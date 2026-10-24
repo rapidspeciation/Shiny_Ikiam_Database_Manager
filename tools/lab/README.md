@@ -268,3 +268,25 @@ To add a case:
   open the snapshot. Codex has no such rule. The prompt tells every model to
   read only the photos.
 - Only the models the prompt names are used. Don't pick Fable models.
+
+### Photo archive curation preview
+
+`LAB_SANDBOX_DRIVE=1 tools/lab/app.sh --bg` also simulates file changes
+when the lab uses a Google Sheets test copy. Drive reads and writes use the
+recorded listing in memory. Restarting resets those simulated changes.
+Database edits still go to the test spreadsheet. The archive summary shows
+this distinction on screen. Production's spreadsheet cannot enable this mode.
+
+Open Photos → Photo_links and sites → Photo archive review. Select a folder,
+year or issue and press Review this section. Entries start unselected; Apply,
+Keep current and Later are separate decisions. Expand a CAM to inspect its
+photos and the OCR's actual CAMID crop. Drive fixes prepare a second card,
+where individual operations or rotations alone can be selected.
+
+Earlier envelope imports dropped detector boxes. To restore just those boxes
+from the original readings without replacing newer OCR:
+
+```sh
+node scripts/restore-ocr-boxes.mjs "$HOME/.cache/ithomiini-lab/app-workbook/app.sqlite" <original-readings-folder>
+```
+

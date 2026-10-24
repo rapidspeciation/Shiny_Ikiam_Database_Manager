@@ -16,7 +16,8 @@ import { blankOrNA, isIdValue } from './verifications.mjs';
 /** Sheet changes are proposed; these are done by hand in Drive (renames, merges). */
 export const TASK_KINDS = new Set(['photo_camid', 'photo_extra']);
 /** Kinds read from the photos by a model: a person's verdict on them is a training label. */
-export const MODEL_KINDS = new Set(['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'ai_species']);
+/** The curation card's own kinds (server/photo-curation.mjs) too: the sex model, and the wings' side and turn. */
+export const MODEL_KINDS = new Set(['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'ai_species', 'ai_sex', 'photo_side', 'photo_turn']);
 
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const binomial = value => text(value).toLowerCase().split(/\s+/).slice(0, 2).join(' ');

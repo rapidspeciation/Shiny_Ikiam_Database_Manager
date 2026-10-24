@@ -49,6 +49,8 @@ export const MAIN_TOOLS = new Set([
   'reference_photos',
   // It shows a card of photos (server/photo-gallery.mjs).
   'show_photos',
+  // It makes a card of photo fixes (server/photo-curation.mjs).
+  'show_photo_fixes',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

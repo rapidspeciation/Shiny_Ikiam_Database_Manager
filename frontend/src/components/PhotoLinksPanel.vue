@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, ExternalLink, FolderSearch, Globe, Loader2, RefreshCw, ScanText } from 'lucide-vue-next'
+import { Check, ChevronDown, ExternalLink, FolderSearch, Globe, History, Loader2, RefreshCw, ScanSearch, ScanText } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { intlLocale, t } from '../lib/i18n'
 import { siteRunLabel, type ReadingsStatus, type SiteStatus, type SitesAnswer } from '../lib/renameHost'
+import { KINDS, kindLabel, type CurationSummary } from '../lib/photoCuration'
 
 const ProposalsLive = defineAsyncComponent(() => import('./assistant/ProposalsLive.vue'))
 
@@ -40,6 +41,92 @@ const upToDate = ref('')
 const result = ref<HTMLElement>()
 /** The card was written in this visit: the gallery's update comes next. */
 const written = ref(false)
+// ------------------------------------------------------------ the photo archive review
+const archive = ref<CurationSummary | null>(null)
+const archiveError = ref('')
+const archiveBusy = ref(false)
+/** The section picked: a kind of problem (none: all), a folder and a year; the counts follow the folder and year. */
+const archiveKind = ref('')
+const archiveFolder = ref('')
+const archiveYear = ref('')
+/** The folders and years of the whole archive, for the lists (the counts of a narrowed summary would hide the others). */
+const archiveFolders = ref<{ name: string; n: number }[]>([])
+const archiveYears = ref<{ name: string | number; n: number }[]>([])
+const kindRows = computed(() => KINDS.filter(k => archive.value?.kinds[k]?.n).map(k => ({ kind: k, ...archive.value!.kinds[k] })))
+const archiveCount = computed(() => (archiveKind.value ? (archive.value?.kinds[archiveKind.value]?.n ?? 0) : (archive.value?.total ?? 0)))
+async function loadArchive() {
+  archiveError.value = ''
+  try {
+    const query = new URLSearchParams(Object.entries({ folder: archiveFolder.value, year: archiveYear.value }).filter(([, v]) => v))
+    const out = await api<CurationSummary>(`photo-curation/summary${query.size ? `?${query}` : ''}`)
+    archive.value = out
+    if (!query.size) {
+      archiveFolders.value = out.folders.filter(f => !/^\d+ more$/.test(f.name) && f.name !== 'not in Photo_links')
+      archiveYears.value = out.years.filter(y => y.name !== 'unknown')
+    }
+  } catch (e) {
+    archiveError.value = errorText(e)
+  }
+}
+watch([archiveFolder, archiveYear], () => void loadArchive())
+async function reviewArchive() {
+  archiveBusy.value = true
+  archiveError.value = ''
+  try {
+    const out = await api<{ proposalId: string }>('photo-curation/show', {
+      method: 'POST',
+      body: { kind: archiveKind.value, folder: archiveFolder.value, year: archiveYear.value, limit: 40 },
+    })
+    if (out.proposalId) showCard(out.proposalId, 'curation')
+  } catch (e) {
+    archiveError.value = errorText(e)
+  } finally {
+    archiveBusy.value = false
+  }
+}
+
+// ------------------------------------------------------------ the card on show, and the ones before it
+/** One card at a time in the workspace; the ones it replaced, to go back to (the newest first). */
+const RECENT_KEY = 'photo-links:recent'
+type Recent = { id: string; kind: 'reading' | 'curation' | 'photos'; at: string }
+const recent = ref<Recent[]>(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'))
+const recentOpen = ref(false)
+function showCard(id: string, kind: Recent['kind']) {
+  const before = card.value
+  if (before && before !== id) {
+    const was = recent.value.find(r => r.id === before)
+    recent.value = [{ id: before, kind: was?.kind ?? cardKind.value, at: new Date().toISOString() }, ...recent.value.filter(r => r.id !== before && r.id !== id)].slice(0, 8)
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.value))
+  }
+  cardKind.value = kind
+  card.value = id
+  localStorage.setItem(CARD_KEY, id)
+  upToDate.value = ''
+  recentOpen.value = false
+}
+const cardKind = ref<Recent['kind']>((localStorage.getItem(`${CARD_KEY}:kind`) as Recent['kind']) || 'reading')
+watch(cardKind, k => localStorage.setItem(`${CARD_KEY}:kind`, k))
+const recentLabel = (r: Recent) =>
+  `${r.kind === 'curation' ? t('Revisión del archivo') : r.kind === 'photos' ? t('Fotos sin renombrar') : 'Photo_links'} · ${new Date(r.at).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+/** A card kept from an earlier visit that is no longer waiting (applied, discarded) is not shown again. */
+async function dropUsedCard() {
+  if (!card.value) return
+  try {
+    const { proposals } = await api<{ proposals: { id: string; status: string }[] }>(`chat/proposals?${new URLSearchParams({ only: card.value, all: '1' })}`)
+    const status = proposals.find(p => p.id === card.value)?.status
+    if (!status || !['pending', 'partial', 'applying', 'queued'].includes(status)) showCard('', cardKind.value)
+  } catch {
+    // Kept as it was.
+  }
+}
+/** The sidebar's other tools, folded or open as the person left them. */
+const FOLDS_KEY = 'photo-links:folds'
+const folds = ref<Record<string, boolean>>({ read: true, unrenamed: false, sites: false, ...JSON.parse(localStorage.getItem(FOLDS_KEY) ?? '{}') })
+function fold(key: string, event: Event) {
+  folds.value = { ...folds.value, [key]: (event.target as HTMLDetailsElement).open }
+  localStorage.setItem(FOLDS_KEY, JSON.stringify(folds.value))
+}
+const onCurationOpen = (event: Event) => showCard((event as CustomEvent<string>).detail, 'curation')
 let wasOpen = false
 /** The card's count of what waits: from one to none, it was applied or discarded (asked which). */
 async function onCount(n: number) {
@@ -91,10 +178,8 @@ async function read() {
       body: { only, add },
     })
     if (out.notFound.length) notify(t('No se encontró en Drive: {folders}', { folders: out.notFound.join(', ') }), 'error')
-    if (out.proposalId) {
-      card.value = out.proposalId
-      localStorage.setItem(CARD_KEY, out.proposalId)
-    } else {
+    if (out.proposalId) showCard(out.proposalId, 'reading')
+    else {
       upToDate.value = new Date().toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' })
       card.value = ''
       localStorage.removeItem(CARD_KEY)
@@ -133,13 +218,7 @@ async function readIds() {
   readingIds.value = true
   try {
     const out = await api<{ batch: string; photos: number }>('drive-photos/start', { method: 'POST', body: { folder: uploaded.value.trim() } })
-    // Beside the reading (the reading's card stays where it is).
-    if (card.value) cardMade(new CustomEvent('photos:card', { detail: out.batch }))
-    else {
-      card.value = out.batch
-      localStorage.setItem(CARD_KEY, out.batch)
-    }
-    upToDate.value = ''
+    showCard(out.batch, 'photos')
     uploaded.value = ''
     notify(t('Leyendo {n} fotos en el servidor (un segundo cada una)', { n: out.photos }))
   } catch (e) {
@@ -210,20 +289,72 @@ watch(
 onMounted(() => {
   void loadFolders()
   void loadSites()
+  void loadArchive()
+  void dropUsedCard()
   window.addEventListener('photos:card', cardMade)
+  window.addEventListener('curation:open', onCurationOpen)
 })
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
   window.removeEventListener('photos:card', cardMade)
+  window.removeEventListener('curation:open', onCurationOpen)
 })
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden" data-photo-links-panel>
     <aside class="flex shrink-0 flex-col gap-4 border-b border-stone-200 bg-white p-3 text-sm md:w-80 md:overflow-y-auto md:border-r md:border-b-0">
+      <!-- The photo archive against the database: a section to review in the workspace. -->
+      <section class="space-y-2" data-archive-summary>
+        <h2 class="flex items-center gap-1.5 font-medium text-stone-800"><ScanSearch :size="15" class="text-emerald-700" /> {{ $t('Revisión del archivo de fotos') }}</h2>
+        <p v-if="archive" class="text-xs text-stone-600">
+          {{ $tn(archive.total, '{n} caso', '{n} casos') }} ·
+          <span class="text-emerald-800">{{ $t('{n} seguros', { n: archive.tiers.clear ?? 0 }) }}</span> ·
+          <span class="text-sky-800">{{ $t('{n} a pensar', { n: archive.tiers.reason ?? 0 }) }}</span> ·
+          <span class="text-amber-800">{{ $t('{n} mirar', { n: archive.tiers.look ?? 0 }) }}</span>
+        </p>
+        <p v-if="archive?.sandboxDrive" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-lab-drive>{{ $t('Lab: los cambios de archivos son simulados. Los cambios en la base se guardan en la copia de prueba.') }}</p>
+        <div v-if="archive" class="overflow-hidden rounded border border-stone-200 text-xs" role="listbox" :aria-label="$t('Tipo de problema')" data-kinds>
+          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-[10px] text-stone-500" aria-hidden="true">
+            <span class="flex-1" /><span class="w-7 text-right">{{ $t('seguro') }}</span><span class="w-7 text-right">{{ $t('pensar') }}</span><span class="w-7 text-right">{{ $t('mirar') }}</span>
+          </p>
+          <button
+            v-for="k in [{ kind: '', n: archive.total, clear: archive.tiers.clear ?? 0, reason: archive.tiers.reason ?? 0, look: archive.tiers.look ?? 0 }, ...kindRows]"
+            :key="k.kind"
+            type="button"
+            role="option"
+            :aria-selected="archiveKind === k.kind"
+            class="flex w-full items-center gap-2 border-t border-stone-100 px-2 py-1 text-left first:border-t-0"
+            :class="archiveKind === k.kind ? 'bg-emerald-50 font-medium text-stone-900' : 'text-stone-700 hover:bg-stone-50'"
+            :data-kind="k.kind || 'all'"
+            @click="archiveKind = k.kind"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ k.kind ? kindLabel(k.kind) : $t('Todos los problemas') }}</span>
+            <span class="w-7 text-right text-emerald-800 tabular-nums" :title="$t('Seguros')">{{ k.clear }}</span>
+            <span class="w-7 text-right text-sky-800 tabular-nums" :title="$t('A pensar')">{{ k.reason }}</span>
+            <span class="w-7 text-right text-amber-800 tabular-nums" :title="$t('Mirar la foto')">{{ k.look }}</span>
+          </button>
+        </div>
+        <div v-if="archive" class="grid grid-cols-2 gap-1.5">
+          <select v-model="archiveFolder" class="min-w-0 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs" :aria-label="$t('Carpeta')">
+            <option value="">{{ $t('Todas las carpetas') }}</option>
+            <option v-for="f in archiveFolders" :key="f.name" :value="f.name">{{ f.name.split('/').slice(-2).join('/') }} · {{ f.n }}</option>
+          </select>
+          <select v-model="archiveYear" class="min-w-0 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs" :aria-label="$t('Año')">
+            <option value="">{{ $t('Todos los años') }}</option>
+            <option v-for="y in archiveYears" :key="y.name" :value="String(y.name)">{{ y.name }} · {{ y.n }}</option>
+          </select>
+        </div>
+        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-emerald-700 hover:bg-emerald-800" :disabled="archiveBusy || !archiveCount" data-review-archive @click="reviewArchive">
+          <Loader2 v-if="archiveBusy" :size="15" class="animate-spin" />
+          {{ $tn(archiveCount, 'Revisar {n} caso', 'Revisar {n} casos') }}
+        </button>
+        <p v-if="archiveError" role="alert" class="text-xs text-red-800">{{ archiveError }} <button type="button" class="underline" @click="loadArchive">{{ $t('Reintentar') }}</button></p>
+      </section>
       <!-- Photo_links: which folders to read. -->
-      <section class="space-y-2" data-read>
-        <h2 class="font-medium text-stone-800">Photo_links</h2>
+      <details class="fold border-t border-stone-200 pt-3" :open="folds.read" data-read @toggle="fold('read', $event)">
+        <summary class="flex cursor-pointer items-center gap-1.5 font-medium text-stone-800"><ChevronDown :size="14" class="chev text-stone-400" /><FolderSearch :size="15" class="text-emerald-700" /> Photo_links · {{ $t('Leer Drive') }}</summary>
+        <div class="mt-2 space-y-2">
         <p class="text-xs text-stone-600">
           {{ $t('Lee las carpetas de fotos en Drive y las compara con la hoja: fotos nuevas, archivos renombrados, borrados o copiados a otra cuenta.') }}
         </p>
@@ -261,11 +392,13 @@ onBeforeUnmount(() => {
           <Loader2 v-if="reading" :size="15" class="animate-spin" /><FolderSearch v-else :size="15" />
           {{ reading ? $t('Leyendo Drive (hasta medio minuto)…') : $t('Leer Drive') }}
         </button>
-      </section>
+        </div>
+      </details>
 
       <!-- Photos uploaded without being renamed: their IDs read on the server. -->
-      <section class="space-y-2 border-t border-stone-200 pt-3" data-unrenamed>
-        <h2 class="flex items-center gap-1.5 font-medium text-stone-800"><ScanText :size="15" class="text-emerald-700" /> {{ $t('Fotos subidas sin renombrar') }}</h2>
+      <details class="fold border-t border-stone-200 pt-3" :open="folds.unrenamed" data-unrenamed @toggle="fold('unrenamed', $event)">
+        <summary class="flex cursor-pointer items-center gap-1.5 font-medium text-stone-800"><ChevronDown :size="14" class="chev text-stone-400" /><ScanText :size="15" class="text-emerald-700" /> {{ $t('Fotos subidas sin renombrar') }}</summary>
+        <div class="mt-2 space-y-2">
         <p class="text-xs text-stone-600">
           {{ $t('El servidor lee el ID del sobre de cada foto (IMG_…), las ordena y te muestra solo las dudosas; se renombran al aplicar.') }}
         </p>
@@ -279,14 +412,16 @@ onBeforeUnmount(() => {
          <button class="btn w-full justify-center py-1" :disabled="readingIds" data-read-ids @click="readIds">
           <Loader2 v-if="readingIds" :size="14" class="animate-spin" /><ScanText v-else :size="14" /> {{ $t('Leer los IDs en el servidor') }}
         </button>
-      </section>
+        </div>
+      </details>
 
       <!-- The public sites. -->
-      <section class="space-y-2 border-t border-stone-200 pt-3" data-sites>
-        <h2 class="flex items-center gap-1.5 font-medium text-stone-800">
-          <Globe :size="15" class="text-emerald-700" /> {{ $t('Sitios públicos') }}
-          <button class="btn-ghost ml-auto p-1" :title="$t('Ver de nuevo cómo van')" @click="loadSites(true)"><RefreshCw :size="13" /></button>
-        </h2>
+      <details class="fold border-t border-stone-200 pt-3" :open="folds.sites || written" data-sites @toggle="fold('sites', $event)">
+        <summary class="flex cursor-pointer items-center gap-1.5 font-medium text-stone-800">
+          <ChevronDown :size="14" class="chev text-stone-400" /><Globe :size="15" class="text-emerald-700" /> {{ $t('Sitios públicos') }}
+          <button class="btn-ghost ml-auto p-1" :title="$t('Ver de nuevo cómo van')" @click.prevent="loadSites(true)"><RefreshCw :size="13" /></button>
+        </summary>
+        <div class="mt-2 space-y-2">
         <p class="text-xs text-stone-600">{{ $t('Toman los datos del libro cuando se actualizan; después de escribir Photo_links, actualiza la Wings Gallery.') }}</p>
         <p v-if="written" class="rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-900" data-next>
           {{ $t('Photo_links está escrito: actualiza la Wings Gallery para que muestre las fotos nuevas.') }}
@@ -300,6 +435,7 @@ onBeforeUnmount(() => {
             <template v-if="typeof s.lastUpdate === 'object'">
               {{ $t('Datos:') }} <a :href="s.lastUpdate.link" target="_blank" rel="noopener" class="hover:underline">{{ siteRunLabel(s.lastUpdate.state) }} · {{ when(s.lastUpdate.started) }}</a>
             </template>
+
             <template v-else>{{ $t('Nunca actualizado') }}</template>
           </p>
           <p v-if="s.publishing" class="text-stone-600">
@@ -329,7 +465,8 @@ onBeforeUnmount(() => {
             {{ running(s) ? $t('Actualizando…') : $t('Actualizar el sitio') }}
           </button>
         </div>
-      </section>
+        </div>
+      </details>
     </aside>
 
     <!-- The reading: the card of Cambios propuestos, applied here. -->
@@ -337,13 +474,35 @@ onBeforeUnmount(() => {
       <p v-if="upToDate" class="m-3 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-up-to-date>
         <Check :size="15" /> {{ $t('Photo_links ya está al día con esas carpetas (leídas a las {at}).', { at: upToDate }) }}
       </p>
+      <!-- The cards this one replaced, to go back to. -->
+      <div v-if="recent.length" class="relative flex justify-end px-3 pt-2 text-xs" data-recent>
+        <button type="button" class="btn-ghost flex items-center gap-1 px-1.5 py-0.5 text-stone-600" :aria-expanded="recentOpen" @click="recentOpen = !recentOpen">
+          <History :size="13" /> {{ $t('Tarjetas recientes') }} <ChevronDown :size="13" />
+        </button>
+        <ul v-if="recentOpen" class="absolute top-full right-3 z-30 mt-1 w-64 overflow-hidden rounded border border-stone-200 bg-white shadow-lg">
+          <li v-for="r in recent" :key="r.id">
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-stone-50" @click="showCard(r.id, r.kind)">{{ recentLabel(r) }}</button>
+          </li>
+        </ul>
+      </div>
       <div v-if="extra.length" class="max-h-[55%] shrink-0 overflow-y-auto border-b-2 border-stone-300" data-extra-cards>
         <ProposalsLive v-for="id in extra" :key="id" layout="page" :only="id" class="h-[24rem] border-b border-stone-200" />
       </div>
       <ProposalsLive v-if="card" :key="card" layout="page" :only="card" class="min-h-0 flex-1" @count="onCount" />
       <p v-else-if="!upToDate" class="m-auto max-w-sm p-6 text-center text-sm text-stone-500">
-        {{ $t('Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.') }}
+        {{ $t('Elige una sección del archivo para revisarla, o pulsa «Leer Drive»: aquí verás lo que cambiaría antes de aplicarlo.') }}
       </p>
     </div>
   </div>
 </template>
+<style scoped>
+.fold > summary {
+  list-style: none;
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold:not([open]) .chev {
+  transform: rotate(-90deg);
+}
+</style>

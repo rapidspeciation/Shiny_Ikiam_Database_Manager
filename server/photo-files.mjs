@@ -7,6 +7,8 @@
 // - planFileChanges works the request out against a reading of the folders (server/photo-links.mjs
 //   `index`): which file each operation means, its RAW file with it, and what cannot be done.
 // - settleChanges asks the account that changes files what it may do with them.
+// - leaveOutChanges takes out the changes the person leaves out on the card, with those that need
+//   them (a RAW file's photo, the folder a move goes into: changeNeeds).
 // - runFileChanges makes the changes with that account (server/drive.mjs driveWriterFor) and says
 //   how each went; undoFileChanges takes them back.
 //
@@ -70,7 +72,8 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *  - withRaw: a photo renamed or removed takes its RAW file with it (the file of its name in the
  *    RAW folder beside its own).
  * An op: { action, id, name, folder, to, … }: `to` is the new name, or the folder gone into (`toId`,
- * or `toNew`: the op that makes it); a RAW file following its photo has `raw: true`.
+ * or `toNew`: the op that makes it); a RAW file following its photo has `raw: true` and `photo`, its
+ * photo's ID (the op of the same action on that file).
  */
 export function planFileChanges({ index, operations = [], fix = [], withRaw = true }) {
   const { items, home, folderPath, info } = index;
@@ -274,7 +277,7 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
         continue;
       }
       if (add({ action: 'rotate', degrees }, item, `${item.id}|rotate`))
-        for (const raw of rawsOf(item)) add({ action: 'rotate', degrees, raw: true }, raw, `${raw.id}|rotate`);
+        for (const raw of rawsOf(item)) add({ action: 'rotate', degrees, raw: true, photo: item.id }, raw, `${raw.id}|rotate`);
       continue;
     }
     if (action === 'rename') {
@@ -284,9 +287,9 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
         continue;
       }
       const to = extOf(name) ? name : `${name}${extOf(item.name)}`;
-      if (rename(item, to)) for (const raw of rawsOf(item)) rename(raw, `${stemOf(to)}${extOf(raw.name)}`, { raw: true });
+      if (rename(item, to)) for (const raw of rawsOf(item)) rename(raw, `${stemOf(to)}${extOf(raw.name)}`, { raw: true, photo: item.id });
     } else if (action === 'remove') {
-      if (remove(item)) for (const raw of rawsOf(item)) remove(raw, { raw: true });
+      if (remove(item)) for (const raw of rawsOf(item)) remove(raw, { raw: true, photo: item.id });
     } else {
       const where = target(o.to);
       if (where.error) {
@@ -330,7 +333,7 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       for (const item of all) {
         if (!listedFile(item) || !PHOTO.test(item.name) || TO_DELETE.test(item.name) || !inside(item) || touched.has(item.id)) continue;
         const right = rightName(item.name, info);
-        if (right && right !== item.name && rename(item, right)) for (const raw of rawsOf(item)) rename(raw, `${stemOf(right)}${extOf(raw.name)}`, { raw: true });
+        if (right && right !== item.name && rename(item, right)) for (const raw of rawsOf(item)) rename(raw, `${stemOf(right)}${extOf(raw.name)}`, { raw: true, photo: item.id });
       }
     } else if (check === 'copies') {
       // The same file twice: the same name (as the sheets read it) and the same size.
@@ -466,18 +469,23 @@ function folderHolding(index, fileIds) {
   return id && items.has(id) ? { id, name: items.get(id).name, path: folderPath(id) ?? items.get(id).name, url: items.get(id).webViewLink } : null;
 }
 
-/** The files of a folder (and of the folders inside it) counted by the account that owns them, the most first. */
-function owners(index, folderId, subfolders, want) {
+/** The files of a folder (and of the folders inside it) that `want` takes. */
+function filesIn(index, folderId, subfolders, want) {
   const { items } = index;
-  const counts = new Map();
+  const out = [];
   for (const item of items.values()) {
     if (isFolder(item) || !want(item)) continue;
     let inside = item.parent === folderId;
     if (!inside && subfolders) for (let p = items.get(item.parent)?.parent; p && !inside; p = items.get(p)?.parent) inside = p === folderId;
-    if (!inside) continue;
-    const account = item.owners?.[0]?.emailAddress ?? '';
-    counts.set(account, (counts.get(account) ?? 0) + 1);
+    if (inside) out.push(item);
   }
+  return out;
+}
+const ownerOf = item => item.owners?.[0]?.emailAddress ?? '';
+/** Files counted by the account that owns them, the most first. */
+function owners(files) {
+  const counts = new Map();
+  for (const item of files) counts.set(ownerOf(item), (counts.get(ownerOf(item)) ?? 0) + 1);
   return [...counts].map(([account, files]) => ({ account, files })).sort((a, b) => b.files - a.files);
 }
 
@@ -547,14 +555,16 @@ export async function settleChanges(writer, { ops, problems }, { parallel = 8, i
       if (index && !transfer.outside) {
         // «Delete copied files»: the accounts whose …_todelete files are there, with those this plan marks.
         // «Copy files»: the accounts whose files are there now (the one that presses it copies the others').
-        const marked = new Set(ops.filter(op => op.how === 'mark' && !left.has(op)).map(op => op.id));
+        const marked = new Map(ops.filter(op => op.how === 'mark' && !left.has(op)).map(op => [op.id, op]));
         const binned = new Set(ops.filter(op => op.how === 'bin' || op.how === 'delete').map(op => op.id));
-        transfer.by = owners(
-          index,
-          transfer.id,
-          transfer.subfolders,
-          transfer.step === 'delete' ? f => marked.has(f.id) || (TO_DELETE.test(f.name) && !binned.has(f.id)) : f => !TO_DELETE.test(f.name),
-        ).slice(0, 12);
+        const files = filesIn(index, transfer.id, transfer.subfolders, transfer.step === 'delete' ? f => marked.has(f.id) || (TO_DELETE.test(f.name) && !binned.has(f.id)) : f => !TO_DELETE.test(f.name));
+        transfer.by = owners(files).slice(0, 12);
+        if (transfer.step === 'delete') {
+          // Each file this plan marks, counted under its owner (taken off again when the person leaves it out:
+          // leaveOutChanges), and how many more are there for the step to delete.
+          for (const f of files) if (marked.has(f.id)) marked.get(f.id).owner = ownerOf(f);
+          transfer.others = files.filter(f => !marked.has(f.id)).length;
+        }
       }
     }
   }
@@ -563,6 +573,94 @@ export async function settleChanges(writer, { ops, problems }, { parallel = 8, i
   const at = new Map(kept.map((op, i) => [op, i]));
   for (const op of kept) if (op.toNew !== undefined) op.toNew = at.get(ops[op.toNew]);
   return { ops: kept, problems };
+}
+
+/**
+ * What each change of a plan needs of the others, by op: { all: [{ on, why }], any } (`on`, `any`:
+ * indexes in `ops`). It is not made without every op of `all`, nor without one of `any`.
+ *  - raw: a RAW file and its photo go together (the RAW file is renamed, removed or turned with it).
+ *  - name: a rename into a name another change frees (`after`) waits for that change.
+ *  - swap: the renames of a swap of names (one steps aside, `via`) need each other.
+ *  - folder: a move or a shortcut into a folder the plan makes (`toNew`) needs that folder.
+ *  - any: the sheet's step the plan added by itself (`auto`) for the files it marks …_todelete, when the
+ *    folder has nothing else for that step to delete, needs one of them.
+ */
+export function changeNeeds(ops) {
+  const freer = new Map();
+  const photoOp = new Map();
+  for (const [i, op] of ops.entries()) {
+    if (['rename', 'move', 'remove'].includes(op.action) && !freer.has(op.id)) freer.set(op.id, i);
+    if (!op.raw && op.id) photoOp.set(`${op.action}|${op.id}`, i);
+  }
+  const needs = ops.map(() => ({ all: [] }));
+  for (const [i, op] of ops.entries()) {
+    const photo = op.raw ? photoOp.get(`${op.action}|${op.photo}`) : undefined;
+    if (photo !== undefined) {
+      needs[i].all.push({ on: photo, why: 'raw' });
+      needs[photo].all.push({ on: i, why: 'raw' });
+    }
+    if (op.after && freer.has(op.after) && freer.get(op.after) !== i) needs[i].all.push({ on: freer.get(op.after), why: 'name' });
+    if (op.toNew !== undefined && op.toNew !== null) needs[i].all.push({ on: op.toNew, why: 'folder' });
+  }
+  // A swap: from the file that steps aside, each rename waits for the next, back to it.
+  for (const [start, op] of ops.entries()) {
+    if (!op.via) continue;
+    const cycle = [start];
+    for (let i = freer.get(op.after); i !== undefined && i !== start && !cycle.includes(i); i = freer.get(ops[i].after)) cycle.push(i);
+    if (freer.get(ops[cycle.at(-1)].after) !== start) continue;
+    for (const i of cycle) for (const need of needs[i].all) if (need.why === 'name' && cycle.includes(need.on)) need.why = 'swap';
+  }
+  const marks = ops.flatMap((op, i) => (op.how === 'mark' ? [i] : []));
+  for (const [i, op] of ops.entries()) if (op.action === 'transfer' && op.auto) {
+    if (!op.others && marks.length) needs[i].any = marks;
+    for (const mark of marks) needs[mark].all.push({ on: i, why: 'handover' });
+  }
+  return needs;
+}
+
+/**
+ * A plan without the changes the person left out on its card (`leaveOut`: their indexes in `ops`), nor
+ * those that need them (changeNeeds): { ops, kept (their indexes), leftOut (how many the person left
+ * out), dropped: [{ index, why, on }] (left out with them, `on`: the change they needed) }. The ops are
+ * copies: a move into a folder the plan makes points at its new place (`toNew`), and the accounts the
+ * sheet's step names (`by`) no longer count the files left out.
+ */
+export function leaveOutChanges(ops, leaveOut = []) {
+  if (!Array.isArray(leaveOut) || leaveOut.some(i => !Number.isInteger(i) || i < 0 || i >= ops.length))
+    throw new RangeError('leaveOut must contain valid change indexes');
+  const needs = changeNeeds(ops);
+  const out = new Set(leaveOut);
+  const leftOut = out.size;
+  const users = new Map();
+  const use = (on, i) => users.get(on)?.push(i) ?? users.set(on, [i]);
+  for (const [i, n] of needs.entries()) {
+    for (const need of n.all) use(need.on, i);
+    for (const on of n.any ?? []) use(on, i);
+  }
+  const dropped = [];
+  const queue = [...out];
+  for (let q = 0; q < queue.length; q++) {
+    const on = queue[q];
+    for (const i of users.get(on) ?? []) {
+      if (out.has(i)) continue;
+      const why = needs[i].all.find(need => need.on === on)?.why ?? (needs[i].any?.every(k => out.has(k)) ? 'mark' : null);
+      if (!why) continue;
+      out.add(i);
+      dropped.push({ index: i, why, on });
+      queue.push(i);
+    }
+  }
+  const kept = ops.flatMap((_, i) => (out.has(i) ? [] : [i]));
+  const place = new Map(kept.map((i, at) => [i, at]));
+  const chosen = kept.map(i => ({ ...ops[i] }));
+  for (const op of chosen) if (op.toNew !== undefined && op.toNew !== null) op.toNew = place.get(op.toNew);
+  const gone = ops.filter((op, i) => out.has(i) && op.how === 'mark' && op.owner !== undefined);
+  for (const op of chosen)
+    if (op.action === 'transfer' && op.by && gone.length)
+      op.by = op.by
+        .map(b => ({ ...b, files: b.files - gone.filter(g => g.owner === b.account).length }))
+        .filter(b => b.files > 0);
+  return { ops: chosen, kept, leftOut, dropped };
 }
 
 /**
@@ -669,6 +767,10 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
   // Last, the sheet left ready for the account that does the rest.
   for (const op of ops.filter(o => o.action === 'transfer')) {
     try {
+      if (op.auto && !op.others && !ops.some(o => o.how === 'mark' && o.done)) {
+        step(op, new Error('no file was marked for its owner; the sheet was not changed'));
+        continue;
+      }
       if (!sheet) throw new Error(`this app has no sheet «${TRANSFER_SHEET_NAME}» set up`);
       const now = await sheet.read();
       if (now.busy) throw new Error(`the sheet is in use (${now.last.action} of ${now.last.folder}: ${now.last.status})`);

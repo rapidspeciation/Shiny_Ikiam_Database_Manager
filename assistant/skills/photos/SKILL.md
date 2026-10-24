@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), photos uploaded without being renamed (drive_photos), showing butterflies' photos (show_photos), the species a photo shows (identify_species, reference_photos), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
+description: The photos of the butterflies' wings, from the camera to the database — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), photos uploaded without being renamed (drive_photos), showing butterflies' photos (show_photos), the species a photo shows (identify_species, reference_photos), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
 ---
 
 # Wing photos and Photo_links
@@ -95,7 +95,7 @@ browser, on the photos in a folder of their computer, before they are
 uploaded: the photos stay on the computer and it needs no key. Chrome or
 Edge (Brave after switching on the setting the app shows); other browsers
 can read the folder but not rename in it. In the tab it checks the IDs
-against the workbook as it is now, and «Review with Claude» opens a chat
+against the database as it is now, and «Review with Claude» opens a chat
 beside it that double-checks the batch (below).
 
 1. «Open folder», then «Read photos»: it reads the CAM_ID on each envelope
@@ -110,7 +110,7 @@ beside it that double-checks the batch (below).
 
 What sends a photo to review, which tells what to check:
 
-- the CAM it read is not in the workbook (in the tab, the workbook as it is
+- the CAM it read is not in the database (in the tab, the database as it is
   now; on its own page, a copy read once a day), so the butterflies' rows
   are typed before their photos are renamed;
 - the CAM is far from those of the photos taken just before and after;
@@ -152,12 +152,12 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 
 | Found | Most likely | What to do |
 |---|---|---|
-| `out-of-sequence`, or `not-in-database` with a `suggest` or `maybe` | a misread digit | read the envelope; set the ID when it fits the IDs before and after and the workbook has it |
+| `out-of-sequence`, or `not-in-database` with a `suggest` or `maybe` | a misread digit | read the envelope; set the ID when it fits the IDs before and after and the database has it |
 | `no-reading` | the envelope is partly out of the frame, covered by a wing, or faint | `part: "photo"` shows the whole photo; set the ID you can read; one you cannot read is the ID of the single photo beside it only when that leaves both with two photos |
 | `notTwoPhotos`, one photo | its other view carries another ID (often the flagged photo beside it), or was not taken | find it beside it; otherwise `leave`: the view is missing, to photograph again |
 | `notTwoPhotos`, three or more | a view photographed twice (the first one blurred), or two butterflies given one ID | look at the whole photos: `skip` the worse of a repeat; two butterflies are for the person |
 | `apart` | the later photos are misread, or one CAM is on two envelopes | read both envelopes; a CAM on two envelopes is for the person (skill `data-rules`, duplicates) |
-| `notInWorkbook` without `maybe` | the butterfly's row is not typed yet (IDs running on after the workbook's last ones) | say which IDs: their rows are typed before the photos are uploaded |
+| `notInWorkbook` without `maybe` | the butterfly's row is not typed yet (IDs running on after the database's last ones) | say which IDs: their rows are typed before the photos are uploaded |
 | `alreadyPhotographed` | photographed again on purpose, or an older ID read by mistake | read the envelope; if it is right, ask whether the new photos replace the old ones |
 | `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
 | `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed (below) |
@@ -169,7 +169,7 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 | `wing-turn` | the photo turned otherwise than its wings ask | look at the whole photo; `rotate` it when its forewings are not on top |
 
 - Set an ID yourself when the envelope reads clearly, the ID fits the run
-  around it and the workbook has it. Otherwise `leave` it: a wrong name puts
+  around it and the database has it. Otherwise `leave` it: a wrong name puts
   a photo on another butterfly's row.
 - Which way up: a photo is landscape, the wings side by side with the
   forewings above the hindwings (the ruler and colour card are usually at
@@ -241,7 +241,7 @@ The Wings Gallery and the maps keep their own copy of the data, made when
 their «Update Database» run on GitHub reads the sheets: `update_websites`
 starts it and says how it went. The gallery takes about a minute; the maps
 5 to 10. A photo reaches the gallery once Photo_links lists it and the
-workbook has recalculated, so the sites are updated after `sync_photo_links`,
+database has recalculated, so the sites are updated after `sync_photo_links`,
 not before.
 
 ## Updating Photo_links
@@ -263,7 +263,7 @@ write, say what it found, what it most likely is and what you suggest:
 | `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go ([reference/organize.md](reference/organize.md)) |
 | `turned` (beside the checks) | a photo whose orientation tag differs from the rest of its folder that day: turned by mistake, or re-saved already turned (then it shows right) | look at them together (`photo_files_look`, 800); `organize_photos` `rotate` with its `degrees` only those that show turned |
 | `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
-| `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
+| `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the database ID one character away that fits) | ask which; a misread one is renamed |
 | `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
 | `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder (`organize_photos`; the right folder is the one of the butterfly's country and year in its row); another photo: compare the two envelopes with the row |
 | `unpaired` | the other view was not photographed, or carries another name (often the `outOfOrder` or `unknownId` photo beside it) | find it among those, or ask for the photo |
@@ -308,20 +308,35 @@ later), and says when Photo_links has the photo but the row does not find it
 
 - A file named after the wrong CAM: rename it in Drive, the JPG and the RAW,
   then `sync_photo_links`.
-- A CAM changed in the workbook: its files are renamed to the new CAM the
+- A CAM changed in the database: its files are renamed to the new CAM the
   same way.
 - Photos taken again: the new files take the names, the old ones go to a
   `_temp` folder or the bin, then `sync_photo_links`.
 
 ## Curating the archive
 
-`photo_facts` puts side by side what the archive's photos say about a
-butterfly (its envelope as read by OCR, the Wings Gallery's prediction, the
-side the wings show and whether the photo is turned) and what the workbook
-says, with the species, sex and CAM_ID changes its notes record. It helps
-when a CAM looks wrong (the envelope shows another ID), a species or sex
-looks off, or the person wants to go through the archive's open cases:
-without CAMs it lists the disagreements, the surest first. The envelope's
-fields are readings with their confidence: the photo itself settles a case
-(`show_photos`, or the link of the file). An envelope whose top strip only
-was photographed has its CAM but no species: nothing to compare there.
+`photo_facts` with `summary: true` says how many disagreements the archive
+has between its photos (file name, envelope read by OCR, the species and sex
+models, the wings' side and turn) and the database, by kind, folder and year,
+and how sure each is (`tier`). Tell the person the counts and offer a
+section to start with; a section at a time keeps the review short enough to
+finish.
+
+- `clear`: independent sources agree against one; the card ticks the fix.
+- `reason`: the readings disagree among themselves. `photo_facts` with `cams`
+  gives everything known of those butterflies; the notes in the database
+  often record an identification changed on purpose.
+- `look`: only the photo settles it: the envelope or the ID line
+  (`photo_files_look`, view `envelope` or `both`) before the whole photo.
+
+`show_photo_fixes` puts a section on a card beside the chat, with each
+case's crops, its evidence and the fix; the person decides there, case by
+case or a group at once. After weighing `reason` or `look` cases, the card
+takes your chosen value and a one-line note per case (`items`). «Aplicar»
+writes the database fixes, marks the wrong readings so they are not raised
+again, and starts the Drive renames and turns on a card of their own; one
+that could not be made comes back on the card with its reason.
+
+Files owned by another account are left for that account: the files card
+gives the «Transfer Ownership & Free Up Space» sheet's link and a message to
+send its owner.

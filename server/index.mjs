@@ -271,6 +271,8 @@ export function configFromEnv(env = process.env) {
     sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
     // LOCAL_MODE (the lab): a recorded listing of the photo folders on Drive, read by sync_photo_links (server/drive.mjs).
     driveListingFile: env.DRIVE_LISTING_FILE || undefined,
+    // Explicit lab-only file sandbox, including when Sheets uses a disposable Google copy.
+    driveSandbox: env.ITHOMIINI_LAB_DRIVE_SANDBOX === '1' && !!env.ITHOMIINI_LAB_URL && workbook.id !== REAL_ID,
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,

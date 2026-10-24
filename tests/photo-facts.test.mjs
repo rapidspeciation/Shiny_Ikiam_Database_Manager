@@ -274,7 +274,7 @@ test('photo_facts with the photo readings: the top 5, why a sex is not supported
 test('photo_facts without CAMs: the disagreements of the archive, the surest first, without those settled', async () => {
   const { store } = await fixture();
   const page = runPhotoFacts(store, {});
-  assert.deepEqual(page.counts, { species: 0, sex: 1, gallery: 1, camid: 2, wings: 3 });
+  assert.deepEqual(page.counts, { species: 0, sex: 1, gallery: 1, aisex: 0, camid: 2, wings: 3 });
   // The species the note says was changed is settled.
   assert.deepEqual(page.settled, { species: 1 });
   const byKind = Object.fromEntries(page.items.map(i => [`${i.kind}:${i.cam}`, i]));

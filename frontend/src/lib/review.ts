@@ -140,6 +140,16 @@ export function cropStyle(box: Box, aspect: number, turned = 0) {
   }
 }
 
+/** Dimensions for a CAM OCR crop read with the camera turned a quarter turn. */
+export function quarterCropStyle(box: Box, aspect: number, turn: number) {
+  const [x0, y0, x1, y1] = box.map(n => Math.min(Math.max(n, 0), 1)) as Box
+  const ratio = (Math.max(x1 - x0, 0.01) * aspect) / Math.max(y1 - y0, 0.01)
+  return {
+    outer: { aspectRatio: String(Math.round((1 / ratio) * 1000) / 1000) },
+    inner: { width: `${ratio * 100}%`, aspectRatio: String(Math.round(ratio * 1000) / 1000), transform: `translate(-50%, -50%) rotate(${-turn}deg)` },
+  }
+}
+
 const same = (a: unknown, b: unknown) =>
   String(a ?? '')
     .trim()

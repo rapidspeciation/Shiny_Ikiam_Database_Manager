@@ -376,13 +376,13 @@ function addLocalPhotos(drive, { dir, under }) {
 /** The Drive reader of a store: the app's Google login, or the recorded listing of a local copy (null without one). */
 export function driveFor(store, config = {}) {
   if (config.drive) return config.drive;
-  if (store.localMode) return localDrive(store, config);
+  if (store.localMode || config.driveSandbox === true) return localDrive(store, config);
   return new GoogleDrive({ token: () => store.sheets.accessToken() });
 }
 /** The Drive account that changes files for a store: the project's own (null when none is set up). */
 export function driveWriterFor(store, config = {}) {
   if (config.drive) return config.drive;
-  if (store.localMode) return localDrive(store, config);
+  if (store.localMode || config.driveSandbox === true) return localDrive(store, config);
   return config.driveCredentialsFile && existsSync(config.driveCredentialsFile) ? new GoogleDrive({ token: tokenFrom(config.driveCredentialsFile) }) : null;
 }
 

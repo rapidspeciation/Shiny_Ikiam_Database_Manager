@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cropStyle, differingCells, fixText, otherField, photoList, photoUrl, type SideBySide } from '../review'
+import { cropStyle, quarterCropStyle, differingCells, fixText, otherField, photoList, photoUrl, type SideBySide } from '../review'
 
 describe('envelope and wing crops', () => {
   it('scales and moves the photo so only the box shows, in a frame of its shape', () => {
@@ -12,6 +12,9 @@ describe('envelope and wing crops', () => {
   it('turns the frame of an envelope photographed upside down, and clamps boxes to the photo', () => {
     expect(cropStyle([0, 0, 1, 1], 1.5, 180).frame).toEqual({ aspectRatio: '1.5', transform: 'rotate(180deg)' })
     expect(cropStyle([-0.2, 0, 1.3, 1], 1).image).toEqual({ width: '100%', height: '100%', left: '0%', top: '0%' })
+    const quarter = quarterCropStyle([0.1, 0.2, 0.5, 0.4], 1, 90)
+    expect(quarter.outer.aspectRatio).toBe('0.5')
+    expect(quarter.inner).toMatchObject({ width: '200%', aspectRatio: '2', transform: 'translate(-50%, -50%) rotate(-90deg)' })
   })
 })
 

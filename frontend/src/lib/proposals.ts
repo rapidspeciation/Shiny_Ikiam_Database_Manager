@@ -3,6 +3,7 @@ import type { CellValue } from './types'
 import type { TableRow } from './rowsTable'
 import { t, tn, tx, type Msg } from './i18n'
 import type { PhotoFiles, PhotoSync } from './photoLinks'
+import type { PhotoCuration } from './photoCuration'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -248,16 +249,16 @@ export interface Proposal {
   reason: string
   /** A table of rows the assistant shows (show_rows) is 'shown', then 'closed': never pending, never applied. */
   /** queued: applied while Google did not answer; its save waits in the app and is written when it does. */
-  status: 'pending' | 'applying' | 'queued' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
+  status: 'pending' | 'partial' | 'applying' | 'queued' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
   /**
    * 'table': rows of the sheet to read (lib/rowsTable), not changes. 'photo_links': a reading of the photo
    * folders; 'photo_files': changes to make to the photo files on Drive (lib/photoLinks); 'photo_review':
    * photos uploaded without being renamed, read on the server (lib/drivePhotos); 'photo_gallery':
    * butterflies' photos shown by CAM ID (show_photos).
    */
-  kind?: 'table' | 'photo_links' | 'photo_files' | 'photo_review' | 'photo_gallery'
+  kind?: 'table' | 'photo_links' | 'photo_files' | 'photo_review' | 'photo_gallery' | 'photo_curation'
   /** A reading of the photo folders on Drive (what Photo_links lacks), or a plan of changes to its files; and how far it is. */
-  sync?: PhotoSync | PhotoFiles
+  sync?: PhotoSync | PhotoFiles | PhotoCuration
   /** A table's rows, with the sheet's current values of its columns (`fields`). */
   rows?: TableRow[]
   sheets?: string[]

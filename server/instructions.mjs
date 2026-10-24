@@ -35,6 +35,7 @@ export const TOOL_RANGES = [
   ['server/drive-photos.mjs', '/^export const DRIVE_PHOTO_TOOLS/', '/^\\];/'],
   ['server/photo-gallery.mjs', '/^export const GALLERY_TOOLS/', '/^\\];/'],
   ['server/photo-facts.mjs', '/^export const PHOTO_FACTS_TOOLS/', '/^\\];/'],
+  ['server/photo-curation.mjs', '/^export const CURATION_TOOLS/', '/^\\];/'],
 ];
 /** Characters of one commit's diff kept (a whole-file rewrite stays readable, not endless). */
 const DIFF_LIMIT = 150_000;
@@ -128,7 +129,10 @@ async function entryHistory(root, entry) {
   const base = ['log', '--no-color', '--word-diff=porcelain', FORMAT];
   if (h.follow) return parseLog(await run(root, [...base, '-p', '--follow', '--', h.follow]));
   if (h.paths) return parseLog(await run(root, [...base, '-p', '--', ...h.paths]));
-  const ranges = h.ranges.flatMap(([file, from, to]) => ['-L', `${from},${to}:${file}`]);
+  // New tools can be tested in the lab before their files have a commit history.
+  const tracked = new Set((await run(root, ['ls-tree', '-r', '--name-only', 'HEAD', '--', ...h.ranges.map(([file]) => file)])).trim().split('\n'));
+  const ranges = h.ranges.filter(([file]) => tracked.has(file)).flatMap(([file, from, to]) => ['-L', `${from},${to}:${file}`]);
+  if (!ranges.length) return [];
   return parseLog(await run(root, [...base, ...ranges]));
 }
 

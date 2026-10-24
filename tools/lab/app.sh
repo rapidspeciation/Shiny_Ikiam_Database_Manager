@@ -136,6 +136,10 @@ else
 fi
 env_app=(
   "${env_data[@]}"
+  # Optional recorded Drive for testing rename/rotation/deletion, even with the Google Sheets copy.
+  ITHOMIINI_LAB_DRIVE_SANDBOX="${LAB_SANDBOX_DRIVE:-0}"
+  DRIVE_LISTING_FILE="$LAB/drive-listing.json"
+  DRIVE_ACCOUNT="jmithominii@gmail.com"
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/

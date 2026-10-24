@@ -182,6 +182,7 @@ export function reviewData(store) {
       camid: r.camid,
       conf: r.camid_conf,
       candidates: parse(r.candidates_json) ?? [],
+      camidLines: parse(r.camid_lines_json) ?? [],
       text: parse(r.text_json) ?? [],
       model: r.model,
       source: r.source,

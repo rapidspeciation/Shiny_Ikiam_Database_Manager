@@ -30,6 +30,11 @@ const props = defineProps<{
   whole?: boolean
   /** Each photo's own page (its file on Google Drive), in the photos' order: the corner button opens it instead of the copy shown. */
   links?: string[]
+  /**
+   * A box to outline on each photo, [x0, y0, x1, y1] in fractions of it (the line an OCR read the ID
+   * from), in the photos' order: the photo opens zoomed to it.
+   */
+  marks?: (readonly [number, number, number, number] | null | undefined)[]
 }>()
 const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
 const noteOf = (n: number) => props.notes?.[n] ?? ''
@@ -82,6 +87,7 @@ function reset(animate = true) {
 function start() {
   if (!pz) return
   pz.reset({ animate: false })
+  if (mark.value) return focusMark()
   if (props.whole) return
   const { w, h } = natural.value
   const { w: pw, h: ph } = size.value
@@ -94,6 +100,32 @@ function start() {
   // Panzoom's pan is in the zoomed element's own units: the page's top to the pane's top.
   const tall = bh * fitted * k
   if (tall > ph) pz.pan(0, (tall - ph) / 2 / k, { animate: false, force: true })
+}
+/** The outline of the photo shown, and the photo zoomed so it fills about half the pane, centred. */
+const mark = computed(() => props.marks?.[props.photo] ?? null)
+const markStyle = computed(() => {
+  const m = mark.value
+  if (!m) return null
+  return { left: `${m[0] * 100}%`, top: `${m[1] * 100}%`, width: `${(m[2] - m[0]) * 100}%`, height: `${(m[3] - m[1]) * 100}%` }
+})
+function focusMark() {
+  const m = mark.value
+  const { w, h } = natural.value
+  const { w: pw, h: ph } = size.value
+  if (!pz || !m || !w || !h || !pw || !ph) return
+  const sideways = turn.value % 2 === 1
+  const [bw, bh] = sideways ? [h, w] : [w, h]
+  const fitted = Math.min(pw / bw, ph / bh)
+  // The box on the photo as fitted, from its centre, turned as the photo is.
+  let dx = ((m[0] + m[2]) / 2 - 0.5) * w * fitted
+  let dy = ((m[1] + m[3]) / 2 - 0.5) * h * fitted
+  for (let i = 0; i < turn.value; i++) [dx, dy] = [-dy, dx]
+  const boxW = (sideways ? (m[3] - m[1]) * h : (m[2] - m[0]) * w) * fitted
+  const boxH = (sideways ? (m[2] - m[0]) * w : (m[3] - m[1]) * h) * fitted
+  // The line and some of the envelope around it: at most 60 % of the pane either way.
+  const k = Math.max(1, Math.min(4, (pw * 0.6) / Math.max(boxW, 1), (ph * 0.6) / Math.max(boxH, 1)))
+  pz.zoom(k, { animate: false })
+  pz.pan(-dx, -dy, { animate: false, force: true })
 }
 const zoomIn = () => pz?.zoomIn()
 const zoomOut = () => pz?.zoomOut()
@@ -204,7 +236,17 @@ onBeforeUnmount(() => {
     </div>
     <!-- Wheel or pinch: zoom; drag: move; double-click: closer. -->
     <div ref="box" class="relative min-h-0 flex-1 overflow-hidden" @dblclick="onDblclick">
+      <slot name="overlay" />
       <div ref="stage" class="relative h-full w-full">
+        <!-- The outline, turned and sized with the photo. -->
+        <div
+          v-if="markStyle && fit"
+          class="pointer-events-none absolute top-1/2 left-1/2 z-10"
+          :style="{ ...fit, transform: `translate(-50%, -50%) rotate(${turn * 90}deg)` }"
+          data-mark
+        >
+          <span class="absolute rounded-sm border-2 border-amber-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" :style="markStyle" />
+        </div>
         <img
           ref="img"
           :key="photo"

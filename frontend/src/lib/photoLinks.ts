@@ -215,7 +215,7 @@ export function filterRows(rows: PhotoRow[], show: 'all' | 'flagged' | CheckKind
  * What is done to a file: binned (the account's own), or renamed …_todelete for its owner to delete (`mark`).
  * `sheet`: the sheet «Transfer Ownership & Free Up Space» left ready for another account's step.
  */
-export type FileChange = 'rename' | 'move' | 'bin' | 'delete' | 'mark' | 'folder' | 'shortcut' | 'sheet'
+export type FileChange = 'rename' | 'move' | 'bin' | 'delete' | 'mark' | 'folder' | 'shortcut' | 'rotate' | 'sheet'
 /** A change of the plan (GET chat/proposals/<id>/photo-links/rows). */
 export interface FileRow {
   change: FileChange
@@ -232,6 +232,11 @@ export interface FileRow {
   keptAs?: string
   /** The sheets find this file, not the one kept. */
   lookedUp?: boolean
+  /** Indexes of changes required with this one. */
+  needs?: { on: number; why: string }[]
+  /** At least one of these changes must also be selected. */
+  needsAny?: number[]
+  owner?: string
 }
 export interface FilesProgress {
   state: 'writing' | 'done' | 'failed'
@@ -245,6 +250,8 @@ export interface FilesProgress {
   sheetNote?: string
   /** The sheet is ready for another account's step. */
   handover?: Handover
+  /** Whether the transfer sheet was written during this application attempt. */
+  handoverWritten?: boolean
   error?: string
 }
 /**
@@ -280,7 +287,7 @@ export interface PhotoFiles {
   progress?: FilesProgress
   stale?: boolean
 }
-export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'delete', 'mark', 'folder', 'shortcut', 'sheet']
+export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'delete', 'mark', 'folder', 'shortcut', 'rotate', 'sheet']
 export const fileChangeLabel = (change: FileChange): string =>
   ({
     rename: t('renombrar'),
@@ -290,6 +297,7 @@ export const fileChangeLabel = (change: FileChange): string =>
     mark: t('marcar …_todelete'),
     folder: t('carpeta nueva'),
     shortcut: t('acceso directo'),
+    rotate: t('girar'),
     sheet: t('hoja de traspaso'),
   })[change]
 /** "x@… (214) · y@… (3)": the accounts of a handover, with their files. */

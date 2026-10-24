@@ -56,6 +56,7 @@ const PhotoFilesCard = defineAsyncComponent(() => import('./PhotoFilesCard.vue')
 const DrivePhotosCard = defineAsyncComponent(() => import('./DrivePhotosCard.vue'))
 /** Butterflies' photos the assistant shows (show_photos). */
 const PhotoGalleryCard = defineAsyncComponent(() => import('./PhotoGalleryCard.vue'))
+const PhotoCurationCard = defineAsyncComponent(() => import('./PhotoCurationCard.vue'))
 /** «Revisar con la foto»: a proposal's table with its notebook photo (pan and zoom load apart too). */
 const PhotoReview = defineAsyncComponent(() => import('./PhotoReview.vue'))
 /** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
@@ -144,7 +145,7 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const isTable = (p: Proposal) => p.kind === 'table'
-const isSync = (p: Proposal) => p.kind === 'photo_links' || p.kind === 'photo_files' || p.kind === 'photo_review' || p.kind === 'photo_gallery'
+const isSync = (p: Proposal) => p.kind === 'photo_links' || p.kind === 'photo_files' || p.kind === 'photo_review' || p.kind === 'photo_gallery' || p.kind === 'photo_curation'
 /**
  * Proposals from the oldest rows of the sheet to the newest, so they are reviewed and applied in the
  * sheet's order: by sheet, then the first existing row each one changes (one with only new rows after
@@ -158,7 +159,7 @@ function byRows(a: Proposal, b: Proposal) {
   const [x, y] = [where(a), where(b)]
   return x.sheet.localeCompare(y.sheet) || x.row - y.row || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))
 }
-const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' || p.status === 'queued' || p.status === 'shown'
+const open = (p: Proposal) => p.status === 'pending' || p.status === 'partial' || p.status === 'applying' || p.status === 'queued' || p.status === 'shown'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
 /** The proposals to review (a table shown is only to read), in the sheet's order: see byRows. */
 const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)).sort(byRows))
@@ -635,6 +636,7 @@ const origin = (p: Proposal) =>
           <PhotoFilesCard v-else-if="p.kind === 'photo_files'" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" @discard="discard(p)" />
           <PhotoGalleryCard v-else-if="p.kind === 'photo_gallery'" :proposal="p" @discard="discard(p)" />
+          <PhotoCurationCard v-else-if="p.kind === 'photo_curation'" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <ProposalGrid
             v-else
@@ -669,6 +671,7 @@ const origin = (p: Proposal) =>
             <PhotoFilesCard v-if="p.kind === 'photo_files'" :proposal="p" />
             <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" />
             <PhotoGalleryCard v-else-if="p.kind === 'photo_gallery'" :proposal="p" />
+            <PhotoCurationCard v-else-if="p.kind === 'photo_curation'" :proposal="p" />
             <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" />
             <ProposalGrid v-else :proposal="p" @photo="n => review(p, n)" />
           </WhenSeen>

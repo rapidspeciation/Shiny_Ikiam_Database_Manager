@@ -469,6 +469,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
               camid: out.camid ?? null,
               readAs: out.camid ?? null,
               conf: out.conf,
+              ...(out.idLine ? { idLine: out.idLine } : {}),
               candidates: (out.candidates ?? []).map(c => c.id),
               readRotation: out.rotation === null || out.rotation === undefined ? null : norm(out.rotation),
               orientation: out.orientation,

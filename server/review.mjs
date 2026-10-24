@@ -443,6 +443,8 @@ export function trainingLabels(store) {
         prediction: s.prediction ?? null,
         sheetValue: s.value ?? null,
         curation: s.curation ?? null,
+        // The curation card's: every source read beside the database (server/photo-curation.mjs).
+        ...(s.evidence ? { evidence: s.evidence } : {}),
       }),
     );
   }

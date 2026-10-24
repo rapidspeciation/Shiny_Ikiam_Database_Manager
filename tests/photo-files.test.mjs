@@ -9,7 +9,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { FOLDER, GoogleDrive, LocalDrive, driveTree } from '../server/drive.mjs';
 import { planPhotoLinks } from '../server/photo-links.mjs';
-import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, undoFileChanges } from '../server/photo-files.mjs';
+import { changeNeeds, describeChanges, kindOf, leaveOutChanges, planFileChanges, runFileChanges, settleChanges, undoFileChanges } from '../server/photo-files.mjs';
 import { GoogleTransferSheet, LocalTransferSheet, parseTransfer } from '../server/transfer-sheet.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
 import { moduleMap } from '../server/schema.mjs';
@@ -87,6 +87,35 @@ async function reading(files = drive()) {
   return { local, index: planPhotoLinks({ rows, items, home: id(1), ids }).index };
 }
 const told = ops => ops.map(o => [kindOf(o), `${o.folder}/${o.name}`, o.to ?? null]);
+
+test('file selection keeps dependencies and remaps folders without mutating the plan', () => {
+  const ops = [
+    { action: 'rename', id: 'photo', name: 'before.jpg', to: 'after.jpg' },
+    { action: 'rename', id: 'raw', photo: 'photo', raw: true, name: 'before.CR2', to: 'after.CR2' },
+    { action: 'folder', name: 'new', toId: 'parent' },
+    { action: 'move', id: 'moving', toNew: 2 },
+    { action: 'remove', id: 'foreign', how: 'mark', owner: 'owner@example.org' },
+    { action: 'transfer', auto: true, others: 0, by: [{ account: 'owner@example.org', files: 1 }] },
+    { action: 'rotate', id: 'turn', degrees: 90 },
+  ];
+  const needs = changeNeeds(ops);
+  assert.deepEqual(needs[1].all, [{ on: 0, why: 'raw' }]);
+  assert.deepEqual(needs[3].all, [{ on: 2, why: 'folder' }]);
+  assert.deepEqual(needs[4].all, [{ on: 5, why: 'handover' }]);
+  assert.deepEqual(needs[5].any, [4]);
+  const onlyTurn = leaveOutChanges(ops, [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(onlyTurn.kept, [6]);
+  assert.deepEqual(onlyTurn.ops, [{ action: 'rotate', id: 'turn', degrees: 90 }]);
+  const withoutFolder = leaveOutChanges(ops, [0, 2]);
+  assert.deepEqual(withoutFolder.kept, [4, 5, 6]);
+  assert.deepEqual(withoutFolder.dropped.map(d => [d.index, d.why]), [[1, 'raw'], [3, 'folder']]);
+  const withoutMark = leaveOutChanges(ops, [4]);
+  assert.deepEqual(withoutMark.dropped.map(d => [d.index, d.why]), [[5, 'mark']]);
+  assert.deepEqual(ops[3].toNew, 2);
+  assert.throws(() => leaveOutChanges(ops, [-1]), RangeError);
+  assert.throws(() => leaveOutChanges(ops, [ops.length]), RangeError);
+  assert.throws(() => leaveOutChanges(ops, ['0']), RangeError);
+});
 
 test('a plan: files by path or name, a RAW file with its photo, a folder made and filled', async () => {
   const { local, index } = await reading();
@@ -183,6 +212,8 @@ test('a photo turned by its orientation tag, its RAW file too, beside a rename; 
     );
     assert.match(plan.problems[0].error, /degrees, 90, 180 or 270/);
     assert.equal(describeChanges(plan.ops, []).turned.count, 2);
+    assert.deepEqual(leaveOutChanges(plan.ops, [0, 1]).kept, [2, 3]);
+    assert.deepEqual(leaveOutChanges(plan.ops, [2, 3]).kept, [0, 1]);
 
     const tagOf = async fileId => {
       const path = join(dir, `read-${fileId}`);
@@ -330,8 +361,13 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
       auto: true,
     });
     const rows = (await http('GET', `/${card.id}/photo-links/rows`)).body.rows;
-    assert.deepEqual(rows[0], { change: 'rename', folder: 'Wild/Peru/JPG', name: 'CAM000001_d.jpg', to: 'CAM000001d.JPG', url: fileUrl(40) });
+    // The photo and its RAW file go together: each needs the other.
+    assert.deepEqual(rows[0], { change: 'rename', folder: 'Wild/Peru/JPG', name: 'CAM000001_d.jpg', to: 'CAM000001d.JPG', url: fileUrl(40), needs: [{ on: 1, why: 'raw' }] });
     assert.equal(rows.filter(r => r.raw).length, 1);
+    assert.deepEqual(rows[1].needs, [{ on: 0, why: 'raw' }]);
+    // The sheet's step added for the curator's file needs that file marked; the file counts under its owner.
+    assert.deepEqual(rows.at(-1).needsAny, [rows.findIndex(r => r.change === 'mark')]);
+    assert.equal(rows.find(r => r.change === 'mark').owner, 'curator@example.org');
     assert.equal(rows.filter(r => r.copy).length, 3);
     assert.equal((await http('POST', `/${card.id}/photo-links/refresh`)).status, 409);
     // Nothing changed yet.
@@ -363,9 +399,12 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     const applied = store.db.prepare('SELECT status, sync_json FROM ai_proposals WHERE id = ?').get(card.id);
     assert.equal(applied.status, 'applied');
     // Its card still shows the changes it made.
-    assert.deepEqual((await http('GET', `/${card.id}/photo-links/rows`)).body.rows, rows);
+    assert.deepEqual(
+      (await http('GET', `/${card.id}/photo-links/rows`)).body.rows,
+      rows.map(({ needs: _needs, needsAny: _any, owner: _owner, ...r }) => r),
+    );
     const progress = JSON.parse(applied.sync_json).progress;
-    assert.deepEqual({ ...progress, handover: progress.handover.step }, { state: 'done', written: 6, total: 6, phase: 'sheet', sheetRows: 4, handover: 'delete' });
+    assert.deepEqual({ ...progress, handover: progress.handover.step }, { state: 'done', written: 6, total: 6, phase: 'sheet', sheetRows: 4, handover: 'delete', handoverWritten: true });
 
     // Taken back: the files, and the sheet's rows.
     const undone = await call('organize_photos', { undo: plan.plan });
@@ -390,6 +429,72 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
       await new Promise(r => setTimeout(r, 10));
     const rowsNamed = name => sheets.rows.get('Photo_links').filter(r => cellsOf(sheets, r.row).Name === name).length;
     assert.equal(rowsNamed('CAM000007v.JPG'), 1);
+    // A failed mutation can be retried without repeating the photo and RAW that already succeeded.
+    const originalRename = local.rename.bind(local);
+    let renamed40 = 0;
+    let fail41 = true;
+    local.rename = async (fileId, name) => {
+      if (fileId === id(40)) renamed40++;
+      if (fileId === id(41) && fail41) {
+        fail41 = false;
+        throw new Error('temporary Drive error');
+      }
+      return originalRename(fileId, name);
+    };
+    const partial = await call('organize_photos', { operations: [
+      { action: 'rename', file: fileUrl(40), name: 'CAM000001x.JPG' },
+      { action: 'rename', file: fileUrl(41), name: 'CAM000002x.JPG' },
+    ] });
+    assert.equal((await http('POST', `/${partial.plan}/photo-links/apply`, { leaveOut: [99] })).status, 409);
+    assert.equal((await http('POST', `/${partial.plan}/photo-links/apply`, { leaveOut: [] })).status, 202);
+    let partialDone;
+    for (let i = 0; i < 200; i++) {
+      partialDone = await call('organize_photos', { plan: partial.plan });
+      if (partialDone.status === 'done') break;
+      await new Promise(r => setTimeout(r, 10));
+    }
+    assert.equal(partialDone.failed, 1);
+    assert.equal(renamed40, 1);
+    assert.ok((await names(4)).includes('CAM000001x.JPG'));
+    assert.ok((await names(4)).includes('CAM000002d.JPG'));
+    assert.equal((await http('POST', `/${partial.plan}/photo-links/apply`, { retry: true })).status, 202);
+    let retried;
+    for (let i = 0; i < 200; i++) {
+      retried = await call('organize_photos', { plan: partial.plan });
+      if (retried.status === 'done') break;
+      await new Promise(r => setTimeout(r, 10));
+    }
+    assert.equal(retried.failed ?? 0, 0);
+    assert.equal(renamed40, 1);
+    assert.ok((await names(4)).includes('CAM000002x.JPG'));
+    assert.deepEqual(
+      (({ filesAsTheyWere, photoLinksSavesUndone }) => ({ filesAsTheyWere, photoLinksSavesUndone }))(await call('organize_photos', { undo: partial.plan })),
+      { filesAsTheyWere: 3, photoLinksSavesUndone: 2 },
+    );
+    const subset = await call('organize_photos', { operations: [
+      { action: 'rename', file: fileUrl(40), name: 'CAM000001x.JPG' },
+      { action: 'rename', file: fileUrl(41), name: 'CAM000002x.JPG' },
+    ] });
+    assert.equal((await http('POST', `/${subset.plan}/photo-links/apply`, { leaveOut: [0, 1, 2] })).body.error.code, 'nothing');
+    assert.equal((await http('POST', `/${subset.plan}/photo-links/apply`, { leaveOut: [0, 1] })).status, 202);
+    for (let i = 0; i < 200 && (await call('organize_photos', { plan: subset.plan })).status !== 'done'; i++)
+      await new Promise(r => setTimeout(r, 10));
+    assert.ok((await names(4)).includes('CAM000001_d.jpg'));
+    assert.ok((await names(4)).includes('CAM000002x.JPG'));
+    assert.equal((await call('organize_photos', { undo: subset.plan })).filesAsTheyWere, 1);
+    // If Drive changed the file despite a timeout, the retry checks its current name and stops.
+    const ambiguous = await call('organize_photos', { operations: [{ action: 'rename', file: fileUrl(41), name: 'CAM000002z.JPG' }] });
+    local.rename = async (fileId, name) => {
+      const result = await originalRename(fileId, name);
+      if (fileId === id(41)) throw new Error('reply lost after Drive changed the file');
+      return result;
+    };
+    assert.equal((await http('POST', `/${ambiguous.plan}/photo-links/apply`)).status, 202);
+    for (let i = 0; i < 200 && (await call('organize_photos', { plan: ambiguous.plan })).status !== 'done'; i++)
+      await new Promise(r => setTimeout(r, 10));
+    const unsafeRetry = await http('POST', `/${ambiguous.plan}/photo-links/apply`, { retry: true });
+    assert.equal(unsafeRetry.status, 409);
+    assert.equal(unsafeRetry.body.error.code, 'replan');
     assert.match((await call('organize_photos', { operations: [{ action: 'remove', file: 'nothing.JPG' }] })).error, /Nothing to change/);
   } finally {
     store.close();

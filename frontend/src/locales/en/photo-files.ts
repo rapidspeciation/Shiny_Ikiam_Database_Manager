@@ -1,0 +1,15 @@
+export default {
+  'girar': 'rotate',
+  'Elegir': 'Select',
+  'Elegir cambio {n}': 'Select change {n}',
+  'Tipo de cambio': 'Change type',
+  'Elegir este tipo': 'Select this type',
+  'Elegir todos': 'Select all',
+  'Quitar selección': 'Clear selection',
+  '{n} de {total} cambios elegidos': '{n} of {total} changes selected',
+  'Copiar mensaje para la cuenta dueña': 'Copy message for the owner',
+  'Mensaje copiado': 'Message copied',
+  'Reintentar cambios fallidos': 'Retry failed changes',
+  'Cada cuenta dueña ({accounts}) debe abrir la hoja «{sheet}» con su sesión y pulsar «{button}» para borrar sus archivos marcados en {folder}.': 'Each owner ({accounts}) should open the “{sheet}” sheet with their account and click “{button}” to delete their marked files in {folder}.',
+  'Por favor, abre la hoja «{sheet}» con la cuenta que recibirá las fotos y pulsa «{button}» para la carpeta {folder}.': 'Please open the “{sheet}” sheet using the account receiving the photos and click “{button}” for the {folder} folder.',
+} as Record<string, string>

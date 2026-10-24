@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ImageOff } from 'lucide-vue-next'
-import { cropStyle, type Box } from '../../lib/review'
+import { cropStyle, quarterCropStyle, type Box } from '../../lib/review'
 
 /**
  * A photo, or only a box of it (the envelope, the wings), cut out by CSS on the
@@ -15,7 +15,9 @@ const props = withDefaults(defineProps<{ src: string; alt: string; box?: Box; as
 })
 const loaded = ref<number | null>(null)
 const failed = ref(false)
-const crop = computed(() => (props.box ? cropStyle(props.box, props.aspect ?? loaded.value ?? 4 / 3, props.turned) : null))
+const quarter = computed(() => props.turned === 90 || props.turned === 270)
+const crop = computed(() => (props.box ? cropStyle(props.box, props.aspect ?? loaded.value ?? 4 / 3, quarter.value ? 0 : props.turned) : null))
+const quarterStyle = computed(() => props.box ? quarterCropStyle(props.box, props.aspect ?? loaded.value ?? 4 / 3, props.turned) : null)
 function onLoad(event: Event) {
   const img = event.target as HTMLImageElement
   if (img.naturalHeight) loaded.value = img.naturalWidth / img.naturalHeight
@@ -29,6 +31,11 @@ function onLoad(event: Event) {
     :title="$t('Drive no dio {name}', { name: alt })"
   >
     <span><ImageOff :size="18" class="mx-auto mb-1" />{{ $t('Sin foto') }}</span>
+  </div>
+  <div v-else-if="crop && quarter && quarterStyle" class="relative overflow-hidden rounded bg-stone-200" :style="quarterStyle.outer">
+    <div class="absolute top-1/2 left-1/2 overflow-hidden" :style="quarterStyle.inner">
+      <img :src="src" :alt="alt" loading="lazy" decoding="async" class="absolute max-w-none" :style="crop.image" @load="onLoad" @error="failed = true" />
+    </div>
   </div>
   <div v-else-if="crop" class="relative overflow-hidden rounded bg-stone-200" :style="crop.frame">
     <img

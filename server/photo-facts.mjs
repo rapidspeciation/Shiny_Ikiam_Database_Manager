@@ -22,7 +22,8 @@ export const PHOTO_FACTS_TOOLS = [
       description: [
         "What the archive's photos say about butterflies beside what the workbook says, read-only. The photo archive was read away from the app: the envelope in each photo (full-text OCR of the handwriting, right on about 9 lines in 10, so each field comes with its confidence 0–1), the AI's species and sex prediction, and the wing models' reading of each photo: which side its wings show, how many wings, and whether the photo is turned.",
         '- `cams`: per CAM (up to 25): `envelope` (each field [value, confidence]: species as the workbook writes it, sex, locality (the workbook\'s name; what was read when different), code (the insectary\'s code written on reared butterflies\' envelopes, e.g. F77, 4MT), crispr, camid (the ID written on the envelope); `dates` [kind, date, confidence], kind date (no label: on field envelopes the collection day), death, preserved, wingClip, emerged; `photos` read; `differ`: fields its photos read differently), `workbook` (its Collection_data / Insectary_data rows: species, sex, locality, dates, insectaryId, and `notes`: the species, sex or CAM_ID changes their notes record, with the sentence), `gallery` (the AI\'s prediction for the butterfly\'s photos together: species and subspecies, up to 5 each as "name probability", those under 1 % left out; sex [sex, confidence, supported or why not]; andes: the side of the Andes it assumed; `photos`: the photos whose own prediction puts another species first), `wings` (each photo: the side its wings show with P(dorsal), the wings counted when not 4 and those missing, `turned`, the pair\'s verdict, the models\' review reasons), `files` (Photo_links: name, folder, link), `disagree` and `explained` (disagreements a note or a curation decision accounts for). `lines: true` adds the OCR lines of each photo.',
-        '- Without `cams`: the disagreements across the archive, the surest first, paged (`offset`, `limit` up to 100): species (envelope ≠ workbook), sex (envelope ≠ workbook), gallery (the gallery ≥ 90 % sure of another species), camid (the envelope shows another CAM than the file name), wings (the wings show the other side than the d/v of the name, or the photo is turned). `counts` per kind; `settled`: left out because a note, a curation decision or a verdict in Revisión accounts for them. `kind` (comma-separated) and `q` (text in the CAM, names or locality) narrow it.',
+        '- Without `cams`: the disagreements across the archive, the surest first, paged (`offset`, `limit` up to 100): species (envelope ≠ workbook), sex (envelope ≠ workbook), gallery (the gallery ≥ 90 % sure of another species), aisex (the sex model, supported and ≥ 90 % sure, against the sex in the database, when the envelope does not already disagree), camid (the envelope shows another CAM than the file name), wings (the wings show the other side than the d/v of the name, or the photo is turned). `counts` per kind; `settled`: left out because a note, a curation decision or a verdict in Revisión accounts for them. `kind` (comma-separated) and `q` (text in the CAM, names or locality) narrow it.',
+        '- Curating the archive: `summary: true` first, a short answer: how many there are by kind, by tier and by folder and year, the sections to work through. `tier`, `folder`, `year` (with `kind`, `q`) then list one section: each item with its `tier` (clear: independent sources agree against one, the fix is proposed; reason: the text evidence needs weighing; look: only the photo settles it), `why` and the `fix` proposed. `show_photo_fixes` puts a section on a card for the person without reading it here.',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -33,6 +34,10 @@ export const PHOTO_FACTS_TOOLS = [
           q: { type: 'string' },
           offset: { type: 'integer' },
           limit: { type: 'integer' },
+          summary: { type: 'boolean' },
+          tier: { type: 'string', description: 'clear, reason, look (comma-separated)' },
+          folder: { type: 'string', description: "A photo folder (Photo_links' path, or its start)" },
+          year: { type: 'string', description: 'The year the butterfly was collected or brought in, e.g. 2024' },
         },
       },
     },
@@ -42,9 +47,9 @@ export const PHOTO_FACTS_TOOL_NAMES = new Set(PHOTO_FACTS_TOOLS.map(t => t.funct
 
 /** The IDs photos are named after: CAM…, and the M series of Collection_data (M6681). */
 const ID = /^(?:CAM\d{5,7}|M\d{4,5})$/;
-const KINDS = ['species', 'sex', 'gallery', 'camid', 'wings'];
+export const KINDS = ['species', 'sex', 'gallery', 'aisex', 'camid', 'wings'];
 /** How sure a reading must be to count as a disagreement. */
-const SURE = { species: 0.6, sex: 0.6, gallery: 0.9, camid: 0.9 };
+const SURE = { species: 0.6, sex: 0.6, gallery: 0.9, aisex: 0.9, camid: 0.9 };
 const MAX_CAMS = 25;
 const EPOCH = Date.UTC(1899, 11, 30);
 const iso = v => (typeof v === 'number' && v > 10000 && v < 80000 ? new Date(EPOCH + Math.floor(v) * 864e5).toISOString().slice(0, 10) : v ?? null);
@@ -235,6 +240,22 @@ function envelopeFacts(entry, withLines) {
   return out;
 }
 
+/**
+ * A butterfly as a card of the photo archive review shows it beside its case (server/photo-curation.mjs):
+ * the envelope's fields as read, and each database row with its notes, whole (a note may say the CAM_ID or
+ * the species was changed after the photo, so the envelope is out of date) and the changes they record.
+ */
+export function recordFacts(store, cam) {
+  const facts = photoFactsData(store);
+  const rows = facts.byCam.get(cam) ?? [];
+  const envelope = envelopeFacts(facts.envelopes.get(cam), false);
+  const database = rows.map(r => {
+    const note = r.values.Notes_Collection_data ?? r.values.Notes_Insectary_data;
+    return { ...rowFacts(facts, r), ...(!none(note) ? { note: text(note).slice(0, 600) } : {}) };
+  });
+  return { ...(envelope ? { envelope } : {}), ...(database.length ? { database } : {}) };
+}
+
 /** The disagreements of one CAM: [{ kind, … }] and those a note or a decision accounts for. */
 function compare(store, facts, data, index, cam, verdicts) {
   const rows = facts.byCam.get(cam) ?? [];
@@ -247,6 +268,7 @@ function compare(store, facts, data, index, cam, verdicts) {
   const readerError = type => flags.some(f => f.type === type && f.decision === 'reader-error');
   const settled = id => ['rejected', 'applied'].includes(verdicts?.get(id)?.verdict);
   const settle = (item, why) => explained.push({ kind: item.kind, why, ...item });
+  const prediction = data.predictions.get(cam);
 
   // Species: the envelope's against each row's (genus only when either has no species).
   if (env?.species && env.species.conf >= SURE.species) {
@@ -280,8 +302,31 @@ function compare(store, facts, data, index, cam, verdicts) {
       break;
     }
   }
+  // The AI's sex, supported and sure, against the row's, when the envelope's sex is not already against it.
+  const sexAi = prediction?.sex;
+  if (sexAi?.supported && (sexAi.confidence ?? 0) >= SURE.aisex && ![...found, ...explained].some(f => f.kind === 'sex')) {
+    for (const r of rows) {
+      const recorded = sexOf(r.values.Sex);
+      if (!recorded || recorded === sexAi.sex) continue;
+      const item = {
+        kind: 'aisex',
+        cam,
+        gallery: sexAi.sex,
+        workbook: text(r.values.Sex),
+        conf: r2(sexAi.confidence),
+        ...(env?.sex && env.sex.conf >= SURE.sex ? { envelope: env.sex.value } : {}),
+        sheet: r.sheet,
+        row: r.row,
+        recordId: r.id,
+      };
+      const note = notes.find(n => n.field === 'sex' && (n.from === sexAi.sex || (!n.from && n.to === recorded)));
+      if (note) settle(item, `note: ${note.text}`);
+      else if (settled(`ai_sex:${cam}`)) settle(item, 'Revisión: settled');
+      else found.push(item);
+      break;
+    }
+  }
   // The gallery, sure of another species than the row's.
-  const prediction = data.predictions.get(cam);
   if (prediction && rows[0]) {
     const r = rows[0];
     const compared = rankComparison(r.values, prediction, 'species');
@@ -337,15 +382,16 @@ function compare(store, facts, data, index, cam, verdicts) {
   const wings = data.wings.byCam.get(cam) ?? [];
   const problems = [];
   let conf = 0;
+  const sideSettled = settled(`photo_side:${cam}`);
   for (const w of wings) {
     const now = (w.fileId && index.files.get(w.fileId)?.name) || w.name;
     const p = wingProblem(w, now);
     if (!p) continue;
-    if (p.side) {
+    if (p.side && !sideSettled) {
       problems.push(`${now} shows ${p.side} (P dorsal ${r2(w.pDorsal)})`);
       conf = Math.max(conf, Math.abs(w.pDorsal - 0.5) * 2);
     }
-    if (p.turn) {
+    if (p.turn && !settled(`photo_turn:${String(now).replace(/\.[^.]+$/, '').toUpperCase()}`)) {
       problems.push(`${now} ${p.turn}`);
       conf = Math.max(conf, 0.9);
     }
@@ -388,7 +434,7 @@ export function camFacts(store, cams, { lines = false } = {}) {
 
 const listCache = new WeakMap();
 /** Every disagreement of the archive (and those settled), the surest first; kept until the sheets, an import or a verdict change. */
-function allDisagreements(store) {
+export function allDisagreements(store) {
   const facts = photoFactsData(store);
   const data = reviewData(store);
   const index = photoIndex(store);

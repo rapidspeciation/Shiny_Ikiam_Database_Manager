@@ -7,8 +7,9 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FolderCo
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { locale, t } from '../../lib/i18n'
+import { excludeFileChanges, includeFileChanges, leftOutFileChanges } from '../../lib/photo-files'
 import type { Proposal } from '../../lib/proposals'
-import { fileChangeLabel, fileCounts, fileTarget, handoverAccounts, progressPercent, type FileRow, type PhotoFiles } from '../../lib/photoLinks'
+import { FILE_CHANGES, fileChangeLabel, fileCounts, fileTarget, handoverAccounts, progressPercent, type FileChange, type FileRow, type PhotoFiles } from '../../lib/photoLinks'
 import { useRowPhotos } from '../../lib/useRowPhotos'
 
 const CardPhotos = defineAsyncComponent(() => import('./CardPhotos.vue'))
@@ -34,7 +35,7 @@ const progress = computed(() => plan.value.progress)
 const base = computed(() => `chat/proposals/${props.proposal.id}/photo-links`)
 const handover = computed(() => plan.value.handover)
 /** The files changed: the steps made, without the sheet's own. */
-const filesDone = computed(() => Math.max(0, (progress.value?.written ?? 0) - (progress.value?.handover ? 1 : 0)))
+const filesDone = computed(() => Math.max(0, (progress.value?.written ?? 0) - (progress.value?.handoverWritten ? 1 : 0)))
 /** What the sheet is set to: the folder, with or without those inside it, and where deleted files go. */
 const handoverSet = computed(() => {
   const h = handover.value
@@ -46,13 +47,27 @@ const handoverSet = computed(() => {
 })
 
 const busy = ref(false)
+const selected = ref<Set<number>>(new Set())
+const selectedKind = ref<FileChange | ''>('')
 async function apply() {
+  if (!rows.value || !selected.value.size) return
   busy.value = true
   try {
-    await api(`${base.value}/apply`, { method: 'POST', body: {} })
+    await api(`${base.value}/apply`, { method: 'POST', body: { leaveOut: leftOutFileChanges(rows.value, selected.value) } })
     emit('started')
   } catch (e) {
     notify((e as { code?: string }).code === 'stale' ? t('Este plan es de hace más de media hora: pídeselo de nuevo al asistente') : errorText(e), 'error')
+  } finally {
+    busy.value = false
+  }
+}
+async function retryFailed() {
+  busy.value = true
+  try {
+    await api(`${base.value}/apply`, { method: 'POST', body: { retry: true } })
+    emit('started')
+  } catch (error) {
+    notify(errorText(error), 'error')
   } finally {
     busy.value = false
   }
@@ -69,8 +84,53 @@ const rowsGone = ref(false)
 const host = ref<HTMLDivElement>()
 let grid: Tabulator | null = null
 let built = false
+function updateSelection(next: Set<number>) {
+  selected.value = next
+  grid?.redraw(true)
+}
+function toggleRow(index: number) {
+  if (!rows.value) return
+  updateSelection(selected.value.has(index)
+    ? excludeFileChanges(rows.value, selected.value, [index])
+    : includeFileChanges(rows.value, selected.value, [index]))
+}
+function chooseKind() {
+  if (!rows.value || !selectedKind.value) return
+  updateSelection(includeFileChanges(rows.value, selected.value, rows.value.flatMap((row, index) => row.change === selectedKind.value ? [index] : [])))
+}
+async function copyHandover() {
+  const h = progress.value?.handover
+  if (!h) return
+  const message = h.step === 'delete'
+    ? t('Cada cuenta dueña ({accounts}) debe abrir la hoja «{sheet}» con su sesión y pulsar «{button}» para borrar sus archivos marcados en {folder}.', {
+      sheet: h.sheet, accounts: handoverAccounts(h) || t('la cuenta dueña de los archivos …_todelete'), button: h.button, folder: h.folder,
+    })
+    : t('Por favor, abre la hoja «{sheet}» con la cuenta que recibirá las fotos y pulsa «{button}» para la carpeta {folder}.', {
+      sheet: h.sheet, button: h.button, folder: h.folder,
+    })
+  try {
+    await navigator.clipboard.writeText([message, h.sheetUrl].filter(Boolean).join('\n'))
+    notify(t('Mensaje copiado'), 'success')
+  } catch (error) {
+    notify(errorText(error), 'error')
+  }
+}
 function columns(): ColumnDefinition[] {
   return [
+    ...(pending.value ? [{
+      title: t('Elegir'), field: '_selected', width: 72, headerSort: false,
+      formatter: (c: CellComponent) => {
+        const index = (c.getRow().getData() as FileRow & { planIndex: number }).planIndex
+        const input = document.createElement('input')
+        input.type = 'checkbox'
+        input.checked = selected.value.has(index)
+        input.setAttribute('aria-label', t('Elegir cambio {n}', { n: index + 1 }))
+        input.className = 'h-4 w-4 accent-emerald-700'
+        input.addEventListener('click', event => event.stopPropagation())
+        input.addEventListener('change', () => toggleRow(index))
+        return input
+      },
+    } as ColumnDefinition] : []),
     { title: t('Cambio'), field: 'change', width: 130, formatter: (c: CellComponent) => fileChangeLabel(c.getValue()) },
     { title: t('Carpeta'), field: 'folder', minWidth: 160 },
     {
@@ -109,7 +169,7 @@ async function draw() {
   if (!showRows.value || !tableOn.value) return
   if (!rows.value && !rowsGone.value)
     try {
-      rows.value = (await api<{ rows: FileRow[] }>(`${base.value}/rows`)).rows
+      rows.value = (await api<{ rows: FileRow[] }>(`${base.value}/rows`)).rows.map((row, planIndex) => ({ ...row, planIndex }))
     } catch (e) {
       if ((e as { code?: string }).code === 'stale') rowsGone.value = true
       else notify(errorText(e), 'error')
@@ -137,6 +197,12 @@ function dropGrid() {
   picking.clear()
 }
 watch([showRows, tableOn], () => (showRows.value && tableOn.value ? void draw() : dropGrid()))
+watch(pending, () => {
+  rows.value = null
+  selected.value = new Set()
+  dropGrid()
+  void draw()
+})
 onMounted(() => void draw())
 watch(locale, () => built && grid?.setColumns(columns()))
 onBeforeUnmount(dropGrid)
@@ -208,6 +274,7 @@ onBeforeUnmount(dropGrid)
         <a v-if="progress.handover.sheetUrl" :href="progress.handover.sheetUrl" target="_blank" rel="noopener" class="mt-1 ml-5 inline-flex items-center gap-1 text-sky-800 hover:underline">
           <ExternalLink :size="12" /> {{ $t('Abrir la hoja') }}
         </a>
+        <button type="button" class="btn ml-5 mt-1 min-h-9 text-xs" data-copy-handover @click="copyHandover">{{ $t('Copiar mensaje para la cuenta dueña') }}</button>
       </div>
     </div>
     <p v-else-if="status === 'discarded'" class="px-3 py-2 text-xs text-stone-500">{{ $t('Descartada') }}</p>
@@ -222,6 +289,7 @@ onBeforeUnmount(dropGrid)
       <ul class="mt-0.5 ml-5 list-disc">
         <li v-for="e in progress?.errors ?? []" :key="e" class="break-all">{{ e }}</li>
       </ul>
+      <button v-if="applied && progress?.failed" type="button" class="btn mt-2 min-h-9 text-xs" :disabled="busy" data-retry-failed @click="retryFailed">{{ $t('Reintentar cambios fallidos') }}</button>
     </div>
 
     <template v-if="pending">
@@ -293,6 +361,17 @@ onBeforeUnmount(dropGrid)
       <p v-if="showRows && rowsGone" class="py-2 text-stone-500">
         {{ applied ? $t('Los cambios de este plan ya no se guardan.') : $t('Este plan es de hace más de media hora: pídeselo de nuevo al asistente') }}
       </p>
+      <div v-if="pending && rows" class="mt-2 flex flex-wrap items-center gap-2" data-file-selection>
+        <label class="sr-only" for="file-change-kind">{{ $t('Tipo de cambio') }}</label>
+        <select id="file-change-kind" v-model="selectedKind" class="min-h-9 rounded border border-stone-300 bg-white px-2 text-xs" data-select-kind>
+          <option value="">{{ $t('Tipo de cambio') }}</option>
+          <option v-for="kind in FILE_CHANGES.filter(kind => rows?.some(row => row.change === kind))" :key="kind" :value="kind">{{ fileChangeLabel(kind) }}</option>
+        </select>
+        <button type="button" class="btn min-h-9 text-xs" :disabled="!selectedKind" data-add-kind @click="chooseKind">{{ $t('Elegir este tipo') }}</button>
+        <button type="button" class="btn min-h-9 text-xs" data-select-all @click="updateSelection(includeFileChanges(rows, new Set(), rows.map((_, i) => i)))">{{ $t('Elegir todos') }}</button>
+        <button type="button" class="btn min-h-9 text-xs" :disabled="!selected.size" data-select-none @click="updateSelection(new Set())">{{ $t('Quitar selección') }}</button>
+        <span class="text-stone-700" data-selected-count>{{ $t('{n} de {total} cambios elegidos', { n: selected.size, total: rows.length }) }}</span>
+      </div>
       <div v-show="showRows && rows" class="card-rows mt-1.5 flex flex-col gap-2">
         <div class="sheet-grid rows-table photo-links-rows min-w-0 flex-1">
           <div ref="host" />
@@ -305,12 +384,12 @@ onBeforeUnmount(dropGrid)
       <div class="flex flex-wrap items-center gap-2 px-3 py-2">
         <button
           class="btn-primary bg-emerald-700 hover:bg-emerald-800"
-          :disabled="busy || !plan.total"
+          :disabled="busy || !selected.size || !rows"
           :title="$t('Hace estos cambios en Google Drive con la cuenta del proyecto')"
           data-apply
           @click="apply"
         >
-          <Check :size="15" /> {{ $tn(plan.total, 'Aplicar {n} cambio', 'Aplicar {n} cambios') }}
+          <Check :size="15" /> {{ $tn(selected.size, 'Aplicar {n} cambio', 'Aplicar {n} cambios') }}
         </button>
         <button class="btn ml-auto" :disabled="busy" @click="emit('discard')"><X :size="14" /> {{ $t('Descartar') }}</button>
       </div>

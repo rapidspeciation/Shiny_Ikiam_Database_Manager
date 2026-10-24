@@ -12,7 +12,7 @@ import { applyBatch } from './batch.mjs';
 import { comparable, moduleMap } from './schema.mjs';
 import { driveFor, driveWriterFor } from './drive.mjs';
 import { SHEET, driveIdOf, photoLinkRows, scanPhotoLinks } from './photo-links.mjs';
-import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, transferOf, undoFileChanges } from './photo-files.mjs';
+import { changeNeeds, describeChanges, kindOf, leaveOutChanges, planFileChanges, runFileChanges, settleChanges, transferOf, undoFileChanges } from './photo-files.mjs';
 import { transferSheetFor } from './transfer-sheet.mjs';
 
 // ------------------------------------------------------------ the tools
@@ -246,8 +246,9 @@ export function brief(id, card, shown = {}) {
 /**
  * sync_photo_links for one app.
  *  - run(args, user, context): the tool.
- *  - apply(id, user, { skip, skipNew, skipChanges }), refresh(id, params, user), rows(id): the card's «Aplicar», «Leer de nuevo» and its table
- *    (`skipNew`: folders whose new rows wait, `skipChanges`: folders whose changed rows wait, `skip`: both).
+ *  - apply(id, user, { skip, skipNew, skipChanges, leaveOut }), refresh(id, params, user), rows(id): the card's «Aplicar», «Leer de nuevo» and its table
+ *    (`skipNew`: folders whose new rows wait, `skipChanges`: folders whose changed rows wait, `skip`: both;
+ *    a plan of file changes: `leaveOut`, the rows of the changes not to make).
  * `show({ id, card }, context)` keeps the card of a reading (`id`: the card it replaces) and answers
  * { id, …what the model is told, its link }; `tell(id, progress)` is called as the writing goes.
  * `drive` (in config), `waitMs`, `chunk`: for tests.
@@ -452,7 +453,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   }
 
   /** Starts writing a reading, or (`files`: from its card) making a plan's changes on Drive: its job, or { error, code }. */
-  /** `leave`: { skip, skipNew, skipChanges } (folders' rows to leave for later). */
+  /** `leave`: { skip, skipNew, skipChanges } (folders' rows to leave for later), or a plan's { leaveOut } (its rows not to make). */
   function start(id, user, leave = {}, files = false) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the sheet', code: 'forbidden' };
     const running = [...jobs.values()].find(j => j.state === 'writing');
@@ -466,11 +467,25 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     if (plan.type === 'files') {
       if (!files) return { error: 'Changes to the files on Drive are made with «Apply» on their card.', code: 'card' };
       if (!driveWriterFor(store, config)) return { error: 'This copy of the app has no account that changes files on Drive: the plan only shows what would change.', code: 'no_writer' };
+      // The changes the person left out on the card go, and those that need them.
+      let chosen;
+      try {
+        chosen = leaveOutChanges(plan.ops, leave.leaveOut ?? []);
+      } catch (error) {
+        return { error: error.message, code: 'invalid_selection' };
+      }
+      if (!chosen.ops.length) return { error: 'Every change was left out: there is nothing to make.', code: 'nothing' };
       plans.delete(id);
-      keepRows(id, plan.display);
-      const job = change(plan, user);
+      keepRows(
+        id,
+        chosen.kept.map(i => {
+          const { needs: _needs, needsAny: _any, owner: _owner, ...row } = plan.display[i];
+          return row;
+        }),
+      );
+      const job = change({ ...plan, ops: chosen.ops }, user, chosen);
       jobs.set(id, job);
-      return { job };
+      return { job, chosen: { ...chosen, display: plan.display } };
     }
     const skipNew = new Set([...list(leave.skip), ...list(leave.skipNew)]);
     const skipChanges = new Set([...list(leave.skip), ...list(leave.skipChanges)]);
@@ -570,7 +585,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   );
   const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done, degrees: op.degrees, tagBefore: op.tagBefore, leftAs: op.leftAs });
 
-  /** A plan's changes as its card keeps them. */
+  /** A plan's changes as its card keeps them (`handover` undefined: none, which also takes off the one a card had). */
   function filesCard({ ops, problems }) {
     const counts = {};
     for (const op of ops) counts[kindOf(op)] = (counts[kindOf(op)] || 0) + 1;
@@ -582,10 +597,11 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       raw: ops.filter(o => o.raw).length,
       problems: { count: problems.length, examples: problems.slice(0, 8).map(p => [p.file ?? p.at, p.error].filter(Boolean).join(': ')) },
       // What another account does afterwards, in the sheet «Transfer Ownership & Free Up Space».
-      ...(transfer ? { handover: transferOf(transfer) } : {}),
+      handover: transfer ? transferOf(transfer) : undefined,
     };
   }
-  const shownOp = op =>
+  /** A change as the card's table lists it; `need`: what it needs of the other rows (changeNeeds), for the card's choice of rows. */
+  const shownOp = (op, need = null) =>
     filled({
       change: kindOf(op),
       folder: op.folder,
@@ -597,12 +613,21 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       keptIn: op.keptIn,
       keptAs: op.keptAs,
       lookedUp: op.lookedUp,
+      needs: need?.all,
+      needsAny: need?.any,
+      // A file marked …_todelete that the sheet's step counts under its owner.
+      owner: op.owner,
     });
 
-  /** Makes a plan's changes on Drive, then has Photo_links follow the files touched. */
-  function change(plan, user) {
+  /**
+   * Makes a plan's changes on Drive, then has Photo_links follow the files touched. `chosen`
+   * (leaveOutChanges): some were left out on the card, which then counts only those made.
+   */
+  function change(plan, user, chosen = null, previous = null) {
     const writer = driveWriterFor(store, config);
-    const job = { type: 'files', state: 'writing', total: plan.ops.length, written: 0, failed: 0, sheetRows: 0 };
+    const leftOut = chosen ? chosen.leftOut + chosen.dropped.length : 0;
+    const job = { type: 'files', state: 'writing', total: plan.ops.length, written: 0, failed: 0, sheetRows: 0, leftOut, at: previous?.at ?? Date.now(), rootOps: previous?.rootOps ?? plan.ops };
+    const card = leftOut ? { ...filesCard({ ops: plan.ops, problems: [] }), problems: plan.card.problems, leftOut: { count: leftOut, dependent: chosen.dropped.length } } : null;
     const say = () => {
       try {
         tell?.(
@@ -617,8 +642,10 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
             sheetRows: job.sheetRows,
             sheetNote: job.sheetNote,
             handover: job.handover,
+            handoverWritten: job.handoverWritten,
             error: job.error,
           }),
+          card,
         );
       } catch (e) {
         console.error('Drive changes progress:', e.message);
@@ -640,11 +667,20 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       // that only turned photos, made shortcuts or left a step to another account keeps the reading it had.
       if (plan.ops.some(o => o.done && ['rename', 'move', 'remove', 'folder'].includes(o.action))) known = null;
       job.errors = plan.ops.filter(o => o.error).slice(0, EXAMPLES).map(o => `${o.name}: ${o.error}`);
-      const transfer = plan.ops.find(o => o.action === 'transfer' && o.done);
-      if (transfer) job.handover = transferOf(transfer);
-      const done = plan.ops.filter(o => o.done);
+      const transfer = job.rootOps.find(o => o.action === 'transfer' && o.done);
+      job.handoverWritten = plan.ops.some(o => o.action === 'transfer' && o.done);
+      if (transfer) {
+        const failedMarks = job.rootOps.filter(o => o.how === 'mark' && !o.done);
+        const by = transfer.by?.map(owner => ({
+          ...owner,
+          files: owner.files - failedMarks.filter(op => op.owner === owner.account).length,
+        })).filter(owner => owner.files > 0);
+        job.handover = transferOf({ ...transfer, by });
+      }
+      const done = job.rootOps.filter(o => o.done);
+      const previousActions = previous ? JSON.parse(store.db.prepare('SELECT actions_json FROM drive_changes WHERE id = ?').get(plan.id)?.actions_json ?? '[]') : [];
       store.db
-        .prepare('INSERT OR REPLACE INTO drive_changes (id, actor, created_at, ops_json) VALUES (?,?,?,?)')
+        .prepare('INSERT INTO drive_changes (id, actor, created_at, ops_json) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET ops_json = excluded.ops_json')
         .run(plan.id, String(user.id ?? user.username), new Date().toISOString(), JSON.stringify(done.map(kept)));
       // Photo_links follows: the rows of the files renamed, moved or removed, and a row for each file that
       // takes a name the sheet lists from now on (a photo renamed from …_todelete or to its ID).
@@ -659,7 +695,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
         const edits = scan.edits.filter(e => touched.has(fileOf.get(e.id))).map(({ id, values, expected }) => ({ id, values, expected }));
         const creates = scan.creates.filter(c => touched.has(driveIdOf(c.values?.URL))).map(({ folder: _folder, ...create }) => create);
         const total = edits.length + creates.length;
-        const actions = [];
+        const actions = previousActions;
         for (let i = 0; i < total; i += chunk) {
           const part = { edits: edits.slice(i, i + chunk), creates: creates.slice(Math.max(0, i - edits.length), Math.max(0, i + chunk - edits.length)) };
           const body = { ...(part.edits.length ? { edits: part.edits } : {}), ...(part.creates.length ? { creates: part.creates } : {}), reason: `Photo_links follows the files changed on Google Drive (${total} rows)` };
@@ -684,13 +720,43 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       .finally(say);
     return job;
   }
+
+  /** Retry only failed file mutations whose current Drive metadata still matches the reviewed plan. */
+  async function retryFiles(id, user) {
+    if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change files', code: 'forbidden' };
+    if ([...jobs.values()].some(job => job.state === 'writing')) return { error: 'Photo_links is being written already: wait for it to finish.', code: 'busy' };
+    const previous = jobs.get(id);
+    if (previous?.type !== 'files' || previous.state !== 'done' || !previous.failed || !previous.rootOps)
+      return { error: 'There are no failed file changes to retry. Ask the assistant for a fresh plan if files have changed.', code: 'nothing_to_retry' };
+    if (Date.now() - previous.at > FRESH_MS)
+      return { error: 'The reviewed plan has expired. Ask the assistant for a fresh plan before changing files.', code: 'stale' };
+    if (store.db.prepare('SELECT undone_at FROM drive_changes WHERE id = ?').get(id)?.undone_at)
+      return { error: 'These changes were already undone. Ask the assistant for a fresh plan.', code: 'undone' };
+    const failed = previous.rootOps.filter(op => op.error && !op.done);
+    if (!failed.length || failed.some(op => !['rename', 'move', 'remove'].includes(op.action) || op.leftAs || op.toNew !== undefined))
+      return { error: 'One failed change may have partly taken effect. Ask the assistant for a fresh plan so Drive can be read again.', code: 'replan' };
+    const writer = driveWriterFor(store, config);
+    if (!writer) return { error: 'This copy of the app has no account that changes files on Drive.', code: 'no_writer' };
+    for (const op of failed) {
+      let current;
+      try { current = await writer.get(op.id); }
+      catch { return { error: `Drive could not confirm ${op.name}. Ask the assistant for a fresh plan.`, code: 'replan' }; }
+      if (!current || current.name !== op.name || (op.action === 'move' && !current.parents?.includes(op.from)))
+        return { error: `${op.name} changed since the plan was reviewed. Ask the assistant for a fresh plan.`, code: 'replan' };
+    }
+    for (const op of failed) delete op.error;
+    const job = change({ id, ops: failed }, user, null, previous);
+    jobs.set(id, job);
+    return { status: 'applying', retrying: failed.length };
+  }
   const changed = (id, job) => {
     const base = filled({
       plan: id,
-      filesChanged: job.written - (job.handover ? 1 : 0),
-      of: job.total - (job.handover ? 1 : 0),
+      filesChanged: job.written - (job.handoverWritten ? 1 : 0),
+      of: job.total - (job.handoverWritten ? 1 : 0),
       failed: job.failed,
       failedExamples: job.errors,
+      leftOutOnTheCard: job.leftOut,
       photoLinksRowsUpdated: job.sheetRows,
       note: job.sheetNote,
     });
@@ -776,7 +842,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     if (!planned.ops.length) return { error: 'Nothing to change.', ...describeChanges([], planned.problems) };
     const card = filesCard(planned);
     const shown = show?.({ id: null, card, title: FILES_TITLE }, context) ?? { id: randomUUID() };
-    plans.set(shown.id, { id: shown.id, shown, type: 'files', at: Date.now(), ops: planned.ops, display: planned.ops.map(shownOp), card });
+    const needs = changeNeeds(planned.ops);
+    plans.set(shown.id, { id: shown.id, shown, type: 'files', at: Date.now(), ops: planned.ops, display: planned.ops.map((op, i) => shownOp(op, needs[i])), card });
     jobs.delete(shown.id);
     const { id, ...links } = shown;
     return {
@@ -884,10 +951,27 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     space,
     driveSpace,
     folders,
-    /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
-    apply(id, user, leave = {}) {
+    /**
+     * The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. A plan of
+     * file changes says how many it makes, how many the person left out (`leftOut`) and which went with
+     * them because they needed one (`dropped`: { count, examples: [{ row, name, why, with }] }).
+     */
+    async apply(id, user, leave = {}) {
+      if (leave.retry === true) return retryFiles(id, user);
       const started = start(id, user, leave, true);
-      return started.error ? started : { status: 'applying' };
+      if (started.error) return started;
+      const chosen = started.chosen;
+      if (!chosen) return { status: 'applying' };
+      const shown = i => chosen.display[i]?.name ?? '';
+      return filled({
+        status: 'applying',
+        changes: chosen.ops.length,
+        leftOut: chosen.leftOut,
+        dropped: filled({
+          count: chosen.dropped.length,
+          examples: chosen.dropped.slice(0, 20).map(d => ({ row: d.index, name: shown(d.index), why: d.why, with: shown(d.on) })),
+        }),
+      });
     },
     /** The card's «Leer de nuevo»: the folders read again into the same card. */
     async refresh(id, params, user) {

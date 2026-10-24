@@ -91,7 +91,7 @@ export function readCuration(dir, manifestPath) {
         camid: r.camid ?? null,
         conf: round(r.conf),
         candidates: (r.candidates ?? []).slice(0, 5).map(c => [c.id, round(c.conf)]),
-        camidLines: (r.lines ?? []).map(l => [l.t, round(l.c, 3)]),
+        camidLines: (r.lines ?? []).map(l => [l.t, round(l.c, 3), ...(Array.isArray(l.b) ? [l.b, l.turn ?? 0] : [])]),
         text: (fulltext.get(r.file) ?? []).map(([t, s]) => [t, round(s, 3)]),
         source: r.source ?? null,
       });

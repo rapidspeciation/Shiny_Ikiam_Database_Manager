@@ -44,7 +44,8 @@ import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './r
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
-import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES, runPhotoFacts } from './photo-facts.mjs';
+import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
+import { CURATION_TOOLS, CURATION_TOOL_NAMES, createCuration, curationSummary, runPhotoFactsTool } from './photo-curation.mjs';
 import { createIdentifier } from './identifier.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
@@ -455,6 +456,8 @@ const TOOLS = [
   ...GALLERY_TOOLS,
   // What the archive's photos (envelope, gallery, wings) say beside the workbook (server/photo-facts.mjs).
   ...PHOTO_FACTS_TOOLS,
+  // Those disagreements on a card for the person to accept or reject, one section at a time (server/photo-curation.mjs).
+  ...CURATION_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
   {
@@ -881,7 +884,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   // server's mailer. Only the app's thread sends them (server/assistant-host.mjs MAIN_TOOLS).
   const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
   // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
-  const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
+  const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress, card) => syncProgress(id, progress, card) });
   // The batches open in people's «Fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
   const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
   // Photos uploaded to Drive without being renamed, read here (the app's thread: it reads Drive and runs the reader).
@@ -901,7 +904,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         organize: async (operations, user) => {
           const out = await photoLinks.organize({ operations }, user, personContext(user));
           if (out.error) return out;
-          const started = photoLinks.apply(out.plan, user);
+          const started = await photoLinks.apply(out.plan, user);
           return started.error ? started : { plan: out.plan, link: out.link };
         },
         show: (batch, context) => showPhotos(batch, context),
@@ -911,6 +914,32 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const walkIds = inWorker ? null : createWalkIds({ store, identifier, onRead: walkId => markWalkReadings(walkId) });
   // Butterflies' photos beside the chat (show_photos): a card that only shows.
   const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
+  // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
+  const curation = createCuration({
+    store,
+    getProposal: id => anyProposal(id),
+    planAvailable: id => !!photoLinks?.rows(id),
+    show: (card, context) => showGallery(card, context),
+    organize: async (operations, user, card) => {
+      if (!photoLinks) return { error: 'Call it again in a moment.' };
+      const out = await photoLinks.organize({ operations }, user, { threadId: card.thread_id, user, person: true });
+      if (out.error) return out;
+      // The plan's card beside the card it came from, in the same chat.
+      db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ?').run(card.t3_thread ?? null, card.t3_title ?? null, out.plan);
+      // The person pressed «Aplicar» on the curation card: the plan starts at once, its own card shows it going.
+      const started = photoLinks.apply(out.plan, user);
+      return { status: started.error ? 'planned' : 'started', plan: out.plan, link: out.link, changes: out.changes, ...(started.error ? { startError: started.error } : {}) };
+    },
+    update: (id, card, status) => {
+      const r = anyProposal(id);
+      if (!r) return;
+      const at = now();
+      db.prepare(
+        `UPDATE ai_proposals SET sync_json = ?, status = ?, revision = revision + 1, updated_at = ?${status === 'applied' ? ', applied_at = ?' : ''} WHERE id = ?`,
+      ).run(json(card), status, at, ...(status === 'applied' ? [at] : []), id);
+      changed(r.owner_id);
+    },
+  });
   // The public sites' updates on GitHub (update_websites).
   const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
@@ -3570,7 +3599,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     db.prepare(
       `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
        t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,'ai',?,?,?,?)`,
-    ).run(id, context.threadId, owner(context.user), card.title, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
+    ).run(id, context.threadId, owner(context.user), card.title || (card.type === 'curation' ? 'Photo curation' : ''), at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
     changed(owner(context.user));
     return { card: id, ...proposalLink(id, chat?.id ?? null) };
   }
@@ -3586,24 +3615,25 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   /** The writing of a card as it goes (the panel's progress bar), and how it ended. */
-  function syncProgress(id, progress) {
+  function syncProgress(id, progress, planCard) {
     const r = anyProposal(id);
     if (!isSync(r)) return;
     const status = progress.state === 'writing' ? 'applying' : progress.state === 'done' ? 'applied' : 'pending';
     // Stopped half way (Google not answering, a row changed): what is left needs the folders read again.
-    const card = { ...(parse(r.sync_json) ?? {}), progress, ...(status === 'pending' ? { stale: true } : {}) };
+    const card = { ...(parse(r.sync_json) ?? {}), ...(planCard ?? {}), progress, ...(status === 'pending' ? { stale: true } : {}) };
     const at = now();
     db.prepare(
       `UPDATE ai_proposals SET sync_json = ?, status = ?, revision = revision + 1, updated_at = ?${status === 'applied' ? ', applied_at = ?' : ''} WHERE id = ?`,
     ).run(json(card), status, at, ...(status === 'applied' ? [at] : []), id);
     changed(r.owner_id);
+    if (card.type === 'files' && ['done', 'failed'].includes(progress.state)) curation.reconcileDrive(id, progress, planCard);
   }
   function syncView(r) {
     const card = parse(r.sync_json) ?? {};
     return {
       id: r.id,
       // A reading of the folders for Photo_links, or changes to make to the files on Drive (organize_photos).
-      kind: card.type === 'files' ? 'photo_files' : card.type === 'photos' ? 'photo_review' : card.type === 'gallery' ? 'photo_gallery' : 'photo_links',
+      kind: card.type === 'files' ? 'photo_files' : card.type === 'photos' ? 'photo_review' : card.type === 'gallery' ? 'photo_gallery' : card.type === 'curation' ? 'photo_curation' : 'photo_links',
       reason: r.reason ?? '',
       status: r.status,
       sheets: ['Photo_links'],
@@ -3766,7 +3796,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    */
   function discardProposal(proposal, by) {
     const some = !isTable(proposal) && appliedIndexes(parse(proposal.changes_json) ?? []).length > 0;
-    const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', some ? 'applied' : 'discarded'];
+    const curation = parse(proposal.sync_json)?.type === 'curation';
+    const [from, to] = isTable(proposal) ? ['shown', 'closed'] : curation && proposal.status === 'partial' ? ['partial', 'closed'] : ['pending', some ? 'applied' : 'discarded'];
     const at = now();
     const done = db
       .prepare(`UPDATE ai_proposals SET status = ?, updated_at = ?, last_by = ?${some ? ', applied_at = ?' : ''} WHERE id = ? AND status = ?`)
@@ -5494,7 +5525,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   function chatGroups(ownerId) {
     const rows = db
       .prepare(
-        "SELECT t3_thread, t3_title, status, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying', 'queued', 'shown')",
+        "SELECT t3_thread, t3_title, status, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'partial', 'applying', 'queued', 'shown')",
       )
       .all(ownerId);
     const groups = new Map();
@@ -5685,7 +5716,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
-    if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFacts(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
+    if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFactsTool(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
+    if (CURATION_TOOL_NAMES.has(name)) {
+      if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot change the database' };
+      return curation.run(args, context.user, context);
+    }
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -5694,6 +5729,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
       // A reading of the photo folders: written as sync_photo_links writes it. A plan of changes to the files: made from its card.
       if (isSync(proposal)) {
+        if (parse(proposal.sync_json)?.type === 'curation') return { error: 'The person ticks the fixes and presses «Aplicar» on that card.' };
         if (!photoLinks) return { error: 'Call it again in a moment.' };
         return parse(proposal.sync_json)?.type === 'files'
           ? photoLinks.organize({ plan: proposal.id }, context.user, context)
@@ -6057,7 +6093,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   async function handle({ method, path, body = {}, user, query = {}, page = null, headers = {} }) {
     // The «Fotos» tab's own requests (server/rename-photos.mjs).
     if (path.startsWith('/api/rename/')) return (await renamePhotos?.handle({ method, path, body, query, user })) ?? null;
-    if (!/^\/api\/(chat|reports|knowledge|ai|proposals|photo-links|sites|drive-photos)(?:\/|$)/.test(path)) return null;
+    if (!/^\/api\/(chat|reports|knowledge|ai|proposals|photo-links|photo-curation|sites|drive-photos)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     const photoMatch = /^\/api\/proposals\/([0-9a-f-]{36})\/photos\/(\d{1,2})$/.exec(path);
     if (photoMatch && method === 'GET') return proposalPhoto(photoMatch[1], Number(photoMatch[2]), user, query, headers);
@@ -6129,11 +6165,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // not every old proposal on each change.
       // Tables shown (show_rows) go with the pending ones; a closed one only on its own page.
       const rows = [
-        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 200`).all(...args),
+        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'partial', 'applying', 'queued', 'shown') ${order} LIMIT 200`).all(...args),
         ...(query.all
           ? db
               .prepare(
-                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'queued', 'shown'${query.only ? '' : ", 'closed'"}) ORDER BY coalesce(p.applied_at, p.updated_at, p.created_at) DESC, p.rowid DESC LIMIT ?`,
+                `${select}${where} AND p.status NOT IN ('pending', 'partial', 'applying', 'queued', 'shown'${query.only ? '' : ", 'closed'"}) ORDER BY coalesce(p.applied_at, p.updated_at, p.created_at) DESC, p.rowid DESC LIMIT ?`,
               )
               .all(...args, Math.min(Number(query.reviewed) || 5, 50))
           : []),
@@ -6360,6 +6396,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     // Photo_links from the «Fotos» tab, without the assistant: the folders it lists, and a reading of
     // all or some of them (a card of Cambios propuestos, the person's own, applied from the tab).
+    if (path === '/api/photo-curation/summary' && method === 'GET') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot review the photos.');
+      const out = curationSummary(store, query);
+      return out.error ? bad(400, 'invalid_filter', out.error) : { status: 200, body: { ...out, sandboxDrive: config.driveSandbox === true } };
+    }
+    if (path === '/api/photo-curation/show' && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot review the photos.');
+      const context = { threadId: namedThread(user, 'Photo curation'), user, person: true };
+      const out = curation.run(body, user, context);
+      return out.error ? bad(409, 'not_shown', out.error) : { status: 201, body: { ...out, proposalId: out.card } };
+    }
     if (path === '/api/photo-links/folders' && method === 'GET') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change the sheet.');
       if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
@@ -6433,6 +6480,23 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const out = await siteUpdates.run({ sites: body.sites, gbif: body.gbif === true }, user, { wait: false });
       return out.error ? bad(409, 'not_started', out.error) : { status: 200, body: out };
     }
+    // A card of photo fixes (show_photo_fixes): «Aplicar» with the ones ticked and rejected.
+    const refreshCuration = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/curation\/refresh$/.exec(path);
+    if (refreshCuration && method === 'POST') {
+      const proposal = teamProposal(refreshCuration[1], user);
+      if (!proposal || parse(proposal.sync_json)?.type !== 'curation') return bad(404, 'not_found', 'Proposal not found.');
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      return { status: 200, body: curation.refreshQueued(proposal) };
+    }
+    const curationMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/curation\/apply$/.exec(path);
+    if (curationMatch && method === 'POST') {
+      const proposal = teamProposal(curationMatch[1], user);
+      if (!proposal || parse(proposal.sync_json)?.type !== 'curation') return bad(404, 'not_found', 'Proposal not found.');
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      if (!['pending', 'partial'].includes(proposal.status)) return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      const out = await curation.apply(proposal, body, user);
+      return out.error ? bad(409, out.code ?? 'not_applied', out.error) : { status: 200, body: out };
+    }
     // A reading of the photo folders (sync_photo_links): its rows, «Aplicar» and «Leer de nuevo».
     const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh|edit)$/.exec(path);
     if (syncMatch) {
@@ -6447,14 +6511,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       }
       if (method !== 'POST') return bad(405, 'method', 'POST');
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
-      if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      const retryFiles = what === 'apply' && body.retry === true && parse(proposal.sync_json)?.type === 'files' && ['applied', 'partial'].includes(proposal.status);
+      if (proposal.status !== 'pending' && !retryFiles) return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       if (what === 'edit') {
         const out = photoLinks.edit(id, body.cells, user);
         if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
         return out.error ? bad(403, out.code, out.error) : { status: 200, body: out };
       }
       if (what === 'apply') {
-        const out = photoLinks.apply(id, user, { skip: body.skip, skipNew: body.skipNew, skipChanges: body.skipChanges });
+        const out = await photoLinks.apply(id, user, { skip: body.skip, skipNew: body.skipNew, skipChanges: body.skipChanges, leaveOut: body.leaveOut, retry: body.retry });
         if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
         if (out.code === 'busy') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
         return out.error ? bad(409, out.code, out.error) : { status: 202, body: out };

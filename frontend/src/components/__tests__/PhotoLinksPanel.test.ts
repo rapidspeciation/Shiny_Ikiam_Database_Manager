@@ -10,6 +10,8 @@ vi.mock('../../lib/api', () => ({
     calls.push({ path, body: options.body })
     if (path === 'photo-links/folders') return { folders: [{ path: 'Brasil_2025', link: '', files: 9 }] }
     if (path === 'photo-links/read') return { proposalId: '00000000-0000-4000-8000-000000000001', upToDate: false, notFound: [] }
+    if (path === 'photo-curation/summary') return { total: 3, tiers: { clear: 1, reason: 1, look: 1 }, kinds: { turn: { n: 1, clear: 1, reason: 0, look: 0 } }, folders: [{ name: 'Brasil_2025', n: 3 }], years: [{ name: '2025', n: 3 }] }
+    if (path === 'photo-curation/show') return { proposalId: 'curation-card' }
     if (path.startsWith('sites')) return { sites: [], ready: true }
     return {}
   },
@@ -54,5 +56,24 @@ describe('PhotoLinksPanel', () => {
     expect(calls.filter(c => c.path === 'photo-links/read')).toEqual([])
     expect(used).toEqual([])
     expect(calls.map(c => c.path)).toContain('photo-links/folders')
+  })
+
+  it('shows the archive by kind and opens one section in place of the card shown, without reading Drive', async () => {
+    localStorage.setItem('photo-links:card', 'old-card')
+    const { host } = await mount(null)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(host.querySelector('[data-archive-summary]')?.textContent).toContain('3 casos')
+    host.querySelector<HTMLButtonElement>('[data-kind="turn"]')!.click()
+    await nextTick()
+    const review = host.querySelector<HTMLButtonElement>('[data-review-archive]')!
+    expect(review.textContent).toContain('Revisar 1 caso')
+    review.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(calls.find(c => c.path === 'photo-curation/show')?.body).toMatchObject({ kind: 'turn' })
+    expect(calls.filter(c => c.path === 'photo-links/read')).toHaveLength(0)
+    // The review replaces the card shown; the one before is kept among the recent cards.
+    expect(localStorage.getItem('photo-links:card')).toBe('curation-card')
+    expect(JSON.parse(localStorage.getItem('photo-links:recent') ?? '[]')[0].id).toBe('old-card')
+    expect(host.querySelector('[data-extra-cards]')).toBeNull()
   })
 })

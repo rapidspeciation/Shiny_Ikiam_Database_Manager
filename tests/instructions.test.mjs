@@ -39,6 +39,22 @@ before(() => {
 });
 after(() => rmSync(repo, { recursive: true, force: true }));
 
+test('a newly added tool file has no history yet and does not block lab builds', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'instructions-uncommitted-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, '-c', 'user.name=Ana', '-c', 'user.email=ana@example.test', ...args]);
+  try {
+    execFileSync('git', ['clone', '-q', repo, dir]);
+    const [file] = TOOL_RANGES.at(-1);
+    git('rm', '--cached', '--', file);
+    git('commit', '-qm', 'Tool file not committed yet');
+    const history = await writeHistory(dir, join(dir, 'history.json'));
+    assert.ok(history.entries.tools.length >= 2);
+    assert.ok(readFileSync(join(dir, file), 'utf8').includes('second'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the AI instructions page: every file in order, the live tool list, history from git; only for signed-in people', async t => {
   const app = await createApp(
     { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'instructions-setup' },
