@@ -292,14 +292,38 @@ export function localityMatch(lexicon, text) {
 
 // ------------------------------------------------------------ the lines
 const MONTHS = { jan: 1, ene: 1, feb: 2, mar: 3, apr: 4, abr: 4, may: 5, jun: 6, jul: 7, aug: 8, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dec: 12, dic: 12 };
-const DATE = /(?<![\d/])(\d{1,2})(?:\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*|\s*[/.\s-]\s*([A-Za-z]{3,4})\.?\s*[/.\s-]\s*)(\d{4}|\d{2})(?![\d])/g;
-/** "3/12/22", "14.1.2022", "9/Sep/2024", "30/AUG/2025" (day first) → "2022-12-03", or null. */
+const ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12 };
+/**
+ * The month a date's middle part names: a number, a Roman numeral as some collectors write it ("11.IV.25",
+ * the OCR reading I as 1: "13.1V.25"), or a month's name in English or Spanish, short or whole ("Sep",
+ * "Sept", "agosto", "Ag"). The OCR reads handwritten letters of a name as digits ("Fe6", "AgO5t0") or one
+ * letter as another ("Nor", "Mov", "9ep"): a short name one letter away from exactly one month is that month.
+ */
+function monthOf(token) {
+  if (/^\d+$/.test(token)) return Number(token);
+  // A lone I is left out: the reader gives it for the barred numerals (Ⅲ) it never learnt.
+  if (/^[IVX1]+$/.test(token) && /[IVX]/.test(token)) return token === 'I' ? null : (ROMAN[token.replace(/1/g, 'I')] ?? null);
+  const t = token.toLowerCase().replace(/0/g, 'o').replace(/5/g, 's').replace(/6/g, 'b');
+  if (t === 'ag') return 8;
+  const head = t.slice(0, 3);
+  if (MONTHS[head] && /^[a-z]+$/.test(t)) return MONTHS[head];
+  if (t.length > 4 || t.length < 3) return null;
+  const near = new Set(Object.entries(MONTHS).filter(([k]) => [...k].filter((c, i) => c !== head[i]).length <= 1).map(([, m]) => m));
+  return near.size === 1 ? [...near][0] : null;
+}
+// Day first; the month a number (separators on both sides), or a name or Roman numeral (separators
+// optional: "29Nov23", "1Sep22", "16: nov 2022"), then the year.
+const DATE =
+  /(?<![\d/])(\d{1,2})(?:\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*|[/.:\s-]*([A-Za-z0-9]?[A-Za-z](?:[A-Za-z0-9]{0,7}[A-Za-z])?)\.?[/.\s-]*|[/.:\s-]*([A-Za-z0-9]?[A-Za-z][A-Za-z0-9]{0,7})\.?[/.\s-]+)(\d{4}|\d{2})(?!\d)/g;
+/** A time written against the year ("7/4/2310:30", "11/4/202312:40"): a space between them. */
+const unglueTime = text => text.replace(/([/.-]\s*)(20\d\d|\d\d)(?=\d{1,2}\s*:\s*\d\d)/g, '$1$2 ');
+/** "3/12/22", "14.1.2022", "9/Sep/2024", "30/AUG/2025", "11.IV.25" (day first) → "2022-12-03", or null. */
 export function isoDate(day, month, year) {
-  const m = /^\d+$/.test(month) ? Number(month) : MONTHS[month.slice(0, 3).toLowerCase()];
+  const m = monthOf(String(month));
   let y = Number(year);
   if (year.length === 2) y += 2000;
   const d = Number(day);
-  if (!m || y < 2000 || y > 2035) return null;
+  if (!m || m > 12 || y < 2000 || y > 2035) return null;
   const date = new Date(Date.UTC(y, m - 1, d));
   return date.getUTCMonth() === m - 1 && date.getUTCDate() === d ? date.toISOString().slice(0, 10) : null;
 }
@@ -362,10 +386,14 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
       break;
     }
     // Dates, with what they are from the words around them ("Death: 27/11/22", "wing clip:" on its own line before one).
+    text = unglueTime(text);
     const kindHere = kindOf(text);
     let dated = false;
     for (const m of text.matchAll(DATE)) {
-      const value = isoDate(m[1], m[2] ?? m[3], m[4]);
+      const month = m[2] ?? m[3] ?? m[4];
+      // A Roman month only between separators ("11.IV.25"), not a letter run into the day ("22V07/22").
+      if (/^[IVX1]+$/.test(month) && !new RegExp(`\\d\\s*[/.-]\\s*${month}\\.?\\s*[/.-]`).test(m[0])) continue;
+      const value = isoDate(m[1], month, m[5]);
       if (!value) continue;
       out.dates.push({ kind: kindHere ?? pendingKind ?? 'date', value, conf, line: String(text0) });
       dated = true;

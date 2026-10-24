@@ -64,6 +64,37 @@ test('similarity: 1 for the same, edits over the longer length, 0 below the floo
   assert.equal(isoDate('31', '2', '23'), null);
 });
 
+test('dates as the archive writes them and the reader reads them', () => {
+  const dateOf = text => read(text).dates.map(d => d.value);
+  // Month names run into the day or the year, after a colon, in Spanish and whole.
+  assert.deepEqual(dateOf('29 Nov23'), ['2023-11-29']);
+  assert.deepEqual(dateOf('1Sep22'), ['2022-09-01']);
+  assert.deepEqual(dateOf('29Apr25'), ['2025-04-29']);
+  assert.deepEqual(dateOf('16: nov 2022'), ['2022-11-16']);
+  assert.deepEqual(dateOf('15/July/2025'), ['2025-07-15']);
+  assert.deepEqual(dateOf('3 agosto 2024'), ['2024-08-03']);
+  assert.deepEqual(dateOf('26/Ag/2024'), ['2024-08-26']);
+  // A handwritten month name read with one letter wrong or a letter as a digit; two months that near: none.
+  assert.deepEqual(dateOf('27/Nor/2022'), ['2022-11-27']);
+  assert.deepEqual(dateOf('4-Mov-25'), ['2025-11-04']);
+  assert.deepEqual(dateOf('20/Fe6/2024'), ['2024-02-20']);
+  assert.deepEqual(dateOf('8/9ep/2025'), ['2025-09-08']);
+  assert.deepEqual(dateOf('18/Oec/23'), ['2023-12-18']);
+  assert.deepEqual(dateOf('22/jue/22'), []);
+  // Roman months between separators, the reader's 1 for I; not a letter run into the day, not a lone I.
+  assert.deepEqual(dateOf('11.IV.25'), ['2025-04-11']);
+  assert.deepEqual(dateOf('18.1V.2025'), ['2025-04-18']);
+  assert.deepEqual(dateOf('22V07/22'), []);
+  assert.deepEqual(dateOf('26.I.25'), []);
+  // The time written against the year.
+  assert.deepEqual(dateOf('7/4/2310:30'), ['2023-04-07']);
+  assert.deepEqual(dateOf('11/4/202312:40'), ['2023-04-11']);
+  assert.deepEqual(dateOf('11/4/231:00am'), ['2023-04-11']);
+  // What stays unread: codes and words with digits are no months.
+  assert.deepEqual(dateOf('(Reared ID: 4MT) 25'), []);
+  assert.deepEqual(dateOf('Km7.2 Pongo-Barranquita'), []);
+});
+
 test('an envelope read into fields: real lines of the archive', () => {
   // CAM070361: a reared butterfly, with its insectary code and two dated events.
   const a = read(['(I15)', 0.916], 'CAM070361', ['Mechanitis', 0.949], ['polymnia eurydice', 0.963], '♀', 'Pozo Cuyabeno', ['Death: 27/11/22', 0.976], ['Preserved: 29/11/22', 0.971]);
