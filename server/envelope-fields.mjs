@@ -408,6 +408,9 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
     }
     text = text.replace(DATE, ' ').replace(/\b\d+(?:[.,]\d+)?\s*(?:g|mg|km|h|hs|m)\b|\b\d{1,2}:\d{2}\b/gi, ' ');
     if (/^[\s\d/.,:;()#~+-]*$/.test(text)) continue;
+    // A label names the date after it, not one below a line of words: "Preserved dead ~1h" is a note,
+    // and the collection date under the locality ("Añangu", "25/11/23") is not the preservation's.
+    pendingKind = null;
     texts.push({ text, conf, raw: String(text0) });
   }
 

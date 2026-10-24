@@ -90,6 +90,9 @@ test('dates as the archive writes them and the reader reads them', () => {
   assert.deepEqual(dateOf('7/4/2310:30'), ['2023-04-07']);
   assert.deepEqual(dateOf('11/4/202312:40'), ['2023-04-11']);
   assert.deepEqual(dateOf('11/4/231:00am'), ['2023-04-11']);
+  // A label line names the next line's date only.
+  assert.deepEqual(read('Callicore', 'Preserved dead', '12h', 'Añangu', '25/11/23').dates.map(d => d.kind), ['date']);
+  assert.deepEqual(read('wing clip:', '31/Aug/24').dates.map(d => d.kind), ['wingClip']);
   // What stays unread: codes and words with digits are no months.
   assert.deepEqual(dateOf('(Reared ID: 4MT) 25'), []);
   assert.deepEqual(dateOf('Km7.2 Pongo-Barranquita'), []);
