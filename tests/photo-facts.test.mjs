@@ -171,6 +171,15 @@ test("a butterfly's photos together: each field the surest reading, `differ` whe
   assert.equal(envelope.camid.seen, 2);
   assert.deepEqual(envelope.differ, ['species']);
   assert.equal(envelope.dates.length, 1, 'a date read on both photos once');
+  // The genus alone on the surer photo, the genus with its species on the other: the fuller name, and no difference.
+  const { envelope: two } = envelopeOfReadings(
+    [
+      { name: 'CAM070998d', camid: 'CAM070998', conf: 0.99, text: lines('Mechanitis', 'Ikiam') },
+      { name: 'CAM070998v', camid: 'CAM070998', conf: 0.99, text: lines('Mechanitis', ['lysimnia ♀', 0.8], 'Ikiam') },
+    ],
+    lexicon,
+  );
+  assert.deepEqual([two.species.value, two.species.seen, two.differ], ['Mechanitis lysimnia', 2, undefined]);
 });
 
 test('the corrections written in the notes: species, sex and CAM_ID changes, with their sentence', () => {

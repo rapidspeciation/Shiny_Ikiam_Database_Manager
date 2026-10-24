@@ -604,7 +604,13 @@ export function envelopeOfReadings(readings, lexicon) {
   for (const field of FIELDS) {
     const seen = parsed.map(p => p.fields[field]).filter(Boolean);
     if (!seen.length) continue;
-    const best = seen.reduce((a, b) => ((b.conf ?? 0) > (a.conf ?? 0) ? b : a));
+    let best = seen.reduce((a, b) => ((b.conf ?? 0) > (a.conf ?? 0) ? b : a));
+    // A genus alone on one photo ("Napeogenes", the species line cut off or misread) and the genus with its
+    // species on another: the fuller name, the surest of those.
+    if (field === 'species' && !best.species) {
+      const fuller = seen.filter(f => f.species && f.genus === best.genus);
+      if (fuller.length) best = fuller.reduce((a, b) => ((b.conf ?? 0) > (a.conf ?? 0) ? b : a));
+    }
     const agree = seen.filter(f => sameValue(field, f, best)).length;
     out[field] = { ...best, seen: agree };
     if (agree < seen.length) differ.push(field);
@@ -621,7 +627,8 @@ export function envelopeOfReadings(readings, lexicon) {
 }
 const binomialOf = name => fold(name).split(/\s+/).slice(0, 2).join(' ');
 function sameValue(field, a, b) {
-  if (field === 'species') return binomialOf(a.value) === binomialOf(b.value);
+  // A genus read alone agrees with a name of that genus.
+  if (field === 'species') return binomialOf(a.value) === binomialOf(b.value) || (!a.species && a.genus === b.genus) || (!b.species && a.genus === b.genus);
   return a.value === b.value;
 }
 
