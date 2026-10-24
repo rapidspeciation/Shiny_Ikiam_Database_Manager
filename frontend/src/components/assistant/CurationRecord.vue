@@ -9,8 +9,8 @@ import { recordLines, type RecordFacts } from '../../lib/photoCuration'
  * says (amber where they disagree), and its notes whole, the changes they record first: a CAM_ID or a
  * species changed after the photo makes the envelope out of date.
  */
-const props = defineProps<{ record: RecordFacts & { named?: boolean }; second?: boolean }>()
-const lines = computed(() => recordLines(props.record))
+const props = defineProps<{ record: RecordFacts & { named?: boolean }; second?: boolean; sheet?: string }>()
+const lines = computed(() => recordLines(props.record, props.sheet))
 const rows = computed(() => props.record.database ?? [])
 const fieldWord = (f: string) => (f === 'species' ? t('la especie') : f === 'sex' ? t('el sexo') : 'CAM_ID')
 </script>
@@ -43,7 +43,7 @@ const fieldWord = (f: string) => (f === 'species' ? t('la especie') : f === 'sex
     <template v-for="r in rows" :key="'n' + r.sheet + r.row">
       <div v-if="r.note" class="mt-1.5 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-sky-950" data-note>
         <p v-for="n in (r.notes ?? []).filter(n => !n.checked)" :key="n.text" class="mb-0.5 font-medium text-amber-900">
-          {{ $t('La nota cambia {field}: {from} → {to}; el sobre puede estar desactualizado.', { field: fieldWord(n.field), from: n.from ?? '?', to: n.to ?? '?' }) }}
+          {{ $t('La nota cambia {field}: {from} → {to}.', { field: fieldWord(n.field), from: n.from ?? '?', to: n.to ?? '?' }) }}
         </p>
         <p class="flex gap-1"><NotebookText :size="12" class="mt-0.5 shrink-0 text-sky-700" /><span class="break-words whitespace-pre-line">{{ r.note }}</span></p>
       </div>

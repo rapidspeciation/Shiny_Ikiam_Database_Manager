@@ -9,7 +9,7 @@ import type { Proposal } from '../../lib/proposals'
 import {
   TIERS,
   cardChoices,
-  changedByNote,
+  notesOnCase,
   curationChange,
   curationChips,
   kindLabel,
@@ -294,8 +294,20 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
                 >{{ c.text }}</span>
               </p>
               <p v-if="e.note" class="mt-1 text-xs text-sky-900 italic">{{ e.note }}</p>
-              <p v-if="changedByNote(e.records).length" class="mt-1 text-xs text-amber-900" :title="changedByNote(e.records).map(n => n.text).join('\n')">
-                {{ $t('Una nota cambió {fields} después: el sobre puede estar desactualizado.', { fields: [...new Set(changedByNote(e.records).map(n => n.field === 'species' ? $t('la especie') : n.field === 'sex' ? $t('el sexo') : 'CAM_ID'))].join(', ') }) }}
+              <p
+                v-for="n in notesOnCase(e)"
+                :key="n.note.text"
+                class="mt-1 text-xs"
+                :class="n.verdict === 'supports' ? 'text-emerald-800' : 'text-amber-900'"
+                :title="n.note.text"
+              >
+                {{
+                  n.verdict === 'outdated'
+                    ? $t('Una nota cambió esto de {from} a {to} después de la foto: el sobre está desactualizado.', { from: n.note.from ?? '?', to: n.note.to ?? '?' })
+                    : n.verdict === 'supports'
+                      ? $t('Una nota cambió esto a {to}, como dice el sobre.', { to: n.note.to ?? '?' })
+                      : $t('Una nota cambió esto de {from} a {to}.', { from: n.note.from ?? '?', to: n.note.to ?? '?' })
+                }}
               </p>
               <p v-if="e.problem && undecided(e)" class="mt-1 text-xs text-red-800">{{ $t('No se hizo en Drive: {why}', { why: e.problem }) }}</p>
               <label v-if="e.choices?.length && can(e)" class="mt-1 flex items-center gap-1.5 text-xs text-stone-600" @click.stop>
@@ -345,7 +357,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
         </div>
         <!-- The envelope beside the database, and the notes, of the butterflies the case involves. -->
         <div v-if="selected?.records?.length" class="record max-h-[42%] shrink-0 space-y-3 overflow-y-auto border-t border-stone-300 bg-white p-2.5" data-records>
-          <CurationRecord v-for="(r, i) in selected.records" :key="r.cam" :record="r" :second="i > 0" />
+          <CurationRecord v-for="(r, i) in selected.records" :key="r.cam" :record="r" :second="i > 0" :sheet="selected.sheet ?? undefined" />
         </div>
       </div>
     </div>

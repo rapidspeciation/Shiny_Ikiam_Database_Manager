@@ -20,6 +20,9 @@ export interface CurationEntry {
   tier: CurationTier
   folder?: string | null
   year?: number | null
+  /** The database row a fix writes. */
+  sheet?: string
+  row?: number
   why?: string[]
   conf?: number
   evidence: Record<string, unknown>
@@ -226,15 +229,20 @@ const fold = (v: unknown) =>
 /** dd/mm/yyyy, as the team writes dates. */
 const dayFirst = (iso: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).split('-').reverse().join('/') : String(iso ?? ''))
 /** Which database date an envelope's date is (a plain date on a field envelope: the collection day). */
-const DATE_OF: Record<string, string[]> = { date: ['collected', 'intoInsectary'], death: ['death'], preserved: ['preserved'], emerged: ['intoInsectary'], wingClip: [] }
+const DATE_OF: Record<string, string[]> = { date: ['collected', 'intoInsectary'], death: ['death'], preserved: ['preserved'], emerged: ['intoInsectary'], wingClip: ['intoInsectary'] }
+/**
+ * A reared butterfly's envelope (it carries an insectary code, or its row is in Insectary_data): its plain date
+ * is the day it died, and a wing clip is dated the day it came into the insectary.
+ */
+const REARED_DATE_OF: Record<string, string[]> = { ...DATE_OF, date: ['death', 'preserved', 'collected'] }
 export const dateKindLabel = (k: string) =>
   ({ date: t('Fecha'), collected: t('Colecta'), intoInsectary: t('Ingreso al insectario'), death: t('Muerte'), preserved: t('Preservación'), emerged: t('Emergencia'), wingClip: t('Corte de ala') })[k] ?? k
 
 export type RecordLine = { label: string; envelope: string; database: string; differ: boolean }
 /** The envelope's fields beside the database's, one line each; `differ` when both have a value and they disagree. */
-export function recordLines(r: RecordFacts): RecordLine[] {
+export function recordLines(r: RecordFacts, sheet?: string): RecordLine[] {
   const env = r.envelope ?? {}
-  const row = r.database?.[0]
+  const row = r.database?.find(d => d.sheet === sheet) ?? r.database?.[0]
   const read = (v?: [string, number, ...unknown[]]) => (v ? `${v[0]} · ${pct(v[1])}` : '')
   const lines: RecordLine[] = []
   const add = (label: string, envelope: string, database: string, same: boolean) =>
@@ -245,13 +253,32 @@ export function recordLines(r: RecordFacts): RecordLine[] {
   add(t('Localidad'), env.locality ? `${env.locality[2] ? `${env.locality[2]} → ` : ''}${read(env.locality)}` : '', row?.locality ?? '', !env.locality || fold(env.locality[0]) === fold(row?.locality))
   const dates = row?.dates ?? {}
   const used = new Set<string>()
+  const reared = !!env.code || !!r.database?.some(d => d.sheet === 'Insectary_data')
   for (const [kind, value, conf] of env.dates ?? []) {
-    const match = (DATE_OF[kind] ?? []).find(k => dates[k])
+    const match = ((reared ? REARED_DATE_OF : DATE_OF)[kind] ?? []).find(k => dates[k] && !used.has(k))
     if (match) used.add(match)
-    add(dateKindLabel(kind), `${dayFirst(value)} · ${pct(conf)}`, match ? dayFirst(dates[match]) : '', !match || dates[match] === value)
+    const label = reared && kind === 'date' && match ? dateKindLabel(match) : dateKindLabel(kind)
+    add(label, `${dayFirst(value)} · ${pct(conf)}`, match ? dayFirst(dates[match]) : '', !match || dates[match] === value)
   }
   for (const [kind, value] of Object.entries(dates)) if (!used.has(kind)) add(dateKindLabel(kind), '', dayFirst(value), true)
   return lines
 }
-/** A note that changed the species, the sex or the CAM_ID after the photo: the envelope may be out of date. */
-export const changedByNote = (records?: RecordFacts[]) => (records ?? []).flatMap(r => (r.database ?? []).flatMap(d => (d.notes ?? []).filter(n => !n.checked)))
+const FIELD_OF: Partial<Record<CurationKind, 'species' | 'sex' | 'camid'>> = { species: 'species', gallery: 'species', sex: 'sex', aisex: 'sex', camid: 'camid' }
+/**
+ * The notes that changed the field of a case after the photo, beside what its envelope reads: `outdated` when
+ * the envelope still shows the value the note changed from (the envelope is out of date), `supports` when it
+ * shows the value the note changed to.
+ */
+export function notesOnCase(e: CurationEntry) {
+  const field = FIELD_OF[e.kind]
+  const out: { note: NonNullable<NonNullable<RecordFacts['database']>[number]['notes']>[number]; verdict: 'outdated' | 'supports' | 'changed' }[] = []
+  if (!field) return out
+  for (const r of e.records ?? []) {
+    const read = field === 'species' ? r.envelope?.species?.[0] : field === 'sex' ? r.envelope?.sex?.[0] : r.envelope?.camid?.[0]
+    const same = (a: unknown, b: unknown) => !!a && !!b && (field === 'species' ? binomial(a) === binomial(b) : fold(a) === fold(b))
+    for (const d of r.database ?? [])
+      for (const n of d.notes ?? [])
+        if (n.field === field && !n.checked) out.push({ note: n, verdict: same(read, n.from) ? 'outdated' : same(read, n.to) ? 'supports' : 'changed' })
+  }
+  return out
+}

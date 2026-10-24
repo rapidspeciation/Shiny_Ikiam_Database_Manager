@@ -126,7 +126,7 @@ describe('a case in words', () => {
 
 describe('the envelope beside the database', () => {
   it('one line per field, amber where both have a value and they disagree; a date matched to its kind', async () => {
-    const { recordLines, changedByNote } = await import('../../lib/photoCuration')
+    const { recordLines, notesOnCase } = await import('../../lib/photoCuration')
     const r = {
       cam: 'CAM5',
       envelope: { camid: ['CAM5', 0.99] as [string, number], species: ['Mechanitis lysimnia', 0.9] as [string, number], sex: ['female', 0.8] as [string, number], dates: [['date', '2022-11-21', 0.95], ['preserved', '2022-11-29', 0.9]] as [string, string, number][] },
@@ -140,6 +140,21 @@ describe('the envelope beside the database', () => {
       ['Fecha', '21/11/2022 · 95 %', '21/11/2022', false],
       ['Preservación', '29/11/2022 · 90 %', '30/11/2022', true],
     ])
-    expect(changedByNote([r]).map(n => n.field)).toEqual(['species'])
+    // The note changed the species from what the envelope reads: the envelope is out of date.
+    const species = { id: 'x', kind: 'species' as const, cam: 'CAM5', tier: 'look' as const, evidence: {}, records: [r] }
+    expect(notesOnCase(species).map(n => n.verdict)).toEqual(['outdated'])
+    expect(notesOnCase({ ...species, kind: 'sex' })).toEqual([])
+    const read = { ...r, envelope: { ...r.envelope, species: ['Mechanitis polymnia', 0.9] as [string, number] } }
+    expect(notesOnCase({ ...species, records: [read] }).map(n => n.verdict)).toEqual(['supports'])
+    // A reared butterfly's envelope: its plain date is the day it died, a wing clip the day it came in.
+    const reared = {
+      cam: 'CAM6',
+      envelope: { code: ['F77', 1] as [string, number], dates: [['date', '2024-03-02', 0.9], ['wingClip', '2024-01-10', 0.9]] as [string, string, number][] },
+      database: [{ sheet: 'Insectary_data', row: 3, species: null, sex: null, locality: null, dates: { intoInsectary: '2024-01-10', death: '2024-03-02', preserved: '2024-03-02' } }],
+    }
+    expect(recordLines(reared).filter(l => l.envelope).map(l => [l.label, l.database, l.differ])).toEqual([
+      ['Muerte', '02/03/2024', false],
+      ['Corte de ala', '10/01/2024', false],
+    ])
   })
 })

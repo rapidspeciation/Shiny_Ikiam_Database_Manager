@@ -119,4 +119,8 @@ export default {
   "Especie": "Species",
   "Sexo": "Sex",
   "el nombre del archivo": "the file name",
+  "La nota cambia {field}: {from} → {to}.": "The note changes {field}: {from} → {to}.",
+  "Una nota cambió esto de {from} a {to} después de la foto: el sobre está desactualizado.": "A note changed this from {from} to {to} after the photo: the envelope is out of date.",
+  "Una nota cambió esto a {to}, como dice el sobre.": "A note changed this to {to}, as the envelope says.",
+  "Una nota cambió esto de {from} a {to}.": "A note changed this from {from} to {to}.",
 } as Record<string, string>
