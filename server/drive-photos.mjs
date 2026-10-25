@@ -5,7 +5,7 @@
 // used dropped first; none while the disk has little room), for the assistant to look closer at the odd
 // ones (drive_photos_look with a `box`: a part at full resolution); one dropped is downloaded again. The batch is
 // then put in order the way the «Fotos» tab does (server/rename-photos.mjs checkBatch): its IDs in the
-// order the photos were taken, two photos each (d then v), one turn for the batch; what does not
+// order the photos were taken, two photos each (d then v), each photo's turn; what does not
 // add up is marked for a look, and only that is shown to the assistant. Applied from its card, it
 // becomes a plan of changes on Drive (server/photo-files.mjs: renames with their RAW files, turns,
 // removals), made with the card of that plan, after which Photo_links lists the photos.
@@ -33,9 +33,9 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'drive_photos',
       description: [
-        "Photos uploaded to a Drive folder without being renamed (the camera's names, IMG_…): the server reads the CAM ID on each envelope with the Rename Photos reader, keeps a small copy, and puts the batch in order (two photos per ID, d then v, in the order taken; one turn for the batch, the photos landscape with the forewings above the hindwings). It shows as a card beside the chat, where the person checks it and presses «Aplicar».",
+        "Photos uploaded to a Drive folder without being renamed (the camera's names, IMG_…): the server reads the CAM ID on each envelope with the Rename Photos reader, keeps a small copy, and puts the batch in order (two photos per ID, d then v, in the order taken; each photo turned so its forewings are above its hindwings, by its own wings or envelope when they are sure, else as the other photos of its camera). It shows as a card beside the chat, where the person checks it and presses «Aplicar».",
         '- `folder` (a Drive link, or a folder of Photo_links by its path): starts reading it (about a second a photo; answers at once with the batch). `all: true`: the photos already named too.',
-        '- `batch`: how it goes, then the IDs in the order taken (`order`), the counts, the checks (IDs without exactly two photos, IDs out of the order taken, IDs the workbook lacks, IDs with photos listed already, `turnUnsure`: the turn of the batch not clear from the envelopes, two photos to look at) and the rows to look at (`toLook`). `rows: "all"`: every row.',
+        '- `batch`: how it goes, then the IDs in the order taken (`order`), the counts, the checks (IDs without exactly two photos, IDs out of the order taken, IDs the workbook lacks, IDs with photos listed already, `turnUnsure`: photos with no sure turn of their own whose camera has no clear usual turn either, two photos to look at) and the rows to look at (`toLook`; `look` turn-disagree: its envelope points another way than its sure wings, turned as the wings say; turn-camera: turned by its envelope alone, unlike the other photos of its camera; `turnBy`: wings, envelope or camera). `rows: "all"`: every row.',
         'Look only at the rows marked (drive_photos_look), correct the clear ones (drive_photos_edit), and tell the person what is left for them and which IDs need photos taken again.',
       ].join('\n'),
       parameters: {
@@ -130,7 +130,7 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'drive_photos_edit',
       description:
-        "Corrects rows of a batch of drive_photos (the card shows each change as the assistant's): `changes` [{ file, id (the CAM ID), view (d, v, d2…), remove (true: a photo not wanted, removed when applied), rotation (0, 90, 180, 270 clockwise, from the photo as shown), note (what a person should know) }]. Views are worked out again for the IDs changed unless given. `turnAll` (0, 90, 180, 270): the same turn, from how each shows, for every photo of the batch (one camera setup, one turn: the photos landscape, forewings above hindwings).",
+        "Corrects rows of a batch of drive_photos (the card shows each change as the assistant's): `changes` [{ file, id (the CAM ID), view (d, v, d2…), remove (true: a photo not wanted, removed when applied), rotation (0, 90, 180, 270 clockwise, from the photo as shown), note (what a person should know) }]. Views are worked out again for the IDs changed unless given. `turnAll` (0, 90, 180, 270): the same turn, from how each shows, for every photo of the batch (when all were shot from one camera setup); one whose orientation tag flipped takes the same turn of the camera's frame.",
       parameters: {
         type: 'object',
         properties: {
@@ -212,8 +212,8 @@ const byNumber = new Intl.Collator('en', { numeric: true }).compare;
 export const viewsFor = count => Array.from({ length: count }, (_, i) => `${i % 2 ? 'v' : 'd'}${i >= 2 ? Math.floor(i / 2) + 1 : ''}`);
 
 /**
- * A batch's rows put in order (they come in the order taken): each ID's views, the batch's one turn
- * (in the camera's frame, keeping the photos landscape), and what to look at (`review`). `known`: the
+ * A batch's rows put in order (they come in the order taken): each ID's views, each photo's turn (its
+ * own wings' or envelope's when sure, else its camera's usual one; `turnBy`), and what to look at (`review`). `known`: the
  * workbook's IDs; `listed`: the IDs whose photos Photo_links lists. Rows a person or the assistant
  * set keep their view and turn.
  */
@@ -229,26 +229,67 @@ export function arrange(rows, { known = null, listed = null } = {}) {
     auto.forEach((r, i) => (r.view = free[i]));
   }
   for (const r of live) if (!r.camid && !r.viewSet) r.view = '';
-  // One turn for the batch (as the Rename Photos app: rotationPlan oneTurn). The camera on its stand does
-  // not move, so in its own frame (the orientation tag ignored) every photo needs the same turn, and the
-  // photos are landscape: an envelope read upright or upside down votes, one laid sideways does not.
+  // Each photo's turn (as the Rename Photos app: rotationPlan planTurns). A photo with a sure reading of its
+  // own takes it, in any direction: its wings' turn when they are sure (`wingRotation`: 3 wings or more, 90 %
+  // sure), else its envelope's (`envelopeRotation`: its CAM ID line read sure, else its whole text). Both sure
+  // and disagreeing: the wings (they show the butterfly; an envelope may lie any way beside it), with a look
+  // unless that is also the camera's sure usual turn. Only a photo with neither takes its camera's usual turn,
+  // in the camera's own frame (the orientation tag ignored: on a copy stand the camera stays put and the tag
+  // flips between shots), from the photos with their own that stay landscape with it; kept landscape, and
+  // looked at unless 3 photos or more say it, 80 % of them alike. A photo turned by its envelope alone
+  // against that usual turn is looked at too.
   const TAG_CW = { 1: 0, 6: 90, 3: 180, 8: 270 };
   const frameWide = r => (r.wide === undefined || TAG_CW[r.orientation ?? 1] === undefined ? null : (TAG_CW[r.orientation ?? 1] % 180 === 0) === r.wide);
   const fits = (turn, wide) => (norm(turn) % 180 === 0) === wide;
-  const votes = new Map();
-  for (const r of live) {
-    const wide = frameWide(r);
-    if (r.readRotation === null || r.readRotation === undefined || wide === null) continue;
-    const turn = norm(TAG_CW[r.orientation ?? 1] + r.readRotation);
-    if (fits(turn, wide)) votes.set(turn, (votes.get(turn) ?? 0) + 1);
-  }
-  const total = [...votes.values()].reduce((a, b) => a + b, 0);
-  const [best, most] = [...votes].sort((a, b) => b[1] - a[1])[0] ?? [0, 0];
-  const sure = total >= 3 && most / total >= 0.8;
-  for (const r of live) {
-    const wide = frameWide(r);
-    if (!r.rotationSet && wide !== null) r.rotation = norm((fits(best, wide) ? best : best + 90) - TAG_CW[r.orientation ?? 1]);
-    r.turnUnsure = !sure && !r.rotationSet;
+  const isTurn = v => v !== null && v !== undefined && Number.isFinite(Number(v));
+  // Rows read before the reader gave the envelope's sure turn: their CAM ID line's, read sure, upright or upside down.
+  const envelopeOf = r =>
+    r.envelopeRotation !== undefined
+      ? (isTurn(r.envelopeRotation) ? norm(r.envelopeRotation) : null)
+      : isTurn(r.readRotation) && (r.conf ?? 0) >= 0.95 && frameWide(r) !== null && fits(TAG_CW[r.orientation ?? 1] + r.readRotation, frameWide(r)) ? norm(r.readRotation) : null;
+  const cameras = new Map();
+  for (const r of live) (cameras.get(r.camera ?? '') ?? cameras.set(r.camera ?? '', []).get(r.camera ?? '')).push(r);
+  for (const group of cameras.values()) {
+    const own = new Map();
+    for (const r of group) {
+      if (r.rotationSet) continue;
+      const envelope = envelopeOf(r);
+      const wings = isTurn(r.wingRotation) ? norm(r.wingRotation) : null;
+      if (wings !== null) own.set(r, { cw: wings, by: 'wings', disagree: envelope !== null && envelope !== wings });
+      else if (envelope !== null) own.set(r, { cw: envelope, by: 'envelope', disagree: false });
+    }
+    const votes = new Map();
+    for (const [r, o] of own) {
+      const wide = frameWide(r);
+      if (wide === null) continue;
+      const turn = norm(TAG_CW[r.orientation ?? 1] + o.cw);
+      if (fits(turn, wide)) votes.set(turn, (votes.get(turn) ?? 0) + 1);
+    }
+    const total = [...votes.values()].reduce((a, b) => a + b, 0);
+    const [best, most] = [...votes].sort((a, b) => b[1] - a[1])[0] ?? [0, 0];
+    const sure = total >= 3 && most / total >= 0.8;
+    const usual = r => {
+      const wide = frameWide(r);
+      return wide === null ? null : norm((fits(best, wide) ? best : best + 90) - TAG_CW[r.orientation ?? 1]);
+    };
+    for (const r of group) {
+      r.turnUnsure = false;
+      r.turnLook = null;
+      if (r.rotationSet) continue;
+      const o = own.get(r);
+      if (o) {
+        const u = sure ? usual(r) : null;
+        r.rotation = o.cw;
+        r.turnBy = o.by;
+        r.turnLook = o.disagree && u !== o.cw ? 'turn-disagree' : o.by === 'envelope' && u !== null && u !== o.cw ? 'turn-camera' : null;
+        continue;
+      }
+      const u = usual(r);
+      if (u === null) continue;
+      r.rotation = u;
+      r.turnBy = 'camera';
+      r.turnUnsure = !sure;
+    }
   }
   // What to look at.
   const shaped = live.map((r, i) => ({
@@ -261,6 +302,7 @@ export function arrange(rows, { known = null, listed = null } = {}) {
       ...(!r.camid ? ['no ID read'] : []),
       ...(r.camid && r.setBy === 'reader' && (r.conf ?? 0) < SURE ? ['unsure reading'] : []),
       ...(r.turnUnsure ? ['turn-unsure'] : []),
+      ...(r.turnLook ? [r.turnLook] : []),
     ],
     skip: false,
     status: '',
@@ -397,7 +439,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     if (reader) return reader;
     const dir = readerDir ?? config.photoReaderDir;
     if (!dir || !existsSync(join(dir, 'photo-reader.mjs'))) throw new Error('This server has no photo reader installed (photo-reader/: scripts/build-rename-app.sh).');
-    const args = [join(dir, 'photo-reader.mjs'), '--models', join(dir, 'models'), ...(knownFile ? ['--known', knownFile] : []), '--threads', '2'];
+    const args = [join(dir, 'photo-reader.mjs'), '--models', join(dir, 'models'), ...(knownFile ? ['--known', knownFile] : []), '--threads', '2', '--wings'];
     const child = spawn(process.execPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -472,6 +514,10 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
               ...(out.idLine ? { idLine: out.idLine } : {}),
               candidates: (out.candidates ?? []).map(c => c.id),
               readRotation: out.rotation === null || out.rotation === undefined ? null : norm(out.rotation),
+              // the envelope's turn when the reading is sure of it, and the wings' (absent: a reader before them)
+              ...(out.envelopeRotation !== undefined ? { envelopeRotation: out.envelopeRotation === null ? null : norm(out.envelopeRotation) } : {}),
+              ...(out.wingRotation !== undefined ? { wingRotation: out.wingRotation === null ? null : norm(out.wingRotation) } : {}),
+              ...(out.wings ? { wings: out.wings } : {}),
               orientation: out.orientation,
               ...(out.width && out.height ? { wide: out.width >= out.height } : {}),
               setBy: 'reader',
@@ -612,6 +658,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
         url: f.webViewLink ?? null,
         folder: items.get(f.parent)?.name ?? '',
         taken: takenOf(f),
+        camera: [f.imageMediaMetadata?.cameraMake, f.imageMediaMetadata?.cameraModel].filter(Boolean).join(' ').trim(),
         size: Number(f.size) || 0,
         ...(raw ? { raw: raw.id, rawName: raw.name } : {}),
         read: false,
@@ -645,6 +692,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       view: r.view,
       taken: r.taken?.slice(11, 19),
       rotation: r.rotation,
+      turnBy: r.rotationSet ? null : r.turnBy,
       remove: r.remove,
       look: r.review,
       setBy: r.setBy !== 'reader' ? r.setBy : null,

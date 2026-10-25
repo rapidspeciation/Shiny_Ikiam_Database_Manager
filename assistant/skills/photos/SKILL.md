@@ -167,19 +167,21 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 | `wing-side`: a single photo against its name | its other photo carries another ID, or the view is missing | as `notTwoPhotos` |
 | `wing-count` | a wing moved or fell between the two photos; or one the check missed (a glass wing on the dark half of the background) | look at both whole photos; a wing really missing from one is for the person |
 | `wing-turn` | the photo turned otherwise than its wings ask | look at the whole photo; `rotate` it when its forewings are not on top |
+| `turn-disagree` | its envelope points another way than its sure wings; it was turned as the wings say | look at the whole photo: usually an envelope laid down turned, nothing to change |
+| `turn-camera` | turned by its envelope alone (the wings not sure), unlike its camera's other photos | look at the whole photo; `rotate` it when its forewings are not on top |
 
 - Set an ID yourself when the envelope reads clearly, the ID fits the run
   around it and the database has it. Otherwise `leave` it: a wrong name puts
   a photo on another butterfly's row.
-- Which way up: a photo is landscape, the wings side by side with the
-  forewings above the hindwings (the ruler and colour card are usually at
-  the bottom, but not always). The envelope's direction does not count: it
-  is often laid down turned. The camera does not move between shots, so one
-  turn fits the whole batch: look at two or three whole photos
-  (`part: "photo"`, as they will be once turned), and if they show standing
-  or upside down, `rotate` every photo of the batch the same way. A photo
-  turned otherwise than the rest is an envelope laid down turned, not a
-  photo to turn.
+- Which way up: the wings side by side with the forewings above the
+  hindwings (the ruler and colour card are usually at the bottom, but not
+  always). Each photo is turned by its own wings when they are sure, else by
+  its envelope when it reads sure (an envelope is often laid down turned, so
+  the wings come first); a photo with neither takes the usual turn of its
+  camera's other photos. Photos flagged `turn-unsure` had neither and no
+  clear usual turn: look at two or three whole photos (`part: "photo"`, as
+  they will be once turned) and `rotate` those whose forewings are not on
+  top.
 - `view` follows the wings when they are sure (`viewFrom: "wings"`: a
   butterfly photographed underside first, or a CRISPR one with more views,
   d2 and v2), and the order taken otherwise, dorsal first. A view you set
@@ -213,11 +215,13 @@ beside the chat shows the batch as it is read.
 1. `drive_photos` with the `batch` once read: the IDs in the order taken
    (`order`), the checks, and `toLook`, only the photos that do not add up.
    The others are not to be looked at: two photos per ID, in the order of
-   the IDs around them, read sure, turned as their session.
+   the IDs around them, read sure, turned by their own wings or envelope or
+   as their camera's other photos (`turnBy`).
 2. `drive_photos_look` at those, the envelope first (`what: "photo"` for the
    side, the wings, the turn; `box` for a part at full resolution: a faint
-   envelope, a wing), and `drive_photos_edit` what is clear (one turn for
-   all the photos, after a look at two or three whole ones: `turnAll`), as in
+   envelope, a wing), and `drive_photos_edit` what is clear (a photo's
+   `rotation`; `turnAll` when every photo of the batch needs the same turn),
+   as in
    «Reviewing a batch» above (the same digits mistaken, the same order of
    IDs). A photo not wanted (blurred, a repeat): `remove`; the reason in
    `note`.

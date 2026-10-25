@@ -21,7 +21,7 @@ test('views in the order taken: d, v, then d2, v2', () => {
   assert.deepEqual(viewsFor(4), ['d', 'v', 'd2', 'v2']);
 });
 
-test('arrange: views by ID, one turn for the batch in the camera frame, the marked rows', () => {
+test('arrange: views by ID, turns from a reader before the sure envelope turn (its ID line, upright or upside down), the marked rows', () => {
   const t = s => `2026-10-14T10:${s}Z`;
   const row = (file, camid, s, readRotation, extra = {}) => ({ file, camid, taken: t(s), readRotation, setBy: 'reader', conf: 1, wide: true, orientation: 1, ...extra });
   const rows = [
@@ -48,13 +48,55 @@ test('arrange: views by ID, one turn for the batch in the camera frame, the mark
   assert.match(out.order, /CAM000001×2 CAM000002×2! \?×1! CAM000003×1/);
 });
 
-test('arrange: envelopes laid sideways decide no turn; the photos stay landscape and two of them are to look at', () => {
+test('arrange: from a reader before the sure envelope turn, envelopes laid sideways decide no turn; the photos stay landscape and two of them are to look at', () => {
   const rows = ['a', 'b', 'c', 'd'].map((file, i) => ({ file, camid: `CAM00000${Math.floor(i / 2) + 1}`, taken: `2026-10-14T10:0${i}:00Z`, readRotation: 270, setBy: 'reader', conf: 1, wide: true, orientation: 1 }));
   const out = arrange(rows, { known: new Set(['CAM000001', 'CAM000002']), listed: new Set() });
   assert.deepEqual(rows.map(r => r.rotation), [0, 0, 0, 0]);
   assert.equal(out.checks.turnUnsure.count, 1);
   assert.equal(out.checks.turnUnsure.examples[0].photos, 4);
   assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['a', 'c']);
+});
+
+test('arrange: each photo takes its own sure turn in any direction, the wings before the envelope', () => {
+  const row = (file, i, envelopeRotation, wingRotation, extra = {}) =>
+    ({ file, camid: `CAM00000${Math.floor(i / 2) + 1}`, taken: `2026-10-14T10:0${i}:00Z`, readRotation: envelopeRotation, envelopeRotation, wingRotation, setBy: 'reader', conf: 1, wide: true, orientation: 1, ...extra });
+  const rows = [
+    row('a', 0, 90, null), // an envelope alone, sideways: the photo ends standing
+    row('b', 1, 90, 270), // envelope and wings disagree: the wings, and a look
+    row('c', 2, null, 180), // the wings alone
+    row('d', 3, null, null), // nothing sure: the camera's usual turn, not clear here
+  ];
+  const out = arrange(rows, { known: new Set(['CAM000001', 'CAM000002']), listed: new Set() });
+  assert.deepEqual(rows.map(r => [r.file, r.rotation, r.turnBy, r.review]), [
+    ['a', 90, 'envelope', []],
+    ['b', 270, 'wings', ['turn-disagree']],
+    ['c', 180, 'wings', []],
+    ['d', 180, 'camera', ['turn-unsure']],
+  ]);
+  assert.equal(out.checks.turnUnsure.count, 1);
+});
+
+test('arrange: on a copy stand an envelope laid another way is no news; one turning its photo alone against the others is', () => {
+  const row = (file, i, envelopeRotation, wingRotation, camera = 'Canon EOS 550D') =>
+    ({ file, camid: `CAM00000${Math.floor(i / 2) + 1}`, taken: `2026-10-14T10:0${i}:00Z`, readRotation: envelopeRotation, envelopeRotation, wingRotation, setBy: 'reader', conf: 1, wide: true, orientation: 3, camera });
+  const rows = [
+    row('a', 0, 270, 0),
+    row('b', 1, 0, 0),
+    row('c', 2, 0, 0),
+    row('d', 3, 90, null), // the wings not sure: its envelope turns it, against the camera's usual turn
+    // another camera's photos: their own usual turn, not clear from one photo
+    row('e', 4, 180, null, 'OLYMPUS TG-6'),
+    row('f', 5, null, null, 'OLYMPUS TG-6'),
+  ];
+  arrange(rows, { known: new Set(['CAM000001', 'CAM000002', 'CAM000003']), listed: new Set() });
+  assert.deepEqual(rows.map(r => [r.file, r.rotation, r.review]), [
+    ['a', 0, []],
+    ['b', 0, []],
+    ['c', 0, []],
+    ['d', 90, ['turn-camera']],
+    ['e', 180, []],
+    ['f', 180, ['turn-unsure']],
+  ]);
 });
 
 async function fixture(t, { originalsGb, fetchImpl, listed = [], identifier = null, t3Home = null } = {}) {
