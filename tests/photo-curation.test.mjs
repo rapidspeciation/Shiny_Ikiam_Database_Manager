@@ -9,7 +9,7 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { importBundle, readCuration, readGallery, readWingSides } from '../server/envelope-import.mjs';
 import { bumpReviewRevision } from '../server/photodata.mjs';
 import { runPhotoFacts } from '../server/photo-facts.mjs';
-import { CURATION_TOOLS, createCuration, curationEntries, curationSummary, runPhotoFactsTool } from '../server/photo-curation.mjs';
+import { CURATION_TOOLS, chosenDrive, createCuration, curationEntries, curationSummary, runPhotoFactsTool, sideOps } from '../server/photo-curation.mjs';
 import { latestVerdicts, trainingLabels } from '../server/review.mjs';
 
 const ENVELOPES = fileURLToPath(new URL('./fixtures/envelope/', import.meta.url));
@@ -404,4 +404,19 @@ test('a card case carries the envelope as read and the database rows with their 
   const [turned] = by.turn.records;
   assert.match(turned.database[0].note, /Species ID changed from Episcada sulphurea/);
   assert.equal(turned.database[0].notes[0].from, 'Episcada sulphurea');
+});
+
+test('a person picks a turn or the photo kept per side: the Drive changes follow it', () => {
+  const files = [['CAM9d', 'dorsal', 0.99, 'a'], ['CAM9d2', 'ventral', 0.01, 'b'], ['CAM9v', 'dorsal', 0.98, 'c'], ['CAM9v2', 'ventral', 0.02, 'e']];
+  const side = { kind: 'side', cam: 'CAM9', evidence: { photos: files }, fix: null };
+  // d kept as it is, v2 named v (the v it frees is removed), the rest removed.
+  assert.deepEqual(chosenDrive(side, JSON.stringify({ d: 'a', v: 'e' })).ops.map(o => [o.action, o.file, o.name ?? null]), [['remove', 'b', null], ['remove', 'c', null], ['rename', 'e', 'CAM9v']]);
+  assert.match(chosenDrive(side, JSON.stringify({ d: 'a', v: 'a' })).error, /one photo/);
+  assert.match(chosenDrive(side, JSON.stringify({ d: 'a', v: 'zz' })).error, /one photo/);
+  assert.deepEqual(sideOps('CAM9', [{ file: 'a', name: 'CAM9d' }, { file: 'c', name: 'CAM9v' }], { d: 'c', v: 'a' }).map(o => o.name), ['CAM9v', 'CAM9d']);
+  const turn = { kind: 'turn', cam: 'CAM9', evidence: {}, fix: { drive: [{ action: 'rotate', file: 'a', degrees: 180, from: 'CAM9d' }] } };
+  assert.deepEqual(chosenDrive(turn, '90').ops, [{ action: 'rotate', file: 'a', degrees: 90, from: 'CAM9d' }]);
+  assert.deepEqual(chosenDrive(turn, '0').ops, []);
+  assert.match(chosenDrive(turn, '45').error, /degrees/);
+  assert.equal(chosenDrive(turn, ''), null);
 });

@@ -48,6 +48,42 @@ const r2 = n => (typeof n === 'number' ? Math.round(n * 100) / 100 : n);
 const yearOf = v => (typeof v === 'number' && v > 10000 && v < 80000 ? new Date(EPOCH + Math.floor(v) * 864e5).getUTCFullYear() : null);
 const sameSpecies = (a, b) => !!a && !!b && binomialOf(a) === binomialOf(b);
 const stem = name => String(name ?? '').replace(/\.[^.]+$/, '');
+/**
+ * The Drive changes that keep one photo per side of a butterfly (`keep`: the files to keep as d and v): those
+ * two take the names CAMd and CAMv, every other photo of it is removed.
+ */
+export function sideOps(cam, files, keep) {
+  const ops = [];
+  for (const f of files) {
+    const as = f.file === keep.d ? 'd' : f.file === keep.v ? 'v' : null;
+    if (!as) ops.push({ action: 'remove', file: f.file, from: f.name });
+    else if (stem(f.name).toLowerCase() !== `${cam}${as}`.toLowerCase()) ops.push({ action: 'rename', file: f.file, name: `${cam}${as}`, from: f.name });
+  }
+  return ops;
+}
+/**
+ * A person's own choice on a Drive case, as its changes: a turn's degrees ('0': none), or a side case's photos
+ * kept ({"d": file, "v": file}). Null: no choice; { error }: one that does not fit the case.
+ */
+export function chosenDrive(e, value) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  if (e.kind === 'turn') {
+    const degrees = Number(v);
+    const op = e.fix?.drive?.find(o => o.action === 'rotate');
+    if (![0, 90, 180, 270].includes(degrees) || !op) return { error: 'a turn is 0, 90, 180 or 270 degrees' };
+    return { ops: degrees ? [{ ...op, degrees }] : [] };
+  }
+  if (e.kind === 'side') {
+    let keep;
+    try { keep = JSON.parse(v); } catch { return { error: 'the photos to keep are not readable' }; }
+    const files = (e.evidence?.photos ?? []).filter(p => p[3]).map(p => ({ name: p[0], file: p[3] }));
+    if (files.length !== (e.evidence?.photos ?? []).length || !files.some(f => f.file === keep?.d) || !files.some(f => f.file === keep?.v) || keep.d === keep.v)
+      return { error: 'keep one photo of this butterfly as d and another as v' };
+    return { ops: sideOps(e.cam, files, keep) };
+  }
+  return null;
+}
 const filled = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && !(Array.isArray(v) && !v.length)));
 const camidLineScore = line => {
   const value = String(line?.[0] ?? '').replace(/\s+/g, '');
@@ -209,15 +245,28 @@ export function curationEntries(store) {
         const shown = wings.map(w => ({ w, file: w.fileId && index.files.has(w.fileId) ? w.fileId : index.byName.get(String(w.name).toUpperCase()) })).map(x => ({ ...x, name: x.file ? index.files.get(x.file).name : x.w.name }));
         const sides = shown.map(x => ({ ...x, problem: wingProblem(x.w, x.name) })).filter(x => x.problem?.side);
         if (sides.length) {
-          const pair = shown.filter(x => /^[dv]$/i.test(x.name.slice(cam.length)));
-          const swapped =
-            sides.length === 2 && pair.length === 2 && sides.every(x => Math.abs(x.w.pDorsal - 0.5) * 2 >= 0.9) && new Set(sides.map(x => x.name.slice(cam.length).toLowerCase())).size === 2;
-          const ops = swapped && sides.every(x => x.file) ? sides.map(x => ({ action: 'rename', file: x.file, name: `${cam}${x.name.slice(cam.length).toLowerCase() === 'd' ? 'v' : 'd'}`, from: x.name })) : [];
+          // The pair (d and v) swapped when its two photos each show the other side, surely. A butterfly with
+          // more views (d2, v2…): one photo kept per side, the model's sure one (the one named so first, then one of its letter), the
+          // others removed; the person may keep others (sideOps).
+          const view = x => stem(x.name).slice(cam.length).toLowerCase();
+          const sure = x => Math.abs(x.w.pDorsal - 0.5) * 2 >= 0.9;
+          const pair = shown.filter(x => /^[dv]$/.test(view(x)));
+          const extra = shown.length > pair.length;
+          const swapped = !extra && sides.length === 2 && pair.length === 2 && sides.every(x => /^[dv]$/.test(view(x)) && sure(x));
+          const pick = side => {
+            const ones = shown.filter(x => x.file && sure(x) && (x.w.pDorsal >= 0.5) === (side === 'd'));
+            return (ones.find(x => view(x) === side) ?? ones.find(x => view(x).startsWith(side)) ?? ones.sort((a, b) => view(a).localeCompare(view(b)))[0])?.file ?? null;
+          };
+          const keep = extra ? { d: pick('d'), v: pick('v') } : null;
+          const files = shown.filter(x => x.file).map(x => ({ file: x.file, name: x.name }));
+          const ops = swapped
+            ? sides.map(x => ({ action: 'rename', file: x.file, name: `${cam}${view(x) === 'd' ? 'v' : 'd'}`, from: x.name }))
+            : keep?.d && keep?.v && files.length === shown.length ? sideOps(cam, files, keep) : [];
           add(item, 'side', swapped ? 'clear' : 'look', {
-            fix: ops.length ? { drive: ops } : null,
-            why: [swapped ? 'swapped' : sides.length === 1 ? 'oneSide' : 'sameSide'],
+            fix: ops.length ? { drive: ops, ...(keep ? { keep } : {}) } : null,
+            why: [swapped ? 'swapped' : extra ? 'extraViews' : sides.length === 1 ? 'oneSide' : 'sameSide'],
             conf: Math.max(...sides.map(x => Math.abs(x.w.pDorsal - 0.5) * 2)),
-            evidence: { photos: shown.map(x => [x.name, x.w.side ?? null, r2(x.w.pDorsal)]) },
+            evidence: { photos: shown.map(x => [x.name, x.w.side ?? null, r2(x.w.pDorsal), ...(x.file ? [x.file] : [])]) },
           });
         }
         for (const x of shown) {
@@ -569,7 +618,7 @@ export function createCuration({ store, show, organize = null, update = null, ge
             result.queued++;
           } else result.failed.push(`${e.cam}: save was ${out.status}`);
         } catch (error) { result.failed.push(`${e.cam}: ${error.message}`); }
-      } else if (e.fix?.drive?.length) {
+      } else if (e.fix?.drive?.length || chosenDrive(e, values[id])) {
         const progress = inProgress?.type === 'drive' ? inProgress : null;
         if (progress?.type === 'drive' && progress.plan) {
           result.drive.push({ id, plan: progress.plan, link: progress.link });
@@ -577,7 +626,19 @@ export function createCuration({ store, show, organize = null, update = null, ge
           result.planned++;
           continue;
         }
-        driveCandidates.push(e);
+        const own = chosenDrive(e, values[id]);
+        if (own?.error) {
+          result.skipped.push(`${e.cam}: ${own.error}`);
+          continue;
+        }
+        // The person's own turn or photos kept; a turn of 0: the photo is right as it is.
+        if (own && !own.ops.length) {
+          verdict(e, 'rejected', null);
+          decisions.set(id, 'kept');
+          result.kept++;
+          continue;
+        }
+        driveCandidates.push(own ? { ...e, fix: { ...e.fix, drive: own.ops } } : e);
       } else result.skipped.push(`${e.cam}: no fix is available for this change`);
     }
     if (driveCandidates.length) {

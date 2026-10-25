@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowRight, Check, ChevronLeft, ChevronRight, ExternalLink, Loader2, ScanSearch, X } from 'lucide-vue-next'
+import { ArrowRight, Check, ChevronLeft, ChevronRight, ExternalLink, Loader2, RotateCcw, RotateCw, ScanSearch, X } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { t } from '../../lib/i18n'
@@ -9,6 +9,9 @@ import type { Proposal } from '../../lib/proposals'
 import {
   TIERS,
   camidCompare,
+  sideKeep,
+  sidePhotos,
+  turnOf,
   cardChoices,
   notesOnCase,
   curationChange,
@@ -67,8 +70,10 @@ function reset() {
 watch(() => props.proposal.id, reset, { immediate: true })
 watch([ticked, wrong, values], () => cardChoices.set(props.proposal.id, { ticked: ticked.value, wrong: wrong.value, values: values.value }), { deep: true })
 const can = (e: CurationEntry) => open.value && undecided(e)
+/** A change to make: the one proposed, or the person's own turn or photos kept. */
+const hasChange = (e: CurationEntry) => !!e.fix || ((e.kind === 'turn' || e.kind === 'side') && !!values.value[e.id])
 function tick(e: CurationEntry, on = !ticked.value.has(e.id)) {
-  if (!can(e) || !e.fix) return
+  if (!can(e) || !hasChange(e)) return
   const next = new Set(ticked.value)
   if (on) next.add(e.id)
   else next.delete(e.id)
@@ -88,7 +93,7 @@ function tickAll(tier: CurationTier, on: boolean) {
   for (const e of entries.value) if (e.tier === tier && can(e) && e.fix && !wrong.value.has(e.id)) on ? next.add(e.id) : next.delete(e.id)
   ticked.value = next
 }
-const toDrive = computed(() => [...ticked.value].filter(id => entries.value.find(e => e.id === id)?.fix?.drive?.length).length)
+const toDrive = computed(() => [...ticked.value].filter(id => { const e = entries.value.find(x => x.id === id); return e?.fix?.drive?.length || e?.kind === 'turn' || e?.kind === 'side' }).length)
 const toDatabase = computed(() => ticked.value.size - toDrive.value)
 const total = computed(() => ticked.value.size + wrong.value.size)
 
@@ -98,7 +103,12 @@ const selected = computed(() => entries.value.find(e => e.id === current.value) 
 // A CAM ID case: the photo beside both CAMs' rows in one table.
 const compare = computed(() => (selected.value ? camidCompare(selected.value, selected.value.sheet ?? undefined) : null))
 const photo = ref(0)
-type ViewPhoto = { id: string; name: string; mark?: readonly [number, number, number, number] | null }
+/** A photo's place by its view (the end of its name): d before v, the rest after. */
+const viewRank = (name: string) => {
+  const stem = name.replace(/\.[^.]+$/, '')
+  return /d\d*$/i.test(stem) ? 0 : /v\d*$/i.test(stem) ? 1 : 2
+}
+type ViewPhoto = { id: string; name: string; mark?: readonly [number, number, number, number] | null; open?: boolean }
 const viewPhotos = computed<ViewPhoto[]>(() => {
   const e = selected.value
   if (!e) return []
@@ -117,9 +127,10 @@ const viewPhotos = computed<ViewPhoto[]>(() => {
   const first = e.kind === 'turn' ? files.filter(f => f.name.toUpperCase() === String(e.evidence.photo ?? '').toUpperCase()) : []
   for (const f of [...first, ...files]) add(f.id, f.name)
   if (env) add(env.fileId, env.name)
-  return list
+  // By their view: dorsal first (d, d2…), then ventral; the viewer opens on the one to look at (above).
+  return list.map((p, i) => ({ ...p, open: i === 0 })).sort((a, b) => viewRank(a.name) - viewRank(b.name) || a.name.localeCompare(b.name))
 })
-watch(selected, () => (photo.value = 0))
+watch(selected, () => (photo.value = Math.max(0, viewPhotos.value.findIndex(p => p.open))), { immediate: true })
 const listEl = ref<HTMLElement>()
 function select(e: CurationEntry, scroll = false) {
   current.value = e.id
@@ -155,11 +166,26 @@ function crops(e: CurationEntry) {
   if (env && e.kind !== 'turn' && e.kind !== 'side')
     out.push({ key: 'env', src: photoUrl(env.fileId, 1600), alt: t('Sobre en {name}', { name: env.name }), box: env.bbox, aspect: env.aspect, turned: env.turned ?? 0, cls: e.kind === 'camid' ? 'h-16 w-auto' : 'h-20 w-auto' })
   const files = (e.photos?.files ?? []).filter(f => e.kind !== 'turn' || f.name.toUpperCase() === String(e.evidence.photo ?? '').toUpperCase())
-  for (const f of files.slice(0, e.kind === 'camid' ? 1 : 2))
+  for (const f of files.slice(0, e.kind === 'camid' ? 1 : e.kind === 'side' ? 4 : 2))
     out.push({ key: f.id, src: photoUrl(f.id, 1600), alt: f.name, box: f.wings, cls: 'h-16 w-auto' })
   // A turn: the photo as it is, then as it will be.
-  if (e.kind === 'turn' && files[0]) out.push({ key: 'after', src: photoUrl(files[0].id, 1600), alt: t('{name} girada', { name: files[0].name }), box: files[0].wings, cls: 'h-16 w-auto', rotate: e.fix?.drive?.[0]?.degrees ?? 0 })
+  if (e.kind === 'turn' && files[0]) out.push({ key: 'after', src: photoUrl(files[0].id, 1600), alt: t('{name} girada', { name: files[0].name }), box: files[0].wings, cls: 'h-16 w-auto', rotate: turnOf(e, values.value[e.id]) })
   return out
+}
+/** The person's own turn of a photo: a quarter more each way, ticked. */
+function turnBy(e: CurationEntry, by: 90 | -90) {
+  values.value = { ...values.value, [e.id]: String((((turnOf(e, values.value[e.id]) + by) % 360) + 360) % 360) }
+  tick(e, true)
+}
+/** The photo kept as d or v of a side case; the other side keeps its own (another photo when it was this one). */
+function keepAs(e: CurationEntry, side: 'd' | 'v', file: string) {
+  const photos = sidePhotos(e)
+  const now = sideKeep(e, values.value[e.id]) ?? { d: photos.find(p => p.side === 'dorsal')?.file ?? photos[0]?.file ?? '', v: photos.find(p => p.side === 'ventral')?.file ?? photos[1]?.file ?? '' }
+  const next = { ...now, [side]: file }
+  const other = side === 'd' ? 'v' : 'd'
+  if (next[other] === file) next[other] = photos.find(p => p.file !== file && p.side === (other === 'd' ? 'dorsal' : 'ventral'))?.file ?? photos.find(p => p.file !== file)?.file ?? ''
+  values.value = { ...values.value, [e.id]: JSON.stringify(next) }
+  tick(e, true)
 }
 const status = (e: CurationEntry) =>
   ({ accepted: t('Aplicado'), kept: t('Lectura mala'), planned: t('En Drive…'), queued: t('En cola'), deferred: '' })[e.decision ?? 'deferred'] ?? ''
@@ -268,8 +294,8 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
               type="checkbox"
               class="size-4 rounded border-stone-400 text-emerald-700"
               :checked="ticked.has(e.id) || e.decision === 'accepted' || e.decision === 'planned' || e.decision === 'queued'"
-              :disabled="!can(e) || !e.fix"
-              :title="e.fix ? $t('Hacer este cambio') : $t('Sin cambio propuesto')"
+              :disabled="!can(e) || !hasChange(e)"
+              :title="hasChange(e) ? $t('Hacer este cambio') : $t('Sin cambio propuesto')"
               :aria-label="$t('Hacer el cambio de {cam}', { cam: e.cam })"
               @click.stop
               @change="tick(e, ($event.target as HTMLInputElement).checked)"
@@ -314,6 +340,28 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
                 }}
               </p>
               <p v-if="e.problem && undecided(e)" class="mt-1 text-xs text-red-800">{{ $t('No se hizo en Drive: {why}', { why: e.problem }) }}</p>
+              <!-- A turn: a quarter more either way, when the one proposed is not right. -->
+              <p v-if="e.kind === 'turn' && can(e)" class="mt-1 flex items-center gap-1 text-xs text-stone-600" @click.stop>
+                {{ $t('Girar:') }}
+                <button type="button" class="btn-ghost rounded border border-stone-300 px-1.5 py-0.5" :title="$t('Un cuarto a la izquierda')" :aria-label="$t('Un cuarto a la izquierda')" @click="turnBy(e, -90)"><RotateCcw :size="13" /></button>
+                <button type="button" class="btn-ghost rounded border border-stone-300 px-1.5 py-0.5" :title="$t('Un cuarto a la derecha')" :aria-label="$t('Un cuarto a la derecha')" @click="turnBy(e, 90)"><RotateCw :size="13" /></button>
+                <span class="tabular-nums">{{ turnOf(e, values[e.id]) }}°</span>
+              </p>
+              <!-- A side case not settled by a swap: the photo kept as dorsal and as ventral; the others are removed. -->
+              <div v-if="e.kind === 'side' && can(e) && sidePhotos(e).length >= 2 && (sidePhotos(e).length > 2 || !e.fix)" class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600" @click.stop>
+                <label v-for="side in (['d', 'v'] as const)" :key="side" class="flex items-center gap-1">
+                  {{ side === 'd' ? $t('Dorsal (d):') : $t('Ventral (v):') }}
+                  <select
+                    class="rounded border border-stone-300 bg-white py-0.5 pr-6 pl-1 font-mono text-xs"
+                    :value="sideKeep(e, values[e.id])?.[side] ?? ''"
+                    @change="keepAs(e, side, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="" disabled>{{ $t('elegir') }}</option>
+                    <option v-for="p in sidePhotos(e)" :key="p.file" :value="p.file">{{ p.name }}{{ p.side ? ` · ${p.side === 'dorsal' ? $t('dorsal') : p.side === 'ventral' ? $t('ventral') : p.side}` : '' }}</option>
+                  </select>
+                </label>
+                <span v-if="sidePhotos(e).length > 2" class="text-stone-500">{{ $t('las demás se quitan') }}</span>
+              </div>
               <label v-if="e.choices?.length && can(e)" class="mt-1 flex items-center gap-1.5 text-xs text-stone-600" @click.stop>
                 {{ $t('Valor:') }}
                 <select v-model="values[e.id]" class="rounded border border-stone-300 bg-white py-0.5 pr-6 pl-1 text-xs" @change="tick(e, true)">
@@ -355,6 +403,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
           :notes="viewPhotos.map(p => (p.mark ? (selected?.kind === 'camid' ? $t('ID leído') : $t('Sobre')) : ''))"
           :links="viewPhotos.map(p => `https://drive.google.com/file/d/${p.id}/view`)"
           :marks="viewPhotos.map(p => p.mark)"
+          named
           whole
         />
         <p v-else class="grid h-full place-items-center bg-stone-800 p-6 text-center text-xs text-stone-300">{{ $t('Este caso no tiene fotos en Photo_links.') }}</p>

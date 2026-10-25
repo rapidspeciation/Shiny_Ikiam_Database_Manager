@@ -739,3 +739,18 @@ test('a file removed and another renamed to its name, in one plan: the rename wa
   const refused = planFileChanges({ index, withRaw: false, operations: [{ action: 'rename', file: fileUrl(93), name: 'CAM000011d.JPG' }] });
   assert.match(refused.problems[0].error, /another file of its folder keeps the name CAM000011d\.JPG .* in the same plan/);
 });
+
+test('one photo kept per side of four: the kept ventral takes the name of a removed photo in the same plan', async () => {
+  const files = [...drive(), file(90, 'CAM000002d2.JPG', 4, mine), file(91, 'CAM000002v.JPG', 4, mine), file(92, 'CAM000002v2.JPG', 4, mine)];
+  const { local, index } = await reading(files);
+  const plan = await settleChanges(local, planFileChanges({
+    index,
+    operations: [
+      { action: 'remove', file: fileUrl(90) },
+      { action: 'remove', file: fileUrl(91) },
+      { action: 'rename', file: fileUrl(92), name: 'CAM000002v' },
+    ],
+  }));
+  assert.deepEqual(plan.problems, []);
+  assert.deepEqual(told(plan.ops).map(([kind, , to]) => [kind, to]).sort(), [['bin', null], ['bin', null], ['rename', 'CAM000002v.JPG']]);
+});

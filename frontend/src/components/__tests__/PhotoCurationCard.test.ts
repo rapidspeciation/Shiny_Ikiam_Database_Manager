@@ -56,6 +56,32 @@ async function mount(entries: CurationEntry[]) {
 const checkbox = (host: HTMLElement, id: string) => host.querySelector<HTMLInputElement>(`[data-entry="${id}"] input[type=checkbox]`)!
 
 describe('PhotoCurationCard', () => {
+  it('turns a photo another way, and keeps one photo per side of four, sending the choices with «Aplicar»', async () => {
+    const side: CurationEntry = {
+      id: 'photo_side:CAM5', kind: 'side', cam: 'CAM5', tier: 'look', why: ['extraViews'], fix: null,
+      evidence: { photos: [['CAM5d', 'dorsal', 0.99, 'fd'], ['CAM5d2', 'ventral', 0.01, 'fd2'], ['CAM5v', 'dorsal', 0.98, 'fv'], ['CAM5v2', 'ventral', 0.02, 'fv2']] },
+      photos: { files: [{ id: 'fv', name: 'CAM5v' }, { id: 'fd', name: 'CAM5d' }] },
+    }
+    const { host } = await mount([turn, side])
+    const turnRow = host.querySelector<HTMLElement>(`[data-entry="${turn.id}"]`)!
+    turnRow.querySelector<HTMLButtonElement>('button[aria-label="Un cuarto a la izquierda"]')!.click()
+    await nextTick()
+    expect(turnRow.textContent).toContain('girar 90°')
+    const sideRow = host.querySelector<HTMLElement>(`[data-entry="${side.id}"]`)!
+    expect(checkbox(host, side.id).disabled).toBe(true)
+    const [dorsal, ventral] = sideRow.querySelectorAll('select')
+    dorsal.value = 'fd'
+    dorsal.dispatchEvent(new Event('change'))
+    await nextTick()
+    ventral.value = 'fv2'
+    ventral.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(checkbox(host, side.id).checked).toBe(true)
+    expect(sideRow.textContent).toContain('quitar 2 fotos')
+    host.querySelector<HTMLButtonElement>('[data-apply-curation]')!.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(posts[0]).toMatchObject({ body: { accept: [turn.id, side.id], values: { [turn.id]: '90', [side.id]: JSON.stringify({ d: 'fd', v: 'fv2' }) } } })
+  })
   it('shows a CAM ID case as one table: the photo beside the CAM read and the file\'s CAM, and the notes of both', async () => {
     const withRecords: CurationEntry = {
       ...camid,

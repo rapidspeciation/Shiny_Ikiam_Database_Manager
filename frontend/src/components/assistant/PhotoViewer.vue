@@ -35,6 +35,8 @@ const props = defineProps<{
    * from), in the photos' order: the photo opens zoomed to it.
    */
   marks?: (readonly [number, number, number, number] | null | undefined)[]
+  /** The photos are known by their names (`alt`, a file's): the bar says the name, not «Foto n». */
+  named?: boolean
 }>()
 const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
 const noteOf = (n: number) => props.notes?.[n] ?? ''
@@ -54,7 +56,7 @@ let pz: PanzoomObject | null = null
 /** The photo shown (when there are several, or it has a note) with its note, and the selected row's line on it. */
 const where = computed(() =>
   [
-    props.count > 1 || noteOf(props.photo) ? t('Foto {n}', { n: props.photo + 1 }) : '',
+    props.named ? altOf(props.photo) : props.count > 1 || noteOf(props.photo) ? t('Foto {n}', { n: props.photo + 1 }) : '',
     noteOf(props.photo),
     props.line ? t('Línea {n}', { n: props.line }) : '',
   ]

@@ -5,7 +5,7 @@
  * the component so they are tested without a browser.
  */
 import type { Box } from './review'
-import { t } from './i18n'
+import { t, tn } from './i18n'
 
 export type CurationKind = 'species' | 'sex' | 'gallery' | 'aisex' | 'camid' | 'side' | 'turn'
 export type CurationTier = 'clear' | 'reason' | 'look'
@@ -26,7 +26,7 @@ export interface CurationEntry {
   why?: string[]
   conf?: number
   evidence: Record<string, unknown>
-  fix?: { field?: string; from?: string; to?: string; drive?: { action: string; from?: string; name?: string; degrees?: number }[] } | null
+  fix?: { field?: string; from?: string; to?: string; drive?: { action: string; from?: string; name?: string; degrees?: number }[]; keep?: { d: string | null; v: string | null } } | null
   choices?: string[]
   photos?: {
     files?: { id: string; name: string; wings?: Box }[]
@@ -113,13 +113,46 @@ const short = (name: unknown) => {
 /** A photo's view, from the end of its name (CAM070046d2 → d2). */
 const viewOf = (name: string) => /([dv]\d*)$/i.exec(name)?.[1]?.toLowerCase() ?? name
 
+/** A turn case's degrees: the person's choice ('0': none), else the one proposed. */
+export function turnOf(e: CurationEntry, chosen?: string): number {
+  return chosen !== undefined && chosen !== '' ? Number(chosen) : Number(e.fix?.drive?.find(o => o.action === 'rotate')?.degrees ?? 0)
+}
+/** A side case's photos that can be kept (those with a file): name, file, the side its wings show. */
+export function sidePhotos(e: CurationEntry): { name: string; file: string; side: string | null }[] {
+  const list = Array.isArray(e.evidence.photos) ? (e.evidence.photos as unknown[][]) : []
+  return list.filter(p => p[3]).map(p => ({ name: String(p[0]), file: String(p[3]), side: (p[1] as string) ?? null }))
+}
+/** The photos a side case keeps as d and v: the person's choice, else the one proposed (null: a swap, or none). */
+export function sideKeep(e: CurationEntry, chosen?: string): { d: string; v: string } | null {
+  if (chosen) {
+    try {
+      const k = JSON.parse(chosen) as { d?: string; v?: string }
+      if (k.d && k.v) return { d: k.d, v: k.v }
+    } catch {
+      /* not a choice of photos */
+    }
+  }
+  const k = e.fix?.keep
+  return k?.d && k?.v ? { d: k.d, v: k.v } : null
+}
 /** The change a case proposes, as the card's bold line shows it: { from, to } (to null: nothing proposed). */
 export function curationChange(e: CurationEntry, chosen?: string): { field: string; from: string; to: string | null } {
   if (e.kind === 'turn') {
-    const deg = e.fix?.drive?.[0]?.degrees
-    return { field: String(e.evidence.photo ?? e.cam), from: '', to: deg ? t('girar {n}°', { n: deg }) : null }
+    const deg = turnOf(e, chosen)
+    return { field: String(e.evidence.photo ?? e.cam), from: '', to: deg ? t('girar {n}°', { n: deg }) : chosen === '0' ? t('dejar como está') : null }
   }
-  if (e.kind === 'side') return { field: '', from: '', to: e.fix?.drive?.length ? t('intercambiar d y v') : null }
+  if (e.kind === 'side') {
+    const keep = sideKeep(e, chosen)
+    if (!keep) return { field: '', from: '', to: e.fix?.drive?.length ? t('intercambiar d y v') : null }
+    const photos = sidePhotos(e)
+    const name = (file: string) => photos.find(p => p.file === file)?.name ?? '?'
+    const gone = photos.filter(p => p.file !== keep.d && p.file !== keep.v).length
+    return {
+      field: '',
+      from: '',
+      to: [t('d: {name}', { name: name(keep.d) }), t('v: {name}', { name: name(keep.v) }), gone ? tn(gone, 'quitar {n} foto', 'quitar {n} fotos') : ''].filter(Boolean).join(' · '),
+    }
+  }
   if (e.kind === 'camid') return { field: '', from: e.cam, to: e.fix?.to ?? null }
   const field = e.fix?.field === 'Sex' || e.kind === 'sex' || e.kind === 'aisex' ? t('Sexo') : t('Especie')
   const show = (v: unknown) => (field === t('Sexo') ? sexWord(v) : String(v ?? ''))
@@ -184,6 +217,7 @@ export function curationChips(e: CurationEntry): Chip[] {
       out.push({ text: `${view}: ${t('alas')} ${sideWord(side)}${sure != null ? ` · ${pct(sure)}` : ''}`, tone: wrong ? 'ok' : 'info' })
     }
     if ((e.why ?? []).includes('sameSide')) out.push({ text: t('Las dos fotos muestran el mismo lado'), tone: 'against' })
+    if ((e.why ?? []).includes('extraViews')) out.push({ text: t('Más de una foto por lado: elige cuál conservar'), tone: 'info' })
   } else if (e.kind === 'turn') {
     out.push({ text: `${t('Alas')}: ${String(ev.turn ?? '')}${e.conf != null ? ` · ${pct(e.conf)}` : ''}`, tone: 'ok' })
   }
