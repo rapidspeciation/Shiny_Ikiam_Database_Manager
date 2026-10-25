@@ -40,9 +40,11 @@ const seed = {
     values: { 'Full Path': `Wild/${name}.JPG`, Name: `${name}.JPG`, Type: 'File', URL: `https://drive.google.com/file/d/${ids[name]}/view` },
   })),
 };
-async function fixture() {
-  const store = new Store({ localMode: true }, { sheets: new LocalSheets(seed) });
-  await store.sync({ sheets: Object.keys(seed) });
+/** `sexes`: the Sex of some CAMs' rows, { CAM000101: 'male' }. */
+async function fixture({ sexes = {} } = {}) {
+  const sheets = { ...seed, Collection_data: seed.Collection_data.map(r => (sexes[r.values.CAM_ID] ? { ...r, values: { ...r.values, Sex: sexes[r.values.CAM_ID] } } : r)) };
+  const store = new Store({ localMode: true }, { sheets: new LocalSheets(sheets) });
+  await store.sync({ sheets: Object.keys(sheets) });
   importBundle(store.db, { ...readCuration(ENVELOPES, join(ENVELOPES, 'manifest.csv')), ...(await readGallery(join(ENVELOPES, 'gallery'))) });
   const wings = readWingSides([join(WINGS, 'eval'), join(WINGS, 'eval', 'new_photos_20261015')], join(ENVELOPES, 'manifest.csv'));
   importBundle(store.db, { wings: wings.wings });
@@ -91,6 +93,38 @@ test('the model agreeing with the database sends the envelope for a look; the se
   const aisex = e['ai_sex:CAM000106'];
   assert.deepEqual([aisex.kind, aisex.tier, aisex.fix.to], ['aisex', 'look', 'female']);
   assert.equal(runPhotoFacts(store, { kind: 'aisex' }).items[0].cam, 'CAM000106');
+});
+
+test('a CAM ID case: the sex model fitting the CAM read supports the change, fitting the file\'s argues against it', async () => {
+  // The envelopes of CAM000101's photos read CAM000111: a male in the database, the file's CAM a female.
+  const { store } = await fixture({ sexes: { CAM000101: 'female', CAM000111: 'male' } });
+  const model = (sex, conf) => {
+    store.db
+      .prepare("INSERT OR REPLACE INTO photo_predictions(cam,species_json,sex,sex_conf,sex_supported,source,imported_at) VALUES('CAM000101','[]',?,?,1,'test',?)")
+      .run(sex, conf, new Date().toISOString());
+    bumpReviewRevision(store.db);
+    return byId(curationEntries(store))['photo_camid:CAM000101'];
+  };
+  const fits = model('male', 0.96);
+  assert.deepEqual([fits.tier, fits.why, fits.evidence.sex], ['clear', ['idEverywhere', 'sexFitsTarget'], ['male', 0.96, 'male', 'female']]);
+  // The assistant sees it on the disagreement too.
+  assert.deepEqual(runPhotoFacts(store, { kind: 'camid', q: 'CAM000101' }).items[0].sex, ['male', 0.96, 'male', 'female']);
+  const against = model('female', 0.96);
+  assert.deepEqual([against.tier, against.why], ['look', ['sexFitsFile']]);
+  // Under 90 %: not shown, and the case is as without it.
+  const unsure = model('female', 0.85);
+  assert.deepEqual([unsure.tier, unsure.why, unsure.evidence.sex], ['clear', ['idEverywhere'], undefined]);
+});
+
+test('a CAM ID case: the sex model\'s support alone does not make a case sure', async () => {
+  const { store } = await fixture({ sexes: { CAM000101: 'female', CAM000111: 'male' } });
+  store.db
+    .prepare("INSERT OR REPLACE INTO photo_predictions(cam,species_json,sex,sex_conf,sex_supported,source,imported_at) VALUES('CAM000101',?,'male',0.97,1,'test','now')")
+    .run(JSON.stringify([['Oleria gunilla', 0.9]]));
+  bumpReviewRevision(store.db);
+  // The species model sure of the file's species: a look, whatever the sex model says.
+  const e = byId(curationEntries(store))['photo_camid:CAM000101'];
+  assert.deepEqual([e.tier, e.why], ['look', ['speciesFitsFile', 'sexFitsTarget']]);
 });
 
 test('photo_facts summary: by tier, kind, folder and year; a section lists tiers and fixes', async () => {

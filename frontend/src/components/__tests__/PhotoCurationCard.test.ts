@@ -118,6 +118,14 @@ describe('a case in words', () => {
     // The model sure of another species than the CAM read argues against it; unsure, it only informs.
     const other = (p: number) => curationChips({ ...camid, evidence: { ...camid.evidence, model: ['Oleria gunilla', p] } })[1].tone
     expect([other(0.9), other(0.3)]).toEqual(['against', 'info'])
+    // The sex model beside the database sex of the CAM read and of the file's: green when it fits the one read only,
+    // amber when it fits the file's only, informing when both have its sex or one is unknown.
+    const sexChip = (sex: unknown[]) => curationChips({ ...camid, evidence: { ...camid.evidence, sex } }).find(c => c.text.startsWith('Modelo de sexo'))!
+    expect(sexChip(['female', 0.97, 'female', 'male'])).toEqual({ text: 'Modelo de sexo: hembra · 97 % · = sexo de CAM9 · ≠ macho de CAM2', tone: 'ok' })
+    expect(sexChip(['male', 0.95, 'female', 'male']).tone).toBe('against')
+    expect([sexChip(['male', 0.95, 'male', 'male']).tone, sexChip(['male', 0.95, null, 'female']).tone]).toEqual(['info', 'info'])
+    expect(sexChip(['female', 0.95, 'female', null])).toEqual({ text: 'Modelo de sexo: hembra · 95 % · = sexo de CAM9', tone: 'info' })
+    expect(curationChips(camid).some(c => c.text.startsWith('Modelo de sexo'))).toBe(false)
     expect(curationChange(sex)).toMatchObject({ from: 'hembra', to: 'macho' })
     const side: CurationEntry = { id: 's', kind: 'side', cam: 'CAM4', tier: 'clear', evidence: { photos: [['CAM4d', 'ventral', 0.01], ['CAM4v', 'dorsal', 0.98]] }, fix: { drive: [{ action: 'rename' }] } }
     expect(curationChips(side).map(c => c.text)).toEqual(['d: alas ventral · 99 %', 'v: alas dorsal · 98 %'])

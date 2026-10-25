@@ -158,6 +158,19 @@ export function curationChips(e: CurationEntry): Chip[] {
         tone: fits ? 'ok' : Number(modelConf) >= 0.6 ? 'against' : 'info',
       })
     }
+    // The sex model (≥ 90 %) beside the database sex of the CAM read and of the file's: for the change when it
+    // fits the one read and not the file's, against it the other way round; with one sex unknown it only informs.
+    const [modelSex, sexConf, targetSex, fileSex] = arr(ev.sex)
+    if (modelSex && (targetSex || fileSex)) {
+      const fitsTarget = !!targetSex && !!fileSex && modelSex === targetSex
+      const fitsFile = !!targetSex && !!fileSex && modelSex === fileSex
+      const beside = (sex: unknown, cam: string) =>
+        !sex ? '' : sex === modelSex ? t('= sexo de {cam}', { cam }) : t('≠ {sex} de {cam}', { sex: sexWord(sex), cam })
+      out.push({
+        text: [`${t('Modelo de sexo')}: ${sexWord(modelSex)} · ${pct(sexConf)}`, beside(targetSex, String(target)), beside(fileSex, e.cam)].filter(Boolean).join(' · '),
+        tone: fitsTarget && !fitsFile ? 'ok' : fitsFile && !fitsTarget ? 'against' : 'info',
+      })
+    }
     if (why.includes('ownIdAlsoRead')) out.push({ text: t('El sobre también lee {cam}', { cam: e.cam }), tone: 'against' })
     if (why.includes('targetHasPhotos')) out.push({ text: t('{cam} ya tiene fotos', { cam: String(target) }), tone: 'against' })
     if (why.includes('targetNoRow')) out.push({ text: t('{cam} no está en la base de datos', { cam: String(target) }), tone: 'against' })

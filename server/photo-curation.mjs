@@ -187,17 +187,21 @@ export function curationEntries(store) {
         if (!other) why.push('targetNoRow');
         if (targetPhotos && [...targetPhotos.dorsal, ...targetPhotos.ventral].length) why.push('targetHasPhotos');
         if (model && targetSpecies && !sameSpecies(targetSpecies, ownSpecies)) why.push(sameSpecies(model, targetSpecies) ? 'speciesFitsTarget' : sameSpecies(model, ownSpecies) ? 'speciesFitsFile' : 'speciesFitsNeither');
+        // The sex model (supported, ≥ 90 %): a weak source with two answers, so it may argue against the change
+        // or support it, but its support alone does not make a case sure.
+        const [modelSex, , targetSex, fileSex] = item.sex ?? [];
+        if (modelSex && targetSex && fileSex && targetSex !== fileSex) why.push(modelSex === targetSex ? 'sexFitsTarget' : 'sexFitsFile');
         const ops = [];
         for (const name of item.files ?? []) {
           const file = index.byName.get(String(name).toUpperCase());
           if (file) ops.push({ action: 'rename', file, name: stem(index.files.get(file)?.name ?? name).replace(new RegExp(`^${cam}`, 'i'), target), from: index.files.get(file)?.name ?? name });
         }
-        const sure = !why.some(w => w !== 'speciesFitsTarget') && (item.conf ?? 0) >= ID_SURE;
+        const sure = !why.some(w => w !== 'speciesFitsTarget' && w !== 'sexFitsTarget') && (item.conf ?? 0) >= ID_SURE;
         const blocked = why.includes('targetHasPhotos') || !ops.length;
         add(item, 'camid', blocked ? 'reason' : sure ? 'clear' : 'look', {
           fix: blocked ? null : { drive: ops, to: target },
           why: sure ? ['idEverywhere', ...why] : why,
-          evidence: { file: cam, envelope: [target, item.conf, item.seen, item.of], database: ownSpecies || undefined, target: targetSpecies || undefined, model: top ? [top[0], r2(top[1])] : undefined },
+          evidence: { file: cam, envelope: [target, item.conf, item.seen, item.of], database: ownSpecies || undefined, target: targetSpecies || undefined, model: top ? [top[0], r2(top[1])] : undefined, sex: item.sex },
         });
       } else if (item.kind === 'wings') {
         // Split: the side of the pair (a swap of d and v), and each photo turned.

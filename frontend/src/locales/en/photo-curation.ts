@@ -85,6 +85,8 @@ export default {
   "{seen} de {of} fotos": "{seen} of {of} photos",
   "= especie de {cam}": "= species of {cam}",
   "≠ {species} de {cam}": "≠ {species} of {cam}",
+  "= sexo de {cam}": "= sex of {cam}",
+  "≠ {sex} de {cam}": "≠ {sex} of {cam}",
   "una de: {places}": "one of: {places}",
   "El sobre también lee {cam}": "The envelope also reads {cam}",
   "{cam} ya tiene fotos": "{cam} already has photos",
