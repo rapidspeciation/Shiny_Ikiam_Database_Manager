@@ -211,6 +211,8 @@ export const cardChoices = new Map<string, { ticked: Set<string>; wrong: Set<str
 // ------------------------------------------------------------ a butterfly's envelope beside its database rows
 export interface RecordFacts {
   cam: string
+  /** A CAM ID case's first record: the CAM read on the envelope (the envelope is its file's photos'). */
+  named?: boolean
   envelope?: {
     species?: [string, number]
     sex?: [string, number]
@@ -298,6 +300,42 @@ export function recordLines(r: RecordFacts, sheet?: string): RecordLine[] {
   }
   for (const [kind, value] of Object.entries(dates)) if (!used.has(kind)) add(dateKindLabel(kind), '', dayFirst(value), true)
   return lines
+}
+export type CompareCell = { value: string; same: boolean | null }
+export type CompareLine = { label: string; photo: string; target: CompareCell; file: CompareCell }
+/**
+ * A CAM ID case in one table: what the photo shows (its envelope, the species and sex models) beside the database
+ * row of the CAM read on the envelope (`target`) and of the file's own CAM (`file`). `same`: the photo's value
+ * agrees with that row (null: one of the two is missing). Null for other cases, or without the CAM read's record.
+ */
+export function camidCompare(e: CurationEntry, sheet?: string): CompareLine[] | null {
+  const [named, own] = e.records ?? []
+  if (e.kind !== 'camid' || !named?.named) return null
+  const cell = (l?: RecordLine): CompareCell => ({ value: l?.database ?? '', same: !l?.envelope || !l.database ? null : !l.differ })
+  const byLabel = (lines: RecordLine[]) => new Map(lines.map(l => [l.label, l]))
+  const a = recordLines(named, sheet)
+  const b = byLabel(recordLines({ cam: own?.cam ?? e.cam, database: own?.database, envelope: named.envelope }, sheet))
+  const out: CompareLine[] = a.map(l => ({ label: l.label, photo: l.envelope, target: cell(l), file: cell(b.get(l.label)) }))
+  for (const [label, l] of b) if (!a.some(x => x.label === label)) out.push({ label, photo: l.envelope, target: { value: '', same: null }, file: cell(l) })
+  const rowOf = (r?: RecordFacts) => r?.database?.find(d => d.sheet === sheet) ?? r?.database?.[0]
+  const [targetRow, fileRow] = [rowOf(named), rowOf(own)]
+  const ev = e.evidence as Record<string, unknown>
+  const arr = (v: unknown) => (Array.isArray(v) ? v : [])
+  const versus = (read: unknown, value: unknown, same: (x: unknown, y: unknown) => boolean): CompareCell => ({
+    value: '',
+    same: read && value ? same(read, value) : null,
+  })
+  const [modelName, modelConf] = arr(ev.model)
+  if (modelName) {
+    const fits = (x: unknown, y: unknown) => binomial(x) === binomial(y)
+    out.push({ label: t('Modelo de especie'), photo: `${modelName} · ${pct(modelConf)}`, target: { ...versus(modelName, targetRow?.species, fits), value: targetRow?.species ?? '' }, file: { ...versus(modelName, fileRow?.species, fits), value: fileRow?.species ?? '' } })
+  }
+  const [modelSex, sexConf] = arr(ev.sex)
+  if (modelSex) {
+    const fits = (x: unknown, y: unknown) => String(y).toLowerCase().startsWith(String(x).toLowerCase())
+    out.push({ label: t('Modelo de sexo'), photo: `${sexWord(modelSex)} · ${pct(sexConf)}`, target: { ...versus(modelSex, targetRow?.sex, fits), value: sexWord(targetRow?.sex ?? '') }, file: { ...versus(modelSex, fileRow?.sex, fits), value: sexWord(fileRow?.sex ?? '') } })
+  }
+  return out
 }
 const FIELD_OF: Partial<Record<CurationKind, 'species' | 'sex' | 'camid'>> = { species: 'species', gallery: 'species', sex: 'sex', aisex: 'sex', camid: 'camid' }
 /**

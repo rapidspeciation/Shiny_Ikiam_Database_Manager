@@ -8,6 +8,7 @@ import { photoUrl } from '../../lib/review'
 import type { Proposal } from '../../lib/proposals'
 import {
   TIERS,
+  camidCompare,
   cardChoices,
   notesOnCase,
   curationChange,
@@ -24,6 +25,7 @@ import {
 import CropImage from '../review/CropImage.vue'
 import PhotoViewer from './PhotoViewer.vue'
 import CurationRecord from './CurationRecord.vue'
+import CurationCompare from './CurationCompare.vue'
 
 /**
  * A section of the photo archive's disagreements with the database (show_photo_fixes, or «Revisar» in
@@ -93,6 +95,8 @@ const total = computed(() => ticked.value.size + wrong.value.size)
 // ------------------------------------------------------------ the case selected, and its photos in the viewer
 const current = ref<string | null>(null)
 const selected = computed(() => entries.value.find(e => e.id === current.value) ?? ordered.value[0] ?? null)
+// A CAM ID case: the photo beside both CAMs' rows in one table.
+const compare = computed(() => (selected.value ? camidCompare(selected.value, selected.value.sheet ?? undefined) : null))
 const photo = ref(0)
 type ViewPhoto = { id: string; name: string; mark?: readonly [number, number, number, number] | null }
 const viewPhotos = computed<ViewPhoto[]>(() => {
@@ -357,7 +361,10 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
         </div>
         <!-- The envelope beside the database, and the notes, of the butterflies the case involves. -->
         <div v-if="selected?.records?.length" class="record max-h-[42%] shrink-0 space-y-3 overflow-y-auto border-t border-stone-300 bg-white p-2.5" data-records>
-          <CurationRecord v-for="(r, i) in selected.records" :key="r.cam" :record="r" :second="i > 0" :sheet="selected.sheet ?? undefined" />
+          <CurationCompare v-if="compare" :lines="compare" :records="selected.records" :file-cam="selected.cam" />
+          <template v-else>
+            <CurationRecord v-for="(r, i) in selected.records" :key="r.cam" :record="r" :second="i > 0" :sheet="selected.sheet ?? undefined" />
+          </template>
         </div>
       </div>
     </div>

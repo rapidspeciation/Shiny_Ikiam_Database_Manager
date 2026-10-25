@@ -381,8 +381,10 @@ function cardEntry(store, data, index, e, extra = {}) {
   const record = cam => ({ cam, ...recordFacts(store, cam) });
   let records = [record(e.cam)];
   // A CAMID case: the envelope (read on the file's photos) against the butterfly it names, then the file's own row.
-  if (e.kind === 'camid' && e.fix?.to && e.fix.to !== e.cam) {
-    const [file, named] = [records[0], record(e.fix.to)];
+  // (Held back, with no fix: the CAM read is the evidence's.)
+  const read = e.kind === 'camid' ? e.fix?.to ?? e.evidence?.envelope?.[0] : null;
+  if (read && read !== e.cam) {
+    const [file, named] = [records[0], record(read)];
     records = [{ ...named, envelope: file.envelope, named: true }, { cam: file.cam, ...(file.database ? { database: file.database } : {}) }];
   }
   records = records.filter(r => r.envelope || r.database || r.named);

@@ -56,6 +56,30 @@ async function mount(entries: CurationEntry[]) {
 const checkbox = (host: HTMLElement, id: string) => host.querySelector<HTMLInputElement>(`[data-entry="${id}"] input[type=checkbox]`)!
 
 describe('PhotoCurationCard', () => {
+  it('shows a CAM ID case as one table: the photo beside the CAM read and the file\'s CAM, and the notes of both', async () => {
+    const withRecords: CurationEntry = {
+      ...camid,
+      evidence: { ...camid.evidence, sex: ['female', 0.97, 'female', 'male'] },
+      records: [
+        { cam: 'CAM9', named: true, envelope: { camid: ['CAM9', 0.99], locality: ['San Isidro', 0.9] }, database: [{ sheet: 'Collection_data', row: 9, species: 'Heliconius sara', sex: 'female', locality: 'San Isidro, Macas', note: 'was CAM2' }] },
+        { cam: 'CAM2', database: [{ sheet: 'Collection_data', row: 2, species: 'Heliconius erato', sex: 'male', locality: 'Narupa' }] },
+      ],
+    }
+    const { host } = await mount([withRecords])
+    host.querySelector<HTMLElement>(`[data-entry="${camid.id}"]`)!.click()
+    await nextTick()
+    const table = host.querySelector('[data-compare]')!
+    expect(table).not.toBeNull()
+    const row = (label: string) => [...table.querySelectorAll('tbody tr')].find(r => r.textContent!.includes(label))!
+    const cells = (label: string) => [...row(label).querySelectorAll('td')].map(c => c.textContent!.trim())
+    expect(cells('Localidad')).toEqual(['Localidad', 'San Isidro · 90 %', 'San Isidro, Macas', 'Narupa'])
+    expect(cells('Modelo de especie').slice(2)).toEqual(['Heliconius sara', 'Heliconius erato'])
+    expect(row('Modelo de sexo').querySelectorAll('td')[2].className).toContain('emerald')
+    expect(row('Modelo de sexo').querySelectorAll('td')[3].className).toContain('amber')
+    expect(table.querySelector('[data-note]')!.textContent).toContain('was CAM2')
+    expect(host.querySelector('[data-record]')).toBeNull()
+    expect(table.querySelector('thead')!.textContent).toContain('CAM2')
+  })
   it('groups the cases, ticks the sure ones and opens the first one in the viewer, its ID line outlined', async () => {
     const { host } = await mount([turn, camid, sex])
     expect([...host.querySelectorAll('[data-group]')].map(g => g.getAttribute('data-group'))).toEqual(['clear', 'look'])
