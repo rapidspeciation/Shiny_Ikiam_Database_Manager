@@ -202,6 +202,8 @@ export interface RecordFacts {
     species?: [string, number]
     sex?: [string, number]
     locality?: [string, number, string?]
+    /** The places a short name written fits equally (it is kept as written, not expanded to one). */
+    localityOptions?: string[]
     dates?: [string, string, number][]
     camid?: [string, number]
     code?: [string, number]
@@ -265,7 +267,13 @@ export function recordLines(r: RecordFacts, sheet?: string): RecordLine[] {
   add('CAM', read(env.camid), r.cam, !env.camid || fold(env.camid[0]) === fold(r.cam))
   add(t('Especie'), read(env.species), row?.species ?? '', !env.species || binomial(env.species[0]) === binomial(row?.species))
   add(t('Sexo'), env.sex ? `${sexWord(env.sex[0])} · ${pct(env.sex[1])}` : '', sexWord(row?.sex ?? ''), !env.sex || String(row?.sex ?? '').toLowerCase().startsWith(env.sex[0]))
-  add(t('Localidad'), env.locality ? `${env.locality[2] ? `${env.locality[2]} → ` : ''}${read(env.locality)}` : '', row?.locality ?? '', !env.locality || samePlace(env.locality[0], row?.locality))
+  const places = env.localityOptions ?? []
+  add(
+    t('Localidad'),
+    env.locality ? `${env.locality[2] ? `${env.locality[2]} → ` : ''}${read(env.locality)}${places.length ? ` · ${t('una de: {places}', { places: places.join(' / ') })}` : ''}` : '',
+    row?.locality ?? '',
+    !env.locality || [env.locality[0], ...places].some(p => samePlace(p, row?.locality)),
+  )
   const dates = row?.dates ?? {}
   const used = new Set<string>()
   const reared = !!env.code || !!r.database?.some(d => d.sheet === 'Insectary_data')

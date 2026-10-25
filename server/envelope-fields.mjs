@@ -252,13 +252,22 @@ function subMatch(species, list) {
   return { ...best, words: list.filter(w => used.has(w.text)) };
 }
 
-/** How well a line reads as one of the workbook's localities: { place, score } or null. */
+/** How close two localities' scores are to count as a tie between them. */
+export const PLACE_TIE = 0.03;
+/**
+ * How well a line reads as one of the workbook's localities: { place, score } or null; with `options`
+ * (the places, the best first) when the line fits several about equally and does not say which:
+ * "San Isidro" is a part of both "San Isidro, Cosanga" and "San Isidro, Macas", "Narupa" of three places.
+ * Ties: scores within PLACE_TIE, or every word read found as well in each place, when the line names
+ * only a part of the best place (the share of a name covered only favours the shorter name, it does not
+ * tell which place). A line that is a place's whole name is that place.
+ */
 export function localityMatch(lexicon, text) {
   const key = fold(text).replace(/\s+/g, ' ').trim();
   if (key.replace(/[^a-z]/g, '').length < 3) return null;
   return memo(lexicon, `l|${key}`, () => {
     const mine = words(key);
-    let best = null;
+    const fits = [];
     for (const place of lexicon.places) {
       const whole = similarity(key, place.key, 0.6);
       // Word by word: the line's words found among the place's (an abbreviation "pto." matching "puerto"),
@@ -282,11 +291,17 @@ export function localityMatch(lexicon, text) {
       }
       const significant = place.tokens.filter(t => t.length > 2 || /\d/.test(t));
       const coverage = significant.length ? significant.filter(t => covered.has(place.tokens.indexOf(t))).length / significant.length : 0;
-      const byWords = weight ? (matched / weight) * (0.75 + 0.25 * coverage) : 0;
+      const found = weight ? matched / weight : 0;
+      const byWords = found * (0.75 + 0.25 * coverage);
       const score = Math.max(whole, byWords);
-      if (score >= 0.7 && (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) < 1e-9 && place.n > best.place.n))) best = { place, score };
+      if (score >= 0.7) fits.push({ place, score, whole, found, coverage });
     }
-    return best;
+    if (!fits.length) return null;
+    fits.sort((a, b) => b.score - a.score || b.place.n - a.place.n);
+    const best = fits[0];
+    const partial = best.whole < 0.95 && best.coverage < 1;
+    const tied = fits.filter(f => f === best || best.score - f.score <= PLACE_TIE + 1e-9 || (partial && f.found >= best.found - PLACE_TIE));
+    return { place: best.place, score: best.score, ...(tied.length > 1 ? { options: tied.slice(0, 8).map(f => f.place) } : {}) };
   });
 }
 
@@ -453,21 +468,25 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
   let place = null;
   for (let i = 0; i < placeLines.length; i++) {
     const one = placeLines[i];
-    const candidates = [{ score: one.place.score, place: one.place.place, used: [one] }];
+    const candidates = [{ ...one.place, used: [one] }];
     const next = placeLines[i + 1];
     if (next) {
       const joined = localityMatch(lexicon, `${one.text} ${next.text}`);
-      if (joined && joined.score > Math.max(one.place.score, next.place.score)) candidates.push({ score: joined.score, place: joined.place, used: [one, next] });
+      if (joined && joined.score > Math.max(one.place.score, next.place.score)) candidates.push({ ...joined, used: [one, next] });
     }
     for (const c of candidates) if (!place || c.score > place.score) place = c;
   }
-  if (place)
+  if (place) {
+    const read = place.used.map(l => l.text.trim()).join(' ');
+    // A short name that fits several places: kept as written, the places it may be beside it.
     out.locality = {
-      value: place.place.name,
+      value: place.options ? read : place.place.name,
       conf: round(Math.min(...place.used.map(l => l.conf)) * place.score, 3),
-      read: place.used.map(l => l.text.trim()).join(' '),
+      read,
+      ...(place.options ? { options: place.options.map(p => p.name) } : {}),
       lines: place.used.map(l => l.raw),
     };
+  }
   return out;
 }
 
@@ -628,6 +647,11 @@ export function envelopeOfReadings(readings, lexicon) {
       const fuller = seen.filter(f => f.species && f.genus === best.genus);
       if (fuller.length) best = fuller.reduce((a, b) => ((b.conf ?? 0) > (a.conf ?? 0) ? b : a));
     }
+    // A short place name that fits several places on one photo, and one of them named in full on another: that one.
+    if (field === 'locality' && best.options) {
+      const named = seen.filter(f => !f.options && best.options.includes(f.value));
+      if (named.length) best = named.reduce((a, b) => ((b.conf ?? 0) > (a.conf ?? 0) ? b : a));
+    }
     const agree = seen.filter(f => sameValue(field, f, best)).length;
     out[field] = { ...best, seen: agree };
     if (agree < seen.length) differ.push(field);
@@ -646,6 +670,9 @@ const binomialOf = name => fold(name).split(/\s+/).slice(0, 2).join(' ');
 function sameValue(field, a, b) {
   // A genus read alone agrees with a name of that genus.
   if (field === 'species') return binomialOf(a.value) === binomialOf(b.value) || (!a.species && a.genus === b.genus) || (!b.species && a.genus === b.genus);
+  // A short place name agrees with each of the places it may be.
+  if (field === 'locality')
+    return a.value === b.value || !!a.options?.includes(b.value) || !!b.options?.includes(a.value) || (!!a.options && a.options.join('|') === b.options?.join('|'));
   return a.value === b.value;
 }
 

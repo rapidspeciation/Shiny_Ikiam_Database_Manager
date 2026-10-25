@@ -85,6 +85,7 @@ export default {
   "{seen} de {of} fotos": "{seen} of {of} photos",
   "= especie de {cam}": "= species of {cam}",
   "≠ {species} de {cam}": "≠ {species} of {cam}",
+  "una de: {places}": "one of: {places}",
   "El sobre también lee {cam}": "The envelope also reads {cam}",
   "{cam} ya tiene fotos": "{cam} already has photos",
   "{cam} no está en la base de datos": "{cam} is not in the database",

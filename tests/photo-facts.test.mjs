@@ -147,6 +147,45 @@ test('species names written short, split or with another genus are read as the w
   assert.equal(read('Ikiam').species, null);
 });
 
+test('a short place name that fits several localities is kept as written, the places listed', () => {
+  const places = buildLexicon({
+    localities: [
+      ['San Isidro, Cosanga', 300],
+      ['San Isidro, Macas', 20],
+      ['Mina Narupa', 230],
+      ['Finca Narupa bridge', 130],
+      ['Narupa birding', 10],
+      ['Rumipata, Moyobamba', 50],
+      ['Ruta del Agua, Moyobamba', 40],
+      ['Ikiam', 1000],
+    ].map(([name, n]) => ({ name, n })),
+  });
+  const place = (...texts) => parseEnvelope(lines(...texts), places).locality;
+  // Two places named "San Isidro": not expanded to the one with more records.
+  const a = place('San Isidro');
+  assert.equal(a.value, 'San Isidro');
+  assert.deepEqual(a.options, ['San Isidro, Cosanga', 'San Isidro, Macas']);
+  // The share of a name covered favours the shorter name (0.875 against 0.81): it does not tell which place.
+  assert.deepEqual(place('Moyobamba').options, ['Rumipata, Moyobamba', 'Ruta del Agua, Moyobamba']);
+  assert.deepEqual(place('Narupa').options, ['Mina Narupa', 'Narupa birding', 'Finca Narupa bridge']);
+  // A misreading as close to two places (0.769 and 0.764, within the tie of 0.03).
+  assert.deepEqual(place('Finoa Naruapa').options, ['Mina Narupa', 'Finca Narupa bridge']);
+  // A name that says which place, or is a place's whole name; one closer by 0.08: that place.
+  assert.deepEqual([place('San Isidro Macas').value, place('San Isidro Macas').options], ['San Isidro, Macas', undefined]);
+  assert.deepEqual([place('Mina Narupa').value, place('Mina Narupa').options], ['Mina Narupa', undefined]);
+  assert.deepEqual([place('Finca Narupa').value, place('Finca Narupa').options], ['Finca Narupa bridge', undefined]);
+  assert.equal(place('Ikiam').options, undefined);
+  // Photos together: the place named in full on one photo, among those the short name fits on another; they agree.
+  const both = envelopeOfReadings(
+    [
+      { name: 'CAM1d', text: lines(['San Isidro', 0.99]) },
+      { name: 'CAM1v', text: lines(['San Isidro, Macas', 0.8]) },
+    ],
+    places,
+  ).envelope.locality;
+  assert.deepEqual([both.value, both.seen, both.options], ['San Isidro, Macas', 2, undefined]);
+});
+
 test('sex: symbols and words; a lone symbol on a strip without names counts half', () => {
   // "dead male": the sex, and the date stays the collection date.
   const a = read('dead male', 'M. messenoides', 'deceptus', 'CAM042052', '14-1-2022', 'Apuya');

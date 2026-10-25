@@ -144,6 +144,11 @@ describe('the envelope beside the database', () => {
     const placed = (envelope: string, database: string) =>
       recordLines({ cam: 'CAM5', envelope: { locality: [envelope, 1] }, database: [{ ...r.database[0], locality: database }] }).find(l => l.label === 'Localidad')!.differ
     expect([placed('Arajuno', 'San Pedro de Arajuno 2'), placed('Tamiayura', 'Tamia Yura'), placed('San Isidro, Cosanga', 'San Isidro, Macas')]).toEqual([false, false, true])
+    // A short name that fits several places (kept as written, the places listed): any of them agrees, even misread.
+    const options = (envelope: string, database: string) =>
+      recordLines({ cam: 'CAM5', envelope: { locality: [envelope, 0.92], localityOptions: ['San Isidro, Cosanga', 'San Isidro, Macas'] }, database: [{ ...r.database[0], locality: database }] }).find(l => l.label === 'Localidad')!
+    expect(options('San Isidro', 'San Isidro, Macas')).toMatchObject({ envelope: 'San Isidro · 92 % · una de: San Isidro, Cosanga / San Isidro, Macas', differ: false })
+    expect([options('San IKidro', 'San Isidro, Macas').differ, options('San IKidro', 'Ikiam').differ]).toEqual([false, true])
     // The note changed the species from what the envelope reads: the envelope is out of date.
     const species = { id: 'x', kind: 'species' as const, cam: 'CAM5', tier: 'look' as const, evidence: {}, records: [r] }
     expect(notesOnCase(species).map(n => n.verdict)).toEqual(['outdated'])
