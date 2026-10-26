@@ -75,4 +75,4 @@ on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecSta
 on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service); "$node" scripts/t3-provision.mjs --refresh-all'
 # Old releases (about 4 MB each) are deleted: the newest KEEP_RELEASES stay, and always the current and previous ones.
 on_server "bash /home/ubuntu/ithomiini/current/scripts/prune-releases.sh /home/ubuntu/ithomiini ${KEEP_RELEASES:-5}"
-echo "Deployed release $release. Check /ithomiini/health before declaring success."
+echo "Deployed release $release. Check https://ithomiini-ikiam.com/health (\"status\":\"ok\") before declaring success."
