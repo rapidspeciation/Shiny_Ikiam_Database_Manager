@@ -281,7 +281,7 @@ function provision(user, { freshToken, addProject }) {
     writeFileSync(config, JSON.stringify(data, null, 2));
   }
 
-  const title = `Ithomiini · ${user.display_name}`;
+  const title = user.display_name;
   const marker = join(workspace, '.claude', 't3-project');
   if (addProject && !existsSync(marker)) {
     execFileSync(t3, ['project', 'add', workspace, '--title', title], { stdio: 'inherit' });

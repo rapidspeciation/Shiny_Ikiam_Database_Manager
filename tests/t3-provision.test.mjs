@@ -116,7 +116,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     const out = run('--refresh-all');
     assert.ok(!existsSync(join(workspace, '.claude', 'skills', 'old-name')), 'a skill the release no longer has goes');
     assert.ok(existsSync(join(workspace, '.claude', 'skills', 'my-own')), "the workspace's own skill stays");
-    assert.match(out, /Refreshed: Ithomiini · Ana Pérez/);
+    assert.match(out, /Refreshed: Ana Pérez → /);
     assert.match(out, /Skipped old: no active user/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
     assert.equal(readlinkSync(join(workspace, 'CLAUDE.md')), 'AGENTS.md');
