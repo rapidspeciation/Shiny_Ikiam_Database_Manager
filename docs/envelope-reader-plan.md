@@ -128,3 +128,21 @@ with CAM ID reading as good as today's model or better, at the same speed.
   - Tests: 100 passed, 12 opt-in skipped; typecheck clean.
   - The CLI with the app's default model reads the 378 dev photos exactly as the A run did (350 right, 3 wrong).
   - Not pushed or deployed.
+
+## Round 4 (28 Oct): species and locality snapped to the workbook's names
+
+Details: `~/.local/share/sanger-envelope-sam3-20260924/ocr-next/envelope-reader/round4/README.md`.
+
+- **Where the errors came from.** On the 300 envelopes, before the fix: of 77 species misses, 39 were small misreads
+  of a workbook name ("eunyanassa", "Aeliconius"), 24 big misreads, 8 lines out of order and 6 lines not found; of 69
+  locality misses, 38 small, 24 big, 6 not found. The database parser already maps most small misreads to the right
+  name (same species as from the gold lines on 191 of 222), so the misreads mostly hurt the text.
+- **Fix, no retraining.** `snapLine` (`server/envelope-fields.mjs`) replaces a read word by the nearest word of the
+  workbook's taxa and localities when it is close enough. CAM ID lines, digits, kept words (`envelope-keep-words.json`),
+  cut and split names stay as read. `parseEnvelope` snaps each line first. Settings chosen on dev only; keep rule
+  written before scoring.
+- **300 envelopes, read once:** species 60.0 -> 69.3 % exact (65.8 -> 76.4 % normalised), locality 51.5 -> 54.5 %
+  (65.2 -> 69.2 %); CAM ID, sex and dates unchanged; line CER 0.140 -> 0.136. Parser fields: species 191 -> 192 of 222,
+  locality 141 -> 145 of 186. testset2 renames unchanged (571 right, 4 wrong): no line with a digit is changed.
+- **Verdict: keep.** Not deployed. Left for the recognizer: big misreads on Brazil, French Guiana and Panama handwriting,
+  3-letter names ("Kaw"), lines not found.

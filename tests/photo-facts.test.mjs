@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { buildLexicon, envelopeOfReadings, isoDate, noteCorrections, parseEnvelope, similarity } from '../server/envelope-fields.mjs';
+import { buildLexicon, envelopeOfReadings, isoDate, localityMatch, nameVocab, noteCorrections, parseEnvelope, similarity, snapLine } from '../server/envelope-fields.mjs';
 import { importBundle, readCuration, readGallery, readWingSides } from '../server/envelope-import.mjs';
 import { bumpReviewRevision, nameView, photoName, wingProblem } from '../server/photodata.mjs';
 import { PHOTO_FACTS_TOOLS, photoFactsData, runPhotoFacts } from '../server/photo-facts.mjs';
@@ -168,8 +168,10 @@ test('a short place name that fits several localities is kept as written, the pl
   // The share of a name covered favours the shorter name (0.875 against 0.81): it does not tell which place.
   assert.deepEqual(place('Moyobamba').options, ['Rumipata, Moyobamba', 'Ruta del Agua, Moyobamba']);
   assert.deepEqual(place('Narupa').options, ['Mina Narupa', 'Narupa birding', 'Finca Narupa bridge']);
-  // A misreading as close to two places (0.769 and 0.764, within the tie of 0.03).
-  assert.deepEqual(place('Finoa Naruapa').options, ['Mina Narupa', 'Finca Narupa bridge']);
+  // A misreading as close to two places (0.769 and 0.764, within the tie of 0.03). Its words are snapped
+  // to the places' words before the envelope is read, so it is read as the place it names.
+  assert.deepEqual(localityMatch(places, 'Finoa Naruapa').options.map(p => p.name), ['Mina Narupa', 'Finca Narupa bridge']);
+  assert.equal(place('Finoa Naruapa').value, 'Finca Narupa bridge');
   // A name that says which place, or is a place's whole name; one closer by 0.08: that place.
   assert.deepEqual([place('San Isidro Macas').value, place('San Isidro Macas').options], ['San Isidro, Macas', undefined]);
   assert.deepEqual([place('Mina Narupa').value, place('Mina Narupa').options], ['Mina Narupa', undefined]);
@@ -408,4 +410,20 @@ test('a Photo_links reading lists the photos whose wings show the other side or 
   items.set(ids.CAM000105v, { ...items.get(ids.CAM000105v), name: 'CAM000105d.JPG' });
   const again = planPhotoLinks({ rows, items, home: fid(1), ids: new Set(['CAM000105']), wings: wingSides(store) });
   assert.equal(again.summary.wings.wingSide.count, 0);
+});
+
+test("the reader's words are snapped to the workbook's names, the rest left as read", () => {
+  const names = nameVocab(
+    {
+      taxa: [{ name: 'Placidina euryanassa', n: 30 }, { name: 'Heliconius sara apseudes', n: 20 }, { name: 'Hypothyris anastasia honesta', n: 5 }],
+      localities: [{ name: 'Caruara, Santos', n: 26 }, { name: 'Mongaguá', n: 14 }, { name: 'Sansahuari', n: 40 }],
+    },
+    ['reference', 'Philaetria'],
+  );
+  assert.equal(snapLine(names, 'Placidina eunyanassa'), 'Placidina euryanassa');
+  assert.equal(snapLine(names, 'Aeliconius sara'), 'Heliconius sara');
+  assert.equal(snapLine(names, 'Carnara'), 'Caruara');
+  assert.equal(snapLine(names, 'Mongapa'), 'Mongaguá');
+  // CAM IDs, dates, short and kept words, words cut short and names split in two stay as read.
+  for (const text of ['CAM077620', '24/Ago/25', 'kau', 'reference', 'Philaetria', 'Hypothyris anasta', 'Sansa huari']) assert.equal(snapLine(names, text), text);
 });
