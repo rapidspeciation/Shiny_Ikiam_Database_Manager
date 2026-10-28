@@ -1,0 +1,137 @@
+{
+ "reason": "Auditoría 28 oct: formas escritas como la variante habitual",
+ "changes": [
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "(no subspecies described)",
+    "CAM_ID": "CAM077439"
+   },
+   "values": {
+    "Subspecies_Form": "(No subspecies described)"
+   },
+   "note": "Forma escrita distinto a la habitual en Ithomia amarilla: «(no subspecies described)» → «(No subspecies described)» (10 filas) (fila 5940 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "Hortona",
+    "CAM_ID": "CAM072695"
+   },
+   "values": {
+    "Subspecies_Form": "hortona"
+   },
+   "note": "Forma escrita distinto a la habitual en Pierella hortona: «Hortona» → «hortona» (1 filas) (fila 3061 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "eudaminae",
+    "CAM_ID": "CAM076982"
+   },
+   "values": {
+    "Subspecies_Form": "Eudaminae"
+   },
+   "note": "Forma escrita distinto a la habitual en Hesperiidae (family): «eudaminae» → «Eudaminae» (3 filas) (fila 5079 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "eudaminae",
+    "CAM_ID": "CAM076983"
+   },
+   "values": {
+    "Subspecies_Form": "Eudaminae"
+   },
+   "note": "Forma escrita distinto a la habitual en Hesperiidae (family): «eudaminae» → «Eudaminae» (3 filas) (fila 5080 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "messnoides",
+    "Collection_location": "3 Km Sur Dayuma"
+   },
+   "values": {
+    "Subspecies_Form": "messenoides"
+   },
+   "note": "Forma con una letra cambiada en Mechanitis messenoides: «messnoides» → «messenoides» (47 filas) (fila 7168 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "metonella",
+    "CAM_ID": "CAM077611"
+   },
+   "values": {
+    "Subspecies_Form": "methonella"
+   },
+   "note": "Forma con una letra cambiada en Callithomia lenea: «metonella» → «methonella» (5 filas) (fila 6132 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "euridice",
+    "Insectary_ID": "A6F"
+   },
+   "values": {
+    "Subspecies_Form": "eurydice"
+   },
+   "note": "Forma con una letra cambiada en Mechanitis polymnia: «euridice» → «eurydice» (101 filas) (fila 8276 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "angosia",
+    "CAM_ID": "CAM072044"
+   },
+   "values": {
+    "Subspecies_Form": "agnosia"
+   },
+   "note": "Forma con una letra cambiada en Ithomia agnosia: «angosia» → «agnosia» (26 filas) (fila 2152 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "lorenia",
+    "CAM_ID": "CAM071671"
+   },
+   "values": {
+    "Subspecies_Form": "loronia"
+   },
+   "note": "Forma con una letra cambiada en Brevioleria arzalia: «lorenia» → «loronia» (7 filas) (fila 1693 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "leuconae",
+    "CAM_ID": "CAM072722"
+   },
+   "values": {
+    "Subspecies_Form": "leuconoe"
+   },
+   "note": "Forma con una letra cambiada en Dismorphia theucharila: «leuconae» → «leuconoe» (3 filas) (fila 3090 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "atergalis",
+    "CAM_ID": "CAM079581"
+   },
+   "values": {
+    "Subspecies_Form": "atergatis"
+   },
+   "note": "Forma con una letra cambiada en Lycorea halia: «atergalis» → «atergatis» (11 filas) (fila 8066 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "eudamine",
+    "CAM_ID": "CAM077372"
+   },
+   "values": {
+    "Subspecies_Form": "Eudaminae"
+   },
+   "note": "Forma con una letra cambiada en Hesperiidae (family): «eudamine» → «Eudaminae» (3 filas) (fila 5144 en la copia del 28 oct)"
+  }
+ ]
+}
