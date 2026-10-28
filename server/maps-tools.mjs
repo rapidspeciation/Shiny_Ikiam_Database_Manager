@@ -186,10 +186,10 @@ function km(a, b) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-/** The countries asked, as the records spell them (the maps app compares them exactly). */
+/** The countries asked, as the records spell them (the maps app compares them exactly); one they lack as asked. */
 const countriesIn = (asked, records) => {
-  const wanted = new Set(list(asked).map(fold));
-  return [...new Set(records.filter(r => wanted.has(fold(r.country))).map(r => r.country))];
+  const spelled = new Map(records.map(r => [fold(r.country), r.country]));
+  return [...new Set(list(asked).map(c => spelled.get(fold(c)) ?? c))];
 };
 
 /** The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's), `map_view`. */
@@ -538,7 +538,8 @@ export function createMapsTools({
     const mixed = taxa.genus.length && taxa.species.length;
     const urlTaxa = {
       species: mixed ? [...new Set([...taxa.species, ...ofTaxa.filter(r => taxa.genus.includes(r.genus)).map(r => r.name)])] : taxa.species,
-      subspecies: taxa.subspecies,
+      // A subspecies filter would hide the rest of a genus asked.
+      subspecies: taxa.genus.length ? [] : taxa.subspecies,
       genus: mixed ? [] : taxa.genus,
       sources,
     };
@@ -572,7 +573,7 @@ export function createMapsTools({
       sites_total: ranked.length,
       sites: shown,
       ...(cells.length ? { grid_cells: { note: 'Dore et al. (2022): 0.25° cells, not collecting sites', cells: cells.length, top: cells.slice(0, 5).map(c => ({ lat: c.lat, lng: c.lng, country: c.country, records: c.records })) } } : {}),
-      map: mapsUrl({ ...urlTaxa, country: countriesIn(args.country, regional), view }, mapsBase),
+      map: mapsUrl({ ...urlTaxa, country: countriesIn(args.country, records), view }, mapsBase),
       freshness,
     };
   }
@@ -599,7 +600,7 @@ export function createMapsTools({
       if (r.year && (!t.last || r.year > t.last)) t.last = r.year;
     }
     const limit = clamp(args.limit, 1, 100, 30);
-    const country = countriesIn(args.country, regional);
+    const country = countriesIn(args.country, records);
     const ranked = [...byName].sort((a, b) => b[1].records - a[1].records);
     const view = args.near
       ? { lat: args.near.lat, lng: args.near.lng, zoom: Math.max(5, Math.min(12, Math.round(Math.log2(40000 / (Number(args.near.km) || 25))) - 1)) }

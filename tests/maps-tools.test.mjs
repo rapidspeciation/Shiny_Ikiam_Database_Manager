@@ -154,6 +154,11 @@ test('maps_localities: sites ranked by records, Dore cells apart, synonyms, link
   const mixed = await tools.run('maps_localities', { taxa: ['Oleria', 'Mechanitis menapis'] });
   assert.doesNotMatch(mixed.map, /genus=/);
   assert.match(mixed.map, /sp=Mechanitis%20menapis%2COleria%20onega&/);
+  const withSubspecies = await tools.run('maps_localities', { taxa: ['Oleria', 'Oleria onega janarilla'] });
+  assert.doesNotMatch(withSubspecies.map, /ssp=/);
+  // A country with no records of them keeps its filter.
+  const peru = await tools.run('maps_localities', { taxa: ['Oleria onega'], country: ['Peru'] });
+  assert.match(peru.map, /&country=Peru/);
 });
 
 test('maps_localities by elevation: the workbook for the project\'s records, the DEM for the rest', async () => {
