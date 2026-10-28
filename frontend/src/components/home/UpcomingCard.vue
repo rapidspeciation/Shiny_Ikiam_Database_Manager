@@ -51,7 +51,8 @@ const detail = (c: Coming) =>
         )
       }}
     </p>
-    <div class="grid gap-3 md:grid-cols-3">
+    <!-- Three columns only where a species name has room beside the counts and dates (wrapped, not cut). -->
+    <div class="grid gap-3 xl:grid-cols-3">
       <div v-for="c in COLUMNS" :key="c.event" class="rounded-md bg-stone-50 px-3 py-2">
         <p class="mb-1 text-sm font-semibold">{{ $t(c.title) }}</p>
         <p v-if="!byEvent[c.event].length" class="py-2 text-sm text-stone-400">{{ $t('Nada en estos días') }}</p>
