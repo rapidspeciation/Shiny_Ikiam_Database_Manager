@@ -42,6 +42,7 @@ import { PHOTO_TOOLS, brief as readingBrief, createPhotoLinksTool } from './phot
 import { photoFoldersOf } from './photo-links.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
+import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
@@ -460,6 +461,8 @@ const TOOLS = [
   ...CURATION_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
+  // Read-only: tube racks read from photos of their bottoms, the LBI deposit sheet, tubes looked up (server/rack-tools.mjs).
+  ...RACK_TOOLS,
   {
     type: 'function',
     function: {
@@ -941,6 +944,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     },
   });
   // The public sites' updates on GitHub (update_websites).
+  const rackTools = createRackTools({ store, config });
   const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
@@ -5713,6 +5717,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
+    if (RACK_TOOL_NAMES.has(name)) return rackTools.run(name, args, context.user);
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);

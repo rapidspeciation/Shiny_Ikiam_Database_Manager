@@ -14,5 +14,8 @@ bundled or deployed) uses playwright-core (Apache License 2.0).
 Map tiles are loaded at run time, not bundled: Esri World Imagery and
 OpenStreetMap (© OpenStreetMap contributors, ODbL), credited on the map.
 
-Exact versions are pinned in frontend/package-lock.json. The server has no
-third-party runtime dependencies. Code 128 patterns: see ZXing-LICENSE.
+Exact versions are pinned in frontend/package-lock.json. The server's one
+third-party runtime dependency is vendored: zxing-wasm 3.1.6 (MIT,
+server/vendor/zxing-wasm/LICENSE), the reader build of zxing-cpp (Apache
+License 2.0, see ZXing-LICENSE), for the tube racks' 2D codes. Code 128
+patterns: see ZXing-LICENSE.

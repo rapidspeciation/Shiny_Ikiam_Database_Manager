@@ -96,6 +96,7 @@ import { watchEventLoop } from './event-loop.mjs';
 import { createReadings } from './readings.mjs';
 import { galleryFiles } from './gallery-public.mjs';
 import { createSiteUpdates } from './site-updates.mjs';
+import { reportFile, reportsDir } from './rack-tools.mjs';
 import {
   setup,
   login,
@@ -276,6 +277,8 @@ export function configFromEnv(env = process.env) {
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
+    // The assistant's rack readings and deposit sheets (server/rack-tools.mjs): rack-reports beside the database by default.
+    rackReportsDir: env.RACK_REPORTS_DIR || undefined,
     // The password of the Cloudflare Workers that start the two public sites' updates (update_websites, server/site-updates.mjs).
     siteUpdatePasswordFile: env.SITE_UPDATE_PASSWORD_FILE || undefined,
     // Where the Rename Photos app's build is (the «Fotos» tab's frame); rename-app/ beside the server by default.
@@ -1272,6 +1275,19 @@ export async function createApp(config = {}, options = {}) {
           'cache-control': 'no-store',
         });
         return res.end(csv);
+      }
+      // A rack's deposit sheet made by the assistant's rack_report (server/rack-tools.mjs): its maker or an admin.
+      if (method === 'GET' && /^\/api\/rack-reports\/[a-f0-9]{24}\/[\w.-]+\.xlsx$/.test(path)) {
+        const [, , , token, name] = path.split('/');
+        const file = reportFile(reportsDir(config), token, name, user);
+        if (!file) throw fail('NOT_FOUND', 'Report not found', 404);
+        res.writeHead(200, {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename="${file.name}"`,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        });
+        return res.end(readFileSync(file.path));
       }
       if (method === 'GET' && path === '/api/monitoring/tracks') return sendTagged(res, { tracks: listTracks(store, user) });
       // Monitoreo → Wikiloc: what the app holds, the corrections its points suggest, and the downloads (anyone signed in).
