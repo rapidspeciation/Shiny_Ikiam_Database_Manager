@@ -6,11 +6,14 @@
 // lines in ten, so every field keeps its confidence (the line's OCR confidence times how close the
 // match to a workbook name is) and the lines it came from.
 
+import { readFileSync } from 'node:fs';
+
 const fold = value =>
   String(value ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
+const KEEP_WORDS = JSON.parse(readFileSync(new URL('./envelope-keep-words.json', import.meta.url), 'utf8'));
 const round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 const NONE = /^(?:na|n\/a|none|null|not_found|not_provided|not_collected|unknown|-)?$/i;
 
@@ -109,7 +112,9 @@ export function buildLexicon({ taxa = [], localities = [] } = {}) {
     for (const species of genus.species.values())
       for (const sub of species.subs.values())
         for (const w of words(sub.key)) if (w.length >= 3) (subWords.get(w) ?? subWords.set(w, []).get(w)).push({ species, sub });
-  return { genera, epithets, subWords, places, memo: new Map() };
+  // The words the reader's lines are snapped to before they are read into fields.
+  const names = nameVocab({ taxa, localities }, KEEP_WORDS);
+  return { genera, epithets, subWords, places, names, memo: new Map() };
 }
 
 /** The words of a folded text (letters, digits, abbreviations with their dot). */
@@ -371,6 +376,7 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
   for (const raw of Array.isArray(lines) ? lines : []) {
     const [text0, c0] = Array.isArray(raw) ? raw : [raw, 1];
     let text = String(text0 ?? '').trim();
+    if (lexicon?.names) text = snapLine(lexicon.names, text);
     const conf = Number.isFinite(c0) ? c0 : 1;
     if (!text) continue;
     // Sex symbols, alone or after a species word.
@@ -755,6 +761,90 @@ export function noteCorrections(note, lexicon = null, hintGenus = null) {
   for (const m of text.matchAll(new RegExp(CAM_CHANGE.source, 'gi')))
     out.push({ field: 'camid', from: m[1].toUpperCase(), to: m[2].toUpperCase(), text: sentenceOf(text, m.index, m[0].length) });
   return out;
+}
+
+// ------------------------------------------------------------ the reader's words snapped to the names
+/**
+ * The words of the workbook's names (genera, epithets, subspecies, the words of localities; 4 letters or
+ * more) that the envelope reader's lines are snapped to, and the words it must leave as read: words of the
+ * training labels written on two lines or more (envelope-keep-words.json: "reference", "CRISPR", writers'
+ * own spellings such as "Philaetria").
+ */
+export function nameVocab({ taxa = [], localities = [] } = {}, keepWords = []) {
+  const vocab = new Map();
+  const add = (word, n, kind) => {
+    const key = fold(word);
+    if (key.length < 4 || !/^[a-z]+$/.test(key)) return;
+    const entry = vocab.get(key) ?? vocab.set(key, { key, forms: new Map(), n: 0, taxon: false, place: false }).get(key);
+    entry.forms.set(word, (entry.forms.get(word) ?? 0) + n + 1e-3);
+    entry.n += n;
+    entry[kind] = true;
+  };
+  for (const { name, n = 0 } of taxa) {
+    const ws = String(name ?? '').trim().split(/\s+/);
+    if (!/^[A-Z][a-z]+$/.test(ws[0] ?? '')) continue;
+    for (const w of ws) if (/^[A-Za-z-]+$/.test(w) && !/^(?:sp|spp|cf|ssp|aff|form|f|x)\.?$/i.test(w)) for (const part of w.split('-')) add(part, n, 'taxon');
+  }
+  for (const { name, n = 0 } of localities) for (const w of String(name ?? '').match(LETTERS) ?? []) add(w, n, 'place');
+  // The starts of names (5 letters or more): a word cut short at the crop's edge is not another name.
+  const starts = new Set();
+  for (const key of vocab.keys()) for (let i = 5; i < key.length; i++) starts.add(key.slice(0, i));
+  const byLength = [];
+  for (const entry of vocab.values()) {
+    entry.form = [...entry.forms].sort((a, b) => b[1] - a[1])[0][0];
+    (byLength[entry.key.length] ??= []).push(entry);
+  }
+  return { vocab, keep: new Set(keepWords.map(fold)), starts, byLength };
+}
+const LETTERS = /[A-Za-zÀ-ÖØ-öø-ÿ]+/g;
+/** How close a read word must be to a name's word (1 − edits / length), by the word's length. */
+const SNAP_SIM = { 4: 0.75, 5: 0.8, 6: 0.8 };
+const snapFloor = length => SNAP_SIM[length] ?? 0.75;
+/** A word written as read: all capitals, or its first letter's case. */
+const cased = (read, form) =>
+  read.length > 1 && read === read.toUpperCase() ? form.toUpperCase() : (read[0] === read[0].toUpperCase() ? form[0].toUpperCase() : form[0].toLowerCase()) + form.slice(1);
+
+/**
+ * The name's word a read word is a misreading of ("eunyanassa" → "euryanassa", "Carnara" → "Caruara"):
+ * { to, sim } or null. A word already a name's word or a kept word, cut short, or two names run together
+ * stays as read; between two words equally close, the one used three times as often or none.
+ */
+export function snapWord(names, word) {
+  const key = fold(word);
+  if (key.length < 4 || !/^[a-z]+$/.test(key) || names.vocab.has(key) || names.keep.has(key) || names.starts.has(key)) return null;
+  for (let i = 4; i <= key.length - 4; i++) if (names.vocab.has(key.slice(0, i)) && names.vocab.has(key.slice(i))) return null;
+  const floor = snapFloor(key.length);
+  const near = [];
+  for (let n = Math.ceil(key.length * floor); n <= Math.floor(key.length / floor); n++)
+    for (const entry of names.byLength[n] ?? []) {
+      const sim = similarity(key, entry.key, floor - 0.01);
+      if (sim >= floor) near.push({ entry, sim });
+    }
+  if (!near.length) return null;
+  near.sort((a, b) => b.sim - a.sim || b.entry.n - a.entry.n);
+  const [a, b] = near;
+  if (b && b.sim === a.sim && !(a.entry.n >= 3 * Math.max(1, b.entry.n))) return null;
+  return { to: cased(word, a.entry.form), sim: a.sim };
+}
+
+/**
+ * A line of the envelope reader with its words snapped to the names. CAM ID lines, and letters glued to
+ * digits (a date's month, a code), are left as read; so are both halves of a name the reader split in
+ * two ("Sansa huari").
+ */
+export function snapLine(names, text) {
+  text = String(text ?? '');
+  if (/CAM|\d{3,}/i.test(text) && /\d{4,}/.test(text)) return text;
+  const found = [...text.matchAll(LETTERS)];
+  const asRead = new Set();
+  for (let i = 0; i + 1 < found.length; i++) {
+    const gap = text.slice(found[i].index + found[i][0].length, found[i + 1].index);
+    if (/^\s{1,2}$/.test(gap) && names.vocab.has(fold(found[i][0] + found[i + 1][0]))) asRead.add(found[i].index).add(found[i + 1].index);
+  }
+  return text.replace(LETTERS, (word, at) => {
+    if (asRead.has(at) || /\d/.test(text[at - 1] ?? '') || /\d/.test(text[at + word.length] ?? '')) return word;
+    return snapWord(names, word)?.to ?? word;
+  });
 }
 
 export { fold, binomialOf };
