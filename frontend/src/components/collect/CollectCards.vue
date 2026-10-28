@@ -220,7 +220,8 @@ const today = todayIso()
           data-day
           @click="dayOpen = !dayOpen"
         >
-          <span class="min-w-0 flex-1 truncate font-medium first-letter:uppercase">{{ dayLine }}</span>
+          <!-- Up to two lines: a phone shows the place and the people too. -->
+          <span class="line-clamp-2 min-w-0 flex-1 font-medium first-letter:uppercase">{{ dayLine }}</span>
           <component :is="dayOpen ? ChevronUp : ChevronDown" :size="18" class="shrink-0" />
         </button>
         <EntryModeToggle v-model="mode" :compact="!roomy" class="h-11 shrink-0 *:min-w-11" />

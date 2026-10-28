@@ -543,7 +543,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <span class="block text-lg leading-tight font-semibold tabular-nums">
                       {{ item.counts[s.count].na ? 'NA' : item.counts[s.count].text ? '?' : item.counts[s.count].terms.length ? totalOf(item.counts[s.count].terms) : '—' }}
                     </span>
-                    <span v-if="item.counts[s.count].terms.length > 1" class="block truncate text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
+                    <span v-if="item.counts[s.count].terms.length > 1" class="block text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
                     <!-- Preserved ones kept counted: not in the sum (only in the app and NOTES). -->
                     <span
                       v-if="preservedText(item, s.stage)"
