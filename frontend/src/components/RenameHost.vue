@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api'
-import { blobBase64, renameHost, type RenameState } from '../lib/renameHost'
+import { blobBase64, renameFrame, renameHost, type RenameState } from '../lib/renameHost'
 
 /**
  * The Rename Photos app's frame for the whole session (lib/renameHost.ts): fixed over the
@@ -82,6 +82,8 @@ function ask(id: string, name: string, args: unknown) {
     say({ type: 'command', id, name, args })
   })
 }
+let own = 0
+renameFrame.ask = (name, args) => ask(`page-${++own}`, name, args)
 async function work() {
   if (looping) return
   looping = true
@@ -150,6 +152,7 @@ onBeforeUnmount(() => {
   removeEventListener('message', hear)
   removeEventListener('resize', measure)
   Object.assign(renameHost, { ready: false, state: null })
+  renameFrame.ask = null
 })
 </script>
 

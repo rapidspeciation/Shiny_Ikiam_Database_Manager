@@ -31,6 +31,10 @@ sex.wings: {"d": reading, "v": reading}); no detector, no image encoder. It read
 dropout in training): one wing found is enough. The cand_cv networks of the specimen's fold, mean of 3 seeds, then the
 supported screen (t 0.85, a 0.80, 3 of each sex) against that model's out-of-fold evidence (its sex_predictions.json).
 
+The «Fotos» tab's sex check (server/sex-check.mjs) asks for the sex model alone (no image encoder, no torch):
+  {"id": "1", "op": "sex", "photos": [{"key": "d", "path": ...}, {"key": "v", "path": ...}],
+   "sex": {"cam", "d": "d", "v": "v", "species", "wings": {"d": reading, "v": reading}}} -> {"id": "1", "sex": {...}}
+
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
   app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier.pt
@@ -314,8 +318,12 @@ class SexModel:
     THRESHOLD, A, MIN_EACH = 0.85, 0.80, 3
 
     def __init__(self, root, threads):
-        import torch
         from PIL import Image, ImageOps
+
+        try:  # only to resize the strips (a model whose size is not the strips' own); the Fotos tab's check has none
+            import torch
+        except ImportError:
+            torch = None
 
         here = os.path.join(root, "sex")
         self.torch, self.Image, self.ImageOps = torch, Image, ImageOps
@@ -407,7 +415,6 @@ class SexModel:
         says which; model.json use_available), the fold's 3 networks (mean of their P(male)); the preparation is the
         training's (train_sex.cnn_batch without changes)."""
         torch = self.torch
-        F = torch.nn.functional
         cam = job["cam"].upper()
         t0 = time.perf_counter()
         partial = bool(self.meta.get("use_available"))
@@ -424,12 +431,14 @@ class SexModel:
         present = [r in cut for r in self.crops]
         size = self.meta["size"]
         hw = tuple(size) if isinstance(size, list) else (int(size), int(size))
-        x = torch.from_numpy(np.stack(crops)).permute(0, 3, 1, 2).float().div(255)
+        x = np.stack(crops).transpose(0, 3, 1, 2).astype(np.float32) / 255
         if tuple(x.shape[-2:]) != hw:
-            x = F.interpolate(x, size=hw, mode="bilinear", antialias=True, align_corners=False)
-        mean = torch.tensor(self.meta["mean"]).view(1, 3, 1, 1)
-        std = torch.tensor(self.meta["std"]).view(1, 3, 1, 1)
-        x = ((x - mean) / std).unsqueeze(0).numpy().astype(np.float32)
+            if torch is None:
+                raise ValueError("the sex model's size needs torch to resize its strips")
+            x = torch.nn.functional.interpolate(torch.from_numpy(x), size=hw, mode="bilinear", antialias=True, align_corners=False).numpy()
+        mean = np.asarray(self.meta["mean"], np.float32).reshape(1, 3, 1, 1)
+        std = np.asarray(self.meta["std"], np.float32).reshape(1, 3, 1, 1)
+        x = ((x - mean) / std)[None].astype(np.float32)
         fold, how = self.fold_of(cam)
         seeds = {}
         feed = {"crops": x}
@@ -473,6 +482,15 @@ def main():
         try:
             if job.get("op") == "ping":
                 send({"id": jid, "loaded": model is not None})
+                continue
+            if job.get("op") == "sex":
+                # the sex model alone (the «Fotos» tab's sex check, server/sex-check.mjs): no image encoder
+                if not sex_model:
+                    sex_model = SexModel(ARGS.dir, ARGS.threads)
+                import numpy as np
+
+                paths = {p["key"]: p["path"] for p in job.get("photos", [])}
+                send({"id": jid, "sex": sex_model.predict(job["sex"], paths, np)})
                 continue
             first = model is None
             if first:
