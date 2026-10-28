@@ -248,6 +248,18 @@ const canEdit: CanEdit = (row, field) => canEditCell((row.getData() as Row).__ke
 const choicesOf = (field: string) => (ID_COLUMN.test(field) ? null : rules.value?.lists[field]?.values)
 const hasChoices = (field: string) => !!choicesOf(field)?.size
 
+/** The assistant's note on a row; a new row whose pre-made row someone used meanwhile: why it is not written, then its note. */
+const noteOf = (c: ProposalChange) =>
+  c.rowTaken
+    ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
+        .filter(Boolean)
+        .join(' · ')
+    : pageNote(c)
+/** The one note all the rows share (a team rule said on each), said once above the table with no «Nota IA» column; null when they differ. */
+const sharedNote = computed(() => {
+  const notes = new Set(props.changes.map(noteOf))
+  return notes.size === 1 ? [...notes][0] : null
+})
 function toRow(c: ProposalChange): Row {
   const key = rowKey(c)
   const out = {
@@ -256,12 +268,7 @@ function toRow(c: ProposalChange): Row {
     // A page line with no sheet row: no row number (it is not a new row either).
     __row: c.row ? String(c.row) : c.placeholder ? '—' : t('nueva'),
     __label: c.label,
-    // A new row whose pre-made row someone used meanwhile: why it is not written, then its note.
-    __note: c.rowTaken
-      ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
-          .filter(Boolean)
-          .join(' · ')
-      : pageNote(c),
+    __note: noteOf(c),
     __line: lineText(c),
   } as Row
   let state = ''
@@ -729,22 +736,23 @@ function columns(): ColumnDefinition[] {
     })
   if (wide) cols.push(id)
   // The assistant's note on the row (where its values come from, what a line says), beside its ID:
-  // cut short, whole under the pointer and in the bar when selected.
-  cols.push({
-    title: t('Nota IA'),
-    field: '__note',
-    headerSort: false,
-    width: 150,
-    minWidth: 70,
-    cssClass: 'proposal-note',
-    headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
-    formatter: (cell: CellComponent) => {
-      if ((cell.getData() as Row).__marker) return ''
-      const note = String(cell.getValue() ?? '')
-      cell.getElement().title = note
-      return note
-    },
-  } as ColumnDefinition)
+  // cut short, whole under the pointer and in the bar when a cell of its row is selected.
+  if (sharedNote.value === null)
+    cols.push({
+      title: t('Nota IA'),
+      field: '__note',
+      headerSort: false,
+      width: 150,
+      minWidth: 70,
+      cssClass: 'proposal-note',
+      headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
+      formatter: (cell: CellComponent) => {
+        if ((cell.getData() as Row).__marker) return ''
+        const note = String(cell.getValue() ?? '')
+        cell.getElement().title = note
+        return note
+      },
+    } as ColumnDefinition)
   const rows = measured()
   for (const field of props.fields) {
     const choices = hasChoices(field)
@@ -840,19 +848,22 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const row = cell.getData() as Row
   const field = cell.getField()
   const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
+  // The row's note in full under any of its cells (the column cuts it short), unless said once above the table.
+  const rowNote: CellBarNote[] = sharedNote.value === null && row.__note && field !== '__note' ? [{ label: t('Nota IA'), text: row.__note, kind: 'hint' }] : []
   // The row's own columns: its note (where the values come from), its ID and row number.
   if (field === '__note') return { ...base, column: t('Nota IA'), text: row.__note }
   if (field === '__label') {
     // A butterfly dead in the sheet, or dying here: said in the bar too (a phone has no tooltips).
     const death = byKey.has(row.__key) ? deathMark(byKey.get(row.__key)!) : null
-    return { ...base, column: 'ID', text: row.__label, ...(death ? { notes: [{ text: death.text, kind: 'hint' as const }] } : {}) }
+    const notes: CellBarNote[] = [...(death ? [{ text: death.text, kind: 'hint' as const }] : []), ...rowNote]
+    return { ...base, column: 'ID', text: row.__label, ...(notes.length ? { notes } : {}) }
   }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
   if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
   const c = fieldSet.value.has(field) ? info(row.__key, field) : null
   const change = byKey.get(row.__key)
   if (!c || !change) return null
-  const notes: CellBarNote[] = []
+  const notes: CellBarNote[] = [...rowNote]
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
   const editable = canEditCell(row.__key, field)
@@ -1388,6 +1399,7 @@ const layoutKey = () =>
     paged() ? (severalPhotos() ? 'pp' : 'p') : '',
     offPhotoRows() ? 'o' : '',
     markedRows() ? 'm' : '',
+    sharedNote.value === null ? 'n' : '',
     repeatRows() ? `r${Math.max(0, ...props.changes.map(c => c.label.length))}` : '',
   ].join('\n')
 function sync() {
@@ -1681,6 +1693,8 @@ watch(
       <slot name="end" />
     </div>
     <slot name="panel" />
+    <!-- The note every row shares, whole, once: the «Nota IA» column would cut it short on each row. -->
+    <p v-if="sharedNote" class="proposal-shared-note"><b>{{ $t('Nota IA') }}:</b> {{ sharedNote }}</p>
     <div class="sheet-grid proposal-sheet">
       <CellBar :info="bar" notes-line @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
@@ -1749,6 +1763,13 @@ watch(
 </template>
 
 <style>
+.proposal-shared-note {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #57534e;
+}
 /* A notebook page's lines that write nothing: grey (as the sheet has them), or as written (no such row). */
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell,
 .legend.is-context {
