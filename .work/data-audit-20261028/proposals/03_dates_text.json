@@ -1,0 +1,588 @@
+{
+ "reason": "Auditoría 28 oct: fechas escritas como texto (mes en neerlandés «mrt» = marzo)",
+ "changes": [
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "na",
+    "FieldMark_ID": "M57"
+   },
+   "values": {
+    "Death_date": "NA"
+   },
+   "note": "«na» → NA (fila 4676 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "5-mrt-26",
+    "CAM_ID": "CAM079264"
+   },
+   "values": {
+    "Death_date": "2026-03-05"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («5-mrt-26», mrt = marzo) → 2026-03-05 (fila 7548 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079265"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7549 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079266"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7550 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079267"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7551 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079268"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7552 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079269"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7553 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079270"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7554 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "6-mrt-26",
+    "CAM_ID": "CAM079271"
+   },
+   "values": {
+    "Death_date": "2026-03-06"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («6-mrt-26», mrt = marzo) → 2026-03-06 (fila 7555 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "7-mrt-26",
+    "CAM_ID": "CAM079272"
+   },
+   "values": {
+    "Death_date": "2026-03-07"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («7-mrt-26», mrt = marzo) → 2026-03-07 (fila 7556 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "7-mrt-26",
+    "CAM_ID": "CAM079273"
+   },
+   "values": {
+    "Death_date": "2026-03-07"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («7-mrt-26», mrt = marzo) → 2026-03-07 (fila 7557 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "7-mrt-26",
+    "CAM_ID": "CAM079274"
+   },
+   "values": {
+    "Death_date": "2026-03-07"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («7-mrt-26», mrt = marzo) → 2026-03-07 (fila 7558 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079275"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7559 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079276"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7560 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079277"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7561 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079278"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7562 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079279"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7563 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "8-mrt-26",
+    "CAM_ID": "CAM079280"
+   },
+   "values": {
+    "Death_date": "2026-03-08"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («8-mrt-26», mrt = marzo) → 2026-03-08 (fila 7564 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079281"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7565 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079282"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7566 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079283"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7567 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079284"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7568 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079285"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7569 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079286"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7570 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079287"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7571 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079288"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7572 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079289"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7573 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079290"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7574 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079291"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7575 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079292"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7576 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "9-mrt-26",
+    "CAM_ID": "CAM079293"
+   },
+   "values": {
+    "Death_date": "2026-03-09"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («9-mrt-26», mrt = marzo) → 2026-03-09 (fila 7577 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079294"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7578 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079295"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7579 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079296"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7580 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079297"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7581 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079298"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7582 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079299"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7583 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079300"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7584 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079301"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7585 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079302"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7586 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079303"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7587 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079304"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7588 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079305"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7589 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "12-mrt-26",
+    "CAM_ID": "CAM079306"
+   },
+   "values": {
+    "Death_date": "2026-03-12"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («12-mrt-26», mrt = marzo) → 2026-03-12 (fila 7590 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079307"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7591 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079308"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7592 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079309"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7593 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079310"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7594 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079311"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7595 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079312"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7596 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079313"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7597 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Death_date": "13-mrt-26",
+    "CAM_ID": "CAM079314"
+   },
+   "values": {
+    "Death_date": "2026-03-13"
+   },
+   "note": "Fecha escrita como texto con mes en neerlandés («13-mrt-26», mrt = marzo) → 2026-03-13 (fila 7598 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Insectary_data",
+   "key": {
+    "Preservation_date": "NA`",
+    "Insectary_ID": "6AD"
+   },
+   "values": {
+    "Preservation_date": "NA"
+   },
+   "note": "«NA`» → NA (fila 5409 en la copia del 28 oct)"
+  }
+ ]
+}

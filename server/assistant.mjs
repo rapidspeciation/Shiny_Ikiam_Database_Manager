@@ -43,6 +43,7 @@ import { photoFoldersOf } from './photo-links.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
+import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
@@ -463,6 +464,8 @@ const TOOLS = [
   ...SITE_TOOLS,
   // Read-only: tube racks read from photos of their bottoms, the LBI deposit sheet, tubes looked up (server/rack-tools.mjs).
   ...RACK_TOOLS,
+  // Read-only: the maps' occurrence records and host plants, and the Wings Gallery's specimens with links and thumbnails (server/maps-tools.mjs).
+  ...MAPS_TOOLS,
   {
     type: 'function',
     function: {
@@ -917,6 +920,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const walkIds = inWorker ? null : createWalkIds({ store, identifier, onRead: walkId => markWalkReadings(walkId) });
   // Butterflies' photos beside the chat (show_photos): a card that only shows.
   const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
+  const mapsTools = createMapsTools({ store, ...(config.mapsTools ?? {}) });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
   const curation = createCuration({
     store,
@@ -5721,6 +5725,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
+    if (MAPS_TOOL_NAMES.has(name)) return fitResult(await mapsTools.run(name, args), { narrow: 'ask for a smaller limit or a narrower region' });
     if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFactsTool(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
     if (CURATION_TOOL_NAMES.has(name)) {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot change the database' };

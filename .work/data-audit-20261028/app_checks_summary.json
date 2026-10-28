@@ -1,0 +1,531 @@
+{
+ "source": "server/checks.mjs allIssues() on a VACUUM copy of ~/.cache/ithomiini-lab/app-workbook/app.sqlite, 28 Oct 2026",
+ "total": 8160,
+ "by_kind": {
+  "repeat": 1235,
+  "id_format": 23,
+  "cam_cross": 130,
+  "list": 1458,
+  "insectary_link": 125,
+  "link_mismatch": 131,
+  "date_order": 156,
+  "bad_date": 65,
+  "missing_sample": 489,
+  "preserved_na": 8,
+  "stage_adult": 5,
+  "mark_reuse": 77,
+  "photo_camid": 30,
+  "photo_extra": 7,
+  "envelope_sex": 14,
+  "envelope_species": 116,
+  "photo_missing": 3180,
+  "ai_species": 911
+ },
+ "by_kind_sheet_field": [
+  {
+   "kind": "photo_missing",
+   "sheet": "Insectary_data",
+   "field": "Photo_dorsal",
+   "count": 2656
+  },
+  {
+   "kind": "ai_species",
+   "sheet": "Collection_data",
+   "field": "SPECIES",
+   "count": 863
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "Preservation_medium",
+   "count": 533
+  },
+  {
+   "kind": "photo_missing",
+   "sheet": "Collection_data",
+   "field": "Photo_dorsal",
+   "count": 504
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "Tube_1_id",
+   "count": 454
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "Tube_1_id",
+   "count": 395
+  },
+  {
+   "kind": "missing_sample",
+   "sheet": "Collection_data",
+   "field": "Tube_1_id",
+   "count": 366
+  },
+  {
+   "kind": "list",
+   "sheet": "CRISPR",
+   "field": "Guide",
+   "count": 194
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "Insectary_ID",
+   "count": 190
+  },
+  {
+   "kind": "list",
+   "sheet": "F1/F2_MutationRate",
+   "field": "Mating",
+   "count": 181
+  },
+  {
+   "kind": "envelope_species",
+   "sheet": "Collection_data",
+   "field": "SPECIES",
+   "count": 115
+  },
+  {
+   "kind": "insectary_link",
+   "sheet": "Insectary_data",
+   "field": "Insectary_ID",
+   "count": 104
+  },
+  {
+   "kind": "list",
+   "sheet": "CRISPR",
+   "field": "CAM_ID",
+   "count": 92
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "Tube_4_id_LEGS",
+   "count": 88
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "SPECIES",
+   "count": 88
+  },
+  {
+   "kind": "mark_reuse",
+   "sheet": "Collection_data",
+   "field": "FieldMark_ID",
+   "count": 77
+  },
+  {
+   "kind": "date_order",
+   "sheet": "Insectary_data",
+   "field": "Death_date",
+   "count": 76
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "Collection_location",
+   "count": 73
+  },
+  {
+   "kind": "link_mismatch",
+   "sheet": "Insectary_data",
+   "field": "SPECIES",
+   "count": 72
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Location_Head",
+   "count": 70
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Location_abdomen",
+   "count": 70
+  },
+  {
+   "kind": "cam_cross",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 65
+  },
+  {
+   "kind": "missing_sample",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 64
+  },
+  {
+   "kind": "cam_cross",
+   "sheet": "Wing_tissue",
+   "field": "CAM_ID",
+   "count": 61
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Sex",
+   "count": 59
+  },
+  {
+   "kind": "link_mismatch",
+   "sheet": "Insectary_data",
+   "field": "Sex",
+   "count": 57
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Collection_data",
+   "field": "Death_date",
+   "count": 51
+  },
+  {
+   "kind": "missing_sample",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 50
+  },
+  {
+   "kind": "ai_species",
+   "sheet": "Insectary_data",
+   "field": "SPECIES",
+   "count": 48
+  },
+  {
+   "kind": "date_order",
+   "sheet": "Insectary_data",
+   "field": "Preservation_date",
+   "count": 38
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "Tube_2_id",
+   "count": 36
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Collection_location",
+   "count": 34
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Tube_1_tissue",
+   "count": 33
+  },
+  {
+   "kind": "date_order",
+   "sheet": "Insectary_data",
+   "field": "Intro2Insectary_date",
+   "count": 29
+  },
+  {
+   "kind": "insectary_link",
+   "sheet": "Collection_data",
+   "field": "Insectary_ID",
+   "count": 21
+  },
+  {
+   "kind": "photo_missing",
+   "sheet": "Collection_data",
+   "field": "Photo_ventral",
+   "count": 20
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID_CollData",
+   "count": 16
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "Tube_2_id",
+   "count": 15
+  },
+  {
+   "kind": "id_format",
+   "sheet": "Collection_data",
+   "field": "Tube_1_id",
+   "count": 13
+  },
+  {
+   "kind": "photo_camid",
+   "sheet": "Photo_links",
+   "field": "CAM_ID",
+   "count": 11
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "Tube_3_id",
+   "count": 10
+  },
+  {
+   "kind": "photo_camid",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 10
+  },
+  {
+   "kind": "missing_sample",
+   "sheet": "Insectary_data",
+   "field": "Tube_1_id",
+   "count": 9
+  },
+  {
+   "kind": "photo_camid",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 9
+  },
+  {
+   "kind": "envelope_sex",
+   "sheet": "Collection_data",
+   "field": "Sex",
+   "count": 9
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Barcoding_DNA",
+   "field": "Tube_4_id_LEGS",
+   "count": 8
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 8
+  },
+  {
+   "kind": "preserved_na",
+   "sheet": "Insectary_data",
+   "field": "Death_cause",
+   "count": 8
+  },
+  {
+   "kind": "id_format",
+   "sheet": "Insectary_data",
+   "field": "Tube_1_id",
+   "count": 7
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Preservation_medium",
+   "count": 7
+  },
+  {
+   "kind": "date_order",
+   "sheet": "Collection_data",
+   "field": "Death_date",
+   "count": 7
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "Insectary_ID",
+   "count": 6
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Location_Legs",
+   "count": 6
+  },
+  {
+   "kind": "date_order",
+   "sheet": "Collection_data",
+   "field": "Preservation_date",
+   "count": 6
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "Location_body",
+   "count": 5
+  },
+  {
+   "kind": "stage_adult",
+   "sheet": "Insectary_data",
+   "field": "LIFESTAGE",
+   "count": 5
+  },
+  {
+   "kind": "envelope_sex",
+   "sheet": "Insectary_data",
+   "field": "Sex",
+   "count": 5
+  },
+  {
+   "kind": "cam_cross",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 4
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "CRISPR",
+   "field": "Emerge_date",
+   "count": 4
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Insectary_stocks",
+   "field": "HATCHING DATE",
+   "count": 4
+  },
+  {
+   "kind": "photo_extra",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 4
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "Location_wings",
+   "count": 3
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "Tube_3_id",
+   "count": 2
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "CAM_ID_insectary",
+   "count": 2
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 2
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Wing_tissue",
+   "field": "Tube_5_id",
+   "count": 2
+  },
+  {
+   "kind": "id_format",
+   "sheet": "CRISPR",
+   "field": "Tube_ID",
+   "count": 2
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "CAM_ID_insectary",
+   "count": 2
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "T1_Preservation_medium",
+   "count": 2
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "T2_Preservation_medium",
+   "count": 2
+  },
+  {
+   "kind": "list",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 2
+  },
+  {
+   "kind": "link_mismatch",
+   "sheet": "Collection_data",
+   "field": "CAM_ID_insectary",
+   "count": 2
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Insectary_stocks",
+   "field": "PUPA DATE",
+   "count": 2
+  },
+  {
+   "kind": "photo_extra",
+   "sheet": "Photo_links",
+   "field": "CAM_ID",
+   "count": 2
+  },
+  {
+   "kind": "repeat",
+   "sheet": "Insectary_data",
+   "field": "Tube_4_id",
+   "count": 1
+  },
+  {
+   "kind": "id_format",
+   "sheet": "Collection_data",
+   "field": "Tube_4_id_LEGS",
+   "count": 1
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "ID_status",
+   "count": 1
+  },
+  {
+   "kind": "list",
+   "sheet": "Collection_data",
+   "field": "CAM_ID",
+   "count": 1
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Insectary_data",
+   "field": "Death_date",
+   "count": 1
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Insectary_data",
+   "field": "Preservation_date",
+   "count": 1
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "Insectary_stocks",
+   "field": "DATE LAID",
+   "count": 1
+  },
+  {
+   "kind": "bad_date",
+   "sheet": "SamplingDay_data",
+   "field": "Date",
+   "count": 1
+  },
+  {
+   "kind": "photo_extra",
+   "sheet": "Insectary_data",
+   "field": "CAM_ID",
+   "count": 1
+  },
+  {
+   "kind": "envelope_species",
+   "sheet": "Insectary_data",
+   "field": "SPECIES",
+   "count": 1
+  }
+ ],
+ "with_obvious_fix": 458
+}

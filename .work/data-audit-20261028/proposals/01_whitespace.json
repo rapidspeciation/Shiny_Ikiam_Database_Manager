@@ -1,0 +1,170 @@
+{
+ "reason": "Auditoría 28 oct: espacios de más en celdas escritas",
+ "changes": [
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "FieldMark_ID": " CR117",
+    "CAM_ID": "CAM071509"
+   },
+   "values": {
+    "FieldMark_ID": "CR117"
+   },
+   "note": "Espacios de más: « CR117» → «CR117» (fila 1491 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "xanthochlora (cotacachi name: Eurema xanthochlora) ",
+    "CAM_ID": "CAM072349"
+   },
+   "values": {
+    "Subspecies_Form": "xanthochlora (cotacachi name: Eurema xanthochlora)"
+   },
+   "note": "Espacios de más: «xanthochlora (cotacachi name: Eurema xanthochlora) » → «xanthochlora (cotacachi name: Eurema xanthochlora)» (fila 2673 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "Rhetus ",
+    "CAM_ID": "CAM072568"
+   },
+   "values": {
+    "Subspecies_Form": "Rhetus"
+   },
+   "note": "Espacios de más: «Rhetus » → «Rhetus» (fila 2930 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "anaitis ",
+    "CAM_ID": "CAM074511"
+   },
+   "values": {
+    "Subspecies_Form": "anaitis"
+   },
+   "note": "Espacios de más: «anaitis » → «anaitis» (fila 3597 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "anaitis ",
+    "CAM_ID": "CAM074512"
+   },
+   "values": {
+    "Subspecies_Form": "anaitis"
+   },
+   "note": "Espacios de más: «anaitis » → «anaitis» (fila 3598 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "anaitis ",
+    "CAM_ID": "CAM074513"
+   },
+   "values": {
+    "Subspecies_Form": "anaitis"
+   },
+   "note": "Espacios de más: «anaitis » → «anaitis» (fila 3599 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "santineza ",
+    "CAM_ID": "CAM074690"
+   },
+   "values": {
+    "Subspecies_Form": "santineza"
+   },
+   "note": "Espacios de más: «santineza » → «santineza» (fila 4498 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "santineza ",
+    "CAM_ID": "CAM074737"
+   },
+   "values": {
+    "Subspecies_Form": "santineza"
+   },
+   "note": "Espacios de más: «santineza » → «santineza» (fila 4545 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "santineza ",
+    "CAM_ID": "CAM074738"
+   },
+   "values": {
+    "Subspecies_Form": "santineza"
+   },
+   "note": "Espacios de más: «santineza » → «santineza» (fila 4546 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "deceptus ",
+    "Insectary_ID": "5RE"
+   },
+   "values": {
+    "Subspecies_Form": "deceptus"
+   },
+   "note": "Espacios de más: «deceptus » → «deceptus» · Forma escrita distinto a la habitual en Mechanitis messenoides: «deceptus » → «deceptus» (510 filas) (fila 5945 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Subspecies_Form": "poecilina ",
+    "CAM_ID": "CAM078644"
+   },
+   "values": {
+    "Subspecies_Form": "poecilina"
+   },
+   "note": "Espacios de más: «poecilina » → «poecilina» · Forma escrita distinto a la habitual en Eresia ithomioides: «poecilina » → «poecilina» (2 filas) (fila 6686 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Tube_1_id": " FS90415348",
+    "Insectary_ID": "A7E.1"
+   },
+   "values": {
+    "Tube_1_id": "FS90415348"
+   },
+   "note": "Espacios de más: « FS90415348» → «FS90415348» (fila 8240 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Insectary_data",
+   "key": {
+    "Tube_1_id": "FS63714012 ",
+    "CAM_ID": "CAM071534"
+   },
+   "values": {
+    "Tube_1_id": "FS63714012"
+   },
+   "note": "Espacios de más: «FS63714012 » → «FS63714012» (fila 1204 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Insectary_data",
+   "key": {
+    "Tube_3_id": " FS63807575",
+    "CAM_ID": "CAM073310"
+   },
+   "values": {
+    "Tube_3_id": "FS63807575"
+   },
+   "note": "Espacios de más: « FS63807575» → «FS63807575» (fila 2498 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Insectary_data",
+   "key": {
+    "SPECIES": "Heliconius hewitsoni ",
+    "CAM_ID": "CAM079723"
+   },
+   "values": {
+    "SPECIES": "Heliconius hewitsoni"
+   },
+   "note": "Espacios de más: «Heliconius hewitsoni » → «Heliconius hewitsoni» · Especie escrita distinto a la lista del insectario: «Heliconius hewitsoni » → «Heliconius hewitsoni» (fila 12303 en la copia del 28 oct)"
+  }
+ ]
+}

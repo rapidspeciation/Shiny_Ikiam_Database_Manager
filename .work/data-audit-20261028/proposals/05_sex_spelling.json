@@ -1,0 +1,654 @@
+{
+ "reason": "Auditoría 28 oct: sexo dudoso escrito como en la lista",
+ "changes": [
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072272"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2596 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072273"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2597 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072287"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2611 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072365"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2689 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072378"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2702 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072451"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 2775 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072518"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2842 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072519"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2843 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072524"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 2848 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072530"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2854 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072598"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2960 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072599"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2961 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072615"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2977 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072629"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 2991 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072645"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3007 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072646"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3008 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072671"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3033 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072676"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3038 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072677"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3039 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072693"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3059 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072716"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3082 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072722"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3090 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072723"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3091 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072729"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3097 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072730"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3098 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072751"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3119 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072752"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3120 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072754"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3122 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072755"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3123 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072785"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3153 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072788"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3156 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072790"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3158 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072791"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3159 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072792"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3160 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072808"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3176 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072824"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3192 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072841"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3209 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072849"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3217 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072908"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3281 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072911"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3284 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072971"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3344 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072974"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3347 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM072978"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3351 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072984"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3357 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072987"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3360 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM072988"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3361 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074317"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3390 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074341"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3414 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM074346"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3419 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074382"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3455 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074427"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3521 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM074429"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3523 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074443"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3537 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM074452"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3546 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074454"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3549 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074476"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3571 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male_?",
+    "CAM_ID": "CAM074506"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male_?» → «male ?» (valor de la lista) (fila 3592 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "female_?",
+    "CAM_ID": "CAM074510"
+   },
+   "values": {
+    "Sex": "female ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «female_?» → «female ?» (valor de la lista) (fila 3596 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "Sex": "male?",
+    "CAM_ID": "CAM079324"
+   },
+   "values": {
+    "Sex": "male ?"
+   },
+   "note": "Sexo dudoso escrito distinto: «male?» → «male ?» (valor de la lista) (fila 7608 en la copia del 28 oct)"
+  }
+ ]
+}

@@ -1,0 +1,522 @@
+{
+ "reason": "Auditoría 28 oct: especie con mayúsculas de la taxonomía",
+ "changes": [
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM071786"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 1894 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072790"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3158 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072793"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3161 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Lycaenidae",
+    "CAM_ID": "CAM072855"
+   },
+   "values": {
+    "SPECIES": "Lycaenidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Lycaenidae» → Lycaenidae (family) (fila 3223 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072899"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3272 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072900"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3273 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072901"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3274 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072902"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3275 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072903"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3276 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072904"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3277 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072906"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3279 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072907"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3280 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072909"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3282 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072913"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3286 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072914"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3287 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072915"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3288 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072952"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3325 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072953"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3326 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072954"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3327 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072955"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3328 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072956"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3329 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072957"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3330 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072958"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3331 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072959"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3332 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072960"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3333 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072961"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3334 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072962"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3335 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072963"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3336 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072964"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3337 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072965"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3338 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072966"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3339 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072967"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3340 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072968"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3341 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072969"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3342 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072973"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3346 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072975"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3348 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072981"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3354 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM072990"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3363 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM074340"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3413 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM074345"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 3418 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Riodinidae",
+    "CAM_ID": "CAM074934"
+   },
+   "values": {
+    "SPECIES": "Riodinidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Riodinidae» → Riodinidae (family) (fila 4831 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Nymphalidae",
+    "CAM_ID": "CAM076810"
+   },
+   "values": {
+    "SPECIES": "Nymphalidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Nymphalidae» → Nymphalidae (family) (fila 4906 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Nymphalidae",
+    "CAM_ID": "CAM076824"
+   },
+   "values": {
+    "SPECIES": "Nymphalidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Nymphalidae» → Nymphalidae (family) (fila 4921 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Nymphalidae",
+    "CAM_ID": "CAM076825"
+   },
+   "values": {
+    "SPECIES": "Nymphalidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Nymphalidae» → Nymphalidae (family) (fila 4922 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Nymphalidae",
+    "CAM_ID": "CAM076979"
+   },
+   "values": {
+    "SPECIES": "Nymphalidae (family)"
+   },
+   "note": "Familia escrita sin «(family)», como en la lista: «Nymphalidae» → Nymphalidae (family) (fila 5076 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Collection_data",
+   "key": {
+    "SPECIES": "Perrybris pamela",
+    "CAM_ID": "CAM079531"
+   },
+   "values": {
+    "SPECIES": "Perrhybris pamela"
+   },
+   "note": "Género mal escrito: «Perrybris pamela» → Perrhybris pamela (fila 7893 en la copia del 28 oct)"
+  },
+  {
+   "sheet": "Insectary_data",
+   "key": {
+    "SPECIES": "Heliconus numata",
+    "CAM_ID": "CAM070286"
+   },
+   "values": {
+    "SPECIES": "Heliconius numata"
+   },
+   "note": "Género mal escrito: «Heliconus numata» → Heliconius numata (fila 757 en la copia del 28 oct)"
+  }
+ ]
+}
