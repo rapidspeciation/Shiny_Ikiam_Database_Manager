@@ -274,7 +274,7 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     const byPhoto = {};
     const missing = [];
     const photoTimes = {};
-    for (let r = 0; r < ROWS; r++)
+    for (let r = 0; r < (m.frame ? ROWS : 0); r++)
       for (let c = 0; c < COLS; c++) {
         const v = m.cells?.get?.(`${c},${r}`);
         const name = known ? wellOf(known, c, r) : photoName([c, r]);
@@ -284,13 +284,22 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
         } else missing.push({ [known ? 'well' : 'photo_position']: name, square_seen: !!v?.seen });
       }
     const order = known ? Object.keys(wells).sort((a, b) => fillOrder(a) - fillOrder(b)) : null;
+    // Conflicts by well: the photos disagree there, so the person confirms those wells (rack_report's fill).
+    const asWell = name => {
+      const m = /^R(\d+)C(\d+)$/.exec(name ?? '');
+      return m && known ? wellOf(known, Number(m[2]) - 1, Number(m[1]) - 1) : null;
+    };
+    const conflicts = (m.conflicts ?? []).map(c => ({
+      ...c,
+      ...(known ? { wells: [c.photo_position, c.also_at, c.kept_at].map(asWell).filter(Boolean) } : {}),
+    }));
     const reading = {
       rack_id: m.rack_id,
       orientation: m.orientation,
       wells: known ? Object.fromEntries(order.map(w => [w, wells[w]])) : null,
       photo_positions: known ? null : byPhoto,
       missing,
-      conflicts: m.conflicts,
+      conflicts,
       photos,
     };
     const token = save(dir, user?.id ?? null, 'reading.json', JSON.stringify(reading));
@@ -308,7 +317,7 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       ...(known ? { wells: reading.wells } : { photo_positions: byPhoto, photo_position_note: 'R1C1: the tube beside the rack code when it was read, else the top-left tube of the first photo.' }),
       missing,
       tubes_seen_in_one_photo_only: Object.entries(photoTimes).filter(([, n]) => n === 1).length,
-      conflicts: m.conflicts,
+      conflicts,
       photos,
       ...(m.notes?.length ? { notes: m.notes } : {}),
     };
@@ -341,6 +350,10 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       }
       const wells = new Map(Object.entries(reading.wells));
       const fill = r.fill && typeof r.fill === 'object' ? r.fill : {};
+      const empty = new Set((Array.isArray(r.empty) ? r.empty : []).map(wellName).filter(Boolean));
+      // Wells the photos disagree on: confirmed by the person (fill or empty), the read value is not trusted.
+      const disputed = new Set((reading.conflicts ?? []).flatMap(c => c.wells ?? []));
+      for (const w of disputed) wells.delete(w);
       for (const [w, id] of Object.entries(fill)) {
         const well = wellName(w);
         const tube = upper(id);
@@ -348,8 +361,10 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
         else if (wells.has(well) && wells.get(well) !== tube) problems.push(`Rack ${k + 1}: ${well} was read as ${wells.get(well)}, not ${tube}.`);
         else wells.set(well, tube);
       }
-      const empty = new Set((Array.isArray(r.empty) ? r.empty : []).map(wellName).filter(Boolean));
-      const open = WELLS.filter(w => !wells.has(w) && !empty.has(w));
+      for (const w of empty) wells.delete(w);
+      const unsure = [...disputed].filter(w => !wells.has(w) && !empty.has(w));
+      if (unsure.length) problems.push(`Rack ${k + 1}: the photos disagree on ${unsure.join(', ')}: ask the person which tube is there (fill) or whether it is empty.`);
+      const open = WELLS.filter(w => !wells.has(w) && !empty.has(w) && !disputed.has(w));
       if (open.length) problems.push(`Rack ${k + 1} (${reading.rack_id ?? 'code not read'}): no tube for ${open.join(', ')}: give each in \`fill\` (its side label) or in \`empty\`.`);
       const twice = [...wells.values()].filter((id, n, all) => all.indexOf(id) !== n);
       if (twice.length) problems.push(`Rack ${k + 1}: ${[...new Set(twice)].join(', ')} on two wells.`);

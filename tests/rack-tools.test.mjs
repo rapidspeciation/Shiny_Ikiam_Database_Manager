@@ -146,3 +146,46 @@ test('wells and attachments: names tidied, other files refused', async () => {
   const out = await tools.run('rack_read_photos', { photos: ['../../etc/passwd'] }, franz);
   assert.match(out.error, /Not chat attachments/);
 });
+
+// A photo's reading as readOne gives it: frame (c, r) → ID, the 8 × 12 rack at (0, 0)..(11, 7).
+const seq = (c, r) => `FS${50849233 + (11 - c) * 8 + r}`; // the photo as Franz's: A1 top right
+const readingOf = (cells, rack = null) => ({ tubes: new Map(cells.map(([c, r, id]) => [`${c},${r}`, id ?? seq(c, r)])), seen: new Set(), rack, lattice: true });
+const allCells = filter => Array.from({ length: 96 }, (_, k) => [k % 12, Math.floor(k / 12)]).filter(filter ?? (() => true));
+
+test('a partly filled rack without its code: the IDs prove the mirror, not where row A is; no wells', async () => {
+  // Rows B..H only (row A empty): shifting would call B "A".
+  const { tools } = await setup({ readPhoto: async () => readingOf(allCells(([, r]) => r > 0)) });
+  const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
+  assert.equal(read.orientation.a1, 'unknown');
+  assert.match(read.orientation.problems.join(' '), /not filled edge to edge/);
+  assert.equal(read.wells, undefined);
+  const refused = await tools.run('rack_report', { responsable: 'X', racks: [{ reading: read.reading }] }, franz);
+  assert.match(refused.problems[0], /A1 is not known/);
+  // With the rack's code beside the top-left tube (R1C1), its row is the rack's first: the wells are known.
+  const coded = await setup({ readPhoto: async () => readingOf(allCells(([, r]) => r > 0), { text: 'FK00274230', at: [-0.95, 0], corner: [0, 0] }) });
+  const again = await coded.tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
+  assert.equal(again.orientation.a1, 'proven by the tube IDs');
+  assert.equal(again.wells.B1, 'FS50849234');
+  assert.deepEqual(again.missing.map(m => m.well).sort(), Array.from({ length: 12 }, (_, k) => `A${k + 1}`).sort());
+});
+
+test('photos without a grid: their codes come back, no error', async () => {
+  const { tools } = await setup({ readPhoto: async () => ({ tubes: new Map(), seen: new Set(), rack: null, loose: ['FS50849233'], codes: 1, lattice: false }) });
+  const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
+  assert.equal(read.error, undefined);
+  assert.deepEqual(read.photos[0].codes, ['FS50849233']);
+  assert.equal(read.orientation.a1, 'unknown');
+});
+
+test('two photos disagreeing on a well: the report waits for the person to say which tube is there', async () => {
+  const photos = [readingOf(allCells()), readingOf(allCells().map(([c, r]) => [c, r, c === 0 && r === 0 ? 'FS99999999' : null]))];
+  let n = 0;
+  const { tools } = await setup({ readPhoto: async () => photos[n++ % 2] });
+  const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg', 'thread-1-rack.jpg'] }, franz);
+  assert.deepEqual(read.conflicts.map(c => c.wells).flat(), ['A12']);
+  const base = { reading: read.reading };
+  const refused = await tools.run('rack_report', { responsable: 'X', racks: [base] }, franz);
+  assert.match(refused.problems.join(' '), /disagree on A12/);
+  const made = await tools.run('rack_report', { responsable: 'X', racks: [{ ...base, fill: { A12: 'FS50849321' } }] }, franz);
+  assert.equal(made.racks[0].tubes, 96);
+});

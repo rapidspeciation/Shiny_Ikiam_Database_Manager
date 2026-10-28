@@ -744,7 +744,7 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
     rack_id_photos: rackCode?.[1].photos ?? 0,
     other_rack_codes: [...rackReads.keys()].filter(t => t !== rackCode?.[0]),
   };
-  if (!coords.length) return { ...out, frame: null, cells: [], conflicts, orientation: { mapping: null, basis: [], note: 'No tubes read.' } };
+  if (!coords.length) return { ...out, frame: null, cells: new Map(), conflicts, notes: [], orientation: { mapping: null, basis: [], problems: [], note: 'No tubes read on a grid.' } };
   let lo = [Math.min(...coords.map(c => c[0])), Math.min(...coords.map(c => c[1]))];
   const hi = [Math.max(...coords.map(c => c[0])), Math.max(...coords.map(c => c[1]))];
   const span = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1];
@@ -754,21 +754,33 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
   let turn = false;
   if (rackCode) {
     const { at } = rackCode[1];
-    const corner = at.map((v, a) => Math.max(lo[a], Math.min(hi[a], Math.round(v))));
+    // The corner well the code is beside: about a pitch in from the code along the long side (that well may be empty).
+    const ci = at[0] < lo[0] ? Math.round(at[0] + 0.95) : at[0] > hi[0] ? Math.round(at[0] - 0.95) : Math.max(lo[0], Math.min(hi[0], Math.round(at[0])));
+    const corner = [ci, Math.round(at[1])];
     rackCode[1].corner = corner;
     // The code to the frame's right: turn the frame half round so the tube beside the code is R1C1's side.
     turn = at[0] > corner[0];
     if (!origin) {
       const oi = turn ? corner[0] - (COLS - 1) : corner[0];
-      const top = corner[1] === lo[1];
-      const bottom = corner[1] === hi[1];
-      const oj = top && !bottom ? corner[1] : bottom && !top ? corner[1] - (ROWS - 1) : null;
-      if (oj !== null && oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1]) origin = [oi, oj];
+      // Its row is the rack's first or last: whichever leaves every tube inside the rack.
+      const fits = oj => oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1];
+      const rows = [corner[1], corner[1] - (ROWS - 1)].filter(fits);
+      if (rows.length === 1) origin = [oi, rows[0]];
     }
   }
   if (span[0] > COLS || span[1] > ROWS) notes.push(`The tubes spread over ${span[0]} × ${span[1]} places, more than a rack's 12 × 8: one photo may be misplaced.`);
+  // Or from the tube the person says is in A1: at the frame's top right (m1) or bottom left (m2), if only one of
+  // the two leaves every tube inside the rack.
+  if (!origin && a1Tube && where.has(a1Tube)) {
+    const [i, j] = unkey(where.get(a1Tube).at);
+    const fits = ([oi, oj]) => oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1];
+    const options = (turn ? [[i, j - (ROWS - 1)], [i - (COLS - 1), j]] : [[i - (COLS - 1), j], [i, j - (ROWS - 1)]]).filter(fits);
+    if (options.length === 1) origin = options[0];
+  }
+  // Without the rack's edges no well can be named: a sequence of IDs proves the mirror, not where row A is.
+  const placedEdges = !!origin;
   if (!origin) {
-    notes.push('The tubes do not fill the rack from edge to edge and the rack code was not read: photo positions are relative.');
+    notes.push('The tubes do not reach every edge of the rack and its code was not placed: photo positions are relative, no wells.');
     origin = lo;
   }
   // Frame cell (c 0..11, r 0..7), turned so the rack code is at the left when it was read.
@@ -819,7 +831,11 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
   const strong = m => fits[m].pairs >= 10 && fits[m].fit >= 0.8 * fits[m].pairs;
   if (strong('m1') !== strong('m2')) say(strong('m1') ? 'm1' : 'm2', 'tube_sequence');
   let mapping = null;
-  if (votesFor.size === 1 && !problems.length) mapping = [...votesFor.keys()][0];
+  if (votesFor.size === 1 && !problems.length && placedEdges) mapping = [...votesFor.keys()][0];
+  if (!placedEdges)
+    problems.push(
+      'The rack is not filled edge to edge and its code was not read beside a corner: which well is which is not known. Send a photo where the rack code shows, or say which tube is in A1 (a1_tube).',
+    );
   if (votesFor.size > 1) problems.push(`The evidence disagrees: ${[...votesFor].map(([m, b]) => `${b.join(' and ')} say A1 is at photo position ${photoName(m === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1])}`).join('; ')}.`);
   const orientation = {
     mapping,
