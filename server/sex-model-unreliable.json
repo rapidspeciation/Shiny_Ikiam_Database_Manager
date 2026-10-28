@@ -1,0 +1,9 @@
+{
+  "_note": "Species whose sex-model calls the Fotos tab's sex check (server/sex-check.mjs, docs/sex-check.md) never treats as sure: shown as 'model unreliable for this species', never flagged. Key: genus and species as in the database's SPECIES. Add one with why and where it was found.",
+  "species": {
+    "Methona confusa": {
+      "why": "Training labels before 15 May 2023 were all set to male (females also have dorsal hindwing hair-pencils, Hill & Tipan 2008); the model finds only 2 of 6 recorded females.",
+      "source": "WingsClassificator reports/sex_label_review_20261027 (commit 7a8ca24c), 27 Oct 2026"
+    }
+  }
+}

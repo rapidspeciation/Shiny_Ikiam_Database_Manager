@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Check, Cloud, CloudUpload, Copy, ExternalLink, MessageSquarePlus, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
 const PhotoLinksPanel = defineAsyncComponent(() => import('../components/PhotoLinksPanel.vue'))
+import SexCheckPanel from '../components/SexCheckPanel.vue'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { intlLocale, t } from '../lib/i18n'
@@ -361,6 +362,8 @@ function resize(event: PointerEvent) {
         <span v-if="line" class="ml-auto min-w-0 truncate text-stone-500" data-batch>{{ line }}</span>
       </p>
     </div>
+    <!-- Before uploading: the sex model, the envelope and the database compared (SexCheckPanel). -->
+    <SexCheckPanel v-if="section === 'rename' && !renameHost.missing && renameHost.ready" />
     <p v-if="section === 'rename' && renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
       {{ $t('La app para renombrar fotos no está instalada en este servidor.') }}
       <a class="text-emerald-800 underline" href="https://fr4nzz.github.io/rename_photos_AI/" target="_blank" rel="noopener">{{

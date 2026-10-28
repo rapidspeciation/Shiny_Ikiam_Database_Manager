@@ -94,6 +94,7 @@ import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
 import { watchEventLoop } from './event-loop.mjs';
 import { createReadings } from './readings.mjs';
+import { createSexCheck } from './sex-check.mjs';
 import { galleryFiles } from './gallery-public.mjs';
 import { createSiteUpdates } from './site-updates.mjs';
 import { reportFile, reportsDir } from './rack-tools.mjs';
@@ -548,6 +549,8 @@ export async function createApp(config = {}, options = {}) {
       enabled: config.readings === true || (config.readings !== false && !config.localMode),
       ...(config.readingsThreads ? { threads: config.readingsThreads } : {}),
     });
+  // The «Fotos» tab's sex check of a batch before it goes to Drive (server/sex-check.mjs): asked by the tab, a butterfly at a time.
+  const sexCheck = options.sexCheck ?? createSexCheck({ store, readerDir: config.photoReaderDir ?? null, identifierDir: config.identifierDir ?? null });
   const publicGallery = galleryFiles(config.publicGalleryDir ?? null);
   // A first look a minute after the start (photos listed while the app was stopped), then after each sync.
   const readingsStart = setTimeout(() => readings.afterSync?.(), 60_000);
@@ -1216,6 +1219,20 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, readings.run('asked'));
       }
+      // The «Fotos» tab's sex check (server/sex-check.mjs): a butterfly's d and v photos as the tab will upload them
+      // (JPEG, base64), its three sexes (the model's, the envelope's, the database's) and the flag. GET: whether it can run here.
+      if (path === '/api/sex-check' && method === 'GET') return json(res, 200, sexCheck.status());
+      if (path === '/api/sex-check' && method === 'POST') {
+        requireEditor(user);
+        const photo = v => (typeof v === 'string' && v.length > 100 ? Buffer.from(v, 'base64') : null);
+        const [d, v] = [photo(body?.d), photo(body?.v)];
+        if (!d || !v) throw fail('NO_PHOTOS', 'Send the d and v photos', 400);
+        try {
+          return json(res, 200, await sexCheck.check({ cam: body?.cam, d, v }));
+        } catch (e) {
+          throw fail(e.status === 400 ? 'NOT_A_CAM' : 'SEX_CHECK', e.message, e.status ?? 500);
+        }
+      }
       if (method === 'POST' && path === '/api/sync') {
         requireEditor(user);
         return json(res, 200, await store.sync({ force: true }));
@@ -1681,6 +1698,7 @@ export async function createApp(config = {}, options = {}) {
       checks.close();
       clearTimeout(readingsStart);
       readings.close?.();
+      sexCheck.close?.();
       // A page's wait for news (wait=1, up to 25 s) would hold the stop until the 5 s limit: what is
       // still open after a second is cut (the pages ask again, as after any restart).
       const closed = new Promise(resolve => server.close(resolve));
