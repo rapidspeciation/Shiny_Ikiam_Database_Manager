@@ -574,15 +574,17 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 </span>
               </button>
               <!-- Today's mark: checked (no change), or checked but someone should look again. -->
-              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).review !== 'checked'" class="flex border-t border-stone-100">
+              <!-- «solo en la app» beside it only when the card has room (its width, not the window's: a desktop's cards are narrow too). -->
+              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).review !== 'checked'" class="@container flex border-t border-stone-100">
                 <button
                   class="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50"
                   :disabled="marking === item.row.id"
+                  :title="$t('Marca solo en la app, para hoy: no se escribe en la hoja.')"
                   @click="markChecked(item.row)"
                 >
                   <Check :size="16" />
                   {{ day.today(item.row.id).review === 'verify' ? $t('Marcar como verificado') : $t('Marcar como revisado') }}
-                  <span class="hidden text-xs font-normal text-stone-500 min-[400px]:inline">· {{ $t('solo en la app') }}</span>
+                  <span class="hidden text-xs font-normal text-stone-500 @min-[28rem]:inline">· {{ $t('solo en la app') }}</span>
                 </button>
                 <button
                   v-if="day.today(item.row.id).review === 'none'"

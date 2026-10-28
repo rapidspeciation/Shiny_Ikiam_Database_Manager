@@ -194,7 +194,9 @@ async function resetPassword(user: User) {
         </p>
       </form>
 
-      <table v-if="invitations.length" class="mb-6 w-full max-w-4xl text-sm">
+      <!-- On a phone the tables scroll sideways at a width they can be read at: squeezed, their columns ran into each other. -->
+      <div v-if="invitations.length" class="mb-6 max-w-4xl overflow-x-auto">
+      <table class="w-full min-w-[34rem] text-sm [&_th]:pr-3">
         <thead class="text-left text-xs text-stone-600">
           <tr>
             <th class="py-2">{{ $t('Invitación') }}</th>
@@ -250,8 +252,10 @@ async function resetPassword(user: User) {
           </tr>
         </tbody>
       </table>
+      </div>
 
-      <table class="w-full max-w-4xl text-sm">
+      <div class="max-w-4xl overflow-x-auto">
+      <table class="w-full min-w-[44rem] text-sm [&_td]:pr-3 [&_th]:pr-3">
         <thead class="text-left text-xs text-stone-600">
           <tr>
             <th class="py-2">{{ $t('Usuario') }}</th>
@@ -307,6 +311,7 @@ async function resetPassword(user: User) {
           </template>
         </tbody>
       </table>
+      </div>
 
       <details class="mt-6 max-w-4xl">
         <summary class="cursor-pointer text-sm text-stone-600">

@@ -335,8 +335,9 @@ const filtered = computed(
               :class="kind === key ? 'bg-brand-50 font-medium text-brand-800' : 'text-stone-700'"
               @click="kind = kind === key ? '' : key"
             >
-              <span class="truncate">{{ $t(label) }}</span>
-              <span class="text-xs tabular-nums text-stone-500">{{ page?.counts[key] ?? 0 }}</span>
+              <!-- Whole, on two lines if it needs them: cut short, several names read the same. -->
+              <span class="min-w-0 leading-snug">{{ $t(label) }}</span>
+              <span class="shrink-0 text-xs tabular-nums text-stone-500">{{ page?.counts[key] ?? 0 }}</span>
             </button>
           </template>
         </nav>
