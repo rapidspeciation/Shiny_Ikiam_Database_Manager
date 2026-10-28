@@ -754,18 +754,35 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
   let turn = false;
   if (rackCode) {
     const { at } = rackCode[1];
-    // The corner well the code is beside: about a pitch in from the code along the long side (that well may be empty).
-    const ci = at[0] < lo[0] ? Math.round(at[0] + 0.95) : at[0] > hi[0] ? Math.round(at[0] - 0.95) : Math.max(lo[0], Math.min(hi[0], Math.round(at[0])));
-    const corner = [ci, Math.round(at[1])];
-    rackCode[1].corner = corner;
-    // The code to the frame's right: turn the frame half round so the tube beside the code is R1C1's side.
-    turn = at[0] > corner[0];
-    if (!origin) {
-      const oi = turn ? corner[0] - (COLS - 1) : corner[0];
-      // Its row is the rack's first or last: whichever leaves every tube inside the rack.
-      const fits = oj => oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1];
-      const rows = [corner[1], corner[1] - (ROWS - 1)].filter(fits);
-      if (rows.length === 1) origin = [oi, rows[0]];
+    // Where the code can sit: a pitch beyond a corner well, along the long side or the short one. Each placement
+    // gives a corner well and the rack's origin; one is taken only if a single origin keeps every tube inside the
+    // rack and the code outside it (that corner well may be empty).
+    const fits = ([oi, oj]) => oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1];
+    const outside = ([oi, oj]) => at[0] < oi - 0.5 || at[0] > oi + COLS - 0.5 || at[1] < oj - 0.5 || at[1] > oj + ROWS - 0.5;
+    const placements = [];
+    for (const axis of [0, 1]) {
+      const n = [COLS, ROWS];
+      for (const toward of [1, -1]) {
+        const corner = [Math.round(at[0]), Math.round(at[1])];
+        corner[axis] = Math.round(at[axis] + toward * 0.95);
+        const other = 1 - axis;
+        // The corner is the rack's first or last along both axes: the code's side fixes the one, either for the other.
+        const onAxis = toward > 0 ? corner[axis] : corner[axis] - (n[axis] - 1);
+        for (const o of [corner[other], corner[other] - (n[other] - 1)]) {
+          const origin = axis === 0 ? [onAxis, o] : [o, onAxis];
+          if (fits(origin) && outside(origin)) placements.push({ origin, corner, turn: axis === 0 && toward < 0 });
+        }
+      }
+    }
+    const distinct = [...new Map(placements.map(pl => [pl.origin.join(','), pl])).values()];
+    if (distinct.length === 1) {
+      const [pl] = distinct;
+      rackCode[1].corner = pl.corner;
+      turn = pl.turn;
+      if (!origin) origin = pl.origin;
+    } else {
+      rackCode[1].corner = null;
+      notes.push('The rack code was read but where it sits does not place the rack: it is not used for positions.');
     }
   }
   if (span[0] > COLS || span[1] > ROWS) notes.push(`The tubes spread over ${span[0]} × ${span[1]} places, more than a rack's 12 × 8: one photo may be misplaced.`);
@@ -806,7 +823,7 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
       c.also_at = photoName(toFrame(c.also_at));
       c.kept_at = photoName(toFrame(c.kept_at));
     }
-  const codeCorner = rackCode ? toFrame(key(...rackCode[1].corner)) : null;
+  const codeCorner = rackCode?.[1].corner ? toFrame(key(...rackCode[1].corner)) : null;
   // ---- orientation: which mirror the photo is.
   const byWell = mapping => new Map([...cells].filter(([, v]) => v.id).map(([k, v]) => [wellOf(mapping, ...unkey(k)), v.id]));
   const votesFor = new Map(); // mapping → [basis]

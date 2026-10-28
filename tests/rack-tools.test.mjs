@@ -189,3 +189,13 @@ test('two photos disagreeing on a well: the report waits for the person to say w
   const made = await tools.run('rack_report', { responsable: 'X', racks: [{ ...base, fill: { A12: 'FS50849321' } }] }, franz);
   assert.equal(made.racks[0].tubes, 96);
 });
+
+test("the rack code beyond the short side: rows A..G stay A..G (the code's side is not assumed)", async () => {
+  // Tubes on rows A..G (frame rows 0..6), the code above the top-left tube; row H empty.
+  const { tools } = await setup({ readPhoto: async () => readingOf(allCells(([, r]) => r < 7), { text: 'FK00274230', at: [0, -0.95], corner: [0, 0] }) });
+  const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
+  assert.equal(read.orientation.a1, 'proven by the tube IDs');
+  assert.equal(read.wells.A1, 'FS50849233');
+  assert.equal(read.wells.G12, 'FS50849327');
+  assert.deepEqual(read.missing.map(m => m.well).sort(), Array.from({ length: 12 }, (_, k) => `H${k + 1}`).sort());
+});
