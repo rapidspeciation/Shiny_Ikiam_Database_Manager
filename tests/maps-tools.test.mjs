@@ -84,11 +84,12 @@ const seed = {
     ['CAM000003', 'Oleria onega', 'lota', 'male', 'Tena', 'Ecuador', ''],
     ['CAM000004', 'Oleria onega', '', 'female', 'Mindo', 'Ecuador', '1450'],
     ['CAM000005', 'Mechanitis menapis', '', 'male', 'Mindo', 'Ecuador', '1460'],
+    ['CAM000007', 'Mechanitis menapis', '', 'male', 'Mindo', 'Ecuador', 'NA'],
   ].map(([cam, SPECIES, Subspecies_Form, Sex, Collection_location, Country, ELEVATION], i) => ({
     row: i + 2,
     values: { CAM_ID: cam, SPECIES, Subspecies_Form, Sex, Collection_location, Country, ELEVATION, Release_Collect: 'Collected_Preserved' },
   })),
-  Photo_links: ['CAM000001d', 'CAM000001v', 'CAM000002d', 'CAM000004v', 'CAM000005d', 'CAM000005d2'].map((name, i) => ({
+  Photo_links: ['CAM000001d', 'CAM000001v', 'CAM000002d', 'CAM000004v', 'CAM000005d', 'CAM000005d2', 'CAM000007d'].map((name, i) => ({
     row: i + 2,
     values: { Name: `${name}.JPG`, Type: 'File', URL: `https://drive.google.com/file/d/1${name.padEnd(30, 'x')}/view` },
   })),
@@ -147,7 +148,12 @@ test('maps_localities: sites ranked by records, Dore cells apart, synonyms, link
   const colombia = await tools.run('maps_localities', { taxa: ['Oleria'], country: ['colombia'] });
   assert.deepEqual(colombia.taxa.genus, ['Oleria']);
   assert.deepEqual(colombia.sites.map(s => s.site), ['Bogotá']);
-  assert.match(colombia.map, /genus=Oleria/);
+  // The maps' own spelling of the country.
+  assert.match(colombia.map, /genus=Oleria&source=.*&country=Colombia&/);
+  // A genus with a species: the app ANDs those filters, so the genus goes as its species.
+  const mixed = await tools.run('maps_localities', { taxa: ['Oleria', 'Mechanitis menapis'] });
+  assert.doesNotMatch(mixed.map, /genus=/);
+  assert.match(mixed.map, /sp=Mechanitis%20menapis%2COleria%20onega&/);
 });
 
 test('maps_localities by elevation: the workbook for the project\'s records, the DEM for the rest', async () => {
@@ -184,6 +190,7 @@ test('maps_species: a region is needed; taxa by records', async () => {
   assert.equal(out.unidentified_records, 1);
   assert.equal(out.taxa[0].last_year, 2024);
   assert.match(out.map, /sp=Oleria%20onega%2CMechanitis%20menapis/);
+  assert.match(out.taxa[1].map, /sp=Mechanitis%20menapis&source=/);
 });
 
 test('host_plants: a species with its subspecies\' rows, confidence, sources; a plant\'s butterflies', async () => {
@@ -224,6 +231,8 @@ test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; noth
   assert.equal(mindo.specimens[0].photos.dorsal.name, 'CAM000005d.JPG');
   assert.equal(mindo.specimens[1].photos.dorsal, null);
 
+  // "NA" is no elevation, not 0 m.
+  assert.equal((await tools.run('gallery_specimens', { genus: ['Mechanitis'], elevation_max: 100 })).found, 0);
   const byId = (await tools.run('gallery_specimens', { cam_ids: ['cam000001'], thumbnails: 1 }));
   assert.equal(byId.markdown.match(/!\[/g).length, 2);
   assert.match((await tools.run('gallery_specimens', {})).error, /at least one/);

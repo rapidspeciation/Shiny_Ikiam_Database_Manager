@@ -145,8 +145,9 @@ export const fold = v =>
     .toLowerCase()
     .replace(/\s+/g, ' ');
 const num = v => {
-  const n = Number(String(v ?? '').replace(',', '.').replace(/[^\d.+-]/g, ''));
-  return text(v) !== '' && Number.isFinite(n) ? n : null;
+  const s = String(v ?? '').replace(',', '.').replace(/[^\d.+-]/g, '');
+  const n = Number(s);
+  return /\d/.test(s) && Number.isFinite(n) ? n : null;
 };
 const clamp = (v, low, high, fallback) => (Number.isFinite(Number(v)) ? Math.min(high, Math.max(low, Math.round(Number(v)))) : fallback);
 const list = v => (Array.isArray(v) ? v : v === undefined || v === null || v === '' ? [] : [v]).map(text).filter(Boolean);
@@ -184,6 +185,12 @@ function km(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(h));
 }
+
+/** The countries asked, as the records spell them (the maps app compares them exactly). */
+const countriesIn = (asked, records) => {
+  const wanted = new Set(list(asked).map(fold));
+  return [...new Set(records.filter(r => wanted.has(fold(r.country))).map(r => r.country))];
+};
 
 /** The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's), `map_view`. */
 export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], view = null } = {}, base = MAPS_URL) {
@@ -527,7 +534,14 @@ export function createMapsTools({
     const ranked = [...sites.values()]
       .map(s => ({ ...s, lat: s.lat / s.n, lng: s.lng / s.n }))
       .sort((a, b) => b.n - a.n || b.years.size - a.years.size);
-    const urlTaxa = { species: taxa.species, subspecies: taxa.subspecies, genus: taxa.genus, sources };
+    // The app ANDs its genus and species filters: a genus asked with species is given as its species.
+    const mixed = taxa.genus.length && taxa.species.length;
+    const urlTaxa = {
+      species: mixed ? [...new Set([...taxa.species, ...ofTaxa.filter(r => taxa.genus.includes(r.genus)).map(r => r.name)])] : taxa.species,
+      subspecies: taxa.subspecies,
+      genus: mixed ? [] : taxa.genus,
+      sources,
+    };
     const shown = ranked.slice(0, limit).map((s, i) => {
       const years = [...s.years].sort();
       return {
@@ -558,7 +572,7 @@ export function createMapsTools({
       sites_total: ranked.length,
       sites: shown,
       ...(cells.length ? { grid_cells: { note: 'Dore et al. (2022): 0.25° cells, not collecting sites', cells: cells.length, top: cells.slice(0, 5).map(c => ({ lat: c.lat, lng: c.lng, country: c.country, records: c.records })) } } : {}),
-      map: mapsUrl({ ...urlTaxa, country: list(args.country), view }, mapsBase),
+      map: mapsUrl({ ...urlTaxa, country: countriesIn(args.country, regional), view }, mapsBase),
       freshness,
     };
   }
@@ -585,6 +599,7 @@ export function createMapsTools({
       if (r.year && (!t.last || r.year > t.last)) t.last = r.year;
     }
     const limit = clamp(args.limit, 1, 100, 30);
+    const country = countriesIn(args.country, regional);
     const ranked = [...byName].sort((a, b) => b[1].records - a[1].records);
     const view = args.near
       ? { lat: args.near.lat, lng: args.near.lng, zoom: Math.max(5, Math.min(12, Math.round(Math.log2(40000 / (Number(args.near.km) || 25))) - 1)) }
@@ -595,8 +610,9 @@ export function createMapsTools({
       records: { in_region: regional.length, kept: kept.length, ...(hasElevation(args) ? { elevation_unknown: unknown, ...(unknownPoints ? { note: `${unknownPoints} points had no DEM elevation: left out` } : {}) } : {}) },
       taxa_total: ranked.length,
       ...(unidentified ? { unidentified_records: unidentified } : {}),
-      taxa: ranked.slice(0, limit).map(([name, t]) => ({ name, records: t.records, sites: t.sites.size, by_source: Object.fromEntries(t.sources), last_year: t.last })),
-      map: mapsUrl({ species: ranked.slice(0, 20).map(([n]) => n), sources, country: list(args.country), view }, mapsBase),
+      taxa: ranked.slice(0, limit).map(([name, t]) => ({ name, records: t.records, sites: t.sites.size, by_source: Object.fromEntries(t.sources), last_year: t.last, map: mapsUrl({ species: [name], sources, country, view }, mapsBase) })),
+      map: mapsUrl({ species: ranked.slice(0, 20).map(([n]) => n), sources, country, view }, mapsBase),
+      map_note: 'The region\'s map holds the first 20 taxa; each taxon has its own link.',
       freshness,
     };
   }
