@@ -1,7 +1,10 @@
 // Read-only tools on the project's public sites (docs/assistant-tools-maps-gallery.md):
 //   maps_localities    places with the most records of some taxa (the maps' occurrence records), with map links
 //   maps_species       the taxa recorded in a region
-//   host_plants        host plants of a butterfly, or the Ithomiini on a plant, with their sources
+//   host_plants        host plants of a butterfly, or the Ithomiini on a plant, with their sources; with an area, where
+//                      each host plant grows there (the maps' GBIF plant records), its photos and a map link
+//   host_plant_sites   where to go first for some host plants near a point: the project's collection localities (or grid
+//                      cells) ranked by the plant records around them, weighted by distance
 //   gallery_specimens  collection specimens with wing photos (the workbook and Photo_links), gallery links, photos
 //                      with wing and envelope crops, and the models' readings stored for them (labelled model output)
 // The maps' data files are read over HTTPS from the published site, at most every 6 hours (and parsed again only
@@ -9,6 +12,7 @@
 // written anywhere.
 
 import { driveIdOf, specimenName } from './photo-links.mjs';
+import { COAST_TOLERANCE_DEG, countryOfPoint, inBox } from './country-outlines.mjs';
 import { unreliableFor } from './sex-check.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
@@ -31,6 +35,20 @@ const DEM_POINTS = 1000;
 const DEM_BATCH = 100;
 const CONFIDENCE = { low: 1, medium: 2, high: 3 };
 const URL_CAMS = 150;
+// Host plants with an area: at most this many plants, gallery pages read per plant, and the named places a site's
+// name may come from (km).
+const PLANT_MAX = 12;
+const PHOTO_PAGES = 4;
+const PLACE_KM = 10;
+const PLACE_SOURCES = ['sanger', 'gbif_unam', 'gbif_other', 'inaturalist'];
+// Site scores: plant records within these distances (km), the kernel's reach, photo pages read per plant for the
+// photos nearest a site, and how many sites get photos.
+const SCORE_RINGS = [2, 5, 10];
+const KERNEL_KM = 10;
+const NEAR_PAGES = 10;
+const PHOTO_SITES = 3;
+/** A record's weight in a site's score: quartic kernel, 1 at the site, 0 at KERNEL_KM (0.85 at 2 km, 0.56 at 5 km). */
+export const kernel = d => (d >= KERNEL_KM ? 0 : (1 - (d / KERNEL_KM) ** 2) ** 2);
 
 const region = {
   country: { type: 'array', items: { type: 'string' } },
@@ -90,10 +108,11 @@ export const MAPS_TOOLS = [
     function: {
       name: 'host_plants',
       description: [
-        "Host plants of Ithomiini from the maps' literature review (Beccaloni et al. 2008 catalogue and direct observations), each with its source.",
+        "Host plants of Ithomiini from the maps' literature review (Beccaloni et al. 2008 catalogue and direct observations), each with its source; with an area, also where each host plant grows there, its photos and a map link. One call answers \"photos of X's host plants in Ecuador\" or \"a map of X's host plants\": use it before any outside API (GBIF, iNaturalist).",
         '- `butterfly`: a species, subspecies or genus: its host plants. Or `plant`: a plant family, genus or species: the Ithomiini recorded on it.',
         '- `min_confidence`: low, medium (default) or high. `include_unchecked`: also the rows the review marked needs_check.',
-        'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little.',
+        "- Area (optional): `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
+        'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -102,7 +121,42 @@ export const MAPS_TOOLS = [
           plant: { type: 'string' },
           min_confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
           include_unchecked: { type: 'boolean' },
+          country: region.country,
+          bbox: region.bbox,
+          near: region.near,
+          records: { type: 'boolean' },
+          photos: { type: 'integer' },
+          site_km: { type: 'number' },
+          limit: { type: 'integer' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'host_plant_sites',
+      description: [
+        "Where to go first to collect a butterfly's host plants (or a plant) near a point: the project's own collection localities (the Sanger records' localities in the maps), or grid cells, ranked by the host plants' GBIF records around each, weighted by distance. For \"near Ikiam (-0.95, -77.86), which site first for X's host plants?\" or \"where around here?\".",
+        '- `butterfly` or `plant`, `min_confidence`, `include_unchecked` as in host_plants. `near` {lat, lng, km} (required): the sites within `km` (default 25, at most 100) of the point.',
+        '- `rank`: `localities` (default) or `grid` (cells of `cell_km`, default 1.5, named after the nearest named place). `limit` (default 8, at most 20). `photos` (default 2, at most 4): the plant photos nearest each of the first 3 sites, as `markdown` thumbnails with credit.',
+        "Per site: `score` (each plant record within 10 km weighs (1 - (d/10)²)²: 1 at the site, 0.56 at 5 km), records within 2, 5 and 10 km, the plants there, the nearest record (plant, km, year), the years of the records, the elevation, the project's records of the butterfly there. `map_url`: the Wings Atlas on the first site with the host-plant layer on.",
+        'Say in the answer: GBIF and iNaturalist records follow roads, stations and observers, so a high score can mean a well-sampled place rather than more plants (give the records and years behind each score); a plant record is not evidence that the butterfly uses the plant there.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          butterfly: { type: 'string' },
+          plant: { type: 'string' },
+          min_confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+          include_unchecked: { type: 'boolean' },
+          near: region.near,
+          rank: { type: 'string', enum: ['localities', 'grid'] },
+          cell_km: { type: 'number' },
+          limit: { type: 'integer' },
+          photos: { type: 'integer' },
+        },
+        required: ['near'],
       },
     },
   },
@@ -195,14 +249,22 @@ const countriesIn = (asked, records) => {
   return [...new Set(list(asked).map(c => spelled.get(fold(c)) ?? c))];
 };
 
-/** The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's), `map_view`. */
-export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], view = null } = {}, base = MAPS_URL) {
+/**
+ * The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's),
+ * `country`, `map_view`; `hostPlants` {butterflies, taxa (slugs), levels, evidence}: the host-plant layer on
+ * (`hp_bf`, `hp_taxa`, `hp_level`, `hp_evidence`; ithomiini_maps docs/host-plant-links.md).
+ */
+export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], view = null, hostPlants = null } = {}, base = MAPS_URL) {
   const params = new URLSearchParams();
   if (genus.length) params.set('genus', genus.join(','));
   if (species.length) params.set('sp', species.join(','));
   if (subspecies.length) params.set('ssp', subspecies.join(','));
   params.set('source', sources.map(k => SOURCES[k]).join(','));
   if (country.length) params.set('country', country.join(','));
+  if (hostPlants?.butterflies?.length) params.set('hp_bf', hostPlants.butterflies.join(','));
+  if (hostPlants?.taxa?.length) params.set('hp_taxa', hostPlants.taxa.join(','));
+  if (hostPlants?.levels?.length) params.set('hp_level', hostPlants.levels.join(','));
+  if (hostPlants?.evidence?.length) params.set('hp_evidence', hostPlants.evidence.join(','));
   if (view) params.set('map_view', [view.lng.toFixed(5), view.lat.toFixed(5), view.zoom.toFixed(2)].join(','));
   return `${base}?${params.toString().replace(/\+/g, '%20')}`;
 }
@@ -838,7 +900,322 @@ export function createMapsTools({
     };
   }
 
-  async function hostPlants(args) {
+
+  // Host plants in an area: the maps' plant layers (data/host_plants/, ithomiini_maps docs/host-plant-links.md).
+  // Each taxon's refs file names the records it has in the 24 occurrence chunks; only the chunks a call needs are
+  // read, each kept as typed arrays (about 0.4 MB for its 20,000 records).
+  const HP = 'host_plants/';
+  const plantLayers = () =>
+    remote(`${HP}host_plant_layers_manifest.json`, json => {
+      const m = json?.metadata ?? {};
+      return {
+        generated_at: m.generated_at ?? null,
+        refs: m.occurrence_refs_by_taxon ?? {},
+        galleries: m.gallery_indexes_by_taxon ?? {},
+        caveat: text(m.scientific_caveat) || null,
+        taxa: new Map(
+          (json?.taxa ?? []).map(t => [
+            t.slug,
+            { slug: t.slug, name: text(t.canonical_name), rank: t.rank, family: t.family ?? null, gbif_name: text(t.gbif_resolution?.canonical_name) || null },
+          ]),
+        ),
+      };
+    });
+  const outlines = () => remote('country_boundaries.json', json => ({ ...json, countries: json?.countries ?? [] }));
+  const plantRefs = path => remote(`${HP}${path}`, json => ({ total: json?.metadata?.total_records ?? null, chunks: Object.entries(json?.chunks ?? {}) }));
+  const plantChunk = path =>
+    remote(`${HP}${path}`, json => {
+      const records = json?.records ?? [];
+      const n = records.length;
+      const out = { lat: new Float64Array(n), lng: new Float64Array(n), year: new Int16Array(n), basis: new Array(n) };
+      records.forEach((r, i) => {
+        const [lat, lng] = [Number(r?.lat), Number(r?.lng)];
+        out.lat[i] = Number.isFinite(lat) ? lat : NaN;
+        out.lng[i] = Number.isFinite(lng) ? lng : NaN;
+        out.year[i] = yearOf(r?.eventDate) ?? 0;
+        out.basis[i] = intern(text(r?.basisOfRecord).toLowerCase());
+      });
+      return out;
+    });
+  const galleryIndex = path => remote(`${HP}${path}`, json => ({ total: json?.total_images ?? 0, pages: json?.pages ?? [] }));
+  const galleryPage = path =>
+    remote(`${HP}${path}`, json =>
+      (json?.items ?? [])
+        .filter(p => /^https:\/\//.test(text(p?.image_url)))
+        .map(p => ({
+          img: text(p.image_url),
+          record: text(p.observation_url) || null,
+          lat: Number(p.lat),
+          lng: Number(p.lng),
+          year: yearOf(p.observation_date),
+          field: p.photo_context === 'field',
+          source: intern(text(p.source)),
+        })),
+    );
+
+  /** The area asked of the plant records: { test(lng, lat), countries, unknown, bbox, near }, null for none, or { error }. */
+  async function plantArea(args) {
+    const asked = list(args.country);
+    const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox : null;
+    const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Number(args.near.km) || 25 } : null;
+    if (!asked.length && !bbox && !near) return null;
+    let o = null;
+    const countries = [];
+    const unknown = [];
+    if (asked.length) {
+      o = (await outlines()).value;
+      const byName = new Map(o.countries.map(c => [fold(c.name), c]));
+      for (const c of asked) (byName.has(fold(c)) ? countries.push(byName.get(fold(c)).name) : unknown.push(c));
+      if (!countries.length) return { error: `The country outlines do not know ${unknown.join(', ')}: give a country of the Americas as the maps spell it (Ecuador, Peru, Costa Rica…).` };
+    }
+    const wanted = new Set(countries);
+    const boxes = o ? o.countries.filter(c => wanted.has(c.name)).map(c => c.bbox) : [];
+    const test = (lng, lat) => {
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+      if (bbox && (lng < bbox[0] || lat < bbox[1] || lng > bbox[2] || lat > bbox[3])) return false;
+      if (near && km(near, { lat, lng }) > near.km) return false;
+      if (!wanted.size) return true;
+      // Cheap reject first: outside every asked country's box (with the coast margin).
+      return boxes.some(b => inBox(lng, lat, b, COAST_TOLERANCE_DEG)) && wanted.has(countryOfPoint(lng, lat, o));
+    };
+    return { test, countries, unknown, bbox, near, outlines: o };
+  }
+
+  /** The named places of the maps' butterfly records (not Dore et al.'s grid cells), on a 0.1° grid; built once per file. */
+  const placeGrids = new WeakMap();
+  async function namedPlaces() {
+    const { value: m } = await manifest();
+    const grids = [];
+    for (const key of PLACE_SOURCES) {
+      const file = m.sources?.[SOURCES[key]]?.file;
+      if (!file) continue;
+      const { value } = await remote(file, json => (Array.isArray(json) ? json : []).map(p => compactPoint(p, intern)).filter(Boolean));
+      if (!placeGrids.has(value)) {
+        const grid = new Map();
+        for (const r of value) {
+          if (!r.place || /^(na|unknown|-)$/i.test(r.place)) continue;
+          const cell = `${Math.floor(r.lat * 10)}:${Math.floor(r.lng * 10)}`;
+          (grid.get(cell) ?? grid.set(cell, []).get(cell)).push(r);
+        }
+        placeGrids.set(value, grid);
+      }
+      grids.push(placeGrids.get(value));
+    }
+    /** The nearest named place within PLACE_KM: "Tena, Hollín (2.1 km)", or null. */
+    return point => {
+      let best = null;
+      const [row, col] = [Math.floor(point.lat * 10), Math.floor(point.lng * 10)];
+      for (const grid of grids)
+        for (let dr = -1; dr <= 1; dr++)
+          for (let dc = -1; dc <= 1; dc++)
+            for (const r of grid.get(`${row + dr}:${col + dc}`) ?? []) {
+              const d = km(point, r);
+              if (d <= PLACE_KM && (!best || d < best.d)) best = { d, r };
+            }
+      if (!best) return null;
+      const { place, country } = best.r;
+      const named = country && !fold(place).includes(fold(country)) ? `${place}, ${country}` : place;
+      return `${named} (${best.d < 1 ? '<1' : Math.round(best.d)} km)`;
+    };
+  }
+
+  /** Records on a grid of `siteKm` cells, busiest first: { lat, lng, n, years, plants, keys }. */
+  function plantSites(points, siteKm) {
+    const deg = siteKm / 111;
+    const sites = new Map();
+    for (const p of points) {
+      const row = Math.floor(p.lat / deg);
+      const key = `${row}:${Math.floor(p.lng / (deg / Math.max(0.2, Math.cos(((row + 0.5) * deg * Math.PI) / 180))))}`;
+      const s = sites.get(key) ?? sites.set(key, { n: 0, lat: 0, lng: 0, years: new Set(), plants: new Map() }).get(key);
+      s.n++;
+      s.lat += p.lat;
+      s.lng += p.lng;
+      if (p.year) s.years.add(p.year);
+      for (const name of p.plants) count(s.plants, name);
+    }
+    return [...sites.values()]
+      .map(s => ({ ...s, lat: s.lat / s.n, lng: s.lng / s.n }))
+      .sort((a, b) => b.n - a.n || b.years.size - a.years.size);
+  }
+  const yearsOf = set => {
+    const y = [...set].sort();
+    return y.length ? { first: y[0], last: y.at(-1), distinct: y.length } : null;
+  };
+  const thumbOf = img => `https://wsrv.nl/?url=${encodeURIComponent(img.replace(/(inaturalist-open-data\.s3\.amazonaws\.com\/photos\/\d+\/)original\./, '$1medium.'))}&w=240&h=180&fit=cover&output=jpg`;
+
+  /** A plant's photos, those taken in the area first (field photos before herbarium sheets), then elsewhere. */
+  async function plantPhotos(path, area, want) {
+    if (!path || want <= 0) return [];
+    const index = (await galleryIndex(path)).value;
+    const here = [];
+    const away = [];
+    for (const page of index.pages.slice(0, PHOTO_PAGES)) {
+      for (const p of (await galleryPage(page)).value) (!area || area.test(p.lng, p.lat) ? here : away).push(p);
+      if (here.filter(p => p.field).length >= want) break;
+    }
+    // Field photos first; one photo per GBIF record before a second of the same record.
+    const ordered = [...here.sort((a, b) => b.field - a.field), ...away.sort((a, b) => b.field - a.field).map(p => ({ ...p, away: true }))];
+    const seen = new Set();
+    const first = ordered.filter(p => !p.record || (!seen.has(p.record) && seen.add(p.record)));
+    return [...first, ...ordered.filter(p => !first.includes(p))].slice(0, want);
+  }
+
+  /**
+   * Where the host plants of `kept` grow in the area: per plant its records, years, top sites; the best sites of the
+   * species-level hosts together; their photos as Markdown; the maps link with the host-plant layer on.
+   */
+  /**
+   * The host plants of `kept` (ranked associations) with records layers, their refs and the chunks those name:
+   * { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks }. `mapped`: the plants that make sites,
+   * photos and the map (species-level hosts; genus-level ones only when there are none, or that genus was asked).
+   */
+  async function hostPlantLayers(kept, args) {
+    const { value: m, modified } = await plantLayers();
+    // The plants in the order the associations were ranked (observed, species-level first).
+    const bySlug = new Map();
+    for (const a of kept) {
+      const slug = text(a.host_taxon_slug);
+      if (!slug) continue;
+      const e = bySlug.get(slug) ?? bySlug.set(slug, { slug, butterflies: new Set(), evidence: new Set(), confidence: 0 }).get(slug);
+      e.butterflies.add(text(a.butterfly_taxon).split(' ').slice(0, 2).join(' '));
+      e.evidence.add(a.evidence_level);
+      e.confidence = Math.max(e.confidence, CONFIDENCE[a.confidence] ?? 0);
+    }
+    const all = [...bySlug.values()].map(e => ({ ...e, taxon: m.taxa.get(e.slug) ?? { slug: e.slug, name: e.slug, rank: null } }));
+    const withRecords = all.filter(e => m.refs[e.slug] && ['species', 'genus'].includes(e.taxon.rank));
+    const withoutRecords = all.filter(e => !withRecords.includes(e)).map(e => e.taxon.name);
+    const shown = withRecords.slice(0, PLANT_MAX);
+    // Species-level hosts make the sites, photos and map; genus-level ones only when there are none, or that genus was asked.
+    const genusAsked = shown.some(e => e.taxon.rank === 'genus' && fold(e.taxon.name) === fold(args.plant));
+    const mapped = shown.some(e => e.taxon.rank === 'species') ? shown.filter(e => e.taxon.rank === 'species' || genusAsked) : shown;
+    const refs = await Promise.all(shown.map(e => plantRefs(m.refs[e.slug]).then(r => r.value)));
+    const chunks = new Map();
+    await Promise.all([...new Set(refs.flatMap(r => r.chunks.map(([c]) => c)))].map(async c => chunks.set(c, (await plantChunk(c)).value)));
+    return { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks };
+  }
+
+  /** The maps link's filters for these plants: the butterflies asked, the host-plant layer with the mapped plants. */
+  function plantUrlTaxa(shown, mapped, asked, country = []) {
+    const evidence = [...new Set(mapped.flatMap(e => [...e.evidence]))].filter(Boolean);
+    const levels = [...new Set(mapped.map(e => e.taxon.rank))];
+    const butterflies = [...new Set(shown.flatMap(e => [...e.butterflies]))].filter(Boolean);
+    const asButterfly = !!asked.butterfly;
+    return {
+      species: asButterfly && fold(asked.butterfly).split(' ').length > 1 ? butterflies.slice(0, 10) : [],
+      genus: asButterfly && fold(asked.butterfly).split(' ').length === 1 ? [butterflies[0]?.split(' ')[0]].filter(Boolean) : [],
+      sources: SOURCE_KEYS.filter(k => k !== 'dore'),
+      country,
+      hostPlants: {
+        butterflies: asButterfly ? butterflies.slice(0, 10) : [],
+        taxa: mapped.map(e => e.slug),
+        levels: levels.length === 1 && levels[0] === 'species' ? [] : levels,
+        evidence: evidence.length === 2 && evidence.includes('direct') && evidence.includes('literature') ? [] : evidence,
+      },
+    };
+  }
+
+  async function plantsInArea(kept, args, area, asked) {
+    const { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks } = await hostPlantLayers(kept, args);
+    const siteKm = Math.min(50, Math.max(0.5, Number(args.site_km) || 5));
+    const points = new Map();
+    const plants = shown.map((e, i) => {
+      const own = [];
+      const years = new Set();
+      const basis = new Map();
+      for (const [c, indexes] of refs[i].chunks) {
+        const chunk = chunks.get(c);
+        for (const j of indexes ?? []) {
+          const [lat, lng] = [chunk.lat[j], chunk.lng[j]];
+          if (lat === undefined || (area && !area.test(lng, lat))) continue;
+          const key = `${c}:${j}`;
+          const p = points.get(key) ?? { lat, lng, year: chunk.year[j] || null, plants: new Set() };
+          own.push(p);
+          if (mapped.includes(e)) {
+            p.plants.add(e.taxon.name);
+            points.set(key, p);
+          }
+          if (p.year) years.add(p.year);
+          count(basis, chunk.basis[j] || 'unknown');
+        }
+      }
+      return { e, own, years, basis };
+    });
+    const named = await namedPlaces().catch(() => () => null);
+    const sitesAll = plantSites([...points.values()], siteKm);
+    const limit = clamp(args.limit, 1, 30, 8);
+    const urlTaxa = plantUrlTaxa(shown, mapped, asked, area?.countries ?? []);
+    const view = area?.near
+      ? { lat: area.near.lat, lng: area.near.lng, zoom: Math.max(5, Math.min(12, Math.round(Math.log2(40000 / area.near.km)) - 1)) }
+      : sitesAll.length
+        ? viewOf(sitesAll)
+        : area?.bbox
+          ? viewOf([{ lat: area.bbox[1], lng: area.bbox[0] }, { lat: area.bbox[3], lng: area.bbox[2] }])
+          : null;
+    const where = area ? (area.countries.length ? area.countries.join(', ') : area.near ? `${area.near.km} km around ${area.near.lat}, ${area.near.lng}` : 'the box asked') : 'their whole range';
+    const want = clamp(args.photos, 0, 6, 3);
+    const photos = await Promise.all(
+      plants.map(({ e, own }) => (mapped.includes(e) && own.length ? plantPhotos(m.galleries[e.slug], area, want) : [])),
+    );
+    const placeOf = p => (area?.outlines ? countryOfPoint(p.lng, p.lat, area.outlines) : null) ?? `${p.lat.toFixed(2)}, ${p.lng.toFixed(2)}`;
+    const markdown = plants
+      .map(({ e, own, years }, i) => {
+        if (!photos[i].length) return null;
+        const y = yearsOf(years);
+        const gbif = e.taxon.gbif_name && e.taxon.gbif_name !== e.taxon.name ? ` (GBIF: ${e.taxon.gbif_name})` : '';
+        const head = `**${e.taxon.name}**${gbif}: ${own.length} record${own.length === 1 ? '' : 's'} in ${where}${y ? `, ${y.first}–${y.last}` : ''}`;
+        const thumbs = photos[i].map(p => `[![${e.taxon.name}${p.year ? ` ${p.year}` : ''}${p.away ? `, ${placeOf(p)}` : ''}](${thumbOf(p.img)})](${p.img})`).join(' ');
+        const credit = `Photos (GBIF records): ${photos[i].map((p, k) => (p.record ? `[${k + 1}](${p.record})` : `${k + 1}`)).join(' ')}; from ${[...new Set(photos[i].map(p => p.source))].join('; ')}. Licence and author on each record's page.${photos[i].some(p => p.away) ? ` Some photos are from outside ${where} (their place in the caption).` : ''}`;
+        return [head, thumbs, credit].join('  \n');
+      })
+      .filter(Boolean)
+      .join('\n\n');
+    return {
+      area: {
+        where,
+        ...(area?.unknown.length ? { countries_not_known: area.unknown } : {}),
+        ...(area?.bbox ? { bbox: area.bbox, bbox_note: 'The map link frames the box; the maps app limits plant records by country, not by this box.' } : {}),
+      },
+      plants: plants.map(({ e, own, years, basis }, i) => ({
+        plant: e.taxon.name,
+        ...(e.taxon.gbif_name && e.taxon.gbif_name !== e.taxon.name ? { gbif_name: e.taxon.gbif_name } : {}),
+        rank: e.taxon.rank,
+        host_of: [...e.butterflies],
+        evidence: [...e.evidence].join(', '),
+        records: own.length,
+        records_total: refs[i].total,
+        years: yearsOf(years),
+        by_basis: Object.fromEntries([...basis].sort((a, b) => b[1] - a[1])),
+        ...(own.length
+          ? {
+              top_sites: plantSites(own.map(p => ({ ...p, plants: [] })), siteKm)
+                .slice(0, 3)
+                .map(s => ({ lat: round(s.lat, 4), lng: round(s.lng, 4), records: s.n, years: yearsOf(s.years), near: named(s) })),
+            }
+          : {}),
+        ...(mapped.includes(e) ? {} : { note: 'genus-level host: its records are of any species of the genus; not in `sites` or the map link' }),
+      })),
+      ...(withoutRecords.length ? { plants_without_records: withoutRecords } : {}),
+      ...(withRecords.length > shown.length ? { plants_left_out: withRecords.slice(PLANT_MAX).map(e => e.taxon.name) } : {}),
+      sites_total: sitesAll.length,
+      sites: sitesAll.slice(0, limit).map((s, i) => ({
+        rank: i + 1,
+        lat: round(s.lat, 4),
+        lng: round(s.lng, 4),
+        near: named(s),
+        records: s.n,
+        plants: Object.fromEntries([...s.plants].sort((a, b) => b[1] - a[1])),
+        years: yearsOf(s.years),
+        map: mapsUrl({ ...urlTaxa, view: { lat: s.lat, lng: s.lng, zoom: siteKm <= 3 ? 12 : 11 } }, mapsBase),
+      })),
+      map_url: mapsUrl({ ...urlTaxa, view }, mapsBase),
+      markdown,
+      records_note: `Plant records: the maps' GBIF occurrences of each plant (generated ${text(m.generated_at).slice(0, 10) || 'date unknown'}), placed in a country by their coordinates (Natural Earth 1:50m outlines: a record within a few km of a border can fall on the wrong side). They show where the plant has been collected or photographed, not that the butterfly uses it there. ${m.caveat ?? ''}`.trim(),
+      plant_data: { manifest: new URL(`data/${HP}host_plant_layers_manifest.json`, mapsBase).href, modified: modified ?? null },
+    };
+  }
+
+  /** The associations asked (`butterfly` or `plant`, confidence): { got, matched, kept, okConfidence, rank, butterfly } or { error }. */
+  async function associationsFor(args) {
     const butterfly = fold(args.butterfly);
     const plant = fold(args.plant);
     if (!butterfly && !plant) return { error: 'Name a `butterfly` or a `plant`.' };
@@ -856,14 +1233,200 @@ export function createMapsTools({
     };
     const ofPlant = a => [a.host_plant_family, a.host_plant_genus, a.host_plant_species, a.host_taxon_name].some(v => fold(v) === plant);
     const matched = all.filter(a => (butterfly ? ofButterfly(a) : true) && (plant ? ofPlant(a) : true));
-    const kept = matched.filter(okConfidence);
+    // Direct observations and species-level hosts first.
+    const rank = a => (a.evidence_level === 'direct' ? 0 : 2) + (a.host_id_level === 'species' ? 0 : 1) - (CONFIDENCE[a.confidence] ?? 0) / 10;
+    const kept = matched.filter(okConfidence).sort((a, b) => rank(a) - rank(b));
+    return { got, matched, kept, okConfidence, butterfly };
+  }
+
+  /** Every photo of these plants in their first NEAR_PAGES gallery pages (field and herbarium), with its plant. */
+  async function plantGallery(plants, m) {
+    const out = [];
+    await Promise.all(
+      plants.map(async e => {
+        const path = m.galleries[e.slug];
+        if (!path) return;
+        const index = (await galleryIndex(path)).value;
+        const pages = await Promise.all(index.pages.slice(0, NEAR_PAGES).map(page => galleryPage(page).then(r => r.value)));
+        for (const p of pages.flat()) if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) out.push({ ...p, plant: e.taxon.name });
+      }),
+    );
+    return out;
+  }
+
+  /**
+   * The sites near a point ranked for collecting the host plants asked: the project's collection localities, or
+   * grid cells, each scored by the plant records around it (kernel()), with photos of the records nearest it.
+   */
+  async function plantSitesNear(args) {
+    const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Math.min(100, Math.max(1, Number(args.near.km) || 25)) } : null;
+    if (!near) return { error: 'Give `near` {lat, lng, km}: the point to start from (Ikiam is about -0.95, -77.86).' };
+    const found = await associationsFor(args);
+    if (found.error) return found;
+    const { m, shown, mapped, withoutRecords, refs, chunks } = await hostPlantLayers(found.kept, args);
+    if (!mapped.length) return { error: 'None of these host plants has a records layer on the maps.', ...(withoutRecords.length ? { plants_without_records: withoutRecords } : {}) };
+    // The mapped plants' records that can count for a site within near.km: one per GBIF record (synonymous plants share it).
+    const reach = near.km + KERNEL_KM;
+    const records = new Map();
+    shown.forEach((e, i) => {
+      if (!mapped.includes(e)) return;
+      for (const [c, indexes] of refs[i].chunks) {
+        const chunk = chunks.get(c);
+        for (const j of indexes ?? []) {
+          const [lat, lng] = [chunk.lat[j], chunk.lng[j]];
+          if (!Number.isFinite(lat) || km(near, { lat, lng }) > reach) continue;
+          const key = `${c}:${j}`;
+          const r = records.get(key) ?? records.set(key, { lat, lng, year: chunk.year[j] || null, plants: new Set() }).get(key);
+          r.plants.add(e.taxon.name);
+        }
+      }
+    });
+    const plantRecords = [...records.values()];
+    const scoreAt = site => {
+      const out = { score: 0, rings: SCORE_RINGS.map(() => 0), plants: new Map(), years: [], undated: 0, nearest: null };
+      for (const r of plantRecords) {
+        const d = km(site, r);
+        if (!out.nearest || d < out.nearest.d) out.nearest = { d, r };
+        if (d >= KERNEL_KM) continue;
+        out.score += kernel(d);
+        SCORE_RINGS.forEach((ring, k) => d <= ring && out.rings[k]++);
+        for (const name of r.plants) count(out.plants, name);
+        if (r.year) out.years.push(r.year);
+        else out.undated++;
+      }
+      return out;
+    };
+    const asked = { butterfly: args.butterfly, plant: args.plant };
+    const words = fold(args.butterfly).split(' ').filter(Boolean);
+    const isButterfly = r => (words.length === 1 ? fold(r.genus) === words[0] : words.length > 1 && fold(r.name) === words.slice(0, 2).join(' '));
+    const mode = args.rank === 'grid' ? 'grid' : 'localities';
+    let candidates;
+    if (mode === 'localities') {
+      // The project's localities: its Sanger records in the maps, by locality name, split where its records are over ~5 km apart.
+      const { records: own } = await points(['sanger']);
+      const { elevation } = collection();
+      const byPlace = new Map();
+      for (const r of own) {
+        if (!r.place || /^(na|unknown|-)$/i.test(r.place)) continue;
+        const key = `${fold(r.place)}|${Math.round(r.lat / 0.05)}|${Math.round(r.lng / 0.05)}`;
+        (byPlace.get(key) ?? byPlace.set(key, []).get(key)).push(r);
+      }
+      candidates = [...byPlace.values()]
+        .map(rs => {
+          const lat = median(rs.map(r => r.lat * 1e5)) / 1e5;
+          const lng = median(rs.map(r => r.lng * 1e5)) / 1e5;
+          const elev = rs.map(r => elevation.get(r.id.toUpperCase())).filter(v => v !== undefined);
+          const names = new Map();
+          rs.forEach(r => count(names, r.place));
+          return {
+            name: top(names),
+            lat,
+            lng,
+            ...(elev.length ? { elevation_m: median(elev), elevation_from: 'workbook' } : {}),
+            project_records: rs.length,
+            ...(words.length ? { project_records_of_butterfly: rs.filter(isButterfly).length } : {}),
+          };
+        })
+        .filter(c => km(near, c) <= near.km);
+    } else {
+      const cellKm = Math.min(5, Math.max(0.5, Number(args.cell_km) || 1.5));
+      const deg = cellKm / 111;
+      const cells = new Map();
+      for (const r of plantRecords) {
+        if (km(near, r) > near.km) continue;
+        const row = Math.floor(r.lat / deg);
+        const kLng = deg / Math.max(0.2, Math.cos(((row + 0.5) * deg * Math.PI) / 180));
+        const col = Math.floor(r.lng / kLng);
+        cells.set(`${row}:${col}`, { lat: (row + 0.5) * deg, lng: (col + 0.5) * kLng, cell_km: cellKm });
+      }
+      candidates = [...cells.values()];
+    }
+    const limit = clamp(args.limit, 1, 20, 8);
+    const scored = candidates
+      .map(c => ({ c, s: scoreAt(c), from: km(near, c) }))
+      .sort((a, b) => b.s.score - a.s.score || a.from - b.from);
+    // A site with no plant record within KERNEL_KM is counted, not listed.
+    const kept = scored.filter(x => x.s.score > 0).slice(0, limit);
+    const named = await namedPlaces().catch(() => () => null);
+    if (mode === 'grid' && kept.length) {
+      const asked = kept.map(({ c }) => ({ lat: c.lat, lng: c.lng, source: 'grid', id: '' }));
+      const { out } = await elevations(asked);
+      kept.forEach(({ c }, i) => {
+        const e = out.get(asked[i]);
+        if (e) Object.assign(c, { elevation_m: Math.round(e.m), elevation_from: 'dem' });
+      });
+    }
+    const want = clamp(args.photos, 0, 4, 2);
+    const nearPlants = mapped.filter(e => plantRecords.some(r => r.plants.has(e.taxon.name)));
+    const gallery = want && kept.length ? await plantGallery(nearPlants, m) : [];
+    const markdown = kept
+      .slice(0, PHOTO_SITES)
+      .map(({ c }, i) => {
+        const label = c.name ?? named(c) ?? `${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}`;
+        const seen = new Set();
+        const photos = gallery
+          .map(p => ({ ...p, d: km(c, p) }))
+          .sort((a, b) => a.d - b.d)
+          .filter(p => !p.record || (!seen.has(p.record) && seen.add(p.record)))
+          .slice(0, want);
+        if (!photos.length) return null;
+        const dist = d => (d < 1 ? '<1 km' : `${d < 10 ? d.toFixed(1) : Math.round(d)} km`);
+        return [
+          `**${i + 1}. ${label}**: the plant photos nearest it`,
+          photos.map(p => `[![${p.plant}${p.year ? ` ${p.year}` : ''}, ${dist(p.d)} away](${thumbOf(p.img)})](${p.img})`).join(' '),
+          `${photos.map((p, k) => `${p.record ? `[${k + 1}](${p.record})` : k + 1} ${p.plant}, ${dist(p.d)}`).join('; ')}. From ${[...new Set(photos.map(p => p.source))].join('; ')}; licence and author on each GBIF record's page.`,
+        ].join('  \n');
+      })
+      .filter(Boolean)
+      .join('\n\n');
+    const urlTaxa = plantUrlTaxa(shown, mapped, asked);
+    const sites = kept.map(({ c, s, from }, i) => {
+      const years = s.years.sort((a, b) => a - b);
+      return {
+        rank: i + 1,
+        ...(c.name ? { locality: c.name } : { near: named(c) }),
+        lat: round(c.lat, 4),
+        lng: round(c.lng, 4),
+        km_from_start: round(from, 1),
+        score: round(s.score, 1),
+        records_within_km: Object.fromEntries(SCORE_RINGS.map((ring, k) => [ring, s.rings[k]])),
+        plants_within_10_km: Object.fromEntries([...s.plants].sort((a, b) => b[1] - a[1])),
+        nearest_record: s.nearest ? { plant: [...s.nearest.r.plants].join(' / '), km: round(s.nearest.d, 1), year: s.nearest.r.year } : null,
+        record_years: years.length || s.undated ? { oldest: years[0] ?? null, newest: years.at(-1) ?? null, undated: s.undated } : null,
+        ...(c.elevation_m !== undefined ? { elevation_m: c.elevation_m, elevation_from: c.elevation_from } : {}),
+        ...(c.project_records !== undefined ? { project_records: c.project_records } : {}),
+        ...(c.project_records_of_butterfly !== undefined ? { project_records_of_butterfly: c.project_records_of_butterfly } : {}),
+        map: mapsUrl({ ...urlTaxa, view: { lat: c.lat, lng: c.lng, zoom: 12 } }, mapsBase),
+      };
+    });
+    return {
+      asked: { ...asked, near, rank: mode, min_confidence: args.min_confidence ?? 'medium' },
+      plants: mapped.map(e => e.taxon.name),
+      ...(shown.length > mapped.length ? { plants_not_scored: shown.filter(e => !mapped.includes(e)).map(e => `${e.taxon.name} (genus-level host)`) } : {}),
+      ...(withoutRecords.length ? { plants_without_records: withoutRecords } : {}),
+      plant_records_in_reach: plantRecords.length,
+      candidates: candidates.length,
+      ...(mode === 'localities' ? { localities_without_records_within_10_km: scored.filter(x => x.s.score === 0).length } : {}),
+      sites,
+      ...(sites.length ? { map_url: sites[0].map } : {}),
+      markdown,
+      method: `Score: each plant record within ${KERNEL_KM} km weighs (1 - (d/${KERNEL_KM})²)², 1 at the site, 0.85 at 2 km, 0.56 at 5 km; a GBIF record of two synonymous plants counts once. ${mode === 'localities' ? "Sites: the project's collection localities (its Sanger records in the maps; elevation from the workbook)." : 'Sites: grid cells with plant records, scored at their centre, named after the nearest named collecting place; elevation from a 90 m DEM.'} Plant records: the maps' GBIF download (generated ${text(m.generated_at).slice(0, 10) || 'date unknown'}).`,
+      caveats: [
+        'GBIF and iNaturalist records follow roads, field stations and observers: a high score can mean a well-sampled place rather than more plants. Each site gives the records and years behind its score.',
+        'A plant record shows where the plant grows, not that the butterfly uses it there.',
+      ],
+    };
+  }
+
+  async function hostPlants(args) {
+    const found = await associationsFor(args);
+    if (found.error) return found;
+    const { got, matched, kept, okConfidence, butterfly } = found;
     const groups = new Map();
     for (const a of kept) count(groups, butterfly ? a.host_plant_genus ?? `(${a.host_plant_family}, genus not given)` : a.butterfly_taxon.split(' ')[0]);
-    // Direct observations and species-level hosts first; each source's link and caveat once, in `sources`.
-    const rank = a => (a.evidence_level === 'direct' ? 0 : 2) + (a.host_id_level === 'species' ? 0 : 1) - (CONFIDENCE[a.confidence] ?? 0) / 10;
+    // Each source's link and caveat once, in `sources`.
     const sources = {};
-    const associations = [...kept]
-      .sort((a, b) => rank(a) - rank(b))
+    const associations = kept
       .map(a => {
         const citation = text(a.citation_for_ui ?? a.source_citation) || 'not given';
         sources[citation] ??= { link: a.doi_or_url ?? null, ...(a.caveats ? { caveat: text(a.caveats).slice(0, 200) } : {}) };
@@ -880,8 +1443,16 @@ export function createMapsTools({
         };
       });
     const onlyCoarse = kept.length > 0 && kept.every(a => a.host_id_level !== 'species');
+    const area = await plantArea(args);
+    if (area?.error) return area;
+    const where = area || args.records === true ? await plantsInArea(kept, args, area, { butterfly: args.butterfly, plant: args.plant }) : null;
     return {
-      asked: { butterfly: args.butterfly ?? null, plant: args.plant ?? null, min_confidence: args.min_confidence ?? 'medium' },
+      asked: {
+        butterfly: args.butterfly ?? null,
+        plant: args.plant ?? null,
+        min_confidence: args.min_confidence ?? 'medium',
+        ...(area ? { country: area.countries, bbox: area.bbox, near: area.near } : {}),
+      },
       found: kept.length,
       ...(matched.length > kept.length ? { left_out: { count: matched.length - kept.length, by_confidence: Object.fromEntries([...matched.filter(a => !okConfidence(a)).reduce((m, a) => count(m, a.confidence), new Map())]) } } : {}),
       [butterfly ? 'by_plant_genus' : 'by_butterfly_genus']: Object.fromEntries([...groups].sort((a, b) => b[1] - a[1])),
@@ -889,6 +1460,7 @@ export function createMapsTools({
       associations,
       sources,
       data: { file: new URL('data/host_plants/host_plant_associations.json', mapsBase).href, generated_at: got.value.metadata?.generated_at ?? null, modified: got.modified ?? null, policy: got.value.metadata?.excluded_policy ?? null },
+      ...(where ?? {}),
     };
   }
 
@@ -1003,6 +1575,7 @@ export function createMapsTools({
         if (name === 'maps_localities') return await localities(args);
         if (name === 'maps_species') return await species(args);
         if (name === 'host_plants') return await hostPlants(args);
+        if (name === 'host_plant_sites') return await plantSitesNear(args);
         if (name === 'gallery_specimens') return specimens(args);
       } catch (e) {
         return { error: e.message };

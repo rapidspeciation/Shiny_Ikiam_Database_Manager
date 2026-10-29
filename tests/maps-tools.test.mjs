@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { mcpTools } from '../server/assistant.mjs';
-import { MAPS_TOOL_NAMES, createMapsTools, cropUrl, dateOf, differences, galleryUrl, mapsUrl, modelOf, percent, previewUrl, specimensMarkdown, yearOf } from '../server/maps-tools.mjs';
+import { countryOfPoint } from '../server/country-outlines.mjs';
+import { MAPS_TOOL_NAMES, createMapsTools, kernel, cropUrl, dateOf, differences, galleryUrl, mapsUrl, modelOf, percent, previewUrl, specimensMarkdown, yearOf } from '../server/maps-tools.mjs';
 import { initPhotoTables } from '../server/photodata.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
@@ -50,11 +51,61 @@ const FILES = {
   'host_plants/host_plant_associations.json': {
     metadata: { generated_at: '2026-06-16T14:02:20+00:00', excluded_policy: 'confidence=exclude omitted' },
     associations: [
-      { butterfly_taxon: 'Oleria onega', host_taxon_name: 'Solanum', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: null, host_plant_name_verbatim: 'Solanum', host_id_level: 'genus', evidence_level: 'literature', confidence: 'medium', citation_for_ui: 'Beccaloni et al. 2008', doi_or_url: 'https://example.org/beccaloni', source_refs: 'Ecuador: [Drummond, 1986]' },
-      { butterfly_taxon: 'Oleria onega janarilla', host_taxon_name: 'Solanum mite', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: 'Solanum mite', host_plant_name_verbatim: 'Solanum mite', host_id_level: 'species', evidence_level: 'direct', confidence: 'high', citation_for_ui: 'Willmott & Mallet 2004', doi_or_url: 'https://doi.org/10.1/x' },
-      { butterfly_taxon: 'Oleria onega', host_taxon_name: 'Cestrum', host_plant_family: 'Solanaceae', host_plant_genus: 'Cestrum', host_plant_species: null, host_plant_name_verbatim: 'Cestrum', host_id_level: 'genus', evidence_level: 'literature', confidence: 'low', citation_for_ui: 'Beccaloni et al. 2008' },
+      { butterfly_taxon: 'Oleria onega', host_taxon_slug: 'genus_solanum', host_taxon_name: 'Solanum', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: null, host_plant_name_verbatim: 'Solanum', host_id_level: 'genus', evidence_level: 'literature', confidence: 'medium', citation_for_ui: 'Beccaloni et al. 2008', doi_or_url: 'https://example.org/beccaloni', source_refs: 'Ecuador: [Drummond, 1986]' },
+      { butterfly_taxon: 'Oleria onega janarilla', host_taxon_slug: 'species_solanum_mite', host_taxon_name: 'Solanum mite', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: 'Solanum mite', host_plant_name_verbatim: 'Solanum mite', host_id_level: 'species', evidence_level: 'direct', confidence: 'high', citation_for_ui: 'Willmott & Mallet 2004', doi_or_url: 'https://doi.org/10.1/x' },
+      { butterfly_taxon: 'Oleria onega', host_taxon_slug: 'genus_cestrum', host_taxon_name: 'Cestrum', host_plant_family: 'Solanaceae', host_plant_genus: 'Cestrum', host_plant_species: null, host_plant_name_verbatim: 'Cestrum', host_id_level: 'genus', evidence_level: 'literature', confidence: 'low', citation_for_ui: 'Beccaloni et al. 2008' },
       { butterfly_taxon: 'Mechanitis menapis', host_taxon_name: 'Solanum', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: null, host_plant_name_verbatim: 'Solanum', host_id_level: 'genus', evidence_level: 'literature', confidence: 'high', citation_for_ui: 'Beccaloni et al. 2008' },
       { butterfly_taxon: 'Mechanitis menapis', host_taxon_name: 'Solanum x', host_plant_family: 'Solanaceae', host_plant_genus: 'Solanum', host_plant_species: 'Solanum x', host_plant_name_verbatim: 'Solanum x', host_id_level: 'species', evidence_level: 'needs_check', confidence: 'needs_check', citation_for_ui: 'Someone' },
+    ],
+  },
+  // Host-plant layers: Solanum mite's records in chunks 1 and 2 (chunk 3 is another plant's, never read for it).
+  'host_plants/host_plant_layers_manifest.json': {
+    metadata: {
+      generated_at: '2026-06-13T03:47:42+00:00',
+      scientific_caveat: 'Plant layers do not demonstrate local host use.',
+      occurrence_refs_by_taxon: { species_solanum_mite: 'taxon_occurrence_refs/species_solanum_mite.json', genus_solanum: 'taxon_occurrence_refs/genus_solanum.json' },
+      gallery_indexes_by_taxon: { species_solanum_mite: 'gallery_taxa/species_solanum_mite/index.json' },
+    },
+    taxa: [
+      { slug: 'species_solanum_mite', canonical_name: 'Solanum mite', rank: 'species', family: 'Solanaceae', gbif_resolution: { canonical_name: 'Solanum mitis' } },
+      { slug: 'genus_solanum', canonical_name: 'Solanum', rank: 'genus', family: 'Solanaceae' },
+      { slug: 'genus_cestrum', canonical_name: 'Cestrum', rank: 'genus', family: 'Solanaceae' },
+    ],
+  },
+  'host_plants/taxon_occurrence_refs/species_solanum_mite.json': {
+    metadata: { total_records: 5 },
+    chunks: { 'occurrence_chunks/chunk_001.json': [0, 1, 2], 'occurrence_chunks/chunk_002.json': [0, 1] },
+  },
+  'host_plants/taxon_occurrence_refs/genus_solanum.json': { metadata: { total_records: 2 }, chunks: { 'occurrence_chunks/chunk_002.json': [0, 1] } },
+  'host_plants/occurrence_chunks/chunk_001.json': {
+    records: [
+      // Near Tena (twice, two years) and in Colombia.
+      { lat: -0.995, lng: -77.805, eventDate: '2019-05-01', basisOfRecord: 'HUMAN_OBSERVATION' },
+      { lat: -0.996, lng: -77.806, eventDate: '2021-07-02', basisOfRecord: 'PRESERVED_SPECIMEN' },
+      { lat: 4.6, lng: -74.1, eventDate: '1999-01-01', basisOfRecord: 'PRESERVED_SPECIMEN' },
+    ],
+  },
+  'host_plants/occurrence_chunks/chunk_002.json': {
+    records: [
+      { lat: -0.06, lng: -78.77, eventDate: '2010-01-01', basisOfRecord: 'PRESERVED_SPECIMEN' },
+      // Just off the outline's western edge (the coast): counted in Ecuador.
+      { lat: -2, lng: -80.02, eventDate: null, basisOfRecord: 'PRESERVED_SPECIMEN' },
+    ],
+  },
+  'host_plants/occurrence_chunks/chunk_003.json': { records: [{ lat: 0, lng: 0 }] },
+  'host_plants/gallery_taxa/species_solanum_mite/index.json': { total_images: 3, pages: ['gallery_taxa/species_solanum_mite/page_001.json'] },
+  'host_plants/gallery_taxa/species_solanum_mite/page_001.json': {
+    items: [
+      { image_url: 'https://herbarium.test/sheet.jpg', observation_url: 'https://www.gbif.org/occurrence/3', lat: -0.06, lng: -78.77, observation_date: '2010-01-01', photo_context: 'preserved', source: 'Tropicos' },
+      { image_url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/11/original.jpg', observation_url: 'https://www.gbif.org/occurrence/1', lat: -0.995, lng: -77.805, observation_date: '2019-05-01', photo_context: 'field', source: 'iNaturalist research-grade observations' },
+      { image_url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg', observation_url: 'https://www.gbif.org/occurrence/9', lat: 4.6, lng: -74.1, observation_date: '1999-01-01', photo_context: 'field', source: 'iNaturalist research-grade observations' },
+    ],
+  },
+  // Two square countries, Ecuador south of the equator and Colombia north of it.
+  'country_boundaries.json': {
+    countries: [
+      { name: 'Ecuador', bbox: [-80, -4, -75, 0], polygons: [[[[-80, -4], [-75, -4], [-75, 0], [-80, 0], [-80, -4]]]] },
+      { name: 'Colombia', bbox: [-80, 0, -70, 8], polygons: [[[[-80, 0], [-70, 0], [-70, 8], [-80, 8], [-80, 0]]]] },
     ],
   },
 };
@@ -103,7 +154,7 @@ async function setup() {
   return { store, web, tools };
 }
 
-test('the four tools are offered to the chats', () => {
+test('the five tools are offered to the chats', () => {
   const names = new Set(mcpTools().map(t => t.name));
   for (const n of MAPS_TOOL_NAMES) assert.ok(names.has(n), n);
 });
@@ -215,6 +266,150 @@ test('host_plants: a species with its subspecies\' rows, confidence, sources; a 
   const unchecked = await tools.run('host_plants', { plant: 'solanum x', include_unchecked: true });
   assert.equal(unchecked.found, 1);
   assert.match((await tools.run('host_plants', {})).error, /butterfly/);
+});
+
+test('host_plants with an area: plants\' records there, sites, photos as Markdown, the map with the plant layer', async () => {
+  const { tools, web } = await setup();
+  const out = await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['ecuador'], photos: 2 });
+  // The associations as before, and the area.
+  assert.equal(out.found, 2);
+  assert.deepEqual(out.asked.country, ['Ecuador']);
+  const mite = out.plants.find(p => p.plant === 'Solanum mite');
+  assert.equal(mite.gbif_name, 'Solanum mitis');
+  // Tena twice, Mindo and the coastal record in Ecuador; Bogotá is in Colombia.
+  assert.equal(mite.records, 4);
+  assert.equal(mite.records_total, 5);
+  assert.deepEqual(mite.years, { first: 2010, last: 2021, distinct: 3 });
+  assert.deepEqual(mite.by_basis, { preserved_specimen: 3, human_observation: 1 });
+  assert.equal(mite.top_sites[0].records, 2);
+  assert.equal(mite.top_sites[0].near, 'Tena, Ecuador (<1 km)');
+  // The genus-level host is counted, but the sites, photos and map are the species-level host's.
+  const genus = out.plants.find(p => p.plant === 'Solanum');
+  assert.equal(genus.records, 2);
+  assert.match(genus.note, /genus-level/);
+  assert.equal(out.sites[0].records, 2);
+  assert.deepEqual(out.sites[0].plants, { 'Solanum mite': 2 });
+  assert.deepEqual(out.sites[0].years, { first: 2019, last: 2021, distinct: 2 });
+  // Only the chunks the plants' refs name were read.
+  assert.ok(web.calls.some(c => c.includes('chunk_001')) && !web.calls.some(c => c.includes('chunk_003')));
+  const url = new URL(out.map_url);
+  assert.equal(url.searchParams.get('hp_bf'), 'Oleria onega');
+  assert.equal(url.searchParams.get('hp_taxa'), 'species_solanum_mite');
+  assert.equal(url.searchParams.get('country'), 'Ecuador');
+  assert.equal(url.searchParams.get('sp'), 'Oleria onega');
+  assert.ok(url.searchParams.get('map_view'));
+  assert.ok(!url.searchParams.get('source').includes('Dore'));
+  // Photos taken in Ecuador, field photo first, linked to the full photo, with the GBIF record and credit.
+  assert.match(out.markdown, /^\*\*Solanum mite\*\* \(GBIF: Solanum mitis\): 4 records in Ecuador, 2010–2021/);
+  assert.match(out.markdown, /\[!\[Solanum mite 2019\]\(https:\/\/wsrv\.nl\/\?url=https%3A%2F%2Finaturalist-open-data\.s3\.amazonaws\.com%2Fphotos%2F11%2Fmedium\.jpg&w=240&h=180&fit=cover&output=jpg\)\]\(https:\/\/inaturalist-open-data\.s3\.amazonaws\.com\/photos\/11\/original\.jpg\)/);
+  assert.ok(out.markdown.indexOf('photos%2F11') < out.markdown.indexOf('sheet.jpg'));
+  // Bogotá's photo is not in Ecuador: left out while the area has enough.
+  assert.ok(!out.markdown.includes('photos%2F12'));
+  assert.match(out.markdown, /\[1\]\(https:\/\/www\.gbif\.org\/occurrence\/1\)/);
+  assert.match(out.markdown, /iNaturalist research-grade observations; Tropicos\. Licence and author on each record's page/);
+  assert.match(out.records_note, /not that the butterfly uses it there/);
+  // Cestrum is a low-confidence row: not asked.
+  assert.equal(out.plants_without_records, undefined);
+  // A second call reads nothing new.
+  const calls = web.calls.length;
+  await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Ecuador'] });
+  assert.equal(web.calls.length, calls);
+});
+
+test('host_plants with an area: photos from elsewhere when the area has too few, near, an unknown country', async () => {
+  const { tools } = await setup();
+  const three = await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Ecuador'], photos: 3 });
+  assert.match(three.markdown, /photos%2F12.*\]\(.*\)/);
+  assert.match(three.markdown, /Solanum mite 1999, Colombia\]/);
+  assert.match(three.markdown, /Some photos are from outside Ecuador/);
+  const none = await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Ecuador'], photos: 0 });
+  assert.equal(none.markdown, '');
+  const near = await tools.run('host_plants', { butterfly: 'Oleria onega', near: { lat: -0.99, lng: -77.81, km: 5 } });
+  assert.equal(near.plants.find(p => p.plant === 'Solanum mite').records, 2);
+  assert.equal(new URL(near.map_url).searchParams.get('country'), null);
+  const everywhere = await tools.run('host_plants', { butterfly: 'Oleria onega janarilla', records: true });
+  assert.equal(everywhere.plants.find(p => p.plant === 'Solanum mite').records, 5);
+  assert.equal(everywhere.area.where, 'their whole range');
+  assert.match((await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Atlantis'] })).error, /do not know Atlantis/);
+  // Without an area: the associations only, as before.
+  const plain = await tools.run('host_plants', { butterfly: 'Oleria onega' });
+  assert.equal(plain.plants, undefined);
+  assert.equal(plain.map_url, undefined);
+});
+
+test('host_plant_sites: the project\'s localities near a point, scored by the plant records around them', async () => {
+  const { tools } = await setup();
+  assert.equal(kernel(0), 1);
+  assert.equal(kernel(5), 0.5625);
+  assert.equal(kernel(10), 0);
+  assert.match((await tools.run('host_plant_sites', { butterfly: 'Oleria onega' })).error, /near/);
+  // Between Tena and Mindo (about 75 km from each); a radius over 100 km is cut to 100.
+  const out = await tools.run('host_plant_sites', { butterfly: 'Oleria onega', near: { lat: -0.5, lng: -78.3, km: 500 } });
+  assert.equal(out.asked.near.km, 100);
+  // Only the species-level host is scored; the genus-level one is named.
+  assert.deepEqual(out.plants, ['Solanum mite']);
+  assert.deepEqual(out.plants_not_scored, ['Solanum (genus-level host)']);
+  // Tena's two localities (two plant records under 1 km away), then Mindo (one, 1 km away).
+  assert.deepEqual(out.sites.slice(0, 2).map(s => s.locality).sort(), ['Tena', 'Tena, Hollín']);
+  const hollin = out.sites.find(s => s.locality === 'Tena, Hollín');
+  assert.deepEqual(hollin.records_within_km, { 2: 2, 5: 2, 10: 2 });
+  assert.ok(hollin.score > 1.9 && hollin.score <= 2);
+  assert.deepEqual(hollin.record_years, { oldest: 2019, newest: 2021, undated: 0 });
+  assert.equal(hollin.nearest_record.plant, 'Solanum mite');
+  assert.equal(hollin.nearest_record.year, 2021);
+  // The workbook's elevation, and the project's records there (of the butterfly asked, and all).
+  assert.equal(hollin.elevation_m, 605);
+  assert.equal(hollin.project_records, 2);
+  assert.equal(hollin.project_records_of_butterfly, 2);
+  const mindo = out.sites[2];
+  assert.equal(mindo.locality, 'Mindo');
+  assert.equal(mindo.project_records, 3);
+  assert.equal(mindo.project_records_of_butterfly, 1);
+  assert.equal(mindo.elevation_m, 1455);
+  assert.equal(out.sites.length, 3);
+  // The map on the first site with the host-plant layer on.
+  const url = new URL(out.map_url);
+  assert.equal(url.searchParams.get('hp_taxa'), 'species_solanum_mite');
+  assert.equal(url.searchParams.get('hp_bf'), 'Oleria onega');
+  assert.match(url.searchParams.get('map_view'), /,12\.00$/);
+  // The photos nearest each site, with their distance and credit.
+  assert.match(out.markdown, /^\*\*1\. Tena(, Hollín)?\*\*: the plant photos nearest it/);
+  assert.match(out.markdown, /\[!\[Solanum mite 2019, <1 km away\]\(https:\/\/wsrv\.nl\/\?url=[^)]+photos%2F11%2Fmedium\.jpg[^)]*\)\]\(https:\/\/inaturalist-open-data\.s3\.amazonaws\.com\/photos\/11\/original\.jpg\)/);
+  assert.match(out.markdown, /\[1\]\(https:\/\/www\.gbif\.org\/occurrence\/1\) Solanum mite, <1 km/);
+  assert.match(out.markdown, /licence and author on each GBIF record's page/);
+  assert.match(out.caveats.join(' '), /well-sampled place rather than more plants/);
+  assert.match(out.caveats.join(' '), /not that the butterfly uses it there/);
+  // A small radius around Tena: Mindo is out of reach.
+  const close = await tools.run('host_plant_sites', { butterfly: 'Oleria onega', near: { lat: -0.99, lng: -77.81, km: 5 } });
+  assert.equal(close.sites.length, 2);
+});
+
+test('host_plant_sites by grid cells: named after the nearest place, DEM elevation', async () => {
+  const { tools } = await setup();
+  const out = await tools.run('host_plant_sites', { butterfly: 'Oleria onega', near: { lat: -0.5, lng: -78.3, km: 100 }, rank: 'grid', cell_km: 1 });
+  // Cells holding plant records within reach: Tena's (both records) first, then Mindo's.
+  assert.equal(out.sites[0].records_within_km['2'], 2);
+  assert.equal(out.sites[0].near, 'Tena, Ecuador (<1 km)');
+  assert.equal(out.sites[0].elevation_m, 500);
+  assert.equal(out.sites[0].elevation_from, 'dem');
+  // The iNaturalist record's name is nearer this cell's centre than the project's.
+  assert.equal(out.sites[1].near, 'Mindo Valley, Ecuador (<1 km)');
+  assert.equal(out.sites[1].elevation_m, 1500);
+  assert.equal(out.sites[0].locality, undefined);
+  assert.equal(out.localities_without_records_within_10_km, undefined);
+});
+
+test('country outlines: inside, on the coast, nowhere', () => {
+  const outlines = FILES['country_boundaries.json'];
+  assert.equal(countryOfPoint(-78, -1, outlines), 'Ecuador');
+  assert.equal(countryOfPoint(-78, 1, outlines), 'Colombia');
+  assert.equal(countryOfPoint(-80.02, -2, outlines), 'Ecuador');
+  assert.equal(countryOfPoint(-81, -2, outlines), null);
+});
+
+test('maps URL with the host-plant layer', () => {
+  const url = mapsUrl({ species: ['Tithorea harmonia'], sources: ['sanger'], country: ['Ecuador'], hostPlants: { butterflies: ['Tithorea harmonia'], taxa: ['species_mesechites_trifida'], evidence: ['direct'] }, view: { lng: -78.4, lat: -1.5, zoom: 6.5 } }, MAPS);
+  assert.equal(url, `${MAPS}?sp=Tithorea%20harmonia&source=Sanger%20Institute&country=Ecuador&hp_bf=Tithorea%20harmonia&hp_taxa=species_mesechites_trifida&hp_evidence=direct&map_view=-78.40000%2C-1.50000%2C6.50`);
 });
 
 test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; nothing written', async () => {
