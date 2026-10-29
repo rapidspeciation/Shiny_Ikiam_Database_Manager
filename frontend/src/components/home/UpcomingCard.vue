@@ -51,14 +51,15 @@ const detail = (c: Coming) =>
         )
       }}
     </p>
-    <div class="grid gap-3 md:grid-cols-3">
+    <!-- Three columns only where a species name has room beside the counts and dates (wrapped, not cut). -->
+    <div class="grid gap-3 xl:grid-cols-3">
       <div v-for="c in COLUMNS" :key="c.event" class="rounded-md bg-stone-50 px-3 py-2">
         <p class="mb-1 text-sm font-semibold">{{ $t(c.title) }}</p>
         <p v-if="!byEvent[c.event].length" class="py-2 text-sm text-stone-400">{{ $t('Nada en estos días') }}</p>
         <ul class="divide-y divide-stone-200">
           <li v-for="i in byEvent[c.event]" :key="i.clutch" class="flex items-baseline gap-2 py-1.5 text-sm" :title="detail(i)">
             <span class="w-16 shrink-0 font-mono font-semibold">{{ i.clutch }}</span>
-            <span class="min-w-0 flex-1 truncate italic">{{ i.species ?? $t('Sin especie') }}</span>
+            <span class="min-w-0 flex-1 italic">{{ i.species ?? $t('Sin especie') }}</span>
             <span v-if="i.n" class="shrink-0 text-xs text-stone-500 tabular-nums">{{ $t(c.unit, { n: i.n }) }}</span>
             <span
               class="w-20 shrink-0 text-right text-xs font-medium"
@@ -81,7 +82,7 @@ const detail = (c: Coming) =>
       <ul class="mt-2 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
         <li v-for="i in upcoming.late" :key="i.clutch" class="flex gap-2 border-t border-stone-100 py-1" :title="detail(i)">
           <span class="w-16 shrink-0 font-mono">{{ i.clutch }}</span>
-          <span class="min-w-0 flex-1 truncate text-stone-600"
+          <span class="min-w-0 flex-1 text-stone-600"
             >{{ $t(EVENT[i.event]) }} · <i>{{ i.species ?? $t('Sin especie') }}</i></span
           >
           <span class="shrink-0 text-xs text-amber-700">{{ when(i.inDays) }}</span>
