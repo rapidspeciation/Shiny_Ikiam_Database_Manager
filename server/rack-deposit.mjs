@@ -11,6 +11,7 @@
 
 import { COLS, RACK_ID, ROW_LETTERS, ROWS, WELLS, fillOrder, sequenceFit, wellOf } from './rack-reader.mjs';
 import { moduleMap } from './schema.mjs';
+import { msg } from './messages.mjs';
 
 export const FREEZER = 'LBI062';
 const TUBE = /^[A-Z]{2}\d{6,10}$/;
@@ -98,12 +99,113 @@ export function rackWells(reading, entry) {
     else wells.set(well, tube);
   }
   for (const w of empty) wells.delete(w);
+  // The person's edits of the table's rows, routed into the rack (routeRowEdit): `set` {well: tube, or null for a
+  // well whose tube they moved away}, over the reading and the fill, as said; `moves` [{ tube, from, to }]: a tube
+  // moved in its row to a well holding another tube, a conflict both wells show until the person resolves it on the
+  // grid (it goes through once `to` is free, or holds that tube; gone once `from` no longer holds it).
+  const before = new Map(wells);
+  const edits = [];
+  for (const [w, id] of Object.entries(entry.set && typeof entry.set === 'object' ? entry.set : {})) {
+    const well = wellName(w);
+    if (!well) continue;
+    if (id === null || id === '') wells.delete(well);
+    else {
+      wells.set(well, upper(id));
+      empty.delete(well);
+    }
+  }
+  for (const [well, tube] of wells) {
+    if (before.get(well) === tube) continue;
+    const from = [...before].find(([w, t]) => t === tube && w !== well && wells.get(w) !== tube)?.[0];
+    if (from) edits.push({ tube, field: 'Tube_location', ai: from });
+    else if (before.has(well)) edits.push({ tube, field: 'Tube_ID', ai: before.get(well) });
+  }
+  const conflicts = [];
+  for (const m of Array.isArray(entry.moves) ? entry.moves : []) {
+    const from = wellName(m?.from);
+    const to = wellName(m?.to);
+    const tube = upper(m?.tube);
+    if (!from || !to || wells.get(from) !== tube) continue;
+    const other = wells.get(to);
+    if (other && other !== tube) {
+      conflicts.push({ tube, from, to, other });
+      edits.push({ tube, field: 'Tube_location', ai: from, value: to, conflict: true });
+      continue;
+    }
+    wells.delete(from);
+    wells.set(to, tube);
+    empty.delete(to);
+    edits.push({ tube, field: 'Tube_location', ai: from });
+  }
   const twice = [...wells.values()].filter((id, n, all) => all.indexOf(id) !== n);
   if (twice.length) problems.push(`${[...new Set(twice)].join(', ')} on two wells.`);
   const missing = WELLS.filter(w => !wells.has(w) && !empty.has(w)).sort((a, b) => fillOrder(a) - fillOrder(b));
   const fit = sequenceFit(wells);
   const code_beside = reading.code_corner ? wellOf(placed.mapping, ...reading.code_corner) : null;
-  return { wells, empty, missing, disputed: placed.disputed.filter(w => missing.includes(w)), problems, code_beside, checked_by_ids: fit.pairs >= 10 && fit.fit >= 0.8 * fit.pairs, seen: placed.seen };
+  return { wells, empty, missing, disputed: placed.disputed.filter(w => missing.includes(w)), problems, code_beside, checked_by_ids: fit.pairs >= 10 && fit.fit >= 0.8 * fit.pairs, seen: placed.seen, conflicts, edits };
+}
+
+/**
+ * The columns of the tube-locations rows the rack decides (the rack is their single source): Tube_ID and
+ * Tube_location edited in a row go into the grid (routeRowEdit), Rack_ID is the rack's field, Sort is numbered
+ * on its own. The rows' other columns stay editable, carried through each recompute by the tube.
+ */
+export const RACK_ROW_FIELDS = ['Tube_ID', 'Tube_location', 'Rack_ID', 'Sort'];
+
+/** The rack (index), well and tube a row of the deposit's proposal stands for, in the deposit as shown; or null. */
+export function rowWell(shown, row) {
+  const tube = upper(row?.values?.Tube_ID);
+  for (const [k, r] of (shown?.racks ?? []).entries())
+    for (const [well, w] of Object.entries(r.wells ?? {}))
+      if (w.t && (row.create ? w.s === 'new' && w.t === tube : w.s === 'moved' && w.r === row.recordId)) return { rack: k, well, tube: w.t };
+  return null;
+}
+
+/**
+ * A cell of a deposit row edited (`at` from rowWell), routed into the rack: `deposit` as given (its racks as
+ * rackInput) is changed; `wellsOf(k)` the wells rack k has now (rackWells, after earlier edits). Tube_ID sets that
+ * well's tube; Tube_location moves the tube there (a well holding another tube: a conflict on both, not
+ * overwritten); Rack_ID and Sort are refused. { error: msg() } refuses, nothing changed; { renamed: [old, new] }.
+ */
+export function routeRowEdit(deposit, at, field, value, wellsOf) {
+  const entry = deposit.racks?.[at.rack];
+  if (field === 'Rack_ID') return { error: msg('Rack_ID se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)') };
+  if (field === 'Sort') return { error: msg('Sort es automático: no se cambia a mano') };
+  const now = entry ? wellsOf(at.rack) : null;
+  const from = now && [...now].find(([, t]) => t === at.tube)?.[0];
+  if (!from) return { error: msg('{tube} ya no está en la cuadrícula del rack: mira la cuadrícula', { tube: at.tube }) };
+  const typed = text(value);
+  entry.set = { ...(entry.set ?? {}) };
+  if (field === 'Tube_ID') {
+    const tube = typed.toUpperCase();
+    if (!tube) return { error: msg('El ID del tubo no puede quedar vacío: se mantiene {tube}', { tube: at.tube }) };
+    if (!TUBE.test(tube)) return { error: msg('{value} no es un ID de tubo (dos letras y de 6 a 10 cifras): se mantiene {tube}', { value: typed, tube: at.tube }) };
+    if (tube === at.tube) return {};
+    for (const [k, r] of deposit.racks.entries()) {
+      const there = [...(wellsOf(k) ?? [])].find(([, t]) => t === tube)?.[0];
+      if (there) return { error: msg('{tube} ya está en {rack} {well}: cámbialo en la cuadrícula', { tube, rack: r.rack_id ?? `rack ${k + 1}`, well: there }) };
+    }
+    entry.set[from] = tube;
+    entry.moves = (entry.moves ?? []).filter(m => upper(m.tube) !== at.tube);
+    return { renamed: [at.tube, tube] };
+  }
+  if (field === 'Tube_location') {
+    const to = wellName(typed);
+    if (!to) return { error: msg('{value} no es un pocillo (A1 a H12): se mantiene {well}', { value: typed || '—', well: from }) };
+    // A move typed again replaces the one waiting; back to its own well, nothing waits.
+    entry.moves = (entry.moves ?? []).filter(m => upper(m.tube) !== at.tube);
+    if (to === from) return {};
+    const other = now.get(to);
+    if (other && other !== at.tube) {
+      entry.moves.push({ tube: at.tube, from, to });
+      return {};
+    }
+    entry.set[from] = null;
+    entry.set[to] = at.tube;
+    entry.empty = (entry.empty ?? []).filter(e => wellName(e) !== to);
+    return {};
+  }
+  return { error: msg('{field} no se cambia aquí', { field }) };
 }
 
 /**
@@ -162,7 +264,7 @@ export function lookupTubes(store, list) {
 }
 
 /** What a rack entry keeps as given (the rest depositState works out again each time). */
-export const RACK_INPUT = ['reading', 'photos', 'rack_id', 'code_beside', 'confirmed', 'estanteria', 'fila_de_rack', 'caja', 'fill', 'empty'];
+export const RACK_INPUT = ['reading', 'photos', 'rack_id', 'code_beside', 'confirmed', 'estanteria', 'fila_de_rack', 'caja', 'fill', 'empty', 'set', 'moves'];
 export const rackInput = entry => Object.fromEntries(RACK_INPUT.filter(k => entry?.[k] !== undefined).map(k => [k, entry[k]]));
 
 /** A new deposit for the person signed in: the freezer LBI062 and their name as responsable (said, to confirm). */
@@ -206,6 +308,8 @@ export function depositState(store, deposit, readingOf) {
       tubes_read: Object.keys(reading.frame_cells ?? reading.wells ?? {}).length,
       _wells: placed.wells,
       _empty: placed.empty,
+      conflicts: placed.conflicts ?? [],
+      edits: placed.edits ?? [],
       missing: placed.missing,
       disputed: placed.disputed ?? [],
       problems: [...placed.problems, ...(rack_id && !RACK_ID.test(rack_id) ? [`${rack_id} is not a rack code (FK…, FH…, FE…, SA… and 8 digits).`] : []), ...(rack_id ? [] : ['The rack code was not read: ask the person for it (printed beside a corner).'])],
@@ -238,6 +342,8 @@ export function depositState(store, deposit, readingOf) {
   if (sheet && columns.has('Sort'))
     sort = Number(store.db.prepare("SELECT max(CAST(json_extract(values_json, '$.Sort') AS INTEGER)) n FROM records WHERE sheet = ? AND missing = 0").get(sheet).n) || 0;
   const need = new Set(ids.length ? lookupTubes(store, ids).not_found : []);
+  // Rows the person took out of the table (by tube): not drafted again until they bring them back.
+  const leftOut = new Set((Array.isArray(deposit.left_out) ? deposit.left_out : []).map(upper));
   const changes = [];
   const newRows = [];
   const out = racks.map(r => {
@@ -258,7 +364,7 @@ export function depositState(store, deposit, readingOf) {
       } else if (rows.length === 1) {
         const old = rows[0];
         cell = { t: tube, s: 'moved', r: old.id, was: { rack: old.rack || null, well: old.well || null } };
-        if (ready) {
+        if (ready && !leftOut.has(tube)) {
           const values = {};
           if (old.rack !== r.rack_id) values.Rack_ID = r.rack_id;
           if (old.well !== well) values.Tube_location = well;
@@ -266,7 +372,7 @@ export function depositState(store, deposit, readingOf) {
         }
       } else {
         cell = { t: tube, s: 'new' };
-        if (ready) {
+        if (ready && !leftOut.has(tube)) {
           const values = { Tube_ID: tube, Rack_ID: r.rack_id, Tube_location: well };
           if (sort !== null) values.Sort = ++sort;
           if (text(deposit.batch) && columns.has('Batch')) values.Batch = text(deposit.batch);
@@ -323,6 +429,7 @@ export function depositProblems(deposit, { fields = true } = {}) {
     for (const p of r.problems ?? []) problems.push(`${name}: ${p}`);
     const unset = fields ? RACK_FIELDS.filter(f => !text(r[f])) : [];
     if (unset.length) problems.push(`${name}: ${unset.join(', ')} not given: ask the person.`);
+    for (const c of r.conflicts ?? []) problems.push(`${name}: ${c.tube} was moved to ${c.to} in the table, but ${c.other} is there: the person resolves it on the grid.`);
     const disputed = r.disputed ?? [];
     if (disputed.length) problems.push(`${name}: the photos disagree on ${disputed.join(', ')}: ask the person which tube is there (fill) or whether it is empty.`);
     const open = (r.missing ?? []).filter(w => !disputed.includes(w));

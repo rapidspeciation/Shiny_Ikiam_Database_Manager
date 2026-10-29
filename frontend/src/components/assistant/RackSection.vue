@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { AlertTriangle, Check, QrCode, RotateCcw } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText } from '../../lib/notice'
-import { COLS, FIELD_LABELS, ROWS, cellCounts, problemText, rackCells, splitTube, type CellState, type DepositRack, type RackCell } from '../../lib/rackDeposit'
+import { COLS, FIELD_LABELS, ROWS, cellCounts, conflictText, problemText, rackCells, splitTube, type CellState, type DepositRack, type RackCell } from '../../lib/rackDeposit'
 import type { Proposal, ProposalChange } from '../../lib/proposals'
 import { t, tn } from '../../lib/i18n'
 
@@ -36,13 +36,14 @@ const typed = ref('')
 watch(selected, () => (typed.value = ''))
 const chosen = computed<RackCell | null>(() => (selected.value ? (cells.value.get(selected.value) ?? null) : null))
 
-async function save(body: Record<string, unknown>) {
+/** A change of this rack (its fields, wells, corner, a conflict); `deposit`: of the whole deposit instead. */
+async function save(body: Record<string, unknown>, deposit = false) {
   if (!props.editable || busy.value) return
   busy.value = true
   try {
     const out = await api<{ proposal: Proposal }>(`chat/proposals/${props.proposalId}/rack`, {
       method: 'POST',
-      body: { racks: [{ rack: String(props.number), ...body }] },
+      body: deposit ? body : { racks: [{ rack: String(props.number), ...body }] },
     })
     emit('replace', out.proposal)
   } catch (e) {
@@ -80,6 +81,10 @@ const STATE: Record<CellState, { label: string; tip: string }> = {
   missing: { label: 'falta', tip: 'Ninguna foto leyó este tubo: escribe su número (etiqueta lateral) o márcalo vacío' },
   left: { label: 'quitado', tip: 'Su fila se quitó de la propuesta: no se escribe' },
   off: { label: 'otro sitio', tip: 'Su fila en la tabla lo pone en otro rack o pocillo que las fotos: revísala' },
+  conflict: {
+    label: 'conflicto',
+    tip: 'Una fila mueve aquí un tubo, o lo saca de aquí, pero el pocillo ya tiene otro: nada se sobrescribe; resuélvelo aquí',
+  },
 }
 const legend = computed(() => (Object.keys(STATE) as CellState[]).filter(s => counts.value[s] > 0 || ['new', 'moved', 'same', 'missing'].includes(s)))
 const occupied = computed(() => Object.keys(props.rack.sheet_here ?? {}).length)
@@ -95,6 +100,7 @@ const cellTitle = (c: RackCell) =>
     c.needsRows ? t('Sin fila en ninguna hoja del libro: necesita su fila') : '',
     c.byHand ? t('Escrito a mano (etiqueta lateral)') : '',
     c.disputed ? t('Las fotos no coinciden en este pocillo') : '',
+    c.conflict ? conflictText(c.conflict) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -277,6 +283,27 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
           {{ $t('Quitar') }}
         </button>
       </template>
+      <!-- A row moved a tube onto this well's tube (or from here onto another's): swap them, or keep the photos'. -->
+      <template v-if="chosen.conflict">
+        <span class="text-red-800">· {{ conflictText(chosen.conflict) }}</span>
+        <template v-if="editable">
+          <button type="button" class="rack-btn" :disabled="busy" @click="save({ resolve: [{ well: chosen.conflict.to, how: 'swap' }] })">
+            {{ $t('Intercambiar: {tube} a {to}, {other} a {from}', { ...chosen.conflict }) }}
+          </button>
+          <button type="button" class="rack-btn" :disabled="busy" @click="save({ resolve: [{ well: chosen.conflict.to, how: 'keep' }] })">
+            {{ $t('Dejar como en las fotos') }}
+          </button>
+        </template>
+      </template>
+      <button
+        v-if="editable && chosen.state === 'left' && chosen.tube"
+        type="button"
+        class="rack-btn"
+        :disabled="busy"
+        @click="save({ restore: [chosen.tube] }, true)"
+      >
+        {{ $t('Volver a proponer su fila') }}
+      </button>
       <button
         v-if="editable && chosen.state === 'empty'"
         type="button"
@@ -289,7 +316,14 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
     </div>
 
     <!-- What the person should hear: tubes needing their rows, the sheet's tubes the photos do not show here, problems. -->
-    <ul v-if="rack.need_rows.length || rack.elsewhere.length || rack.duplicates.length || rack.problems.length" class="rack-notes">
+    <ul
+      v-if="rack.need_rows.length || rack.elsewhere.length || rack.duplicates.length || rack.problems.length || rack.conflicts?.length"
+      class="rack-notes"
+    >
+      <li v-for="c in rack.conflicts ?? []" :key="c.to" class="is-conflict">
+        <AlertTriangle :size="12" /> {{ conflictText(c) }}
+        <button type="button" class="rack-link" @click="selected = c.to">{{ $t('Ver') }}</button>
+      </li>
       <li v-if="rack.missing.length" class="is-warn">
         <AlertTriangle :size="12" />
         {{
@@ -512,6 +546,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   background: var(--color-amber-50);
   box-shadow: inset 0 0 0 2px var(--color-red-500);
 }
+.well.is-conflict {
+  background: var(--color-red-100);
+  box-shadow: inset 0 0 0 2px var(--color-red-600);
+}
 .well.sheet-here {
   outline: 2px dashed var(--color-amber-600);
   outline-offset: -3px;
@@ -585,6 +623,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   background: var(--color-amber-50);
   border: 2px solid var(--color-red-500);
 }
+.swatch.is-conflict {
+  background: var(--color-red-100);
+  border: 2px solid var(--color-red-600);
+}
 .swatch.is-sheet-here {
   border: 2px dashed var(--color-amber-600);
 }
@@ -631,5 +673,16 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   align-items: center;
   gap: 0.25rem;
   color: var(--color-amber-900);
+}
+.rack-notes .is-conflict {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+  color: var(--color-red-800);
+}
+.rack-link {
+  text-decoration: underline;
+  color: inherit;
 }
 </style>

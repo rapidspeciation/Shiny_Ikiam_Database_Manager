@@ -24,8 +24,8 @@ import RowPhotos from './assistant/RowPhotos.vue'
 import SheetApply from './assistant/SheetApply.vue'
 import RackDepositHead from './assistant/RackDepositHead.vue'
 import RackSection from './assistant/RackSection.vue'
-import { rackOfChange, type DepositRack } from '../lib/rackDeposit'
-import { api } from '../lib/api'
+import { RACK_LOCKED, rackOfChange, type DepositRack } from '../lib/rackDeposit'
+import { api, learnItems } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
@@ -256,6 +256,8 @@ async function save(): Promise<void> {
       dropChoices(choices)
       savedRevision = Math.max(savedRevision, out.proposal.revision ?? 0)
       emit('replace', out.proposal)
+      // Refused cells come with their descriptors (a rack deposit's rows, …): said in the interface language.
+      learnItems(out.rejected)
       for (const r of out.rejected.slice(0, 3)) {
         const what = [r.field, r.label ? `(${r.label})` : ''].filter(Boolean).join(' ')
         const message = t(r.message)
@@ -900,6 +902,7 @@ const statusText = computed(
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
         :editable="editable"
+        :locked-fields="s.rack && deposit && g.sheet === deposit.sheet ? RACK_LOCKED : undefined"
         :applied="
           proposal.status === 'applied'
             ? (proposal.applied ?? [])

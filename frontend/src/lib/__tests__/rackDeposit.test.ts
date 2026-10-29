@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellCounts, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
+import { RACK_LOCKED, cellCounts, conflictText, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
 import type { ProposalChange } from '../proposals'
 
 const rack = (over: Partial<DepositRack> = {}): DepositRack => ({
@@ -88,5 +88,27 @@ describe('a rack of a deposit', () => {
   it('a tube ID: its series apart from the four digits compared', () => {
     expect(splitTube('FS50849233')).toEqual(['FS5084', '9233'])
     expect(splitTube(null)).toEqual(['', ''])
+  })
+
+  it('a row moving its tube onto another tube: both wells show the conflict (not «otro sitio»), counted, and the .xlsx waits', () => {
+    const conflicts = [{ tube: 'FS50849233', from: 'A1', to: 'C1', other: 'FS50849235' }]
+    const r = rack({ conflicts, missing: [], estanteria: '2', fila_de_rack: '1', caja: '3' })
+    const kept = change({ ...created, values: { ...created.values, Tube_location: 'C1' }, personEdits: { Tube_location: { ai: 'A1', by: 'Ana', at: 'x' } } })
+    const cells = rackCells(r, [kept, moved])
+    expect(cells.get('A1')).toMatchObject({ state: 'conflict', tube: 'FS50849233', conflict: conflicts[0] })
+    expect(cells.get('C1')).toMatchObject({ state: 'conflict', tube: 'FS50849235', conflict: conflicts[0] })
+    expect(cellCounts(cells).conflict).toBe(2)
+    expect(conflictText(conflicts[0])).toMatch(/FS50849233.*C1.*FS50849235/)
+    const why = notReady({ responsable: 'Franz', ultracongelador: 'LBI062', racks: [r], sheet: 'T', unset: [] })
+    expect(why).toHaveLength(1)
+    expect(why[0]).toMatch(/FK00274230: FS50849233.*C1/)
+    // Resolved (no conflicts): the row's place agrees with the grid again.
+    expect(rackCells(rack(), [created, moved]).get('A1')?.state).toBe('new')
+  })
+
+  it('the columns the rack decides are only to read in its rows, with where they change; Tube_ID and Tube_location stay editable', () => {
+    expect(Object.keys(RACK_LOCKED).sort()).toEqual(['Rack_ID', 'Sort'])
+    expect(RACK_LOCKED.Rack_ID).toMatch(/datos del rack/)
+    expect(RACK_LOCKED.Sort).toMatch(/Automático/)
   })
 })

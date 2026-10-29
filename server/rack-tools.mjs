@@ -64,7 +64,8 @@ export const RACK_TOOLS = [
       description: [
         "Changes a rack deposit of this chat (the proposal rack_read_photos made, «Cambios propuestos»): the deposit sheet's fields, the tubes of wells the photos did not read, which corner the rack's code is beside. The grid and the tube-locations rows follow at once; the person can change the same in the sidebar.",
         '- `responsable` (default: the person signed in), `ultracongelador` (default LBI062), `batch` (the sheet\'s Batch for new rows, only when the person gives one).',
-        '- `racks`: per rack (`rack`: its code, or its number in the deposit from 1): `estanteria`, `fila_de_rack`, `caja`; `fill` {well: tube ID} (from the side label); `empty` [wells]; `code_beside` (one of the rack\'s `code_options`: the person confirming the corner, or turning the rack); `rack_id` when the code was not read; `remove: true` drops the rack.',
+        '- `racks`: per rack (`rack`: its code, or its number in the deposit from 1): `estanteria`, `fila_de_rack`, `caja`; `fill` {well: tube ID} (from the side label); `empty` [wells]; `code_beside` (one of the rack\'s `code_options`: the person confirming the corner, or turning the rack); `rack_id` when the code was not read; `remove: true` drops the rack; `move` {from: to} when the person says a tube is in another well (a well holding another tube becomes a conflict on both, never overwritten; `resolve` it with the person: swap or keep); `leave_out` / `restore` [tube IDs] take a tube\'s row out of the proposal or bring it back.',
+        "- The tube-locations rows follow the rack: their Tube_ID, Tube_location, Rack_ID and Sort change only here (update_proposal refuses them); their other columns change with update_proposal and are kept through each change of the rack.",
         "Answers what it still needs (`ask`), the tubes no sheet has (`need_rows`: they need their rows, never invented), the sheet's tubes on the rack that the photos do not show there (`elsewhere`), and `protected` when the app's Google account cannot write the sheet («Aplicar» is then refused until its owner allows it).",
       ].join('\n'),
       parameters: {
@@ -88,6 +89,14 @@ export const RACK_TOOLS = [
                 code_beside: { type: 'string', enum: ['A1', 'A12', 'H1', 'H12'] },
                 rack_id: { type: 'string' },
                 remove: { type: 'boolean' },
+                move: { type: 'object', additionalProperties: { type: 'string' }, description: '{from well: to well}: a tube moved (to a well holding another tube: a conflict the person resolves on the grid)' },
+                resolve: {
+                  type: 'array',
+                  items: { type: 'object', properties: { well: { type: 'string' }, how: { type: 'string', enum: ['swap', 'keep'] } }, required: ['well', 'how'] },
+                  description: 'A conflict (a well of `conflicts`): swap the two tubes, or keep them as the photos have them.',
+                },
+                leave_out: { type: 'array', items: { type: 'string' }, description: 'Tube IDs whose rows are taken out of the proposal.' },
+                restore: { type: 'array', items: { type: 'string' }, description: 'Tube IDs whose rows come back.' },
               },
               required: ['rack'],
             },
@@ -492,6 +501,11 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     },
     /** The deposit as the table shows it and the changes it implies (rack-deposit.mjs), its readings read as `owner`'s. */
     state: (deposit, owner) => depositState(store, deposit, token => loadReading(token, owner)),
+    /** A rack entry's wells as they are now (Map well → tube; null without its reading or A1), its reading read as `owner`'s. */
+    wellsOf: (entry, owner) => {
+      const reading = loadReading(entry?.reading, owner);
+      return reading ? rackWells(reading, entry).wells : null;
+    },
     loadReading,
     depositReport,
     copyToDrive,

@@ -226,3 +226,167 @@ test('a reading placed by the other corner: the photo positions turned into the 
   assert.deepEqual(Object.fromEntries(placeReading(reading, 'H12').wells), { H12: 'FS1', A1: 'FS2' });
   assert.equal(placeReading({ mapping: null, code_corner: null, frame_cells: {} }), null);
 });
+
+// ------------------------------------------------------------ the person's edits of the rows go into the rack
+/** The deposit proposal after a read, every well said (so nothing waits), and helpers to edit its rows. */
+async function editable() {
+  const env = await setup();
+  const read = await env.call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  const p = async () => (await env.list()).find(x => x.id === id);
+  const rowOf = (proposal, tube) => proposal.changes.find(c => (c.create ? c.values.Tube_ID : c.label) === tube);
+  const key = c => c.key ?? c.clientId ?? c.recordId;
+  const edit = (cells, more = {}) => env.http('POST', `/api/chat/proposals/${id}/edit`, { cells, ...more });
+  return { ...env, read, id, p, rowOf, key, edit };
+}
+
+test('a Tube_ID typed in a row sets that well on the grid: the row follows, marked as the person\'s, same key', async () => {
+  const { read, p, rowOf, key, edit } = await editable();
+  const before = await p();
+  const a2 = rowOf(before, read.wells.A2);
+  const out = await edit([{ key: key(a2), field: 'Tube_ID', value: 'fs99000001', before: read.wells.A2 }]);
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.rejected, []);
+  const after = out.body.proposal;
+  assert.equal(after.deposit.racks[0].wells.A2.t, 'FS99000001');
+  assert.equal(after.deposit.racks[0].set.A2, 'FS99000001');
+  const row = rowOf(after, 'FS99000001');
+  assert.equal(row.values.Tube_location, 'A2');
+  assert.equal(key(row), key(a2), 'the row keeps its key');
+  assert.equal(row.personEdits.Tube_ID.ai, read.wells.A2);
+  assert.ok(!rowOf(after, read.wells.A2), 'the old ID has no row');
+});
+
+test('a Tube_location typed in a row moves the tube on the grid; onto another tube it is a conflict, kept and resolved on the grid', async () => {
+  const { read, p, rowOf, key, edit, http, id, call } = await editable();
+  // A1 is not read (glare): moving A2's tube there frees A2.
+  let out = await edit([{ key: key(rowOf(await p(), read.wells.A2)), field: 'Tube_location', value: 'a01' }]);
+  assert.deepEqual(out.body.rejected, []);
+  let rack = out.body.proposal.deposit.racks[0];
+  assert.equal(rack.wells.A1.t, read.wells.A2);
+  assert.equal(rack.wells.A2, undefined);
+  assert.ok(rack.missing.includes('A2'));
+  assert.equal(rowOf(out.body.proposal, read.wells.A2).values.Tube_location, 'A1');
+  assert.equal(rowOf(out.body.proposal, read.wells.A2).personEdits.Tube_location.ai, 'A2');
+
+  // A3's tube typed into A4, which holds another tube: nothing overwritten, both wells flagged, the person's A4 kept.
+  out = await edit([{ key: key(rowOf(out.body.proposal, read.wells.A3)), field: 'Tube_location', value: 'A4' }]);
+  assert.deepEqual(out.body.rejected, []);
+  rack = out.body.proposal.deposit.racks[0];
+  assert.deepEqual(rack.conflicts, [{ tube: read.wells.A3, from: 'A3', to: 'A4', other: read.wells.A4 }]);
+  assert.equal(rack.wells.A3.t, read.wells.A3);
+  assert.equal(rack.wells.A4.t, read.wells.A4);
+  const row = rowOf(out.body.proposal, read.wells.A3);
+  assert.equal(row.values.Tube_location, 'A4');
+  assert.match(row.note, /Conflicto: A4/);
+  // Still there after a field of the rack changes; «Aplicar» and the .xlsx wait for it.
+  out = await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: '1', caja: '4' }] });
+  assert.equal(rowOf(out.body.proposal, read.wells.A3).values.Tube_location, 'A4');
+  const applied = await http('POST', `/api/chat/proposals/${id}/apply`, { requestId: 'apply-conflict-1' });
+  assert.equal(applied.status, 409);
+  assert.equal(applied.body.error.code, 'rack_conflict');
+  const asked = await call('rack_deposit', {});
+  assert.ok(asked.ask.some(a => /moved to A4 in the table/.test(a)));
+  // Resolved on the grid: the two tubes swapped.
+  out = await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: '1', resolve: [{ well: 'A4', how: 'swap' }] }] });
+  rack = out.body.proposal.deposit.racks[0];
+  assert.deepEqual(rack.conflicts, []);
+  assert.equal(rack.wells.A4.t, read.wells.A3);
+  assert.equal(rack.wells.A3.t, read.wells.A4);
+  assert.equal(rowOf(out.body.proposal, read.wells.A3).values.Tube_location, 'A4');
+  assert.equal(rowOf(out.body.proposal, read.wells.A4).values.Tube_location, 'A3');
+});
+
+test('a conflict kept as the photos have it; or gone through once its well is free', async () => {
+  const { read, p, rowOf, key, edit, http, id } = await editable();
+  await edit([{ key: key(rowOf(await p(), read.wells.A3)), field: 'Tube_location', value: 'A4' }]);
+  let out = await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: '1', resolve: [{ well: 'A3', how: 'keep' }] }] });
+  let rack = out.body.proposal.deposit.racks[0];
+  assert.deepEqual(rack.conflicts, []);
+  assert.equal(rack.wells.A3.t, read.wells.A3);
+  assert.equal(rowOf(out.body.proposal, read.wells.A3).values.Tube_location, 'A3');
+  // Again, then A4 said empty on the grid: the waiting move goes through.
+  await edit([{ key: key(rowOf(out.body.proposal, read.wells.A3)), field: 'Tube_location', value: 'A4' }]);
+  out = await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: '1', empty: ['A4'] }] });
+  rack = out.body.proposal.deposit.racks[0];
+  assert.deepEqual(rack.conflicts, []);
+  assert.equal(rack.wells.A4.t, read.wells.A3);
+  assert.ok(rack.missing.includes('A3'));
+});
+
+test('Rack_ID and Sort are refused in the rows; a bad well or an empty tube ID refused, the value kept; in the person\'s language', async () => {
+  const { read, p, rowOf, key, edit } = await editable();
+  const before = await p();
+  const a2 = rowOf(before, read.wells.A2);
+  const out = await edit([
+    { key: key(a2), field: 'Rack_ID', value: 'FK00000001' },
+    { key: key(a2), field: 'Sort', value: 3 },
+    { key: key(a2), field: 'Tube_location', value: 'Z9' },
+    { key: key(a2), field: 'Tube_ID', value: '' },
+    { key: key(rowOf(before, read.wells.A3)), field: 'Tube_ID', value: read.wells.A5 },
+  ]);
+  assert.equal(out.status, 200);
+  const said = Object.fromEntries(out.body.rejected.map(r => [`${r.label ?? ''}:${r.field}`, r.message]));
+  assert.equal(out.body.rejected.length, 5);
+  assert.match(out.body.rejected.find(r => r.field === 'Rack_ID').message, /se cambia en los datos del rack/);
+  assert.match(out.body.rejected.find(r => r.field === 'Sort').message, /automático/);
+  assert.match(out.body.rejected.find(r => r.field === 'Tube_location').message, /Z9 no es un pocillo \(A1 a H12\): se mantiene A2/);
+  assert.ok(out.body.rejected.some(r => /no puede quedar vacío/.test(r.message)));
+  assert.ok(out.body.rejected.some(r => new RegExp(`${read.wells.A5} ya está en FK00274230 A5`).test(r.message)));
+  assert.ok(out.body.rejected.every(r => r.messageMsg?.key), 'each with its descriptor (shown in English too)');
+  assert.ok(Object.keys(said).length);
+  const after = await p();
+  const row = rowOf(after, read.wells.A2);
+  assert.deepEqual([row.values.Rack_ID, row.values.Tube_location, row.values.Sort], [a2.values.Rack_ID, 'A2', a2.values.Sort]);
+  assert.equal(rowOf(after, read.wells.A3).values.Tube_ID, read.wells.A3);
+});
+
+test('nothing the person edited is lost when the rack\'s fields or corner change: other columns, IDs, wells, rows taken out', async () => {
+  const { read, p, rowOf, key, edit, http, id, call } = await editable();
+  let now = await p();
+  await edit([
+    { key: key(rowOf(now, read.wells.A2)), field: 'Batch', value: 'B7' },
+    { key: key(rowOf(now, read.wells.A3)), field: 'Tube_ID', value: 'FS99000003' },
+    { key: key(rowOf(now, read.wells.A4)), field: 'Tube_location', value: 'A1' },
+  ]);
+  now = await p();
+  await edit([], { remove: [key(rowOf(now, read.wells.A5))] });
+  // The rack's fields, the corner turned and back, a field from the chat: each drafts the rows again.
+  await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: '1', estanteria: '2', fila_de_rack: '1', caja: '3' }] });
+  await call('rack_deposit', { racks: [{ rack: '1', code_beside: 'H1' }] });
+  await call('rack_deposit', { racks: [{ rack: '1', code_beside: 'A12' }], responsable: 'Ana P.' });
+  now = await p();
+  const a2 = rowOf(now, read.wells.A2);
+  assert.equal(a2.values.Batch, 'B7');
+  assert.ok(a2.personEdits?.Batch, 'still the person\'s');
+  assert.equal(rowOf(now, 'FS99000003')?.values.Tube_location, 'A3');
+  assert.equal(rowOf(now, read.wells.A4)?.values.Tube_location, 'A1');
+  assert.ok(!rowOf(now, read.wells.A5), 'a row taken out stays out');
+  assert.deepEqual(now.deposit.left_out, [read.wells.A5]);
+  // Brought back from the grid.
+  const back = await http('POST', `/api/chat/proposals/${id}/rack`, { restore: [read.wells.A5] });
+  assert.ok(rowOf(back.body.proposal, read.wells.A5));
+  // The same rack read again keeps the wells the person set.
+  await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  now = await p();
+  assert.equal(now.deposit.racks[0].wells.A3.t, 'FS99000003');
+  assert.equal(rowOf(now, read.wells.A2).values.Batch, 'B7');
+});
+
+test('the assistant changes the rows through the rack too: update_proposal refuses what the rack decides; rack_deposit move', async () => {
+  const { read, p, rowOf, call, id } = await editable();
+  const now = await p();
+  const index = now.changes.indexOf(rowOf(now, read.wells.A2));
+  const refused = await call('update_proposal', { proposalId: id, rows: [{ index, values: { Tube_location: 'A1' } }] });
+  assert.match(refused.error, /follow its rack.*rack_deposit/);
+  const batch = await call('update_proposal', { proposalId: id, rows: [{ index, values: { Batch: 'B9' } }] });
+  assert.ok(!batch.error, JSON.stringify(batch));
+  const moved = await call('rack_deposit', { racks: [{ rack: '1', move: { A2: 'A1' } }] });
+  assert.ok(!moved.error, JSON.stringify(moved));
+  const after = await p();
+  assert.equal(after.deposit.racks[0].wells.A1.t, read.wells.A2);
+  assert.equal(rowOf(after, read.wells.A2).values.Tube_location, 'A1');
+  assert.equal(rowOf(after, read.wells.A2).values.Batch, 'B9', 'the assistant\'s own edit carried too');
+  const onto = await call('rack_deposit', { racks: [{ rack: '1', move: { A3: 'A4' } }] });
+  assert.deepEqual(onto.racks[0].conflicts, [{ tube: read.wells.A3, from: 'A3', to: 'A4', other: read.wells.A4 }]);
+});

@@ -165,6 +165,8 @@ const props = defineProps<{
   loadRows?: (from: number, to: number) => Promise<SheetRows>
   /** Where the table's undo steps are kept while the page is open (the proposal and the table); none: while it is shown. */
   historyKey?: string
+  /** Columns only to read in these rows, with where they change instead (a rack deposit's Rack_ID and Sort). */
+  lockedFields?: Record<string, string>
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -230,7 +232,9 @@ function info(key: string, field: string) {
 }
 const canEditCell = (key: string, field: string) => {
   const change = byKey.get(key)
-  return props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && info(key, field)?.kind !== 'locked'
+  return (
+    props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && !props.lockedFields?.[field] && info(key, field)?.kind !== 'locked'
+  )
 }
 /** Why a row is only to read: a page line that writes nothing, or a sheet row between the proposal's rows. */
 const readOnlyText = (change: ProposalChange) =>
@@ -439,6 +443,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-warned', !!c.warning)
   el.classList.toggle('is-formula-gives', !!c.fromFormula || !!c.formulaWrite)
   el.classList.toggle('is-formula-write', !!c.formulaWrite)
+  el.classList.toggle('is-field-locked', !!props.lockedFields?.[field])
   el.classList.toggle('is-sheet-edit', !!c.sheetEdit)
   el.classList.toggle('is-kept', c.kind === 'kept')
   el.classList.toggle('is-again', !!c.sheetEdit?.again)
@@ -493,6 +498,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
     c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     readOnlyRow(change) ? readOnlyText(change) : '',
+    props.lockedFields?.[field] ? t(props.lockedFields[field]) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -867,6 +873,8 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
   const editable = canEditCell(row.__key, field)
+  // A column only to read in these rows (a rack deposit's Rack_ID, Sort): where it changes, said under the bar.
+  if (props.lockedFields?.[field]) notes.unshift({ label: t('Solo lectura'), text: t(props.lockedFields[field]), kind: 'hint' })
   // What the assistant says about it (as the cell's tooltip): a doubt, where it comes from, why unreadable.
   for (const n of cellComments(c, v => show(field, v)))
     notes.push(
@@ -899,7 +907,9 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     multiline: longText(field) && !hasChoices(field),
     readonly: editable
       ? ''
-      : c.kind === 'locked'
+      : props.lockedFields?.[field]
+        ? t(props.lockedFields[field])
+        : c.kind === 'locked'
         ? t('Calculado por la fórmula de la hoja: no se escribe')
         : readOnlyRow(change)
           ? readOnlyText(change)
@@ -1393,6 +1403,7 @@ const layoutKey = () =>
   [
     props.fields.join('|'),
     props.editable,
+    Object.keys(props.lockedFields ?? {}).join('|'),
     props.applied ? 1 : 0,
     rules.value ? 1 : 0,
     locale.value,
@@ -1808,6 +1819,11 @@ watch(
   color: #57534e;
   background: #f3f4f1;
   font-style: italic;
+}
+/* A column the rack decides (Rack_ID, Sort): only to read here (its colour kept, a grey underline); its tooltip and the bar say where it changes. */
+.proposal-sheet .tabulator-cell.is-field-locked {
+  box-shadow: inset 0 -2px 0 #d6d3d1;
+  cursor: not-allowed;
 }
 /* A formula the proposal writes: the formula tint with the proposal's green edge, and an "ƒx" tag. */
 .proposal-sheet .tabulator-cell.is-formula-write {

@@ -49,6 +49,19 @@ export interface DepositRack {
   duplicates: string[]
   unset: string[]
   tubes_read?: number
+  /** Wells the person set in the table's rows (a Tube_ID typed, a tube moved; null: moved away), over the reading. */
+  set?: Record<string, string | null>
+  /**
+   * A tube moved in its row onto a well holding another tube: nothing overwritten, both wells flagged, the row
+   * keeps the person's well until they resolve it here (swap the two, or keep them as the photos have them).
+   */
+  conflicts?: RackConflict[]
+}
+export interface RackConflict {
+  tube: string
+  from: string
+  to: string
+  other: string
 }
 export interface RackFile {
   file: string
@@ -65,15 +78,18 @@ export interface RackDeposit {
   sheet: string | null
   unset: string[]
   protected?: boolean
+  /** Tubes whose rows the person took out of the table: they stay out until brought back. */
+  left_out?: string[]
   xlsx?: RackFile
   drive?: RackFile
 }
 
 /**
  * What a well shows: the server's states, 'missing' (nobody said what is there), 'left' (its row taken out of the
- * proposal), 'off' (its row edited in the table to another rack or well than the photos have).
+ * proposal), 'off' (its row edited in the table to another rack or well than the photos have), 'conflict' (a row
+ * moves its tube onto a well holding another tube: both wells, until the person resolves it).
  */
-export type CellState = RackWell['s'] | 'missing' | 'left' | 'off'
+export type CellState = RackWell['s'] | 'missing' | 'left' | 'off' | 'conflict'
 export interface RackCell {
   well: string
   tube: string | null
@@ -90,6 +106,8 @@ export interface RackCell {
   rowPlace: RackPlace | null
   /** Another tube the sheet records in this well of this rack. */
   sheetHere: string | null
+  /** The conflict this well is part of (either end). */
+  conflict: RackConflict | null
 }
 
 /** The tube a proposal row places: a new row's Tube_ID, an existing row's ID (its label). */
@@ -111,6 +129,8 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
     well: wellOf(c.values?.Tube_location ?? c.current?.Tube_location ?? c.rowValues?.Tube_location) || null,
   })
   const disputed = new Set(rack.disputed ?? [])
+  const conflictAt = new Map<string, RackConflict>()
+  for (const c of rack.conflicts ?? []) for (const w of [c.from, c.to]) conflictAt.set(w, c)
   const out = new Map<string, RackCell>()
   for (const row of ROWS)
     for (const col of COLS) {
@@ -119,7 +139,9 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
       let state: CellState = w?.s ?? 'missing'
       const line = state === 'new' && w?.t ? created.get(w.t) : state === 'moved' && w?.r ? edited.get(w.r) : undefined
       let rowPlace: RackPlace | null = null
-      if ((state === 'new' || state === 'moved') && !line) state = 'left'
+      const conflict = conflictAt.get(well) ?? null
+      if (conflict) state = 'conflict'
+      else if ((state === 'new' || state === 'moved') && !line) state = 'left'
       else if (line) {
         const at = placeOf(line)
         if (at.rack !== text(rack.rack_id) || at.well !== well) {
@@ -137,6 +159,7 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
         disputed: disputed.has(well),
         rowPlace,
         sheetHere: rack.sheet_here?.[well] ?? null,
+        conflict,
       })
     }
   return out
@@ -144,7 +167,7 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
 
 /** How many wells of each state (the section's legend). */
 export function cellCounts(cells: Map<string, RackCell>) {
-  const n: Record<CellState, number> = { new: 0, moved: 0, same: 0, check: 0, empty: 0, missing: 0, left: 0, off: 0 }
+  const n: Record<CellState, number> = { new: 0, moved: 0, same: 0, check: 0, empty: 0, missing: 0, left: 0, off: 0, conflict: 0 }
   for (const c of cells.values()) n[c.state]++
   return n
 }
@@ -173,8 +196,22 @@ export function notReady(deposit: RackDeposit): string[] {
     const wells = `${r.missing.slice(0, 6).join(', ')}${open > 6 ? '…' : ''}`
     if (open) out.push(tn(open, '{rack}: {n} pocillo sin tubo ({wells})', '{rack}: {n} pocillos sin tubo ({wells})', { rack, wells }))
     for (const p of r.problems) if (!/code was not read/.test(p)) out.push(`${rack}: ${problemText(p)}`)
+    for (const c of r.conflicts ?? []) out.push(`${rack}: ${conflictText(c)}`)
   }
   return out
+}
+
+/** A conflict in the person's words. */
+export const conflictText = (c: RackConflict) =>
+  t('{tube} va a {to} según su fila, pero {to} tiene {other}: resuélvelo en la cuadrícula', { tube: c.tube, to: c.to, other: c.other })
+
+/**
+ * The tube-locations columns the rack decides: read-only in its rows, with where they change instead. Tube_ID and
+ * Tube_location stay editable (they go into the grid).
+ */
+export const RACK_LOCKED: Record<string, string> = {
+  Rack_ID: 'Se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)',
+  Sort: 'Automático: se numera solo',
 }
 
 /** A tube ID as the grid shows it: its series and the digits the person compares, apart. */

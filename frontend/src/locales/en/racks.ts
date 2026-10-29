@@ -101,4 +101,29 @@ export default {
     '{n} tubes have no row in any sheet of the workbook (Collection_data, Insectary_data…): they need their rows; none are invented',
   'La hoja pone en este rack tubos que las fotos no muestran ahí': "The sheet puts tubes on this rack that the photos don't show there",
   'En dos filas de la hoja (no se cambian)': 'On two rows of the sheet (not changed)',
+  // A rack deposit's rows follow its rack (lib/rackDeposit, server/rack-deposit.mjs routeRowEdit)
+  conflicto: 'conflict',
+  'Una fila mueve aquí un tubo, o lo saca de aquí, pero el pocillo ya tiene otro: nada se sobrescribe; resuélvelo aquí':
+    'A row moves a tube here, or moves it from here, but the well already holds another: nothing is overwritten; resolve it here',
+  '{tube} va a {to} según su fila, pero {to} tiene {other}: resuélvelo en la cuadrícula':
+    '{tube} goes to {to} by its row, but {to} holds {other}: resolve it on the grid',
+  'Intercambiar: {tube} a {to}, {other} a {from}': 'Swap: {tube} to {to}, {other} to {from}',
+  'Dejar como en las fotos': 'Keep as in the photos',
+  'Volver a proponer su fila': 'Propose its row again',
+  'Se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)': "Changed in the rack's data (the «Rack» field beside its grid)",
+  'Automático: se numera solo': 'Automatic: numbered on its own',
+  'Rack_ID se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)':
+    "Rack_ID is changed in the rack's data (the «Rack» field beside its grid)",
+  'Sort es automático: no se cambia a mano': 'Sort is automatic: it is not changed by hand',
+  '{tube} ya no está en la cuadrícula del rack: mira la cuadrícula': "{tube} is no longer on the rack's grid: look at the grid",
+  'El ID del tubo no puede quedar vacío: se mantiene {tube}': 'The tube ID cannot be empty: {tube} is kept',
+  '{value} no es un ID de tubo (dos letras y de 6 a 10 cifras): se mantiene {tube}':
+    '{value} is not a tube ID (two letters and 6 to 10 digits): {tube} is kept',
+  '{tube} ya está en {rack} {well}: cámbialo en la cuadrícula': '{tube} is already in {rack} {well}: change it on the grid',
+  '{value} no es un pocillo (A1 a H12): se mantiene {well}': '{value} is not a well (A1 to H12): {well} is kept',
+  '{field} no se cambia aquí': '{field} is not changed here',
+  '{field} sigue a la cuadrícula del rack: escribe el valor o cámbialo en la cuadrícula':
+    "{field} follows the rack's grid: type the value or change it on the grid",
+  'Hay un conflicto en la cuadrícula de un rack (dos tubos en el mismo pocillo): resuélvelo allí antes de aplicar.':
+    "A rack's grid has a conflict (two tubes in the same well): resolve it there before applying.",
 }
