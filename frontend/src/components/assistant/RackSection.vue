@@ -171,9 +171,8 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
           <tr v-for="f in FIELD_ROWS" :key="f">
             <th>{{ f === 'rack' ? $t('Rack') : $t(FIELD_LABELS[f]) }}</th>
             <td v-if="f === 'rack'">
-              <span v-if="rack.rack_id_read" class="font-mono">{{ rack.rack_id }}</span>
+              <!-- Read from the photo or typed: the person corrects it here (the rows' Rack_ID follows). -->
               <input
-                v-else
                 :value="rack.rack_id ?? ''"
                 class="font-mono"
                 :class="{ 'is-unset': !rack.rack_id }"

@@ -126,4 +126,7 @@ export default {
     "{field} follows the rack's grid: type the value or change it on the grid",
   'Hay un conflicto en la cuadrícula de un rack (dos tubos en el mismo pocillo): resuélvelo allí antes de aplicar.':
     "A rack's grid has a conflict (two tubes in the same well): resolve it there before applying.",
+  Conflicto: 'Conflict',
+  '{to} ya tiene otro tubo en la cuadrícula del rack: resuélvelo allí (este tubo sigue en {from})':
+    "{to} already holds another tube on the rack's grid: resolve it there (this tube is still in {from})",
 }

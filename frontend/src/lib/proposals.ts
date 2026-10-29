@@ -46,6 +46,8 @@ export interface Unreadable {
 export interface Hint {
   text: string
   msg?: Msg
+  /** What the bar calls it (Spanish, translated); «Falta» when not said. */
+  label?: string
 }
 /**
  * Where a row is on the notebook page (match_notebook): its photo (0 = the
@@ -599,7 +601,7 @@ export function cellComments(c: CellInfo, show: (value: CellValue | undefined) =
         : t('se mantiene el de la hoja')
     out.push({ label: t('Editada en la hoja'), text: `${read} · ${then}`, kind: 'edited' })
   }
-  if (c.warning) out.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
+  if (c.warning) out.push({ label: t(c.warning.label ?? 'Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
   for (const h of c.formulaNotes ?? []) out.push({ label: t('Fórmula'), text: tx(h.text, h.msg), kind: 'doubt' })
   // The checks are about the sheet's value: said while the cell keeps it.
   if (['sheet', 'locked', 'kept', 'reverted'].includes(c.kind))

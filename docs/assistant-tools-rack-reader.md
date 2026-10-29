@@ -19,6 +19,16 @@ The production sheet is protected for the app's Google account (the whole sheet,
 
 Defaults: responsable = the person signed in (shown as assumed until changed), freezer LBI062; the rest empty and asked for. Edits from the sidebar: `POST /api/chat/proposals/<id>/rack` (as `rack_deposit`), files: `POST /api/chat/proposals/<id>/rack-files` (`{ drive: true }` for the Drive copy).
 
+The rack is the single source of truth for its tube-locations rows, and nothing typed in them is lost when they are
+drafted again (any change of the grid, a field or the corner): a Tube_ID typed in a row sets that well's tube on the grid
+(`set`); a Tube_location moves the tube there, or, when that well holds another tube, becomes a `conflict` shown on both
+wells and in the row's cell (the person's well kept in the row; «Aplicar» and the .xlsx wait) until it is resolved on
+the grid (swap, keep as the photos, or the well freed); Rack_ID (the rack's field) and Sort (numbered on its own) are
+read-only in the rows; the rows' other columns keep the person's and the assistant's values by tube (`row_edits`); a row
+taken out stays out (`left_out`) until brought back. The wells set in rows turn with the rack when its corner changes and
+survive a new reading of the same rack. The assistant does the same with `rack_deposit` (`move`, `resolve`,
+`leave_out`, `restore`); update_proposal refuses those four columns.
+
 ## Drive copy
 
 On click only («Guardar en Google Drive», or `rack_report` with `drive: true`). The project account (`GOOGLE_DRIVE_CREDENTIALS_FILE`, jmithominii@gmail.com) uploads the .xlsx (`GoogleDrive.upload`, a multipart upload) into «Depósitos LBI (racks)»: `RACK_DRIVE_FOLDER` (its ID) when set, else that folder found or made in `RACK_DRIVE_PARENT`, else in the account's My Drive. On claudeclaw it is in the project's shared area, Ithomiini_IKIAM › Admin (beside «Formatos deposito temporal muestras ikiam»). Drive not answering: the answer says so and the download link still works.

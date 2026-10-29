@@ -512,12 +512,12 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     mark.textContent = t('no se escribe: columna protegida')
     return mark
   }
-  // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
+  // A preserved butterfly would be left without it: an amber "missing" tag (or the warning's own, a rack's «conflicto»), then what the cell holds.
   if (c.warning && c.kind !== 'unreadable') {
     const box = document.createElement('span')
     const mark = document.createElement('span')
     mark.className = 'warn-mark'
-    mark.textContent = t('falta')
+    mark.textContent = c.warning.label ? t(c.warning.label).toLowerCase() : t('falta')
     box.append(mark)
     if (text) box.append(' ', withTotal(field, c.value, text))
     return box

@@ -43,7 +43,7 @@ import { photoFoldersOf } from './photo-links.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
-import { RACK_FIELDS, RACK_ROW_FIELDS, newDeposit, rackInput, routeRowEdit, rowWell, wellName } from './rack-deposit.mjs';
+import { RACK_FIELDS, RACK_ROW_FIELDS, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
@@ -3569,7 +3569,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const deposit = { ...structuredClone(was), racks: (was.racks ?? []).map(rackInput) };
       for (const k of ['sheet', 'unset', 'protected', 'renamed']) delete deposit[k];
       const ownerId = found?.owner_id ?? owner(context.user);
-      const bad = change(deposit, k => rackTools.wellsOf(deposit.racks[k], { id: ownerId }));
+      const bad = change(deposit, k => rackTools.wellsOf(deposit.racks[k], { id: ownerId }), was);
       if (bad?.error) return bad;
       const renamed = deposit.renamed ?? [];
       delete deposit.renamed;
@@ -3670,7 +3670,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         marks[field] = { ai: e.ai ?? null, by: had?.by ?? who, at: had?.at ?? now() };
         if (e.conflict) {
           next.values.Tube_location = e.value;
-          next.note = [next.note, `Conflicto: ${e.value} ya tiene otro tubo en la cuadrícula; resuélvelo allí (este tubo sigue en ${e.ai})`].filter(Boolean).join(' · ');
+          const m = msg('{to} ya tiene otro tubo en la cuadrícula del rack: resuélvelo allí (este tubo sigue en {from})', { to: e.value, from: e.ai });
+          next.rackWarnings = { Tube_location: { label: 'Conflicto', text: m.text, msg: m.msg } };
         }
       }
       if (Object.keys(marks).length) next.personEdits = marks;
@@ -3735,16 +3736,19 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * rack_deposit's changes (and the sidebar's): the deposit's fields, and per rack its fields, wells filled or
    * said empty (or no longer: `not_empty`), the corner of its code, its code when not read, or its removal; a tube
    * moved (`move`, routed as a row's Tube_location is), a conflict resolved (`resolve`), rows taken out of the
-   * proposal or brought back (`leave_out`, `restore`, by tube). `wellsOf(k)`: rack k's wells now.
+   * proposal or brought back (`leave_out`, `restore`, by tube; at the top or per rack). `wellsOf(k)`: rack k's
+   * wells now; `shown`: the deposit as it was shown (its corners).
    * Edits `deposit`; { error } refuses.
    */
-  function editDeposit(deposit, args, wellsOf) {
+  function editDeposit(deposit, args, wellsOf, shown = null) {
     const tubes = list => (Array.isArray(list) ? list.slice(0, 200).map(t => String(t ?? '').trim().toUpperCase()).filter(Boolean) : []);
-    if (args.leave_out !== undefined || args.restore !== undefined) {
-      const out = new Set([...(deposit.left_out ?? []), ...tubes(args.leave_out)]);
-      for (const t of tubes(args.restore)) out.delete(t);
-      deposit.left_out = [...out];
-    }
+    const leaveOut = (out, back) => {
+      if (out === undefined && back === undefined) return;
+      const left = new Set([...(deposit.left_out ?? []), ...tubes(out)]);
+      for (const t of tubes(back)) left.delete(t);
+      deposit.left_out = [...left];
+    };
+    leaveOut(args.leave_out, args.restore);
     for (const f of ['responsable', 'ultracongelador', 'batch'])
       if (typeof args[f] === 'string') {
         deposit[f] = clip(args[f].trim(), FIELD_LIMIT);
@@ -3761,8 +3765,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         continue;
       }
       for (const f of RACK_FIELDS) if (typeof r[f] === 'string' || typeof r[f] === 'number') entry[f] = clip(String(r[f]).trim(), FIELD_LIMIT);
+      leaveOut(r.leave_out, r.restore);
       if (r.code_beside !== undefined && r.code_beside !== null) {
         if (!['A1', 'A12', 'H1', 'H12'].includes(r.code_beside)) return { error: 'code_beside: a corner well (one of the rack\'s code_options).' };
+        // The rack turned: the wells the person set in its rows turn with its tubes (the other mirror of the photos).
+        const was = shown?.racks?.find(x => x.reading === entry.reading)?.code_beside;
+        if (was && was !== r.code_beside) turnWells(entry);
         entry.code_beside = r.code_beside;
         entry.confirmed = true;
       }
@@ -3865,7 +3873,20 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     );
     if (saved.error) return saved;
     for (const r of refused) refuse(...r);
-    return { cells: rest, remove: restRemove, rejected, proposal: teamProposal(found.id, user) };
+    const fresh = teamProposal(found.id, user);
+    // A row whose tube ID was edited may come back under another key (an existing row becomes a new one): the
+    // other cells sent for it in the same save follow it.
+    const now = parse(fresh.changes_json) ?? [];
+    const freshShown = depositPage(fresh).deposit;
+    const moved = new Map();
+    for (const { c, row, at } of routed) {
+      if (c.field !== 'Tube_ID' || refused.some(r => r[0] === row && r[1] === 'Tube_ID')) continue;
+      const tube = String(c.value ?? '').trim().toUpperCase();
+      const next = now.find(r => rowWell(freshShown, r)?.tube === tube);
+      if (next && rowKey(next) !== rowKey(row)) moved.set(rowKey(row), rowKey(next));
+      void at;
+    }
+    return { cells: rest.map(c => (moved.has(c.key) ? { ...c, key: moved.get(c.key) } : c)), remove: restRemove, rejected, proposal: fresh };
   }
   /** The deposit as the Anexo1 .xlsx (`drive`: and its copy on Drive), the links kept on the proposal. */
   async function depositFiles(found, user, { drive = false } = {}) {
@@ -4515,7 +4536,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const shown = depositPage(proposal).deposit;
       const decided = new Set(RACK_ROW_FIELDS.map(f => f.toLowerCase()));
       const touches = list => (Array.isArray(list) ? list : []).some(r => Object.keys(r?.values ?? {}).some(f => decided.has(f.toLowerCase())));
-      const rowOf = r => (Number.isInteger(r) ? changes[r] : changes.find(c => c.recordId === r || c.label === r));
+      const named = r => String(r ?? '').trim().toLowerCase();
+      const rowOf = r => (Number.isInteger(r) ? changes[r] : changes.find(c => c.recordId === String(r) || named(c.label) === named(r) || named(c.values?.Tube_ID) === named(r)));
       const removes = (Array.isArray(args.removeRows) ? args.removeRows : []).some(r => rowOf(r) && rowWell(shown, rowOf(r)));
       if (touches(args.rows) || touches(args.changes) || touches(args.newRows) || removes)
         return {
@@ -5161,7 +5183,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const status = row?.status ?? proposal.status;
     const open = status === 'pending';
     // A butterfly the row would leave preserved without CAM or tube: those cells are marked (and shown) until filled.
-    const warned = changes.map(c => (open && !c.applied ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null));
+    const warned = changes.map(c => {
+      const sample = open && !c.applied ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null;
+      // A rack deposit's row moving its tube onto another tube's well (carryRows): marked on that cell.
+      return c.rackWarnings && open ? { ...sample, ...c.rackWarnings } : sample;
+    });
     // What the checks (Revisión) say about its rows' cells, once they are found (never waited for here).
     const issues = open ? issuesByRecord(store, { ready: true }) : null;
     const checked = changes.map(c => {
@@ -6109,7 +6135,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
       const found = depositOf(context, args.proposal ?? null);
       if (!found) return { error: 'No rack deposit in this chat yet: read a rack first (rack_read_photos).' };
-      return depositAnswer(saveDeposit(context, found, (d, wellsOf) => editDeposit(d, args, wellsOf)));
+      return depositAnswer(saveDeposit(context, found, (d, wellsOf, shown) => editDeposit(d, args, wellsOf, shown)));
     }
     if (name === 'rack_report' && !Array.isArray(args.racks)) {
       const found = depositOf(context, args.proposal ?? null);
@@ -6721,7 +6747,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         if (made.error) return { status: 409, body: { error: { code: 'not_ready', message: made.error, details: { problems: made.problems ?? [] } } } };
         return { status: 200, body: { ...made, proposal: await listedOne(ownProposalListed(found.id)) } };
       }
-      const saved = saveDeposit({ user, person: true, threadId: found.thread_id, proposals: [] }, found, (d, wellsOf) => editDeposit(d, body ?? {}, wellsOf), 'person');
+      const saved = saveDeposit({ user, person: true, threadId: found.thread_id, proposals: [] }, found, (d, wellsOf, shown) => editDeposit(d, body ?? {}, wellsOf, shown), 'person');
       if (saved.error) return bad(saved.status ?? 400, 'invalid_rack', saved.error);
       return { status: 200, body: { proposal: await listedOne(ownProposalListed(found.id)) } };
     }

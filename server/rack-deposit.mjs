@@ -125,17 +125,19 @@ export function rackWells(reading, entry) {
     const from = wellName(m?.from);
     const to = wellName(m?.to);
     const tube = upper(m?.tube);
-    if (!from || !to || wells.get(from) !== tube) continue;
+    // Where the tube is now (its row's well, or wherever the grid has it since): gone from the rack, nothing waits.
+    const at = wells.get(from) === tube ? from : [...wells].find(([, t]) => t === tube)?.[0];
+    if (!at || !to || at === to) continue;
     const other = wells.get(to);
     if (other && other !== tube) {
-      conflicts.push({ tube, from, to, other });
-      edits.push({ tube, field: 'Tube_location', ai: from, value: to, conflict: true });
+      conflicts.push({ tube, from: at, to, other });
+      edits.push({ tube, field: 'Tube_location', ai: at, value: to, conflict: true });
       continue;
     }
-    wells.delete(from);
+    wells.delete(at);
     wells.set(to, tube);
     empty.delete(to);
-    edits.push({ tube, field: 'Tube_location', ai: from });
+    edits.push({ tube, field: 'Tube_location', ai: at });
   }
   const twice = [...wells.values()].filter((id, n, all) => all.indexOf(id) !== n);
   if (twice.length) problems.push(`${[...new Set(twice)].join(', ')} on two wells.`);
@@ -143,6 +145,17 @@ export function rackWells(reading, entry) {
   const fit = sequenceFit(wells);
   const code_beside = reading.code_corner ? wellOf(placed.mapping, ...reading.code_corner) : null;
   return { wells, empty, missing, disputed: placed.disputed.filter(w => missing.includes(w)), problems, code_beside, checked_by_ids: fit.pairs >= 10 && fit.fit >= 0.8 * fit.pairs, seen: placed.seen, conflicts, edits };
+}
+
+/** A well as the rack turned (its code beside the other corner): the photos' other mirror, A1 ↔ H12. */
+export const turnedWell = well => {
+  const w = wellName(well);
+  return w ? `${ROW_LETTERS[ROWS - 1 - ROW_LETTERS.indexOf(w[0])]}${COLS + 1 - Number(w.slice(1))}` : well;
+};
+/** The wells the person set in a rack's rows (set, moves), turned with the rack so they stay on their tubes. */
+export function turnWells(entry) {
+  if (entry.set) entry.set = Object.fromEntries(Object.entries(entry.set).map(([w, t]) => [turnedWell(w), t]));
+  if (entry.moves) entry.moves = entry.moves.map(m => ({ ...m, from: turnedWell(m.from), to: turnedWell(m.to) }));
 }
 
 /**
@@ -186,7 +199,8 @@ export function routeRowEdit(deposit, at, field, value, wellsOf) {
       if (there) return { error: msg('{tube} ya está en {rack} {well}: cámbialo en la cuadrícula', { tube, rack: r.rack_id ?? `rack ${k + 1}`, well: there }) };
     }
     entry.set[from] = tube;
-    entry.moves = (entry.moves ?? []).filter(m => upper(m.tube) !== at.tube);
+    // A move of this tube still waiting (a conflict) goes on under its new ID.
+    entry.moves = (entry.moves ?? []).map(m => (upper(m.tube) === at.tube ? { ...m, tube } : m));
     return { renamed: [at.tube, tube] };
   }
   if (field === 'Tube_location') {
