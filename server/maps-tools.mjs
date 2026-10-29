@@ -2,12 +2,14 @@
 //   maps_localities    places with the most records of some taxa (the maps' occurrence records), with map links
 //   maps_species       the taxa recorded in a region
 //   host_plants        host plants of a butterfly, or the Ithomiini on a plant, with their sources
-//   gallery_specimens  collection specimens with wing photos (the workbook and Photo_links), gallery links, thumbnails
+//   gallery_specimens  collection specimens with wing photos (the workbook and Photo_links), gallery links, photos
+//                      with wing and envelope crops, and the models' readings stored for them (labelled model output)
 // The maps' data files are read over HTTPS from the published site, at most every 6 hours (and parsed again only
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
 
 import { driveIdOf, specimenName } from './photo-links.mjs';
+import { unreliableFor } from './sex-check.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
 export const GALLERY_URL = 'https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/';
@@ -109,10 +111,11 @@ export const MAPS_TOOLS = [
     function: {
       name: 'gallery_specimens',
       description: [
-        "Collection specimens with wing photos (the Wings Gallery's Collection tab, read from the workbook and Photo_links): by CAM ID, species, sex, locality or elevation, with a link to the gallery showing them and photo URLs.",
+        "Collection specimens with wing photos (the Wings Gallery's Collection tab, read from the workbook and Photo_links): by CAM ID, species, sex, locality or elevation, with a link to the gallery showing them, photo URLs, and what the models read from the photos.",
         '- Any of: `cam_ids`, `species` ["Genus species"], `subspecies`, `genus`, `sex` (male, female), `locality` (words of Collection_location), `country`, `elevation_min`/`elevation_max`. `with_photos` (default true). `limit` (default 12).',
-        '- `markdown`: the first `thumbnails` specimens (default 6) as small photos linked to the full ones, ready to put in the reply: put it in as it is to show them.',
-        'The gallery site is rebuilt when its update runs (update_websites): a specimen added since may not be there yet.',
+        "- Each specimen: the database's species, subspecies, sex; `model` (the Wings Gallery's species/subspecies top 3 and the sex model's call, with `sex_trusted` false and `sex_not_trusted` saying why when the model is not trusted for it: not a Supported call, or a species on the model's unreliable list); `envelope` (the envelope's text lines as the reader read them, and its model); `differs` (where the model or envelope disagree with the database).",
+        '- `markdown`: ready to put in the reply as it is. The first `thumbnails` specimens (default 4, at most 8) in full: a 600 px photo, the wings and envelope crops (each linked to the full photo), the model output and the envelope lines; the rest one plain line each.',
+        'Model output and envelope readings are not checked: say so, never give them as facts. The database is the record. The gallery site is rebuilt when its update runs (update_websites): a specimen added since may not be there yet.',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -228,9 +231,225 @@ export function galleryUrl({ species = [], subspecies = [], sex = null, camids =
   return `${base}?${params.toString().replace(/\+/g, '%20')}`;
 }
 
-const thumbUrl = (file, width = 160) =>
-  `https://wsrv.nl/?url=${encodeURIComponent(`https://drive.google.com/uc?id=${file}`)}&w=${width}&output=webp`;
-const fullUrl = file => `https://lh3.googleusercontent.com/d/${file}=w1600`;
+const lh3 = (file, width = 1600) => `https://lh3.googleusercontent.com/d/${file}=w${width}`;
+const fullUrl = file => lh3(file);
+/** A photo `width` px wide, made by the image proxy from the 1600 px photo. */
+export const previewUrl = (file, width = 600) => `https://wsrv.nl/?url=${encodeURIComponent(lh3(file))}&w=${width}&output=jpg`;
+/**
+ * A crop of a photo made by the image proxy, nothing stored. `box` [x0, y0, x1, y1] in pixels of the photo as
+ * `size` [w, h] says (the frame the boxes were read in); the proxy is given the photo at that width (Drive's
+ * =w1600 of an upright 1200x1600 photo is 1536x2048, not that frame). `precrop`: crop, then shrink to `width`
+ * (without it the proxy shrinks first and a crop outside the small image is dropped). Not turned: an envelope
+ * reading's `turned` 180 is how the reader found the photo then, and the Drive photos checked on 29 Oct 2026
+ * (6 of 6) show the envelope upright as they are now. Null when the box or size is unusable.
+ */
+export function cropUrl(file, box, size, { width = 300, pad = 0 } = {}) {
+  if (!file || !Array.isArray(box) || box.length !== 4 || !Array.isArray(size) || size.length !== 2) return null;
+  const [w, h] = size.map(Number);
+  if (!(w > 0 && h > 0) || !box.every(Number.isFinite)) return null;
+  const x0 = Math.max(0, Math.floor(Math.min(box[0], box[2]) - pad));
+  const y0 = Math.max(0, Math.floor(Math.min(box[1], box[3]) - pad));
+  const x1 = Math.min(w, Math.ceil(Math.max(box[0], box[2]) + pad));
+  const y1 = Math.min(h, Math.ceil(Math.max(box[1], box[3]) + pad));
+  if (x1 - x0 < 8 || y1 - y0 < 8) return null;
+  const out = Math.min(width, x1 - x0);
+  return `https://wsrv.nl/?url=${encodeURIComponent(lh3(file, w))}&cx=${x0}&cy=${y0}&cw=${x1 - x0}&ch=${y1 - y0}&w=${out}&precrop&output=jpg`;
+}
+const parseJson = v => {
+  try {
+    return v ? JSON.parse(v) : null;
+  } catch {
+    return null;
+  }
+};
+/** A probability as a percentage: 85 %, 1.8 %, 0.4 %. */
+export const percent = p => (Number.isFinite(p) ? `${p >= 0.1 ? Math.round(p * 100) : Math.round(p * 1000) / 10} %` : '?');
+const binomialOf = name => fold(name).split(' ').slice(0, 2).join(' ');
+const MODEL_TOP = 3;
+const DETAILED_MAX = 8;
+const PLAIN_ROWS = 20;
+
+/**
+ * What was read from a specimen's photos and kept in this app's tables (server/photodata.mjs): the Wings
+ * Gallery's predictions, the envelope readings, the wing boxes and the photos' sizes. SELECT only; a table the
+ * app has not made yet is read as empty. -> Map(cam -> { prediction, envelopes, boxes, sizes })
+ */
+export function photoReadings(db, wanted) {
+  const out = new Map();
+  if (!db || !wanted.length) return out;
+  const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name));
+  const columns = t => (tables.has(t) ? new Set(db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name)) : new Set());
+  const pc = columns('photo_predictions');
+  const has = c => (pc.has(c) ? c : `NULL ${c}`);
+  const prediction = pc.size
+    ? db.prepare(`SELECT species_json, subspecies_json, sex, sex_conf, sex_supported, sex_species, ${has('sex_status')}, ${has('model')}, ${has('sex_model')} FROM photo_predictions WHERE cam=?`)
+    : null;
+  const envelopes = tables.has('envelope_readings')
+    ? db.prepare('SELECT name, file_id, view, bbox_json, size_json, camid, camid_conf, text_json, model FROM envelope_readings WHERE cam=? ORDER BY name')
+    : null;
+  const box = tables.has('photo_wing_boxes') ? db.prepare('SELECT box_json, conf FROM photo_wing_boxes WHERE name=?') : null;
+  const sideSize = columns('photo_wing_sides').has('size_json') ? db.prepare('SELECT size_json FROM photo_wing_sides WHERE file_id=? AND size_json IS NOT NULL LIMIT 1') : null;
+  for (const { cam, photos } of wanted) {
+    const p = prediction?.get(cam);
+    const env = (envelopes?.all(cam) ?? []).map(r => ({
+      name: r.name,
+      file: r.file_id,
+      view: r.view,
+      bbox: parseJson(r.bbox_json),
+      size: parseJson(r.size_json),
+      camid: r.camid,
+      camid_conf: r.camid_conf,
+      lines: (parseJson(r.text_json) ?? []).map(l => (Array.isArray(l) ? text(l[0]) : text(l))).filter(Boolean),
+      model: r.model,
+    }));
+    const boxes = {};
+    const sizes = {};
+    for (const [view, photo] of Object.entries(photos)) {
+      if (!photo) continue;
+      const stem = photo.name.replace(/\.[^.]+$/, '');
+      const b = box?.get(stem);
+      const frac = parseJson(b?.box_json);
+      if (Array.isArray(frac) && frac.length === 4) boxes[view] = frac;
+      const size = env.find(e => e.file === photo.file || fold(e.name) === fold(stem))?.size ?? parseJson(sideSize?.get(photo.file)?.size_json);
+      if (Array.isArray(size) && size.length === 2) sizes[view] = size;
+    }
+    out.set(cam, { prediction: p ?? null, envelopes: env, boxes, sizes });
+  }
+  return out;
+}
+
+/** The models' output for a specimen, as the answer gives it (labelled model output, never facts). */
+export function modelOf(prediction, databaseSpecies) {
+  if (!prediction) return null;
+  const top = v => (parseJson(v) ?? []).slice(0, MODEL_TOP).map(([name, p]) => ({ name, p }));
+  const species = top(prediction.species_json);
+  const subspecies = top(prediction.subspecies_json);
+  const scored = prediction.sex === 'male' || prediction.sex === 'female';
+  const unreliable = unreliableFor(databaseSpecies) ?? unreliableFor(prediction.sex_species) ?? unreliableFor(species[0]?.name);
+  const supported = prediction.sex_supported === 1 || prediction.sex_supported === true;
+  // Short, for the Markdown; the list's reason goes in `sex_not_trusted_why`.
+  const why = !scored
+    ? null
+    : unreliable
+      ? 'the sex model is not trusted for this species'
+      : !supported
+        ? `not a Supported call (${text(prediction.sex_status) || 'no status'}): a leaning only`
+        : null;
+  return {
+    species,
+    subspecies,
+    ...(scored
+      ? {
+          sex: prediction.sex,
+          sex_confidence: prediction.sex_conf,
+          sex_trusted: !why,
+          ...(why ? { sex_not_trusted: why } : {}),
+          ...(unreliable ? { sex_not_trusted_why: text(unreliable.why) } : {}),
+        }
+      : { sex: null, sex_status: text(prediction.sex_status) || 'not scored' }),
+    species_model: prediction.model ?? null,
+    sex_model: prediction.sex_model ?? null,
+  };
+}
+
+const sexWord = v => {
+  const s = fold(v).replace(/\s*\?$/, '');
+  return s === 'male' || s === 'female' ? s : null;
+};
+const NO_SUBSPECIES = /^(na|unknown|-|)$/;
+
+/**
+ * Where the models' top answer or the envelope's CAM read is not the database's: 'species', 'subspecies' (only
+ * when the species agree and the database names one), 'sex' (whether or not the sex model is trusted for it:
+ * the answer says which), 'envelope_cam'.
+ */
+export function differences({ cam, species, subspecies, sex, model, envelope }) {
+  const out = [];
+  const sp = model?.species[0]?.name;
+  if (sp && species && binomialOf(sp) !== binomialOf(species)) out.push('species');
+  const ssp = model?.subspecies[0]?.name;
+  if (ssp && species && binomialOf(ssp) === binomialOf(species) && !NO_SUBSPECIES.test(fold(subspecies)) && fold(ssp).split(' ')[2] !== fold(subspecies))
+    out.push('subspecies');
+  if (model?.sex && sexWord(sex) && sexWord(sex) !== model.sex) out.push('sex');
+  if (envelope?.camid && text(envelope.camid).toUpperCase() !== cam) out.push('envelope_cam');
+  return out;
+}
+
+const shortName = (name, genus) => {
+  const w = text(name).split(' ');
+  return genus && w[0] === genus && w.length > 2 ? `${w[0][0]}. ${w.slice(1).join(' ')}` : text(name);
+};
+const flagged = (s, key) => (s.differs?.includes(key) ? ' **(not the database\'s)**' : '');
+const stemOf = name => text(name).replace(/\.[^.]+$/, '');
+const factsOf = (s, extra = true) =>
+  [s.species, s.subspecies, s.sex, s.locality, extra ? s.country : null, extra ? s.date : null, s.elevation_m !== null ? `${s.elevation_m} m` : null]
+    .filter(Boolean)
+    .join(', ');
+
+/** One specimen in full: the database's line, a 600 px photo, the wings and envelope crops, the models' output. */
+function detailedMarkdown(s) {
+  const out = [`**${s.cam_id}** in the database: ${factsOf(s) || 'no species or sex recorded'}`];
+  const main = s.photos.dorsal ?? s.photos.ventral;
+  out.push(`[![${s.cam_id} ${s.photos.dorsal ? 'dorsal' : 'ventral'}](${main.preview})](${main.full})`);
+  const crops = ['dorsal', 'ventral'].filter(k => s.photos[k]?.wings).map(k => `[![${s.cam_id} wings ${k}](${s.photos[k].wings})](${s.photos[k].full})`);
+  if (s.envelope?.crop) {
+    const from = ['dorsal', 'ventral'].map(k => s.photos[k]).find(x => x && stemOf(x.name).toUpperCase() === text(s.envelope.photo).toUpperCase()) ?? main;
+    crops.push(`[![${s.cam_id} envelope](${s.envelope.crop})](${from.full})`);
+  }
+  if (crops.length) out.push(crops.join(' '));
+  out.push(`Full photos: ${['dorsal', 'ventral'].filter(k => s.photos[k]).map(k => `[${k}](${s.photos[k].full})`).join(', ')}`);
+  const m = s.model;
+  if (m) {
+    const genus = m.species[0]?.name.split(' ')[0];
+    const parts = [];
+    if (m.species.length) parts.push(`species ${m.species.map(x => `${x.name} ${percent(x.p)}`).join(', ')}${flagged(s, 'species')}`);
+    if (m.subspecies.length) parts.push(`subspecies ${m.subspecies.map(x => `${shortName(x.name, genus)} ${percent(x.p)}`).join(', ')}${flagged(s, 'subspecies')}`);
+    parts.push(m.sex ? `sex ${m.sex} ${percent(m.sex_confidence)}, ${m.sex_trusted ? 'a Supported call' : m.sex_not_trusted}${flagged(s, 'sex')}` : `sex not scored (${m.sex_status})`);
+    out.push(`Model output, not checked: ${parts.join('; ')}.`);
+  } else out.push('Model output: none stored for this specimen.');
+  if (s.envelope?.lines.length)
+    out.push(
+      `Envelope as read by the model ${s.envelope.model ?? '(not named)'}, not checked: ${s.envelope.lines.join(' / ')}${flagged(s, 'envelope_cam')}${s.envelope.cam_read ? '' : ' (no CAM ID read from it: the reading may be poor)'}`,
+    );
+  return out.join('  \n');
+}
+
+/** One specimen on one plain line. */
+function plainMarkdown(s) {
+  const m = s.model;
+  const model = m?.species[0] ? `; model: ${m.species[0].name} ${percent(m.species[0].p)}${m.sex ? `, ${m.sex} ${percent(m.sex_confidence)}${m.sex_trusted ? '' : ' (not trusted)'}` : ''}` : '';
+  const flag = s.differs?.length ? ` (not the database's: ${s.differs.join(', ')})` : '';
+  const links = ['dorsal', 'ventral'].filter(k => s.photos[k]).map(k => `[${k[0]}](${s.photos[k].full})`).join(' ');
+  return `- **${s.cam_id}** ${factsOf(s, false)}${model}${flag}${links ? ` ${links}` : ''}`;
+}
+
+/**
+ * A specimen as the answer's JSON gives it: the preview and crop URLs only in the Markdown, the models' names in
+ * `models`; past the detailed ones, the models' first answer only.
+ */
+function compactSpecimen(s, detailed) {
+  const { species_model, sex_model, ...model } = s.model ?? {};
+  const first = list => list?.[0] ?? null;
+  const photo = x => x && (({ preview, wings, ...rest }) => rest)(x);
+  return {
+    ...s,
+    photos: { dorsal: photo(s.photos.dorsal), ventral: photo(s.photos.ventral) },
+    model: !s.model ? null : detailed ? model : { species: first(model.species), subspecies: first(model.subspecies), ...Object.fromEntries(Object.entries(model).filter(([k]) => k.startsWith('sex'))) },
+    envelope: s.envelope ? (({ model: _, crop, ...e }) => e)(s.envelope) : null,
+  };
+}
+
+/**
+ * The answer's Markdown: the first `detailed` specimens with photos in full, the next PLAIN_ROWS one plain line
+ * each (the rest are counted: the gallery link has them).
+ */
+export function specimensMarkdown(shown, detailed) {
+  const full = shown.slice(0, detailed).filter(s => s.photos.dorsal || s.photos.ventral);
+  const rest = shown.filter(s => !full.includes(s));
+  const rows = rest.slice(0, PLAIN_ROWS).map(plainMarkdown);
+  if (rest.length > PLAIN_ROWS) rows.push(`- and ${rest.length - PLAIN_ROWS} more (in \`specimens\` and the gallery link)`);
+  return [...full.map(detailedMarkdown), ...(rows.length ? [rows.join('\n')] : [])].join('\n\n');
+}
 
 /** One record of the maps, kept small: strings shared (`intern`). */
 function compactPoint(p, intern) {
@@ -704,19 +923,55 @@ export function createMapsTools({
     }
     found.sort((a, b) => b.cam.localeCompare(a.cam, 'en', { numeric: true }));
     const limit = clamp(args.limit, 1, 60, 12);
-    const thumbs = clamp(args.thumbnails, 0, 24, 6);
-    const photo = x => x && { name: x.name, file: x.file, thumbnail: thumbUrl(x.file), full: fullUrl(x.file) };
-    const shown = found.slice(0, limit).map(({ cam, v, elev, p }) => ({
-      cam_id: cam,
-      species: text(v.SPECIES) || null,
-      subspecies: text(v.Subspecies_Form) || null,
-      sex: text(v.Sex) || null,
-      locality: text(v.Collection_location) || null,
-      country: text(v.Country) || null,
-      date: dateOf(v.Collection_date),
-      elevation_m: elev,
-      photos: { dorsal: photo(p.dorsal) ?? null, ventral: photo(p.ventral) ?? null },
-    }));
+    const thumbs = clamp(args.thumbnails, 0, DETAILED_MAX, 4);
+    const kept = found.slice(0, limit);
+    const read = photoReadings(store?.db, kept.map(({ cam, p }) => ({ cam, photos: { dorsal: p.dorsal ?? null, ventral: p.ventral ?? null } })));
+    const shown = kept.map(({ cam, v, elev, p }, i) => {
+      const detailed = i < thumbs;
+      const r = read.get(cam) ?? { prediction: null, envelopes: [], boxes: {}, sizes: {} };
+      const photo = view => {
+        const x = p[view];
+        if (!x) return null;
+        const size = r.sizes[view] ?? null;
+        const f = r.boxes[view];
+        // The wing box as fractions of the photo, made pixels of its real size, with a small margin.
+        const wings = detailed && f && size ? cropUrl(x.file, [f[0] * size[0], f[1] * size[1], f[2] * size[0], f[3] * size[1]], size, { pad: 0.02 * size[0] }) : null;
+        return {
+          name: x.name,
+          file: x.file,
+          full: fullUrl(x.file),
+          ...(detailed ? { preview: previewUrl(x.file), ...(size ? { size } : {}), ...(wings ? { wings } : {}) } : {}),
+        };
+      };
+      // The envelope: the reading that read this CAM ID best, then one that read another (shown as differing),
+      // then one that read none (an upside-down reading); the dorsal photo's on a tie.
+      const camConf = e => (!e.camid ? -2 : text(e.camid).toUpperCase() === cam ? (e.camid_conf ?? 0) : -1);
+      const env = [...r.envelopes]
+        .sort((a, b) => camConf(b) - camConf(a) || (b.view === 'dorsal') - (a.view === 'dorsal'))
+        .find(e => e.lines.length || e.bbox);
+      const envCrop = detailed && env?.file && env.bbox ? cropUrl(env.file, env.bbox, env.size, { width: 360, pad: 6 }) : null;
+      const species = text(v.SPECIES) || null;
+      const subspecies = text(v.Subspecies_Form) || null;
+      const sex = text(v.Sex) || null;
+      const model = modelOf(r.prediction, species);
+      const differs = differences({ cam, species, subspecies, sex, model, envelope: env });
+      return {
+        cam_id: cam,
+        species,
+        subspecies,
+        sex,
+        locality: text(v.Collection_location) || null,
+        country: text(v.Country) || null,
+        date: dateOf(v.Collection_date),
+        elevation_m: elev,
+        photos: { dorsal: photo('dorsal'), ventral: photo('ventral') },
+        model,
+        envelope: env
+          ? { photo: env.name, lines: env.lines, cam_read: env.camid ?? null, model: env.model ?? null, ...(envCrop ? { crop: envCrop } : {}) }
+          : null,
+        ...(differs.length ? { differs } : {}),
+      };
+    });
     // The Collection tab filters by species, subspecies and sex only; anything else is the search tab with the IDs.
     const byFilters = (sp.size || ssp.size) && !cams.size && !genera.size && !place.length && !countries.size && low === null && high === null && withPhotos;
     const speciesNames = [...new Set(found.map(f => text(f.v.SPECIES)))];
@@ -725,25 +980,19 @@ export function createMapsTools({
       : found.length
         ? galleryUrl({ camids: found.map(f => f.cam) }, galleryBase)
         : null;
-    const lines = shown
-      .slice(0, thumbs)
-      .filter(s => s.photos.dorsal || s.photos.ventral)
-      .map(s => {
-        const pics = ['dorsal', 'ventral']
-          .filter(k => s.photos[k])
-          .map(k => `[![${s.cam_id} ${k[0]}](${s.photos[k].thumbnail})](${s.photos[k].full})`)
-          .join(' ');
-        const about = [s.species, s.subspecies, s.sex, s.locality, s.elevation_m !== null ? `${s.elevation_m} m` : null].filter(Boolean).join(', ');
-        return `${pics}  \n**${s.cam_id}** ${about}`;
-      });
+    // The models' names once for the answer, not in every specimen; the rows past `thumbnails` with only the
+    // models' first answer: the answer stays well within the tools' budget (server/tool-budget.mjs).
+    const named = key => [...new Set(shown.map(key).filter(Boolean))];
+    const models = { species: named(s => s.model?.species_model), sex: named(s => s.model?.sex_model), envelope: named(s => s.envelope?.model) };
     return {
       found: found.length,
       shown: shown.length,
-      specimens: shown,
+      specimens: shown.map((s, i) => compactSpecimen(s, i < thumbs)),
+      models,
       gallery: url,
       ...(url && !byFilters && found.length > URL_CAMS ? { gallery_note: `The link holds the first ${URL_CAMS} of ${found.length} CAM IDs.` } : {}),
-      markdown: lines.join('\n\n'),
-      note: 'From the workbook and Photo_links as this app has them now; the gallery site shows a new specimen after its next update.',
+      markdown: specimensMarkdown(shown, thumbs),
+      note: 'From the workbook and Photo_links as this app has them now; the gallery site shows a new specimen after its next update. `model` and `envelope` are model output, not checked: the database is the record.',
     };
   }
 

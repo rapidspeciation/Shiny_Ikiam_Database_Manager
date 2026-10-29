@@ -12,6 +12,7 @@ None of them writes anything: they read the public sites' data files over HTTPS 
 | Host plants | `data/host_plants/host_plant_associations.json` of the same site (863 butterfly-plant associations, 16 Jun 2026) | Changes only when the maps' host plant review is rebuilt. Same 6-hour check. |
 | Elevation of a record | The workbook's `ELEVATION` for the project's records (by CAM ID, from this app's database); for other records, the Copernicus 90 m DEM through Open-Meteo's elevation API at the record's coordinates | Workbook: live. DEM: looked up only when a call filters or sorts by elevation, at most 1,000 distinct points a call (10 requests of 100), kept in memory. |
 | Specimens and photos (Wings Gallery, `rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery`) | This app's own copy of the workbook: `Collection_data` rows and the `Photo_links` sheet (Drive file IDs) | Live (the workbook sync, every few minutes). The gallery site itself is rebuilt by its «Update Database» run, so a specimen added today may be in the tool's answer before the gallery shows it: the answer says so. |
+| What the models read from the photos | This app's photo tables (`server/photodata.mjs`): `photo_predictions` (the Wings Gallery's species and subspecies, the sex model's call), `envelope_readings` (the envelope's box and text lines, the photo's size), `photo_wing_boxes` (the wings' box) | As last imported (`scripts/import-envelope-curation.mjs` and the predictions import). A specimen photographed since has none yet: the answer says "none stored". |
 
 ## Tools
 
@@ -44,9 +45,20 @@ Answer: each association with the butterfly taxon, the plant (family, genus, spe
 Collection specimens with wing photos, from the workbook and Photo_links.
 
 - Any of: `cam_ids` (up to 200), `species` (list, "Genus species"), `subspecies`, `genus`, `sex` (`male`, `female`), `locality` (words matched in `Collection_location`, accents ignored), `country`, `elevation_min`, `elevation_max`.
-- `with_photos` (default true), `limit` (default 12, at most 60), `thumbnails` (default 6, at most 24: how many of them get a thumbnail in `markdown`).
+- `with_photos` (default true), `limit` (default 12, at most 60), `thumbnails` (default 4, at most 8: how many of them are shown in full in `markdown`).
 
-Answer: per specimen CAM ID, species, subspecies, sex, locality, country, date, elevation, and its photos (`dorsal`, `ventral`: Drive file, thumbnail URL, full-size URL); the count of all matches; a gallery URL; and `markdown`: a few specimens as small thumbnails, ready to paste in the reply.
+Answer: per specimen
+- the database's CAM ID, species, subspecies, sex, locality, country, date, elevation;
+- its photos (`dorsal`, `ventral`: Drive file, full-size URL, and for the detailed ones the photo's `size`);
+- `model`: the Wings Gallery's species and subspecies top 3 with probabilities, and the sex model's call with its confidence. `sex_trusted` is false, with `sex_not_trusted` saying why, when the call is not Supported (`sex_supported` 0: a leaning only) or the species is on `server/sex-model-unreliable.json` (Methona confusa: `sex_not_trusted_why` gives the list's reason). Past the detailed ones only the first answer of each;
+- `envelope`: the text lines the envelope reader read, the CAM ID it read, the photo it is from;
+- `differs`: where these disagree with the database (`species`; `subspecies` when the species agree and the database names one; `sex`; `envelope_cam`).
+
+And: the count of all matches; a gallery URL; `models`: the names of the species, sex and envelope models, once; and `markdown`, ready to paste in the reply.
+
+`markdown`: the first `thumbnails` specimens in full: the database's line, a 600 px photo, the wings crop of each photo and the envelope crop (each linked to its full photo), links to both full photos, the model output and the envelope lines, each marked "not checked", with "(not the database's)" where they disagree. The next 20 one plain line each (the database's line, the model's first species and sex, links to the photos); any more are counted. A detailed specimen is about 1,700 characters; the default answer (12 specimens, 4 in full) about 22,000 of the tools' 38,000. The preview and crop URLs are only in `markdown`.
+
+The models' output is never given as a fact: the database is the record. The envelope reader misreads some lines (an upside-down reading reads no CAM ID; the answer then says the reading may be poor).
 
 ## URL formats
 
@@ -70,11 +82,22 @@ https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/search?view=1&camids
 
 The collection tab filters by `species`, `subspecies`, `sex`, `family`, `tribe`; it has no locality or elevation filter, so a search by locality, elevation or CAM ID links to the search tab with the CAM IDs found (at most 150 in a URL).
 
-Photos: thumbnail `https://wsrv.nl/?url=https%3A%2F%2Fdrive.google.com%2Fuc%3Fid%3D<file>&w=160&output=webp` (the image proxy the gallery itself uses first), full size `https://lh3.googleusercontent.com/d/<file>=w1600`.
+Photos (no file is stored; the image proxy wsrv.nl makes each one from Drive's copy):
+
+- full size: `https://lh3.googleusercontent.com/d/<file>=w1600`;
+- preview: `https://wsrv.nl/?url=<the full-size URL, encoded>&w=600&output=jpg`;
+- crop: `https://wsrv.nl/?url=<encoded https://lh3.googleusercontent.com/d/<file>=w<photo width>>&cx=..&cy=..&cw=..&ch=..&w=300&precrop&output=jpg`.
+
+The crop is in pixels of the photo at the size the readers saw it (`size_json` of `envelope_readings`, else of `photo_wing_sides`: mostly 1600 x 1067, 1200, 899 or 1060, some upright 1200 x 1600). The wing box (`photo_wing_boxes.box_json`, fractions [x1, y1, x2, y2]) is multiplied by that size, with a 2 % margin; the envelope box (`bbox_json`) is already pixels, with 6 px. Two things checked on 29 Oct 2026:
+
+- Drive's `=w1600` of an upright photo is 1536 x 2048 (larger than the 1200 x 1600 frame the boxes are in), so the crop asks Drive for the photo at its own width (`=w1200`).
+- Without `precrop` the proxy first shrinks the photo to `w` and then drops a crop that falls outside it (the answer showed the whole photo at 300 px). With it, it crops and then shrinks.
+
+An envelope reading's `turned` 180 is not used: 6 of 6 such Drive photos checked show the envelope upright as they are now. A photo without a size gets no crop (the photo and links are still given).
 
 ## Photos in the chat
 
-T3 Code (0.1.3, the server's version) renders Markdown images with https sources in assistant replies: tested on 28 Oct 2026 with a reply holding a wsrv.nl and an lh3 thumbnail of CAM036744, both shown at 160 px (screenshot `docs/assistant-tools-maps-gallery-t3-images.png`). The page sets no Content-Security-Policy, so the images load inside the Asistente frame too. `gallery_specimens` therefore returns ready Markdown, each thumbnail linked to its full photo.
+T3 Code (0.1.3, the server's version) renders Markdown images with https sources in assistant replies: tested on 28 Oct 2026 with a reply holding a wsrv.nl and an lh3 thumbnail of CAM036744, both shown at 160 px (screenshot `docs/assistant-tools-maps-gallery-t3-images.png`). The page sets no Content-Security-Policy, so the images load inside the Asistente frame too. `gallery_specimens` therefore returns ready Markdown, each image linked to its full photo.
 
 ## Limits
 

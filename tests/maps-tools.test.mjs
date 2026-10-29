@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { mcpTools } from '../server/assistant.mjs';
-import { MAPS_TOOL_NAMES, createMapsTools, dateOf, galleryUrl, mapsUrl, yearOf } from '../server/maps-tools.mjs';
+import { MAPS_TOOL_NAMES, createMapsTools, cropUrl, dateOf, differences, galleryUrl, mapsUrl, modelOf, percent, previewUrl, specimensMarkdown, yearOf } from '../server/maps-tools.mjs';
+import { initPhotoTables } from '../server/photodata.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
 const GALLERY = 'https://gallery.test/Gallery/';
@@ -225,8 +226,12 @@ test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; noth
   assert.deepEqual(males.specimens.map(s => s.cam_id), ['CAM000002']);
   assert.equal(males.gallery, `${GALLERY}?view=1&species=Oleria%20onega&sex=male`);
   assert.equal(males.specimens[0].photos.dorsal.file, '1CAM000002d'.padEnd(31, 'x'));
-  assert.match(males.specimens[0].photos.dorsal.thumbnail, /^https:\/\/wsrv\.nl\/\?url=https%3A%2F%2Fdrive\.google\.com%2Fuc%3Fid%3D1CAM000002d/);
-  assert.match(males.markdown, /^\[!\[CAM000002 d\]\(https:\/\/wsrv\.nl\/.*\)\]\(https:\/\/lh3\.googleusercontent\.com\/d\/1CAM000002d\w+=w1600\)/);
+  assert.equal(males.specimens[0].photos.dorsal.full, `https://lh3.googleusercontent.com/d/${'1CAM000002d'.padEnd(31, 'x')}=w1600`);
+  // Without the photo tables (an app that has not imported them): the photo and no model output.
+  assert.equal(males.specimens[0].model, null);
+  assert.match(males.markdown, /^\*\*CAM000002\*\* in the database: Oleria onega, janarilla, male/);
+  assert.match(males.markdown, /\[!\[CAM000002 dorsal\]\(https:\/\/wsrv\.nl\/\?url=https%3A%2F%2Flh3\.googleusercontent\.com%2Fd%2F1CAM000002d\w+%3Dw1600&w=600&output=jpg\)\]\(https:\/\/lh3\.googleusercontent\.com\/d\/1CAM000002d\w+=w1600\)/);
+  assert.match(males.markdown, /Model output: none stored/);
   assert.equal((await tools.run('gallery_specimens', { species: ['Oleria onega'], sex: 'male', with_photos: false })).found, 2);
 
   const mindo = (await tools.run('gallery_specimens', { locality: 'mindo', elevation_min: 1400 }));
@@ -239,7 +244,9 @@ test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; noth
   // "NA" is no elevation, not 0 m.
   assert.equal((await tools.run('gallery_specimens', { genus: ['Mechanitis'], elevation_max: 100 })).found, 0);
   const byId = (await tools.run('gallery_specimens', { cam_ids: ['cam000001'], thumbnails: 1 }));
-  assert.equal(byId.markdown.match(/!\[/g).length, 2);
+  // One 600 px photo (no wing boxes or envelope here), and both full photos linked.
+  assert.equal(byId.markdown.match(/!\[/g).length, 1);
+  assert.match(byId.markdown, /Full photos: \[dorsal\]\(.*\), \[ventral\]\(/);
   assert.match((await tools.run('gallery_specimens', {})).error, /at least one/);
   assert.equal(changes(), before);
 });
@@ -261,4 +268,103 @@ test('a site that does not answer: an error the first time, the copy read before
   down = true;
   clock += 7 * 3600_000;
   assert.equal((await tools.run('host_plants', { butterfly: 'Oleria' })).found, 2);
+});
+
+/** The photo tables of server/photodata.mjs with readings of CAM000002 (landscape) and CAM000001 (upright). */
+function addReadings(db) {
+  initPhotoTables(db);
+  const now = '2026-10-29T00:00:00Z';
+  const env = db.prepare('INSERT INTO envelope_readings(name,file_id,cam,view,bbox_json,turned,size_json,camid,camid_conf,text_json,model,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
+  env.run('CAM000002d', '1CAM000002d'.padEnd(31, 'x'), 'CAM000002', 'dorsal', '[0,263,547,656]', 0, '[1600,1067]', 'CAM000002', 1, '[["CAM000002",1],["Oleria onega",0.97],["♂",1]]', 'reader-v1', now);
+  // An upside-down reading of the upright photo: no CAM ID read, so the other photo's reading is shown.
+  env.run('CAM000001d', '1CAM000001d'.padEnd(31, 'x'), 'CAM000001', 'dorsal', '[10,20,410,620]', 180, '[1200,1600]', null, null, '[["99EEL0",0.5]]', 'reader-v1', now);
+  env.run('CAM000001v', '1CAM000001v'.padEnd(31, 'x'), 'CAM000001', 'ventral', '[10,20,410,620]', 0, '[1200,1600]', 'CAM000009', 0.9, '[["CAM000009",0.9],["♀",1]]', 'reader-v1', now);
+  const box = db.prepare('INSERT INTO photo_wing_boxes(name,box_json,conf) VALUES(?,?,?)');
+  box.run('CAM000002d', '[0.32,0.28,0.6,0.56]', 0.94);
+  box.run('CAM000001d', '[0.25,0.5,0.75,0.75]', 0.9);
+  const pred = db.prepare('INSERT INTO photo_predictions(cam,species_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,sex_status,model,sex_model,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+  pred.run('CAM000002', '[["Oleria onega",0.849],["Oleria baizana",0.0181],["Hypothyris anastasia",0.004],["Oleria x",0.001]]', '[["Oleria onega lota",0.61],["Oleria onega janarilla",0.18]]', 'female', 0.9936, 1, 'Oleria onega', 'species_supported', 'species-model-D', 'sex-model-1019', now);
+  pred.run('CAM000001', '[["Oleria onega",0.9]]', '[["Oleria onega janarilla",0.7]]', 'female', 0.71, 0, 'Oleria onega', 'below_confidence', 'species-model-D', 'sex-model-1019', now);
+}
+
+test('gallery_specimens with the photo tables: 600 px photo, wing and envelope crops, model output marked as such', async () => {
+  const { tools, store } = await setup();
+  addReadings(store.db);
+  const changes = () => store.db.prepare('SELECT total_changes() n').get().n;
+  const before = changes();
+  const out = await tools.run('gallery_specimens', { cam_ids: ['CAM000002', 'CAM000001'], thumbnails: 1 });
+  assert.deepEqual(out.specimens.map(s => s.cam_id), ['CAM000002', 'CAM000001']);
+  const [two, one] = out.specimens;
+  const file2 = '1CAM000002d'.padEnd(31, 'x');
+
+  // The wing box (fractions) made pixels of the photo's 1600x1067, with a 2 % margin; the envelope's pixels.
+  const wings = `https://wsrv.nl/?url=${encodeURIComponent(`https://lh3.googleusercontent.com/d/${file2}=w1600`)}&cx=480&cy=266&cw=512&ch=364&w=300&precrop&output=jpg`;
+  assert.ok(out.markdown.includes(`[![CAM000002 wings dorsal](${wings})](https://lh3.googleusercontent.com/d/${file2}=w1600)`));
+  assert.ok(out.markdown.includes(`&cx=0&cy=257&cw=553&ch=405&w=360&precrop&output=jpg)`));
+  assert.ok(out.markdown.includes(`[![CAM000002 dorsal](${previewUrl(file2)})]`));
+  // Top 3 with probabilities, as model output; the sex model's Supported call against the database's male.
+  assert.deepEqual(two.model.species.map(x => x.name), ['Oleria onega', 'Oleria baizana', 'Hypothyris anastasia']);
+  assert.equal(two.model.sex_trusted, true);
+  assert.deepEqual(two.differs, ['subspecies', 'sex']);
+  assert.match(
+    out.markdown,
+    /Model output, not checked: species Oleria onega 85 %, Oleria baizana 1\.8 %, Hypothyris anastasia 0\.4 %; subspecies O\. onega lota 61 %, O\. onega janarilla 18 % \*\*\(not the database's\)\*\*; sex female 99 %, a Supported call \*\*\(not the database's\)\*\*\./,
+  );
+  assert.match(out.markdown, /Envelope as read by the model reader-v1, not checked: CAM000002 \/ Oleria onega \/ ♂/);
+  // The models' names once; the JSON without the Markdown's URLs.
+  assert.deepEqual(out.models, { species: ['species-model-D'], sex: ['sex-model-1019'], envelope: ['reader-v1'] });
+  assert.equal(two.model.species_model, undefined);
+  assert.equal(two.photos.dorsal.wings, undefined);
+  assert.deepEqual(two.photos.dorsal.size, [1600, 1067]);
+
+  // Past `thumbnails`: one plain line, the models' first answer only, the sex call not trusted.
+  assert.deepEqual(one.model.species, { name: 'Oleria onega', p: 0.9 });
+  assert.equal(one.model.sex_trusted, false);
+  assert.match(one.model.sex_not_trusted, /not a Supported call \(below_confidence\)/);
+  // The reading that read a CAM ID, though not this one: flagged.
+  assert.equal(one.envelope.photo, 'CAM000001v');
+  assert.deepEqual(one.differs, ['envelope_cam']);
+  assert.match(out.markdown, /\n\n- \*\*CAM000001\*\* Oleria onega, janarilla, female, Tena, Hollín, 600 m; model: Oleria onega 90 %, female 71 % \(not trusted\) \(not the database's: envelope_cam\) \[d\]\(.*\) \[v\]\(.*\)$/);
+
+  // In full, the upright photo's crop asks Drive for the photo at its own width (1200), not 1600.
+  const full = await tools.run('gallery_specimens', { cam_ids: ['CAM000001'] });
+  assert.ok(full.markdown.includes(`${encodeURIComponent('=w1200')}&cx=276&cy=776&cw=648&ch=448&w=300&precrop&output=jpg`));
+  assert.match(full.markdown, /\(not the database's\)/);
+  assert.equal(changes(), before);
+});
+
+test('crop URLs: clamped to the photo, made from its own width, none from a bad box or size', () => {
+  const url = cropUrl('F1', [-20, 10, 300, 2000], [1600, 1067], { width: 300 });
+  assert.equal(url, `https://wsrv.nl/?url=${encodeURIComponent('https://lh3.googleusercontent.com/d/F1=w1600')}&cx=0&cy=10&cw=300&ch=1057&w=300&precrop&output=jpg`);
+  // A crop narrower than the width asked is not enlarged.
+  assert.match(cropUrl('F1', [0, 0, 100, 100], [1600, 1067], { width: 300 }), /&w=100&/);
+  assert.equal(cropUrl('F1', [0, 0, 100, 100], null), null);
+  assert.equal(cropUrl('F1', [0, 0, 4, 4], [1600, 1067]), null);
+  assert.equal(cropUrl(null, [0, 0, 100, 100], [1600, 1067]), null);
+  assert.deepEqual([percent(0.849), percent(0.0181), percent(0.004), percent(undefined)], ['85 %', '1.8 %', '0.4 %', '?']);
+});
+
+test('the sex model is not trusted for a species on its unreliable list, even for a Supported call', () => {
+  const prediction = { species_json: '[["Methona confusa",0.76]]', subspecies_json: '[]', sex: 'male', sex_conf: 0.96, sex_supported: 1, sex_species: 'Methona confusa', sex_status: 'species_supported' };
+  const m = modelOf(prediction, 'Methona confusa');
+  assert.equal(m.sex_trusted, false);
+  assert.equal(m.sex_not_trusted, 'the sex model is not trusted for this species');
+  assert.match(m.sex_not_trusted_why, /Training labels/);
+  // The database's species on the list is enough.
+  assert.equal(modelOf({ ...prediction, species_json: '[["Methona grandior",0.6]]', sex_species: null }, 'Methona confusa psamathe').sex_trusted, false);
+  assert.equal(modelOf({ ...prediction, species_json: '[["Oleria onega",0.9]]', sex_species: 'Oleria onega' }, 'Oleria onega').sex_trusted, true);
+  // Not scored: no sex, its status.
+  assert.deepEqual(modelOf({ species_json: '[]', subspecies_json: null, sex: null, sex_status: 'not_scored:no_v_photo' }, 'Oleria onega').sex_status, 'not_scored:no_v_photo');
+  // A database sex with a question mark is still that sex; no subspecies in the database is no disagreement.
+  const model = { species: [{ name: 'Oleria onega' }], subspecies: [{ name: 'Oleria onega lota' }], sex: 'male' };
+  assert.deepEqual(differences({ cam: 'CAM1', species: 'Oleria onega', subspecies: 'NA', sex: 'male?', model, envelope: null }), []);
+  assert.deepEqual(differences({ cam: 'CAM1', species: 'Oleria baizana', subspecies: '', sex: 'female', model, envelope: { camid: 'cam1' } }), ['species', 'sex']);
+});
+
+test('the Markdown stays compact with many specimens: plain lines past the detailed ones, at most 20', () => {
+  const s = i => ({ cam_id: `CAM${String(i).padStart(6, '0')}`, species: 'Oleria onega', subspecies: null, sex: 'male', locality: 'Tena', elevation_m: null, photos: { dorsal: { full: `https://f/${i}`, preview: `https://p/${i}` }, ventral: null }, model: null, envelope: null });
+  const md = specimensMarkdown(Array.from({ length: 30 }, (_, i) => s(i)), 2);
+  assert.equal(md.match(/!\[/g).length, 2);
+  assert.equal(md.match(/^- \*\*CAM/gm).length, 20);
+  assert.match(md, /- and 8 more \(in `specimens` and the gallery link\)$/);
 });
