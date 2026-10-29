@@ -128,6 +128,10 @@ test('the person turns the rack (code beside H1): the wells and the rows follow;
   assert.deepEqual(p.deposit.racks[0].missing, []);
   assert.equal(p.deposit.racks[0].wells[open[0]].t, expected(open[0]));
   assert.ok(p.changes.some(c => c.create && c.values.Tube_ID === expected(open[0])));
+  // A side label typed with another well's tube: said once, as two wells of this rack (not as two racks).
+  const twice = await call('rack_deposit', { racks: [{ rack: '1', fill: { [open[0]]: read.wells.A2 } }] });
+  assert.deepEqual(twice.ask.filter(a => /FS/.test(a) && /two wells|is on/.test(a)), [`FK00274230: ${read.wells.A2} on two wells.`]);
+  await call('rack_deposit', { racks: [{ rack: '1', fill: { [open[0]]: expected(open[0]) } }] });
   const bad = await http('POST', `/api/chat/proposals/${id}/rack`, { racks: [{ rack: 'FK00000001', caja: '1' }] });
   assert.equal(bad.status, 400);
 });

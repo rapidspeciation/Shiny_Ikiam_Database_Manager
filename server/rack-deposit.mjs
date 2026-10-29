@@ -211,11 +211,12 @@ export function depositState(store, deposit, readingOf) {
       problems: [...placed.problems, ...(rack_id && !RACK_ID.test(rack_id) ? [`${rack_id} is not a rack code (FK…, FH…, FE…, SA… and 8 digits).`] : []), ...(rack_id ? [] : ['The rack code was not read: ask the person for it (printed beside a corner).'])],
     });
   }
-  // The same tube on two racks of the deposit.
+  // The same tube on two racks of the deposit (twice on one rack is rackWells' «on two wells»).
   const onRack = new Map();
-  for (const r of racks) for (const id of r._wells?.values() ?? []) onRack.set(id, [...(onRack.get(id) ?? []), r.rack_id ?? '?']);
+  for (const r of racks) for (const id of new Set(r._wells?.values() ?? [])) onRack.set(id, [...(onRack.get(id) ?? []), r]);
   for (const r of racks)
-    for (const id of r._wells?.values() ?? []) if (onRack.get(id).length > 1) r.problems.push(`${id} is on ${onRack.get(id).join(' and ')}.`);
+    for (const id of new Set(r._wells?.values() ?? []))
+      if (onRack.get(id).length > 1) r.problems.push(`${id} is on ${onRack.get(id).map(x => x.rack_id ?? '?').join(' and ')}.`);
   const ids = [...onRack.keys()];
   const rackIds = racks.map(r => r.rack_id).filter(Boolean);
   const byTube = new Map();
