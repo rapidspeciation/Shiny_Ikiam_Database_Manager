@@ -379,6 +379,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   }
 }
 .rack-fields {
+  align-self: flex-start;
   border-collapse: collapse;
   font-size: 12px;
   flex: none;
@@ -440,7 +441,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 .well {
   position: relative;
   display: flex;
-  min-width: 3.6rem;
+  min-width: 3.3rem;
   height: 2.1rem;
   flex-direction: column;
   align-items: center;
@@ -506,10 +507,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 9999px;
-  background: var(--color-amber-600);
+  background: var(--color-stone-400);
 }
 .well.has-code::before {
   content: '▣';
@@ -564,11 +565,11 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   background: var(--color-stone-100);
 }
 .swatch.dot {
-  width: 0.4rem;
-  height: 0.4rem;
+  width: 0.35rem;
+  height: 0.35rem;
   border: 0;
   border-radius: 9999px;
-  background: var(--color-amber-600);
+  background: var(--color-stone-400);
 }
 .well-bar {
   display: flex;
