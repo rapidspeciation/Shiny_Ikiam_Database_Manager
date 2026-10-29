@@ -44,6 +44,8 @@ export interface DepositRack {
   counts?: { new: number; moved: number; same: number; check: number; empty: number; missing: number }
   need_rows: string[]
   elsewhere: { tube: string; well: string | null }[]
+  /** Wells where the sheet records another tube of this rack (one the photos do not show there). */
+  sheet_here?: Record<string, string>
   duplicates: string[]
   unset: string[]
   tubes_read?: number
@@ -67,8 +69,11 @@ export interface RackDeposit {
   drive?: RackFile
 }
 
-/** What a well shows: the server's states, 'missing' (nobody said what is there), 'left' (its row taken out of the proposal). */
-export type CellState = RackWell['s'] | 'missing' | 'left'
+/**
+ * What a well shows: the server's states, 'missing' (nobody said what is there), 'left' (its row taken out of the
+ * proposal), 'off' (its row edited in the table to another rack or well than the photos have).
+ */
+export type CellState = RackWell['s'] | 'missing' | 'left' | 'off'
 export interface RackCell {
   well: string
   tube: string | null
@@ -81,6 +86,10 @@ export interface RackCell {
   byHand: boolean
   /** The photos disagree on it. */
   disputed: boolean
+  /** Where its row in the table puts the tube now, when not here ('off'). */
+  rowPlace: RackPlace | null
+  /** Another tube the sheet records in this well of this rack. */
+  sheetHere: string | null
 }
 
 /** The tube a proposal row places: a new row's Tube_ID, an existing row's ID (its label). */
@@ -88,8 +97,14 @@ const tubeOf = (c: ProposalChange) => String((c.create ? c.values?.Tube_ID : c.l
 
 /** The rack's 96 wells (A1..H12) as shown now, with the proposal's rows. */
 export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<string, RackCell> {
-  const created = new Set(changes.filter(c => c.create && !c.context).map(tubeOf))
-  const edited = new Set(changes.filter(c => !c.create && !c.context).map(c => c.recordId))
+  const created = new Map(changes.filter(c => c.create && !c.context).map(c => [tubeOf(c), c]))
+  const edited = new Map(changes.filter(c => !c.create && !c.context).map(c => [c.recordId, c]))
+  // Where a row puts its tube now (the table's value, the person's edits included).
+  const text = (v: unknown) => String(v ?? '').trim().toUpperCase()
+  const placeOf = (c: ProposalChange): RackPlace => ({
+    rack: text(c.values?.Rack_ID ?? c.current?.Rack_ID ?? c.rowValues?.Rack_ID) || null,
+    well: text(c.values?.Tube_location ?? c.current?.Tube_location ?? c.rowValues?.Tube_location) || null,
+  })
   const disputed = new Set(rack.disputed ?? [])
   const out = new Map<string, RackCell>()
   for (const row of ROWS)
@@ -97,8 +112,16 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
       const well = `${row}${col}`
       const w = rack.wells[well]
       let state: CellState = w?.s ?? 'missing'
-      if (state === 'new' && w?.t && !created.has(w.t)) state = 'left'
-      if (state === 'moved' && w?.r && !edited.has(w.r)) state = 'left'
+      const line = state === 'new' && w?.t ? created.get(w.t) : state === 'moved' && w?.r ? edited.get(w.r) : undefined
+      let rowPlace: RackPlace | null = null
+      if ((state === 'new' || state === 'moved') && !line) state = 'left'
+      else if (line) {
+        const at = placeOf(line)
+        if (at.rack !== text(rack.rack_id) || at.well !== well) {
+          state = 'off'
+          rowPlace = at
+        }
+      }
       out.set(well, {
         well,
         tube: w?.t ?? null,
@@ -107,6 +130,8 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
         needsRows: !!w?.n,
         byHand: !!rack.fill?.[well],
         disputed: disputed.has(well),
+        rowPlace,
+        sheetHere: rack.sheet_here?.[well] ?? null,
       })
     }
   return out
@@ -114,7 +139,7 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
 
 /** How many wells of each state (the section's legend). */
 export function cellCounts(cells: Map<string, RackCell>) {
-  const n: Record<CellState, number> = { new: 0, moved: 0, same: 0, check: 0, empty: 0, missing: 0, left: 0 }
+  const n: Record<CellState, number> = { new: 0, moved: 0, same: 0, check: 0, empty: 0, missing: 0, left: 0, off: 0 }
   for (const c of cells.values()) n[c.state]++
   return n
 }
@@ -133,13 +158,16 @@ export function notReady(deposit: RackDeposit): string[] {
   const out: string[] = []
   if (!deposit.racks.length) out.push(t('ningún rack leído'))
   if (!deposit.responsable?.trim()) out.push(t('falta el responsable'))
+  if (!deposit.ultracongelador?.trim()) out.push(t('falta el ultracongelador'))
   for (const r of deposit.racks) {
     const rack = r.rack_id ?? '?'
     if (!r.rack_id) out.push(t('{rack}: falta el código del rack', { rack }))
+    const unset = (['estanteria', 'fila_de_rack', 'caja'] as const).filter(f => !String(r[f] ?? '').trim())
+    if (unset.length) out.push(t('{rack}: falta {fields}', { rack, fields: unset.map(f => t(FIELD_LABELS[f])).join(', ') }))
     const open = r.missing.length
     const wells = `${r.missing.slice(0, 6).join(', ')}${open > 6 ? '…' : ''}`
     if (open) out.push(tn(open, '{rack}: {n} pocillo sin tubo ({wells})', '{rack}: {n} pocillos sin tubo ({wells})', { rack, wells }))
-    for (const p of r.problems) if (!/A1 is not known|code was not read/.test(p)) out.push(`${rack}: ${p}`)
+    for (const p of r.problems) if (!/code was not read/.test(p)) out.push(`${rack}: ${problemText(p)}`)
   }
   return out
 }
@@ -155,4 +183,22 @@ export const FIELD_LABELS: Record<string, string> = {
   estanteria: 'Estantería',
   fila_de_rack: 'Fila de rack',
   caja: 'Nro. Caja',
+}
+
+/**
+ * A rack's problem as the server says it to the assistant (English), in the person's words for the common ones;
+ * others as they are.
+ */
+export function problemText(p: string): string {
+  let m: RegExpExecArray | null
+  if (/code was not read/.test(p)) return t('Falta el código del rack: escríbelo en «Rack»')
+  if ((m = /^(\S+) is on (.+)\.$/.exec(p))) return t('{tube} está en dos racks: {racks}', { tube: m[1], racks: m[2].replace(' and ', ', ') })
+  if ((m = /^(.+) on two wells\.$/.exec(p))) return t('En dos pocillos: {tubes}', { tubes: m[1] })
+  if ((m = /^(\w+) was read as (\S+), not (\S+)\.$/.exec(p))) return t('{well}: las fotos leyeron {read}, no {given}', { well: m[1], read: m[2], given: m[3] })
+  if ((m = /^In these photos the rack code can only be beside (\S+) or (\S+), not (\S+)\.$/.exec(p)))
+    return t('En estas fotos el código solo puede estar junto a {a} o {b}, no {c}', { a: m[1], b: m[2], c: m[3] })
+  if (/^A1 is not known/.test(p)) return t('No se sabe dónde está A1: falta el código del rack en las fotos')
+  if ((m = /^(\S+) is not a rack code/.exec(p))) return t('{code} no es un código de rack (FK…, FH…, FE…, SA… y 8 cifras)', { code: m[1] })
+  if (/reading is gone/.test(p)) return t('Su lectura ya no está: vuelve a leer las fotos')
+  return p
 }

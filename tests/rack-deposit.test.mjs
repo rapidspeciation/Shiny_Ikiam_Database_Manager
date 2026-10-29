@@ -72,6 +72,7 @@ test('a rack read goes at once into a deposit proposal: grid, defaults, the tube
   assert.equal(rack.tubes.moved, 1);
   assert.equal(rack.tubes.new, rack.tubes.same + rack.tubes.moved + rack.tubes.new - 2);
   assert.deepEqual(rack.elsewhere, [{ tube: 'FS11111111', well: 'H12' }]);
+  assert.deepEqual(d.racks.length, 1);
   // Tubes no sheet holds need their rows (one has its Collection_data row).
   assert.ok(rack.need_rows.length >= 90 && !rack.need_rows.includes('FS50849233'));
 
@@ -94,6 +95,8 @@ test('a rack read goes at once into a deposit proposal: grid, defaults, the tube
   assert.ok(p.deposit.racks[0].missing.includes('A1'));
   assert.deepEqual(p.deposit.racks[0].code_options, ['A12', 'H1']);
   assert.equal(p.deposit.racks[0].assumed, true);
+  // The sheet's own tube at H12 of this rack (not in the photos): marked on that well.
+  assert.deepEqual(p.deposit.racks[0].sheet_here, { H12: 'FS11111111' });
   assert.ok(p.page?.photos >= 1, 'the rack photo beside the table');
 });
 
@@ -138,7 +141,12 @@ test('the .xlsx from the sidebar, refused while wells are open; the Drive copy o
   assert.equal(refused.status, 409);
   assert.ok(refused.body.error.details.problems.some(p => /no tube for/.test(p)));
   const open = read.missing.map(m => m.well);
-  await call('rack_deposit', { racks: [{ rack: '1', fill: Object.fromEntries(open.map(w => [w, expected(w)])), estanteria: '2', fila_de_rack: '1', caja: '1' }] });
+  // Every well said, but the deposit sheet's fields not given yet: still refused (nothing invented in the file).
+  await call('rack_deposit', { racks: [{ rack: '1', fill: Object.fromEntries(open.map(w => [w, expected(w)])) }] });
+  const noFields = await http('POST', `/api/chat/proposals/${id}/rack-files`, {});
+  assert.equal(noFields.status, 409);
+  assert.ok(noFields.body.error.details.problems.some(p => /estanteria, fila_de_rack, caja not given/.test(p)));
+  await call('rack_deposit', { racks: [{ rack: '1', estanteria: '2', fila_de_rack: '1', caja: '1' }] });
   const made = await http('POST', `/api/chat/proposals/${id}/rack-files`, {});
   assert.equal(made.status, 200);
   assert.equal(made.body.file, `Anexo1-deposito-${new Date().toISOString().slice(0, 10)}-FK00274230.xlsx`);
@@ -168,7 +176,7 @@ test('Drive unreachable: a clear failure, the download still works', async () =>
   };
   const { call } = await setup({ drive });
   const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
-  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well) }] });
+  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well), estanteria: '2', fila_de_rack: '1', caja: '1' }] });
   const out = await call('rack_report', { drive: true });
   assert.match(out.download, /\/api\/rack-reports\//);
   assert.match(out.drive.error, /did not take the copy.*download link still works/);

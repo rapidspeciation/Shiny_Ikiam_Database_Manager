@@ -385,9 +385,9 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
   }
 
   /** The deposit (depositState's) as the Anexo1 .xlsx, kept for `user`: { file, token, download, markdown } or { error, problems }. */
-  function depositReport(deposit, user) {
+  function depositReport(deposit, user, { fields = true } = {}) {
     if (!dir) return { error: 'This app has no folder for rack reports (rackReportsDir).' };
-    const problems = depositProblems(deposit);
+    const problems = depositProblems(deposit, { fields });
     if (!deposit.racks?.length) problems.push('No rack in this deposit yet: read its photos (rack_read_photos).');
     if (problems.length) return { error: 'Not made yet.', problems };
     const names = new Set();
@@ -404,7 +404,7 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
           estanteria: text(r.estanteria),
           rack,
           fila: text(r.fila_de_rack),
-          caja: text(r.caja) || String(k + 1),
+          caja: text(r.caja),
           wells: sheetWells(r),
         }),
       };
@@ -434,7 +434,8 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
         problems: !reading ? [`reading ${r.reading} not found (read the photos again with rack_read_photos).`] : placed.problems,
       });
     }
-    return depositReport(deposit, user);
+    // The call before the deposit proposal: its fields were asked for by the assistant, not required here.
+    return depositReport(deposit, user, { fields: false });
   }
 
   // ------------------------------------------------------------ the copy on Drive

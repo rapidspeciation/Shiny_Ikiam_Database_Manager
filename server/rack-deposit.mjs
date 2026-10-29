@@ -286,9 +286,12 @@ export function depositState(store, deposit, readingOf) {
       .filter(x => !placedTubes.has(x.tube))
       .map(x => ({ tube: x.tube, well: x.well }))
       .sort((a, b) => (fillOrder(a.well ?? 'A1') || 0) - (fillOrder(b.well ?? 'A1') || 0));
+    // Wells where the sheet records another tube of this rack (one the photos do not show there): marked on the grid.
+    const sheet_here = Object.fromEntries(elsewhere.filter(e => wellName(e.well)).map(e => [wellName(e.well), e.tube]));
     return {
       ...entry,
       wells,
+      sheet_here,
       counts: { ...counts, empty: _empty?.size ?? 0, missing: r.missing.length },
       need_rows: [...(_wells?.values() ?? [])].filter(t => need.has(t)),
       elsewhere,
@@ -306,13 +309,19 @@ export function depositState(store, deposit, readingOf) {
   return { sheet, deposit: { ...deposit, sheet, racks: out, unset }, changes, newRows, reason };
 }
 
-/** Whether a deposit can be written as the Anexo1 sheet: every well of every rack read, filled or said empty. */
-export function depositProblems(deposit) {
+/**
+ * Whether a deposit can be written as the Anexo1 sheet: every well of every rack read, filled or said empty, and
+ * (`fields`) the sheet's fields given: responsable, freezer, and per rack shelf, rack row and box.
+ */
+export function depositProblems(deposit, { fields = true } = {}) {
   const problems = [];
   if (!text(deposit.responsable)) problems.push('responsable: the person depositing the samples.');
+  if (fields && !text(deposit.ultracongelador)) problems.push('ultracongelador: the freezer (LBI062).');
   for (const [k, r] of (deposit.racks ?? []).entries()) {
     const name = `Rack ${k + 1} (${r.rack_id ?? 'code not read'})`;
     for (const p of r.problems ?? []) problems.push(`${name}: ${p}`);
+    const unset = fields ? RACK_FIELDS.filter(f => !text(r[f])) : [];
+    if (unset.length) problems.push(`${name}: ${unset.join(', ')} not given: ask the person.`);
     const disputed = r.disputed ?? [];
     if (disputed.length) problems.push(`${name}: the photos disagree on ${disputed.join(', ')}: ask the person which tube is there (fill) or whether it is empty.`);
     const open = (r.missing ?? []).filter(w => !disputed.includes(w));

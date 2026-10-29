@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellCounts, notReady, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
+import { cellCounts, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
 import type { ProposalChange } from '../proposals'
 
 const rack = (over: Partial<DepositRack> = {}): DepositRack => ({
@@ -50,6 +50,14 @@ describe('a rack of a deposit', () => {
     expect(rackCells(rack(), [created]).get('C1')?.state).toBe('left')
   })
 
+  it('a row edited in the table to another place: its well says so; the sheet\'s own tube in a well is marked', () => {
+    const elsewhere = { ...created, values: { ...created.values, Tube_location: 'B7' } }
+    const cells = rackCells(rack({ sheet_here: { H12: 'FS11111111' } }), [elsewhere, { ...moved, values: { Rack_ID: 'FK00274230' }, rowValues: { Tube_location: 'E5' } }])
+    expect(cells.get('A1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'B7' } })
+    expect(cells.get('C1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'E5' } })
+    expect(cells.get('H12')?.sheetHere).toBe('FS11111111')
+  })
+
   it('a row of the table belongs to the rack holding its tube', () => {
     const d: RackDeposit = { responsable: 'Franz', ultracongelador: 'LBI062', racks: [rack(), rack({ reading: 'r2', rack_id: 'FK2', wells: { A1: { t: 'FS1', s: 'new' } } })], sheet: 'T', unset: [] }
     expect(rackOfChange(d, created)).toBe('r1')
@@ -64,7 +72,14 @@ describe('a rack of a deposit', () => {
     expect(why.some(w => /responsable|depositor/.test(w))).toBe(true)
     expect(why.some(w => /código del rack|rack code/.test(w))).toBe(true)
     expect(why.some(w => /F1/.test(w))).toBe(true)
-    expect(notReady({ ...d, responsable: 'Franz', racks: [rack({ missing: [] })] })).toEqual([])
+    expect(why.some(w => /Nro\. Caja|Box no\./.test(w))).toBe(true)
+    expect(notReady({ ...d, responsable: 'Franz', racks: [rack({ missing: [], estanteria: '2', fila_de_rack: '1', caja: '3' })] })).toEqual([])
+  })
+
+  it("the server's problems in the person's words", () => {
+    expect(problemText('FS1 is on FK1 and FK2.')).toMatch(/FS1.*FK1, FK2/)
+    expect(problemText('The rack code was not read: ask the person for it (printed beside a corner).')).toMatch(/Rack/)
+    expect(problemText('something new')).toBe('something new')
   })
 
   it('a tube ID: its series apart from the four digits compared', () => {

@@ -868,7 +868,11 @@ const statusText = computed(
       @notice="m => notify(m)"
     />
     <p v-if="s.rack && !s.tables.length" class="px-2 pb-2 text-[11px] text-stone-500">
-      {{ $t('Nada que cambiar en la hoja de ubicaciones para este rack.') }}
+      {{
+        s.rack.problems.length
+          ? $t('Las filas de este rack se proponen cuando se resuelva lo de arriba.')
+          : $t('Nada que cambiar en la hoja de ubicaciones para este rack.')
+      }}
     </p>
     <div v-for="g in s.tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
       <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->

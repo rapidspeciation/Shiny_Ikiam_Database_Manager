@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { AlertTriangle, Check, QrCode, RotateCcw } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText } from '../../lib/notice'
-import { COLS, FIELD_LABELS, ROWS, cellCounts, rackCells, splitTube, type CellState, type DepositRack, type RackCell } from '../../lib/rackDeposit'
+import { COLS, FIELD_LABELS, ROWS, cellCounts, problemText, rackCells, splitTube, type CellState, type DepositRack, type RackCell } from '../../lib/rackDeposit'
 import type { Proposal, ProposalChange } from '../../lib/proposals'
 import { t, tn } from '../../lib/i18n'
 
@@ -52,6 +52,8 @@ async function save(body: Record<string, unknown>) {
   }
 }
 const FIELDS = ['estanteria', 'fila_de_rack', 'caja'] as const
+/** Anexo1's order: freezer, shelf, rack, rack row, box. */
+const FIELD_ROWS = ['estanteria', 'rack', 'fila_de_rack', 'caja'] as const
 const fieldValue = (f: (typeof FIELDS)[number]) => props.rack[f] ?? ''
 function onField(f: (typeof FIELDS)[number], event: Event) {
   const value = (event.target as HTMLInputElement).value.trim()
@@ -77,14 +79,19 @@ const STATE: Record<CellState, { label: string; tip: string }> = {
   empty: { label: 'vacío', tip: 'Pocillo vacío (dicho por la persona)' },
   missing: { label: 'falta', tip: 'Ninguna foto leyó este tubo: escribe su número (etiqueta lateral) o márcalo vacío' },
   left: { label: 'quitado', tip: 'Su fila se quitó de la propuesta: no se escribe' },
+  off: { label: 'otro sitio', tip: 'Su fila en la tabla lo pone en otro rack o pocillo que las fotos: revísala' },
 }
 const legend = computed(() => (Object.keys(STATE) as CellState[]).filter(s => counts.value[s] > 0 || ['new', 'moved', 'same', 'missing'].includes(s)))
+const occupied = computed(() => Object.keys(props.rack.sheet_here ?? {}).length)
+const placeText = (p: { rack: string | null; well: string | null }) => `${p.rack ?? '—'} ${p.well ?? '—'}`
 const codeCorner = computed(() => props.rack.code_beside)
 const cellTitle = (c: RackCell) =>
   [
     `${c.well}${c.tube ? ` · ${c.tube}` : ''}`,
     t(STATE[c.state].tip),
     ...c.was.map(w => t('En la hoja: {rack} {well}', { rack: w.rack ?? '—', well: w.well ?? '—' })),
+    c.rowPlace ? t('La fila de la tabla dice: {place}', { place: placeText(c.rowPlace) }) : '',
+    c.sheetHere ? t('La hoja tiene aquí otro tubo: {tube}; revisa la fila de ese tubo', { tube: c.sheetHere }) : '',
     c.needsRows ? t('Sin fila en ninguna hoja del libro: necesita su fila') : '',
     c.byHand ? t('Escrito a mano (etiqueta lateral)') : '',
     c.disputed ? t('Las fotos no coinciden en este pocillo') : '',
@@ -116,9 +123,9 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
       >
         <QrCode :size="12" />
         {{ $t('Código junto a {well}', { well: rack.code_beside }) }}
-        <template v-if="rack.assumed">· {{ $t('supuesto') }}</template>
+        <template v-if="rack.assumed"> · {{ $t('supuesto') }}</template>
         <template v-else><Check :size="12" /></template>
-        <template v-if="rack.checked_by_ids">· {{ $t('los números de los tubos coinciden') }}</template>
+        <template v-if="rack.checked_by_ids"> · {{ $t('la secuencia de números de los tubos lo apoya') }}</template>
       </span>
       <span v-if="editable && rack.assumed" class="flex items-center gap-1">
         <button type="button" class="rack-btn" :disabled="busy" @click="save({ confirmed: true })">
@@ -155,23 +162,9 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
             <th>{{ $t('Ultracongelador') }}</th>
             <td class="font-mono text-stone-700" :title="$t('Se cambia arriba, para todo el depósito')">{{ freezer }}</td>
           </tr>
-          <tr v-for="f in FIELDS" :key="f">
-            <th>{{ $t(FIELD_LABELS[f]) }}</th>
-            <td>
-              <input
-                :value="fieldValue(f)"
-                :class="{ 'is-unset': !fieldValue(f) }"
-                :placeholder="$t('falta')"
-                :disabled="!editable || busy"
-                :aria-label="$t(FIELD_LABELS[f])"
-                @change="onField(f, $event)"
-                @keydown.enter="($event.target as HTMLInputElement).blur()"
-              />
-            </td>
-          </tr>
-          <tr>
-            <th>{{ $t('Rack') }}</th>
-            <td>
+          <tr v-for="f in FIELD_ROWS" :key="f">
+            <th>{{ f === 'rack' ? $t('Rack') : $t(FIELD_LABELS[f]) }}</th>
+            <td v-if="f === 'rack'">
               <span v-if="rack.rack_id_read" class="font-mono">{{ rack.rack_id }}</span>
               <input
                 v-else
@@ -182,6 +175,17 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
                 :disabled="!editable || busy"
                 :aria-label="$t('Código del rack')"
                 @change="onRackId"
+                @keydown.enter="($event.target as HTMLInputElement).blur()"
+              />
+            </td>
+            <td v-else>
+              <input
+                :value="fieldValue(f)"
+                :class="{ 'is-unset': !fieldValue(f) }"
+                :placeholder="$t('falta')"
+                :disabled="!editable || busy"
+                :aria-label="$t(FIELD_LABELS[f])"
+                @change="onField(f, $event)"
                 @keydown.enter="($event.target as HTMLInputElement).blur()"
               />
             </td>
@@ -211,6 +215,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
                       'is-selected': selected === `${r}${c}`,
                       'has-code': codeCorner === `${r}${c}`,
                       'needs-rows': cells.get(`${r}${c}`)!.needsRows,
+                      'sheet-here': !!cells.get(`${r}${c}`)!.sheetHere,
                       'by-hand': cells.get(`${r}${c}`)!.byHand,
                     },
                   ]"
@@ -237,6 +242,9 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
       <span v-for="s in legend" :key="s" class="legend-item" :title="$t(STATE[s].tip)">
         <span class="swatch" :class="`is-${s}`" />{{ $t(STATE[s].label) }} {{ counts[s] }}
       </span>
+      <span v-if="occupied" class="legend-item" :title="$t('La hoja tiene en ese pocillo de este rack otro tubo, que las fotos no muestran ahí')">
+        <span class="swatch is-sheet-here" />{{ $t('la hoja tiene otro tubo aquí') }} {{ occupied }}
+      </span>
       <span v-if="rack.need_rows.length" class="legend-item" :title="$t('Sin fila en ninguna hoja del libro: necesita su fila')">
         <span class="swatch dot" />{{ $t('sin fila en el libro') }} {{ rack.need_rows.length }}
       </span>
@@ -248,6 +256,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
       <span v-if="chosen.tube" class="font-mono">{{ chosen.tube }}</span>
       <span class="text-stone-600">{{ $t(STATE[chosen.state].tip) }}</span>
       <span v-if="chosen.was.length" class="text-stone-600">· {{ $t('en la hoja') }}: <span class="font-mono">{{ wasText(chosen) }}</span></span>
+      <span v-if="chosen.rowPlace" class="text-amber-900">· {{ $t('La fila de la tabla dice: {place}', { place: placeText(chosen.rowPlace) }) }}</span>
+      <span v-if="chosen.sheetHere" class="text-amber-900">
+        · {{ $t('La hoja tiene aquí otro tubo: {tube}; revisa la fila de ese tubo', { tube: chosen.sheetHere }) }}
+      </span>
       <span v-if="chosen.needsRows" class="text-amber-900">· {{ $t('sin fila en ninguna hoja del libro') }}</span>
       <template v-if="editable && (chosen.state === 'missing' || chosen.byHand)">
         <input
@@ -304,7 +316,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
       <li v-if="rack.duplicates.length">
         {{ $t('En dos filas de la hoja (no se cambian)') }}: <span class="font-mono">{{ rack.duplicates.join(', ') }}</span>
       </li>
-      <li v-for="(p, i) in rack.problems" :key="i" class="is-warn"><AlertTriangle :size="12" /> {{ p }}</li>
+      <li v-for="(p, i) in rack.problems" :key="i" class="is-warn"><AlertTriangle :size="12" /> {{ problemText(p) }}</li>
     </ul>
     <p v-else-if="rack.missing.length" class="rack-notes is-warn">
       <AlertTriangle :size="12" />
@@ -496,6 +508,14 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   color: var(--color-stone-400);
   text-decoration: line-through;
 }
+.well.is-off {
+  background: var(--color-amber-50);
+  box-shadow: inset 0 0 0 2px var(--color-red-500);
+}
+.well.sheet-here {
+  outline: 2px dashed var(--color-amber-600);
+  outline-offset: -3px;
+}
 .well.is-selected {
   box-shadow: inset 0 0 0 2px var(--color-emerald-700);
 }
@@ -560,6 +580,13 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 .swatch.is-missing {
   background: var(--color-red-50);
   border-color: var(--color-red-400);
+}
+.swatch.is-off {
+  background: var(--color-amber-50);
+  border: 2px solid var(--color-red-500);
+}
+.swatch.is-sheet-here {
+  border: 2px dashed var(--color-amber-600);
 }
 .swatch.is-left {
   background: var(--color-stone-100);

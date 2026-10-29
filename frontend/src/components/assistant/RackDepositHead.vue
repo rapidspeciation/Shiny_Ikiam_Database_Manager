@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { AlertTriangle, CloudUpload, Download, ExternalLink, Loader2 } from 'lucide-vue-next'
+import { AlertTriangle, Check, CloudUpload, Download, ExternalLink, Loader2 } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText } from '../../lib/notice'
 import { notReady, type RackDeposit } from '../../lib/rackDeposit'
@@ -20,9 +20,10 @@ const busy = ref<'' | 'fields' | 'xlsx' | 'drive'>('')
 const why = computed(() => notReady(props.deposit))
 const problems = ref<string[]>([])
 
-async function saveField(field: 'responsable' | 'ultracongelador', event: Event) {
-  const value = (event.target as HTMLInputElement).value.trim()
-  if (!props.editable || value === (props.deposit[field] ?? '')) return
+async function saveField(field: 'responsable' | 'ultracongelador', event: Event | null) {
+  // null: the responsable confirmed as it is (no longer assumed).
+  const value = event ? (event.target as HTMLInputElement).value.trim() : (props.deposit[field] ?? '')
+  if (!props.editable || (event && value === (props.deposit[field] ?? ''))) return
   busy.value = 'fields'
   try {
     const out = await api<{ proposal: Proposal }>(`chat/proposals/${props.proposalId}/rack`, { method: 'POST', body: { [field]: value } })
@@ -87,6 +88,17 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
           @keydown.enter="($event.target as HTMLInputElement).blur()"
         />
         <em v-if="deposit.responsable_default" class="text-[10px] text-amber-800">{{ $t('supuesto') }}</em>
+        <button
+          v-if="editable && deposit.responsable_default && deposit.responsable"
+          type="button"
+          class="confirm"
+          :disabled="!!busy"
+          :title="$t('Sí, deposita esta persona')"
+          :aria-label="$t('Confirmar el responsable')"
+          @click="saveField('responsable', null)"
+        >
+          <Check :size="12" />
+        </button>
       </label>
       <label class="dep-field">
         <span>{{ $t('Ultracongelador') }}</span>
@@ -191,6 +203,18 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
 .dep-field input.is-unset {
   background: var(--color-amber-50);
   border-color: var(--color-amber-400);
+}
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-stone-300);
+  border-radius: 0.25rem;
+  background: white;
+  padding: 0.15rem 0.3rem;
+  color: var(--color-emerald-800);
+}
+.confirm:hover:not(:disabled) {
+  border-color: var(--color-emerald-600);
 }
 .jump {
   border: 1px solid var(--color-stone-300);
