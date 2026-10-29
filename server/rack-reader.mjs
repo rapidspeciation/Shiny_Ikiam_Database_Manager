@@ -8,7 +8,8 @@
 // decoded alone, which reads 92-93 of 96 on a phone photo of a full rack.
 //
 // Positions. A photo of the bottom is a mirror of the rack seen from above, so a photo position maps to A1..H12
-// in one of two ways. Which one is decided only by evidence (`orient`): a tube the person says is in A1, the
+// in one of two ways. Which one is decided only by evidence (`orient`): a tube the person says is in A1 (or, when
+// that one was not read, in A12, H1 or H12), the
 // rack's code with the corner the person confirmed it sits by, or, for a rack of pre-loaded sequential tubes, the
 // IDs themselves (+1 from row A to B and +8 from a column to the next, as the Sanger-scanned FluidX racks of the
 // workbook's tube locations show). Without any of them the positions stay photo positions.
@@ -682,12 +683,21 @@ export function sequenceFit(byWell) {
   return { pairs, fit };
 }
 
+/** The rack's corner wells, and the two photo corners each can be at in a photo of the bottom (a mirror). */
+export const CORNER_WELLS = ['A1', 'A12', 'H1', 'H12'];
+
 /**
- * The photos read (readOne's), merged into one rack. `a1Tube`: the tube the person says is in A1; `codeAt`: the
- * well the person confirmed the rack's code sits beside ('A12' or 'H12'). Returns the merged positions, the
- * orientation with what decided it, conflicts, and the rack's code.
+ * The photos read (readOne's), merged into one rack. `a1Tube`: the tube the person says is in A1;
+ * `cornerTubes`: [{ well: 'A1' | 'A12' | 'H1' | 'H12', id }], tubes the person names at corner wells (when the A1
+ * tube was not read, the one at A12 or H1 does the same); `codeAt`: the well the person confirmed the rack's code
+ * sits beside ('A12' or 'H12'). A named tube the photos did not read is noted, never guessed, and does not stop
+ * other evidence. Returns the merged positions, the orientation with what decided it, conflicts, and the rack's code.
  */
-export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
+export function mergeReadings(readings, { a1Tube = null, codeAt = null, cornerTubes = [] } = {}) {
+  const named = [...(a1Tube ? [{ well: 'A1', id: a1Tube }] : []), ...cornerTubes]
+    .map(t => ({ well: String(t?.well ?? '').toUpperCase(), id: String(t?.id ?? '').trim().toUpperCase() }))
+    .filter(t => CORNER_WELLS.includes(t.well) && t.id)
+    .filter((t, k, all) => all.findIndex(o => o.well === t.well && o.id === t.id) === k);
   const placed = alignReadings(readings);
   const votes = new Map(); // "i,j" → Map(id → photos)
   const seen = new Set();
@@ -786,12 +796,14 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
     }
   }
   if (span[0] > COLS || span[1] > ROWS) notes.push(`The tubes spread over ${span[0]} × ${span[1]} places, more than a rack's 12 × 8: one photo may be misplaced.`);
-  // Or from the tube the person says is in A1: at the frame's top right (m1) or bottom left (m2), if only one of
-  // the two leaves every tube inside the rack.
-  if (!origin && a1Tube && where.has(a1Tube)) {
-    const [i, j] = unkey(where.get(a1Tube).at);
+  // Or from a tube the person names at a corner well (that was read): A1 and H12 can only be at the photo's top
+  // right or bottom left, A12 and H1 at its top left or bottom right (either mirror, either half turn); taken
+  // when only one of the two leaves every tube inside the rack.
+  for (const t of named) {
+    if (origin || !where.has(t.id)) continue;
+    const [i, j] = unkey(where.get(t.id).at);
     const fits = ([oi, oj]) => oi <= lo[0] && oi + COLS - 1 >= hi[0] && oj <= lo[1] && oj + ROWS - 1 >= hi[1];
-    const options = (turn ? [[i, j - (ROWS - 1)], [i - (COLS - 1), j]] : [[i - (COLS - 1), j], [i, j - (ROWS - 1)]]).filter(fits);
+    const options = (t.well === 'A1' || t.well === 'H12' ? [[i - (COLS - 1), j], [i, j - (ROWS - 1)]] : [[i, j], [i - (COLS - 1), j - (ROWS - 1)]]).filter(fits);
     if (options.length === 1) origin = options[0];
   }
   // Without the rack's edges no well can be named: a sequence of IDs proves the mirror, not where row A is.
@@ -829,15 +841,19 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
   const votesFor = new Map(); // mapping → [basis]
   const say = (mapping, basis) => votesFor.set(mapping, [...(votesFor.get(mapping) ?? []), basis]);
   const problems = [];
-  if (a1Tube) {
-    const hit = [...cells].find(([, v]) => v.id === a1Tube);
-    if (!hit) problems.push(`${a1Tube} (given as A1) was not read in these photos.`);
-    else {
-      const f = unkey(hit[0]);
-      const m = ['m1', 'm2'].find(mm => wellOf(mm, ...f) === 'A1');
-      if (m) say(m, 'a1_tube');
-      else problems.push(`${a1Tube} (given as A1) is at photo position ${photoName(f)}, not a corner where A1 can be in a photo of the bottom.`);
+  // A named tube not read (glare, a smudged code) decides nothing: noted, and the person is asked for another corner.
+  const notRead = [];
+  for (const t of named) {
+    const hit = [...cells].find(([, v]) => v.id === t.id);
+    if (!hit) {
+      notRead.push(t);
+      notes.push(`${t.id} (given as ${t.well}) was not read in these photos: it does not place the rack.`);
+      continue;
     }
+    const f = unkey(hit[0]);
+    const m = ['m1', 'm2'].find(mm => wellOf(mm, ...f) === t.well);
+    if (m) say(m, t.well === 'A1' ? 'a1_tube' : 'corner_tube');
+    else problems.push(`${t.id} (given as ${t.well}) is at photo position ${photoName(f)}, not a corner where ${t.well} can be in a photo of the bottom.`);
   }
   if (codeAt && codeCorner) {
     const m = ['m1', 'm2'].find(mm => wellOf(mm, ...codeCorner) === codeAt);
@@ -851,7 +867,7 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
   if (votesFor.size === 1 && !problems.length && placedEdges) mapping = [...votesFor.keys()][0];
   if (!placedEdges)
     problems.push(
-      'The rack is not filled edge to edge and its code was not read beside a corner: which well is which is not known. Send a photo where the rack code shows, or say which tube is in A1 (a1_tube).',
+      'The rack is not filled edge to edge and its code was not read beside a corner: which well is which is not known. Send a photo where the rack code shows, or say which tube is in A1 (a1_tube), or in A12 or H1 (corner_tube).',
     );
   if (votesFor.size > 1) problems.push(`The evidence disagrees: ${[...votesFor].map(([m, b]) => `${b.join(' and ')} say A1 is at photo position ${photoName(m === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1])}`).join('; ')}.`);
   const orientation = {
@@ -861,11 +877,15 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null } = {}) {
     rack_code_beside: mapping && codeCorner ? wellOf(mapping, ...codeCorner) : null,
     tube_sequence: { m1: fits.m1, m2: fits.m2 },
     problems,
+    not_read: notRead.map(t => ({ well: t.well, id: t.id })),
     note: mapping
       ? null
       : 'A1 is not known for these photos: a photo of the bottom is a mirror, and A1 is either at photo position ' +
-        `${photoName([COLS - 1, 0])} or ${photoName([0, ROWS - 1])}. Ask the person which tube is in A1 (look at the rack from above, where A1 is printed) ` +
-        (codeCorner ? `or whether the rack code is beside A12 or H12 (here it would be ${wellOf('m1', ...codeCorner)} or ${wellOf('m2', ...codeCorner)}).` : 'and read it again with a1_tube.'),
+        `${photoName([COLS - 1, 0])} or ${photoName([0, ROWS - 1])}. ` +
+        (notRead.length
+          ? `${notRead.map(t => `${t.id} (given as ${t.well})`).join(' and ')} was not read in these photos. Ask the person for the ID of the tube in ${['A12', 'H1'].filter(w => !notRead.some(t => t.well === w)).join(' or ') || 'H12'} instead (look at the rack from above, where the wells are printed) and read it again with corner_tube.`
+          : 'Ask the person which tube is in A1 (look at the rack from above, where A1 is printed) and read it again with a1_tube; if the A1 tube was not read, the tube in A12 or H1 with corner_tube' +
+            (codeCorner ? `, or whether the rack code is beside A12 or H12 (here it would be ${wellOf('m1', ...codeCorner)} or ${wellOf('m2', ...codeCorner)}).` : '.')),
   };
   return { ...out, frame: { origin, turn, span, rack_code_photo_position: codeCorner ? photoName(codeCorner) : null }, cells, conflicts, orientation, notes };
 }

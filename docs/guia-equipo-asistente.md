@@ -40,7 +40,7 @@ La dirección de correo del Director del LBI está en el protocolo de Alex, en e
    - mandar otra foto desde otro ángulo (envía de nuevo todas las fotos), o
    - **dictar el número de la etiqueta lateral del tubo**, o
    - decir que ese pocillo está vacío.
-3. **Posición A1.** Una foto del fondo es como un espejo del rack visto desde arriba, así que A1 puede estar en una de dos esquinas. Muchas veces los números de los tubos lo resuelven solos. Si no, el Asistente pregunta qué tubo está en A1 (mirando el rack desde arriba, donde está impreso A1) o si el código del rack está junto a A12 o a H12. Nunca adivina A1, porque el Excel va al LBI con las posiciones.
+3. **Posición A1.** Una foto del fondo es como un espejo del rack visto desde arriba, así que A1 puede estar en una de dos esquinas. Muchas veces los números de los tubos lo resuelven solos. Si no, el Asistente pregunta qué tubo está en A1 (mirando el rack desde arriba, donde está impreso A1) o si el código del rack está junto a A12 o a H12. Si el tubo de A1 no se leyó en las fotos (por un reflejo, por ejemplo), te pide el número del tubo en A12 o en H1: cualquier tubo de esquina que sí se leyó ubica el rack. Nunca adivina A1, porque el Excel va al LBI con las posiciones.
 4. Te pedirá lo que falte para la hoja: responsable, estantería, fila del rack y caja (el ultracongelador es LBI062 si no dices otro).
 5. Te da un enlace para descargar el Excel. Revísalo antes de enviarlo al LBI.
 6. También busca los tubos en la base: dice cuántos tienen su fila (CAM, especie, sexo, tejido) y cuáles todavía no están registrados.

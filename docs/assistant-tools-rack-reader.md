@@ -19,7 +19,9 @@ Franz's photo of rack FK00274230 (2000 × 1125, 28 Oct): 94 of 96 tubes and the 
 A photo of the bottom is a mirror of the rack seen from above, so with the grid found there are two ways to name the wells: A1 is at one of two corners. Evidence decides, or the person:
 
 1. **The tubes' IDs.** In the workbook's tube locations (Sanger's scans), the FluidX racks of pre-loaded sequential tubes go +1 from row A to B and +8 from a column to the next (e.g. FK00403695: 83 of 84 neighbour pairs; FK00405946: 74 of 75). When a rack's neighbours fit one way (≥ 80 % of ≥ 10 pairs) and not the other, A1 is proven. Franz's rack: 166 of 166 pairs one way, 0 the other.
-2. **The person.** `a1_tube` (the tube in A1, printed on the rack's top) or `rack_code_beside` ('A12' or 'H12').
+2. **The person.** `a1_tube` (the tube in A1, printed on the rack's top), `corner_tube` {well: 'A12' | 'H1' | 'H12' | 'A1', id} (a tube at another corner) or `rack_code_beside` ('A12' or 'H12').
+
+A named tube the photos did not read decides nothing and blocks nothing: it is listed in `orientation.not_read` and in the notes, the IDs' proof still counts, and when nothing else decides, the question asks for the tube in A12 or H1. On Franz's FK00274230 the A1 tube sat under glare. Any named corner tube that was read places a partly filled rack's grid too: A1 and H12 can only be at the photo's top right or bottom left, A12 and H1 at its top left or bottom right, and the tube is taken when only one of the two keeps every tube inside the rack. A tube named at a corner where that well cannot be in a photo of the bottom is a problem, not a guess.
 
 The rack code's corner alone is not taken as proof: on Franz's rack the IDs put it beside A12, but FluidX lists the rack ID at A12 for some racks and at H12 for others. Once the team confirms it for the racks they use, `rack_code_beside` makes it a single word. Without proof, the tool returns photo positions (R1C1: the tube beside the rack code) and the question to ask; `rack_report` refuses such a reading. A deposit rack filled by hand from mixed runs (Alex's FK00404722) has no sequence, so expect the question there.
 

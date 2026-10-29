@@ -130,6 +130,70 @@ test('A1 unknown (tubes not in sequence): positions stay photo positions and the
   assert.match(wrong.orientation.problems[0], /not a corner/);
 });
 
+test('the A1 tube not read: noted, other evidence still places the rack, and the person is asked for A12 or H1', async () => {
+  // A hand-filled rack (IDs in no order, no rack code); A1 is at the photo's bottom left (m2), under glare.
+  const ids = Array.from({ length: 96 }, (_, k) => `FS${63886000 + ((k * 37) % 96) * 3}`);
+  const at = (c, r) => ids[r * 12 + c];
+  const tubes = new Map(ids.map((id, k) => [`${k % 12},${Math.floor(k / 12)}`, id]));
+  tubes.delete('0,7');
+  const reading = { tubes, seen: new Set(['0,7']), rack: null, lattice: true };
+  const { tools } = await setup({ readPhoto: async () => reading });
+  const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'], a1_tube: at(0, 7) }, franz);
+  assert.equal(read.orientation.a1, 'unknown');
+  assert.deepEqual(read.orientation.not_read, [{ well: 'A1', id: at(0, 7) }]);
+  assert.equal(read.orientation.problems, undefined);
+  assert.match(read.orientation.ask, /was not read in these photos\. Ask the person for the ID of the tube in A12 or H1 instead/);
+  // The tube in A12 (photo bottom right in this mirror) settles it; A1 is the open well.
+  const a12 = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'], a1_tube: at(0, 7), corner_tube: { well: 'a12', id: at(11, 7).toLowerCase() } }, franz);
+  assert.equal(a12.orientation.a1, 'confirmed by the person');
+  assert.deepEqual(a12.orientation.basis, ['corner_tube']);
+  assert.equal(a12.wells.A12, at(11, 7));
+  assert.equal(a12.wells.H1, at(0, 0));
+  assert.equal(a12.wells.A1, undefined);
+  assert.deepEqual(a12.missing, [{ well: 'A1', square_seen: true }]);
+  // H1 the same way.
+  const h1 = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'], corner_tube: { well: 'H1', id: at(0, 0) } }, franz);
+  assert.equal(h1.wells.H12, at(11, 0));
+  // A tube named at a corner it cannot be at in this photo: refused, never guessed.
+  const wrong = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'], corner_tube: { well: 'A12', id: at(11, 0) } }, franz);
+  assert.equal(wrong.orientation.a1, 'unknown');
+  assert.match(wrong.orientation.problems[0], /given as A12\) is at photo position R1C12, not a corner where A12 can be/);
+});
+
+test('a partly filled rack is placed from a named corner tube that was read', () => {
+  // Rows D..H are filled, at the photo's top (m2: H1 at the top left); no rack code, no sequence.
+  const ids = new Map();
+  for (let c = 0; c < 12; c++) for (let r = 0; r < 5; r++) ids.set(`${c},${r}`, `FS${70000000 + c * 97 + r * 13}`);
+  const reading = { tubes: ids, seen: new Set(), rack: null, lattice: true };
+  const unplaced = mergeReadings([reading]);
+  assert.equal(unplaced.orientation.mapping, null);
+  const m = mergeReadings([reading], { cornerTubes: [{ well: 'H1', id: ids.get('0,0') }] });
+  assert.equal(m.orientation.mapping, 'm2');
+  assert.deepEqual(m.frame.origin, [0, 0]);
+  assert.equal(wellOf('m2', 0, 4), 'D1');
+  assert.equal(m.cells.get('0,4').id, ids.get('0,4'));
+  // The same tube said to be at A1 cannot place it (A1 is never at that photo corner): no wells.
+  const asA1 = mergeReadings([reading], { a1Tube: ids.get('0,0') });
+  assert.equal(asA1.orientation.mapping, null);
+});
+
+test("Franz's rack FK00274230: A1 under glare does not block the IDs' proof; A12 agrees; H12 is not assumed", async () => {
+  const one = await readOne(await loadPhoto(RACK_PHOTO));
+  const a1 = expected('A1');
+  const glare = mergeReadings([one], { a1Tube: a1 });
+  const a1Read = [...glare.cells.values()].some(v => v.id === a1);
+  if (!a1Read) assert.deepEqual(glare.orientation.not_read, [{ well: 'A1', id: a1 }]);
+  assert.equal(glare.orientation.mapping, 'm1');
+  const a12 = mergeReadings([one], { cornerTubes: [{ well: 'A12', id: expected('A12') }] });
+  assert.equal(a12.orientation.mapping, 'm1');
+  assert.deepEqual(a12.orientation.basis, ['corner_tube', 'tube_sequence']);
+  assert.equal(a12.orientation.rack_code_beside, 'A12');
+  // The A12 tube said to be at H12 (as if the code sat beside H12): a problem, no wells.
+  const h12 = mergeReadings([one], { cornerTubes: [{ well: 'H12', id: expected('A12') }] });
+  assert.equal(h12.orientation.mapping, null);
+  assert.match(h12.orientation.problems[0], /given as H12\)/);
+});
+
 test('tubes_lookup: rows with CAM, species, tissue and medium; IDs not in the workbook', async () => {
   const { tools } = await setup();
   const out = await tools.run('tubes_lookup', { tubes: ['fs50849233', 'FS50849234', 'FS50849300'] }, franz);

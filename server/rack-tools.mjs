@@ -27,6 +27,7 @@ export const RACK_TOOLS = [
         "Reads a 96-tube rack (8 × 12, FluidX-style tubes) from photos of its bottom: every tube's 2D code, the rack's own code, and where each tube is (A1..H12). For unloading samples into a rack and listing what was left.",
         '- `photos`: 1 to 6 chat attachments (file names from "[Attached image … saved at …]"), the same rack from slightly different angles: the photos are merged by tube ID, so a tube hidden by glare in one is read in another.',
         "- A1: a photo of the bottom is a mirror of the rack seen from above, so A1 is at one of two corners. The tool proves which from the tubes' own IDs when the rack holds pre-loaded sequential tubes; otherwise ask the person, then call again with `a1_tube` (the ID of the tube in A1: A1 is printed on the rack's top) or `rack_code_beside` ('A12' or 'H12': the well the rack's code is next to). Never guess it.",
+        "- If the A1 tube was not read (glare, a smudged code: `orientation.not_read`, or `missing` has it), ask for the ID of the tube in A12 or H1 instead and call again with `corner_tube` {well, id}: any corner tube that was read places the rack. Do not assume where the rack code sits (on FK00274230 it is beside A12, not H12).",
         'Returns `reading` (give it to rack_report), the rack ID, `orientation`, the wells with their tubes, `missing` wells (tube not read: ask for another photo, or the ID from its side label) and conflicts.',
       ].join('\n'),
       parameters: {
@@ -34,6 +35,12 @@ export const RACK_TOOLS = [
         properties: {
           photos: { type: 'array', items: { type: 'string' } },
           a1_tube: { type: 'string' },
+          corner_tube: {
+            type: 'object',
+            description: 'A tube the person names at a corner well, when the A1 tube was not read.',
+            properties: { well: { type: 'string', enum: ['A12', 'H1', 'H12', 'A1'] }, id: { type: 'string' } },
+            required: ['well', 'id'],
+          },
           rack_code_beside: { type: 'string', enum: ['A12', 'H12'] },
         },
         required: ['photos'],
@@ -268,7 +275,8 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       }
     }
     const a1 = args.a1_tube ? upper(args.a1_tube) : null;
-    const m = mergeReadings(readings, { a1Tube: a1, codeAt: args.rack_code_beside ?? null });
+    const corner = args.corner_tube && typeof args.corner_tube === 'object' ? [{ well: upper(args.corner_tube.well), id: upper(args.corner_tube.id) }] : [];
+    const m = mergeReadings(readings, { a1Tube: a1, codeAt: args.rack_code_beside ?? null, cornerTubes: corner });
     const known = m.orientation.mapping;
     const wells = {};
     const byPhoto = {};
@@ -303,7 +311,7 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       photos,
     };
     const token = save(dir, user?.id ?? null, 'reading.json', JSON.stringify(reading));
-    const status = known ? (m.orientation.basis.some(b => b === 'a1_tube' || b === 'rack_code') ? 'confirmed by the person' : 'proven by the tube IDs') : 'unknown';
+    const status = known ? (m.orientation.basis.some(b => b === 'a1_tube' || b === 'corner_tube' || b === 'rack_code') ? 'confirmed by the person' : 'proven by the tube IDs') : 'unknown';
     return {
       reading: token,
       rack_id: m.rack_id,
@@ -312,6 +320,7 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
         a1: status,
         ...(known ? { a1_photo_position: m.orientation.a1_photo_position, rack_code_beside: m.orientation.rack_code_beside, basis: m.orientation.basis } : {}),
         ...(m.orientation.problems.length ? { problems: m.orientation.problems } : {}),
+        ...(m.orientation.not_read?.length ? { not_read: m.orientation.not_read } : {}),
         ...(m.orientation.note ? { ask: m.orientation.note } : {}),
       },
       ...(known ? { wells: reading.wells } : { photo_positions: byPhoto, photo_position_note: 'R1C1: the tube beside the rack code when it was read, else the top-left tube of the first photo.' }),
