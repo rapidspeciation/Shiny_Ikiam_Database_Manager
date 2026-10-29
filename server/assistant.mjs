@@ -43,6 +43,7 @@ import { photoFoldersOf } from './photo-links.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
+import { RACK_FIELDS, newDeposit, rackInput, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
@@ -948,7 +949,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     },
   });
   // The public sites' updates on GitHub (update_websites).
-  const rackTools = createRackTools({ store, config });
+  const rackTools = createRackTools({ store, config, ...(config.rackReadPhoto ? { readPhoto: config.rackReadPhoto } : {}) });
   const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
@@ -1949,7 +1950,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const overlapsOfRow = r => overlapsWith([], [r.id], keysOf(r.id, `${r.revision}:${r.updated_at}`, r.changes_json), { inSheet: false });
 
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
-  function saveProposal(changes, reason, context, issueIds = [], view = null, photos = []) {
+  function saveProposal(changes, reason, context, issueIds = [], view = null, photos = [], page = null) {
     const id = randomUUID();
     const time = now();
     const chat = context.t3 ? chatOfCall(context) : null;
@@ -1970,7 +1971,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       chat?.title ?? null,
       context.t3?.toolUseId ?? null,
       view ? json(view) : null,
-      photos.length ? json({ photos }) : null,
+      photos.length || page ? json({ ...(photos.length ? { photos } : {}), ...page }) : null,
     );
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
@@ -3532,6 +3533,192 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return { notes, skipped: [...new Set(skipped)], offPhoto };
   }
 
+  // ------------------------------------------------------------ racks deposited at the LBI (server/rack-deposit.mjs)
+  /** A rack deposit's proposal: its page holds the deposit (racks, fields, links). */
+  const depositPage = p => parse(p?.page_json ?? 'null');
+  const isDeposit = p => !!depositPage(p)?.deposit;
+  /** This chat's rack deposit still to apply (the person's), or the one named: theirs, or anyone's for those who edit proposals. */
+  function depositOf(context, id = null) {
+    if (id) {
+      const p = context.person ? teamProposal(id, context.user) : ownProposal(id, context.user);
+      return p && isDeposit(p) ? p : null;
+    }
+    const chat = context.t3 ? (chatOfCall(context)?.id ?? '') : '';
+    return (
+      db
+        .prepare(
+          "SELECT * FROM ai_proposals WHERE owner_id = ? AND thread_id = ? AND status = 'pending' AND json_extract(page_json, '$.deposit') IS NOT NULL AND coalesce(t3_thread, '') = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(owner(context.user), context.threadId, chat) ?? null
+    );
+  }
+  /**
+   * A deposit changed (`change(deposit)` edits its fields and racks, as given; { error } refuses) and saved as its
+   * proposal: the grid worked out again (rackTools.state), the tube-locations rows drafted as propose_changes
+   * drafts them, a revision of `found` (or a new proposal in this chat). The person's own edits of those rows in
+   * the table are worked out again with it. by: 'ai' or 'person'.
+   */
+  function saveDeposit(context, found, change, by = 'ai') {
+    for (let tries = 1; ; tries++) {
+      const page = depositPage(found) ?? {};
+      const was = page.deposit ?? newDeposit(context.user);
+      const deposit = { ...structuredClone(was), racks: (was.racks ?? []).map(rackInput) };
+      for (const k of ['sheet', 'unset', 'protected']) delete deposit[k];
+      const bad = change(deposit);
+      if (bad?.error) return bad;
+      const ownerId = found?.owner_id ?? owner(context.user);
+      const state = rackTools.state(deposit, { id: ownerId });
+      let changes = [];
+      if (state.changes.length || state.newRows.length) {
+        const read = assistantArgs({ changes: state.changes, newRows: state.newRows }, context.user);
+        if (read.error) return read;
+        const drafted = draftChanges(read.args, idsFor(), PROPOSAL_ROWS);
+        if (drafted.error) return drafted;
+        changes = drafted.changes;
+      }
+      // The sheet the app's Google account cannot write: «Aplicar» would be refused (said, not hidden).
+      const locked = state.sheet ? protectedFields(db, state.sheet, nextFreeRow(state.sheet), sheetColumns(state.sheet)) : new Set();
+      if (locked.has('Tube_ID') || locked.has('Rack_ID')) state.deposit.protected = true;
+      // The files made before stay only while the racks' wells are as they were.
+      const same = json((was.racks ?? []).map(r => [r.rack_id, r.wells])) === json(state.deposit.racks.map(r => [r.rack_id, r.wells]));
+      const fieldsSame = ['responsable', 'ultracongelador'].every(f => was[f] === state.deposit[f]) && json((was.racks ?? []).map(r => RACK_FIELDS.map(f => r[f] ?? ''))) === json(state.deposit.racks.map(r => RACK_FIELDS.map(f => r[f] ?? '')));
+      if (!same || !fieldsSame) {
+        delete state.deposit.xlsx;
+        delete state.deposit.drive;
+      }
+      const names = [...new Set(state.deposit.racks.flatMap(r => r.photos ?? []))];
+      const shot = names.length ? photosOf(config.t3?.home, { photo: names.slice(0, 12) }, page.photos) : { photos: [] };
+      if (!found) {
+        const saved = saveProposal(changes, state.reason, context, [], null, shot.photos, { deposit: state.deposit });
+        return { proposal: saved.id, chat: saved.chat, state, changes };
+      }
+      const saved = saveRevision(found, changes, by, state.reason, null, {
+        page_json: json({ ...page, ...(shot.photos.length ? { photos: shot.photos } : {}), deposit: state.deposit }),
+      });
+      if (saved === null) return { error: 'This deposit is no longer pending (applied or discarded): read the rack again for a new one.', status: 409 };
+      if (saved !== false) return { proposal: found.id, chat: found.t3_thread, state, changes };
+      found = anyProposal(found.id);
+      if (tries >= 5) return { error: 'The deposit changed meanwhile: try again.', status: 409 };
+    }
+  }
+  /** What the assistant hears of a deposit: its link, each rack's state, what to ask the person. */
+  function depositAnswer(saved) {
+    if (saved.error) return saved;
+    const d = saved.state.deposit;
+    const ask = [];
+    if (d.responsable_default && d.responsable) ask.push(`responsable: «${d.responsable}» (the person signed in) unless they say otherwise`);
+    for (const f of d.unset) if (!f.startsWith('responsable (')) ask.push(f);
+    for (const [k, r] of d.racks.entries()) {
+      const name = r.rack_id ?? `rack ${k + 1}`;
+      if (r.assumed) ask.push(`${name}: confirm the rack code sits beside ${r.code_beside} (seen from above; else it is ${r.code_options.find(w => w !== r.code_beside)})`);
+      if (r.unset.length) ask.push(`${name}: ${r.unset.join(', ')}`);
+      if (r.missing.length) ask.push(`${name}: no tube for ${r.missing.join(', ')} (another photo, the side label's ID, or empty)`);
+      for (const p of r.problems) ask.push(`${name}: ${p}`);
+    }
+    return {
+      proposalId: saved.proposal,
+      ...proposalLink(saved.proposal, saved.chat),
+      rows: saved.changes.length,
+      status: 'waiting for the person to confirm («Aplicar»)',
+      responsable: d.responsable,
+      ultracongelador: d.ultracongelador,
+      racks: d.racks.map(r => ({
+        rack: r.rack_id,
+        code_beside: r.code_beside,
+        code_options: r.code_options,
+        assumed: r.assumed,
+        checked_by_ids: r.checked_by_ids,
+        tubes: r.counts,
+        estanteria: r.estanteria ?? null,
+        fila_de_rack: r.fila_de_rack ?? null,
+        caja: r.caja ?? null,
+        ...(r.need_rows.length ? { need_rows: r.need_rows } : {}),
+        ...(r.elsewhere.length ? { elsewhere: r.elsewhere } : {}),
+        ...(r.duplicates.length ? { duplicates: r.duplicates } : {}),
+      })),
+      ...(ask.length ? { ask } : {}),
+      ...(d.protected
+        ? { protected: `The app's Google account cannot write ${d.sheet} (a protected sheet): «Aplicar» will be refused until its owner lets the account edit it. The deposit sheet (.xlsx) works.` }
+        : {}),
+      ...(d.xlsx ? { download: d.xlsx.markdown } : {}),
+      ...(d.drive ? { drive: d.drive.markdown } : {}),
+    };
+  }
+  /** A rack of the deposit by its code or its number from 1. */
+  const rackAt = (deposit, which) => {
+    const code = String(which ?? '').trim().toUpperCase();
+    const n = /^\d{1,2}$/.test(code) ? Number(code) - 1 : -1;
+    return n >= 0 && n < deposit.racks.length ? n : deposit.racks.findIndex(r => String(r.rack_id ?? '').toUpperCase() === code);
+  };
+  const FIELD_LIMIT = 80;
+  /**
+   * rack_deposit's changes (and the sidebar's): the deposit's fields, and per rack its fields, wells filled or
+   * said empty (or no longer: `not_empty`), the corner of its code, its code when not read, or its removal.
+   * Edits `deposit`; { error } refuses.
+   */
+  function editDeposit(deposit, args) {
+    for (const f of ['responsable', 'ultracongelador', 'batch'])
+      if (typeof args[f] === 'string') {
+        deposit[f] = clip(args[f].trim(), FIELD_LIMIT);
+        if (f === 'responsable') deposit.responsable_default = false;
+      }
+    const racks = Array.isArray(args.racks) ? args.racks.slice(0, 20) : [];
+    const removed = [];
+    for (const r of racks) {
+      const at = rackAt(deposit, r?.rack);
+      if (at < 0) return { error: `No rack ${clip(r?.rack, 30)} in this deposit: ${deposit.racks.map(x => x.rack_id ?? '?').join(', ') || 'none yet'}.` };
+      const entry = deposit.racks[at];
+      if (r.remove) {
+        removed.push(at);
+        continue;
+      }
+      for (const f of RACK_FIELDS) if (typeof r[f] === 'string' || typeof r[f] === 'number') entry[f] = clip(String(r[f]).trim(), FIELD_LIMIT);
+      if (r.code_beside !== undefined && r.code_beside !== null) {
+        if (!['A1', 'A12', 'H1', 'H12'].includes(r.code_beside)) return { error: 'code_beside: a corner well (one of the rack\'s code_options).' };
+        entry.code_beside = r.code_beside;
+        entry.confirmed = true;
+      }
+      if (r.confirmed === true) entry.confirmed = true;
+      if (typeof r.rack_id === 'string') entry.rack_id = clip(r.rack_id.trim().toUpperCase(), 20) || undefined;
+      if (r.fill && typeof r.fill === 'object') {
+        const fill = { ...(entry.fill ?? {}) };
+        for (const [w, id] of Object.entries(r.fill)) {
+          const well = wellName(w);
+          if (!well) return { error: `fill: ${clip(w, 10)} is not a well (A1..H12).` };
+          if (id === null || id === '') delete fill[well];
+          else fill[well] = clip(String(id).trim().toUpperCase(), 20);
+          entry.empty = (entry.empty ?? []).filter(e => wellName(e) !== well);
+        }
+        entry.fill = fill;
+      }
+      if (Array.isArray(r.empty)) {
+        const wells = r.empty.map(wellName).filter(Boolean);
+        entry.empty = [...new Set([...(entry.empty ?? []), ...wells])];
+        for (const w of wells) delete entry.fill?.[w];
+      }
+      if (Array.isArray(r.not_empty)) {
+        const wells = r.not_empty.map(wellName);
+        entry.empty = (entry.empty ?? []).filter(e => !wells.includes(wellName(e)));
+      }
+    }
+    deposit.racks = deposit.racks.filter((_, k) => !removed.includes(k));
+    return null;
+  }
+  /** The deposit as the Anexo1 .xlsx (`drive`: and its copy on Drive), the links kept on the proposal. */
+  async function depositFiles(found, user, { drive = false } = {}) {
+    const made = rackTools.depositReport(depositPage(found).deposit, user);
+    if (made.error) return made;
+    const at = now();
+    const xlsx = { file: made.file, download: made.download, markdown: made.markdown, at };
+    const copy = drive ? await rackTools.copyToDrive(made.token, made.file, user) : null;
+    const fresh = depositPage(anyProposal(found.id));
+    const kept = { ...fresh.deposit, xlsx, ...(copy && !copy.error ? { drive: { file: copy.file, link: copy.link, markdown: copy.markdown, at } } : {}) };
+    db.prepare('UPDATE ai_proposals SET page_json = ?, revision = revision + 1, updated_at = ? WHERE id = ?').run(json({ ...fresh, deposit: kept }), at, found.id);
+    changed(found.owner_id);
+    const { token, ...out } = made;
+    return { ...out, ...(copy ? { drive: copy } : {}) };
+  }
+
   // ------------------------------------------------------------ Photo_links from Drive (sync_photo_links)
   /*
    * A reading of the photo folders is a card of Cambios propuestos too: a row of ai_proposals with
@@ -5039,6 +5226,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
       ...(hintTable.length ? { hintTable } : {}),
       ...(notebook ? { page: notebook } : {}),
+      // A rack deposit (server/rack-deposit.mjs): its racks as grids, their fields and its files, beside the rows.
+      ...(page?.deposit ? { deposit: page.deposit } : {}),
       ...(outOfOrder.length ? { outOfOrder: outOfOrder.map(({ key, ...o }) => o) } : {}),
       ...(formulaCost ? { formulaCost } : {}),
       changes: out,
@@ -5721,6 +5910,33 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
+    // A rack read goes at once into this chat's deposit (its proposal): the grid, the fields, the tube-locations rows.
+    if (name === 'rack_read_photos') {
+      const out = await rackTools.run(name, args, context.user);
+      if (out.error || !out.wells || !EDITORS.includes(context.user.role)) return out;
+      const confirmed = !!(args.rack_code_beside || args.a1_tube || args.corner_tube);
+      const saved = saveDeposit(context, depositOf(context), d => {
+        const entry = { reading: out.reading, photos: out.photos.map(p => p.photo).filter(Boolean), ...(confirmed ? { confirmed: true } : {}) };
+        const at = out.rack_id ? d.racks.findIndex(r => r.rack_id === out.rack_id) : -1;
+        // The same rack read again: its fields kept, its wells read anew.
+        if (at >= 0) d.racks[at] = { ...Object.fromEntries(RACK_FIELDS.filter(f => d.racks[at][f] !== undefined).map(f => [f, d.racks[at][f]])), ...entry };
+        else if (d.racks.length >= 20) return { error: 'A deposit holds at most 20 racks: apply this one first.' };
+        else d.racks.push(entry);
+        return null;
+      });
+      return { ...out, deposit: depositAnswer(saved) };
+    }
+    if (name === 'rack_deposit') {
+      if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+      const found = depositOf(context, args.proposal ?? null);
+      if (!found) return { error: 'No rack deposit in this chat yet: read a rack first (rack_read_photos).' };
+      return depositAnswer(saveDeposit(context, found, d => editDeposit(d, args)));
+    }
+    if (name === 'rack_report' && !Array.isArray(args.racks)) {
+      const found = depositOf(context, args.proposal ?? null);
+      if (!found) return { error: 'No rack deposit in this chat yet: read a rack first (rack_read_photos).' };
+      return depositFiles(found, context.user, { drive: !!args.drive });
+    }
     if (RACK_TOOL_NAMES.has(name)) return rackTools.run(name, args, context.user);
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
@@ -6301,6 +6517,22 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         status: 200,
         body: { proposal: await listedOne(ownProposalListed(proposal.id)), rejected: out.rejected, overrode: out.overrode },
       };
+    }
+    // A rack deposit's fields, wells and corner changed in the sidebar (as rack_deposit changes them), and its files.
+    const rackMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/(rack|rack-files)$/.exec(path);
+    if (rackMatch && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      const found = teamProposal(rackMatch[1], user);
+      if (!found || !isDeposit(found)) return bad(404, 'not_found', 'Proposal not found.');
+      if (found.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      if (rackMatch[2] === 'rack-files') {
+        const made = await depositFiles(found, user, { drive: body.drive === true });
+        if (made.error) return { status: 409, body: { error: { code: 'not_ready', message: made.error, details: { problems: made.problems ?? [] } } } };
+        return { status: 200, body: { ...made, proposal: await listedOne(ownProposalListed(found.id)) } };
+      }
+      const saved = saveDeposit({ user, person: true, threadId: found.thread_id, proposals: [] }, found, d => editDeposit(d, body ?? {}), 'person');
+      if (saved.error) return bad(saved.status ?? 400, 'invalid_rack', saved.error);
+      return { status: 200, body: { proposal: await listedOne(ownProposalListed(found.id)) } };
     }
     // The sheet's rows a marker of the table stands for, opened with a click: whoever may see the proposal.
     const rowsMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/rows$/.exec(path);

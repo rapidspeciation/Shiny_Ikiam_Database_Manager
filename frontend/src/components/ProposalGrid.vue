@@ -22,6 +22,9 @@ import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
 import PhotoThumbs from './assistant/PhotoThumbs.vue'
 import RowPhotos from './assistant/RowPhotos.vue'
 import SheetApply from './assistant/SheetApply.vue'
+import RackDepositHead from './assistant/RackDepositHead.vue'
+import RackSection from './assistant/RackSection.vue'
+import { rackOfChange, type DepositRack } from '../lib/rackDeposit'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
@@ -514,6 +517,29 @@ const tables = computed(() =>
       : [table]
   }),
 )
+// ------------------------------------------------------------ a rack deposit (lib/rackDeposit)
+const deposit = computed(() => props.proposal.deposit ?? null)
+/**
+ * The tables as shown: as they are, or for a rack deposit one section per rack (its grid and fields,
+ * then its own rows: the tube-locations rows of its tubes); rows of no rack after them.
+ */
+type Table = (typeof tables.value)[number]
+const sections = computed((): { key: string; rack: DepositRack | null; number: number; tables: Table[] }[] => {
+  const d = deposit.value
+  if (!d) return [{ key: '', rack: null, number: 0, tables: tables.value }]
+  const of = new Map(shown.value.changes.map(c => [rowKey(c), rackOfChange(d, c)]))
+  const split = (reading: string | null): Table[] =>
+    tables.value.flatMap((g): Table[] => {
+      const rows = g.rows.filter(c => (of.get(rowKey(c)) ?? null) === reading)
+      return rows.length ? [{ ...g, id: `${g.id}:${reading ?? 'other'}`, rows, changes: rows, laid: undefined, photos: [] } as Table] : []
+    })
+  const racks = d.racks.map((r, i) => ({ key: r.reading, rack: r, number: i + 1, tables: split(r.reading) }))
+  const rest = split(null)
+  return rest.length ? [...racks, { key: 'other', rack: null, number: 0, tables: rest }] : racks
+})
+function jumpToRack(reading: string) {
+  document.querySelector(`[data-proposal="${props.proposal.id}"] [data-rack="${reading}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 /** A sheet's rows `from`–`to` as they are now: a slim row of its table opened with a click. */
 const sheetRows = (sheet: string) => (from: number, to: number) =>
   api<SheetRows>(`chat/proposals/${props.proposal.id}/rows?sheet=${encodeURIComponent(sheet)}&from=${from}&to=${to}`)
@@ -619,7 +645,7 @@ function reviewNext(
   const next = nextCell(cells, order.value, from)
   if (!next) return
   lastReviewed = next
-  const id = tables.value.find(g => g.rows.some(c => rowKey(c) === next.key))?.id
+  const id = sections.value.flatMap(s => s.tables).find(g => g.rows.some(c => rowKey(c) === next.key))?.id
   if (id) sheets.get(id)?.focusCell(next.key, next.field)
 }
 
@@ -819,7 +845,32 @@ const statusText = computed(
         <Send :size="12" /> {{ $t('Avisar al asistente') }}
       </button>
     </div>
-    <div v-for="g in tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
+    <!-- A rack deposit: its fields and files, then each rack as its own section (grid, fields, its rows). -->
+    <RackDepositHead
+      v-if="deposit"
+      :proposal-id="proposal.id"
+      :deposit="deposit"
+      :editable="editable"
+      @replace="p => emit('replace', p)"
+      @notice="m => notify(m)"
+      @jump="jumpToRack"
+    />
+    <template v-for="s in sections" :key="s.key">
+    <RackSection
+      v-if="s.rack && deposit"
+      :proposal-id="proposal.id"
+      :rack="s.rack"
+      :number="s.number"
+      :freezer="deposit.ultracongelador"
+      :changes="shown.changes"
+      :editable="editable"
+      @replace="p => emit('replace', p)"
+      @notice="m => notify(m)"
+    />
+    <p v-if="s.rack && !s.tables.length" class="px-2 pb-2 text-[11px] text-stone-500">
+      {{ $t('Nada que cambiar en la hoja de ubicaciones para este rack.') }}
+    </p>
+    <div v-for="g in s.tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
       <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->
       <p
         v-if="g.near"
@@ -1056,6 +1107,7 @@ const statusText = computed(
         @apply="applyRows(g.sheet)"
       />
     </div>
+    </template>
     <!-- Each «Aplicar» of a proposal applied one sheet at a time (each a save of its own in Historial). -->
     <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-[11px] text-stone-600" data-apply-log>
       <li v-for="a in applyLog" :key="a.n" class="flex items-center gap-1">

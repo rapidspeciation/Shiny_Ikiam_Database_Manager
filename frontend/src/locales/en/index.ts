@@ -18,6 +18,7 @@ import instructions from './instructions'
 import monitoring from './monitoring'
 import photoCuration from './photo-curation'
 import photoFiles from './photo-files'
+import racks from './racks'
 import review from './review'
 import search from './search'
 import server from './server'
@@ -35,6 +36,7 @@ export const en: Record<string, string> = Object.assign(
   emerged,
   google,
   tubes,
+  racks,
   clutches,
   collect,
   monitoring,

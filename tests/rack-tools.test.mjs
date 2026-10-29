@@ -62,7 +62,14 @@ test("Franz's rack photo: at least 92 of 96 tubes, every one where its ID says, 
   assert.equal(one.rack?.text, 'FK00274230');
   const m = mergeReadings([one]);
   assert.equal(m.orientation.mapping, 'm1');
-  assert.deepEqual(m.orientation.basis, ['tube_sequence']);
+  // The code beside A12 (the team's racks) places it; the IDs, pre-loaded in sequence here, check it.
+  assert.deepEqual(m.orientation.basis, ['rack_code_default', 'tube_sequence']);
+  assert.equal(m.orientation.assumed, true);
+  assert.equal(m.orientation.checked_by_ids, true);
+  // Without the code's corner the IDs alone do not decide: the person is asked, with the IDs' hint.
+  const noCode = mergeReadings([{ ...one, rack: null }]);
+  assert.equal(noCode.orientation.mapping, null);
+  assert.match(noCode.orientation.note, /code .* was not read .*a hint, not proof/);
   assert.equal(m.orientation.rack_code_beside, 'A12');
   const wells = [...m.cells].filter(([, v]) => v.id).map(([k, v]) => [wellOf('m1', ...k.split(',').map(Number)), v.id]);
   assert.ok(wells.length >= 92, `${wells.length} read`);
@@ -79,7 +86,7 @@ test('rack_read_photos → rack_report: the Anexo1 sheet, refused while a well i
   const { tools, rackReportsDir } = await setup();
   const read = await tools.run('rack_read_photos', { photos: ['/somewhere/thread-1-rack.jpg'] }, franz);
   assert.equal(read.rack_id, 'FK00274230');
-  assert.equal(read.orientation.a1, 'proven by the tube IDs');
+  assert.match(read.orientation.a1, /^assumed: the rack code beside A12/);
   assert.ok(read.tubes_read >= 92);
   for (const [well, id] of Object.entries(read.wells)) assert.equal(id, expected(well));
   const open = read.missing.map(m => m.well);
@@ -87,8 +94,7 @@ test('rack_read_photos → rack_report: the Anexo1 sheet, refused while a well i
   assert.match((await refused).problems[0], new RegExp(open[0]));
   const fill = Object.fromEntries(open.map(w => [w, expected(w)]));
   const made = await tools.run('rack_report', { responsable: 'Franz Chandi', racks: [{ reading: read.reading, estanteria: '2', fila_de_rack: '1', caja: '1', fill }] }, franz);
-  assert.equal(made.racks[0].sheet, 'Caja FK00274230 (8x12)');
-  assert.equal(made.racks[0].tubes, 96);
+  assert.deepEqual(made.sheets, ['Caja FK00274230 (8x12)']);
   const [, token, file] = /\/api\/rack-reports\/([a-f0-9]{24})\/(.+)$/.exec(made.download);
   assert.equal(reportFile(rackReportsDir, token, file, { id: 'someone else', role: 'editor' }), null);
   assert.equal(reportFile(rackReportsDir, token, file, { id: 'admin', role: 'admin' })?.name, file);
@@ -228,7 +234,7 @@ test('a partly filled rack without its code: the IDs prove the mirror, not where
   // With the rack's code beside the top-left tube (R1C1), its row is the rack's first: the wells are known.
   const coded = await setup({ readPhoto: async () => readingOf(allCells(([, r]) => r > 0), { text: 'FK00274230', at: [-0.95, 0], corner: [0, 0] }) });
   const again = await coded.tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
-  assert.equal(again.orientation.a1, 'proven by the tube IDs');
+  assert.match(again.orientation.a1, /^assumed: the rack code beside A12/);
   assert.equal(again.wells.B1, 'FS50849234');
   assert.deepEqual(again.missing.map(m => m.well).sort(), Array.from({ length: 12 }, (_, k) => `A${k + 1}`).sort());
 });
@@ -242,7 +248,8 @@ test('photos without a grid: their codes come back, no error', async () => {
 });
 
 test('two photos disagreeing on a well: the report waits for the person to say which tube is there', async () => {
-  const photos = [readingOf(allCells()), readingOf(allCells().map(([c, r]) => [c, r, c === 0 && r === 0 ? 'FS99999999' : null]))];
+  const code = { text: 'FK00274230', at: [-0.95, 0], corner: [0, 0] };
+  const photos = [readingOf(allCells(), code), readingOf(allCells().map(([c, r]) => [c, r, c === 0 && r === 0 ? 'FS99999999' : null]), code)];
   let n = 0;
   const { tools } = await setup({ readPhoto: async () => photos[n++ % 2] });
   const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg', 'thread-1-rack.jpg'] }, franz);
@@ -251,14 +258,14 @@ test('two photos disagreeing on a well: the report waits for the person to say w
   const refused = await tools.run('rack_report', { responsable: 'X', racks: [base] }, franz);
   assert.match(refused.problems.join(' '), /disagree on A12/);
   const made = await tools.run('rack_report', { responsable: 'X', racks: [{ ...base, fill: { A12: 'FS50849321' } }] }, franz);
-  assert.equal(made.racks[0].tubes, 96);
+  assert.deepEqual(made.sheets, ['Caja FK00274230 (8x12)']);
 });
 
 test("the rack code beyond the short side: rows A..G stay A..G (the code's side is not assumed)", async () => {
   // Tubes on rows A..G (frame rows 0..6), the code above the top-left tube; row H empty.
   const { tools } = await setup({ readPhoto: async () => readingOf(allCells(([, r]) => r < 7), { text: 'FK00274230', at: [0, -0.95], corner: [0, 0] }) });
   const read = await tools.run('rack_read_photos', { photos: ['thread-1-rack.jpg'] }, franz);
-  assert.equal(read.orientation.a1, 'proven by the tube IDs');
+  assert.match(read.orientation.a1, /^assumed: the rack code beside A12/);
   assert.equal(read.wells.A1, 'FS50849233');
   assert.equal(read.wells.G12, 'FS50849327');
   assert.deepEqual(read.missing.map(m => m.well).sort(), Array.from({ length: 12 }, (_, k) => `H${k + 1}`).sort());

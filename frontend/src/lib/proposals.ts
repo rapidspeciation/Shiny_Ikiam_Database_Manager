@@ -1,3 +1,4 @@
+import type { RackDeposit } from './rackDeposit'
 import type { FormulaCost } from './formulaCost'
 import type { CellValue } from './types'
 import type { TableRow } from './rowsTable'
@@ -281,6 +282,8 @@ export interface Proposal {
   hintTable?: { text?: string; msg?: Msg }[]
   /** A notebook page's proposal: the page. */
   page?: ProposalPage
+  /** A rack deposit at the LBI freezer (lib/rackDeposit): its racks as grids, their fields, its files. */
+  deposit?: RackDeposit
   /**
    * The columns each sheet's table shows whatever the proposal changes, in order
    * (reviewColumns in server/notebook.mjs); `keys`: the row's own ID, shown in the

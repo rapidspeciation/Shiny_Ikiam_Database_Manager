@@ -2,21 +2,31 @@
 //   rack_read_photos  photos of a rack's bottom (chat attachments) → its code, the tubes on A1..H12, what is missing
 //   rack_report       the readings as the LBI's deposit sheet (Anexo1: one sheet per rack), a download link
 //   tubes_lookup      tube IDs → the workbook's rows (CAM, species, tissue, medium), and the IDs it does not have
-// Nothing here changes the workbook (SELECT only) or Drive. Readings and reports are files of the app's own
+//   rack_propose      a reading as changes to the tube-locations sheet (new rows, rack or well moved), made into a
+//                     proposal of «Cambios propuestos» by server/assistant.mjs (proposeChanges): nothing is written
+//                     until the person presses «Aplicar»
+// Nothing here writes the workbook (SELECT only). Readings and reports are files of the app's own
 // (<rackReportsDir>, beside the database by default), each kept with the person who made it; a report is served
-// at /api/rack-reports/<token>/<file> to that person (or an admin) signed in to the app.
+// at /api/rack-reports/<token>/<file> to that person (or an admin) signed in to the app, and copied to the project
+// account's Drive (folder «Depósitos LBI (racks)»: config.rackDriveFolder, else found or made in
+// config.rackDriveParent, else in its My Drive).
 
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
+import { driveWriterFor } from './drive.mjs';
 import { attachmentFile } from './proposal-photos.mjs';
+import { FREEZER, depositProblems, depositState, lookupTubes, rackWells, sheetWells } from './rack-deposit.mjs';
 import { COLS, ROWS, ROW_LETTERS, WELLS, fillOrder, loadPhoto, mergeReadings, photoName, readOne, wellOf } from './rack-reader.mjs';
 
 export const MAX_PHOTOS = 6;
+/** The folder of the deposit sheets on the project account's Drive. */
+export const DRIVE_FOLDER = 'Depósitos LBI (racks)';
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const EDITORS = ['editor', 'reviewer', 'admin'];
 const TOKEN = /^[a-f0-9]{24}$/;
 const FILE = /^[\w.-]{1,120}\.xlsx$/;
-const TUBE = /^[A-Z]{2}\d{6,10}$/;
 
 export const RACK_TOOLS = [
   {
@@ -24,11 +34,11 @@ export const RACK_TOOLS = [
     function: {
       name: 'rack_read_photos',
       description: [
-        "Reads a 96-tube rack (8 × 12, FluidX-style tubes) from photos of its bottom: every tube's 2D code, the rack's own code, and where each tube is (A1..H12). For unloading samples into a rack and listing what was left.",
+        "Reads a 96-tube rack (8 × 12, FluidX-style tubes) from photos of its bottom: every tube's 2D code, the rack's own code, and where each tube is (A1..H12). The rack goes at once into this chat's deposit proposal in «Cambios propuestos» (one section per rack, its 8 × 12 grid, the deposit sheet's fields and the tube-locations rows it implies); nothing is written until the person presses «Aplicar».",
         '- `photos`: 1 to 6 chat attachments (file names from "[Attached image … saved at …]"), the same rack from slightly different angles: the photos are merged by tube ID, so a tube hidden by glare in one is read in another.',
-        "- A1: a photo of the bottom is a mirror of the rack seen from above, so A1 is at one of two corners. The tool proves which from the tubes' own IDs when the rack holds pre-loaded sequential tubes; otherwise ask the person, then call again with `a1_tube` (the ID of the tube in A1: A1 is printed on the rack's top) or `rack_code_beside` ('A12' or 'H12': the well the rack's code is next to). Never guess it.",
-        "- If the A1 tube was not read (glare, a smudged code: `orientation.not_read`, or `missing` has it), ask for the ID of the tube in A12 or H1 instead and call again with `corner_tube` {well, id}: any corner tube that was read places the rack. Do not assume where the rack code sits (on FK00274230 it is beside A12, not H12).",
-        'Returns `reading` (give it to rack_report), the rack ID, `orientation`, the wells with their tubes, `missing` wells (tube not read: ask for another photo, or the ID from its side label) and conflicts.',
+        "- A1: a photo of the bottom is a mirror of the rack seen from above. The rack's printed code (the square beside a corner) places it: by default the code sits beside A12, as on the team's racks (FK00274230). That is an assumption: `orientation.assumed`; tell the person and ask them to confirm (seen from above, the code beside A12?). The photos allow two wells for it (the deposit's `code_options`, A12 or H1 on FK00274230): if the person says the other, rack_deposit with that `code_beside` turns the rack. Tubes go into racks in any order, so their IDs seldom tell; when they do follow a sequence it only checks the corner (`orientation.checked_by_ids`).",
+        "- No code read in any photo: ask for a photo where the code shows, or the ID of the tube in A1 (`a1_tube`) or at another corner (`corner_tube` {well, id}), then call again.",
+        'Returns `reading`, the rack ID, `orientation`, `missing` wells (tube not read: ask for another photo, or the ID from its side label, or whether it is empty: rack_deposit `fill` / `empty`), conflicts, and `deposit`: the proposal, its link and what it still needs (`ask`).',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -50,35 +60,55 @@ export const RACK_TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'rack_report',
+      name: 'rack_deposit',
       description: [
-        "The deposit sheet of the LBI freezer (Alex's Anexo1): an .xlsx with one sheet per rack, «Caja <rack code> (8x12)», the tubes on their wells A1..H12, and a download link to give the person as a Markdown link.",
-        '- `racks`: one entry per rack: `reading` (from rack_read_photos, A1 known), `estanteria`, `fila_de_rack`, `caja` (box number); `fill` {well: tube ID} for tubes the photos did not read (from the tube\'s side label); `empty` [wells] the person says are empty.',
-        '- `responsable` (the person depositing), `ultracongelador` (default LBI062).',
-        'Refused while a well of a rack is neither read, filled nor said empty: ask the person.',
+        "Changes a rack deposit of this chat (the proposal rack_read_photos made, «Cambios propuestos»): the deposit sheet's fields, the tubes of wells the photos did not read, which corner the rack's code is beside. The grid and the tube-locations rows follow at once; the person can change the same in the sidebar.",
+        '- `responsable` (default: the person signed in), `ultracongelador` (default LBI062), `batch` (the sheet\'s Batch for new rows, only when the person gives one).',
+        '- `racks`: per rack (`rack`: its code, or its number in the deposit from 1): `estanteria`, `fila_de_rack`, `caja`; `fill` {well: tube ID} (from the side label); `empty` [wells]; `code_beside` (one of the rack\'s `code_options`: the person confirming the corner, or turning the rack); `rack_id` when the code was not read; `remove: true` drops the rack.',
+        "Answers what it still needs (`ask`), the tubes no sheet has (`need_rows`: they need their rows, never invented), the sheet's tubes on the rack that the photos do not show there (`elsewhere`), and `protected` when the app's Google account cannot write the sheet («Aplicar» is then refused until its owner allows it).",
       ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
+          proposal: { type: 'string', description: "The deposit's proposalId (default: this chat's pending deposit)." },
+          responsable: { type: 'string' },
+          ultracongelador: { type: 'string' },
+          batch: { type: 'string' },
           racks: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
-                reading: { type: 'string' },
+                rack: { type: 'string' },
                 estanteria: { type: 'string' },
                 fila_de_rack: { type: 'string' },
                 caja: { type: 'string' },
                 fill: { type: 'object', additionalProperties: { type: 'string' } },
                 empty: { type: 'array', items: { type: 'string' } },
+                code_beside: { type: 'string', enum: ['A1', 'A12', 'H1', 'H12'] },
+                rack_id: { type: 'string' },
+                remove: { type: 'boolean' },
               },
-              required: ['reading'],
+              required: ['rack'],
             },
           },
-          responsable: { type: 'string' },
-          ultracongelador: { type: 'string' },
         },
-        required: ['racks', 'responsable'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rack_report',
+      description: [
+        "The deposit sheet of the LBI freezer (Alex's Anexo1) for this chat's rack deposit: an .xlsx with one sheet per rack, «Caja <rack code> (8x12)», the tubes on their wells A1..H12, and its download link (`markdown`: give it as it is). The sidebar has the same as «Descargar .xlsx».",
+        "- `drive: true` (only when the person asks for it, or presses «Guardar en Google Drive» in the sidebar): a copy in the project's Drive folder «Depósitos LBI (racks)», `drive.markdown`. `drive.error`: Drive did not take it; the download still works, say so.",
+        '- `proposal`: the deposit (default: this chat\'s pending one).',
+        'Refused while a well of a rack is neither read, filled nor said empty, or a field is missing: ask the person.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: { proposal: { type: 'string' }, drive: { type: 'boolean' } },
       },
     },
   },
@@ -99,14 +129,7 @@ export const RACK_TOOLS = [
 export const RACK_TOOL_NAMES = new Set(RACK_TOOLS.map(t => t.function.name));
 
 const text = v => (v === null || v === undefined ? '' : String(v).trim());
-const blank = v => ['', 'NA', 'N/A', 'NOT_COLLECTED', 'NOT_PROVIDED'].includes(text(v).toUpperCase());
 const upper = v => text(v).toUpperCase();
-
-/** The well name, tidy (a1 → A1), or null. */
-export function wellName(value) {
-  const m = /^([A-Ha-h])\s*0?(\d{1,2})$/.exec(text(value));
-  return m && Number(m[2]) >= 1 && Number(m[2]) <= COLS ? `${m[1].toUpperCase()}${Number(m[2])}` : null;
-}
 
 // ---------------------------------------------------------------- .xlsx
 
@@ -231,7 +254,7 @@ function save(dir, owner, name, body) {
 
 /** A kept file for a signed-in user: { path, name } when theirs (or they are an admin), else null. */
 export function reportFile(dir, token, name, user) {
-  if (!dir || !TOKEN.test(token ?? '') || !(FILE.test(name ?? '') || name === 'reading.json')) return null;
+  if (!dir || !TOKEN.test(token ?? '') || !(FILE.test(name ?? '') || name === 'reading.json' || name === 'report.json')) return null;
   const path = join(dir, token, name);
   if (!existsSync(path)) return null;
   try {
@@ -245,12 +268,17 @@ export function reportFile(dir, token, name, user) {
 
 // ---------------------------------------------------------------- the tools
 
-const TUBE_FIELD = /^(?:[FM]_)?Tube_\d(?:_id)?(?:_LEGS)?$|^Tube_ID$|^Tube$/i;
-const SKIP_SHEETS = /tube_locations|manifest/i;
+/** What the answer says of how A1 was placed. */
+function orientationStatus(o) {
+  if (!o.mapping) return 'unknown';
+  if (o.basis.some(b => b === 'a1_tube' || b === 'corner_tube' || b === 'rack_code')) return 'confirmed by the person';
+  return `assumed: the rack code beside ${o.rack_code_beside ?? 'A12'} (the team's racks)${o.checked_by_ids ? ', and the tubes\' IDs agree' : ''}: confirm with the person`;
+}
 
 /**
  * The tools for one app. `store`: the app's database (SELECT only); config: `rackReportsDir`, `publicUrl`,
- * `t3.home` (the chat attachments); `readPhoto` (tests) reads a file into readOne's result.
+ * `t3.home` (the chat attachments), the Drive copy's `rackDriveFolder` / `rackDriveParent` and the project
+ * account (`driveCredentialsFile`, server/drive.mjs; tests: `drive`); `readPhoto` (tests) reads a file into readOne's result.
  */
 export function createRackTools({ store, config = {}, readPhoto = async path => readOne(await loadPhoto(path)) }) {
   const dir = reportsDir(config);
@@ -282,17 +310,23 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     const byPhoto = {};
     const missing = [];
     const photoTimes = {};
+    const frameCells = {};
+    const seen = [];
     for (let r = 0; r < (m.frame ? ROWS : 0); r++)
       for (let c = 0; c < COLS; c++) {
         const v = m.cells?.get?.(`${c},${r}`);
         const name = known ? wellOf(known, c, r) : photoName([c, r]);
         if (v?.id) {
           (known ? wells : byPhoto)[name] = v.id;
+          frameCells[`${c},${r}`] = v.id;
           photoTimes[v.id] = v.photos;
-        } else missing.push({ [known ? 'well' : 'photo_position']: name, square_seen: !!v?.seen });
+        } else {
+          missing.push({ [known ? 'well' : 'photo_position']: name, square_seen: !!v?.seen });
+          if (v?.seen) seen.push(`${c},${r}`);
+        }
       }
     const order = known ? Object.keys(wells).sort((a, b) => fillOrder(a) - fillOrder(b)) : null;
-    // Conflicts by well: the photos disagree there, so the person confirms those wells (rack_report's fill).
+    // Conflicts by well: the photos disagree there, so the person confirms those wells (rack_deposit's fill).
     const asWell = name => {
       const m = /^R(\d+)C(\d+)$/.exec(name ?? '');
       return m && known ? wellOf(known, Number(m[2]) - 1, Number(m[1]) - 1) : null;
@@ -301,9 +335,14 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       ...c,
       ...(known ? { wells: [c.photo_position, c.also_at, c.kept_at].map(asWell).filter(Boolean) } : {}),
     }));
+    // Kept as photo positions too, so the rack can be turned (its code beside H12, not A12) without reading it again.
     const reading = {
       rack_id: m.rack_id,
       orientation: m.orientation,
+      mapping: known,
+      code_corner: m.frame?.code_corner ?? null,
+      frame_cells: m.frame ? frameCells : null,
+      seen,
       wells: known ? Object.fromEntries(order.map(w => [w, wells[w]])) : null,
       photo_positions: known ? null : byPhoto,
       missing,
@@ -311,14 +350,21 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       photos,
     };
     const token = save(dir, user?.id ?? null, 'reading.json', JSON.stringify(reading));
-    const status = known ? (m.orientation.basis.some(b => b === 'a1_tube' || b === 'corner_tube' || b === 'rack_code') ? 'confirmed by the person' : 'proven by the tube IDs') : 'unknown';
     return {
       reading: token,
       rack_id: m.rack_id,
       tubes_read: Object.keys(photoTimes).length,
       orientation: {
-        a1: status,
-        ...(known ? { a1_photo_position: m.orientation.a1_photo_position, rack_code_beside: m.orientation.rack_code_beside, basis: m.orientation.basis } : {}),
+        a1: orientationStatus(m.orientation),
+        ...(known
+          ? {
+              a1_photo_position: m.orientation.a1_photo_position,
+              rack_code_beside: m.orientation.rack_code_beside,
+              basis: m.orientation.basis,
+              assumed: m.orientation.assumed,
+              checked_by_ids: m.orientation.checked_by_ids,
+            }
+          : {}),
         ...(m.orientation.problems.length ? { problems: m.orientation.problems } : {}),
         ...(m.orientation.not_read?.length ? { not_read: m.orientation.not_read } : {}),
         ...(m.orientation.note ? { ask: m.orientation.note } : {}),
@@ -332,129 +378,95 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     };
   }
 
+  /** A reading of `user`'s (null: not found or someone else's). */
   function loadReading(token, user) {
     const f = reportFile(dir, String(token ?? ''), 'reading.json', user);
     return f ? JSON.parse(readFileSync(f.path, 'utf8')) : null;
   }
 
-  function report(args, user) {
+  /** The deposit (depositState's) as the Anexo1 .xlsx, kept for `user`: { file, token, download, markdown } or { error, problems }. */
+  function depositReport(deposit, user) {
     if (!dir) return { error: 'This app has no folder for rack reports (rackReportsDir).' };
-    const racks = Array.isArray(args.racks) ? args.racks.slice(0, 20) : [];
-    if (!racks.length) return { error: 'Give `racks`: one entry per rack with its `reading` from rack_read_photos.' };
-    const responsable = text(args.responsable);
-    if (!responsable) return { error: 'Give `responsable`: the person depositing the samples.' };
-    const sheets = [];
-    const summary = [];
-    const problems = [];
+    const problems = depositProblems(deposit);
+    if (!deposit.racks?.length) problems.push('No rack in this deposit yet: read its photos (rack_read_photos).');
+    if (problems.length) return { error: 'Not made yet.', problems };
     const names = new Set();
-    for (const [k, r] of racks.entries()) {
-      const reading = loadReading(r.reading, user);
-      if (!reading) {
-        problems.push(`Rack ${k + 1}: reading ${r.reading} not found (read the photos again with rack_read_photos).`);
-        continue;
-      }
-      if (!reading.wells) {
-        problems.push(`Rack ${k + 1} (${reading.rack_id ?? 'code not read'}): A1 is not known. ${reading.orientation?.note ?? ''}`.trim());
-        continue;
-      }
-      const wells = new Map(Object.entries(reading.wells));
-      const fill = r.fill && typeof r.fill === 'object' ? r.fill : {};
-      const empty = new Set((Array.isArray(r.empty) ? r.empty : []).map(wellName).filter(Boolean));
-      // Wells the photos disagree on: confirmed by the person (fill or empty), the read value is not trusted.
-      const disputed = new Set((reading.conflicts ?? []).flatMap(c => c.wells ?? []));
-      for (const w of disputed) wells.delete(w);
-      for (const [w, id] of Object.entries(fill)) {
-        const well = wellName(w);
-        const tube = upper(id);
-        if (!well || !TUBE.test(tube)) problems.push(`Rack ${k + 1}: fill ${w} = ${id} is not a well and a tube ID.`);
-        else if (wells.has(well) && wells.get(well) !== tube) problems.push(`Rack ${k + 1}: ${well} was read as ${wells.get(well)}, not ${tube}.`);
-        else wells.set(well, tube);
-      }
-      for (const w of empty) wells.delete(w);
-      const unsure = [...disputed].filter(w => !wells.has(w) && !empty.has(w));
-      if (unsure.length) problems.push(`Rack ${k + 1}: the photos disagree on ${unsure.join(', ')}: ask the person which tube is there (fill) or whether it is empty.`);
-      const open = WELLS.filter(w => !wells.has(w) && !empty.has(w) && !disputed.has(w));
-      if (open.length) problems.push(`Rack ${k + 1} (${reading.rack_id ?? 'code not read'}): no tube for ${open.join(', ')}: give each in \`fill\` (its side label) or in \`empty\`.`);
-      const twice = [...wells.values()].filter((id, n, all) => all.indexOf(id) !== n);
-      if (twice.length) problems.push(`Rack ${k + 1}: ${[...new Set(twice)].join(', ')} on two wells.`);
-      const rack = reading.rack_id ?? '';
+    const sheets = deposit.racks.map((r, k) => {
+      const rack = r.rack_id ?? '';
       let name = `Caja ${rack || k + 1} (8x12)`.slice(0, 31);
       for (let n = 2; names.has(name); n++) name = `Caja ${rack || k + 1}-${n} (8x12)`.slice(0, 31);
       names.add(name);
-      sheets.push({
+      return {
         name,
         xml: sheetXml({
-          responsable,
-          ultracongelador: text(args.ultracongelador) || 'LBI062',
+          responsable: text(deposit.responsable),
+          ultracongelador: text(deposit.ultracongelador) || FREEZER,
           estanteria: text(r.estanteria),
           rack,
           fila: text(r.fila_de_rack),
           caja: text(r.caja) || String(k + 1),
-          wells,
+          wells: sheetWells(r),
         }),
-      });
-      summary.push({ sheet: name, rack_id: rack || null, tubes: wells.size, empty: [...empty], filled_by_hand: Object.keys(fill).map(wellName).filter(Boolean), a1: reading.orientation?.basis ?? [] });
-    }
-    if (problems.length) return { error: 'Not made yet.', problems };
+      };
+    });
+    const codes = deposit.racks.map(r => r.rack_id).filter(Boolean);
     const day = new Date().toISOString().slice(0, 10);
-    const file = `Anexo1-deposito-${day}.xlsx`;
+    const file = `Anexo1-deposito-${day}${codes.length && codes.length <= 3 ? `-${codes.join('-')}` : ''}.xlsx`;
     const token = save(dir, user?.id ?? null, file, workbook(sheets));
     const url = `${base}/api/rack-reports/${token}/${file}`;
-    return { file, download: url, markdown: `[${file}](${url})`, racks: summary, note: 'The link opens for the person who asked (signed in to the app) and admins.' };
+    return { file, token, download: url, markdown: `[${file}](${url})`, sheets: sheets.map(s => s.name), note: 'The link opens for the person who asked (signed in to the app) and admins.' };
   }
 
-  function lookup(args, user) {
-    let ids = Array.isArray(args.tubes) ? args.tubes : typeof args.tubes === 'string' ? args.tubes.split(/[\s,;]+/) : [];
-    if (args.reading) {
-      const reading = loadReading(args.reading, user);
-      if (!reading) return { error: `Reading ${args.reading} not found.` };
-      ids = [...ids, ...Object.values(reading.wells ?? reading.photo_positions ?? {})];
+  /** The legacy call: racks given as readings with their fields (before the deposit proposal). */
+  function report(args, user) {
+    const racks = Array.isArray(args.racks) ? args.racks.slice(0, 20) : [];
+    if (!racks.length) return { error: 'Give `racks`: one entry per rack with its `reading` from rack_read_photos.' };
+    const deposit = { responsable: text(args.responsable), ultracongelador: text(args.ultracongelador) || FREEZER, racks: [] };
+    for (const r of racks) {
+      const reading = loadReading(r.reading, user);
+      const placed = reading ? rackWells(reading, r) : null;
+      deposit.racks.push({
+        ...r,
+        rack_id: reading?.rack_id ?? null,
+        wells: Object.fromEntries([...(placed?.wells ?? [])].map(([w, t]) => [w, { t }])),
+        missing: placed?.missing ?? [...WELLS],
+        disputed: placed?.disputed ?? [],
+        problems: !reading ? [`reading ${r.reading} not found (read the photos again with rack_read_photos).`] : placed.problems,
+      });
     }
-    ids = [...new Set(ids.map(upper).filter(Boolean))].slice(0, 500);
-    if (!ids.length) return { error: 'Give `tubes` (IDs) or a `reading`.' };
-    const rows = store.db
-      .prepare(
-        `SELECT DISTINCT r.sheet, r.row_num, r.values_json FROM records r, json_each(r.values_json) j
-         WHERE r.missing = 0 AND j.type = 'text' AND upper(trim(j.value)) IN (SELECT value FROM json_each(?))`,
-      )
-      .all(JSON.stringify(ids));
-    const found = new Map(ids.map(id => [id, { rows: [], location: null }]));
-    for (const row of rows) {
-      const v = JSON.parse(row.values_json);
-      if (/tube_locations/i.test(row.sheet)) {
-        const id = upper(v.Tube_ID);
-        if (found.has(id)) found.get(id).location = { rack: text(v.Rack_ID) || null, well: text(v.Tube_location) || null, sheet: row.sheet };
-        continue;
-      }
-      if (SKIP_SHEETS.test(row.sheet)) continue;
-      for (const [field, value] of Object.entries(v)) {
-        const id = upper(value);
-        if (!TUBE_FIELD.test(field) || !found.has(id)) continue;
-        const stem = field.replace(/_id(_LEGS)?$/i, '').replace(/^Tube_ID$/i, 'Tube');
-        const n = /Tube_(\d)/i.exec(field)?.[1];
-        const tissue = /_LEGS$/i.test(field) ? 'LEGS' : text(v[`${stem}_tissue`]) || null;
-        const medium = [n && v[`T${n}_Preservation_medium`], v.Preservation_medium].find(x => !blank(x));
-        found.get(id).rows.push({
-          sheet: row.sheet,
-          row: row.row_num,
-          field,
-          cam_id: text(v.CAM_ID) || null,
-          species: text(v.SPECIES ?? v.Species) || null,
-          subspecies: text(v.Subspecies_Form) || null,
-          sex: text(v.Sex) || null,
-          tissue,
-          medium: medium ? text(medium) : null,
-          sample_type: [medium && text(medium), tissue].filter(Boolean).join(' · ') || null,
-        });
-      }
+    return depositReport(deposit, user);
+  }
+
+  // ------------------------------------------------------------ the copy on Drive
+  let driveFolder = null;
+  /** The folder «Depósitos LBI (racks)»: the one configured, else found or made in the configured parent (else My Drive). */
+  async function folderOnDrive(drive) {
+    if (config.rackDriveFolder) return config.rackDriveFolder;
+    if (driveFolder) return driveFolder;
+    const parent = config.rackDriveParent || 'root';
+    const found = (await drive.children(parent, { foldersOnly: true })).find(f => f.name === DRIVE_FOLDER);
+    driveFolder = (found ?? (await drive.createFolder(DRIVE_FOLDER, parent))).id;
+    return driveFolder;
+  }
+  /**
+   * A kept report (its token and file) copied to the project's Drive: { file, link, markdown, folder } or
+   * { error } (Drive not set up or not answering: the download link still works).
+   */
+  async function copyToDrive(token, file, user) {
+    if (!EDITORS.includes(user?.role)) return { error: 'Only editors copy deposit sheets to the project Drive.' };
+    const kept = reportFile(dir, token, file, user);
+    if (!kept) return { error: 'That report is not kept here any more: make it again.' };
+    const drive = driveWriterFor(store, config);
+    if (!drive?.upload) return { error: 'This app has no Google account for Drive set up: the download link still works.' };
+    try {
+      const folder = await folderOnDrive(drive);
+      const made = await drive.upload(file, readFileSync(kept.path), XLSX, folder);
+      const link = made.webViewLink ?? `https://drive.google.com/file/d/${made.id}/view`;
+      return { file, id: made.id, link, markdown: `[${file} en Drive](${link})`, folder: `https://drive.google.com/drive/folders/${folder}` };
+    } catch (e) {
+      driveFolder = null;
+      return { error: `Google Drive did not take the copy (${String(e?.message || e).slice(0, 160)}): the download link still works.` };
     }
-    const tubes = [...found].map(([id, f]) => ({ tube_id: id, rows: f.rows, ...(f.location ? { location: f.location } : {}) }));
-    return {
-      asked: ids.length,
-      found: tubes.filter(t => t.rows.length).length,
-      not_found: tubes.filter(t => !t.rows.length).map(t => t.tube_id),
-      tubes: tubes.filter(t => t.rows.length || t.location),
-    };
   }
 
   return {
@@ -462,11 +474,27 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
       try {
         if (name === 'rack_read_photos') return await readPhotos(args, user);
         if (name === 'rack_report') return report(args, user);
-        if (name === 'tubes_lookup') return lookup(args, user);
+        if (name === 'tubes_lookup') {
+          let ids = Array.isArray(args.tubes) ? args.tubes : typeof args.tubes === 'string' ? args.tubes.split(/[\s,;]+/) : [];
+          if (args.reading) {
+            const reading = loadReading(args.reading, user);
+            if (!reading) return { error: `Reading ${args.reading} not found.` };
+            ids = [...ids, ...Object.values(reading.wells ?? reading.photo_positions ?? {})];
+          }
+          if (!ids.length) return { error: 'Give `tubes` (IDs) or a `reading`.' };
+          return lookupTubes(store, ids.slice(0, 500));
+        }
       } catch (e) {
         return { error: e.message };
       }
       return { error: `Unknown tool ${name}` };
     },
+    /** The deposit as the table shows it and the changes it implies (rack-deposit.mjs), its readings read as `owner`'s. */
+    state: (deposit, owner) => depositState(store, deposit, token => loadReading(token, owner)),
+    loadReading,
+    depositReport,
+    copyToDrive,
   };
 }
+
+export { wellName } from './rack-deposit.mjs';

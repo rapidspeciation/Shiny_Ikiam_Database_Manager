@@ -691,9 +691,13 @@ export const CORNER_WELLS = ['A1', 'A12', 'H1', 'H12'];
  * `cornerTubes`: [{ well: 'A1' | 'A12' | 'H1' | 'H12', id }], tubes the person names at corner wells (when the A1
  * tube was not read, the one at A12 or H1 does the same); `codeAt`: the well the person confirmed the rack's code
  * sits beside ('A12' or 'H12'). A named tube the photos did not read is noted, never guessed, and does not stop
- * other evidence. Returns the merged positions, the orientation with what decided it, conflicts, and the rack's code.
+ * other evidence. Without the person's word, the rack's code read beside a corner places A1 as the rack model the
+ * team uses has it (`defaultCodeAt`, A12 on FK00274230: the tubes go into racks in any order, so their IDs seldom
+ * tell): an assumption (`assumed`), said to the person to confirm; the IDs' sequence, when they happen to follow
+ * one, only checks it (`checked_by_ids`), and alone never decides. No code read and nothing said: the person is asked.
+ * Returns the merged positions, the orientation with what decided it, conflicts, and the rack's code.
  */
-export function mergeReadings(readings, { a1Tube = null, codeAt = null, cornerTubes = [] } = {}) {
+export function mergeReadings(readings, { a1Tube = null, codeAt = null, cornerTubes = [], defaultCodeAt = 'A12' } = {}) {
   const named = [...(a1Tube ? [{ well: 'A1', id: a1Tube }] : []), ...cornerTubes]
     .map(t => ({ well: String(t?.well ?? '').toUpperCase(), id: String(t?.id ?? '').trim().toUpperCase() }))
     .filter(t => CORNER_WELLS.includes(t.well) && t.id)
@@ -860,19 +864,33 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null, cornerTu
     if (m) say(m, 'rack_code');
     else problems.push(`The rack code is beside photo position ${photoName(codeCorner)}, which cannot be ${codeAt} in a photo of the bottom.`);
   }
+  // The rack model's layout, when the person said nothing: the code beside `defaultCodeAt`.
+  const personSaid = votesFor.size > 0;
+  if (!personSaid && codeCorner && defaultCodeAt) {
+    const m = ['m1', 'm2'].find(mm => wellOf(mm, ...codeCorner) === defaultCodeAt);
+    if (m) say(m, 'rack_code_default');
+  }
   const fits = Object.fromEntries(['m1', 'm2'].map(m => [m, sequenceFit(byWell(m))]));
   const strong = m => fits[m].pairs >= 10 && fits[m].fit >= 0.8 * fits[m].pairs;
-  if (strong('m1') !== strong('m2')) say(strong('m1') ? 'm1' : 'm2', 'tube_sequence');
+  const sequence = strong('m1') !== strong('m2') ? (strong('m1') ? 'm1' : 'm2') : null;
+  if (sequence) say(sequence, 'tube_sequence');
   let mapping = null;
-  if (votesFor.size === 1 && !problems.length && placedEdges) mapping = [...votesFor.keys()][0];
+  // The IDs' sequence alone does not decide (it is only a check of the code's corner or the person's word).
+  const decided = [...votesFor].filter(([, b]) => b.some(x => x !== 'tube_sequence'));
+  if (votesFor.size === 1 && decided.length === 1 && !problems.length && placedEdges) mapping = decided[0][0];
   if (!placedEdges)
     problems.push(
       'The rack is not filled edge to edge and its code was not read beside a corner: which well is which is not known. Send a photo where the rack code shows, or say which tube is in A1 (a1_tube), or in A12 or H1 (corner_tube).',
     );
   if (votesFor.size > 1) problems.push(`The evidence disagrees: ${[...votesFor].map(([m, b]) => `${b.join(' and ')} say A1 is at photo position ${photoName(m === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1])}`).join('; ')}.`);
+  const basis = mapping ? votesFor.get(mapping) : [];
   const orientation = {
     mapping,
-    basis: mapping ? votesFor.get(mapping) : [],
+    basis,
+    // The code's usual corner taken without the person's word: the person confirms it (or says H12).
+    assumed: basis.includes('rack_code_default'),
+    checked_by_ids: basis.includes('tube_sequence'),
+    sequence_suggests: !mapping && sequence ? photoName(sequence === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1]) : null,
     a1_photo_position: mapping ? photoName(mapping === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1]) : null,
     rack_code_beside: mapping && codeCorner ? wellOf(mapping, ...codeCorner) : null,
     tube_sequence: { m1: fits.m1, m2: fits.m2 },
@@ -882,10 +900,12 @@ export function mergeReadings(readings, { a1Tube = null, codeAt = null, cornerTu
       ? null
       : 'A1 is not known for these photos: a photo of the bottom is a mirror, and A1 is either at photo position ' +
         `${photoName([COLS - 1, 0])} or ${photoName([0, ROWS - 1])}. ` +
+        (codeCorner ? '' : "The rack's code (the printed square at a corner) was not read beside a corner in any photo: ask for a photo where it shows, or ") +
+        (sequence ? `(The tubes' IDs follow a sequence that puts A1 at ${photoName(sequence === 'm1' ? [COLS - 1, 0] : [0, ROWS - 1])}: a hint, not proof.) ` : '') +
         (notRead.length
           ? `${notRead.map(t => `${t.id} (given as ${t.well})`).join(' and ')} was not read in these photos. Ask the person for the ID of the tube in ${['A12', 'H1'].filter(w => !notRead.some(t => t.well === w)).join(' or ') || 'H12'} instead (look at the rack from above, where the wells are printed) and read it again with corner_tube.`
           : 'Ask the person which tube is in A1 (look at the rack from above, where A1 is printed) and read it again with a1_tube; if the A1 tube was not read, the tube in A12 or H1 with corner_tube' +
             (codeCorner ? `, or whether the rack code is beside A12 or H12 (here it would be ${wellOf('m1', ...codeCorner)} or ${wellOf('m2', ...codeCorner)}).` : '.')),
   };
-  return { ...out, frame: { origin, turn, span, rack_code_photo_position: codeCorner ? photoName(codeCorner) : null }, cells, conflicts, orientation, notes };
+  return { ...out, frame: { origin, turn, span, rack_code_photo_position: codeCorner ? photoName(codeCorner) : null, code_corner: codeCorner }, cells, conflicts, orientation, notes };
 }
