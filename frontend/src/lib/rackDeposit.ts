@@ -101,9 +101,14 @@ export function rackCells(rack: DepositRack, changes: ProposalChange[]): Map<str
   const edited = new Map(changes.filter(c => !c.create && !c.context).map(c => [c.recordId, c]))
   // Where a row puts its tube now (the table's value, the person's edits included).
   const text = (v: unknown) => String(v ?? '').trim().toUpperCase()
+  // A well as the server tidies it (A01, a 1 → A1).
+  const wellOf = (v: unknown) => {
+    const m = /^([A-H])\s*0?(\d{1,2})$/.exec(text(v))
+    return m ? `${m[1]}${Number(m[2])}` : text(v)
+  }
   const placeOf = (c: ProposalChange): RackPlace => ({
     rack: text(c.values?.Rack_ID ?? c.current?.Rack_ID ?? c.rowValues?.Rack_ID) || null,
-    well: text(c.values?.Tube_location ?? c.current?.Tube_location ?? c.rowValues?.Tube_location) || null,
+    well: wellOf(c.values?.Tube_location ?? c.current?.Tube_location ?? c.rowValues?.Tube_location) || null,
   })
   const disputed = new Set(rack.disputed ?? [])
   const out = new Map<string, RackCell>()
@@ -192,12 +197,12 @@ export const FIELD_LABELS: Record<string, string> = {
 export function problemText(p: string): string {
   let m: RegExpExecArray | null
   if (/code was not read/.test(p)) return t('Falta el código del rack: escríbelo en «Rack»')
-  if ((m = /^(\S+) is on (.+)\.$/.exec(p))) return t('{tube} está en dos racks: {racks}', { tube: m[1], racks: m[2].replace(' and ', ', ') })
+  if ((m = /^(\S+) is on (.+)\.$/.exec(p))) return t('{tube} está en varios racks: {racks}', { tube: m[1], racks: m[2].replaceAll(' and ', ', ') })
   if ((m = /^(.+) on two wells\.$/.exec(p))) return t('En dos pocillos: {tubes}', { tubes: m[1] })
   if ((m = /^(\w+) was read as (\S+), not (\S+)\.$/.exec(p))) return t('{well}: las fotos leyeron {read}, no {given}', { well: m[1], read: m[2], given: m[3] })
   if ((m = /^In these photos the rack code can only be beside (\S+) or (\S+), not (\S+)\.$/.exec(p)))
     return t('En estas fotos el código solo puede estar junto a {a} o {b}, no {c}', { a: m[1], b: m[2], c: m[3] })
-  if (/^A1 is not known/.test(p)) return t('No se sabe dónde está A1: falta el código del rack en las fotos')
+  if (/^A1 is not known/.test(p)) return t('No se sabe dónde está A1: dile al Asistente qué tubo está en A1 (mirando el rack desde arriba)')
   if ((m = /^(\S+) is not a rack code/.exec(p))) return t('{code} no es un código de rack (FK…, FH…, FE…, SA… y 8 cifras)', { code: m[1] })
   if (/reading is gone/.test(p)) return t('Su lectura ya no está: vuelve a leer las fotos')
   return p

@@ -56,6 +56,9 @@ describe('a rack of a deposit', () => {
     expect(cells.get('A1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'B7' } })
     expect(cells.get('C1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'E5' } })
     expect(cells.get('H12')?.sheetHere).toBe('FS11111111')
+    // A well the sheet writes A01 is the same well A1: not «otro sitio».
+    const padded = { ...moved, values: { Rack_ID: 'FK00274230' }, rowValues: { Tube_location: 'C01' } }
+    expect(rackCells(rack(), [created, padded]).get('C1')?.state).toBe('moved')
   })
 
   it('a row of the table belongs to the rack holding its tube', () => {
@@ -77,7 +80,7 @@ describe('a rack of a deposit', () => {
   })
 
   it("the server's problems in the person's words", () => {
-    expect(problemText('FS1 is on FK1 and FK2.')).toMatch(/FS1.*FK1, FK2/)
+    expect(problemText('FS1 is on FK1 and FK2 and FK3.')).toMatch(/FS1.*FK1, FK2, FK3/)
     expect(problemText('The rack code was not read: ask the person for it (printed beside a corner).')).toMatch(/Rack/)
     expect(problemText('something new')).toBe('something new')
   })
