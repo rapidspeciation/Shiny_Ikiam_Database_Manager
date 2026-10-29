@@ -123,8 +123,13 @@ function fakeWeb() {
     }
     const path = u.pathname.replace('/ithomiini_maps/data/', '');
     if (!(path in FILES)) return new Response('missing', { status: 404 });
-    if (options.headers?.['if-none-match'] === `"${path}"`) return new Response(null, { status: 304 });
-    return Response.json(FILES[path], { headers: { etag: `"${path}"`, 'last-modified': 'Wed, 14 Oct 2026 15:15:59 GMT' } });
+    // The ETag changes with the file's content, as a web server's does.
+    const body = JSON.stringify(FILES[path]);
+    let hash = 0;
+    for (let i = 0; i < body.length; i++) hash = (hash * 31 + body.charCodeAt(i)) | 0;
+    const etag = `"${path}:${hash}"`;
+    if (options.headers?.['if-none-match'] === etag) return new Response(null, { status: 304 });
+    return Response.json(FILES[path], { headers: { etag, 'last-modified': 'Wed, 14 Oct 2026 15:15:59 GMT' } });
   };
   return { calls, fetchImpl, now: () => clock, advance: ms => void (clock += ms) };
 }
@@ -397,6 +402,36 @@ test('host_plant_sites by grid cells: named after the nearest place, DEM elevati
   assert.equal(out.sites[1].elevation_m, 1500);
   assert.equal(out.sites[0].locality, undefined);
   assert.equal(out.localities_without_records_within_10_km, undefined);
+});
+
+test('host plants: a photo page that does not answer leaves the records; a new plant download is read afresh', async () => {
+  const { tools, web } = await setup();
+  const page = 'host_plants/gallery_taxa/species_solanum_mite/page_001.json';
+  const saved = FILES[page];
+  delete FILES[page];
+  try {
+    const out = await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Ecuador'] });
+    assert.equal(out.plants.find(p => p.plant === 'Solanum mite').records, 4);
+    assert.equal(out.markdown, '');
+    assert.match(out.photos_note, /could not be read/);
+    const sites = await tools.run('host_plant_sites', { butterfly: 'Oleria onega', near: { lat: -0.99, lng: -77.81, km: 5 } });
+    assert.equal(sites.sites.length, 2);
+    assert.match(sites.photos_note, /could not be read/);
+  } finally {
+    FILES[page] = saved;
+  }
+  // The maps republish their plant layers: the refs and chunks are read again, not revalidated one by one.
+  const manifest = FILES['host_plants/host_plant_layers_manifest.json'];
+  const refsReads = () => web.calls.filter(c => c === '/ithomiini_maps/data/host_plants/taxon_occurrence_refs/species_solanum_mite.json').length;
+  const before = refsReads();
+  FILES['host_plants/host_plant_layers_manifest.json'] = { ...manifest, metadata: { ...manifest.metadata, generated_at: '2026-12-01T00:00:00+00:00' } };
+  try {
+    web.advance(7 * 3600_000);
+    await tools.run('host_plants', { butterfly: 'Oleria onega', country: ['Ecuador'] });
+    assert.equal(refsReads(), before + 1);
+  } finally {
+    FILES['host_plants/host_plant_layers_manifest.json'] = manifest;
+  }
 });
 
 test('country outlines: inside, on the coast, nowhere', () => {
