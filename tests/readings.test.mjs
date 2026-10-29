@@ -307,7 +307,7 @@ test("the gallery's files: the formats the gallery reads, nothing else", async t
     mode: 'app_readings',
     model_meta: {
       source: 'app_readings',
-      model: 'bioclip-2.5-h int8 + head_hier 749fbffd + wing_seg_v5n d74f9c13 (tools/identifier) (feature mean of 2 photos)',
+      model: 'bioclip-2.5-h int8 + head_hier b8127dbf (alias_w075) + wing_seg_v5n d74f9c13 (tools/identifier) (feature mean of 2 photos)',
       oof: true,
       oof_source: 'never_in_training',
       photos: [

@@ -37,7 +37,7 @@ The «Fotos» tab's sex check (server/sex-check.mjs) asks for the sex model alon
 
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
-  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier.pt
+  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier_b8127dbf.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
 """
@@ -55,7 +55,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the worker's own folder out
 import sex_crops  # noqa: E402
 
-HEAD_SHA256 = "749fbffd5f73f12c0f8598b5b2e3f575c0510b93a61c3f3c0123ab2ee8990830"
+HEAD_SHA256 = "b8127dbf0591630c99a9e4af1c00eb8d50f217acfb795fe9e23093702e816d42"
+# Its own file name: head_hier.pt (749fbffd) is hard-linked with ~/bioclip-bench and stays for the previous release.
+HEAD_FILE = "head_hier_b8127dbf.pt"
 DETECTOR = "wing_seg_v5n"
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
@@ -148,10 +150,10 @@ class Identifier:
         self.v6.detector = YOLO(os.path.join(assets, DETECTOR + ".onnx"), task="segment")
         gc.collect()
 
-        head_path = os.path.join(assets, "head_hier.pt")
+        head_path = os.path.join(assets, HEAD_FILE)
         with open(head_path, "rb") as f:
             if hashlib.sha256(f.read()).hexdigest() != HEAD_SHA256:
-                raise ValueError("head_hier.pt is not the release's head (SHA-256 differs)")
+                raise ValueError(HEAD_FILE + " is not the release's head (SHA-256 differs)")
         ck = torch.load(head_path, map_location="cpu", weights_only=False)
 
         class CosineHead(nn.Module):

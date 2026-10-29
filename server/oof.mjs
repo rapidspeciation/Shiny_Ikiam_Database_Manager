@@ -1,4 +1,5 @@
-// Which species predictions are out-of-fold. The identifier's head (head_hier 749fbffd, tools/identifier) was trained on
+// Which species predictions are out-of-fold. The identifier's head (head_hier b8127dbf alias_w075, tools/identifier; the
+// same collection CAMs as 749fbffd, it only adds iNaturalist photos) was trained on
 // the collection photos of 3,022 butterflies (its pub_sanger rows, tools/identifier/head_749fbffd_training_cams.json,
 // from the Sanger plan of tools/oof-identifier): its own predictions for them are in-sample and never used. Theirs come
 // from heads trained without them (5 folds by CAM, gallery_readings_20261019) or from the gallery's out-of-fold
