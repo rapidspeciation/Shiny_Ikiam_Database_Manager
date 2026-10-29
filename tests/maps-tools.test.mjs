@@ -341,7 +341,7 @@ test('crop URLs: clamped to the photo, made from its own width, none from a bad 
   assert.equal(cropUrl('F1', [0, 0, 100, 100], null), null);
   assert.equal(cropUrl('F1', [0, 0, 4, 4], [1600, 1067]), null);
   assert.equal(cropUrl(null, [0, 0, 100, 100], [1600, 1067]), null);
-  assert.deepEqual([percent(0.849), percent(0.0181), percent(0.004), percent(undefined)], ['85 %', '1.8 %', '0.4 %', '?']);
+  assert.deepEqual([percent(0.849), percent(0.0181), percent(0.004), percent(0.0435), percent(0.9989), percent(1), percent(undefined)], ['85 %', '1.8 %', '0.4 %', '4.4 %', '99.8 %', '100 %', '?']);
 });
 
 test('the sex model is not trusted for a species on its unreliable list, even for a Supported call', () => {

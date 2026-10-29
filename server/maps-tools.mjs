@@ -262,8 +262,9 @@ const parseJson = v => {
     return null;
   }
 };
-/** A probability as a percentage: 85 %, 1.8 %, 0.4 %. */
-export const percent = p => (Number.isFinite(p) ? `${p >= 0.1 ? Math.round(p * 100) : Math.round(p * 1000) / 10} %` : '?');
+/** A probability as a percentage: 85 %, 1.8 %, 0.4 %, 99.8 % (never 100 % unless it is 1). */
+export const percent = p =>
+  Number.isFinite(p) ? `${p < 0.1 ? Math.round(p * 1000) / 10 : p < 0.995 || p >= 1 ? Math.round(p * 100) : Math.floor(p * 1000) / 10} %` : '?';
 const binomialOf = name => fold(name).split(' ').slice(0, 2).join(' ');
 const MODEL_TOP = 3;
 const DETAILED_MAX = 8;
