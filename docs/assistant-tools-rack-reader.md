@@ -4,9 +4,24 @@ For unloading samples at the LBI (Laboratorio de Biología Integrativa): the tea
 
 | Tool | Does |
 |---|---|
-| `rack_read_photos` | photos (chat attachments) → rack code, tubes on A1..H12, missing wells, conflicts; saves a `reading` |
-| `rack_report` | readings → the Anexo1 .xlsx; a download link (`/api/rack-reports/<token>/<file>`, its maker or an admin, signed in) |
+| `rack_read_photos` | photos (chat attachments) → rack code, tubes on A1..H12, missing wells, conflicts; saves a `reading` and puts the rack into this chat's deposit proposal at once |
+| `rack_deposit` | the deposit's fields (responsable, freezer, per rack shelf, rack row, box), wells filled or said empty, the code's corner, a rack code not read; the grid and the rows follow |
+| `rack_report` | the deposit → the Anexo1 .xlsx and its download link (`/api/rack-reports/<token>/<file>`, its maker or an admin, signed in); `drive: true` also a copy on Drive |
 | `tubes_lookup` | tube IDs or a reading → the workbook rows (CAM, species, sex, tissue, medium), the tube-locations sheet's rack and well, IDs not found |
+
+## The deposit in «Cambios propuestos» (29 Oct 2026)
+
+`server/rack-deposit.mjs`, `server/assistant.mjs` (saveDeposit), the sidebar's `RackDepositHead.vue` and `RackSection.vue`. A rack read becomes, at once, a proposal of the same kind as a notebook page's (a row of `ai_proposals`, drafted with propose_changes' draft and applied with «Aplicar»): one per chat, holding every rack read there (`page_json.deposit`, with the photos beside it). Each rack is a section: its code, the corner the code is beside (assumed or confirmed, with a button to turn the rack), Anexo1's left block (freezer, shelf, rack code, rack row, box: empty ones amber), the 8 × 12 grid as seen from above (row A at the top, column 1 at the left) with each tube's ID, and its rows of the tube-locations sheet. A well is green (a new row), amber (its rack or well changes; the table shows the old value struck through), white (already there), hatched (said empty) or red (no tube yet: a click gives a box for the side label's ID, or «Vacío»). A grey dot: no sheet of the workbook has the tube (it needs its rows; never invented).
+
+What it writes, only on «Aplicar», only in `Ithomiini_tube_locations_18Jun26`: new rows (Tube_ID, Rack_ID, Tube_location = the well, Sort going on from the sheet's largest, Batch only when the person gives one) for tubes the sheet does not have; Rack_ID and/or Tube_location of a tube it has on another rack or well. Tubes already where the photos have them are left alone; a tube on two rows of the sheet is not changed (listed). Rows the sheet puts on the rack whose tubes the photos do not show there are listed, never removed. The sheet has no freezer, shelf, rack row or box columns (checked in the production database on 29 Oct); the code fills such columns if the sheet ever has them. Any change to the deposit (a field, a well, the corner) works the rows out again: the person's own cell edits of those rows in the table do not survive it.
+
+The production sheet is protected for the app's Google account (the whole sheet, `protected:Ithomiini_tube_locations_18Jun26`), so «Aplicar» is refused by Google until its owner lets the account edit it; the answer and the sidebar say so. The .xlsx works regardless.
+
+Defaults: responsable = the person signed in (shown as assumed until changed), freezer LBI062; the rest empty and asked for. Edits from the sidebar: `POST /api/chat/proposals/<id>/rack` (as `rack_deposit`), files: `POST /api/chat/proposals/<id>/rack-files` (`{ drive: true }` for the Drive copy).
+
+## Drive copy
+
+On click only («Guardar en Google Drive», or `rack_report` with `drive: true`). The project account (`GOOGLE_DRIVE_CREDENTIALS_FILE`, jmithominii@gmail.com) uploads the .xlsx (`GoogleDrive.upload`, a multipart upload) into «Depósitos LBI (racks)»: `RACK_DRIVE_FOLDER` (its ID) when set, else that folder found or made in `RACK_DRIVE_PARENT`, else in the account's My Drive. On claudeclaw it is in the project's shared area, Ithomiini_IKIAM › Admin (beside «Formatos deposito temporal muestras ikiam»). Drive not answering: the answer says so and the download link still works.
 
 ## Reading
 
@@ -16,7 +31,7 @@ Franz's photo of rack FK00274230 (2000 × 1125, 28 Oct): 94 of 96 tubes and the 
 
 ## A1 (positions)
 
-A photo of the bottom is a mirror of the rack seen from above, so with the grid found there are two ways to name the wells: A1 is at one of two corners. Evidence decides, or the person:
+A photo of the bottom is a mirror of the rack seen from above, so with the grid found there are two ways to name the wells: A1 is at one of two corners. Since 29 Oct the rack's code decides by default: the team's racks have it beside A12 (FK00274230), so a code read beside a corner places the rack with that corner as A12, an assumption shown to the person (confirm, or turn the rack: the photo allows the code beside A12 or H1 on this rack, the corner's two mirror names). Tubes go into racks in any order, so the IDs' sequence below only checks it (`checked_by_ids`) and never decides alone; with no code read and nothing said, the person is asked (the IDs' hint, if any, is in the question). What the person says overrides the default:
 
 1. **The tubes' IDs.** In the workbook's tube locations (Sanger's scans), the FluidX racks of pre-loaded sequential tubes go +1 from row A to B and +8 from a column to the next (e.g. FK00403695: 83 of 84 neighbour pairs; FK00405946: 74 of 75). When a rack's neighbours fit one way (≥ 80 % of ≥ 10 pairs) and not the other, A1 is proven. Franz's rack: 166 of 166 pairs one way, 0 the other.
 2. **The person.** `a1_tube` (the tube in A1, printed on the rack's top), `corner_tube` {well: 'A12' | 'H1' | 'H12' | 'A1', id} (a tube at another corner) or `rack_code_beside` ('A12' or 'H12').
@@ -29,4 +44,4 @@ The rack code's corner alone is not taken as proof: on Franz's rack the IDs put 
 
 `server/rack-tools.mjs` writes the .xlsx itself (a small zip writer, inline strings): the Anexo1 layout of the filled examples, A1 «Responsable: …», G1:R1 the title, row 2 headers and 1..12, rows 3..10 A..H, A3:E10 merged (freezer, shelf, rack code, rack row, box), thin borders, the template's column widths. Checked with openpyxl and LibreOffice. A well neither read, filled by hand (`fill`) nor said empty (`empty`) refuses the report. Files: `<rackReportsDir>` (default `rack-reports/` beside the database), one folder per reading or report with its owner.
 
-Not yet: video input, a copy on Drive (the app's Google login, franz.chandi@gmail.com, has the `drive.file` scope: it could create new files; `google.jmithominii.json` no longer refreshes), 10x10 and other box formats.
+Not yet: video input, 10x10 and other box formats.

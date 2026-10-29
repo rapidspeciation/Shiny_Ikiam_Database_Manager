@@ -1,14 +1,14 @@
 // The assistant's tools for tube racks (docs/assistant-tools-rack-reader.md):
-//   rack_read_photos  photos of a rack's bottom (chat attachments) → its code, the tubes on A1..H12, what is missing
-//   rack_report       the readings as the LBI's deposit sheet (Anexo1: one sheet per rack), a download link
+//   rack_read_photos  photos of a rack's bottom (chat attachments) → its code, the tubes on A1..H12, what is missing;
+//                     server/assistant.mjs then puts the rack into the chat's deposit proposal (server/rack-deposit.mjs)
+//   rack_deposit      (server/assistant.mjs) the deposit's fields, wells and corner changed; the rows follow
+//   rack_report       the deposit as the LBI's deposit sheet (Anexo1: one sheet per rack), a download link, and on
+//                     request a copy on the project account's Drive
 //   tubes_lookup      tube IDs → the workbook's rows (CAM, species, tissue, medium), and the IDs it does not have
-//   rack_propose      a reading as changes to the tube-locations sheet (new rows, rack or well moved), made into a
-//                     proposal of «Cambios propuestos» by server/assistant.mjs (proposeChanges): nothing is written
-//                     until the person presses «Aplicar»
 // Nothing here writes the workbook (SELECT only). Readings and reports are files of the app's own
 // (<rackReportsDir>, beside the database by default), each kept with the person who made it; a report is served
-// at /api/rack-reports/<token>/<file> to that person (or an admin) signed in to the app, and copied to the project
-// account's Drive (folder «Depósitos LBI (racks)»: config.rackDriveFolder, else found or made in
+// at /api/rack-reports/<token>/<file> to that person (or an admin) signed in to the app, and copied, when asked, to
+// the project account's Drive (folder «Depósitos LBI (racks)»: config.rackDriveFolder, else found or made in
 // config.rackDriveParent, else in its My Drive).
 
 import { randomBytes } from 'node:crypto';

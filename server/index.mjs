@@ -280,6 +280,10 @@ export function configFromEnv(env = process.env) {
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
     // The assistant's rack readings and deposit sheets (server/rack-tools.mjs): rack-reports beside the database by default.
     rackReportsDir: env.RACK_REPORTS_DIR || undefined,
+    // The deposit sheets' copies on the project account's Drive (rack_report, server/rack-tools.mjs): the folder
+    // «Depósitos LBI (racks)» by its ID, else found or made in RACK_DRIVE_PARENT, else in the account's My Drive.
+    rackDriveFolder: env.RACK_DRIVE_FOLDER || undefined,
+    rackDriveParent: env.RACK_DRIVE_PARENT || undefined,
     // The password of the Cloudflare Workers that start the two public sites' updates (update_websites, server/site-updates.mjs).
     siteUpdatePasswordFile: env.SITE_UPDATE_PASSWORD_FILE || undefined,
     // Where the Rename Photos app's build is (the «Fotos» tab's frame); rename-app/ beside the server by default.
