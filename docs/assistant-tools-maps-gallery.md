@@ -1,6 +1,6 @@
 # Assistant tools: maps, host plants, Wings Gallery
 
-Four read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
+Five read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?", "show me photos of Tithorea harmonia's host plants found in Ecuador" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
 
 None of them writes anything: they read the public sites' data files over HTTPS and the app's own database with `SELECT` only. What they keep is in memory, in the tools' worker (`server/assistant-host.mjs`: they are not in `MAIN_TOOLS`, so a 20 MB file read never holds up the app's thread).
 
@@ -10,6 +10,8 @@ None of them writes anything: they read the public sites' data files over HTTPS 
 |---|---|---|
 | Occurrence records of the maps (`rapidspeciation.github.io/ithomiini_maps`) | `data/data_manifest.json` and the five `data/map_points_*.json` it lists: Sanger Institute (the project's own collection, 7,850 records), GBIF (UNAM) 21,562, GBIF (other institutions) 26,956, Dore et al. (2022) 28,927, iNaturalist 20,424 | As published by the maps' «Update Database» run (`update_websites`). The project's records follow the workbook when that run is started; the GBIF and iNaturalist downloads only when it runs with `gbif: true` (last on 26 Sep 2026, `generated_at` of the manifest). The tool re-reads a file at most every 6 hours, and only if its ETag changed. Each answer says the manifest's date and each file's Last-Modified. |
 | Host plants | `data/host_plants/host_plant_associations.json` of the same site (863 butterfly-plant associations, 16 Jun 2026) | Changes only when the maps' host plant review is rebuilt. Same 6-hour check. |
+| Where host plants grow, and their photos (only when an area is asked) | `data/host_plants/host_plant_layers_manifest.json`; per plant its `taxon_occurrence_refs/<slug>.json` (which records of the 24 `occurrence_chunks/chunk_NNN.json` are its own: 465,757 GBIF plant records with coordinates, year and basis of record, no locality or country) and its photo index `gallery_taxa/<slug>/index.json` with pages of 100 photos | The maps' GBIF plant download (generated 13 Jun 2026). Only the chunks the asked plants' refs name are read (Tithorea harmonia's hosts: 6 of 24), each kept as typed arrays (about 0.4 MB); at most 4 photo pages per plant. Same 6-hour check. |
+| Countries of plant records | `data/country_boundaries.json` of the maps site (Natural Earth 1:50m outlines of the Americas, made by the maps' `scripts/build_country_boundaries.mjs`) | Fixed. The maps app's country filter places plant records with the same file and rule (`server/country-outlines.mjs` here, `src/utils/countryLookup.js` there), so the counts match what the map shows. |
 | Elevation of a record | The workbook's `ELEVATION` for the project's records (by CAM ID, from this app's database); for other records, the Copernicus 90 m DEM through Open-Meteo's elevation API at the record's coordinates | Workbook: live. DEM: looked up only when a call filters or sorts by elevation, at most 1,000 distinct points a call (10 requests of 100), kept in memory. |
 | Specimens and photos (Wings Gallery, `rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery`) | This app's own copy of the workbook: `Collection_data` rows and the `Photo_links` sheet (Drive file IDs) | Live (the workbook sync, every few minutes). The gallery site itself is rebuilt by its «Update Database» run, so a specimen added today may be in the tool's answer before the gallery shows it: the answer says so. |
 | What the models read from the photos | This app's photo tables (`server/photodata.mjs`): `photo_predictions` (the Wings Gallery's species and subspecies, the sex model's call), `envelope_readings` (the envelope's box and text lines, the photo's size), `photo_wing_boxes` (the wings' box) | As last imported (`scripts/import-envelope-curation.mjs` and the predictions import). A specimen photographed since has none yet: the answer says "none stored". |
@@ -41,6 +43,31 @@ Host plant associations from the maps' review, with sources.
 
 Answer: each association with the butterfly taxon, the plant (family, genus, species, as written in the source), host level (species, genus, family), evidence level (direct, literature), confidence, the citation, its DOI or URL, and the primary references (cut to 400 characters). Grouped and counted by plant genus (or butterfly genus). A note when only family-level or catalogue rows exist: the review says not to treat a catalogue row as observed local use.
 
+With an area (`country` list, `bbox` [west, south, east, north] or `near` {lat, lng, km}), or `records: true` for the whole range, the same call also answers where those host plants grow:
+
+- `plants`: each host plant that has a records layer (species and genus level; at most 12), with its GBIF name when it differs, the butterflies it is a host of, the evidence, its records in the area and in all, years, records by basis (preserved specimen, human observation), and its top 3 sites. A plant with no records there is listed with 0. `plants_without_records`: hosts with no layer (family level, or not downloaded).
+- `sites`: the best sites of the species-level hosts together (a grid of `site_km`, default 5 km), busiest first (`limit`, default 8): centre, records (a record of two synonymous plants once), records per plant, years, the nearest named collecting place of the maps' butterfly records within 10 km (Sanger, GBIF and iNaturalist localities: plant records have no locality name), and a map link zoomed on it. Genus-level hosts are counted in `plants` but are not in `sites`, photos or the map, unless they are the only hosts or that genus was asked: their records are of any species of the genus.
+- `markdown`: per plant, `photos` thumbnails (default 3, at most 6; 0 for none) from the maps' plant gallery: those taken in the area first, field photos before herbarium sheets, one per GBIF record before a second; if the area has too few, photos from elsewhere with their country in the caption. Each is a 240x180 wsrv.nl thumbnail linked to the full photo, then a line with the GBIF record of each photo and the datasets they come from. The maps' gallery data keep no licence or photographer, so the line says they are on each record's page.
+- `map_url`: the Wings Atlas with the butterfly's records, the host-plant layer with those plants (`hp_bf`, `hp_taxa`, `hp_level`, `hp_evidence`), the country, and a view of the sites.
+- `records_note`: the download's date; countries placed by coordinates with 1:50m outlines; plant records show where the plant grows, not that the butterfly uses it there.
+- Size: the answer keeps itself under 36,000 characters. `markdown` at most 12,000 (plants past that in `photos_left_out`), map links on the first 3 sites only (`map_url` has them all), `limit` at most 15. When still too long it drops, in this order, the associations' references, the associations of plants not listed with records, the last associations, the plants' top sites, the last photo blocks and the last sites, and says so in `cut`. A photo page that does not answer leaves that plant without photos (`photos_note`), not the answer without its records.
+- Cache: the plant files are kept per version of the layers (the manifest's `generated_at`); when the maps republish them, all are read again, so a refs file never points into an older chunk.
+
+Tithorea harmonia in Ecuador (low confidence and unchecked rows too): one call, about 25,000 characters; 0.8 s the first time from local files, 20 ms after.
+
+### `host_plant_sites`
+Where to go first to collect a butterfly's host plants (or a plant) near a point: "near Ikiam, which site first for Tithorea harmonia's host plants?".
+
+- `butterfly` or `plant`, `min_confidence`, `include_unchecked` as in `host_plants`; `near` {lat, lng, km} (required; `km` default 25, at most 100).
+- `rank`: `localities` (default): the project's collection localities, from its Sanger records in the maps (grouped by locality name, split where its records are over about 5 km apart; the median of their coordinates). `grid`: cells of `cell_km` (default 1.5 km, 0.5 to 5) holding plant records, scored at their centre and named after the nearest named place of the maps' records.
+- `limit` (default 8, at most 20), `photos` (default 2, at most 4) for the first 3 sites.
+
+Score: the plant records of the species-level hosts (as in `host_plants`' sites; a GBIF record of two synonymous plants once) within 10 km, each weighing (1 - (d/10)²)² (quartic kernel: 1 at the site, 0.92 at 2 km, 0.56 at 5 km, 0 at 10 km). Sites with none are counted, not listed. Plain JavaScript in the tools worker (haversine distances): no GIS library.
+
+Answer, per site: locality (or the nearest named place for a cell), coordinates, km from the point, score, records within 2, 5 and 10 km, records per plant within 10 km, the nearest record (plant, km, year), the oldest and newest years and the undated records, the elevation (the workbook's median for a locality; the 90 m DEM for a cell), the project's records there and those of the butterfly asked, and a map link on it. `map_url`: the first site's, with the host-plant layer on. `markdown`: for the first 3 sites, the plant photos nearest each (from the first 10 gallery pages of each plant with records in reach), with plant, year and distance, each linked to its full photo, and their GBIF records and datasets. `method` and `caveats`: the kernel; records follow roads, stations and observers (a high score can be a well-sampled place, not more plants); a plant record is not evidence that the butterfly uses the plant there.
+
+Tithorea harmonia near Ikiam (30 km, low confidence and unchecked rows too): 7 plant records in reach, so the scores rest on few, old records (1968 to 1995); about 11,000 characters, 0.8 s from local files.
+
 ### `gallery_specimens`
 Collection specimens with wing photos, from the workbook and Photo_links.
 
@@ -62,7 +89,7 @@ The models' output is never given as a fact: the database is the record. The env
 
 ## URL formats
 
-Maps (state already in its URL, `src/stores/filterStore.js` and `viewStore.js` of ithomiini_maps; no change to that app was needed):
+Maps (state in its URL: `src/stores/filterStore.js`, `viewStore.js` and, for the host-plant layer, `hostPlants.js` of ithomiini_maps; `docs/host-plant-links.md` there):
 
 ```
 https://rapidspeciation.github.io/ithomiini_maps/?sp=Oleria%20onega&source=Sanger%20Institute,iNaturalist&map_view=-77.81000,-0.99000,11.00
@@ -70,7 +97,8 @@ https://rapidspeciation.github.io/ithomiini_maps/?sp=Oleria%20onega&source=Sange
 
 - `sp`: species, comma separated (the app's `scientific_name`); `ssp`: subspecies; `genus`: genus list.
 - `source`: the sources' names as the app shows them (`Sanger Institute`, `GBIF (UNAM)`, `GBIF (Other Institutions)`, `Dore et al. (2022)`, `iNaturalist`). Left out it shows only Sanger Institute, so the tools always set it.
-- `country`: comma separated. `locality`: a JSON array of exact locality names.
+- `country`: comma separated; it limits the host-plant layer too (records placed by coordinates). `locality`: a JSON array of exact locality names.
+- Host-plant layer: `hp_bf` butterflies; `hp_taxa` plant slugs or names; `hp_level` (`species`, `genus`, `family`; default species); `hp_evidence` (`direct`, `literature`, `needs_check`; default the first two); `hp_conf` (`high`, `medium`, `low`) in a hand-written link. The layer is on when `hp_bf` or `hp_taxa` is given.
 - `map_view`: `lng,lat,zoom` (5 decimals, zoom 2 decimals).
 
 Wings Gallery (`src/utils/shareView.js`): `view=1` marks a shared view; arrays repeat their key.
@@ -97,7 +125,7 @@ An envelope reading's `turned` 180 is not used: 6 of 6 such Drive photos checked
 
 ## Photos in the chat
 
-T3 Code (0.1.3, the server's version) renders Markdown images with https sources in assistant replies: tested on 28 Oct 2026 with a reply holding a wsrv.nl and an lh3 thumbnail of CAM036744, both shown at 160 px (screenshot `docs/assistant-tools-maps-gallery-t3-images.png`). The page sets no Content-Security-Policy, so the images load inside the Asistente frame too. `gallery_specimens` therefore returns ready Markdown, each image linked to its full photo.
+`html_preview` does not work on claudeclaw (AppArmor blocks T3's browser, 29 Oct 2026); `html_render` does. The skill says to show photos with the tools' Markdown. T3 Code (0.1.3, the server's version) renders Markdown images with https sources in assistant replies: tested on 28 Oct 2026 with a reply holding a wsrv.nl and an lh3 thumbnail of CAM036744, both shown at 160 px (screenshot `docs/assistant-tools-maps-gallery-t3-images.png`). The page sets no Content-Security-Policy, so the images load inside the Asistente frame too. `gallery_specimens` therefore returns ready Markdown, each image linked to its full photo.
 
 ## Limits
 
@@ -105,5 +133,6 @@ T3 Code (0.1.3, the server's version) renders Markdown images with https sources
 - Map records carry no elevation; DEM elevation is the ground at the coordinates (90 m cells), not where the butterfly flew, and coordinates with a large uncertainty (iNaturalist obscured points) can be far off. Records without a workbook elevation beyond the 1,000-point DEM budget are counted as "elevation unknown" and left out of an elevation filter, and the answer says how many.
 - Dore et al. records are 0.25° grid cells (about 28 km), with no locality name: they show where a species occurs, not a collecting site, so they are ranked apart (`grid_records`) and never as a "site".
 - Locality names differ between sources; sites are grouped by distance, and named after their commonest name.
-- Memory: the five occurrence files are about 117 MB of JSON; each is read one at a time and kept as a compact list (about 10 MB for all), in each tools worker that needed it.
+- Memory: the five occurrence files are about 117 MB of JSON; each is read one at a time and kept as a compact list (about 10 MB for all), in each tools worker that needed it. Plant chunks: about 0.4 MB each once read (7.5 MB of JSON each to download).
+- Plant records: the maps' GBIF download, not GBIF today (Mesechites trifida: 51 in Ecuador in the download; GBIF counted 146 on 29 Oct 2026, with no coordinate filter). Records within a few km of a border can be placed in the neighbour country.
 - The gallery tool shows only Collection_data specimens (the gallery's Collection tab), not Insectary or CRISPR.
