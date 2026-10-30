@@ -145,6 +145,8 @@ async function storageInfo() {
     `Almacenamiento: ${est ? `${mb(est.usage ?? 0)} MB usados de ${mb(est.quota ?? 0)} MB disponibles` : 'sin datos'}; ` +
     `persistente: ${persisted == null ? 'sin datos' : persisted ? 'sí' : 'no'}` +
     (diag.persistRequest != null ? ` (pedido: ${diag.persistRequest ? 'concedido' : 'denegado'})` : '')
+  // Only once there is something to lose (models stored or asked for); the download goes ahead either way.
+  $('notPersisted').hidden = persisted !== false || !(diag.modelsReady || diag.persistRequest != null)
   render()
 }
 
@@ -192,10 +194,13 @@ async function download() {
   show('dlErr', null)
   const button = $<HTMLButtonElement>('download')
   button.disabled = true
+  // Asked first, still inside the click (Chrome weighs the gesture and the installed app); shown again after the download.
+  const persist = navigator.storage?.persist?.().catch(() => null) ?? Promise.resolve(null)
   try {
+    diag.persistRequest = await persist
+    await storageInfo()
     if (!files) await listFiles()
     if (!files) throw new Error(signedIn ? 'No se pudo leer la lista de modelos.' : 'Inicie sesión primero.')
-    if (navigator.storage?.persist) diag.persistRequest = await navigator.storage.persist().catch(() => null)
     const cache = await caches.open(CACHE)
     $('progressBox').hidden = false
     const t0 = performance.now()

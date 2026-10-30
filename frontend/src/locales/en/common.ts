@@ -23,6 +23,7 @@ export default {
   'Iniciar sesión': 'Sign in',
   'Abrir Google Sheet': 'Open Google Sheet',
   Usuarios: 'Users',
+  'Prueba: identificador sin conexión': 'Test: offline identifier',
   'Cerrar sesión': 'Sign out',
   '{n} filas nuevas': '{n} new rows',
   '{n} fila': '{n} row',

@@ -34,9 +34,11 @@
       canvas { border: 1px solid #d6d3d1; border-radius: 6px; width: 160px; height: 160px; }
       pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: #fafaf9; padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
       [hidden] { display: none !important; }
+      a.back { display: inline-block; color: #1f4d3a; font-weight: 600; text-decoration: none; padding: 6px 0; }
     </style>
   </head>
   <body>
+    <a class="back" href="../">← Volver a la app</a>
     <h1>Prueba: identificador sin conexión</h1>
     <div class="muted">El identificador completo (BioCLIP 2.5-H int8, 638 MB) corriendo en este teléfono, sin internet. Solo una prueba.</div>
     <div id="crash" class="err" hidden></div>
@@ -61,6 +63,7 @@
       <div id="progressBox" hidden><progress id="progress" max="1" value="0"></progress><div id="progressText" class="muted"></div></div>
       <div id="ready" class="ok" hidden></div>
       <div id="storage" class="muted"></div>
+      <div id="notPersisted" class="warn" hidden>El teléfono no marcó estos datos como persistentes: si se queda sin espacio, puede borrar los modelos y habrá que descargarlos de nuevo.</div>
       <div id="dlErr" class="err" hidden></div>
     </section>
 
@@ -96,6 +99,7 @@
 
     <section class="muted">
       <h2>Instalar en la pantalla de inicio</h2>
+      <p>Si ya tiene instalada la app de la base de datos, no hace falta otra: ábrala, toque su nombre arriba a la derecha → «Prueba: identificador sin conexión».</p>
       <p><b>Android (Chrome):</b> menú ⋮ → «Instalar app» o «Agregar a la pantalla principal». <button id="install" class="light" hidden>Instalar ahora</button></p>
       <p><b>iPhone (Safari):</b> botón Compartir → «Agregar a inicio». Abra la app desde el ícono, inicie sesión y descargue los modelos <i>dentro</i> de la app: en iPhone la app instalada guarda sus datos aparte de Safari.</p>
     </section>

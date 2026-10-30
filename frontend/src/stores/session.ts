@@ -11,6 +11,9 @@ interface Bootstrap {
   sync: SyncStatus
 }
 
+// Franz Chandi's account on the production database (users.id).
+const OFFLINE_ID_TESTER = 'cebc6f0ddb14f86ecc6cfaa0eb912e4c'
+
 // Whether someone was signed in on this device when the app last started (no one's name, just yes or no).
 const SIGNED_IN = 'session:signed-in'
 const signedInHere = () => {
@@ -41,6 +44,8 @@ export const useSession = defineStore('session', {
   getters: {
     canEdit: s => !!s.user && ['editor', 'reviewer', 'admin'].includes(s.user.role),
     isAdmin: s => s.user?.role === 'admin',
+    /** Franz Chandi's account (by its id, which a rename keeps): sees the offline identifier test page in the menu. */
+    isOfflineIdTester: s => s.user?.id === OFFLINE_ID_TESTER,
     /** Reviewers and admins: may also make pre-made rows in the workbook. */
     isReviewer: s => !!s.user && ['reviewer', 'admin'].includes(s.user.role),
     module: s => (id: string) => s.modules.find(m => m.id === id),

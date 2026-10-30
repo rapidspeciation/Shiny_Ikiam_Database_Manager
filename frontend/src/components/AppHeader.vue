@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { ExternalLink, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next'
+import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next'
 import { tabs } from '../router'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
@@ -35,6 +35,9 @@ const shown = computed(() =>
         .filter(t => !('staged' in t && t.staged) || session.settings?.stagedSaving !== false)
     : tabs.filter(t => 'open' in t && t.open),
 )
+
+/** The offline identifier test page (a page of its own, server/offline-id.mjs), opened in this window: inside the installed app it stays in the app. */
+const offlineIdPage = new URL('prueba-offline/', location.href.split('#')[0]).href
 
 async function logout() {
   if (
@@ -141,6 +144,9 @@ async function logout() {
           <RouterLink v-if="session.isAdmin" to="/usuarios" class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100">
             <Users :size="15" /> {{ $t('Usuarios') }}
           </RouterLink>
+          <a v-if="session.isOfflineIdTester" :href="offlineIdPage" class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100">
+            <FlaskConical :size="15" /> {{ $t('Prueba: identificador sin conexión') }}
+          </a>
           <button class="flex w-full items-center gap-2 px-3 py-2 hover:bg-stone-100" @click="logout">
             <LogOut :size="15" /> {{ $t('Cerrar sesión') }}
           </button>
