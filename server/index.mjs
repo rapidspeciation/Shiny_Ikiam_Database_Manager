@@ -41,6 +41,7 @@ import { freshCorrections, monitoringRowsCsv, pointsCsv, walksGpx } from './moni
 import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevision, tableText } from './grid.mjs';
 import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
+import { serveOfflineId } from './offline-id.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -624,6 +625,14 @@ export async function createApp(config = {}, options = {}) {
         return res.end();
       }
       if (path === '/rename-app' || path.startsWith('/rename-app/')) return serveRenameApp(req, res, path.slice('/rename-app'.length), config.renameAppRoot);
+      // The offline identifier test page: its own headers (cross-origin isolated, WebAssembly) and its models behind the sign-in.
+      if (path === '/prueba-offline' || path.startsWith('/prueba-offline/'))
+        return serveOfflineId(req, res, {
+          path: path.slice('/prueba-offline'.length),
+          webRoot: config.webRoot ?? webRoot,
+          identifierDir: config.identifierDir ?? null,
+          user: path.startsWith('/prueba-offline/models/') ? getSession(store, req.headers.cookie)?.user ?? null : null,
+        });
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url, config.webRoot);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);

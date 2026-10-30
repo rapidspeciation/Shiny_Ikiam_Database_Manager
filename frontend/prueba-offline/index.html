@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f4d3a" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="../mark.svg?v=3" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png?v=3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Prueba IA" />
+    <title>Prueba: identificador sin conexión</title>
+    <style>
+      :root { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1c1917; background: #f5f5f4; }
+      body { margin: 0; padding: 12px; max-width: 720px; margin-inline: auto; }
+      h1 { font-size: 1.25rem; margin: 4px 0 2px; color: #1f4d3a; }
+      h2 { font-size: 1.05rem; margin: 0 0 8px; }
+      section { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; padding: 12px; margin: 12px 0; }
+      .muted { color: #57534e; font-size: 0.9rem; }
+      .warn { background: #fef3c7; border: 1px solid #f59e0b; padding: 8px 10px; border-radius: 8px; margin: 8px 0; }
+      .err { background: #fee2e2; border: 1px solid #ef4444; padding: 8px 10px; border-radius: 8px; margin: 8px 0; white-space: pre-wrap; }
+      .ok { color: #166534; font-weight: 600; }
+      button, .filebtn { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid #1f4d3a; background: #1f4d3a; color: #fff; cursor: pointer; display: inline-block; margin: 4px 4px 4px 0; }
+      button.light, .filebtn.light { background: #fff; color: #1f4d3a; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      input[type='file'] { display: none; }
+      input[type='text'], input[type='password'], select { font: inherit; padding: 8px; border: 1px solid #a8a29e; border-radius: 6px; width: 100%; box-sizing: border-box; margin: 4px 0; }
+      progress { width: 100%; height: 18px; }
+      table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+      td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e7e5e4; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+      canvas { border: 1px solid #d6d3d1; border-radius: 6px; width: 160px; height: 160px; }
+      pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: #fafaf9; padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Prueba: identificador sin conexión</h1>
+    <div class="muted">El identificador completo (BioCLIP 2.5-H int8, 638 MB) corriendo en este teléfono, sin internet. Solo una prueba.</div>
+    <div id="crash" class="err" hidden></div>
+    <div id="status" class="muted"></div>
+
+    <section id="login" hidden>
+      <h2>Iniciar sesión</h2>
+      <div class="muted">Hace falta para descargar los modelos (solo la primera vez). Usuario y contraseña de la base de datos.</div>
+      <form id="loginForm">
+        <input id="user" type="text" autocomplete="username" placeholder="Usuario o correo" />
+        <input id="pass" type="password" autocomplete="current-password" placeholder="Contraseña" />
+        <button type="submit">Entrar</button>
+      </form>
+      <div id="loginErr" class="err" hidden></div>
+    </section>
+
+    <section>
+      <h2>1. Modelos</h2>
+      <div id="files" class="muted"></div>
+      <button id="download">Descargar modelos para uso sin conexión</button>
+      <button id="remove" class="light" hidden>Borrar modelos</button>
+      <div id="progressBox" hidden><progress id="progress" max="1" value="0"></progress><div id="progressText" class="muted"></div></div>
+      <div id="ready" class="ok" hidden></div>
+      <div id="storage" class="muted"></div>
+      <div id="dlErr" class="err" hidden></div>
+    </section>
+
+    <section>
+      <h2>2. Identificar</h2>
+      <div class="muted">Funciona sin conexión cuando los modelos están descargados. La primera foto tarda más (carga los modelos en memoria).</div>
+      <label>Lado de los Andes (opcional, como en el identificador del servidor):
+        <select id="side"><option value="">Sin indicar</option><option value="East">Este (Amazonía)</option><option value="West">Oeste</option></select>
+      </label>
+      <label class="muted"><input id="useGpu" type="checkbox" /> Usar WebGPU para detectar las alas (si el teléfono lo tiene)</label>
+      <div>
+        <label class="filebtn">Tomar foto<input id="camera" type="file" accept="image/*" capture="environment" /></label>
+        <label class="filebtn light">Elegir foto<input id="pick" type="file" accept="image/*" /></label>
+      </div>
+      <div id="running" class="muted" hidden></div>
+      <div id="idErr" class="err" hidden></div>
+      <div id="result" hidden>
+        <div class="row">
+          <div><canvas id="crop" width="224" height="224"></canvas><div id="cropNote" class="muted"></div></div>
+          <div style="flex: 1; min-width: 220px">
+            <table><thead><tr><th>Especie</th><th class="num">Prob.</th></tr></thead><tbody id="top"></tbody></table>
+          </div>
+        </div>
+        <table id="times" style="margin-top: 8px"></table>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Enviar el resultado</h2>
+      <button id="copy">Copiar resultado</button> <span id="copied" class="ok" hidden>Copiado ✓</span>
+      <pre id="diag"></pre>
+    </section>
+
+    <section class="muted">
+      <h2>Instalar en la pantalla de inicio</h2>
+      <p><b>Android (Chrome):</b> menú ⋮ → «Instalar app» o «Agregar a la pantalla principal». <button id="install" class="light" hidden>Instalar ahora</button></p>
+      <p><b>iPhone (Safari):</b> botón Compartir → «Agregar a inicio». Abra la app desde el ícono, inicie sesión y descargue los modelos <i>dentro</i> de la app: en iPhone la app instalada guarda sus datos aparte de Safari.</p>
+    </section>
+    <script type="module" src="../src/offline/main.ts"></script>
+  </body>
+</html>
