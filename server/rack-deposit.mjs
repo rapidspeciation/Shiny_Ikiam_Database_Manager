@@ -434,9 +434,9 @@ export function depositState(store, deposit, readingOf) {
  * Whether a deposit can be written as the Anexo1 sheet: every well of every rack read, filled or said empty, and
  * (`fields`) the sheet's fields given: responsable, freezer, and per rack shelf, rack row and box.
  */
-export function depositProblems(deposit, { fields = true } = {}) {
+export function depositProblems(deposit, { fields = true, responsable = true } = {}) {
   const problems = [];
-  if (!text(deposit.responsable)) problems.push('responsable: the person depositing the samples.');
+  if (responsable && !text(deposit.responsable)) problems.push('responsable: the person depositing the samples.');
   if (fields && !text(deposit.ultracongelador)) problems.push('ultracongelador: the freezer (LBI062).');
   for (const [k, r] of (deposit.racks ?? []).entries()) {
     const name = `Rack ${k + 1} (${r.rack_id ?? 'code not read'})`;
@@ -451,6 +451,17 @@ export function depositProblems(deposit, { fields = true } = {}) {
   }
   return problems;
 }
+
+/**
+ * Whether the tube-locations changes (the .xlsx to paste by hand) can be made: the same rule as the deposit sheet's
+ * wells (every well read, filled or said empty; no conflict, no problem, the rack code known), without the deposit
+ * sheet's own fields (responsable, shelf, rack row, box), which the tube-locations sheet does not have.
+ */
+export const changesProblems = deposit => {
+  const problems = depositProblems(deposit, { fields: false, responsable: false });
+  if (!deposit.racks?.length) problems.push('No rack in this deposit yet: read its photos (rack_read_photos).');
+  return problems;
+};
 
 /** A rack's wells as the deposit sheet writes them (Map well → tube). */
 export const sheetWells = rack => new Map(Object.entries(rack.wells ?? {}).filter(([, c]) => c.t).map(([w, c]) => [w, c.t]));

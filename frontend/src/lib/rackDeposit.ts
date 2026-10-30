@@ -82,6 +82,10 @@ export interface RackDeposit {
   left_out?: string[]
   xlsx?: RackFile
   drive?: RackFile
+  /** The tube-locations changes as an .xlsx to paste by hand (the last one made, and who made it). */
+  changes_xlsx?: RackFile & { by?: string }
+  /** Pasted into the sheet by hand («Aplicado a mano»): who and when; the app wrote nothing. */
+  manual?: { by: string; at: string; file?: string }
 }
 
 /**
@@ -181,6 +185,18 @@ export function rackOfChange(deposit: RackDeposit, change: ProposalChange): stri
   return null
 }
 
+/** A rack's wells not settled yet, in the person's words: no tube said, a problem, a conflict. */
+function wellsNotReady(r: DepositRack): string[] {
+  const rack = r.rack_id ?? '?'
+  const out: string[] = []
+  const open = r.missing.length
+  const wells = `${r.missing.slice(0, 6).join(', ')}${open > 6 ? '…' : ''}`
+  if (open) out.push(tn(open, '{rack}: {n} pocillo sin tubo ({wells})', '{rack}: {n} pocillos sin tubo ({wells})', { rack, wells }))
+  for (const p of r.problems) if (!/code was not read/.test(p)) out.push(`${rack}: ${problemText(p)}`)
+  for (const c of r.conflicts ?? []) out.push(`${rack}: ${conflictText(c)}`)
+  return out
+}
+
 /** Why the deposit sheet (.xlsx) cannot be made yet, in the person's words (empty: it can). */
 export function notReady(deposit: RackDeposit): string[] {
   const out: string[] = []
@@ -192,12 +208,24 @@ export function notReady(deposit: RackDeposit): string[] {
     if (!r.rack_id) out.push(t('{rack}: falta el código del rack', { rack }))
     const unset = (['estanteria', 'fila_de_rack', 'caja'] as const).filter(f => !String(r[f] ?? '').trim())
     if (unset.length) out.push(t('{rack}: falta {fields}', { rack, fields: unset.map(f => t(FIELD_LABELS[f])).join(', ') }))
-    const open = r.missing.length
-    const wells = `${r.missing.slice(0, 6).join(', ')}${open > 6 ? '…' : ''}`
-    if (open) out.push(tn(open, '{rack}: {n} pocillo sin tubo ({wells})', '{rack}: {n} pocillos sin tubo ({wells})', { rack, wells }))
-    for (const p of r.problems) if (!/code was not read/.test(p)) out.push(`${rack}: ${problemText(p)}`)
-    for (const c of r.conflicts ?? []) out.push(`${rack}: ${conflictText(c)}`)
+    out.push(...wellsNotReady(r))
   }
+  return out
+}
+
+/**
+ * Why the tube-locations changes (.xlsx to paste by hand) cannot be made yet (empty: they can): the deposit sheet's
+ * rule for the wells (every well read, filled or said empty; no conflict, no problem, the rack code known), without
+ * its own fields (shelf, rack row, box: the tube-locations sheet has none); and rows to paste at all.
+ */
+export function changesNotReady(deposit: RackDeposit, changes: ProposalChange[]): string[] {
+  const out: string[] = []
+  if (!deposit.racks.length) out.push(t('ningún rack leído'))
+  for (const r of deposit.racks) {
+    if (!r.rack_id) out.push(t('{rack}: falta el código del rack', { rack: '?' }))
+    out.push(...wellsNotReady(r))
+  }
+  if (!out.length && !changes.some(c => !c.context && !c.applied && c.sheet === deposit.sheet)) out.push(t('no cambia nada en la hoja de tubos'))
   return out
 }
 

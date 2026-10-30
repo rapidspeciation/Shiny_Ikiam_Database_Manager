@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RACK_LOCKED, cellCounts, conflictText, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
+import { RACK_LOCKED, cellCounts, changesNotReady, conflictText, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
 import type { ProposalChange } from '../proposals'
 
 const rack = (over: Partial<DepositRack> = {}): DepositRack => ({
@@ -110,5 +110,18 @@ describe('a rack of a deposit', () => {
     expect(Object.keys(RACK_LOCKED).sort()).toEqual(['Rack_ID', 'Sort'])
     expect(RACK_LOCKED.Rack_ID).toMatch(/datos del rack/)
     expect(RACK_LOCKED.Sort).toMatch(/Automático/)
+  })
+
+  it('the changes to paste by hand wait for every well and no conflict, not for the deposit sheet\'s own fields', () => {
+    const d: RackDeposit = { responsable: '', ultracongelador: '', racks: [rack()], sheet: 'T', unset: [] }
+    // F1 has no tube yet: waits (the same rule as the deposit sheet's wells).
+    expect(changesNotReady(d, [created, moved]).some(w => /F1/.test(w))).toBe(true)
+    // Every well said: made, though responsable, freezer and box are still empty.
+    const ready = { ...d, racks: [rack({ missing: [] })] }
+    expect(changesNotReady(ready, [created, moved])).toEqual([])
+    // A conflict waits; no row to paste at all says so.
+    const conflicts = [{ tube: 'FS50849233', from: 'A1', to: 'C1', other: 'FS50849235' }]
+    expect(changesNotReady({ ...ready, racks: [rack({ missing: [], conflicts })] }, [created, moved])).toHaveLength(1)
+    expect(changesNotReady(ready, [{ ...created, applied: 1 }])[0]).toMatch(/no cambia nada|changes nothing/)
   })
 })

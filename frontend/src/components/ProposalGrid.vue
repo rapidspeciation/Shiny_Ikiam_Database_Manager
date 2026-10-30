@@ -23,6 +23,7 @@ import PhotoThumbs from './assistant/PhotoThumbs.vue'
 import RowPhotos from './assistant/RowPhotos.vue'
 import SheetApply from './assistant/SheetApply.vue'
 import RackDepositHead from './assistant/RackDepositHead.vue'
+import RackChanges from './assistant/RackChanges.vue'
 import RackSection from './assistant/RackSection.vue'
 import { RACK_LOCKED, rackOfChange, type DepositRack } from '../lib/rackDeposit'
 import { api, learnItems } from '../lib/api'
@@ -521,6 +522,8 @@ const tables = computed(() =>
 )
 // ------------------------------------------------------------ a rack deposit (lib/rackDeposit)
 const deposit = computed(() => props.proposal.deposit ?? null)
+/** A rack deposit whose sheet the app's Google account cannot edit: its changes go by hand, no «Aplicar». */
+const byHand = computed(() => !!deposit.value?.protected)
 /**
  * The tables as shown: as they are, or for a rack deposit one section per rack (its grid and fields,
  * then its own rows: the tube-locations rows of its tubes); rows of no rack after them.
@@ -707,6 +710,10 @@ const statusText = computed(
       applied: t('Aplicado en la hoja ({n} filas)', { n: props.proposal.applied?.length ?? props.proposal.changes.length }),
       needs_review: t('No se pudo aplicar: revisa las filas en la hoja'),
       discarded: t('Descartado'),
+      // A rack deposit pasted into the sheet by hand: who and when; the app wrote nothing.
+      closed: props.proposal.deposit?.manual
+        ? t('Aplicado a mano por {who} ({when}): la app no escribió nada en la hoja', { who: props.proposal.deposit.manual.by, when: whenText(props.proposal.deposit.manual.at) })
+        : '',
       applying: t('Aplicando…'),
       queued: t('Esperando a Google Sheets: se escribe solo cuando responda'),
     })[props.proposal.status as string] ?? '',
@@ -852,6 +859,7 @@ const statusText = computed(
       v-if="deposit"
       :proposal-id="proposal.id"
       :deposit="deposit"
+      :changes="shown.changes"
       :editable="editable"
       @replace="p => emit('replace', p)"
       @notice="m => notify(m)"
@@ -1125,9 +1133,20 @@ const statusText = computed(
     </ul>
     <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
       <template v-if="pending">
+        <!-- A rack deposit the app cannot write: the changes downloaded and pasted by hand, then «Aplicado a mano». -->
+        <RackChanges
+          v-if="byHand && deposit"
+          :proposal-id="proposal.id"
+          :deposit="deposit"
+          :changes="shown.changes"
+          :editable="editable"
+          main
+          @replace="p => emit('replace', p)"
+          @notice="m => notify(m)"
+        />
         <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
         <button
-          v-if="!perSheet.size || sheetsToApply.length > 1"
+          v-else-if="!perSheet.size || sheetsToApply.length > 1"
           class="btn-primary bg-emerald-700 hover:bg-emerald-800"
           :disabled="busy || !chosen.length"
           @click="applyRows(null)"
@@ -1154,13 +1173,17 @@ const statusText = computed(
               >{{ $tn(setAside, '{n} sugerencia de la IA sin aplicar', '{n} sugerencias de la IA sin aplicar') }} ·
             </template>
           </template>
-          {{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}
+          <template v-if="!byHand">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</template>
         </span>
+        <!-- Why there is no «Aplicar»: the app's Google account cannot edit the deposit's sheet. -->
+        <p v-if="byHand && deposit" class="order-last basis-full text-[11px] text-stone-600" data-no-edit-access>
+          {{ $t('La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».', { sheet: deposit.sheet ?? '' }) }}
+        </p>
       </template>
       <span
         v-else
         class="flex items-center gap-1 text-xs"
-        :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'"
+        :class="proposal.status === 'applied' || proposal.deposit?.manual ? 'text-brand-700' : 'text-amber-800'"
         :role="proposal.status === 'queued' ? 'status' : undefined"
       >
         <Clock v-if="proposal.status === 'queued'" :size="13" class="shrink-0" />
