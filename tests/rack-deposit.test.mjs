@@ -515,12 +515,13 @@ test('changes .xlsx: refused while wells are open; then new rows in the sheet\'s
   assert.deepEqual(['D2', 'E2', 'F2', 'G2'].map(r => moved[r].v), ['FK00999999', 'FK00274230', 'E5', 'C1']);
   assert.deepEqual([moved.E2.s, moved.G2.s, moved.D2.s], [6, 6, 1], 'the new values highlighted');
   const readme = xlsx['xl/worksheets/sheet3.xml'];
-  for (const said of ['Racks?: FK00274230', 'Hecho por: Franz Chandi', 'la 5, según la última lectura', 'Sort sigue la numeración: 13–106', 'L–Q (Genus', 'Aplicado a mano', expected('A2'), 'FS11111111 (FK00274230 H12)'])
+  for (const said of ['Racks?: FK00274230', 'Hecho por: Franz Chandi', 'la 5, según la última lectura', 'Sort sigue la numeración (13–106)', 'solo valores', 'L–Q (Genus', 'Aplicado a mano', expected('A2'), 'FS11111111 (FK00274230 H12)'])
     assert.ok(new RegExp(said.replace(/[()]/g, '\\$&')).test(readme), said);
   assert.ok(!readme.includes(`${expected('A1')} (`), 'A1 has its Collection_data row: not listed as needing rows');
   // Through rack_report too, beside the deposit sheet (refused there: its fields are not given).
   const report = await call('rack_report', {});
-  assert.match(report.error, /Not made yet/);
+  assert.equal(report.error, undefined, 'the deposit sheet refused apart, not as the answer\'s error');
+  assert.match(report.deposit_sheet_error, /Not made yet/);
   assert.equal(report.changes_download, done.changes_download);
   // Pasted by hand: out of the pending list, who and when; nothing written.
   const marked = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
@@ -583,4 +584,69 @@ test('identify_species names the live head (alias, b8127dbf), not the release of
   assert.ok(!/release of 14 Oct/.test(text));
   assert.match(text, /head_hier_b8127dbf\.pt/);
   assert.match(text, /measured with the earlier head/);
+});
+
+test('pasted and synced, then «Aplicado a mano»: accepted; a file made after the paste leaves the pasted rows out', async () => {
+  const { call, http, store, rackReportsDir, user, list } = await setup({ protect: true });
+  const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well) }] });
+  assert.equal((await http('POST', `/api/chat/proposals/${id}/rack-changes`, {})).status, 200);
+  // Someone with access pastes the new rows (not the changed one yet); the app's sync reads them.
+  const [p] = await list();
+  const creates = p.changes.filter(c => c.create);
+  for (const [k, c] of creates.entries()) await store.sheets.externalEdit(SHEET, 5 + k, { Sort: c.values.Sort, Tube_ID: c.values.Tube_ID, Rack_ID: c.values.Rack_ID, Tube_location: c.values.Tube_location });
+  await store.sync({ sheets: [SHEET], force: true });
+  // The local sheet has no protection of its own: noted again as production has it (the tab stays protected).
+  store.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`protected:${SHEET}`, '[{"range":{"sheetId":7}}]');
+  // Downloaded again: only the changed row is left; the file says the others are there already.
+  const again = await http('POST', `/api/chat/proposals/${id}/rack-changes`, {});
+  assert.equal(again.status, 200, JSON.stringify(again.body.error));
+  const [, token, file] = /\/api\/rack-reports\/([a-f0-9]{24})\/(.+)$/.exec(again.body.download);
+  const xlsx = unzip(readFileSync(reportFile(rackReportsDir, token, file, user).path));
+  assert.equal(cells(xlsx['xl/worksheets/sheet1.xml']).A2, undefined, 'no new row left to paste');
+  assert.equal(cells(xlsx['xl/worksheets/sheet2.xml']).B2.v, expected('C1'));
+  assert.match(xlsx['xl/worksheets/sheet3.xml'], new RegExp(`${creates.length} filas nuevas de esta propuesta ya están en la hoja`));
+  // The proposal's own rows did not change: «Aplicado a mano» is taken after the paste and the sync.
+  const marked = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(marked.status, 200, JSON.stringify(marked.body.error));
+  assert.equal(marked.body.proposal.status, 'closed');
+});
+
+test('«Aplicado a mano» refused while a conflict waits, and when the app can write the sheet', async () => {
+  const { call, http, store } = await setup({ protect: true });
+  const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well) }] });
+  assert.equal((await http('POST', `/api/chat/proposals/${id}/rack-changes`, {})).status, 200);
+  // A tube moved onto another tube's well after the download: a conflict, so not marked.
+  await call('rack_deposit', { racks: [{ rack: '1', move: { A2: 'B2' } }] });
+  const conflict = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(conflict.status, 409);
+  assert.match(conflict.body.error.message, /por resolver/);
+  await call('rack_deposit', { racks: [{ rack: '1', resolve: [{ well: 'B2', how: 'keep' }] }] });
+  // Access given: «Aplicar» is the way, not «Aplicado a mano».
+  store.db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('[]', `protected:${SHEET}`);
+  const writable = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(writable.status, 409);
+  assert.match(writable.body.error.message, /usa «Aplicar»/);
+});
+
+test('Sort in the file leaves room for the new rows of a deposit pending from before (never the same numbers)', async () => {
+  const { call, http, store, rackReportsDir, user, list } = await setup({ protect: true });
+  const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well) }] });
+  const [p] = await list();
+  const own = store.db.prepare('SELECT thread_id, owner_id FROM ai_proposals WHERE id = ?').get(id);
+  // Another chat's deposit, made earlier and still pending: three new rows numbered 13..15 as well.
+  const rows = [13, 14, 15].map(n => ({ sheet: SHEET, create: true, clientId: `o${n}`, values: { Sort: n, Tube_ID: `FS7000000${n}`, Rack_ID: 'FK00000001', Tube_location: 'A1' } }));
+  store.db
+    .prepare("INSERT INTO ai_proposals(id, thread_id, owner_id, changes_json, reason, status, created_at, page_json) VALUES ('other-deposit', ?, ?, ?, 'x', 'pending', '2000-01-01T00:00:00Z', ?)")
+    .run(own.thread_id, own.owner_id, JSON.stringify(rows), JSON.stringify({ deposit: { racks: [] } }));
+  assert.equal(p.changes.find(c => c.create).values.Sort, 13, 'the proposal numbers from the sheet');
+  const made = await http('POST', `/api/chat/proposals/${id}/rack-changes`, {});
+  const [, token, file] = /\/api\/rack-reports\/([a-f0-9]{24})\/(.+)$/.exec(made.body.download);
+  const added = cells(unzip(readFileSync(reportFile(rackReportsDir, token, file, user).path))['xl/worksheets/sheet1.xml']);
+  assert.equal(added.A2.v, 16, 'after the other deposit\'s three rows');
 });

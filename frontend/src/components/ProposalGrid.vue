@@ -1176,8 +1176,8 @@ const statusText = computed(
           <template v-if="!byHand">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</template>
         </span>
         <!-- Why there is no «Aplicar»: the app's Google account cannot edit the deposit's sheet. -->
-        <p v-if="byHand && deposit" class="basis-full text-[11px] text-stone-600" data-no-edit-access>
-          {{ $t('La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso.', { sheet: deposit.sheet ?? '' }) }}
+        <p v-if="byHand && deposit" class="order-last basis-full text-[11px] text-stone-600" data-no-edit-access>
+          {{ $t('La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».', { sheet: deposit.sheet ?? '' }) }}
         </p>
       </template>
       <span

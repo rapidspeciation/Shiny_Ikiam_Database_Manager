@@ -140,8 +140,14 @@ export default {
   '¿Ya están pegados en {sheet}?': 'Already pasted into {sheet}?',
   'Sí, marcar aplicado a mano': 'Yes, mark applied by hand',
   'no cambia nada en la hoja de tubos': 'it changes nothing in the tube sheet',
-  'La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso.':
-    'The app has no edit access to the sheet {sheet}: download the changes for someone with access to paste.',
+  'La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».':
+    'The app has no edit access to the sheet {sheet}: download the changes for someone with access to paste, then press «Applied by hand».',
+  'Filas de {sheet}': 'Rows of {sheet}',
+  'Sin acceso de edición a {sheet}: los cambios se descargan abajo, en «Descargar cambios (.xlsx)», para pegarlos a mano.':
+    'No edit access to {sheet}: the changes are downloaded below, with «Download changes (.xlsx)», to paste by hand.',
+  'La app puede escribir en esta hoja: usa «Aplicar».': 'The app can write this sheet: use «Apply».',
+  'Algo de los racks está por resolver (mira la cuadrícula): resuélvelo y descarga los cambios de nuevo.':
+    'Something on the racks is still to resolve (see the grid): resolve it and download the changes again.',
   'Aplicado a mano por {who} ({when}): la app no escribió nada en la hoja': 'Applied by hand by {who} ({when}): the app wrote nothing to the sheet',
   'Descarga primero los cambios (.xlsx) y pégalos en la hoja.': 'First download the changes (.xlsx) and paste them into the sheet.',
   'Los cambios propuestos cambiaron después de la descarga: descárgalos de nuevo y pega esa versión.':

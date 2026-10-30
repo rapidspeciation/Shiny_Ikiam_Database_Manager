@@ -111,7 +111,7 @@ export const RACK_TOOLS = [
       name: 'rack_report',
       description: [
         "The deposit sheet of the LBI freezer (Alex's Anexo1) for this chat's rack deposit: an .xlsx with one sheet per rack, «Caja <rack code> (8x12)», the tubes on their wells A1..H12, and its download link (`markdown`: give it as it is). The sidebar has the same as «Descargar .xlsx».",
-        "Also `changes_download` (once every rack is complete; else `changes_not_ready`): the tube-locations rows as an .xlsx to paste by hand («Filas nuevas» in the sheet's column order, «Filas cambiadas», «Léeme»), the sidebar's «Descargar cambios (.xlsx)». Put it in the reply as it is; after pasting, the person presses «Aplicado a mano».",
+        "Also `changes_download` (once every rack is complete; else `changes_not_ready`; when the deposit sheet itself is refused for a missing field, that is `deposit_sheet_error`, the changes link still good): the tube-locations rows as an .xlsx to paste by hand («Filas nuevas» in the sheet's column order, «Filas cambiadas», «Léeme»), the sidebar's «Descargar cambios (.xlsx)». Put it in the reply as it is; after pasting, the person presses «Aplicado a mano».",
         "- `drive: true` (only when the person asks for it, or presses «Guardar en Google Drive» in the sidebar): a copy in the project's Drive folder «Depósitos LBI (racks)», `drive.markdown`. `drive.error`: Drive did not take it; the download still works, say so.",
         '- `proposal`: the deposit (default: this chat\'s pending one).',
         'Refused while a well of a rack is neither read, filled nor said empty, or a field is missing: ask the person.',
@@ -268,7 +268,8 @@ export function tableXml(rows, { widths = [], freeze = 0 } = {}) {
  */
 export function changesSheets({ columns, added, changed, readme }) {
   const header = columns.map(c => ({ v: c.key, s: STYLE.header }));
-  const newRows = [header, ...added.map(values => columns.map(c => ({ v: c.formula ? null : (values[c.key] ?? null), s: STYLE.cell })))];
+  // Plain cells (no borders): pasted into the sheet they bring no formatting along.
+  const newRows = [header, ...added.map(values => columns.map(c => (c.formula ? null : (values[c.key] ?? null))))];
   const changedKeys = columns.filter(c => changed.some(t => t.cells.some(x => x.key === c.key)));
   const head = ['Fila en la hoja', 'Tube_ID', 'Columnas que cambian', ...changedKeys.flatMap(c => [`${c.key} (${c.letter}) ahora`, `${c.key} nuevo`])];
   const changedRows = [

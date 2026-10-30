@@ -164,7 +164,8 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
       <span v-if="why.length" class="text-[11px] text-stone-500">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
     </div>
     <!-- The tube-locations rows to paste by hand (the main action at the foot when the app cannot edit the sheet). -->
-    <div v-if="!deposit.protected" class="flex flex-wrap items-center gap-2">
+    <div v-if="!deposit.protected" class="flex flex-wrap items-center gap-2 border-t border-stone-200 pt-1.5">
+      <span class="text-xs font-semibold text-stone-800">{{ $t('Filas de {sheet}', { sheet: deposit.sheet ?? '' }) }}</span>
       <RackChanges
         :proposal-id="proposalId"
         :deposit="deposit"
@@ -174,6 +175,10 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
         @notice="m => emit('notice', m)"
       />
     </div>
+    <!-- The app cannot edit that sheet: said here too, the download and «Aplicado a mano» are at the proposal's foot. -->
+    <p v-else class="dep-note" role="status" data-no-edit-access-head>
+      {{ $t('Sin acceso de edición a {sheet}: los cambios se descargan abajo, en «Descargar cambios (.xlsx)», para pegarlos a mano.', { sheet: deposit.sheet ?? '' }) }}
+    </p>
     <ul v-if="problems.length" class="text-[11px] text-red-800">
       <li v-for="(p, i) in problems" :key="i">{{ p }}</li>
     </ul>
@@ -234,6 +239,13 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
 .jump.has-open {
   border-color: var(--color-amber-400);
   background: var(--color-amber-50);
+}
+.dep-note {
+  border-radius: 0.25rem;
+  background: var(--color-amber-50);
+  padding: 0.25rem 0.5rem;
+  font-size: 11px;
+  color: var(--color-amber-950);
 }
 .file-link {
   display: inline-flex;

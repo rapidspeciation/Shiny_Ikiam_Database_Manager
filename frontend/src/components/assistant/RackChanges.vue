@@ -104,8 +104,8 @@ async function byHand() {
         <button type="button" class="btn h-7 px-2 text-xs" :disabled="!!busy" @click="asking = false">{{ $t('Cancelar') }}</button>
       </span>
     </template>
-    <span v-if="why.length" class="text-[11px] text-stone-500">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
-    <span v-if="problems.length" class="basis-full text-[11px] text-red-800">{{ problems.join(' · ') }}</span>
+    <span v-if="why.length" class="text-[11px] text-stone-500" :class="{ 'order-last basis-full': main }">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
+    <span v-if="problems.length" class="order-last basis-full text-[11px] text-red-800">{{ problems.join(' · ') }}</span>
   </span>
 </template>
 

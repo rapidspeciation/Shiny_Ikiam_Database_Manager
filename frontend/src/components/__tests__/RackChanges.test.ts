@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 import RackChanges from '../assistant/RackChanges.vue'
+import RackDepositHead from '../assistant/RackDepositHead.vue'
 import type { RackDeposit } from '../../lib/rackDeposit'
 import type { ProposalChange } from '../../lib/proposals'
 import { t, tn } from '../../lib/i18n'
@@ -12,10 +13,10 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function mount(props: Record<string, unknown>) {
+function mount(props: Record<string, unknown>, component: object = RackChanges) {
   const host = document.createElement('div')
   document.body.append(host)
-  const app = createApp({ render: () => h(RackChanges as object, props) })
+  const app = createApp({ render: () => h(component, props) })
   app.config.globalProperties.$t = t
   app.config.globalProperties.$tn = tn
   app.mount(host)
@@ -90,5 +91,15 @@ describe('a rack deposit the app cannot write: its changes by hand', () => {
     const host = mount({ proposalId: 'p1', deposit: deposit({ protected: false }), changes: [row], editable: true })
     expect(host.querySelector<HTMLButtonElement>('[data-rack-changes]')!.disabled).toBe(false)
     expect(host.querySelector('[data-rack-by-hand]')).toBeNull()
+  })
+
+  it("the deposit's head: the download beside the deposit sheet when the app can write; a pointer to the foot when not", () => {
+    let host = mount({ proposalId: 'p1', deposit: deposit({ protected: false }), changes: [row], editable: true }, RackDepositHead)
+    expect(host.querySelector('[data-rack-changes]')).not.toBeNull()
+    expect(host.querySelector('[data-no-edit-access-head]')).toBeNull()
+    unmount()
+    host = mount({ proposalId: 'p1', deposit: deposit(), changes: [row], editable: true }, RackDepositHead)
+    expect(host.querySelector('[data-rack-changes]')).toBeNull()
+    expect(host.querySelector('[data-no-edit-access-head]')!.textContent).toMatch(/Ithomiini_tube_locations_18Jun26/)
   })
 })
