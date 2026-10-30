@@ -129,4 +129,21 @@ export default {
   Conflicto: 'Conflict',
   '{to} ya tiene otro tubo en la cuadrícula del rack: resuélvelo allí (este tubo sigue en {from})':
     "{to} already holds another tube on the rack's grid: resolve it there (this tube is still in {from})",
+  // RackChanges, ProposalGrid (a deposit the app cannot write: its changes pasted by hand)
+  'Descargar cambios (.xlsx)': 'Download changes (.xlsx)',
+  'Las filas nuevas y las cambiadas de {sheet}, para pegarlas a mano, con instrucciones':
+    'The new and changed rows of {sheet}, to paste by hand, with instructions',
+  'Cuando alguien con acceso haya pegado los cambios en la hoja: la propuesta sale de pendientes. La app no escribe nada':
+    'Once someone with access has pasted the changes into the sheet: the proposal leaves the pending list. The app writes nothing',
+  'Primero descarga los cambios y pégalos en la hoja': 'First download the changes and paste them into the sheet',
+  'Aplicado a mano': 'Applied by hand',
+  '¿Ya están pegados en {sheet}?': 'Already pasted into {sheet}?',
+  'Sí, marcar aplicado a mano': 'Yes, mark applied by hand',
+  'no cambia nada en la hoja de tubos': 'it changes nothing in the tube sheet',
+  'La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso.':
+    'The app has no edit access to the sheet {sheet}: download the changes for someone with access to paste.',
+  'Aplicado a mano por {who} ({when}): la app no escribió nada en la hoja': 'Applied by hand by {who} ({when}): the app wrote nothing to the sheet',
+  'Descarga primero los cambios (.xlsx) y pégalos en la hoja.': 'First download the changes (.xlsx) and paste them into the sheet.',
+  'Los cambios propuestos cambiaron después de la descarga: descárgalos de nuevo y pega esa versión.':
+    'The proposed changes changed after the download: download them again and paste that version.',
 }

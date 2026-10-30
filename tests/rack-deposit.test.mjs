@@ -4,12 +4,14 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { LocalDrive } from '../server/drive.mjs';
 import { loadPhoto, readOne } from '../server/rack-reader.mjs';
-import { DRIVE_FOLDER, reportFile } from '../server/rack-tools.mjs';
+import { DRIVE_FOLDER, changesSheets, reportFile, workbook } from '../server/rack-tools.mjs';
+import { DRIVE_PHOTO_TOOLS } from '../server/drive-photos.mjs';
 import { placeReading, tubeSheet } from '../server/rack-deposit.mjs';
 
 // A rack deposit as «Cambios propuestos» shows it: Franz's photo of FK00274230 (28 Oct), the workbook's
@@ -189,7 +191,7 @@ test('Drive unreachable: a clear failure, the download still works', async () =>
 test('a protected tube-locations sheet: said in the answer and on the proposal, the proposal still made', async () => {
   const { call, list } = await setup({ protect: true });
   const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
-  assert.match(read.deposit.protected, /cannot write .*«Aplicar» will be refused/);
+  assert.match(read.deposit.protected, /no edit access to .*«Aplicar» is not offered.*changes_download/);
   const [p] = await list();
   assert.equal(p.deposit.protected, true);
 });
@@ -447,4 +449,138 @@ test('rows the assistant takes out go through the rack: removeRows by ID in any 
   assert.ok(!rowOf(await p(), read.wells.A2));
   await call('rack_deposit', { racks: [{ rack: '1', restore: [read.wells.A2] }] });
   assert.ok(rowOf(await p(), read.wells.A2));
+});
+
+// ------------------------------------------------------------ the changes to paste by hand (no edit access)
+/** The entries of an .xlsx (our own zip: deflated, sizes in the local headers). */
+function unzip(buf) {
+  const out = {};
+  let at = 0;
+  while (buf.readUInt32LE(at) === 0x04034b50) {
+    const size = buf.readUInt32LE(at + 18);
+    const nameLength = buf.readUInt16LE(at + 26);
+    const name = buf.subarray(at + 30, at + 30 + nameLength).toString();
+    const start = at + 30 + nameLength;
+    out[name] = inflateRawSync(buf.subarray(start, start + size)).toString();
+    at = start + size;
+  }
+  return out;
+}
+/** A sheet's cells by reference: { A1: { v, s } } (inline strings and numbers). */
+function cells(sheetXml) {
+  const out = {};
+  for (const m of sheetXml.matchAll(/<c r="([A-Z]+\d+)" s="(\d+)"(?: t="inlineStr")?(?:\/>|>(?:<v>([^<]*)<\/v>|<is><t[^>]*>([^<]*)<\/t><\/is>)<\/c>)/g))
+    out[m[1]] = { v: m[3] !== undefined ? Number(m[3]) : (m[4] ?? null), s: Number(m[2]) };
+  return out;
+}
+const FORMULAS = { Genus: '=1', Genera_0176: '=1', DATE_OF_COLLECTION: '=1', 'Next export permit': '=1', COLLECTOR_SAMPLE_ID: '=1', FILTER: '=1' };
+
+test('changes .xlsx: refused while wells are open; then new rows in the sheet\'s column order, Sort going on, the changed row highlighted, Léeme', async () => {
+  const { call, http, store, rackReportsDir, user } = await setup({ protect: true });
+  // The sheet's last row has the formula columns (Genus … FILTER): left to the sheet, after Exclude.
+  store.db.prepare('UPDATE records SET formulas_json = ? WHERE sheet = ? AND row_num = 4').run(JSON.stringify(FORMULAS), SHEET);
+  const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  assert.equal(read.deposit.changes_download, undefined, 'not while a well is open');
+  const refused = await http('POST', `/api/chat/proposals/${id}/rack-changes`, {});
+  assert.equal(refused.status, 409);
+  assert.ok(refused.body.error.details.problems.some(p => /no tube for A1/.test(p)));
+  const early = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(early.status, 409, 'not marked by hand before the changes were downloaded');
+  // Every well said (the deposit sheet's own fields not given: they do not block the changes).
+  const open = read.missing.map(m => m.well);
+  const done = await call('rack_deposit', { racks: [{ rack: '1', fill: Object.fromEntries(open.map(w => [w, expected(w)])) }] });
+  assert.match(done.changes_download, /^\[Cambios-tube-locations-\d{4}-\d\d-\d\d-FK00274230\.xlsx\]\(https:\/\/app\.test\/api\/rack-reports\//);
+  assert.deepEqual(done.changes_rows, { new: 94, changed: 1 });
+  assert.match(done.status, /pasted into the sheet by someone with access/);
+  const made = await http('POST', `/api/chat/proposals/${id}/rack-changes`, {});
+  assert.equal(made.status, 200);
+  assert.equal(made.body.download, /\((.+)\)$/.exec(done.changes_download)[1], 'the same rows: the same file');
+  assert.equal(made.body.proposal.deposit.protected, true);
+  const [, token, file] = /\/api\/rack-reports\/([a-f0-9]{24})\/(.+)$/.exec(made.body.download);
+  const xlsx = unzip(readFileSync(reportFile(rackReportsDir, token, file, user).path));
+  assert.match(xlsx['xl/workbook.xml'], /name="Filas nuevas".*name="Filas cambiadas".*name="Léeme"/);
+  const added = cells(xlsx['xl/worksheets/sheet1.xml']);
+  assert.deepEqual(
+    ['A1', 'B1', 'C1', 'D1', 'E1', 'K1'].map(r => added[r].v),
+    ['Sort', 'Tube_ID', 'Rack_ID', 'Tube_location', 'Batch', 'Exclude'],
+  );
+  assert.equal(added.L1, undefined, 'formula columns left out');
+  // A1 first (fill order), Sort going on from the sheet's 12.
+  assert.deepEqual(['A2', 'B2', 'C2', 'D2'].map(r => added[r].v), [13, expected('A1'), 'FK00274230', 'A1']);
+  assert.equal(added.A95.v, 13 + 93);
+  assert.equal(added.A96, undefined);
+  const moved = cells(xlsx['xl/worksheets/sheet2.xml']);
+  assert.deepEqual(['A2', 'B2', 'C2'].map(r => moved[r].v), [3, expected('C1'), 'Rack_ID (C), Tube_location (D)']);
+  assert.deepEqual(['D2', 'E2', 'F2', 'G2'].map(r => moved[r].v), ['FK00999999', 'FK00274230', 'E5', 'C1']);
+  assert.deepEqual([moved.E2.s, moved.G2.s, moved.D2.s], [6, 6, 1], 'the new values highlighted');
+  const readme = xlsx['xl/worksheets/sheet3.xml'];
+  for (const said of ['Racks?: FK00274230', 'Hecho por: Franz Chandi', 'la 5, según la última lectura', 'Sort sigue la numeración: 13–106', 'L–Q (Genus', 'Aplicado a mano', expected('A2'), 'FS11111111 (FK00274230 H12)'])
+    assert.ok(new RegExp(said.replace(/[()]/g, '\\$&')).test(readme), said);
+  assert.ok(!readme.includes(`${expected('A1')} (`), 'A1 has its Collection_data row: not listed as needing rows');
+  // Through rack_report too, beside the deposit sheet (refused there: its fields are not given).
+  const report = await call('rack_report', {});
+  assert.match(report.error, /Not made yet/);
+  assert.equal(report.changes_download, done.changes_download);
+  // Pasted by hand: out of the pending list, who and when; nothing written.
+  const marked = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(marked.status, 200);
+  assert.equal(marked.body.proposal.status, 'closed');
+  assert.equal(marked.body.proposal.deposit.manual.by, 'Franz Chandi');
+  assert.ok(marked.body.proposal.changes.every(c => !c.applied), 'nothing written');
+  assert.equal((await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {})).status, 409);
+});
+
+test('«Aplicado a mano» refused when the rows changed after the download; access given later shows at once', async () => {
+  const { call, http, store, list } = await setup({ protect: true });
+  const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
+  const id = read.deposit.proposalId;
+  await call('rack_deposit', { racks: [{ rack: '1', empty: read.missing.map(m => m.well) }] });
+  assert.equal((await http('POST', `/api/chat/proposals/${id}/rack-changes`, {})).status, 200);
+  // A row taken out in the table (no new file handed out): what was downloaded is no longer what it says.
+  let [p] = await list();
+  const a2 = p.changes.find(c => c.create && c.values.Tube_ID === read.wells.A2);
+  assert.equal((await http('POST', `/api/chat/proposals/${id}/edit`, { cells: [], remove: [a2.key ?? a2.clientId] })).status, 200);
+  const stale = await http('POST', `/api/chat/proposals/${id}/rack-by-hand`, {});
+  assert.equal(stale.status, 409);
+  assert.match(stale.body.error.message, /cambiaron después de la descarga/);
+  [p] = await list();
+  assert.equal(p.status, 'pending');
+  assert.equal(p.deposit.protected, true);
+  // The account gets edit access (the next sync notes no locked range): «Aplicar» is back, nothing else changed.
+  store.db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('[]', `protected:${SHEET}`);
+  [p] = await list();
+  assert.equal(p.deposit.protected, false);
+  const answer = await call('rack_deposit', {});
+  assert.equal(answer.protected, undefined);
+  assert.match(answer.status, /«Aplicar»/);
+});
+
+test('changes .xlsx of several racks: one file, each tube once; the cells to write in amber', () => {
+  const columns = ['Sort', 'Tube_ID', 'Rack_ID', 'Tube_location'].map((key, k) => ({ key, letter: 'ABCD'[k] }));
+  const sheets = changesSheets({
+    columns,
+    added: [
+      { Sort: 7, Tube_ID: 'FS1', Rack_ID: 'FK00000001', Tube_location: 'A1' },
+      { Sort: 8, Tube_ID: 'FS2', Rack_ID: 'FK00000002', Tube_location: 'A1' },
+    ],
+    changed: [{ tube: 'FS3', row: 9, cells: [{ key: 'Tube_location', letter: 'D', was: 'B2', now: 'B3' }], current: { Rack_ID: 'FK00000002', Tube_location: 'B2' } }],
+    readme: [{ title: 'Cambios' }, 'Racks: FK00000001, FK00000002'],
+  });
+  assert.deepEqual(sheets.map(s => s.name), ['Filas nuevas', 'Filas cambiadas', 'Léeme']);
+  const xlsx = unzip(workbook(sheets));
+  const added = cells(xlsx['xl/worksheets/sheet1.xml']);
+  assert.deepEqual([added.C2.v, added.C3.v], ['FK00000001', 'FK00000002']);
+  const moved = cells(xlsx['xl/worksheets/sheet2.xml']);
+  assert.deepEqual(['A1', 'D1', 'E1'].map(r => moved[r].v), ['Fila en la hoja', 'Tube_location (D) ahora', 'Tube_location nuevo']);
+  assert.deepEqual([moved.D2.v, moved.E2.v, moved.E2.s], ['B2', 'B3', 6]);
+  assert.match(xlsx['xl/styles.xml'], /<cellXfs count="9">/);
+});
+
+test('identify_species names the live head (alias, b8127dbf), not the release of 14 Oct', () => {
+  const tool = DRIVE_PHOTO_TOOLS.find(t => t.function.name === 'identify_species');
+  const text = tool.function.description;
+  assert.ok(!/release of 14 Oct/.test(text));
+  assert.match(text, /head_hier_b8127dbf\.pt/);
+  assert.match(text, /measured with the earlier head/);
 });

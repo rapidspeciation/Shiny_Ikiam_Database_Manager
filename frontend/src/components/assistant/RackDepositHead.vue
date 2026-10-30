@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { AlertTriangle, Check, CloudUpload, Download, ExternalLink, Loader2 } from 'lucide-vue-next'
+import { Check, CloudUpload, Download, ExternalLink, Loader2 } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText } from '../../lib/notice'
 import { notReady, type RackDeposit } from '../../lib/rackDeposit'
-import type { Proposal } from '../../lib/proposals'
+import type { Proposal, ProposalChange } from '../../lib/proposals'
+import RackChanges from './RackChanges.vue'
 import { t } from '../../lib/i18n'
 
 /**
  * The head of a rack deposit's proposal (lib/rackDeposit): the deposit sheet's own fields (responsable: the
  * person signed in until someone says otherwise; the freezer, LBI062), a jump to each rack when there are
  * several, «Descargar .xlsx» (the LBI's Anexo1, one sheet per rack) and «Guardar en Google Drive» (a copy in
- * the project's folder «Depósitos LBI (racks)», only on click), with the links once made. Saved at once.
+ * the project's folder «Depósitos LBI (racks)», only on click), with the links once made, and «Descargar cambios
+ * (.xlsx)» (the tube-locations rows to paste by hand; RackChanges) while the app can write the sheet (when it cannot,
+ * that download is the proposal's main action, at its foot). Saved at once.
  */
-const props = defineProps<{ proposalId: string; deposit: RackDeposit; editable: boolean }>()
+const props = defineProps<{ proposalId: string; deposit: RackDeposit; changes: ProposalChange[]; editable: boolean }>()
 const emit = defineEmits<{ replace: [proposal: Proposal]; notice: [message: string]; jump: [reading: string] }>()
 
 const busy = ref<'' | 'fields' | 'xlsx' | 'drive'>('')
@@ -160,18 +163,20 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
       </a>
       <span v-if="why.length" class="text-[11px] text-stone-500">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
     </div>
+    <!-- The tube-locations rows to paste by hand (the main action at the foot when the app cannot edit the sheet). -->
+    <div v-if="!deposit.protected" class="flex flex-wrap items-center gap-2">
+      <RackChanges
+        :proposal-id="proposalId"
+        :deposit="deposit"
+        :changes="changes"
+        :editable="editable"
+        @replace="p => emit('replace', p)"
+        @notice="m => emit('notice', m)"
+      />
+    </div>
     <ul v-if="problems.length" class="text-[11px] text-red-800">
       <li v-for="(p, i) in problems" :key="i">{{ p }}</li>
     </ul>
-    <p v-if="deposit.protected" class="dep-warn" role="status">
-      <AlertTriangle :size="12" class="shrink-0" />
-      {{
-        $t(
-          'La hoja {sheet} está protegida para la cuenta de la app: «Aplicar» lo rechazará Google hasta que su dueño le dé permiso. La hoja de depósito (.xlsx) sí funciona.',
-          { sheet: deposit.sheet ?? '' },
-        )
-      }}
-    </p>
   </div>
 </template>
 
@@ -237,15 +242,5 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   font-size: 11px;
   color: var(--color-emerald-800);
   text-decoration: underline;
-}
-.dep-warn {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.3rem;
-  border-radius: 0.25rem;
-  background: var(--color-amber-100);
-  padding: 0.3rem 0.5rem;
-  font-size: 11px;
-  color: var(--color-amber-950);
 }
 </style>

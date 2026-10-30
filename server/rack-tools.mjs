@@ -66,7 +66,7 @@ export const RACK_TOOLS = [
         '- `responsable` (default: the person signed in), `ultracongelador` (default LBI062), `batch` (the sheet\'s Batch for new rows, only when the person gives one).',
         '- `racks`: per rack (`rack`: its code, or its number in the deposit from 1): `estanteria`, `fila_de_rack`, `caja`; `fill` {well: tube ID} (from the side label); `empty` [wells]; `code_beside` (one of the rack\'s `code_options`: the person confirming the corner, or turning the rack); `rack_id` when the code was not read; `remove: true` drops the rack; `move` {from: to} when the person says a tube is in another well (a well holding another tube becomes a conflict on both, never overwritten; `resolve` it with the person: swap or keep); `leave_out` / `restore` [tube IDs] take a tube\'s row out of the proposal or bring it back.',
         "- The tube-locations rows follow the rack: their Tube_ID, Tube_location, Rack_ID and Sort change only here (update_proposal refuses them); their other columns change with update_proposal and are kept through each change of the rack.",
-        "Answers what it still needs (`ask`), the tubes no sheet has (`need_rows`: they need their rows, never invented), the sheet's tubes on the rack that the photos do not show there (`elsewhere`), and `protected` when the app's Google account cannot write the sheet («Aplicar» is then refused until its owner allows it).",
+        "Answers what it still needs (`ask`), the tubes no sheet has (`need_rows`: they need their rows, never invented), the sheet's tubes on the rack that the photos do not show there (`elsewhere`), `protected` when the app's Google account cannot edit the sheet («Aplicar» is then not offered: the changes go by hand), and, once every rack is complete, `changes_download`: the tube-locations changes as an .xlsx to paste by hand (put the link in the reply as it is).",
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -111,6 +111,7 @@ export const RACK_TOOLS = [
       name: 'rack_report',
       description: [
         "The deposit sheet of the LBI freezer (Alex's Anexo1) for this chat's rack deposit: an .xlsx with one sheet per rack, «Caja <rack code> (8x12)», the tubes on their wells A1..H12, and its download link (`markdown`: give it as it is). The sidebar has the same as «Descargar .xlsx».",
+        "Also `changes_download` (once every rack is complete; else `changes_not_ready`): the tube-locations rows as an .xlsx to paste by hand («Filas nuevas» in the sheet's column order, «Filas cambiadas», «Léeme»), the sidebar's «Descargar cambios (.xlsx)». Put it in the reply as it is; after pasting, the person presses «Aplicado a mano».",
         "- `drive: true` (only when the person asks for it, or presses «Guardar en Google Drive» in the sidebar): a copy in the project's Drive folder «Depósitos LBI (racks)», `drive.markdown`. `drive.error`: Drive did not take it; the download still works, say so.",
         '- `proposal`: the deposit (default: this chat\'s pending one).',
         'Refused while a well of a rack is neither read, filled nor said empty, or a field is missing: ask the person.',
@@ -197,9 +198,12 @@ export function zip(files) {
 }
 
 const colName = n => (n < 26 ? String.fromCharCode(65 + n) : colName(Math.floor(n / 26) - 1) + String.fromCharCode(65 + (n % 26)));
-// Styles: 0 plain, 1 bordered, 2 bordered bold, 3 bordered centred (the merged rack cells), 4 bordered bold centred.
+// Styles: 0 plain, 1 bordered, 2 bordered bold, 3 bordered centred (the merged rack cells), 4 bordered bold centred;
+// the tube-locations changes: 5 a header (bordered bold, grey), 6 a cell to write (bordered, amber), 7 text that wraps,
+// 8 a title (bold, larger).
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf xfId="0"/><xf xfId="0" borderId="1" applyBorder="1"/><xf xfId="0" fontId="1" borderId="1" applyFont="1" applyBorder="1"/><xf xfId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf xfId="0" fontId="1" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="13"/><name val="Calibri"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE7E5E4"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFDE68A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf xfId="0"/><xf xfId="0" borderId="1" applyBorder="1"/><xf xfId="0" fontId="1" borderId="1" applyFont="1" applyBorder="1"/><xf xfId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf xfId="0" fontId="1" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf xfId="0" fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1"/><xf xfId="0" fillId="3" borderId="1" applyFill="1" applyBorder="1"/><xf xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf xfId="0" fontId="2" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+export const STYLE = { plain: 0, cell: 1, header: 5, write: 6, wrap: 7, title: 8 };
 
 /**
  * One rack's sheet as Anexo1 lays it out: A1 «Responsable: …», G1:R1 the diagram's title, row 2 the headers
@@ -229,6 +233,62 @@ export function sheetXml({ responsable, ultracongelador, estanteria, rack, fila,
   const merges = [`G1:${colName(last)}1`, ...[0, 1, 2, 3, 4].map(k => `${colName(k)}3:${colName(k)}${2 + ROWS}`)];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${widths.map((w, k) => `<col min="${k + 1}" max="${k + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.join('')}</sheetData><mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells></worksheet>`;
+}
+
+/**
+ * A plain table sheet: `rows` of cells, each a value or { v, s } (s a STYLE), from A1; `widths` per column;
+ * `freeze`: rows kept in view at the top (the header).
+ */
+export function tableXml(rows, { widths = [], freeze = 0 } = {}) {
+  const out = rows.map((cells, r) => {
+    const row = r + 1;
+    const xmlCells = cells.map((c, k) => {
+      const { v, s = STYLE.plain } = c !== null && typeof c === 'object' ? c : { v: c };
+      const ref = `${colName(k)}${row}`;
+      if (v === null || v === undefined || v === '') return s ? `<c r="${ref}" s="${s}"/>` : '';
+      if (typeof v === 'number' && Number.isFinite(v)) return `<c r="${ref}" s="${s}"><v>${v}</v></c>`;
+      return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xml(v)}</t></is></c>`;
+    });
+    return `<row r="${row}">${xmlCells.join('')}</row>`;
+  });
+  const pane = freeze ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${freeze}" topLeftCell="A${freeze + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : '';
+  const cols = widths.length ? `<cols>${widths.map((w, k) => `<col min="${k + 1}" max="${k + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${pane}${cols}<sheetData>${out.join('')}</sheetData></worksheet>`;
+}
+
+/**
+ * The tube-locations changes of a deposit as one workbook to paste by hand (when the app cannot write the sheet):
+ *  - «Filas nuevas»: `columns` [{ key, letter }] in the sheet's order from A (formula columns left out at the end;
+ *    one in between stays as an empty column), a header, then `added` (values by key);
+ *  - «Filas cambiadas»: one row per tube of `changed` [{ tube, row, cells: [{ key, letter, was, now }] }]: its row in
+ *    the sheet, the columns that change, and for each column changed in the file its value now and the new one
+ *    (amber: the cell to write);
+ *  - «Léeme»: `readme` lines (strings; { title } for a heading).
+ */
+export function changesSheets({ columns, added, changed, readme }) {
+  const header = columns.map(c => ({ v: c.key, s: STYLE.header }));
+  const newRows = [header, ...added.map(values => columns.map(c => ({ v: c.formula ? null : (values[c.key] ?? null), s: STYLE.cell })))];
+  const changedKeys = columns.filter(c => changed.some(t => t.cells.some(x => x.key === c.key)));
+  const head = ['Fila en la hoja', 'Tube_ID', 'Columnas que cambian', ...changedKeys.flatMap(c => [`${c.key} (${c.letter}) ahora`, `${c.key} nuevo`])];
+  const changedRows = [
+    head.map(v => ({ v, s: STYLE.header })),
+    ...changed.map(t => [
+      { v: t.row ?? '—', s: STYLE.cell },
+      { v: t.tube, s: STYLE.cell },
+      { v: t.cells.map(x => `${x.key} (${x.letter})`).join(', '), s: STYLE.cell },
+      ...changedKeys.flatMap(c => {
+        const x = t.cells.find(y => y.key === c.key);
+        return x ? [{ v: x.was ?? '', s: STYLE.cell }, { v: x.now ?? '', s: STYLE.write }] : [{ v: t.current?.[c.key] ?? '', s: STYLE.cell }, { v: null, s: STYLE.cell }];
+      }),
+    ]),
+  ];
+  const readmeRows = readme.map(line => (line && typeof line === 'object' ? [{ v: line.title, s: STYLE.title }] : [{ v: line, s: STYLE.wrap }]));
+  return [
+    { name: 'Filas nuevas', xml: tableXml(newRows, { widths: columns.map(c => Math.min(Math.max(c.key.length + 3, 12), 40)), freeze: 1 }) },
+    { name: 'Filas cambiadas', xml: tableXml(changedRows, { widths: [14, 14, 28, ...changedKeys.flatMap(() => [22, 16])], freeze: 1 }) },
+    { name: 'Léeme', xml: tableXml(readmeRows, { widths: [110] }) },
+  ];
 }
 
 /** The workbook of sheets [{ name, xml }]. */
@@ -426,6 +486,20 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     return { file, token, download: url, markdown: `[${file}](${url})`, sheets: sheets.map(s => s.name), note: 'The link opens for the person who asked (signed in to the app) and admins.' };
   }
 
+  /**
+   * The tube-locations changes (changesSheets' input) as an .xlsx kept for `user`, named by the day and the racks'
+   * codes: { file, token, download, markdown } or { error }.
+   */
+  function changesReport(input, user, codes = []) {
+    if (!dir) return { error: 'This app has no folder for rack reports (rackReportsDir).' };
+    // The day in Ecuador, as «Léeme» says it (late in the evening there it is already tomorrow in UTC).
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+    const file = `Cambios-tube-locations-${day}${codes.length && codes.length <= 3 ? `-${codes.join('-')}` : ''}.xlsx`;
+    const token = save(dir, user?.id ?? null, file, workbook(changesSheets(input)));
+    const url = `${base}/api/rack-reports/${token}/${file}`;
+    return { file, token, download: url, markdown: `[${file}](${url})` };
+  }
+
   /** The legacy call: racks given as readings with their fields (before the deposit proposal). */
   function report(args, user) {
     const racks = Array.isArray(args.racks) ? args.racks.slice(0, 20) : [];
@@ -508,6 +582,12 @@ export function createRackTools({ store, config = {}, readPhoto = async path => 
     },
     loadReading,
     depositReport,
+    changesReport,
+    /** Whether a kept file's link (…/api/rack-reports/<token>/<file>) is still there for `user`. */
+    keptFile: (url, user) => {
+      const m = /\/api\/rack-reports\/([a-f0-9]{24})\/([\w.-]+\.xlsx)$/.exec(String(url ?? ''));
+      return !!(m && reportFile(dir, m[1], m[2], user));
+    },
     copyToDrive,
   };
 }

@@ -15,7 +15,7 @@ For unloading samples at the LBI (Laboratorio de Biología Integrativa): the tea
 
 What it writes, only on «Aplicar», only in `Ithomiini_tube_locations_18Jun26`: new rows (Tube_ID, Rack_ID, Tube_location = the well, Sort going on from the sheet's largest, Batch only when the person gives one) for tubes the sheet does not have; Rack_ID and/or Tube_location of a tube it has on another rack or well. Tubes already where the photos have them are left alone; a tube on two rows of the sheet is not changed (listed). Rows the sheet puts on the rack whose tubes the photos do not show there are listed, never removed. The sheet has no freezer, shelf, rack row or box columns (checked in the production database on 29 Oct); the code fills such columns if the sheet ever has them. Any change to the deposit (a field, a well, the corner) works the rows out again: the person's own cell edits of those rows in the table do not survive it.
 
-The production sheet is protected for the app's Google account (the whole sheet, `protected:Ithomiini_tube_locations_18Jun26`), so «Aplicar» is refused by Google until its owner lets the account edit it; the answer and the sidebar say so. The .xlsx works regardless.
+The production sheet is protected for the app's Google account (the whole sheet, `protected:Ithomiini_tube_locations_18Jun26`), and Franz decided (29 Oct) not to rely on that access being shared: the changes go by hand (next section).
 
 Defaults: responsable = the person signed in (shown as assumed until changed), freezer LBI062; the rest empty and asked for. Edits from the sidebar: `POST /api/chat/proposals/<id>/rack` (as `rack_deposit`), files: `POST /api/chat/proposals/<id>/rack-files` (`{ drive: true }` for the Drive copy).
 
@@ -28,6 +28,20 @@ read-only in the rows; the rows' other columns keep the person's and the assista
 taken out stays out (`left_out`) until brought back. The wells set in rows turn with the rack when its corner changes and
 survive a new reading of the same rack. The assistant does the same with `rack_deposit` (`move`, `resolve`,
 `leave_out`, `restore`); update_proposal refuses those four columns.
+
+## Changes to paste by hand (29 Oct 2026)
+
+Write access is read the way the app already knows it: the sheet's protected ranges with Google's `requestingUserCanEdit`, read with every sync and kept in settings (`protectedFields`, `depositLocked` in server/assistant.mjs), checked live when the proposal is shown and in each answer, so access given later shows after the next sync and «Aplicar» works as before. (Drive's `capabilities.canEdit` would say yes: the workbook is editable, only the tab is protected.)
+
+«Descargar cambios (.xlsx)» (`POST /api/chat/proposals/<id>/rack-changes`; in the chat `changes_download` from `rack_deposit` and `rack_report` once every rack is complete): one workbook for all the racks of the deposit, made from the proposal's rows as they are (the person's edits included, rows taken out left out):
+
+- «Filas nuevas»: the new rows in the sheet's column order from A (the header as the last sync read it, else the workbook's profile; on production A Sort … K Exclude), Sort going on from the sheet's largest; the formula columns at the end (L–Q, Genus … FILTER, as the sheet's last row has them) left out, to copy down in the sheet.
+- «Filas cambiadas»: one row per tube already in the sheet whose rack or well changes: its row in the sheet, the columns, each value now and the new one (amber).
+- «Léeme»: how to paste (the first empty row, the Sort range), the rack codes, the date (Ecuador), who made it and the responsable, the proposal's link, the tubes no sample sheet has (they need their rows there, listed, never invented), the sheet's rows on these racks the photos do not show, tubes with two rows.
+
+The same rule as the deposit sheet's wells: a well nobody said, a conflict or a rack problem blocks it (with why); the deposit sheet's own fields (responsable, shelf, rack row, box) do not. The same rows give the same file again (`changes_xlsx` on the deposit, with a key of its contents).
+
+When the app cannot edit the sheet, the proposal's main action is that download (no «Aplicar»), with one line saying why, and «Aplicado a mano» (`POST …/rack-by-hand`) once the file was downloaded: the proposal is closed with who and when (`deposit.manual`), out of the pending list; refused when its rows changed after the last file was made (download again). Nothing is written to the sheet: the next sync reads the pasted rows.
 
 ## Drive copy
 
