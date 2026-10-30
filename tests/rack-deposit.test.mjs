@@ -478,7 +478,9 @@ const FORMULAS = { Genus: '=1', Genera_0176: '=1', DATE_OF_COLLECTION: '=1', 'Ne
 test('changes .xlsx: refused while wells are open; then new rows in the sheet\'s column order, Sort going on, the changed row highlighted, Léeme', async () => {
   const { call, http, store, rackReportsDir, user } = await setup({ protect: true });
   // The sheet's last row has the formula columns (Genus … FILTER): left to the sheet, after Exclude.
-  store.db.prepare('UPDATE records SET formulas_json = ? WHERE sheet = ? AND row_num = 4').run(JSON.stringify(FORMULAS), SHEET);
+  // As on production: the formulas in the older rows only (not the last one), a stray one in Export_permit.
+  store.db.prepare('UPDATE records SET formulas_json = ? WHERE sheet = ? AND row_num IN (2, 3)').run(JSON.stringify(FORMULAS), SHEET);
+  store.db.prepare('UPDATE records SET formulas_json = ? WHERE sheet = ? AND row_num = 4').run(JSON.stringify({ Export_permit: '=1' }), SHEET);
   const read = await call('rack_read_photos', { photos: ['thread-1-rack.jpg'] });
   const id = read.deposit.proposalId;
   assert.equal(read.deposit.changes_download, undefined, 'not while a well is open');

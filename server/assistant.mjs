@@ -3967,8 +3967,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!rows.length) return { error: 'This deposit changes nothing in the tube-locations sheet.', problems: [] };
     // The sheet's columns as its header has them (the last sync's layout, else the workbook's profile), from A.
     const at = new Map([...sheetColumns(sheet)].map(([key, column]) => [column, key]));
-    const last = db.prepare('SELECT formulas_json FROM records WHERE sheet = ? AND missing = 0 AND row_num < 2000000000 ORDER BY row_num DESC LIMIT 1').get(sheet);
-    const formulas = new Set(Object.keys(parse(last?.formulas_json ?? '{}') ?? {}));
+    // Its formula columns: those most of the sheet's rows with formulas have (on production Genus … FILTER, in rows up
+    // to 11,580 only; a column with a stray formula or two, as Export_permit, is not one).
+    const counts = db
+      .prepare("SELECT j.key k, count(*) n FROM records r, json_each(r.formulas_json) j WHERE r.sheet = ? AND r.missing = 0 AND r.row_num < 2000000000 GROUP BY j.key")
+      .all(sheet);
+    const most = Math.max(0, ...counts.map(c => c.n));
+    const formulas = new Set(counts.filter(c => c.n * 2 >= most).map(c => c.k));
     const columns = Array.from({ length: Math.max(-1, ...at.keys()) + 1 }, (_, k) => ({ key: at.get(k) ?? '', letter: colLetter(k), formula: formulas.has(at.get(k)) || !at.has(k) }));
     while (columns.length && columns.at(-1).formula) columns.pop();
     const left = [...at].filter(([k, key]) => k >= columns.length && key).sort((a, b) => a[0] - b[0]);
