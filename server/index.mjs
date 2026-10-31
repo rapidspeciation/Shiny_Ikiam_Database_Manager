@@ -1783,7 +1783,8 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
   const found = existsSync(target) && statSync(target).isFile();
   // A missing script or style (a page opened before a deploy asks for the old build's files) is a 404,
   // not the page itself: served as HTML it broke the page instead of letting it reload.
-  if (!found && /(^|\/)assets\//.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
+  // The same for an icon (an older manifest's name).
+  if (!found && /(^|\/)(assets|icons)\/|\.png$/.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
   // A page's address typed without its # (…/propuestas/<id>), or the base without its slash: the page
   // loads its files relative to its address, so it is sent to the app's own (#/propuestas/<id>).
   const { pathname, search } = new URL(req.url, 'http://localhost');
@@ -1805,10 +1806,11 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
     ...(br ? { 'content-encoding': 'br', 'content-length': statSync(`${file}.br`).size } : {}),
     'x-content-type-options': 'nosniff',
     'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-src 'self'${frameSrc ? ` ${frameSrc}` : ''}`,
-    // Built scripts and styles carry a content hash in their name: a new build gets new names.
-    'cache-control': file.endsWith('index.html')
+    // Built scripts and styles, and the app's icons, carry a content hash in their name: a new build or
+    // icon gets new names. The manifest is checked each time: installed apps compare it to update their icon.
+    'cache-control': /(index\.html|\.webmanifest)$/.test(file)
       ? 'no-cache'
-      : found && /^assets\//.test(clean)
+      : found && /^(assets|icons)\//.test(clean)
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=3600',
   });

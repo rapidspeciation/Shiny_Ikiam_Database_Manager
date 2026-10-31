@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
@@ -15,6 +16,9 @@ test('built scripts are cached for good; other files are checked again', async (
   mkdirSync(join(webRoot, 'assets'));
   writeFileSync(join(webRoot, 'assets', 'index-abc123.js'), 'export {}\n');
   writeFileSync(join(webRoot, 'favicon.svg'), '<svg/>');
+  mkdirSync(join(webRoot, 'icons'));
+  writeFileSync(join(webRoot, 'icons', 'icon-192.0123456789.png'), 'png');
+  writeFileSync(join(webRoot, 'manifest.webmanifest'), '{}');
   const store = new Store({ localMode: true }, { sheets: new LocalSheets({}) });
   const app = await createApp({ localMode: true, secureCookies: false, syncIntervalMs: 0, webRoot }, { store, skipInitialSync: true });
   const address = await app.listen(0, '127.0.0.1');
@@ -26,10 +30,15 @@ test('built scripts are cached for good; other files are checked again', async (
     const other = await fetch(`${base}/favicon.svg`);
     assert.equal(other.status, 200);
     assert.equal(other.headers.get('cache-control'), 'public, max-age=3600');
+    // The icons carry their content's hash in their name; the manifest that names them is checked each time.
+    assert.equal((await fetch(`${base}/icons/icon-192.0123456789.png`)).headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal((await fetch(`${base}/manifest.webmanifest`)).headers.get('cache-control'), 'no-cache');
     // A script of an older build is a 404, never cached.
     const missing = await fetch(`${base}/assets/gone-00000000.js`);
     assert.equal(missing.status, 404);
     assert.equal(missing.headers.get('cache-control'), 'no-store');
+    // So is an icon gone with an older manifest.
+    for (const gone of ['/icons/icon-192.ffffffffff.png', '/icon-192.png?v=3']) assert.equal((await fetch(`${base}${gone}`)).status, 404, gone);
   } finally {
     await app.close();
     rmSync(webRoot, { recursive: true, force: true });
@@ -80,4 +89,25 @@ test('a file with a brotli copy beside it is sent compressed to a browser that t
     await app.close();
     rmSync(webRoot, { recursive: true, force: true });
   }
+});
+
+test('the app icons are named after their content; the installed app keeps its manifest, id and start page', () => {
+  const pub = new URL('../frontend/public/', import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL('manifest.webmanifest', pub), 'utf8'));
+  // Chrome on Android tells an installed app (a WebAPK) by its id (start_url when there is none): changing either
+  // would leave the installed one behind.
+  assert.equal(manifest.id, './');
+  assert.equal(manifest.start_url, './');
+  const page = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /<link rel="manifest" href="\.\/manifest\.webmanifest" \/>/);
+  const apple = page.match(/<link rel="apple-touch-icon" href="\.\/([^"]+)"/)[1];
+  const named = [...manifest.icons.map(icon => icon.src), apple];
+  for (const src of named) {
+    const [, hash] = src.match(/^icons\/[\w-]+\.([0-9a-f]{10})\.png$/) || [];
+    assert.ok(hash, `${src}: icons/<name>.<hash>.png`);
+    const actual = createHash('sha256').update(readFileSync(new URL(src, pub))).digest('hex').slice(0, 10);
+    assert.equal(hash, actual, `${src}: the name's hash is not its content's (rename the file to icons/<name>.${actual}.png)`);
+  }
+  for (const purpose of ['any', 'maskable'])
+    assert.deepEqual(manifest.icons.filter(i => i.purpose === purpose).map(i => i.sizes).sort(), ['192x192', '512x512'], purpose);
 });

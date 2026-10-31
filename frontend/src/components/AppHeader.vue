@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next'
 import { tabs } from '../router'
@@ -9,11 +9,51 @@ import { useLive } from '../stores/live'
 import { changeCount } from '../lib/staged'
 import { notify } from '../lib/notice'
 import { locale, t } from '../lib/i18n'
+import { menuLeft } from '../lib/menuPlace'
 
 const session = useSession()
 const pending = usePending()
 const live = useLive()
 const menu = ref(false)
+const holder = ref<HTMLElement>()
+const trigger = ref<HTMLElement>()
+const menuBox = ref<HTMLElement>()
+/** The menu's left edge from the name's (lib/menuPlace.ts): it never opens past the screen's sides. */
+const menuX = ref<number | null>(null)
+async function toggleMenu() {
+  menu.value = !menu.value
+  if (!menu.value) return
+  menuX.value = null
+  await nextTick()
+  if (trigger.value && menuBox.value)
+    menuX.value = menuLeft(trigger.value.getBoundingClientRect(), menuBox.value.offsetWidth, document.documentElement.clientWidth)
+}
+// Closed by a tap outside it, by Escape, and when the screen turns (the name moves with the header; only a
+// change of width: Android's address bar changes the height while scrolling).
+const outside = (event: PointerEvent) => {
+  if (menu.value && !holder.value?.contains(event.target as Node)) menu.value = false
+}
+const escape = (event: KeyboardEvent) => {
+  if (!menu.value || event.key !== 'Escape') return
+  menu.value = false
+  trigger.value?.focus()
+}
+let width = 0
+const resized = () => {
+  if (window.innerWidth !== width) menu.value = false
+  width = window.innerWidth
+}
+onMounted(() => {
+  width = window.innerWidth
+  document.addEventListener('pointerdown', outside)
+  document.addEventListener('keydown', escape)
+  window.addEventListener('resize', resized)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', outside)
+  document.removeEventListener('keydown', escape)
+  window.removeEventListener('resize', resized)
+})
 /** Emergidos, Clutches and Censo: their changes kept in the app, waiting for «Guardar en Google Sheets». */
 const PURPOSE: Record<string, string> = { '/emergidos': 'emergidos', '/clutches': 'clutches', '/censo': 'censo' }
 const waiting = computed(() => {
@@ -122,13 +162,22 @@ async function logout() {
       >
         <LogIn :size="15" /> {{ $t('Iniciar sesión') }}
       </RouterLink>
-      <div v-else class="relative shrink-0">
-        <button class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800" @click="menu = !menu">
+      <div v-else ref="holder" class="relative shrink-0">
+        <button
+          ref="trigger"
+          class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800"
+          :aria-expanded="menu"
+          @click="toggleMenu"
+        >
           {{ session.user?.displayName }} <ChevronDown :size="14" />
         </button>
         <div
           v-if="menu"
-          class="absolute right-0 z-50 mt-1 w-52 rounded-md border border-stone-200 bg-white py-1 text-sm text-stone-800 shadow-lg"
+          ref="menuBox"
+          data-user-menu
+          class="absolute z-50 mt-1 w-max max-w-[calc(100vw-1rem)] min-w-52 rounded-md border border-stone-200 bg-white py-1 text-sm text-stone-800 shadow-lg"
+          :class="menuX === null ? 'right-0' : ''"
+          :style="menuX === null ? undefined : { left: `${menuX}px` }"
           @click="menu = false"
         >
           <p class="px-3 py-1 text-xs text-stone-500">{{ session.user?.username }} · {{ session.user?.role }}</p>
