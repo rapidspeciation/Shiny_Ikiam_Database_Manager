@@ -49,6 +49,7 @@ const hhmm = t => new Date(t + ECUADOR_MS).toISOString().slice(11, 16);
 const clip = (s, n) => (s == null ? '' : String(s).slice(0, n));
 const dmhm = t => { const d = new Date(t + ECUADOR_MS).toISOString(); return `${d.slice(8, 10)}/${d.slice(5, 7)} ${d.slice(11, 16)}`; };
 const CONTEXT_CAP = 40;
+const IMAGE_PARALLEL = Number(process.env.WA_IMAGE_PARALLEL) || 3;
 const CONTEXT_MS = 2 * 3_600_000;
 
 /** One message as a history line (a WhatsApp row or a webhook message, both reduced to the same fields). */
@@ -222,7 +223,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
    * edit (`edit`: the id of one of the bridge's own messages, `text` its new text).
    * `trigger` is the incoming message being answered; in a group the send is refused unless it wakes the bridge.
    */
-  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger }) {
+  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger, postWait = null }) {
     const entry = { dir: 'out', chat: chat.key, kind, chars: text?.length ?? 0, file: Boolean(file), ...(edit ? { edit: true } : {}), ...(react ? { emoji: react.emoji } : {}) };
     let id = null;
     if (isGroup(chat) && !(wakes(trigger) || (trigger && active(chat)))) {
@@ -253,7 +254,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
           : voice
             ? ['send', 'voice', '--to', chat.jid, '--file', file, ...q]
             : file
-              ? ['send', 'file', '--to', chat.jid, '--file', file, ...(text ? ['--caption', text] : []), ...q]
+              ? ['send', 'file', '--to', chat.jid, '--file', file, ...(text ? ['--caption', text] : []), ...(postWait ? ['--post-send-wait', postWait] : []), ...q]
               : ['send', 'text', '--to', chat.jid, '--message', text, ...(chat.key === 'self' ? ['--allow-self'] : []), ...q];
       try {
         const out = await wacli(['--json', ...args], { timeout: 90_000 });
@@ -670,6 +671,28 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   /** The tools' /health answers within 2 s. */
   const toolsUp = url => fetch(url, { signal: AbortSignal.timeout(2000) }).then(r => r.ok, () => false);
 
+  /** The reply's pictures, at most `IMAGE_PARALLEL` at a time; each keeps its own caption and goes through send() with the trigger. */
+  async function sendImages(chat, msg, route, dir, images) {
+    if (!images.length) return;
+    const t0 = now();
+    let next = 0;
+    const worker = async () => {
+      for (let i = next++; i < images.length; i = next++) {
+        const img = images[i];
+        try {
+          const file = await fetchImage(route, img.src, dir, i);
+          // wacli keeps its connection 2 s after each send (for retry receipts) and sends queue on its store lock, so
+          // that wait is most of the 3 s per picture: all but the last picture skip it.
+          await send(chat, { kind: 'image', file, text: img.caption ? PREFIX + toWhatsApp(img.caption).slice(0, 900) : PREFIX.trim(), trigger: msg, postWait: i < images.length - 1 ? '0s' : null });
+        } catch (e) {
+          record({ dir: 'out', chat: chat.key, kind: 'image', ok: false, error: clip(e.message, 100) });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(IMAGE_PARALLEL, images.length) }, worker));
+    record({ dir: 'images', chat: chat.key, n: images.length, ms: now() - t0 });
+  }
+
   async function turn(chat, msg) {
     const route = config.routes[chat.route];
     const started = now();
@@ -752,20 +775,18 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
         return;
       }
+      // The text goes first; the pictures are fetched and sent meanwhile, three at a time.
+      const textDone = (async () => {
       if (reply.text) {
         const text = PREFIX + toWhatsApp(reply.text).slice(0, 3500);
         // WhatsApp lets a message be edited for about 15 minutes; past that, or when the edit fails, the answer goes as a new message.
         const edited = status.id && now() - started < 14 * 60_000 ? await send(chat, { kind: 'reply', edit: status.id, text, trigger: msg }).then(() => true, () => false) : false;
         if (!edited) await send(chat, { kind: 'reply', text, quote: msg, trigger: msg });
       } else if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
-      for (const [i, img] of reply.images.entries()) {
-        try {
-          const file = await fetchImage(route, img.src, dir, i);
-          await send(chat, { kind: 'image', file, text: img.caption ? PREFIX + toWhatsApp(img.caption).slice(0, 900) : PREFIX.trim(), trigger: msg });
-        } catch (e) {
-          record({ dir: 'out', chat: chat.key, kind: 'image', ok: false, error: clip(e.message, 100) });
-        }
-      }
+      })();
+      textDone.catch(() => {});
+      await sendImages(chat, msg, route, dir, reply.images);
+      await textDone;
       if (reply.text && (reply.voice || heardVoice)) {
         try {
           const ogg = await voiceNote(reply.text, dir);
@@ -787,6 +808,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     handle,
     send,
     flushHistory,
+    sendImages,
     state: () => state,
     idle: () => busy.size === 0 && [...queues.values()].every(q => !q.length),
   };

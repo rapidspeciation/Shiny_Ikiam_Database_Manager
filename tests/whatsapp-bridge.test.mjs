@@ -437,3 +437,31 @@ test('a question that needs a 3-day-old message: the chat is pointed to the hist
   assert.ok(rows().some(r => r.text?.includes('charla 0')));
   assert.ok(readFileSync(join(hist, '..', '..', 'state', 'outbox.jsonl'), 'utf8').includes('La planta fue Solanum'));
 });
+
+test('pictures go out together, each with its own caption, through the same trigger guard', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-img-'));
+  const files = [];
+  for (let i = 0; i < 5; i++) {
+    const f = join(dir, `p${i}.jpg`);
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=1:duration=1', '-frames:v', '1', f]);
+    files.push(f);
+  }
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: {} },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const group = { key: 'group', jid: 'G@g.us', dryRun: true };
+  const images = files.map((src, i) => ({ src, caption: `foto ${i}` }));
+  // Untagged, no conversation: every picture is refused.
+  await bridge.sendImages(group, { id: 'x', text: 'hola' }, config.routes.r, dir, images);
+  assert.deepEqual(outbox(), []);
+  // Tagged: all five go out, each with its own caption.
+  await bridge.sendImages(group, { id: 'y', text: '@claude fotos' }, config.routes.r, dir, images);
+  const sent = outbox().filter(s => s.kind === 'image');
+  assert.equal(sent.length, 5);
+  assert.deepEqual(sent.map(s => s.text).sort(), [0, 1, 2, 3, 4].map(i => `Claude: foto ${i}`));
+});
