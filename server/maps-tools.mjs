@@ -401,6 +401,29 @@ export function viewOf(points, minZoom = 3, maxZoom = 12) {
   return { lng: (w + e) / 2, lat: (s + n) / 2, zoom };
 }
 
+/**
+ * A plant's tiles for a contact sheet: `k` of its photos (already by place), one per GBIF record before a second of
+ * the same; then the nearest leaves-or-plant photo and the nearest flower (photo tags) are made sure of, in place of
+ * the last tiles that are neither the nearest photo nor the one leaves photo and one flower kept.
+ */
+export function sheetPicks(sorted, k) {
+  const records = new Set();
+  const firstOfRecord = sorted.filter(ph => !ph.record || (!records.has(ph.record) && records.add(ph.record)));
+  const list = [...firstOfRecord, ...sorted.filter(ph => !firstOfRecord.includes(ph))];
+  const best = list.slice(0, k);
+  const isLeaves = ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit');
+  const isFlower = ph => ph.live === 0 && ph.view === 'flower';
+  for (const want of [isLeaves, isFlower]) {
+    const extra = list.find(want);
+    if (!extra || best.some(want) || best.length < k || k < 3) continue;
+    const keptLeaves = best.find(isLeaves);
+    const keptFlower = best.find(isFlower);
+    const at = best.findLastIndex((ph, j) => j > 0 && ph !== keptLeaves && ph !== keptFlower);
+    if (at > 0) best[at] = extra;
+  }
+  return best;
+}
+
 const viewOfBox = b => viewOf([{ lat: b[1], lng: b[0] }, { lat: b[3], lng: b[2] }]);
 /** "Napo (province of Ecuador)", "Tena (canton of Napo, Ecuador)". */
 const adminWhere = a => (a.level === 'province' ? `${a.name} (province of Ecuador)` : `${a.name} (canton of ${a.province}, Ecuador)`);
@@ -1883,21 +1906,7 @@ export function createMapsTools({
     const byPlace = (a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0);
     for (const [i, p] of picked.entries()) {
       const sorted = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
-      // One photo per GBIF record before a second of the same (an observation's photos are often near-repeats).
-      const records = new Set();
-      const firstOfRecord = sorted.filter(ph => !ph.record || (!records.has(ph.record) && records.add(ph.record)));
-      const list = [...firstOfRecord, ...sorted.filter(ph => !firstOfRecord.includes(ph))];
-      const best = list.slice(0, k);
-      // The photo tags help only to make sure the nearest leaves-or-plant photo and a flower are among them.
-      const isLeaves = ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit');
-      const isFlower = ph => ph.live === 0 && ph.view === 'flower';
-      for (const want of [isLeaves, isFlower]) {
-        const extra = list.find(want);
-        if (!extra || best.includes(extra) || best.length < k || k < 3) continue;
-        // The last tile that is neither the nearest photo nor one kept for its view gives way.
-        const at = best.findLastIndex((ph, j) => j > 0 && !isLeaves(ph) && !isFlower(ph));
-        if (at > 0) best[at] = extra;
-      }
+      const best = sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
       for (const ph of best) {
         seen.add(ph.img);
         const t = plantTile(p, ph, short, nearbyKm, adminData);
@@ -1925,7 +1934,7 @@ export function createMapsTools({
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
       ...(leftOut.length ? { photo_sheet_left_out: leftOut, photo_sheet_left_out_note: 'Not on the sheets (2 sheets at most): ask again with `plant` for these.' } : {}),
-      photo_sheet_note: 'No photo is sent yet. Look at each sheet (read its path) and choose for every plant a tile that shows its leaves or the whole plant (how it is found in the field), then a flower where there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5). A plant with no such tile: say in the answer that no photo of its leaves was found.',
+      photo_sheet_note: 'No photo is sent yet. Look at each sheet (read its path) and choose for every plant a tile that shows its leaves or the whole plant (how it is found in the field), then a flower where there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5). A plant with no such tile: say that none of its photos on the sheet shows its leaves (host_plants with `plant` and `photo_sheet` shows more of its photos).',
       photo_sheet_ms: Date.now() - started,
     };
   }

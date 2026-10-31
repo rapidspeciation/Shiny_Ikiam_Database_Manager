@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOUNDARY_URLS, createAdminAreas } from '../server/admin-areas.mjs';
-import { TAGS_FILE, createMapsTools } from '../server/maps-tools.mjs';
+import { TAGS_FILE, createMapsTools, sheetPicks } from '../server/maps-tools.mjs';
 import { MAX_PX, creditOf, jpegSize, licenceName, proxyUrl, sizedUrl } from '../server/plant-photos.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
@@ -377,6 +377,17 @@ test('contact sheets: host_plants gives numbered sheets of candidate photos; sen
   assert.deepEqual(sheet.tiles, ['1: Solanum mite — Tena · 2019', '2: Solanum mite — 2 km, Sucumbíos · 2022', '3: Cestrum megalophyllum (candidata) — 28 km, Pastaza · 2011']);
   assert.match(out.photo_sheet_note, /send_sheet_photos/);
   assert.equal(out.markdown, '');
+  // Two photos of one GBIF record: the record's second photo comes after the other records' first.
+  const page = 'host_plants/gallery/mite/p1.json';
+  const saved = FILES[page];
+  // A second photo of the Tena record (nearer than Sucumbíos): it waits behind the Sucumbíos record's first.
+  FILES[page] = { items: [...saved.items, { ...saved.items[1], image_url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/14/original.jpg' }] };
+  try {
+    const dup = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: mkdtempSync(join(tmpdir(), 'maps-cache-')) }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', photo_sheet: true });
+    assert.deepEqual(dup.photo_sheets[0].tiles.slice(0, 3).map(t => t.replace(/^\d+: Solanum mite — /, '')), ['Tena · 2019', '2 km, Sucumbíos · 2022', 'Tena · 2019']);
+  } finally {
+    FILES[page] = saved;
+  }
   // Asked the older way (send_photos), the answer is the same sheet: nothing is picked without looking.
   const older = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5, lang: 'es' });
   assert.equal(older.images, undefined);
@@ -403,4 +414,22 @@ test('contact sheets, review fixes: another reach is another sheet; a tile numbe
   assert.match((await fresh.run('send_sheet_photos', { sheets: [b.photo_sheets[0].id], tiles: [3], lang: 'es' })).images[0].caption, /a menos de 80 km/);
   // Two calls' sheets both start at 1.
   assert.match((await fresh.run('send_sheet_photos', { sheets: [a.photo_sheets[0].id, b.photo_sheets[0].id], tiles: [1] })).error, /more than one of these sheets/);
+});
+
+test('send_photos never sends unseen, Pillow or not', async () => {
+  const out = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5 });
+  assert.equal(out.images, undefined);
+  assert.ok(out.photo_sheets || out.photo_sheet_error);
+});
+
+test('a plant\'s sheet tiles: one per record first; its leaves photo and a flower made sure of, the nearest kept', () => {
+  const ph = (img, record, view) => ({ img, record, view, live: 0 });
+  // Only flowers in the first three (one record twice): the leaves photo replaces a second flower, one flower stays.
+  const picks = sheetPicks([ph('A1', 'A', 'flower'), ph('A2', 'A', 'leaves'), ph('B', 'B', 'flower'), ph('C', 'C', 'flower')], 3);
+  assert.deepEqual(picks.map(p => p.img), ['A1', 'B', 'A2']);
+  // Untagged photos: the leaves and the flower come in for the last two, the nearest stays.
+  const untagged = sheetPicks([ph('1', '1', null), ph('2', '2', null), ph('3', '3', null), ph('4', '4', 'leaves'), ph('5', '5', 'flower')], 3);
+  assert.deepEqual(untagged.map(p => p.img), ['1', '5', '4']);
+  // Two photos of one record wait behind the other records' first.
+  assert.deepEqual(sheetPicks([ph('a1', 'a', null), ph('a2', 'a', null), ph('b', 'b', null)], 2).map(p => p.img), ['a1', 'b']);
 });

@@ -1,4 +1,4 @@
-// Host-plant photos ready to send (host_plants' `send_photos`, server/maps-tools.mjs): each photo of the maps' plant
+// Host-plant photos ready to send (send_sheet_photos, and host_plants' `auto_pick`, server/maps-tools.mjs): each photo of the maps' plant
 // gallery downloaded at about HD size (MAX_PX on its long side, a JPEG: not the original, not a thumbnail), with its credit read from its GBIF record (photographer, licence,
 // place, year, link). Photos and credits are kept on disk (`dir`) and in memory, so a photo asked again is ready
 // at once; all of one answer's are fetched together.
