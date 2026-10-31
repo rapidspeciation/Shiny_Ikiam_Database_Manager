@@ -128,7 +128,7 @@ test('the group: untagged, loop guard, tagged, limit', async () => {
 
 test('the edit mode: one message that becomes the answer', async () => {
   const { post, outbox, settle } = setup();
-  post('G@g.us', '/ack edit', { FromMe: true });
+  post('G@g.us', '@claude /ack edit', { FromMe: true });
   await settle();
   post('G@g.us', '@claude cuántos hay?');
   await settle();
@@ -141,15 +141,15 @@ test('the edit mode: one message that becomes the answer', async () => {
 
 test('/stop and /start only from Franz; everything else waits while stopped', async () => {
   const { post, outbox, settle, bridge } = setup();
-  post('G@g.us', '/stop');
+  post('G@g.us', '@claude /stop');
   await settle();
   assert.equal(bridge.state().stopped, false);
   assert.match(outbox().at(-1).text, /Solo Franz/);
-  post('G@g.us', '/stop', { FromMe: true });
+  post('G@g.us', '@claude /stop', { FromMe: true });
   await settle();
   assert.equal(bridge.state().stopped, true);
   assert.equal(post('G@g.us', '@claude hola').reason, 'stopped');
-  post('G@g.us', '/start', { FromMe: true });
+  post('G@g.us', '@claude /start', { FromMe: true });
   await settle();
   assert.equal(bridge.state().stopped, false);
 });
@@ -194,4 +194,77 @@ test('the self-chat answers at once when the tools are down, without a model tur
   const sent = outbox().slice(before).filter(s => s.kind !== 'react');
   assert.deepEqual(sent.map(s => s.text), ['Claude: herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.']);
   assert.equal(outbox().slice(before).filter(s => s.react).at(-1).react.emoji, '⚠️');
+});
+
+test('group sends: never without a @claude or reply-to-bot trigger', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-guard-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.\\n[images]\\n${join(dir, 'p.jpg')} | pie\\n[/images]\\n[voice]'}));`);
+  writeFileSync(join(dir, 'p.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]));
+  const config = {
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 3, contextLines: 0 },
+      self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0 },
+    },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const log = () => readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8');
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `Q${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  // Image and voice need ffmpeg and a speech engine, so they are checked in the source: every send( call names its trigger.
+  const src = readFileSync(new URL('../tools/whatsapp/bridge.mjs', import.meta.url), 'utf8');
+  const calls = [...src.matchAll(/\bsend\(chat, \{[^\n]*/g)].map(m => m[0]);
+  assert.ok(calls.length >= 8);
+  assert.deepEqual(calls.filter(c => !c.includes('trigger')), []);
+  assert.ok(calls.some(c => c.includes("kind: 'image'")) && calls.some(c => c.includes("kind: 'voice'")));
+  const group = { key: 'group', jid: 'G@g.us', dryRun: true };
+
+  // The unit: send() itself.
+  const direct = bridge.send;
+  await assert.rejects(direct(group, { kind: 'reply', text: 'Claude: hola' }), /no trigger/);
+  await assert.rejects(direct(group, { kind: 'reply', text: 'Claude: hola', trigger: { id: 'x', text: 'hola a todos' } }), /no trigger/);
+  await assert.rejects(direct(group, { kind: 'notice', text: 'Claude: aviso', trigger: { id: 'x', text: 'hola', replyToId: 'NOT-OURS' } }), /no trigger/);
+  await assert.rejects(direct(group, { kind: 'react', react: { id: 'x', emoji: '👀' }, trigger: { id: 'x', text: 'sin etiqueta' } }), /no trigger/);
+  await assert.rejects(direct(group, { kind: 'status', edit: 'OUT1', text: 'Claude: x', trigger: { id: 'x', text: 'sin etiqueta' } }), /no trigger/);
+  assert.deepEqual(outbox(), []);
+  assert.ok(log().includes('refused'));
+  await direct(group, { kind: 'reply', text: 'Claude: hola', trigger: { id: 'x', text: 'oye @claude' } });
+  assert.equal(outbox().length, 1);
+
+  // Untagged group messages, commands included, send nothing at all.
+  post('G@g.us', 'hola a todos');
+  assert.equal(post('G@g.us', '/status', { FromMe: true }).reason, 'command without trigger');
+  await settle();
+  assert.equal(outbox().length, 1);
+
+  // Tagged: reaction, answer, image and voice all pass the trigger; the rate-limit notice too.
+  post('G@g.us', '@claude cuántos hay?');
+  await settle();
+  const kinds = outbox().slice(1).map(s => s.kind);
+  assert.ok(['react', 'reply'].every(k => kinds.includes(k)), kinds.join());
+  // A reply to one of the bridge's own messages counts as a trigger (also for a command); to someone else's it does not.
+  const ours = outbox().find(s => s.kind === 'reply').id;
+  post('G@g.us', '/status', { ReplyToID: ours });
+  await settle();
+  assert.ok(outbox().some(s => /Estado del puente/.test(s.text ?? '')));
+  const before = outbox().length;
+  post('G@g.us', '/status', { ReplyToID: 'SOMEONE-ELSE' });
+  await settle();
+  assert.equal(outbox().length, before);
+  assert.equal(outbox().filter(s => s.kind === 'reply').length, 3);
+
+  post('G@g.us', '@claude otra');
+  await settle();
+  assert.ok(outbox().some(s => s.kind === 'notice' && /límite/.test(s.text)));
+
+  // The self chat needs no trigger.
+  await direct({ key: 'self', jid: 'ME@s.whatsapp.net', dryRun: true }, { kind: 'reply', text: 'Claude: a mí' });
+  assert.equal(outbox().at(-1).text, 'Claude: a mí');
 });

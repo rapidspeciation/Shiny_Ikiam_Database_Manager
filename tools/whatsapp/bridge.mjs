@@ -17,6 +17,8 @@
 // only: its workspace's settings deny applying), over ssh with tools/whatsapp/t3-turn.mjs. Franz's chat → «Orchestrator wpp»
 // in this PC's T3, in the project on the lab's workspace (the lab app's tools).
 // Sends go through `wacli send`, and only to the group's and Franz's own JID (hard block in send()).
+// In the group the bridge never sends on its own: every send names the incoming message it answers,
+// and send() refuses unless that message tagged @claude or replied to one of the bridge's own messages.
 //
 //   node tools/whatsapp/bridge.mjs serve            the receiver (systemd: ithomiini-wa-bridge.service)
 //   node tools/whatsapp/bridge.mjs install          copy the bridge to ~/.local/share/ithomiini-wa-bridge and write the unit
@@ -56,7 +58,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const stateFile = join(stateDir, 'state.json');
   const logFile = join(stateDir, 'bridge.log.jsonl');
   const outboxFile = join(stateDir, 'outbox.jsonl');
-  let state = { stopped: false, threads: {}, sends: {}, seen: [], lastTurn: {} };
+  let state = { stopped: false, threads: {}, sends: {}, seen: [], lastTurn: {}, botIds: [] };
   try {
     state = { ...state, ...JSON.parse(readFileSync(stateFile, 'utf8')) };
   } catch {
@@ -64,6 +66,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   }
   const save = () => {
     state.seen = state.seen.slice(-500);
+    state.botIds = (state.botIds ?? []).slice(-500);
     writeFileSync(stateFile + '.tmp', JSON.stringify(state, null, 1), { mode: 0o600 });
     renameSync(stateFile + '.tmp', stateFile);
   };
@@ -81,6 +84,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   // The hard block: wacli sends only to these two JIDs, whatever the config's other chats say.
   const SENDABLE = new Set([config.chats?.group?.jid, config.chats?.self?.jid].filter(Boolean));
   const admin = msg => msg.fromMe;
+  // The group's rule: a message wakes the bridge only if it tags @claude or replies to one of the bridge's own messages.
+  const isGroup = chat => String(chat.jid ?? '').endsWith('@g.us');
+  const wakes = msg => Boolean(msg) && (tagged(msg.text) || Boolean(msg.replyToId && (state.botIds ?? []).includes(msg.replyToId)));
   const ring = new Map(); // dry-run chats' recent messages (the lab's fake group has no wacli history)
   const queues = new Map();
   const busy = new Set();
@@ -93,10 +99,15 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
    * One send; resolves to the sent message's id (null in a dry run). `kind`: reply (counted for the
    * hourly limit), status, notice, image, voice, react (`react`: { id, sender, emoji } on a message),
    * edit (`edit`: the id of one of the bridge's own messages, `text` its new text).
+   * `trigger` is the incoming message being answered; in a group the send is refused unless it wakes the bridge.
    */
-  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null }) {
+  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger }) {
     const entry = { dir: 'out', chat: chat.key, kind, chars: text?.length ?? 0, file: Boolean(file), ...(edit ? { edit: true } : {}), ...(react ? { emoji: react.emoji } : {}) };
     let id = null;
+    if (isGroup(chat) && !wakes(trigger)) {
+      record({ ...entry, refused: 'group send without a @claude or reply-to-bot trigger' });
+      throw new Error('Refused: no trigger');
+    }
     if (chat.dryRun) {
       // The file is kept for the test to look at (the turn's own copy is deleted after it).
       let kept = null;
@@ -136,6 +147,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         throw e;
       }
     }
+    if (id && !edit) (state.botIds ??= []).push(String(id));
     if (kind === 'reply') (state.sends[chat.key] ??= []).push(now());
     state.sends[chat.key] = lastHour(state.sends[chat.key], now());
     save();
@@ -144,8 +156,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   /** How a chat shows it is working: Franz's /ack choice, else the config's (reaction by default). */
   const ackMode = chat => state.ack?.[chat.key] ?? chat.ack ?? 'reaction';
   const reactTo = (chat, msg, emoji) =>
-    send(chat, { kind: 'react', react: { id: msg.id, sender: msg.sender, emoji } }).catch(e => log.error?.('react:', e.message));
-  const say = (chat, text, kind = 'reply', quote = null) => send(chat, { kind, text: text.startsWith(PREFIX) ? text : PREFIX + text, quote }).catch(e => log.error?.('send:', e.message));
+    send(chat, { kind: 'react', react: { id: msg.id, sender: msg.sender, emoji }, trigger: msg }).catch(e => log.error?.('react:', e.message));
+  const say = (chat, text, kind = 'reply', trigger = null) => send(chat, { kind, text: text.startsWith(PREFIX) ? text : PREFIX + text, quote: kind === 'reply' ? trigger : null, trigger }).catch(e => log.error?.('send:', e.message));
 
   // --- the commands
   function statusText() {
@@ -194,7 +206,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       record({ dir: 'state', ack: mode, chat: chat.key });
       return say(chat, `Aviso de trabajo aquí: ${mode}.`, 'reply', msg);
     }
-    if (overLimit(chat)) return;
+    if (overLimit(chat, msg)) return;
     if (cmd.name === 'help') return say(chat, HELP, 'reply', msg);
     if (cmd.name === 'status') return say(chat, statusText(), 'reply', msg);
     if (cmd.name === 'whoami') {
@@ -213,14 +225,14 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     return say(chat, `No conozco /${cmd.word}. Comandos: /help, /status, /whoami, /usage.`, 'reply', msg);
   }
 
-  function overLimit(chat) {
+  function overLimit(chat, msg) {
     const n = lastHour(state.sends[chat.key], now()).length;
     if (n < chat.repliesHour) return false;
     const hour = Math.floor(now() / 3_600_000);
     if (state.noticeHour?.[chat.key] !== hour) {
       (state.noticeHour ??= {})[chat.key] = hour;
       save();
-      say(chat, `Llegué al límite de ${chat.repliesHour} respuestas por hora; vuelvo a leer en un rato.`, 'notice');
+      say(chat, `Llegué al límite de ${chat.repliesHour} respuestas por hora; vuelvo a leer en un rato.`, 'notice', msg);
     }
     record({ dir: 'in', chat: chat.key, decision: 'limited' });
     return true;
@@ -255,12 +267,14 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     if (chat.key === 'self' && !msg.fromMe) return out('skip', 'not from Franz');
     const cmd = command(msg.text);
     if (state.stopped && !(cmd && cmd.name === 'start' && admin(msg)) && !(cmd?.name === 'status' && admin(msg))) return out('skip', 'stopped');
+    // In a group a command counts only if its own message tagged @claude or replied to the bridge.
+    if (cmd && isGroup(chat) && !wakes(msg)) return out('skip', 'command without trigger');
     if (cmd) {
       runCommand(chat, msg, cmd).catch(e => log.error?.('command:', e.message));
       return { decision: 'command' };
     }
     if (!tagged(msg.text)) return out('skip', 'no @claude');
-    if (overLimit(chat)) return { decision: 'limited' };
+    if (overLimit(chat, msg)) return { decision: 'limited' };
     const q = queues.get(chat.key) ?? [];
     if (q.length >= 5) return out('skip', 'queue full');
     q.push(msg);
@@ -510,7 +524,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       if (!status.id || text === status.shown || now() - status.last < 3000) return;
       status.shown = text;
       status.last = now();
-      status.editing = status.editing.then(() => send(chat, { kind: 'status', edit: status.id, text }).catch(e => log.error?.('edit:', e.message)));
+      status.editing = status.editing.then(() => send(chat, { kind: 'status', edit: status.id, text, trigger: msg }).catch(e => log.error?.('edit:', e.message)));
     };
     let ok = false;
     try {
@@ -520,7 +534,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         await say(chat, 'herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.', 'notice', msg);
         return;
       }
-      if (mode === 'edit') status.id = await send(chat, { kind: 'status', text: statusMessage([]), quote: msg }).catch(() => null);
+      if (mode === 'edit') status.id = await send(chat, { kind: 'status', text: statusMessage([]), quote: msg, trigger: msg }).catch(() => null);
       const attachments = [];
       let heardVoice = false;
       for (const m of mediaFor(chat, msg)) {
@@ -561,26 +575,26 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       record({ dir: 'turn', chat: chat.key, id: msg.id, ok: Boolean(r.ok), status: r.status ?? null, error: r.error ?? null, ms: now() - started, attachments: attachments.length, steps: status.steps.length });
       if (!r.ok && !r.text) {
         const sorry = `No pude responder ahora (${r.error ?? r.status ?? 'error'}). Prueba de nuevo en un rato.`;
-        if (status.id) await send(chat, { kind: 'notice', edit: status.id, text: PREFIX + sorry }).catch(() => say(chat, sorry, 'notice', msg));
+        if (status.id) await send(chat, { kind: 'notice', edit: status.id, text: PREFIX + sorry, trigger: msg }).catch(() => say(chat, sorry, 'notice', msg));
         else await say(chat, sorry, 'notice', msg);
         return;
       }
       ok = true;
       const reply = parseReply(r.text);
       if (reply.silent) {
-        if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅` }).catch(() => null);
+        if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
         return;
       }
       if (reply.text) {
         const text = PREFIX + toWhatsApp(reply.text).slice(0, 3500);
         // WhatsApp lets a message be edited for about 15 minutes; past that, or when the edit fails, the answer goes as a new message.
-        const edited = status.id && now() - started < 14 * 60_000 ? await send(chat, { kind: 'reply', edit: status.id, text }).then(() => true, () => false) : false;
-        if (!edited) await send(chat, { kind: 'reply', text, quote: msg });
-      } else if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅` }).catch(() => null);
+        const edited = status.id && now() - started < 14 * 60_000 ? await send(chat, { kind: 'reply', edit: status.id, text, trigger: msg }).then(() => true, () => false) : false;
+        if (!edited) await send(chat, { kind: 'reply', text, quote: msg, trigger: msg });
+      } else if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
       for (const [i, img] of reply.images.entries()) {
         try {
           const file = await fetchImage(route, img.src, dir, i);
-          await send(chat, { kind: 'image', file, text: img.caption ? PREFIX + toWhatsApp(img.caption).slice(0, 900) : PREFIX.trim() });
+          await send(chat, { kind: 'image', file, text: img.caption ? PREFIX + toWhatsApp(img.caption).slice(0, 900) : PREFIX.trim(), trigger: msg });
         } catch (e) {
           record({ dir: 'out', chat: chat.key, kind: 'image', ok: false, error: clip(e.message, 100) });
         }
@@ -588,7 +602,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       if (reply.text && (reply.voice || heardVoice)) {
         try {
           const ogg = await voiceNote(reply.text, dir);
-          if (ogg) await send(chat, { kind: 'voice', file: ogg, voice: true });
+          if (ogg) await send(chat, { kind: 'voice', file: ogg, voice: true, trigger: msg });
         } catch (e) {
           record({ dir: 'out', chat: chat.key, kind: 'voice', ok: false, error: clip(e.message, 100) });
         }
@@ -604,6 +618,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
 
   return {
     handle,
+    send,
     state: () => state,
     idle: () => busy.size === 0 && [...queues.values()].every(q => !q.length),
   };
