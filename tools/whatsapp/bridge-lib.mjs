@@ -209,3 +209,51 @@ export function statusMessage(steps, max = 6) {
   for (const s of steps) if (s && lines.at(-1) !== s) lines.push(s);
   return ['Claude: pensando…', ...lines.slice(-max).map(s => `- ${s}`)].join('\n');
 }
+
+/** A folder-safe name from a chat's label: «Ithomiini 🦋 (underground)» → ithomiini-underground. */
+export const slug = label =>
+  String(label ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'chat';
+
+/** What a media message is called in the context and the history. */
+export const mediaTag = type => ({ image: 'foto', audio: 'audio', ptt: 'audio', video: 'video', sticker: 'sticker', document: 'documento' })[String(type ?? '').toLowerCase()] ?? (type ? String(type).toLowerCase() : null);
+
+/**
+ * Appends the JSON lines whose "id" (or "of", for a transcript) is not in the file yet; returns how
+ * many it wrote. Self-contained: it is also sent to claudeclaw as source (node -e), so it reaches
+ * only for the built-in modules.
+ */
+export function appendNew(file, text) {
+  const fs = process.getBuiltinModule('node:fs');
+  const path = process.getBuiltinModule('node:path');
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o750 });
+  const key = o => (o.t === 'transcript' ? 'T:' + o.of : 'M:' + o.id);
+  const seen = new Set();
+  if (fs.existsSync(file))
+    for (const line of fs.readFileSync(file, 'utf8').split('\n'))
+      try {
+        seen.add(key(JSON.parse(line)));
+      } catch {
+        /* blank or partial */
+      }
+  let out = '';
+  let n = 0;
+  for (const line of String(text).split('\n')) {
+    let o;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (seen.has(key(o))) continue;
+    seen.add(key(o));
+    out += JSON.stringify(o) + '\n';
+    n++;
+  }
+  if (out) fs.appendFileSync(file, out, { mode: 0o640 });
+  return n;
+}

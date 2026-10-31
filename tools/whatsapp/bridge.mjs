@@ -24,6 +24,7 @@
 // refuses a group send that names no incoming message or comes outside an active conversation.
 //
 //   node tools/whatsapp/bridge.mjs serve            the receiver (systemd: ithomiini-wa-bridge.service)
+//   node tools/whatsapp/bridge.mjs backfill [days]  copy the group's last days (default 30) into its history file on claudeclaw
 //   node tools/whatsapp/bridge.mjs install          copy the bridge to ~/.local/share/ithomiini-wa-bridge and write the unit
 // Config: $WA_BRIDGE_CONFIG (default ~/.config/ithomiini-wa-bridge/config.json, mode 600); state and
 // logs in ~/.local/state/ithomiini-wa-bridge. Design and test notes: tools/whatsapp/README.md.
@@ -34,7 +35,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
+import { appendNew, mediaTag, slug, ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -46,6 +47,49 @@ const STALE_MS = 15 * 60_000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hhmm = t => new Date(t + ECUADOR_MS).toISOString().slice(11, 16);
 const clip = (s, n) => (s == null ? '' : String(s).slice(0, n));
+const dmhm = t => { const d = new Date(t + ECUADOR_MS).toISOString(); return `${d.slice(8, 10)}/${d.slice(5, 7)} ${d.slice(11, 16)}`; };
+const CONTEXT_CAP = 40;
+const CONTEXT_MS = 2 * 3_600_000;
+
+/** One message as a history line (a WhatsApp row or a webhook message, both reduced to the same fields). */
+const historyLine = ({ id, at, name, text, media, replyTo = null, replyName = null, replyText = null }) => ({
+  id: String(id),
+  at: new Date(at).toISOString(),
+  name: name ?? null,
+  text: clip(text, 3000) || null,
+  media: mediaTag(media),
+  ...(replyTo ? { replyTo, replyName, replyText: clip(replyText, 120) || null } : {}),
+});
+
+/** Appends lines (JSON, one per line) to a chat's history file, on claudeclaw over ssh or in a local folder. */
+async function historyAppend(route, history, chat, lines) {
+  const file = join(history.dir, `${history.slug ?? slug(chat.label)}.jsonl`);
+  const text = lines.map(x => JSON.stringify(x)).join('\n');
+  if (!route.ssh) return appendNew(file, text);
+  const src = `${appendNew.toString()};const fs=process.getBuiltinModule('node:fs');process.stdout.write(String(appendNew(process.argv[1],fs.readFileSync(0,'utf8'))));`;
+  const out = await run('ssh', ['-o', 'BatchMode=yes', route.ssh, `${route.node ?? 'node'} -e "eval(Buffer.from('${Buffer.from(src).toString('base64')}','base64').toString())" '${file.replace(/'/g, '')}'`], { input: text, timeout: 60_000 });
+  return Number(out) || 0;
+}
+
+/** The history rows of a chat from the wacli store (read-only), oldest first. */
+function historyRows(config, chat, sinceMs) {
+  const db = new DatabaseSync(join(config.wacli.store, 'wacli.db'), { readOnly: true, timeout: 5000 });
+  try {
+    return db
+      .prepare(
+        `SELECT m.msg_id id, m.ts, m.from_me, m.sender_name, coalesce(m.text, m.display_text, m.media_caption, '') text, m.media_type,
+           m.quoted_msg_id,
+           (SELECT coalesce(nullif(c.full_name, ''), nullif(c.push_name, '')) FROM contacts c WHERE c.jid = m.sender_jid) contact,
+           (SELECT coalesce(q.text, q.display_text, q.media_caption, '') FROM messages q WHERE q.chat_jid = m.chat_jid AND q.msg_id = m.quoted_msg_id) qtext,
+           (SELECT q.sender_name FROM messages q WHERE q.chat_jid = m.chat_jid AND q.msg_id = m.quoted_msg_id) qname
+         FROM messages m WHERE m.chat_jid = ? AND m.ts >= ? AND m.revoked = 0 AND m.reaction_to_id IS NULL ORDER BY m.ts`,
+      )
+      .all(chat.jid, Math.floor(sinceMs / 1000))
+      .map(r => ({ ...r, name: r.from_me ? (ownAnswer(r.text) ? 'Claude' : 'Franz') : r.sender_name || r.contact || null }));
+  } finally {
+    db.close();
+  }
+}
 
 function run(bin, args, { input = null, timeout = 120_000, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
@@ -61,7 +105,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const stateFile = join(stateDir, 'state.json');
   const logFile = join(stateDir, 'bridge.log.jsonl');
   const outboxFile = join(stateDir, 'outbox.jsonl');
-  let state = { stopped: false, threads: {}, sends: {}, seen: [], lastTurn: {}, botIds: [] };
+  let state = { stopped: false, threads: {}, sends: {}, seen: [], lastTurn: {}, botIds: [], transcripts: {} };
   try {
     state = { ...state, ...JSON.parse(readFileSync(stateFile, 'utf8')) };
   } catch {
@@ -70,6 +114,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const save = () => {
     state.seen = state.seen.slice(-500);
     state.botIds = (state.botIds ?? []).slice(-500);
+    state.transcripts = Object.fromEntries(Object.entries(state.transcripts ?? {}).slice(-200));
     writeFileSync(stateFile + '.tmp', JSON.stringify(state, null, 1), { mode: 0o600 });
     renameSync(stateFile + '.tmp', stateFile);
   };
@@ -96,6 +141,76 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const ring = new Map(); // dry-run chats' recent messages (the lab's fake group has no wacli history)
   const queues = new Map();
   const busy = new Set();
+
+  // --- the group's history, mirrored to the chat's own workspace (only chats with a `history` setting)
+  const queueFile = join(stateDir, 'history-queue.jsonl');
+  let flushing = false;
+  let flushTimer = null;
+  async function flushHistory() {
+    if (flushing || !existsSync(queueFile)) return 0;
+    flushing = true;
+    let done = 0;
+    try {
+      const entries = readFileSync(queueFile, 'utf8').split('\n').filter(Boolean).map(x => JSON.parse(x));
+      const rest = [];
+      for (const key of new Set(entries.map(e => e.chat))) {
+        const chat = chats.find(c => c.key === key);
+        const mine = entries.filter(e => e.chat === key);
+        try {
+          await historyAppend(config.routes[chat.route], chat.history, chat, mine.map(e => e.line));
+          done += mine.length;
+        } catch (e) {
+          rest.push(...mine);
+          record({ dir: 'history', chat: key, ok: false, queued: mine.length, error: clip(e.message, 120) });
+        }
+      }
+      // Lines queued while this ran stay: the file is rewritten from what it holds now minus what was sent.
+      const now2 = readFileSync(queueFile, 'utf8').split('\n').filter(Boolean);
+      const left = now2.slice(entries.length);
+      writeFileSync(queueFile, [...rest.map(e => JSON.stringify(e)), ...left].map(x => x + '\n').join(''), { mode: 0o600 });
+      if (rest.length) flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(() => {})), 60_000).unref();
+    } finally {
+      flushing = false;
+    }
+    return done;
+  }
+  const queueHistory = (chat, line) => {
+    appendFileSync(queueFile, JSON.stringify({ chat: chat.key, line }) + '\n', { mode: 0o600 });
+    if (!flushTimer) flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(e => log.error?.('history:', e.message))), chat.dryRun && !config.routes[chat.route]?.ssh ? 0 : 3000).unref();
+  };
+  function mirror(chat, msg) {
+    if (!chat.history?.dir || msg.skip) return;
+    let reply = {};
+    if (msg.replyToId) {
+      let q = null;
+      if (chat.dryRun) q = (ring.get(chat.key) ?? []).find(m => m.id === msg.replyToId);
+      else
+        try {
+          const db = wacliDb();
+          try {
+            q = db.prepare(`SELECT sender_name name, coalesce(text, display_text, media_caption, '') text FROM messages WHERE chat_jid = ? AND msg_id = ?`).get(chat.jid, msg.replyToId);
+          } finally {
+            db.close();
+          }
+        } catch {
+          /* not stored */
+        }
+      reply = { replyTo: msg.replyToId, replyName: q?.name ?? null, replyText: q?.text ?? null };
+    }
+    let name = msg.pushName ?? (msg.fromMe ? (ownAnswer(msg.text) ? 'Claude' : 'Franz') : null);
+    if (!name && !chat.dryRun)
+      try {
+        const db = wacliDb();
+        try {
+          name = db.prepare(`SELECT coalesce(nullif(full_name, ''), nullif(push_name, '')) n FROM contacts WHERE jid = ?`).get(msg.sender ?? '')?.n ?? null;
+        } finally {
+          db.close();
+        }
+      } catch {
+        /* none */
+      }
+    queueHistory(chat, historyLine({ id: msg.id, at: msg.at, name, text: msg.text, media: msg.media?.type ?? null, ...reply }));
+  }
 
   // --- wacli
   const wacli = (args, opts) => run(config.wacli.bin, ['--store', config.wacli.store, ...args], opts);
@@ -260,10 +375,15 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       return { decision: 'drop' };
     }
     if (chat.dryRun && body._labMedia) msg.labMedia = String(body._labMedia);
+    try {
+      mirror(chat, msg);
+    } catch (e) {
+      log.error?.('mirror:', e.message);
+    }
     if (chat.dryRun) {
       const list = ring.get(chat.key) ?? [];
-      list.push({ at: msg.at, name: msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien', text: msg.text, media: msg.media?.type ?? null, fromMe: msg.fromMe, id: msg.id });
-      ring.set(chat.key, list.slice(-30));
+      list.push({ at: msg.at, name: msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien', text: msg.text, media: msg.media?.type ?? null, fromMe: msg.fromMe, id: msg.id, replyToId: msg.replyToId ?? null });
+      ring.set(chat.key, list.slice(-60));
     }
     const out = (decision, reason) => {
       record({ dir: 'in', chat: chat.key, id: msg.id, decision, reason });
@@ -321,23 +441,44 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   }
 
   // --- context and media
+  /** The chat's last `contextLines` messages or the last 2 hours, whichever is more, at most 40 (oldest first). */
   function recentMessages(chat, msg) {
     if (!chat.contextLines) return [];
-    if (chat.dryRun) return (ring.get(chat.key) ?? []).filter(m => m.id !== msg.id && m.at <= msg.at).slice(-chat.contextLines);
+    const keep = (rows, at) => rows.filter((r, i) => i >= rows.length - chat.contextLines || r.at >= at - CONTEXT_MS).slice(-CONTEXT_CAP);
+    if (chat.dryRun) {
+      const list = (ring.get(chat.key) ?? []).filter(m => m.id !== msg.id && m.at <= msg.at);
+      return keep(list, msg.at).map(m => {
+        const q = m.replyToId ? list.find(x => x.id === m.replyToId) : null;
+        return { ...m, replyName: q?.name ?? null, replyText: q?.text ?? null, transcript: state.transcripts?.[m.id] ?? null };
+      });
+    }
     const db = wacliDb();
     try {
-      return db
+      const rows = db
         .prepare(
-          `SELECT m.msg_id id, m.ts, m.from_me, m.sender_name, coalesce(m.text, m.display_text, m.media_caption, '') text, m.media_type,
-             (SELECT coalesce(nullif(c.full_name, ''), nullif(c.push_name, '')) FROM contacts c WHERE c.jid = m.sender_jid) contact
-           FROM messages m WHERE m.chat_jid = ? AND m.msg_id != ? AND m.ts <= ? AND m.revoked = 0 ORDER BY m.ts DESC LIMIT ?`,
+          `SELECT m.msg_id id, m.ts, m.from_me, m.sender_name, coalesce(m.text, m.display_text, m.media_caption, '') text, m.media_type, m.quoted_msg_id,
+             (SELECT coalesce(nullif(c.full_name, ''), nullif(c.push_name, '')) FROM contacts c WHERE c.jid = m.sender_jid) contact,
+             (SELECT coalesce(q.text, q.display_text, q.media_caption, '') FROM messages q WHERE q.chat_jid = m.chat_jid AND q.msg_id = m.quoted_msg_id) qtext,
+             (SELECT q.sender_name FROM messages q WHERE q.chat_jid = m.chat_jid AND q.msg_id = m.quoted_msg_id) qname
+           FROM messages m WHERE m.chat_jid = ? AND m.msg_id != ? AND m.ts <= ? AND m.revoked = 0 AND m.reaction_to_id IS NULL ORDER BY m.ts DESC LIMIT ?`,
         )
-        .all(chat.jid, msg.id, Math.ceil(msg.at / 1000), chat.contextLines)
+        .all(chat.jid, msg.id, Math.ceil(msg.at / 1000), CONTEXT_CAP)
         .reverse()
-        .map(r => ({ at: r.ts * 1000, name: r.from_me ? (ownAnswer(r.text) ? 'Claude (you)' : 'Franz') : r.sender_name || r.contact || 'alguien', text: r.text, media: r.media_type }));
+        .map(r => ({ id: r.id, at: r.ts * 1000, name: r.from_me ? (ownAnswer(r.text) ? 'Claude (you)' : 'Franz') : r.sender_name || r.contact || 'alguien', text: r.text, media: r.media_type, replyName: r.qname ?? null, replyText: r.qtext || null, transcript: state.transcripts?.[r.id] ?? null }));
+      return keep(rows, msg.at);
     } finally {
       db.close();
     }
+  }
+
+  /** A context line: time (with the date when not today), sender, what it answers, media placeholder and text. */
+  function contextLine(r, today) {
+    const when = hhmm(r.at);
+    const stamp = dmhm(r.at).slice(0, 5) === dmhm(today).slice(0, 5) ? when : dmhm(r.at);
+    const tag = mediaTag(r.media);
+    const media = tag ? (r.transcript ? `[${tag}: «${clip(r.transcript, 200)}»] ` : `[${tag}] `) : '';
+    const to = r.replyName || r.replyText ? ` (en respuesta a ${r.replyName ?? 'alguien'}: «${clip(String(r.replyText ?? '').replace(/\s*\n\s*/g, ' '), 60)}»)` : '';
+    return `  ${stamp} ${r.name}${to}: ${media}${clip(String(r.text || '').replace(/\s*\n\s*/g, ' / '), 400)}`;
   }
 
   /** Media to bring along: the message's own, the quoted message's, and the sender's untagged media of the last 3 minutes. */
@@ -564,6 +705,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
             status.steps.push('escuchando la nota de voz');
             showSteps();
             const t = await transcribe(file);
+            if (t.text) {
+              (state.transcripts ??= {})[m.id] = clip(t.text, 400);
+              if (chat.history?.dir) queueHistory(chat, { t: 'transcript', of: m.id, at: new Date(now()).toISOString(), text: clip(t.text, 1500) });
+            }
             heardVoice = heardVoice || Boolean(t.text);
             record({ dir: 'voice', chat: chat.key, id: m.id, engine: t.engine ?? null, ok: Boolean(t.text) });
             attachments.push(t.text ? `voice note (transcribed, ${t.language ?? '?'}, may mishear names and codes): "${t.text}"` : `voice note: ${t.error}`);
@@ -578,8 +723,11 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       const lines = [head];
       if (recent.length) {
         lines.push('Recent messages (oldest first):');
-        for (const r of recent) lines.push(`  ${hhmm(r.at)} ${r.name}: ${clip(String(r.text || '').replace(/\s*\n\s*/g, ' / '), 400)}${r.media ? ` [${r.media}]` : ''}`);
+        for (const r of recent) lines.push(contextLine(r, msg.at));
       }
+      // Where the older messages are, for questions that reach back further than the lines above.
+      if (chat.history?.dir) lines.push(`History: the file wa-history/${chat.history.slug ?? slug(chat.label)}.jsonl in your workspace has every message of this group (one JSON per line: id, at, name, text, media, replyTo); search it with Grep or Read when the question needs earlier messages.`);
+      else if (chat.key === 'self' && !chat.dryRun) lines.push(`History: your chat's older messages are in the WhatsApp store, read-only: wacli --store ${config.wacli.store} messages list --read-only --json --chat ${chat.jid} --after YYYY-MM-DD --limit N (this chat only).`);
       if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it came inside a conversation you were in during the last 15 minutes. Answer only if it clearly continues that exchange with you (an answer to your question, a follow-up, a correction). If people are talking among themselves, or you are unsure, your last message must be exactly [silent].');
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
@@ -638,6 +786,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   return {
     handle,
     send,
+    flushHistory,
     state: () => state,
     idle: () => busy.size === 0 && [...queues.values()].every(q => !q.length),
   };
@@ -710,9 +859,28 @@ WantedBy=default.target
   console.log(`Installed in ${target}; unit ${unit}`);
 }
 
+/** Copies a chat's last `days` days from the wacli store (read-only) into its history file; idempotent. */
+async function backfill(days = 30, only = null) {
+  const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  let total = 0;
+  for (const [key, c] of Object.entries(config.chats ?? {})) {
+    if (!c.history?.dir || !c.enabled || (only && key !== only)) continue;
+    const chat = { key, ...c };
+    const lines = historyRows(config, chat, Date.now() - days * 86_400_000).map(r =>
+      historyLine({ id: r.id, at: r.ts * 1000, name: r.name, text: r.text, media: r.media_type, ...(r.quoted_msg_id ? { replyTo: r.quoted_msg_id, replyName: r.qname, replyText: r.qtext } : {}) }),
+    );
+    let wrote = 0;
+    for (let i = 0; i < lines.length; i += 500) wrote += await historyAppend(config.routes[chat.route], chat.history, chat, lines.slice(i, i + 500));
+    console.log(`${key}: ${lines.length} messages read, ${wrote} new lines in the history file`);
+    total += lines.length;
+  }
+  return total;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const cmd = process.argv[2];
   if (cmd === 'serve') serve();
   else if (cmd === 'install') install();
+  else if (cmd === 'backfill') backfill(Number(process.argv[3]) || 30).catch(e => (console.error(e.message), process.exit(1)));
   else console.error('Usage: bridge.mjs serve | install');
 }

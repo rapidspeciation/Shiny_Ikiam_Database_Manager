@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
@@ -327,4 +327,113 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   post('gracias', { ReplyToID: sent[0].id });
   await settle();
   assert.deepEqual(turns(), ['T', 'F', 'F', 'T']);
+});
+
+function historySetup({ failing = false } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-hist-'));
+  const hist = join(dir, failing ? 'blocked' : 'ws', 'wa-history');
+  if (failing) writeFileSync(join(dir, 'blocked'), 'a file where a folder should be');
+  const script = join(dir, 'turn.mjs');
+  // A stub turn: keeps the envelope it got, and answers from the history file when the envelope points to one and asks "planta".
+  writeFileSync(
+    script,
+    `import { appendFileSync, readFileSync, existsSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s);
+appendFileSync(${JSON.stringify(join(dir, 'envelopes'))}, JSON.stringify(r.text)+'\\n');
+let ans='Hay 12.'; const f=${JSON.stringify(join(hist, 'grupo.jsonl'))};
+if (r.text.includes('wa-history/grupo.jsonl') && r.text.split('Message to answer:')[1].includes('planta') && existsSync(f)) { const hit=readFileSync(f,'utf8').split('\\n').filter(Boolean).map(x=>JSON.parse(x)).find(x=>/planta/i.test(x.text||'')); ans = hit ? 'La planta fue '+hit.text.split(': ').pop() : 'No la encuentro'; }
+console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:ans}));`,
+  );
+  const config = {
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 15, history: { dir: hist } },
+      other: { jid: 'O@g.us', label: 'Otro', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 15 },
+    },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  let clock = Date.now();
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), now: () => clock, log: { error() {}, info() {} } });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+    await bridge.flushHistory();
+  };
+  let n = 0;
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `H${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const rows = () => (existsSync(join(hist, 'grupo.jsonl')) ? readFileSync(join(hist, 'grupo.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const envelopes = () => (existsSync(join(dir, 'envelopes')) ? readFileSync(join(dir, 'envelopes'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  return { dir, hist, bridge, settle, post, rows, envelopes, tick: ms => (clock += ms) };
+}
+
+test('the enabled group is mirrored to its history file (all its messages, nothing from other chats), once each', async () => {
+  const { post, settle, rows, hist, dir } = historySetup();
+  post('G@g.us', 'hola a todos');
+  post('G@g.us', '', { Media: { Type: 'image', Caption: '' }, PushName: 'Luis' });
+  post('G@g.us', 'sí, en T2', { ReplyToID: 'H1' });
+  post('O@g.us', 'secreto de otro chat');
+  post('G@g.us', 'hola a todos', { ID: 'H1' }); // a duplicate delivery
+  await settle();
+  const got = rows();
+  assert.deepEqual(got.map(r => r.text), ['hola a todos', null, 'sí, en T2']);
+  assert.equal(got[1].media, 'foto');
+  assert.equal(got[1].name, 'Luis');
+  assert.equal(got[2].replyTo, 'H1');
+  assert.equal(got[2].replyText, 'hola a todos');
+  assert.ok(!readFileSync(join(hist, 'grupo.jsonl'), 'utf8').includes('secreto'));
+  assert.ok(!existsSync(join(hist, 'otro.jsonl')));
+  assert.equal(readFileSync(join(dir, 'state', 'history-queue.jsonl'), 'utf8'), ''); // sent, queue empty
+});
+
+test('a history that cannot be written keeps its lines queued instead of losing them', async () => {
+  const { post, settle, dir } = historySetup({ failing: true });
+  post('G@g.us', 'primero');
+  post('G@g.us', 'segundo');
+  await settle();
+  const queued = readFileSync(join(dir, 'state', 'history-queue.jsonl'), 'utf8').trim().split('\n');
+  assert.equal(queued.length, 2);
+  assert.ok(readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').includes('"dir":"history"'));
+});
+
+test('context: last 15 messages or last 2 hours, whichever is more (cap 40), with replies and media', async () => {
+  const { post, settle, envelopes, tick } = historySetup();
+  for (let i = 0; i < 18; i++) {
+    post('G@g.us', `viejo ${i}`, { Timestamp: new Date(Date.now() - 5 * 3_600_000 + i * 1000).toISOString() });
+  }
+  for (let i = 0; i < 25; i++) post('G@g.us', `reciente ${i}`, { Timestamp: new Date(Date.now() - 3_000_000 + i * 1000).toISOString() });
+  post('G@g.us', '', { Media: { Type: 'image', Caption: 'una Mechanitis' } });
+  post('G@g.us', 'respuesta', { ReplyToID: 'H19', PushName: 'Luis' });
+  tick(1000);
+  post('G@g.us', '@claude ¿qué dijimos?');
+  await settle();
+  const env = envelopes().at(-1);
+  const ctx = env.split('Recent messages (oldest first):')[1].split('Message to answer:')[0].split('\n').filter(l => l.startsWith('  '));
+  assert.equal(ctx.length, 27); // 25 recent + the photo + the reply: all inside 2 hours, more than 15
+  assert.ok(!env.includes('viejo'));
+  assert.ok(env.includes('[foto] una Mechanitis'));
+  assert.match(env, /Luis \(en respuesta a Ana: «reciente 0»\): respuesta/);
+  assert.ok(env.includes('wa-history/grupo.jsonl'));
+});
+
+test('context: with a quiet chat, the last 15 messages are kept even when older than 2 hours', async () => {
+  const { post, settle, envelopes } = historySetup();
+  for (let i = 0; i < 20; i++) post('G@g.us', `de ayer ${i}`, { Timestamp: new Date(Date.now() - 20 * 3_600_000 + i * 1000).toISOString() });
+  post('G@g.us', '@claude hola');
+  await settle();
+  const ctx = envelopes().at(-1).split('Recent messages (oldest first):')[1].split('Message to answer:')[0];
+  assert.equal((ctx.match(/de ayer/g) ?? []).length, 15);
+});
+
+test('a question that needs a 3-day-old message: the chat is pointed to the history and finds it', async () => {
+  const { post, settle, hist, rows, envelopes } = historySetup();
+  // The history already holds an old message (a backfill), not in the 15-message context.
+  mkdirSync(hist, { recursive: true });
+  writeFileSync(join(hist, 'grupo.jsonl'), JSON.stringify({ id: 'OLD1', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), name: 'Luis', text: 'la planta de la semana: Solanum', media: null }) + '\n');
+  for (let i = 0; i < 20; i++) post('G@g.us', `charla ${i}`);
+  post('G@g.us', '@claude ¿cuál era la planta de la semana pasada?');
+  await settle();
+  const env = envelopes().at(-1);
+  assert.ok(!env.includes('Solanum')); // not in the context lines
+  assert.ok(env.includes('wa-history/grupo.jsonl'));
+  assert.ok(rows().some(r => r.text?.includes('charla 0')));
+  assert.ok(readFileSync(join(hist, '..', '..', 'state', 'outbox.jsonl'), 'utf8').includes('La planta fue Solanum'));
 });
