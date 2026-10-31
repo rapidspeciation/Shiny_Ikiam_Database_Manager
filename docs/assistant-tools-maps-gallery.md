@@ -1,6 +1,6 @@
 # Assistant tools: maps, host plants, Wings Gallery
 
-Four read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
+Five read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
 
 None of them writes anything: they read the public sites' data files over HTTPS and the app's own database with `SELECT` only. What they keep is in memory, in the tools' worker (`server/assistant-host.mjs`: they are not in `MAIN_TOOLS`, so a 20 MB file read never holds up the app's thread).
 
@@ -27,6 +27,16 @@ Places with the most records of one or more taxa, best first.
 - `limit` (default 15, at most 50).
 
 Answer: per site its name (the commonest locality name of its records), country, centre, records, records by source, years seen (first, last), elevation (median, with its source), and a map URL zoomed on it; a map URL with all of them; the totals; and the freshness note. Ranking is by number of records, then distinct years: many records over many years is the best sign a species is reliably there.
+
+Every region filter also takes `sex` (`male`, `female`), from the maps' `sex` field; a project record without one in the maps takes the workbook's `Sex` by CAM ID. With it, a site is ranked by its records of that sex (sites without any are left out, and so are Dore et al.'s cells, which have no sex), and each site gives `by_sex` and `own_by_sex` (the project's records). Records with a sex in the maps' data (26 Sep 2026): Sanger Institute 7,293 of 7,850 (93 %), GBIF (UNAM) 6,186 of 21,562 (29 %), GBIF (other institutions) 11,325 of 26,956 (42 %), iNaturalist 267 of 20,424 (1 %), Dore et al. 0 of 28,927.
+
+### `maps_snapshot`
+A picture of the maps with some taxa (one sex too), framed on the best sites, for answers sent where a link is not enough (WhatsApp). Code: `server/map-snapshot.mjs`.
+
+- `species` (as `taxa`), `sex`, `country`, `sources`, `years`, elevations, `site_km`; `bbox` or, left out, the best site and the next best within 150 km of it (up to `sites`, default 8); `lang` `en`/`es` for the words on the picture.
+- Answer: `image` (a 1280×960 JPEG of about 150–300 KB in `<photo cache>/map-snapshots`, kept a week), `map_url` (the maps app on the same filters, `sex` included, and view), the sites as `maps_localities` gives them with `on_map` (their number on the picture), `elsewhere`, `best_by_taxon`, and `timing_ms`.
+- How it is drawn: no browser. The basemap is Esri's World Topo Map raster tiles (towns, roads, rivers, relief; CARTO's raster tiles now answer "API key required"), fetched once and kept on disk; the records are dots coloured by taxon, the sites black numbered circles (moved aside with a line when two would overlap), a legend and the attribution; Pillow (python3, already used for the proposal photos; claudeclaw has it with the DejaVu fonts) makes the JPEG.
+- Speed (30 Oct 2026, the three-species question with `sex: male`): this PC, first call 2.5–3.8 s (the five data files and 30 tiles fetched), again 0.3–0.6 s; claudeclaw (4-core ARM), 3.7 s and 0.5 s.
 
 ### `maps_species`
 The taxa recorded in a region, most records first ("what can we find around Mindo above 1,500 m?"). Same region, elevation, sources and years parameters; `genus` narrows it; `limit` default 30, at most 100. Each taxon with its records, sites, and last year seen, and a map URL.
@@ -59,6 +69,7 @@ https://rapidspeciation.github.io/ithomiini_maps/?sp=Oleria%20onega&source=Sange
 - `sp`: species, comma separated (the app's `scientific_name`); `ssp`: subspecies; `genus`: genus list.
 - `source`: the sources' names as the app shows them (`Sanger Institute`, `GBIF (UNAM)`, `GBIF (Other Institutions)`, `Dore et al. (2022)`, `iNaturalist`). Left out it shows only Sanger Institute, so the tools always set it.
 - `country`: comma separated. `locality`: a JSON array of exact locality names.
+- `sex`: `male` or `female` (records without a sex are hidden then).
 - `map_view`: `lng,lat,zoom` (5 decimals, zoom 2 decimals).
 
 Wings Gallery (`src/utils/shareView.js`): `view=1` marks a shared view; arrays repeat their key.

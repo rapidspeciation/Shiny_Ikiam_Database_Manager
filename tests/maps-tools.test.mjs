@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { mcpTools } from '../server/assistant.mjs';
-import { MAPS_TOOL_NAMES, createMapsTools, dateOf, galleryUrl, mapsUrl, yearOf } from '../server/maps-tools.mjs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MAPS_TOOL_NAMES, createMapsTools, dateOf, galleryUrl, mapsUrl, sexOf, yearOf } from '../server/maps-tools.mjs';
+import { fitView } from '../server/map-snapshot.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
 const GALLERY = 'https://gallery.test/Gallery/';
@@ -102,7 +107,7 @@ async function setup() {
   return { store, web, tools };
 }
 
-test('the four tools are offered to the chats', () => {
+test('the maps tools are offered to the chats', () => {
   const names = new Set(mcpTools().map(t => t.name));
   for (const n of MAPS_TOOL_NAMES) assert.ok(names.has(n), n);
 });
@@ -261,4 +266,75 @@ test('a site that does not answer: an error the first time, the copy read before
   down = true;
   clock += 7 * 3600_000;
   assert.equal((await tools.run('host_plants', { butterfly: 'Oleria' })).found, 2);
+});
+
+test('sex: the maps\' and the workbook\'s spellings; in the maps link', () => {
+  assert.equal(sexOf('Male'), 'male');
+  assert.equal(sexOf('hembra'), 'female');
+  assert.equal(sexOf(''), null);
+  assert.equal(sexOf('unknown'), null);
+  assert.match(mapsUrl({ species: ['Oleria onega'], sex: 'male' }, MAPS), /&source=[^&]+&sex=male$/);
+});
+
+test('maps_localities by sex: sites ranked by that sex, by_sex and the project\'s own; the workbook\'s sex when the maps lack it', async () => {
+  const { tools } = await setup();
+  const all = await tools.run('maps_localities', { taxa: ['Oleria onega'] });
+  // The maps' records here have no sex: the project's take the workbook's, iNaturalist's stay unknown.
+  assert.deepEqual(all.sites[1].by_sex, { male: 0, female: 1, unknown: 1 });
+  assert.deepEqual(all.sites[1].own_by_sex, { male: 0, female: 1, unknown: 0 });
+  assert.equal(all.sites[2].own_by_sex, undefined);
+  const males = await tools.run('maps_localities', { taxa: ['Oleria onega'], sex: 'male' });
+  // Mindo and Bogotá have no male record; the Dore cells no sex at all.
+  assert.deepEqual(males.sites.map(s => [s.site, s.by_sex]), [['Tena, Hollín', { male: 2, female: 1, unknown: 0 }]]);
+  assert.equal(males.grid_cells, undefined);
+  assert.equal(males.records.male, 2);
+  assert.match(males.map, /&sex=male&map_view=/);
+  const species = await tools.run('maps_species', { country: ['Ecuador'], sex: 'male' });
+  assert.deepEqual(species.taxa.map(t => [t.name, t.records]), [['Oleria onega', 2], ['Mechanitis menapis', 1]]);
+});
+
+test('the picture\'s view holds the frame at the largest whole zoom', () => {
+  const v = fitView([-78, -1.2, -77.3, -0.6], 1280, 960, 36);
+  // 0.7° is 1,019 pixels at zoom 11 (fits in 1,280 less the margins), 2,039 at 12.
+  assert.equal(v.zoom, 11);
+  assert.ok(v.bbox[0] <= -78 && v.bbox[2] >= -77.3 && v.bbox[1] <= -1.2 && v.bbox[3] >= -0.6);
+});
+
+const pillow = spawnSync('python3', ['-c', 'import PIL'], { stdio: 'ignore' }).status === 0;
+test('maps_snapshot: a JPEG framed on the best sites near the first, the link on its view, each taxon\'s best', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const { store } = await setup();
+  const web = fakeWeb();
+  const tiles = [];
+  // A grey 1×1 PNG for every tile.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVQI12P4DwABAQEAWk1v8QAAAABJRU5ErkJggg==', 'base64');
+  const fetchImpl = (url, o) => {
+    if (url.startsWith('https://tiles.test/')) return tiles.push(url), Promise.resolve(new Response(png));
+    return web.fetchImpl(url, o);
+  };
+  const dir = mkdtempSync(join(tmpdir(), 'maps-snapshot-'));
+  const tools = createMapsTools({ store, fetchImpl, now: web.now, mapsBase: MAPS, elevationApi: DEM, snapshotDir: dir, snapshotOptions: { tileUrl: 'https://tiles.test/{z}/{x}/{y}' } });
+  const out = await tools.run('maps_snapshot', { species: ['Oleria onega', 'Mechanitis menapis'], lang: 'es' });
+  assert.equal(out.error, undefined);
+  assert.ok(existsSync(out.image) && statSync(out.image).size === out.image_bytes);
+  assert.ok(out.image_bytes < 500_000);
+  // Tena and Mindo are within 150 km of each other; Bogotá is not.
+  assert.deepEqual(out.sites.map(s => [s.on_map, s.rank, s.site]), [[1, 1, 'Tena, Hollín'], [2, 2, 'Mindo']]);
+  assert.deepEqual(out.elsewhere.map(s => s.site), ['Bogotá']);
+  assert.ok(out.framed.bbox[0] < -78.77 && out.framed.bbox[2] > -77.81);
+  assert.match(out.map_url, /sp=Oleria%20onega%2CMechanitis%20menapis&source=.*&map_view=-78\.\d+%2C-0\.\d+%2C\d+\.00$/);
+  assert.deepEqual(out.best_by_taxon['Mechanitis menapis'], [{ rank: 2, site: 'Mindo', country: 'Ecuador', records: 1 }]);
+  assert.ok(tiles.length > 0);
+  // Again: the tiles from the disk.
+  const asked = tiles.length;
+  const again = await tools.run('maps_snapshot', { species: ['Oleria onega', 'Mechanitis menapis'], lang: 'es' });
+  assert.equal(tiles.length, asked);
+  assert.equal(again.timing_ms.tiles_fetched, 0);
+  // Males only, framed by a bbox.
+  const males = await tools.run('maps_snapshot', { species: ['Oleria onega'], sex: 'male', bbox: [-78, -1.2, -77.5, -0.8] });
+  assert.deepEqual(males.sites.map(s => s.site), ['Tena, Hollín']);
+  assert.equal(males.records.on_picture, 2);
+  assert.match(males.map_url, /&sex=male&/);
+  assert.equal(males.framed.by, 'bbox asked');
+  // No folder: said, not thrown.
+  assert.match((await createMapsTools({ store, fetchImpl, mapsBase: MAPS }).run('maps_snapshot', { species: ['Oleria onega'] })).error, /off/);
 });

@@ -3,11 +3,13 @@
 //   maps_species       the taxa recorded in a region
 //   host_plants        host plants of a butterfly, or the Ithomiini on a plant, with their sources
 //   gallery_specimens  collection specimens with wing photos (the workbook and Photo_links), gallery links, thumbnails
+//   maps_snapshot      a picture of the maps with some taxa (one sex too) framed on the best sites (server/map-snapshot.mjs)
 // The maps' data files are read over HTTPS from the published site, at most every 6 hours (and parsed again only
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
 
 import { driveIdOf, specimenName } from './photo-links.mjs';
+import { PALETTE, createSnapshots } from './map-snapshot.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
 export const GALLERY_URL = 'https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/';
@@ -29,6 +31,7 @@ const DEM_POINTS = 1000;
 const DEM_BATCH = 100;
 const CONFIDENCE = { low: 1, medium: 2, high: 3 };
 const URL_CAMS = 150;
+const CLUSTER_KM = 150;
 
 const region = {
   country: { type: 'array', items: { type: 'string' } },
@@ -42,6 +45,7 @@ const region = {
   elevation_max: { type: 'number' },
   sources: { type: 'array', items: { type: 'string', enum: SOURCE_KEYS } },
   years: { type: 'object', properties: { from: { type: 'integer' }, to: { type: 'integer' } } },
+  sex: { type: 'string', enum: ['male', 'female'] },
 };
 
 export const MAPS_TOOLS = [
@@ -53,6 +57,7 @@ export const MAPS_TOOLS = [
         "Where to find some taxa: the places with the most occurrence records of the Ithomiini maps (the project's own collection records, GBIF museum records, Dore et al. 2022, iNaturalist), best first, each with a link that opens the maps app on it with the filters set. For questions like \"where are the best places to find X?\".",
         '- `taxa`: species ("Oleria onega"), subspecies ("Oleria onega janarilla") or genus ("Oleria"); synonyms are resolved.',
         '- Region (optional): `country`, `bbox` [west, south, east, north], `near` {lat, lng, km}. `elevation_min`/`elevation_max` in metres (the workbook\'s elevation for the project\'s records, the ground\'s from a 90 m DEM for the rest). `sources` (default all), `years` {from, to}.',
+        '- `sex` (male, female): only the records of that sex. The project\'s records nearly all have it, GBIF\'s about four in ten, iNaturalist\'s and Dore et al.\'s almost never, so with it a site is ranked by its records of that sex; every site gives `by_sex` (all its records: male, female, unknown) and `own_by_sex` (the project\'s).',
         '- `site_km` (default 3): records closer than this are one site. `limit` (default 15).',
         "Ranked by records, then by the number of years seen. Dore et al. records are 0.25° grid cells, not sites: counted apart (`grid_cells`). Cite the data's dates (`freshness`) and give the links; a site's name is its records' commonest locality name.",
       ].join('\n'),
@@ -74,7 +79,7 @@ export const MAPS_TOOLS = [
       name: 'maps_species',
       description: [
         'The Ithomiini recorded in a region of the maps (the same records as maps_localities), most records first: for "what can we find around X?" or "which species live above 1500 m in Napo?".',
-        '- A region is needed: `country`, `bbox` or `near` {lat, lng, km}; with `elevation_min`/`elevation_max`, `sources`, `years` as in maps_localities. `genus` narrows it. `limit` (default 30).',
+        '- A region is needed: `country`, `bbox` or `near` {lat, lng, km}; with `elevation_min`/`elevation_max`, `sources`, `years`, `sex` as in maps_localities. `genus` narrows it. `limit` (default 30).',
         'Each taxon with its records, sites, sources and the last year seen, and a map link.',
       ].join('\n'),
       parameters: {
@@ -130,6 +135,36 @@ export const MAPS_TOOLS = [
           limit: { type: 'integer' },
           thumbnails: { type: 'integer' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'maps_snapshot',
+      description: [
+        'A picture of the Ithomiini maps (a JPEG of about 200 KB, small enough for WhatsApp) with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
+        '- `species`: as maps_localities\' `taxa` (species, subspecies or genus). `sex` (male, female). `country`, `sources`, `years`, `elevation_min`/`elevation_max`, `site_km` as there.',
+        '- `bbox` [west, south, east, north] frames the picture (and limits the sites); left out ("auto"), it frames the best site and the next best within 150 km of it, up to `sites` (default 8); the best ones further away are in `elsewhere`. Give `country` to keep it to one country.',
+        '- `lang`: "es" or "en" (default) for the words on the picture.',
+        'Send `image` (a file on this server) as the picture and give `map_url` to open it live; the sites are numbered on the picture as their `on_map` (their `rank` is among all sites). `best_by_taxon`: each taxon\'s own best sites (of the sex asked), for a taxon the shared ranking puts low.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          species: { type: 'array', items: { type: 'string' } },
+          sex: region.sex,
+          bbox: { anyOf: [region.bbox, { type: 'string', enum: ['auto'] }] },
+          country: region.country,
+          sources: region.sources,
+          years: region.years,
+          elevation_min: { type: 'number' },
+          elevation_max: { type: 'number' },
+          site_km: { type: 'number' },
+          sites: { type: 'integer' },
+          lang: { type: 'string', enum: ['en', 'es'] },
+        },
+        required: ['species'],
       },
     },
   },
@@ -192,14 +227,15 @@ const countriesIn = (asked, records) => {
   return [...new Set(list(asked).map(c => spelled.get(fold(c)) ?? c))];
 };
 
-/** The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's), `map_view`. */
-export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], view = null } = {}, base = MAPS_URL) {
+/** The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's), `sex`, `map_view`. */
+export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], sex = null, view = null } = {}, base = MAPS_URL) {
   const params = new URLSearchParams();
   if (genus.length) params.set('genus', genus.join(','));
   if (species.length) params.set('sp', species.join(','));
   if (subspecies.length) params.set('ssp', subspecies.join(','));
   params.set('source', sources.map(k => SOURCES[k]).join(','));
   if (country.length) params.set('country', country.join(','));
+  if (sex) params.set('sex', sex);
   if (view) params.set('map_view', [view.lng.toFixed(5), view.lat.toFixed(5), view.zoom.toFixed(2)].join(','));
   return `${base}?${params.toString().replace(/\+/g, '%20')}`;
 }
@@ -232,6 +268,14 @@ const thumbUrl = (file, width = 160) =>
   `https://wsrv.nl/?url=${encodeURIComponent(`https://drive.google.com/uc?id=${file}`)}&w=${width}&output=webp`;
 const fullUrl = file => `https://lh3.googleusercontent.com/d/${file}=w1600`;
 
+/** "male" or "female" from the maps' and the workbook's ways of writing it, else null. */
+export function sexOf(value) {
+  const s = fold(value);
+  if (/^(m|male|males|macho|♂)$/.test(s)) return 'male';
+  if (/^(f|female|females|hembra|♀)$/.test(s)) return 'female';
+  return null;
+}
+
 /** One record of the maps, kept small: strings shared (`intern`). */
 function compactPoint(p, intern) {
   const lat = Number(p.lat);
@@ -248,7 +292,7 @@ function compactPoint(p, intern) {
     country: intern(text(p.country)),
     year: yearOf(p.observation_date),
     source: KEY_OF[p.source] ?? intern(text(p.source)),
-    sex: intern(text(p.sex)),
+    sex: sexOf(p.sex),
   };
 }
 
@@ -263,6 +307,8 @@ export function createMapsTools({
   mapsBase = MAPS_URL,
   galleryBase = GALLERY_URL,
   elevationApi = ELEVATION_API,
+  snapshotDir = null,
+  snapshotOptions = {},
 } = {}) {
   const files = new Map();
   const dem = new Map();
@@ -327,7 +373,7 @@ export function createMapsTools({
   let workbook = null;
   function collection() {
     const db = store?.db;
-    if (!db) return { rows: [], elevation: new Map(), photos: new Map() };
+    if (!db) return { rows: [], elevation: new Map(), sexes: new Map(), photos: new Map() };
     const state = db
       .prepare("SELECT count(*) n, max(updated_at) u FROM records WHERE sheet IN ('Collection_data','Photo_links') AND missing=0")
       .get();
@@ -335,6 +381,7 @@ export function createMapsTools({
     if (workbook?.stamp === stamp) return workbook;
     const rows = [];
     const elevation = new Map();
+    const sexes = new Map();
     for (const r of db
       .prepare("SELECT values_json FROM records WHERE sheet='Collection_data' AND missing=0 AND observed=1 AND row_num>1 ORDER BY row_num")
       .all()) {
@@ -348,6 +395,8 @@ export function createMapsTools({
       if (!cam) continue;
       const elev = num(v.ELEVATION);
       if (elev !== null) elevation.set(cam, elev);
+      const sex = sexOf(v.Sex);
+      if (sex) sexes.set(cam, sex);
       rows.push({ cam, v, elev });
     }
     const photos = new Map();
@@ -370,7 +419,7 @@ export function createMapsTools({
       // The plain name (CAM…d.JPG) before its extra views (CAM…d2.JPG).
       if (!entry[view] || !parsed.extra) entry[view] = { name: text(v.Name), file };
     }
-    workbook = { stamp, rows, elevation, photos };
+    workbook = { stamp, rows, elevation, sexes, photos };
     return workbook;
   }
 
@@ -486,7 +535,12 @@ export function createMapsTools({
     };
   }
 
-  async function localities(args) {
+  /** A record's sex: the maps', else the workbook's for the project's records, else null. */
+  const sexOfRecord = (r, sexes) => r.sex ?? (r.source === 'sanger' ? sexes.get(r.id.toUpperCase()) ?? null : null);
+  const sexAsked = args => sexOf(args.sex);
+
+  /** `inner`, when given, gets what maps_snapshot draws: the records shown, the link's taxa and sources. */
+  async function localities(args, inner = null) {
     const asked = list(args.taxa).slice(0, 20);
     if (!asked.length) return { error: 'Name at least one taxon in `taxa`.' };
     const sources = sourcesOf(args);
@@ -500,11 +554,16 @@ export function createMapsTools({
     // Without an elevation asked: the workbook's for the project's records (no DEM look-ups).
     const own = collection().elevation;
     const elev = fromBand ?? new Map(kept.filter(r => r.source === 'sanger' && own.has(r.id.toUpperCase())).map(r => [r, { m: own.get(r.id.toUpperCase()), from: 'workbook' }]));
+    const { sexes } = collection();
+    const sex = sexAsked(args);
+    const sexOfKept = new Map(kept.map(r => [r, sexOfRecord(r, sexes)]));
     const siteKm = Math.min(50, Math.max(0.5, Number(args.site_km) || 3));
     const deg = siteKm / 111;
     const sites = new Map();
     const grid = new Map();
     for (const r of kept) {
+      // Dore et al. cells have no sex: left out when one is asked, as the maps app's sex filter does.
+      if (r.source === 'dore' && sex) continue;
       if (r.source === 'dore') {
         const key = `${r.lat},${r.lng}`;
         const cell = grid.get(key) ?? grid.set(key, { lat: r.lat, lng: r.lng, country: r.country, records: 0 }).get(key);
@@ -515,14 +574,17 @@ export function createMapsTools({
       const key = `${row}:${Math.floor(r.lng / (deg / Math.max(0.2, Math.cos(((row + 0.5) * deg * Math.PI) / 180))))}`;
       const s =
         sites.get(key) ??
-        sites.set(key, { n: 0, lat: 0, lng: 0, names: new Map(), countries: new Map(), sources: new Map(), years: new Set(), elev: [], elevFrom: new Set(), taxa: new Map() }).get(key);
+        sites.set(key, { n: 0, lat: 0, lng: 0, names: new Map(), countries: new Map(), sources: new Map(), years: new Set(), elev: [], elevFrom: new Set(), taxa: new Map(), sex: { male: 0, female: 0, unknown: 0 }, own: { male: 0, female: 0, unknown: 0 } }).get(key);
       s.n++;
+      const rs = sexOfKept.get(r) ?? 'unknown';
+      s.sex[rs]++;
+      if (r.source === 'sanger') s.own[rs]++;
       s.lat += r.lat;
       s.lng += r.lng;
       if (r.place) count(s.names, r.place);
       if (r.country) count(s.countries, r.country);
       count(s.sources, SOURCES[r.source] ?? r.source);
-      count(s.taxa, r.name);
+      if (!sex || rs === sex) count(s.taxa, r.name);
       if (r.year) s.years.add(r.year);
       const e = elev?.get(r);
       if (e) {
@@ -531,9 +593,11 @@ export function createMapsTools({
       }
     }
     const limit = clamp(args.limit, 1, 50, 15);
+    // With a sex asked: the sites with records of it, by those records, then all records and years.
     const ranked = [...sites.values()]
+      .filter(s => !sex || s.sex[sex] > 0)
       .map(s => ({ ...s, lat: s.lat / s.n, lng: s.lng / s.n }))
-      .sort((a, b) => b.n - a.n || b.years.size - a.years.size);
+      .sort((a, b) => (sex ? b.sex[sex] - a.sex[sex] : 0) || b.n - a.n || b.years.size - a.years.size);
     // The app ANDs its genus and species filters: a genus asked with species is given as its species.
     const mixed = taxa.genus.length && taxa.species.length;
     const urlTaxa = {
@@ -542,7 +606,9 @@ export function createMapsTools({
       subspecies: taxa.genus.length ? [] : taxa.subspecies,
       genus: mixed ? [] : taxa.genus,
       sources,
+      sex,
     };
+    if (inner) Object.assign(inner, { records: sex ? kept.filter(r => sexOfKept.get(r) === sex) : kept, urlTaxa, taxa, countries: countriesIn(args.country, records), ranked });
     const shown = ranked.slice(0, limit).map((s, i) => {
       const years = [...s.years].sort();
       return {
@@ -553,6 +619,8 @@ export function createMapsTools({
         lng: round(s.lng, 4),
         records: s.n,
         by_source: Object.fromEntries(s.sources),
+        by_sex: s.sex,
+        ...(s.own.male + s.own.female + s.own.unknown ? { own_by_sex: s.own } : {}),
         ...(taxa.genus.length || taxa.species.length > 1 ? { taxa: Object.fromEntries([...s.taxa].sort((a, b) => b[1] - a[1]).slice(0, 8)) } : {}),
         years: years.length ? { first: years[0], last: years.at(-1), distinct: years.length } : null,
         ...(s.elev.length ? { elevation_m: median(s.elev), elevation_from: [...s.elevFrom].join('+') } : {}),
@@ -568,6 +636,7 @@ export function createMapsTools({
         of_taxa: ofTaxa.length,
         in_region: regional.length,
         kept: kept.length,
+        ...(sex ? { [sex]: [...sexOfKept.values()].filter(v => v === sex).length, sex_unknown: [...sexOfKept.values()].filter(v => !v).length, sex_note: `Ranked by ${sex} records; records without a sex (most of iNaturalist's, all of Dore et al.'s) are in each site's by_sex but not on the map's ${sex} filter.` } : {}),
         ...(hasElevation(args) ? { elevation_unknown: unknown, ...(unknownPoints ? { note: `${unknownPoints} points had no DEM elevation (over the ${DEM_POINTS}-point budget or not answered): left out` } : {}) } : {}),
       },
       sites_total: ranked.length,
@@ -584,7 +653,10 @@ export function createMapsTools({
     const { records, freshness } = await points(sources);
     const genera = new Set(list(args.genus).map(fold));
     const regional = inRegion(genera.size ? records.filter(r => genera.has(fold(r.genus))) : records, args);
-    const { kept, unknown, unknownPoints } = await byElevation(regional, args);
+    const { kept: banded, unknown, unknownPoints } = await byElevation(regional, args);
+    const sex = sexAsked(args);
+    const { sexes } = collection();
+    const kept = sex ? banded.filter(r => sexOfRecord(r, sexes) === sex) : banded;
     const byName = new Map();
     let unidentified = 0;
     for (const r of kept) {
@@ -608,13 +680,95 @@ export function createMapsTools({
         ? viewOf([{ lat: args.bbox[1], lng: args.bbox[0] }, { lat: args.bbox[3], lng: args.bbox[2] }])
         : viewOf(kept);
     return {
-      records: { in_region: regional.length, kept: kept.length, ...(hasElevation(args) ? { elevation_unknown: unknown, ...(unknownPoints ? { note: `${unknownPoints} points had no DEM elevation: left out` } : {}) } : {}) },
+      records: { in_region: regional.length, kept: kept.length, ...(sex ? { sex, sex_note: `Only records with ${sex} as their sex (most of iNaturalist's and all of Dore et al.'s have none).` } : {}), ...(hasElevation(args) ? { elevation_unknown: unknown, ...(unknownPoints ? { note: `${unknownPoints} points had no DEM elevation: left out` } : {}) } : {}) },
       taxa_total: ranked.length,
       ...(unidentified ? { unidentified_records: unidentified } : {}),
-      taxa: ranked.slice(0, limit).map(([name, t]) => ({ name, records: t.records, sites: t.sites.size, by_source: Object.fromEntries(t.sources), last_year: t.last, map: mapsUrl({ species: [name], sources, country, view }, mapsBase) })),
-      map: mapsUrl({ species: ranked.slice(0, 20).map(([n]) => n), sources, country, view }, mapsBase),
+      taxa: ranked.slice(0, limit).map(([name, t]) => ({ name, records: t.records, sites: t.sites.size, by_source: Object.fromEntries(t.sources), last_year: t.last, map: mapsUrl({ species: [name], sources, country, sex, view }, mapsBase) })),
+      map: mapsUrl({ species: ranked.slice(0, 20).map(([n]) => n), sources, country, sex, view }, mapsBase),
       map_note: 'The region\'s map holds the first 20 taxa; each taxon has its own link.',
       freshness,
+    };
+  }
+
+  const snapshots = snapshotDir ? createSnapshots({ dir: snapshotDir, fetchImpl, ...snapshotOptions }) : null;
+  const WORDS = {
+    en: { male: 'Males', female: 'Females', null: 'Records', title: 'best sites', sites: n => (n > 1 ? `1–${n}: best sites here, in order` : '1: the best site'), count: (n, sex) => `${n.toLocaleString('en')} ${sex ?? 'record'}${n === 1 ? '' : 's'}`, other: 'other taxa' },
+    es: { male: 'Machos', female: 'Hembras', null: 'Registros', title: 'mejores sitios', sites: n => (n > 1 ? `1–${n}: mejores sitios aquí, en orden` : '1: el mejor sitio'), count: (n, sex) => `${n.toLocaleString('es')} ${sex === 'male' ? 'macho' : sex === 'female' ? 'hembra' : 'registro'}${n === 1 ? '' : 's'}`, other: 'otros taxones' },
+  };
+
+  /** A picture of the maps with the taxa asked (one sex too), framed on the best sites, and the link to the same view. */
+  async function snapshot(args) {
+    if (!snapshots) return { error: 'Map pictures are off on this server (no folder for them is set).' };
+    const started = Date.now();
+    const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox : null;
+    const wanted = clamp(args.sites, 1, 15, 8);
+    const inner = {};
+    const found = await localities({ ...args, taxa: args.species ?? args.taxa, bbox, limit: 50 }, inner);
+    if (found.error) return found;
+    const dataMs = Date.now() - started;
+    // Auto: the best site and the next best near it, so the picture is a place to go to, not a continent.
+    const near = s => km(found.sites[0], s) <= CLUSTER_KM;
+    // Numbered on the picture in this order (`on_map`); `rank` stays the site's place among all.
+    const best = (bbox ? found.sites : found.sites.filter(near)).slice(0, wanted).map((s, i) => ({ on_map: i + 1, ...s }));
+    const elsewhere = bbox ? [] : found.sites.filter(s => !near(s)).slice(0, 5);
+    let frame = bbox;
+    if (!frame) {
+      const at = best.length ? best : inner.records;
+      if (!at.length) return { ...found, error: 'None of these records can go on a map.' };
+      const lats = at.map(p => p.lat);
+      const lngs = at.map(p => p.lng);
+      const [w, s, e, n] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+      const padX = Math.max(0.04, (e - w) * 0.12);
+      const padY = Math.max(0.03, (n - s) * 0.12);
+      frame = [w - padX, s - padY, e + padX, n + padY];
+    }
+    // Colours by taxon, the commonest in the frame first; past the palette, grey.
+    const shownIn = r => r.lng >= frame[0] && r.lng <= frame[2] && r.lat >= frame[1] && r.lat <= frame[3];
+    const counts = new Map();
+    for (const r of inner.records) if (shownIn(r)) count(counts, r.name);
+    const order = [...counts].sort((a, b) => b[1] - a[1]);
+    const colour = new Map(order.slice(0, PALETTE.length - 1).map(([name], i) => [name, i]));
+    const grey = PALETTE.length - 1;
+    const lang = WORDS[args.lang] ? args.lang : 'en';
+    const words = WORDS[lang];
+    const sex = inner.urlTaxa.sex;
+    const legend = order.slice(0, PALETTE.length - 1).map(([name, n]) => ({ text: `${name} · ${words.count(n, sex)}`, color: colour.get(name) }));
+    if (order.length > PALETTE.length - 1)
+      legend.push({ text: `${words.other} · ${words.count(order.slice(PALETTE.length - 1).reduce((t, [, n]) => t + n, 0), sex)}`, color: grey });
+    if (best.length) legend.push({ text: words.sites(best.length), color: null });
+    const picture = await snapshots.render({
+      bbox: frame,
+      // Grey first, then the commonest taxon to the rarest, so the rarer ones are on top.
+      points: inner.records
+        .map(r => ({ lat: r.lat, lng: r.lng, color: colour.get(r.name) ?? grey }))
+        .sort((a, b) => (a.color === grey ? -1 : a.color) - (b.color === grey ? -1 : b.color)),
+      sites: best.map(s => ({ lat: s.lat, lng: s.lng, rank: s.on_map })),
+      legend,
+      title: `${words[sex]} · ${words.title}`,
+    });
+    return {
+      image: picture.path,
+      image_bytes: picture.bytes,
+      image_size: `${picture.width}x${picture.height}`,
+      map_url: mapsUrl({ ...inner.urlTaxa, country: inner.countries, view: picture.view }, mapsBase),
+      framed: { bbox: picture.bbox, by: bbox ? 'bbox asked' : `the first ${best.length || 'records'} sites` },
+      taxa: found.taxa,
+      records: { ...found.records, on_picture: picture.points_drawn },
+      sites_total: found.sites_total,
+      sites: best,
+      ...(elsewhere.length ? { elsewhere: elsewhere.map(({ rank, site, country, lat, lng, records, by_sex, map }) => ({ rank, site, country, lat, lng, records, by_sex, map })) } : {}),
+      best_by_taxon: Object.fromEntries(
+        found.taxa.species.map(name => [
+          name,
+          inner.ranked
+            .map((s, i) => ({ rank: i + 1, site: top(s.names) ?? `${s.lat.toFixed(3)}, ${s.lng.toFixed(3)}`, country: top(s.countries), [sex ?? 'records']: s.taxa.get(name) ?? 0 }))
+            .filter(s => s[sex ?? 'records'] > 0)
+            .sort((a, b) => b[sex ?? 'records'] - a[sex ?? 'records'] || a.rank - b.rank)
+            .slice(0, 3),
+        ]),
+      ),
+      freshness: found.freshness,
+      timing_ms: { data: dataMs, tiles: picture.ms.tiles, picture: picture.ms.total - picture.ms.tiles, total: Date.now() - started, tiles_fetched: picture.tiles.fetched, tiles_failed: picture.tiles.failed },
     };
   }
 
@@ -754,6 +908,7 @@ export function createMapsTools({
         if (name === 'maps_species') return await species(args);
         if (name === 'host_plants') return await hostPlants(args);
         if (name === 'gallery_specimens') return specimens(args);
+        if (name === 'maps_snapshot') return await snapshot(args);
       } catch (e) {
         return { error: e.message };
       }

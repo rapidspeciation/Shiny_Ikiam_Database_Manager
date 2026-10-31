@@ -917,7 +917,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const walkIds = inWorker ? null : createWalkIds({ store, identifier, onRead: walkId => markWalkReadings(walkId) });
   // Butterflies' photos beside the chat (show_photos): a card that only shows.
   const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
-  const mapsTools = createMapsTools({ store, ...(config.mapsTools ?? {}) });
+  // maps_snapshot's pictures and basemap tiles: beside the photo cache (none for an in-memory database).
+  const mapsTools = createMapsTools({
+    store,
+    snapshotDir: (() => {
+      const base = config.photoCacheDir || photoCacheDir({}, db?.location?.() ?? null);
+      return base ? `${base}/map-snapshots` : null;
+    })(),
+    ...(config.mapsTools ?? {}),
+  });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
   const curation = createCuration({
     store,
