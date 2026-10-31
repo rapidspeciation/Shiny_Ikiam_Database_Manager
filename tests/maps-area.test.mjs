@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOUNDARY_URLS, createAdminAreas } from '../server/admin-areas.mjs';
@@ -363,4 +363,27 @@ test('photo tags: a leaves guess under the threshold is no view; a living flower
   } finally {
     FILES[mite] = saved;
   }
+});
+
+const pillow = (await import('node:child_process')).spawnSync('python3', ['-c', 'import PIL'], { stdio: 'ignore' }).status === 0;
+test('contact sheets: host_plants gives numbered sheets of candidate photos; send_sheet_photos sends the tiles chosen', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
+  const tools = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir });
+  const out = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', photo_sheet: true, lang: 'es' });
+  assert.equal(out.photo_sheets.length, 1);
+  const [sheet] = out.photo_sheets;
+  assert.ok(existsSync(sheet.path) && statSync(sheet.path).size > 1000);
+  // The plant in Napo first, its photo in Tena before the one in Sucumbíos; the candidate said so.
+  assert.deepEqual(sheet.tiles, ['1: Solanum mite — Tena · 2019', '2: Solanum mite — 2 km, Sucumbíos · 2022', '3: Cestrum megalophyllum (candidata) — 28 km, Pastaza · 2011']);
+  assert.match(out.photo_sheet_note, /send_sheet_photos/);
+  assert.equal(out.markdown, '');
+  const sent = await tools.run('send_sheet_photos', { sheets: [sheet.id], tiles: [2, 3], lang: 'es' });
+  assert.deepEqual(sent.images.map(im => [im.plant, im.status, im.photo_in_area]), [['Solanum mite', 'in_area', false], ['Cestrum megalophyllum', 'nearby', false]]);
+  assert.match(sent.images[1].caption, /^_Cestrum megalophyllum_ — CANDIDATA: sin registros en Napo, 2 a menos de 50 km\n/);
+  assert.match(sent.images_block, /^\[images\]\n.+ \| _Solanum mite_/);
+  // Another worker finds the sheet on disk; a wrong sheet or tile is said.
+  const other = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir });
+  assert.equal((await other.run('send_sheet_photos', { sheets: [sheet.id], tiles: [1] })).images[0].plant, 'Solanum mite');
+  assert.match((await other.run('send_sheet_photos', { sheets: ['0123456789abcdef'], tiles: [1] })).error, /No such contact sheet/);
+  assert.match((await other.run('send_sheet_photos', { sheets: [sheet.id], tiles: [9] })).error, /None of tiles 9/);
 });

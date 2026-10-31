@@ -21,7 +21,8 @@ import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-
 import { unreliableFor } from './sex-check.mjs';
 import { PALETTE, createSnapshots } from './map-snapshot.mjs';
 import { cantonOf, createAdminAreas } from './admin-areas.mjs';
-import { createPlantPhotos } from './plant-photos.mjs';
+import { createPlantPhotos, proxyUrl } from './plant-photos.mjs';
+import { PER_SHEET, TILE, createPhotoSheets } from './photo-sheets.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
 export const GALLERY_URL = 'https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/';
@@ -67,7 +68,8 @@ const NEARBY_KM = 50;
 const NEAREST_MAX_KM = 300;
 const SEND_PAGES = 12;
 // The photo tags file in the cache folder, and the probability of "leaves or whole plant" over which a photo counts
-// as showing them (calibrated: 17 of 17 right, no flower close-up taken for leaves, on 40 photos checked by eye).
+// as showing them (tools/plant-photo-tags/CALIBRATION.md: over 80 photos checked by eye, 26 of 27 so tagged showed
+// them and 1 of 33 flower close-ups was so tagged; a small sample: no errors expected, not ruled out).
 export const TAGS_FILE = 'plant-photo-tags-v1.json';
 export const TAG_LEAVES = 0.8;
 const SEND_WORDS = {
@@ -80,6 +82,8 @@ const SEND_WORDS = {
     photo: 'Photo',
     unknown: 'author not given',
     herbariumTag: '[Herbarium specimen]',
+    candidateShort: 'candidate',
+    herbariumShort: 'herbarium',
     views: { leaves: 'leaves', habit: 'whole plant', flower: 'flower', fruit: 'fruit' },
     herbarium: 'herbarium specimen (no photo of the living plant)',
   },
@@ -92,6 +96,8 @@ const SEND_WORDS = {
     photo: 'Foto',
     unknown: 'autor no indicado',
     herbariumTag: '[Ejemplar de herbario]',
+    candidateShort: 'candidata',
+    herbariumShort: 'herbario',
     views: { leaves: 'hojas', habit: 'planta entera', flower: 'flor', fruit: 'fruto' },
     herbarium: 'ejemplar de herbario (no hay foto de la planta viva)',
   },
@@ -170,7 +176,8 @@ export const MAPS_TOOLS = [
         '- `min_confidence`: low, medium (default) or high. `include_unchecked`: also the rows the review marked needs_check.',
         "- Area (optional): `area` (a province or canton of Ecuador by its outline: {province: \"Napo\"}, {canton: \"Tena\"}), `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
         "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
-        '- `send_photos` (0-8): photo files to send (WhatsApp), one per plant, those in the area first, then the nearby candidates: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}] and `images_block` (the same as a WhatsApp [images] block: end the reply with it as it is); then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions.',
+        '- `photo_sheet: true` (with an area): `photo_sheets`, 1 or 2 contact sheets (JPEG, 3 by 3 numbered tiles of 512 px with the plant and its place) of the plants\' candidate photos (living plants first, those in the area or nearest). Look at them and pick the tiles that show the leaves or the whole plant, and a flower, then send_sheet_photos. This is how photos to send are chosen.',
+        '- `send_photos` (0-5, the total): photo files to send (WhatsApp): first one per plant (its leaves or the whole plant when the photo tags say so, a living plant before a herbarium sheet), those in the area first, then the nearby candidates; then a flower of the first plants as `second` photos while the total allows: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}] and `images_block` (the same as a WhatsApp [images] block: end the reply with it as it is); then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions.',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
@@ -183,6 +190,7 @@ export const MAPS_TOOLS = [
           area: AREA,
           nearby_km: { type: 'number' },
           send_photos: { type: 'integer' },
+          photo_sheet: { type: 'boolean' },
           lang: { type: 'string', enum: ['en', 'es'] },
           country: region.country,
           bbox: region.bbox,
@@ -192,6 +200,22 @@ export const MAPS_TOOLS = [
           site_km: { type: 'number' },
           limit: { type: 'integer' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_sheet_photos',
+      description: [
+        'The photos chosen on contact sheets (host_plants or gallery_specimens with `photo_sheet`), ready to send: each downloaded at about 2048 px and credited (plant, in the area or candidate, place, year, photographer, licence, link; a specimen\'s CAM ID and data).',
+        '- `sheets`: the sheet ids; `tiles`: the numbers chosen (at most 5, in the order to send). `lang`: "es" or "en" for the captions.',
+        'Gives `images` [{path, caption, …}] and `images_block` (on WhatsApp, end the answer with it as it is). A tile whose photo or credit cannot be had is in `failed`: pick another of the same plant.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: { sheets: { type: 'array', items: { type: 'string' } }, tiles: { type: 'array', items: { type: 'integer' } }, lang: { type: 'string', enum: ['en', 'es'] } },
+        required: ['sheets', 'tiles'],
       },
     },
   },
@@ -231,6 +255,7 @@ export const MAPS_TOOLS = [
         "Collection specimens with wing photos (the Wings Gallery's Collection tab, read from the workbook and Photo_links): by CAM ID, species, sex, locality or elevation, with a link to the gallery showing them, photo URLs, and what the models read from the photos.",
         '- Any of: `cam_ids`, `species` ["Genus species"], `subspecies`, `genus`, `sex` (male, female), `locality` (words of Collection_location), `country`, `elevation_min`/`elevation_max`. `with_photos` (default true). `limit` (default 12).',
         "- Each specimen: the database's species, subspecies, sex; `model` (the Wings Gallery's species/subspecies top 3 and the sex model's call, with `sex_trusted` false and `sex_not_trusted` saying why when the model is not trusted for it: not a Supported call, or a species on the model's unreliable list); `envelope` (the envelope's text lines as the reader read them, and its model); `differs` (where the model or envelope disagree with the database).",
+        '- `photo_sheet: true`: `photo_sheets`, contact sheets (3 by 3 numbered tiles) of the specimens\' photos to look at and pick from; then send_sheet_photos sends those chosen.',
         '- `markdown`: ready to put in the reply as it is. The first `thumbnails` specimens (default 4, at most 8) in full: a 600 px photo, the wings and envelope crops (each linked to the full photo), the model output and the envelope lines; the rest one plain line each.',
         'Model output and envelope readings are not checked: say so, never give them as facts. The database is the record. The gallery site is rebuilt when its update runs (update_websites): a specimen added since may not be there yet.',
       ].join('\n'),
@@ -248,6 +273,7 @@ export const MAPS_TOOLS = [
           elevation_max: { type: 'number' },
           with_photos: { type: 'boolean' },
           limit: { type: 'integer' },
+          photo_sheet: { type: 'boolean' },
           thumbnails: { type: 'integer' },
         },
       },
@@ -656,6 +682,7 @@ export function createMapsTools({
   snapshotDir = null,
   snapshotOptions = {},
   cacheDir = null,
+  sheetOptions = null,
 } = {}) {
   const files = new Map();
   const dem = new Map();
@@ -664,6 +691,7 @@ export function createMapsTools({
   // Provinces and cantons (downloaded once into the cache folder), photos to send and their credits, plant records.
   const adminAreas = createAdminAreas({ dir: cacheDir ? join(cacheDir, 'admin') : null, fetchImpl });
   const photoFiles = createPlantPhotos({ dir: cacheDir ? join(cacheDir, 'plant-photos') : null, fetchImpl });
+  const sheets = cacheDir ? createPhotoSheets({ dir: join(cacheDir, 'photo-sheets'), fetchImpl, ...(sheetOptions ?? {}) }) : null;
   // What each gallery photo shows (scripts/plant-photo-tags: leaves, habit, flower, fruit…), by iNaturalist photo
   // number, from the cache folder; read again when the file changes. Without it, photos are not told apart by view.
   let tagsKept = null;
@@ -672,7 +700,16 @@ export function createMapsTools({
     const file = join(cacheDir, TAGS_FILE);
     try {
       const mtime = statSync(file).mtimeMs;
-      if (tagsKept?.mtime !== mtime) tagsKept = { mtime, map: new Map(Object.entries(JSON.parse(readFileSync(file, 'utf8')).photos ?? {})) };
+      if (tagsKept?.mtime !== mtime) {
+        // A file that cannot be read is remembered as none until it changes.
+        let map = null;
+        try {
+          map = new Map(Object.entries(JSON.parse(readFileSync(file, 'utf8')).photos ?? {}));
+        } catch {
+          /* unreadable */
+        }
+        tagsKept = { mtime, map };
+      }
       return tagsKept.map;
     } catch {
       return null;
@@ -1511,8 +1548,10 @@ export function createMapsTools({
     for (const p of plants) if (p.sig && mapped.includes(p.e)) (firstOf.get(p.sig) ? (p.sameAs = firstOf.get(p.sig).e.taxon.name) : firstOf.set(p.sig, p));
     for (const p of plants) if (p.sameAs) (firstOf.get(p.sig).same ??= []).push(p.e.taxon.name);
     // The photo files, fetched while the thumbnails and site names are made.
-    const sendPhotos = clamp(args.send_photos, 0, 8, 0);
+    // The WhatsApp bridge sends at most 5 pictures with an answer.
+    const sendPhotos = clamp(args.send_photos, 0, 5, 0);
     const photosStarted = Date.now();
+    const sheetLoading = args.photo_sheet === true ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
     const filesLoading = sendPhotos
       ? photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').then(f => ({ ...f, ms: Date.now() - photosStarted }))
       : Promise.resolve(null);
@@ -1530,7 +1569,7 @@ export function createMapsTools({
           : null;
     const where = area ? (area.admin ? adminWhere(area.admin) : area.countries.length ? area.countries.join(', ') : area.near ? `${area.near.km} km around ${area.near.lat}, ${area.near.lng}` : 'the box asked') : 'their whole range';
     // With photo files asked, no thumbnails unless asked too: a small answer.
-    const want = clamp(args.photos, 0, 6, sendPhotos ? 0 : 3);
+    const want = clamp(args.photos, 0, 6, sendPhotos || args.photo_sheet === true ? 0 : 3);
     // A photo page that cannot be read now leaves that plant without photos, not the answer without its records.
     let photoFailed = false;
     const photos = await Promise.all(
@@ -1555,7 +1594,7 @@ export function createMapsTools({
         return { plant: e.taxon.name, text: [head, thumbs, credit].join('  \n') };
       })
       .filter(Boolean);
-    const [files, named] = await Promise.all([filesLoading, namedLoading]);
+    const [files, named, sheet] = await Promise.all([filesLoading, namedLoading, sheetLoading]);
     const shownBlocks = [];
     for (const b of blocks) if (shownBlocks.reduce((n, x) => n + x.text.length + 2, 0) + b.text.length <= MARKDOWN_CHARS) shownBlocks.push(b);
     const markdown = shownBlocks.map(b => b.text).join('\n\n');
@@ -1624,11 +1663,12 @@ export function createMapsTools({
             not_near: plants.filter(p => p.status === 'far' && mapped.includes(p.e) && !p.sameAs).map(p => p.e.taxon.name),
           }
         : {}),
+      ...(sheet ?? {}),
       ...(files
         ? {
             images: files.images,
             // The WhatsApp bridge's picture block (tools/whatsapp/bridge-skill): one line per photo, `path | caption`.
-            images_block: files.images.some(im => im.path) ? `[images]\n${files.images.filter(im => im.path).map(im => `${im.path} | ${im.caption.split('\n').join(' — ')}`).join('\n')}\n[/images]` : '',
+            images_block: imagesBlock(files.images),
             ...(files.note ? { images_note: files.note } : {}),
           }
         : {}),
@@ -1642,16 +1682,19 @@ export function createMapsTools({
   }
 
   /**
-   * Photo files to send (WhatsApp), one per plant: the plants recorded in the area first, then those only nearby
-   * (candidates), up to `n`. Per plant, from its first SEND_PAGES gallery pages: a field photo in the area, else a
-   * field photo within `nearbyKm`, else a herbarium sheet in the area, else the nearest field photo; newer first. A
-   * photo another plant has is skipped; one that cannot be fetched gives way to the next. Downloaded and credited
-   * together (server/plant-photos.mjs). -> { images, note }
+   * Photo files to send (WhatsApp), at most `n`: first one per plant (the plants recorded in the area, then those
+   * only nearby, most nearby records first), then a flower of the first plants as a second photo. A plant's photos
+   * from its first SEND_PAGES gallery pages are ranked: a living plant before anything else, a herbarium sheet last;
+   * within that, leaves or the whole plant (photo tags), untagged, then flowers and fruits; then in the area, within
+   * `nearbyKm`, nearer, newer. A photo goes only with its own credit, else the next; downloaded and credited together
+   * (server/plant-photos.mjs). -> { images, note }
    */
-  async function photosToSend(plants, n, area, nearbyKm, m, lang) {
-    const words = SEND_WORDS[lang];
-    const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
-    const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, n);
+  /**
+   * Each plant's gallery photos (its first SEND_PAGES pages, no fallback items), ranked: a living plant before
+   * anything else, a herbarium sheet last; within that, leaves or the whole plant (photo tags), untagged, then flowers
+   * and fruits; then in the area, within `nearbyKm`, nearer, newer. Each photo with inside, away, live, view.
+   */
+  async function rankedFor(picked, area, nearbyKm, m) {
     const tags = photoTags();
     const galleries = await Promise.all(
       picked.map(async p => {
@@ -1662,8 +1705,6 @@ export function createMapsTools({
         return pages.flat().filter(ph => !ph.fallback && Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
       }).map(x => x.catch(() => [])),
     );
-    const used = new Set();
-    let failed = 0;
     const viewOf = ph => {
       const t = tags?.get(/inaturalist[^/]*\/photos\/(\d+)\//.exec(ph.img)?.[1] ?? '');
       // Leaves or the whole plant only over the calibrated threshold; under it, a leaves/habit guess is no view.
@@ -1671,23 +1712,31 @@ export function createMapsTools({
       if (t[1] >= TAG_LEAVES) return t[0] === 'habit' ? 'habit' : 'leaves';
       return t[0] === 'leaves' || t[0] === 'habit' ? null : t[0];
     };
-    const rankedOf = gallery =>
+    const viewRank = ph => (ph.view === 'leaves' || ph.view === 'habit' ? 0 : ph.view === null ? 1 : 2);
+    // Past the measured reach, distance to the area's middle orders the far photos.
+    const box = area?.admin?.bbox ?? area?.bbox ?? null;
+    const middle = box ? { lat: (box[1] + box[3]) / 2, lng: (box[0] + box[2]) / 2 } : area?.near ?? null;
+    return galleries.map(gallery =>
       gallery
         .map(ph => {
           const inside = !area || area.test(ph.lng, ph.lat);
-          const away = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
-          // Living plants first, wherever they are (a field trip needs the plant as it grows); a herbarium
-          // sheet only for a plant with no other photo.
+          const measured = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
+          const away = Number.isFinite(measured) ? measured : middle ? NEAREST_MAX_KM + km(middle, ph) : Infinity;
           const live = ph.field && !ph.herbarium ? 0 : !ph.herbarium ? 1 : 2;
-          const view = viewOf(ph);
-          return { ...ph, inside, away, live, view, loc: inside ? 0 : away <= nearbyKm ? 1 : 2 };
+          return { ...ph, inside, away, live, view: viewOf(ph), loc: inside ? 0 : away <= nearbyKm ? 1 : 2 };
         })
-        .sort((a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0));
-    // The first photo of a plant shows its leaves or the whole plant (how it is found in the field): of the living
-    // plant's photos, those the tags call leaves or habit first, untagged next, flowers and fruits last; then a flower
-    // as a second photo of the plants in order, while `n` allows.
+        .sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b) || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0)),
+    );
+  }
+
+  async function photosToSend(plants, n, area, nearbyKm, m, lang) {
+    const words = SEND_WORDS[lang];
+    const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
+    const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, n);
+    const ranked = await rankedFor(picked, area, nearbyKm, m);
+    const used = new Set();
+    let failed = 0;
     const viewRank = ph => (ph.view === 'leaves' || ph.view === 'habit' ? 0 : ph.view === null ? 1 : 2);
-    const ranked = galleries.map(rankedOf);
     // The first photos: living plant first (its tier decides), within it leaves or whole plant, untagged, then the
     // rest; the seconds (flowers) are chosen after, from what the firsts did not use.
     const firsts = picked.map((p, i) => ({ p, list: [...ranked[i]].sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b)), second: false }));
@@ -1727,37 +1776,7 @@ export function createMapsTools({
     }
     const got = [...firstGot, ...(await Promise.all(seconds.map(fetchOne)))];
     const adminData = area?.admin ? await adminAreas.data() : null;
-    const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
-    const images = got.filter(Boolean).map(({ p, ph, credit, file, second }) => {
-      const name = p.e.taxon.name;
-      // "Mesechites trifidus" for "Mesechites trifida" is the same name: not said.
-      const asRecorded = credit?.as_recorded && ![name, p.e.taxon.gbif_name, ...(p.same ?? [])].filter(Boolean).map(stem).includes(stem(credit.as_recorded)) ? credit.as_recorded : null;
-      const place = credit?.place ?? `${ph.lat.toFixed(3)}, ${ph.lng.toFixed(3)}`;
-      const year = credit?.year ?? ph.year;
-      const by = credit?.photographer ?? credit?.rights_holder ?? null;
-      const link = credit?.link ?? ph.record ?? null;
-      // Outside the area: where the outlines put it (a GBIF locality may name the area across a changed border).
-      const canton = ph.inside || !adminData ? null : cantonOf(ph.lng, ph.lat, adminData);
-      const at = ph.inside ? '' : ` (${words.photoOutside(short)}${canton ? `: ${canton.name}, ${canton.province}` : ''})`;
-      const status = p.status === 'in_area' ? words.inArea(short, p.own.length) : words.candidate(short, p.near.records, nearbyKm);
-      return {
-        path: file.path,
-        caption: [`${ph.herbarium ? `${words.herbariumTag} ` : ''}_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}${words.views[ph.view] ? ` · ${words.views[ph.view]}` : ''}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.herbarium ? `, ${words.herbarium}` : ''}`, link].filter(Boolean).join('\n'),
-        plant: name,
-        status: p.status,
-        view: ph.view,
-        ...(second ? { second: true } : {}),
-        photo_in_area: ph.inside,
-        field_photo: ph.field && !ph.herbarium,
-        herbarium: ph.herbarium,
-        width: file.width,
-        height: file.height,
-        bytes: file.bytes,
-        url: file.url,
-        source_url: ph.img,
-        credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
-      };
-    });
+    const images = got.filter(Boolean).map(({ p, ph, credit, file, second }) => plantImage(plantTile(p, ph, short, nearbyKm, adminData), credit, file, lang, second));
     // Plants that had photos to try and got none credited (not those with no photo in the gallery).
     const missing = picked.filter((_, i) => !firstGot[i] && firsts[i].list.length).map(p => p.e.taxon.name);
     // Seconds that found nothing are not said.
@@ -1766,6 +1785,172 @@ export function createMapsTools({
       missing.length ? `No photo with its credit could be had for ${missing.join(', ')}.` : '',
     ].filter(Boolean).join(' ');
     return { images, note: note || null };
+  }
+
+  /** What a sent plant photo's caption needs, kept with a contact sheet's tile too. */
+  function plantTile(p, ph, short, nearbyKm, adminData) {
+    const canton = ph.inside || !adminData ? null : cantonOf(ph.lng, ph.lat, adminData);
+    return {
+      kind: 'plant',
+      name: p.e.taxon.name,
+      gbif_name: p.e.taxon.gbif_name ?? null,
+      same: p.same ?? null,
+      status: p.status,
+      here: p.own.length,
+      nearby: p.near.records,
+      nearby_km: nearbyKm,
+      where: short,
+      inside: ph.inside,
+      away_km: ph.away <= NEAREST_MAX_KM ? Math.round(ph.away) : null,
+      canton,
+      region: canton ? canton.province : null,
+      herbarium: ph.herbarium,
+      field: ph.field,
+      view: ph.view ?? null,
+      lat: ph.lat,
+      lng: ph.lng,
+      year: ph.year ?? null,
+      record: ph.record ?? null,
+      img: ph.img,
+    };
+  }
+
+  /** A plant photo ready to send: its file and its caption (plant, in the area or candidate, place, credit). */
+  function plantImage(t, credit, file, lang, second = false) {
+    const words = SEND_WORDS[lang];
+    const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
+    // "Mesechites trifidus" for "Mesechites trifida" is the same name: not said.
+    const asRecorded = credit?.as_recorded && ![t.name, t.gbif_name, ...(t.same ?? [])].filter(Boolean).map(stem).includes(stem(credit.as_recorded)) ? credit.as_recorded : null;
+    const place = credit?.place ?? `${t.lat.toFixed(3)}, ${t.lng.toFixed(3)}`;
+    const year = credit?.year ?? t.year;
+    const by = credit?.photographer ?? credit?.rights_holder ?? null;
+    const link = credit?.link ?? t.record ?? null;
+    // Outside the area: where the outlines put it (a GBIF locality may name the area across a changed border).
+    const at = t.inside ? '' : ` (${words.photoOutside(t.where)}${t.canton ? `: ${t.canton.name}, ${t.canton.province}` : ''})`;
+    const status = t.status === 'in_area' ? words.inArea(t.where, t.here) : t.status === 'nearby' ? words.candidate(t.where, t.nearby, t.nearby_km) : null;
+    return {
+      path: file.path,
+      caption: [
+        `${t.herbarium ? `${words.herbariumTag} ` : ''}_${t.name}_${t.same ? ` (= ${t.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''}${status ? ` — ${status}` : ''}${words.views[t.view] ? ` · ${words.views[t.view]}` : ''}`,
+        `${[place, year].filter(Boolean).join(', ')}${at}`,
+        `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${t.herbarium ? `, ${words.herbarium}` : ''}`,
+        link,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      plant: t.name,
+      status: t.status,
+      view: t.view,
+      ...(second ? { second: true } : {}),
+      photo_in_area: t.inside,
+      field_photo: t.field && !t.herbarium,
+      herbarium: t.herbarium,
+      width: file.width,
+      height: file.height,
+      bytes: file.bytes,
+      url: file.url,
+      source_url: t.img,
+      credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
+    };
+  }
+
+  /** The `images_block` of the WhatsApp bridge: one line per photo, `path | caption` (its lines joined by « — »). */
+  const imagesBlock = images => (images.some(im => im.path) ? `[images]\n${images.filter(im => im.path).map(im => `${im.path} | ${im.caption.split('\n').join(' — ')}`).join('\n')}\n[/images]` : '');
+
+  /**
+   * Contact sheets of the plants' candidate photos (server/photo-sheets.mjs) for the chat to look at and pick from:
+   * the plants recorded in the area, then those only nearby; per plant its photos ranked as photosToSend ranks them
+   * (living plant, view tags when there are, place), one flower among them when it has one. At most 2 sheets of 9.
+   */
+  async function plantSheets(plants, area, nearbyKm, m, lang) {
+    if (!sheets) return { error: 'Contact sheets are off on this server (no folder for them).' };
+    const words = SEND_WORDS[lang];
+    const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
+    const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, 2 * PER_SHEET);
+    if (!picked.length) return { photo_sheets: [], photo_sheet_note: `No host plant recorded in or near ${short}: no photos to choose from.` };
+    const ranked = await rankedFor(picked, area, nearbyKm, m);
+    const adminData = area?.admin ? await adminAreas.data() : null;
+    // Up to 2 sheets of 9: one plant fills a sheet, two get a sheet each, more share them.
+    const k = Math.min(PER_SHEET, Math.max(2, Math.floor((2 * PER_SHEET) / picked.length)));
+    const seen = new Set();
+    const tiles = [];
+    // By place, as the chat will judge them: the living plant first, then in the area, nearer, newer.
+    const byPlace = (a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0);
+    for (const [i, p] of picked.entries()) {
+      const list = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
+      const best = list.slice(0, k);
+      // The photo tags help only to make sure the nearest leaves-or-plant photo and a flower are among them.
+      for (const want of [ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit'), ph => ph.live === 0 && ph.view === 'flower']) {
+        const extra = list.find(want);
+        if (extra && !best.includes(extra) && best.length === k && k >= 3) best.splice(best.findLastIndex(ph => !want(ph) && ph !== best[0]), 1, extra);
+      }
+      for (const ph of best) {
+        seen.add(ph.img);
+        const t = plantTile(p, ph, short, nearbyKm, adminData);
+        const region = cantonOf(ph.lng, ph.lat, adminData)?.province ?? area?.regionOf?.(ph.lng, ph.lat) ?? null;
+        const where = ph.inside
+          ? (t.canton?.name ?? cantonOf(ph.lng, ph.lat, adminData)?.name ?? short)
+          : `${ph.away <= NEAREST_MAX_KM ? `${Math.round(ph.away)} km` : `>${NEAREST_MAX_KM} km`}${region ? `, ${region}` : ''}`;
+        tiles.push({
+          ...t,
+          // The chat judges what a tile shows; a model's guess is not put in the caption.
+          view: null,
+          thumb: /inaturalist[^/]*\/photos\/\d+\//.test(ph.img) ? ph.img.replace(/\/(original|large)\./, '/medium.') : proxyUrl(ph.img).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`),
+          line1: `${t.name}${p.status === 'nearby' ? ` (${words.candidateShort})` : ''}`,
+          line2: [where, ph.year, ph.herbarium ? words.herbariumShort : null].filter(Boolean).join(' · '),
+        });
+      }
+    }
+    const started = Date.now();
+    const made = [];
+    for (let i = 0; i < tiles.length && made.length < 2; i += PER_SHEET) made.push(sheets.make(tiles.slice(i, i + PER_SHEET), { first: i + 1 }));
+    const out = await Promise.all(made);
+    return {
+      photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
+      photo_sheet_note: 'Look at each sheet (read its path), choose per plant the tile that best shows its leaves or the whole plant (how it is found in the field), and one with its flower if there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5).',
+      photo_sheet_ms: Date.now() - started,
+    };
+  }
+
+  /** send_sheet_photos: the tiles chosen on contact sheets, downloaded (about 2048 px) and credited, ready to send. */
+  async function sendSheetPhotos(args) {
+    if (!sheets) return { error: 'Contact sheets are off on this server.' };
+    const ids = list(args.sheets ?? args.sheet);
+    const all = ids.flatMap(id => sheets.tilesOf(id) ?? []);
+    if (!all.length) return { error: 'No such contact sheet: give the `id` of a sheet from photo_sheets.' };
+    const numbers = [...new Set((Array.isArray(args.tiles) ? args.tiles : [args.tiles]).map(Number).filter(Number.isInteger))].slice(0, 5);
+    const chosen = numbers.map(n => all.find(t => t.n === n)).filter(Boolean);
+    if (!chosen.length) return { error: `None of tiles ${numbers.join(', ')} is on these sheets (1–${all.at(-1).n}).` };
+    const lang = args.lang === 'es' ? 'es' : 'en';
+    const started = Date.now();
+    const seen = new Set();
+    const got = await Promise.all(
+      chosen.map(async t => {
+        try {
+          if (t.kind === 'specimen') {
+            const file = await photoFiles.photo(t.full);
+            return { path: file.path, caption: t.caption, cam_id: t.cam_id, width: file.width, height: file.height, bytes: file.bytes, url: file.url };
+          }
+          const id = /(\d+)\/?$/.exec(t.record ?? '')?.[1];
+          const [credit, file] = await Promise.all([photoFiles.credit(id, t.img), photoFiles.photo(t.img)]);
+          if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
+          // A second photo of a plant already sent is its second.
+          const second = seen.has(t.name);
+          seen.add(t.name);
+          return plantImage(t, credit, file, lang, second);
+        } catch (e) {
+          return { tile: t.n, error: e.message === 'no credit' ? 'its credit (GBIF record of the photo) could not be had' : e.message };
+        }
+      }),
+    );
+    const images = got.filter(g => !g.error);
+    const failed = got.filter(g => g.error).map(g => ({ tile: g.tile, error: g.error }));
+    return {
+      images,
+      images_block: imagesBlock(images),
+      ...(failed.length ? { failed, failed_note: 'Pick another tile of the same plant for these.' } : {}),
+      timing_ms: Date.now() - started,
+    };
   }
 
   /** The associations asked (`butterfly` or `plant`, confidence): { got, matched, kept, okConfidence, rank, butterfly } or { error }. */
@@ -2070,7 +2255,7 @@ export function createMapsTools({
     return cut.length ? { ...out, cut: { left_out: cut, note: 'To keep the answer within its size: ask without an area for all the associations, or with `plant` or a smaller area for the rest.' } } : out;
   }
 
-  function specimens(args) {
+  async function specimens(args) {
     const { rows, photos } = collection();
     const cams = new Set(list(args.cam_ids).map(c => c.replace(/[\s_-]+/g, '').toUpperCase()));
     const sp = new Set(list(args.species).map(s => fold(s).split(' ').slice(0, 2).join(' ')));
@@ -2163,7 +2348,34 @@ export function createMapsTools({
     // models' first answer: the answer stays well within the tools' budget (server/tool-budget.mjs).
     const named = key => [...new Set(shown.map(key).filter(Boolean))];
     const models = { species: named(s => s.model?.species_model), sex: named(s => s.model?.sex_model), envelope: named(s => s.envelope?.model) };
+    // A contact sheet of the specimens' photos (dorsal first) for the chat to look at and pick from (send_sheet_photos).
+    let sheet = null;
+    if (args.photo_sheet === true) {
+      if (!sheets) sheet = { photo_sheet_error: 'Contact sheets are off on this server.' };
+      else {
+        const tiles = shown
+          .map(sp => ({ sp, ph: sp.photos.dorsal ?? sp.photos.ventral }))
+          .filter(x => x.ph)
+          .slice(0, 2 * PER_SHEET)
+          .map(({ sp, ph }) => {
+            const facts = [sp.sex, sp.locality, sp.country, sp.date, sp.elevation_m !== null ? `${sp.elevation_m} m` : null].filter(Boolean);
+            return {
+              kind: 'specimen',
+              cam_id: sp.cam_id,
+              thumb: lh3(ph.file, TILE),
+              full: lh3(ph.file, 2048),
+              caption: [`_${sp.species ?? '?'}_${sp.subspecies ? ` ${sp.subspecies}` : ''} — ${sp.cam_id}`, facts.join(', '), 'Ithomiini Ikiam (project collection)'].join('\n'),
+              line1: `${sp.cam_id} ${sp.species ?? ''}`.trim(),
+              line2: [sp.sex, sp.locality].filter(Boolean).join(', '),
+            };
+          });
+        const out = [];
+        for (let i = 0; i < tiles.length; i += PER_SHEET) out.push(sheets.make(tiles.slice(i, i + PER_SHEET), { first: i + 1 }));
+        sheet = { photo_sheets: (await Promise.all(out)).map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })), photo_sheet_note: 'Look at each sheet (read its path), choose the tiles to send, then send_sheet_photos with `sheets` and `tiles`.' };
+      }
+    }
     return {
+      ...(sheet ?? {}),
       found: found.length,
       shown: shown.length,
       specimens: shown.map((s, i) => compactSpecimen(s, i < thumbs)),
@@ -2182,7 +2394,8 @@ export function createMapsTools({
         if (name === 'maps_species') return await species(args);
         if (name === 'host_plants') return await hostPlants(args);
         if (name === 'host_plant_sites') return await plantSitesNear(args);
-        if (name === 'gallery_specimens') return specimens(args);
+        if (name === 'send_sheet_photos') return await sendSheetPhotos(args);
+        if (name === 'gallery_specimens') return await specimens(args);
         if (name === 'maps_snapshot') return await snapshot(args);
       } catch (e) {
         return { error: e.message };
