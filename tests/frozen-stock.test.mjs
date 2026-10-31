@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countFrozen, frozenWhyNot, genusOf, sexOf, speciesOf } from '../server/frozen-stock.mjs';
+import { countFrozen, frozenWhyNot, genusOf, sexOf, speciesOf, syncedAt } from '../server/frozen-stock.mjs';
 
 const HEAD = ['Pagyris euryanassa', 'Mechanitis polymnia', 'Mechanitis lysimnia', 'Melinaea menophilus', 'Melinaea mothone', 'Oleria onega'];
 const C = values => ({ sheet: 'Collection_data', values: { Release_Collect: 'Collected_Preserved', Preservation_medium: 'Flash frozen', ...values } });
@@ -162,4 +162,13 @@ test('countFrozen: a CAM gone in one sheet is gone; CAM spelled with a space; ge
   assert.equal(out.gone, 1);
   assert.equal(out.counted, 3);
   assert.equal(out.unmapped.rows, 2);
+});
+
+test('syncedAt: the last check that found the workbook unchanged, else the last sync that read it', () => {
+  const store = (syncStatus, setting = null) => ({ syncStatus, getSetting: () => setting });
+  assert.equal(syncedAt(store({ state: 'ok', lastSync: 'A', checkedAt: 'B', unchanged: true })), 'B');
+  assert.equal(syncedAt(store({ state: 'stale', lastSync: 'A', checkedAt: 'B' })), 'A');
+  assert.equal(syncedAt(store({ state: 'error', lastSync: 'A', checkedAt: 'B' })), 'A');
+  assert.equal(syncedAt(store({}, 'S')), 'S');
+  assert.equal(syncedAt(store({})), null);
 });

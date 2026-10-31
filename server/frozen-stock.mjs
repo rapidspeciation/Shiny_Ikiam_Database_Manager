@@ -201,5 +201,13 @@ export async function frozenStock(store, identifierDir) {
   return promise;
 }
 
-/** When the local copy last read the workbook (shown as the inventory's date), or null. */
-export const syncedAt = store => store.getSetting?.('lastSync') ?? null;
+/**
+ * When the local copy was last known to match the workbook (the inventory's date), or null: the last sync's
+ * check (a sync that finds the workbook unchanged only moves checkedAt), else the last sync that read it
+ * (lastSync, also after a restart or when the last sync was stale).
+ */
+export function syncedAt(store) {
+  const status = store.syncStatus ?? {};
+  if (status.checkedAt && status.state !== 'stale' && status.state !== 'error') return status.checkedAt;
+  return status.lastSync ?? store.getSetting?.('lastSync') ?? null;
+}
