@@ -4,12 +4,15 @@
 // at once; all of one answer's are fetched together.
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeCacheFile } from './cache-write.mjs';
 
 export const MAX_PX = 2048;
 const GBIF_API = 'https://api.gbif.org/v1/occurrence/';
 const TIMEOUT_MS = 20_000;
+// A photo larger than this is not read further (a 2048 px JPEG is 0.2-3 MB).
+export const MAX_BYTES = 12 * 1024 * 1024;
 
 /** The image proxy's JPEG of a photo, at most MAX_PX on its long side. */
 export const proxyUrl = img => `https://wsrv.nl/?url=${encodeURIComponent(img)}&w=${MAX_PX}&h=${MAX_PX}&fit=inside&we&output=jpg&q=82`;
@@ -49,9 +52,17 @@ export function jpegSize(buf) {
   return null;
 }
 
-/** The credit of one photo from its GBIF record (`media` entry matching the image), compact. */
+/** An iNaturalist photo's number (its sizes share it), else the URL itself. */
+const photoKey = url => /inaturalist[^/]*\/photos\/(\d+)\//.exec(String(url ?? ''))?.[1] ?? String(url ?? '');
+
+/**
+ * The credit of one photo from its GBIF record, compact. Only the record's `media` entry of this photo speaks for it
+ * (a record's photos, and its licence, can differ per photo): without one, `matched` is false and the photographer
+ * and licence are null, never borrowed from another photo or the record.
+ */
 export function creditOf(record, img) {
-  const media = (record?.media ?? []).find(m => m.identifier === img) ?? (record?.media ?? [])[0] ?? {};
+  const found = (record?.media ?? []).find(m => m.identifier && photoKey(m.identifier) === photoKey(img));
+  const media = found ?? {};
   // iNaturalist's verbatim places end in the country code (", EC"): dropped, the country follows.
   const parts = [record?.locality || record?.verbatimLocality || record?.municipality, record?.stateProvince, record?.country]
     .flatMap(v => String(v ?? '').split(/,\s*/))
@@ -60,10 +71,11 @@ export function creditOf(record, img) {
   // "Tena, Napo Prov., Ecuador": a later part already inside an earlier one is dropped.
   const place = parts.filter((p, i) => !parts.slice(0, i).some(q => q.toLowerCase().includes(p.toLowerCase().replace(/ prov\.?$/, '')))).join(', ');
   return {
-    photographer: String(media.creator || media.rightsHolder || record?.recordedBy || record?.rightsHolder || '').trim() || null,
-    licence: licenceName(media.license || record?.license),
-    licence_url: media.license || record?.license || null,
-    rights_holder: String(media.rightsHolder || record?.rightsHolder || '').trim() || null,
+    matched: !!found,
+    photographer: String(media.creator || media.rightsHolder || '').trim() || null,
+    licence: licenceName(media.license),
+    licence_url: media.license || null,
+    rights_holder: String(media.rightsHolder || '').trim() || null,
     place: place.length > 120 ? `${place.slice(0, 117)}…` : place || null,
     year: Number.isFinite(record?.year) ? record.year : null,
     as_recorded: record?.species || record?.scientificName || null,
@@ -116,7 +128,7 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
       const full = await r.json();
       const kept = Object.fromEntries(KEEP.filter(k => full[k] !== undefined).map(k => [k, full[k]]));
       counts.credit_fetched++;
-      if (file) writeAtomic(file, JSON.stringify(kept));
+      if (file) writeCacheFile(file, JSON.stringify(kept));
       return kept;
     })();
     credits.set(key, loading);
@@ -147,7 +159,7 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
       const get = async u => {
         const r = await fetchImpl(u, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
         if (!r.ok) throw new Error(`The photo's site answered ${r.status}`);
-        const buf = Buffer.from(await r.arrayBuffer());
+        const buf = await capped(r);
         return { buf, size: jpegSize(buf) };
       };
       let got = await get(url);
@@ -159,7 +171,7 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
       }
       if (!got.size) throw new Error('Not a JPEG');
       counts.photo_fetched++;
-      if (path) writeAtomic(path, got.buf);
+      if (path) writeCacheFile(path, got.buf);
       return { path, bytes: got.buf.length, ...got.size, url: used, cached: false };
     })();
     photos.set(img, loading);
@@ -174,8 +186,19 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
   };
 }
 
-function writeAtomic(file, data) {
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, data);
-  renameSync(tmp, file);
+/** A response's bytes, given up past MAX_BYTES (the download is cancelled). */
+async function capped(response) {
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) {
+    await response.body?.cancel();
+    throw new Error('Photo too large');
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const parts = [];
+  let size = 0;
+  for await (const part of response.body) {
+    size += part.length;
+    if (size > MAX_BYTES) throw new Error('Photo too large');
+    parts.push(part);
+  }
+  return Buffer.concat(parts.map(p => Buffer.from(p)));
 }

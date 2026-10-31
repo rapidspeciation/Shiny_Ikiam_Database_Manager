@@ -168,6 +168,9 @@ test('area names: province before canton, a canton by name, unknown names, a dow
   assert.deepEqual(Object.values(await areas.area({ canton: 'Pastaza' })).slice(0, 3), ['canton', 'Pastaza', 'Pastaza']);
   assert.equal((await areas.area({ canton: 'Tena' })).test(NAPO_NORTH.lng, NAPO_NORTH.lat), false);
   assert.equal((await areas.area('provincia de Sucumbios')).name, 'Sucumbíos');
+  // Names with «de» in them.
+  assert.deepEqual(Object.values(await areas.area({ canton: 'La Joya de los Sachas' })).slice(0, 3), ['canton', 'La Joya de los Sachas', 'Orellana']);
+  assert.equal((await areas.area('cantón La Joya de los Sachas, provincia de Orellana')).name, 'La Joya de los Sachas');
   assert.match((await areas.area('Narnia')).error, /No province or canton/);
   const down = createAdminAreas({ fetchImpl: async () => new Response('down', { status: 503 }) });
   assert.match((await down.area('Napo')).error, /outlines could not be read: .*503/);
@@ -184,6 +187,11 @@ test('photo helpers: about 2048 px, licences, JPEG size, the credit from a GBIF 
   assert.equal(jpegSize(Buffer.from('not a jpeg')), null);
   const c = creditOf(GBIF[1], 'https://inaturalist-open-data.s3.amazonaws.com/photos/11/original.jpg');
   assert.deepEqual([c.photographer, c.licence, c.place, c.year, c.link], ['Ana Pérez', 'CC BY 4.0', 'Tena, Napo, Ecuador', 2019, 'https://www.inaturalist.org/observations/101']);
+  // Another size of the same iNaturalist photo is the same photo; a photo the record does not list gets no
+  // photographer or licence (never the record's or another photo's).
+  assert.equal(creditOf(GBIF[1], 'https://inaturalist-open-data.s3.amazonaws.com/photos/11/large.jpg').photographer, 'Ana Pérez');
+  const other = creditOf(GBIF[1], 'https://inaturalist-open-data.s3.amazonaws.com/photos/99/original.jpg');
+  assert.deepEqual([other.matched, other.photographer, other.licence], [false, null, null]);
   // iNaturalist's ", EC" is dropped.
   assert.equal(creditOf(GBIF[2], '').place, 'Lumbaqui, Sucumbíos, Ecuador');
 });
@@ -255,6 +263,25 @@ test('host_plants with an area: in the area, only nearby (candidates) or far, an
   assert.ok(!web2.calls.some(u => /chunks|api\.gbif|amazonaws|wsrv|geoBoundaries/.test(u)), web2.calls.join('\n'));
   assert.match(again.images[1].caption, /CANDIDATE: no record in Napo, 2 within 50 km/);
   assert.equal(readdirSync(join(dir, 'plant-photos', 'photos')).length, 2);
+});
+
+test('host_plants with send_photos: a fallback photo is never sent; a photo without its credit gives way to the next', async () => {
+  const web = fakeWeb();
+  const page = 'host_plants/gallery/mite/p1.json';
+  const saved = FILES[page];
+  // A record without a photo shown with a photo from elsewhere, placed in Tena: skipped.
+  FILES[page] = { items: [{ ...saved.items[1], image_url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/50/original.jpg', image_is_fallback: true }, ...saved.items] };
+  try {
+    // GBIF does not answer for the Tena photo's record: the Sucumbíos photo, with its credit, goes instead.
+    const noGbif1 = async url => (/occurrence\/1$/.test(url) ? new Response('down', { status: 503 }) : web.fetchImpl(url));
+    const out = await createMapsTools({ fetchImpl: noGbif1, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1 });
+    assert.equal(out.images.length, 1);
+    assert.equal(out.images[0].source_url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg');
+    assert.equal(out.images[0].credit.photographer, 'Luis');
+    assert.match(out.images_note, /could not be fetched or credited/);
+  } finally {
+    FILES[page] = saved;
+  }
 });
 
 test('host_plants with send_photos: a photo that cannot be had gives way to the next', async () => {

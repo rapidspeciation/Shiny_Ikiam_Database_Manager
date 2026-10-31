@@ -4,8 +4,9 @@
 // (ecuador-admin.json), then read from there; in memory after the first question. A province is the union of its
 // cantons, so provinces and cantons share the same edges; a canton's province is read from ADM1 at points inside it.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeCacheFile } from './cache-write.mjs';
 import { countryOfPoint, inBox } from './country-outlines.mjs';
 
 const RELEASE = '9469f09';
@@ -141,14 +142,17 @@ export function findArea(asked, data) {
   if (!raw) return { error: 'Name a province or canton of Ecuador: area {province: "Napo"} or {canton: "Tena"}.' };
   wantsCanton ||= /\bcanton\b/.test(raw);
   wantsProvince ||= /\bprovincia\b|\bprovince\b|\bprov\b/.test(raw);
-  const clean = raw
-    .replace(/\b(provincia|province|prov|canton|del|de la|de|of|the|ecuador)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const [first, second] = clean.split(',').map(s => s.trim());
-  const province = data.provinces.get(first);
-  let cantons = data.cantons.filter(c => fold(c.name) === first);
-  if (second) cantons = cantons.filter(c => fold(c.province) === second);
+  // The words around a name ("provincia de", "cantón"), taken out of what was asked and of the names alike, so
+  // "Baños de Agua Santa" or "La Joya de los Sachas" still match.
+  const clean = v =>
+    fold(v)
+      .replace(/\b(provincia|province|prov|canton|del|de la|de|of|the|ecuador)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const [first, second] = clean(raw).split(',').map(s => s.trim());
+  const province = [...data.provinces.values()].find(p => clean(p.name) === first);
+  let cantons = data.cantons.filter(c => clean(c.name) === first);
+  if (second) cantons = cantons.filter(c => clean(c.province) === second);
   const asProvince = p => ({ level: 'province', name: p.name, province: p.name, own: p.cantons, bbox: p.bbox });
   const asCanton = c => ({ level: 'canton', name: c.name, province: c.province, own: [c], bbox: c.bbox });
   let area = null;
@@ -156,14 +160,14 @@ export function findArea(asked, data) {
   if (province && !wantsCanton && !(second && cantons.length)) {
     area = asProvince(province);
     if (cantons.length) also = `${cantons[0].name} is also a canton (of ${cantons.map(c => c.province).join(', ')}): ask {canton: "${cantons[0].name}"} for it.`;
-  } else if (cantons.length === 1 && !wantsProvince) area = asCanton(cantons[0]);
+  } else if (cantons.length === 1 && (!wantsProvince || wantsCanton || second)) area = asCanton(cantons[0]);
   else if (cantons.length > 1) return { error: `Several cantons are named ${cantons[0].name}: ${cantons.map(c => `${c.name}, ${c.province}`).join('; ')}. Give its province too.` };
   else if (province) area = asProvince(province);
   if (!area) {
-    const starts = [...data.provinces.values()].filter(p => fold(p.name).startsWith(first)).map(p => p.name);
-    const cantonStarts = data.cantons.filter(c => fold(c.name).startsWith(first)).map(c => `${c.name} (${c.province})`);
-    if (starts.length === 1 && !wantsCanton) area = asProvince(data.provinces.get(fold(starts[0])));
-    else return { error: `No province or canton of Ecuador is called ${text}.`, suggestions: [...starts, ...cantonStarts].slice(0, 8) };
+    const starts = [...data.provinces.values()].filter(p => clean(p.name).startsWith(first));
+    const cantonStarts = data.cantons.filter(c => clean(c.name).startsWith(first)).map(c => `${c.name} (${c.province})`);
+    if (starts.length === 1 && !wantsCanton) area = asProvince(starts[0]);
+    else return { error: `No province or canton of Ecuador is called ${text}.`, suggestions: [...starts.map(p => p.name), ...cantonStarts].slice(0, 8) };
   }
   const keys = new Set(area.own.map(c => c.key));
   const own = { countries: area.own.map(c => ({ name: c.key, bbox: c.bbox, polygons: c.polygons, boxes: c.boxes })) };
@@ -222,11 +226,7 @@ export function createAdminAreas({ dir = null, fetchImpl = fetch } = {}) {
     const [adm2, adm1] = await Promise.all([get(BOUNDARY_URLS.ADM2), get(BOUNDARY_URLS.ADM1)]);
     const json = buildAdmin(adm2, adm1);
     if (!json.cantons.length) throw new Error('The boundary files hold no cantons');
-    if (file) {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(json));
-      renameSync(`${file}.${process.pid}.tmp`, file);
-    }
+    if (file) writeCacheFile(file, JSON.stringify(json));
     return indexAdmin(json);
   }
   const data = () => {

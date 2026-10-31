@@ -13,8 +13,9 @@
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeCacheFile } from './cache-write.mjs';
 import { driveIdOf, specimenName } from './photo-links.mjs';
 import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-outlines.mjs';
 import { unreliableFor } from './sex-check.mjs';
@@ -993,7 +994,7 @@ export function createMapsTools({
   }
 
   async function species(args) {
-    if (!list(args.country).length && !Array.isArray(args.bbox) && !args.near && !args.area) return { error: 'Give a region: `area`, `country`, `bbox` or `near`.' };
+    if (!list(args.country).length && !Array.isArray(args.bbox) && !args.near && !(args.area && (typeof args.area === 'object' || text(args.area)))) return { error: 'Give a region: `area`, `country`, `bbox` or `near`.' };
     const sources = sourcesOf(args);
     const [admin, { records, freshness }] = await Promise.all([areaOf(args), points(sources)]);
     if (admin?.error) return admin;
@@ -1133,6 +1134,7 @@ export function createMapsTools({
     const v = encodeURIComponent(text(generatedAt) || 'none');
     if (v === plantVersion) return;
     for (const key of files.keys()) if (key.startsWith(HP) && key.includes('?v=')) files.delete(key);
+    for (const key of plantPoints.keys()) if (!key.startsWith(`${v}|`)) plantPoints.delete(key);
     plantVersion = v;
   }
   const plantLayers = () =>
@@ -1179,6 +1181,8 @@ export function createMapsTools({
           lng: Number(p.lng),
           year: yearOf(p.observation_date),
           field: p.photo_context === 'field',
+          // A record without a photo shown with another record's photo of the plant: its place and credit are not the photo's.
+          fallback: p.image_is_fallback === true,
           source: intern(text(p.source)),
         })),
     );
@@ -1215,7 +1219,10 @@ export function createMapsTools({
     // circle's rim. A lower bound first (the distance to the area's box), so most points cost one haversine.
     const box = admin?.bbox ?? bbox;
     const toBox = (lng, lat) => (box ? km({ lat: Math.min(box[3], Math.max(box[1], lat)), lng: Math.min(box[2], Math.max(box[0], lng)) }, { lat, lng }) : 0);
-    const distance = admin
+    // One kind of area only: with two (a province and a box), "how far" has no single answer.
+    const distance = [admin, bbox, near, countries.length].filter(Boolean).length !== 1
+      ? null
+      : admin
       ? (lng, lat) => (toBox(lng, lat) > NEAREST_MAX_KM ? Infinity : admin.distanceKm(lng, lat))
       : near && !bbox && !countries.length
         ? (lng, lat) => Math.max(0, km(near, { lat, lng }) - near.km)
@@ -1379,15 +1386,10 @@ export function createMapsTools({
             });
           }),
         );
-      if (dir) mkdirSync(dir, { recursive: true });
       fromChunks.forEach((slug, k) => {
         plantPoints.set(`${plantVersion}|${slug}`, lists[k]);
         out.set(slug, lists[k]);
-        if (dir) {
-          const file = join(dir, `${slug.replace(/[^\w.-]/g, '_')}.json`);
-          writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(lists[k]));
-          renameSync(`${file}.${process.pid}.tmp`, file);
-        }
+        if (dir) writeCacheFile(join(dir, `${slug.replace(/[^\w.-]/g, '_')}.json`), JSON.stringify(lists[k]));
       });
     }
     return { points: out, from };
@@ -1600,7 +1602,7 @@ export function createMapsTools({
         ? {
             images: files.images,
             // The WhatsApp bridge's picture block (tools/whatsapp/bridge-skill): one line per photo, `path | caption`.
-            images_block: files.images.length ? `[images]\n${files.images.map(im => `${im.path} | ${im.caption.split('\n').join(' — ')}`).join('\n')}\n[/images]` : '',
+            images_block: files.images.some(im => im.path) ? `[images]\n${files.images.filter(im => im.path).map(im => `${im.path} | ${im.caption.split('\n').join(' — ')}`).join('\n')}\n[/images]` : '',
             ...(files.note ? { images_note: files.note } : {}),
           }
         : {}),
@@ -1630,7 +1632,7 @@ export function createMapsTools({
         if (!path) return [];
         const index = (await galleryIndex(path)).value;
         const pages = await Promise.all(index.pages.slice(0, SEND_PAGES).map(page => galleryPage(page).then(r => r.value)));
-        return pages.flat().filter(ph => Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
+        return pages.flat().filter(ph => !ph.fallback && Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
       }).map(x => x.catch(() => [])),
     );
     const used = new Set();
@@ -1653,10 +1655,12 @@ export function createMapsTools({
           used.add(ph.img);
           tries.push(ph);
         }
+        // A photo goes only with its own credit (its GBIF record's media entry): otherwise the next one.
         for (const ph of tries) {
           try {
             const id = /(\d+)\/?$/.exec(ph.record ?? '')?.[1];
-            const [credit, file] = await Promise.all([photoFiles.credit(id, ph.img).catch(() => null), photoFiles.photo(ph.img)]);
+            const [credit, file] = await Promise.all([photoFiles.credit(id, ph.img), photoFiles.photo(ph.img)]);
+            if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
             return { p, ph, credit, file };
           } catch {
             failed++;
@@ -1694,7 +1698,12 @@ export function createMapsTools({
         credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
       };
     });
-    return { images, note: failed ? `${failed} photo(s) could not be fetched; the next best was used.` : null };
+    const missing = picked.filter((_, i) => !got[i]).map(p => p.e.taxon.name);
+    const note = [
+      failed ? `${failed} photo(s) could not be fetched or credited (GBIF's record of the photo): the next best was used.` : '',
+      missing.length ? `No credited photo could be had now for ${missing.join(', ')}.` : '',
+    ].filter(Boolean).join(' ');
+    return { images, note: note || null };
   }
 
   /** The associations asked (`butterfly` or `plant`, confidence): { got, matched, kept, okConfidence, rank, butterfly } or { error }. */
