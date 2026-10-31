@@ -42,7 +42,7 @@ import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevisi
 import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
-import { frozenStock } from './frozen-stock.mjs';
+import { frozenStock, syncedAt } from './frozen-stock.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -1122,8 +1122,9 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/frozen-stock') {
         if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
         const stock = await frozenStock(store, config.identifierDir);
-        const headers = { etag: `"${stock.version}"`, 'cache-control': 'private, no-cache' };
-        if ((req.headers['if-none-match'] ?? '').split(/\s*,\s*/).includes(headers.etag)) {
+        // x-synced-at: when the copy last read the workbook, on a 304 too (the page dates the inventory by it).
+        const headers = { etag: `"${stock.version}"`, 'cache-control': 'private, no-cache', 'x-synced-at': syncedAt(store) ?? '' };
+        if ((req.headers['if-none-match'] ?? '').split(/\s*,\s*/).some(t => t.replace(/^W\//, '') === headers.etag)) {
           res.writeHead(304, headers);
           return res.end();
         }

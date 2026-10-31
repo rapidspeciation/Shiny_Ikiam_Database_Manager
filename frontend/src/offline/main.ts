@@ -124,6 +124,7 @@ $('loginForm').addEventListener('submit', async e => {
     $<HTMLInputElement>('pass').value = ''
     await checkSession()
     await listFiles()
+    await refreshStock()
   } catch (err) {
     show('loginErr', `No se pudo entrar: ${(err as Error).message}`)
   }
@@ -189,26 +190,29 @@ async function listFiles() {
 
 // ---------------------------------------------------------------- the flash-frozen stock (server/frozen-stock.mjs)
 
-/** The snapshot as kept with the models: its ETag and when the server last confirmed it (x-checked-at). */
+/**
+ * The snapshot as kept with the models: its ETag, when the server's copy last read the workbook (x-synced-at:
+ * the inventory's date) and when this phone last asked (x-checked-at).
+ */
 const STOCK_KEY = () => url('./models/frozen-stock.json')
 let stock: FrozenStock | null = null
-let stockCheckedAt: string | null = null
+let stockAsOf: string | null = null
 
-function showStock(checkedAt: string | null) {
-  stockCheckedAt = checkedAt
-  show('stockInfo', stock ? `${stockDate(checkedAt || stock.generatedAt)} (${Object.keys(stock.species).length} especies)` : null)
-  diag.stock = stock ? { version: stock.version, generatedAt: stock.generatedAt, checkedAt } : null
+function showStock(syncedAt: string | null, checkedAt: string | null) {
+  stockAsOf = stock ? syncedAt || stock.generatedAt : null
+  const withStock = stock ? Object.values(stock.species).filter(c => c.total).length : 0
+  show('stockInfo', stock ? `${stockDate(stockAsOf!)} (${withStock} especies con congelados)` : null)
+  diag.stock = stock ? { version: stock.version, generatedAt: stock.generatedAt, syncedAt, checkedAt } : null
 }
 
 async function loadStock() {
   const r = await (await caches.open(CACHE)).match(STOCK_KEY())
-  if (!r) return
   try {
-    stock = (await r.json()) as FrozenStock
-    showStock(r.headers.get('x-checked-at'))
+    stock = r ? ((await r.json()) as FrozenStock) : null
   } catch {
     stock = null
   }
+  showStock(r?.headers.get('x-synced-at') || null, r?.headers.get('x-checked-at') || null)
 }
 
 /** Asked again whenever online (cheap: the ETag answers 304 when nothing changed). Never throws. */
@@ -218,10 +222,17 @@ async function refreshStock() {
     const cache = await caches.open(CACHE)
     const have = await cache.match(STOCK_KEY())
     const etag = have?.headers.get('etag')
-    const r = await fetch(url('../api/frozen-stock'), { credentials: 'same-origin', cache: 'no-store', headers: etag ? { 'if-none-match': etag } : {} })
+    // A weak signal in the field must not hold the page up: given up after 10 s (the kept copy stays).
+    const r = await fetch(url('../api/frozen-stock'), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: etag ? { 'if-none-match': etag } : {},
+      signal: AbortSignal.timeout(10_000),
+    })
     const now = new Date().toISOString()
+    const synced = r.headers.get('x-synced-at') || ''
     const keep = (body: string, tag: string) =>
-      cache.put(STOCK_KEY(), new Response(body, { headers: { 'content-type': 'application/json', etag: tag, 'x-checked-at': now } }))
+      cache.put(STOCK_KEY(), new Response(body, { headers: { 'content-type': 'application/json', etag: tag, 'x-synced-at': synced, 'x-checked-at': now } }))
     if (r.status === 304 && have) await keep(await have.text(), etag!)
     else if (r.ok) await keep(await r.text(), r.headers.get('etag') ?? '')
     else return
@@ -352,6 +363,7 @@ $('remove').addEventListener('click', async () => {
   if (!confirm('¿Borrar los modelos guardados en este teléfono?')) return
   dropSessions()
   await caches.delete(CACHE)
+  await loadStock() // gone with the models
   await refreshReady()
 })
 
@@ -527,7 +539,7 @@ async function identify(photo: Photo) {
     const tr = document.createElement('tr')
     tr.innerHTML = `<td><b>Total por foto</b></td><td class="num"><b>${(total / 1000).toFixed(2)} s</b></td>`
     $('times').append(tr)
-    show('stockNote', stock ? stockDate(stockCheckedAt || stock.generatedAt) : 'Sin inventario de congelados: abra esta página una vez con conexión.')
+    show('stockNote', stock ? stockDate(stockAsOf!) : 'Sin inventario de congelados: abra esta página una vez con conexión.')
     $('result').hidden = false
     const result = {
       at: new Date().toISOString(), file: { name: photo.name, bytes: photo.size, type: photo.type }, size: [out.img.width, out.img.height], orientation: out.orientation,
@@ -596,8 +608,8 @@ $('copy').addEventListener('click', async () => {
 
 $<HTMLInputElement>('useGpu').checked = 'gpu' in navigator
 $<HTMLInputElement>('useGpu').disabled = !('gpu' in navigator)
-addEventListener('online', () => { checkSession().then(listFiles).then(refreshStock) })
+addEventListener('online', () => { checkSession().then(listFiles); refreshStock() })
 addEventListener('offline', () => show('status', 'Sin conexión.'))
 render()
-loadStock()
-checkSession().then(listFiles).then(refreshStock).finally(refreshReady)
+loadStock().then(refreshStock)
+checkSession().then(listFiles).finally(refreshReady)

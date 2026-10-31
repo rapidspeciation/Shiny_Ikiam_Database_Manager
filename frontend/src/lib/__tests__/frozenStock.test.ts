@@ -26,7 +26,7 @@ describe('frozen stock lines', () => {
   })
   it('says «ninguno» for a species without stock', () => {
     expect(line(speciesStock(stock, 'Greta andromica'))).toBe('Congelados: ninguno')
-    expect(speciesStock(stock, 'Greta andromica').some(p => p.low)).toBe(true)
+    expect(speciesStock(stock, 'Greta andromica').some(p => p.low)).toBe(false)
   })
   it('gives the genus total when there is one', () => {
     expect(genusStock(stock, 'Mechanitis lysimnia')).toBe('Género Mechanitis: 1905 congelados')

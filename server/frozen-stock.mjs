@@ -10,16 +10,18 @@
 //   the butterfly is an adult (LIFESTAGE empty, Adult or NA: eggs, larvae and pre-pupae are left out).
 // - F1/F2_MutationRate is not read: every flash-frozen row there is also an Insectary_data row (same CAM_ID).
 //   Wing_tissue (pupal wing dissections) is not a specimen stock either.
-// - Still there: the body's location (Collection_data Location_WholeBody, or Location_abdomen when the body was
-//   split or the cell is empty; Insectary_data Location_body) is Ikiam, Sanger (the TOL704 freezer), Splitted
-//   body, NA or empty. Lost, Missing, [Sent for sequencing] and other institutions (Cambridge, Brazil, Paris...)
-//   are gone from the stock.
-// - One specimen per CAM_ID (a CAM in both sheets counts once); rows without a CAM count on their own.
+// - Gone from the stock: the body's location (Collection_data Location_WholeBody, or Location_abdomen when the
+//   body was split or the cell is empty; Insectary_data Location_body) says Lost, Missing, [Sent for sequencing]
+//   or another institution (Paris, Brazil, Cambridge, Sheffield, York). Ikiam, Sanger (the TOL704 freezer),
+//   Splitted body, NA, empty and any place not listed count as still there.
+// - One specimen per CAM_ID (a CAM in both sheets counts once, and not at all when either row says it is gone);
+//   rows without a CAM count on their own.
 // - Sex: male -> M, female -> F; uncertain ("male ?", "female_?"), NOT_COLLECTED, NA or empty -> unknown.
 // - Species: the SPECIES cell's first two words (a subspecies counts for its species). A cross counts for its
 //   species when both sides are the same species ("Mechanitis polymnia werneri x proceriformis"); a cross of two
 //   species is not counted. Names are matched to the identifier head's species (head_<sha>.json `species`) by
-//   case; names the head does not know are counted only in their genus (and in `unmapped`).
+//   case (ALIASES for two the head names otherwise); names the head does not know count only in their genus
+//   when the head knows the genus (and in `unmapped`).
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -37,18 +39,23 @@ export const ALIASES = {
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const FLASH = /flash\s*frozen/i;
 const ADULT_STAGE = /^(|adult|na|n\/a)$/i;
-const KEPT_PLACE = /^(|ikiam|sanger.*|splitted body|na|n\/a)$/i;
+const GONE_PLACE = /^(lost|missing|\[?sent for sequencing|paris|brazil|cambridge|sheffield|york)\b/i;
 
-/** The binomial a SPECIES cell counts for, or null (empty, a family or tribe, a cross of two species). */
-export function speciesOf(value) {
+/**
+ * The binomial a SPECIES cell counts for, or null (empty, a family or tribe, a cross of two species). `isSpecies`
+ * (the head's names, lower case): a bare epithet on a cross's second side that is a species of the genus
+ * ("Melinaea menophilus x mothone") makes it a cross of two species, not of two subspecies.
+ */
+export function speciesOf(value, isSpecies = () => false) {
   const sides = text(value)
-    .split(/\s+(?:x|vs\.?)\s+/i)
+    .split(/\s*×\s*|\s+(?:x|vs\.?)\s+/i)
     .map(s => s.split(/\s+/).filter(Boolean));
   let name = null;
   for (const words of sides) {
     if (!words.length) continue;
     // "proceriformis" on the second side of a cross: the first side's species.
-    const binomial = /^[A-Z]/.test(words[0]) ? (words.length >= 2 ? `${words[0]} ${words[1].toLowerCase()}` : null) : name;
+    let binomial = /^[A-Z]/.test(words[0]) ? (words.length >= 2 ? `${words[0]} ${words[1].toLowerCase()}` : null) : name;
+    if (!/^[A-Z]/.test(words[0]) && name && words.length === 1 && isSpecies(`${name.split(' ')[0]} ${words[0]}`.toLowerCase())) binomial = `${name.split(' ')[0]} ${words[0].toLowerCase()}`;
     if (!binomial || /^(sp|spp|cf|aff)\.?$/i.test(binomial.split(' ')[1]) || /^\(/.test(binomial.split(' ')[1])) return null;
     if (name && binomial !== name) return null;
     name = binomial;
@@ -83,7 +90,7 @@ export function frozenWhyNot(sheet, values) {
     if (![values.Preservation_medium, values.T1_Preservation_medium, values.T2_Preservation_medium].some(v => FLASH.test(text(v)))) return 'not_flash_frozen';
     if (!ADULT_STAGE.test(text(values.LIFESTAGE))) return 'not_adult';
   } else return 'other_sheet';
-  if (!KEPT_PLACE.test(placeOf(sheet, values))) return 'gone';
+  if (GONE_PLACE.test(placeOf(sheet, values))) return 'gone';
   return null;
 }
 
@@ -100,24 +107,40 @@ const add = (map, key, sex) => {
  */
 export function countFrozen(rows, headSpecies) {
   const known = new Map(headSpecies.map(s => [s.toLowerCase(), s]));
+  const genera = new Set(headSpecies.map(s => s.split(' ')[0]));
+  const isSpecies = name => known.has(name);
+  const camOf = values => {
+    const cam = text(values.CAM_ID).replace(/\s+/g, '').toUpperCase();
+    return /^CAM\d+$/.test(cam) ? cam : null;
+  };
+  // A CAM that any row says is gone is not counted from its other row either.
+  const goneCams = new Set();
+  const why = rows.map(({ sheet, values }) => {
+    const w = frozenWhyNot(sheet, values);
+    if (w === 'gone' && camOf(values)) goneCams.add(camOf(values));
+    return w;
+  });
   const species = {},
     genus = {},
     unmapped = { rows: 0, names: {} };
   const seen = new Set();
   let counted = 0,
     gone = 0;
-  for (const { sheet, values } of rows) {
-    const why = frozenWhyNot(sheet, values);
-    if (why === 'gone') gone++;
-    if (why) continue;
-    const cam = text(values.CAM_ID);
-    if (/^CAM\d+$/i.test(cam)) {
-      if (seen.has(cam.toUpperCase())) continue;
-      seen.add(cam.toUpperCase());
+  rows.forEach(({ values }, i) => {
+    const cam = camOf(values);
+    if (why[i] === 'gone' || (!why[i] && cam && goneCams.has(cam))) {
+      if (!cam || !seen.has(cam)) gone++;
+      if (cam) seen.add(cam);
+      return;
+    }
+    if (why[i]) return;
+    if (cam) {
+      if (seen.has(cam)) return;
+      seen.add(cam);
     }
     counted++;
     const sex = sexOf(values.Sex);
-    const name = speciesOf(values.SPECIES);
+    const name = speciesOf(values.SPECIES, isSpecies);
     const head = name && known.get((ALIASES[name.toLowerCase()] ?? name).toLowerCase());
     if (head) add(species, head, sex);
     else {
@@ -126,8 +149,8 @@ export function countFrozen(rows, headSpecies) {
       unmapped.names[label] = (unmapped.names[label] ?? 0) + 1;
     }
     const g = head ? head.split(' ')[0] : genusOf(values.SPECIES);
-    if (g) add(genus, g, sex);
-  }
+    if (g && genera.has(g)) add(genus, g, sex);
+  });
   const sorted = obj => Object.fromEntries(Object.entries(obj).sort(([a], [b]) => a.localeCompare(b)));
   return { species: sorted(species), genus: sorted(genus), counted, gone, unmapped: { rows: unmapped.rows, names: sorted(unmapped.names) } };
 }
@@ -154,18 +177,29 @@ function stockRows(store) {
 }
 
 const cache = new WeakMap();
+const pending = new WeakMap();
 /**
  * The snapshot for the page, computed again only when the local copy changed:
- * { version, generatedAt, species, genus, counted, gone, unmapped: { rows, names } }.
- * `version` hashes the counts only, so a change elsewhere in the workbook keeps the page's copy (ETag) valid.
+ * { version, generatedAt, species, genus, counted, gone, unmapped: { rows } }. `version` hashes what is sent
+ * (not when), so a change elsewhere in the workbook keeps the page's copy (ETag) valid.
  */
 export async function frozenStock(store, identifierDir) {
   const stamp = recordsStamp(store);
   const hit = cache.get(store);
   if (hit?.stamp === stamp && hit.dir === identifierDir) return hit.value;
-  const counts = countFrozen(stockRows(store), await headSpecies(identifierDir));
-  const version = createHash('sha256').update(JSON.stringify([counts.species, counts.genus])).digest('hex').slice(0, 16);
-  const value = { version, generatedAt: hit?.value.version === version ? hit.value.generatedAt : new Date().toISOString(), ...counts };
-  cache.set(store, { stamp, dir: identifierDir, value });
-  return value;
+  const running = pending.get(store);
+  if (running?.stamp === stamp) return running.promise;
+  const promise = (async () => {
+    const counts = countFrozen(stockRows(store), await headSpecies(identifierDir));
+    const sent = { species: counts.species, genus: counts.genus, counted: counts.counted, gone: counts.gone, unmapped: { rows: counts.unmapped.rows } };
+    const version = createHash('sha256').update(JSON.stringify(sent)).digest('hex').slice(0, 16);
+    const value = { version, generatedAt: hit?.value.version === version ? hit.value.generatedAt : new Date().toISOString(), ...sent };
+    cache.set(store, { stamp, dir: identifierDir, value });
+    return value;
+  })().finally(() => pending.delete(store));
+  pending.set(store, { stamp, promise });
+  return promise;
 }
+
+/** When the local copy last read the workbook (shown as the inventory's date), or null. */
+export const syncedAt = store => store.getSetting?.('lastSync') ?? null;

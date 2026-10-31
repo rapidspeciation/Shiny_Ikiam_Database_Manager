@@ -14,6 +14,11 @@ test('speciesOf: subspecies, crosses within a species, crosses of two species, g
   assert.equal(speciesOf('Dircenna sp.'), null);
   assert.equal(speciesOf('Haeterini (tribe)'), null);
   assert.equal(speciesOf('Riodinidae'), null);
+  assert.equal(speciesOf('Melinaea menophilus zaneka VS Melinaea menophilus zaneka x menophilus'), 'Melinaea menophilus');
+  assert.equal(speciesOf('Mechanitis polymnia × Mechanitis lysimnia'), null);
+  const isHead = n => HEAD.map(h => h.toLowerCase()).includes(n);
+  assert.equal(speciesOf('Melinaea menophilus x mothone', isHead), null); // mothone is a species of Melinaea
+  assert.equal(speciesOf('Melinaea menophilus zaneka x menophilus', isHead), 'Melinaea menophilus');
   assert.equal(speciesOf(''), null);
   assert.equal(genusOf('Dircenna sp.'), 'Dircenna');
   assert.equal(genusOf('Riodinidae (family)'), null);
@@ -34,6 +39,9 @@ test('frozenWhyNot: preserved flash frozen adults still in the project', () => {
   assert.equal(frozenWhyNot('Collection_data', C({ Location_WholeBody: 'Splitted body', Location_abdomen: 'Missing' }).values), 'gone');
   assert.equal(frozenWhyNot('Collection_data', C({ Location_abdomen: '[Sent for sequencing]' }).values), 'gone');
   assert.equal(frozenWhyNot('Collection_data', C({ Location_abdomen: 'Cambridge' }).values), 'gone');
+  assert.equal(frozenWhyNot('Collection_data', C({ Location_abdomen: 'Cambridge, Zoology' }).values), 'gone');
+  assert.equal(frozenWhyNot('Collection_data', C({ Location_abdomen: 'Ikiam - freezer -80' }).values), null); // a place not listed stays
+  assert.equal(frozenWhyNot('Insectary_data', I({ T1_Preservation_medium: '', T2_Preservation_medium: 'Flash frozen', LIFESTAGE: 'NA' }).values), null);
   assert.equal(frozenWhyNot('Insectary_data', I({}).values), null);
   assert.equal(frozenWhyNot('Insectary_data', I({ T1_Preservation_medium: 'Ethanol', Preservation_medium: 'Flash frozen' }).values), null);
   assert.equal(frozenWhyNot('Insectary_data', I({ T1_Preservation_medium: 'Ethanol' }).values), 'not_flash_frozen');
@@ -120,8 +128,13 @@ test('GET /api/frozen-stock: signed in only, ETag, 304, a new version after a ch
   assert.deepEqual(stock.species, { 'Oleria onega': { M: 1, F: 1, unknown: 0, total: 2 } });
   assert.match(stock.generatedAt, /^\d{4}-\d\d-\d\dT/);
   const etag = first.headers.get('etag');
+  assert.match(first.headers.get('x-synced-at'), /^\d{4}-/);
+  assert.equal(stock.unmapped.names, undefined); // only counts go to the phones
   assert.equal(etag, `"${stock.version}"`);
-  assert.equal((await fetch(`${base}/api/frozen-stock`, { headers: { cookie, 'if-none-match': etag } })).status, 304);
+  const same = await fetch(`${base}/api/frozen-stock`, { headers: { cookie, 'if-none-match': etag } });
+  assert.equal(same.status, 304);
+  assert.match(same.headers.get('x-synced-at'), /^\d{4}-/);
+  assert.equal((await fetch(`${base}/api/frozen-stock`, { headers: { cookie, 'if-none-match': `W/${etag}` } })).status, 304);
   // A change that counts: a new version.
   const record = app.store.getRecordBySheetRow('Collection_data', 3);
   app.store.db
@@ -130,4 +143,23 @@ test('GET /api/frozen-stock: signed in only, ETag, 304, a new version after a ch
   const after = await fetch(`${base}/api/frozen-stock`, { headers: { cookie, 'if-none-match': etag } });
   assert.equal(after.status, 200);
   assert.deepEqual((await after.json()).species['Oleria onega'], { M: 0, F: 2, unknown: 0, total: 2 });
+});
+
+test('countFrozen: a CAM gone in one sheet is gone; CAM spelled with a space; genus only when the head has it', () => {
+  const out = countFrozen(
+    [
+      C({ CAM_ID: 'CAM020', SPECIES: 'Oleria onega', Sex: 'male', Location_abdomen: 'Missing' }),
+      I({ CAM_ID: 'CAM020', SPECIES: 'Oleria onega', Sex: 'male' }), // Ikiam in the insectary sheet: still gone
+      C({ CAM_ID: 'CAM 021', SPECIES: 'Oleria onega', Sex: 'female' }),
+      I({ CAM_ID: 'CAM021', SPECIES: 'Oleria onega', Sex: 'female' }), // the same butterfly
+      C({ CAM_ID: 'CAM022', SPECIES: 'Unknown', Sex: 'female' }),
+      C({ CAM_ID: 'CAM023', SPECIES: 'Actinote sp.', Sex: 'female' }),
+    ],
+    HEAD,
+  );
+  assert.deepEqual(out.species, { 'Oleria onega': { M: 0, F: 1, unknown: 0, total: 1 } });
+  assert.deepEqual(Object.keys(out.genus), ['Oleria']);
+  assert.equal(out.gone, 1);
+  assert.equal(out.counted, 3);
+  assert.equal(out.unmapped.rows, 2);
 });

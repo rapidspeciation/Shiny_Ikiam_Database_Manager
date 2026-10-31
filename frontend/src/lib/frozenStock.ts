@@ -28,7 +28,8 @@ export interface StockPart {
 /** «Congelados: 12 ♂ · 3 ♀ (1 sin sexo)» or «Congelados: ninguno», as parts (the low counts marked). */
 export function speciesStock(stock: FrozenStock, name: string): StockPart[] {
   const c = stock.species[name]
-  if (!c || !c.total) return [{ text: 'Congelados: ' }, { text: 'ninguno', low: true }]
+  // «ninguno» is plain: rare species mostly have none, and a page of amber would mean nothing.
+  if (!c || !c.total) return [{ text: 'Congelados: ninguno' }]
   const out: StockPart[] = [{ text: 'Congelados: ' }, { text: `${c.M} ♂`, low: c.M < LOW_STOCK }, { text: ' · ' }, { text: `${c.F} ♀`, low: c.F < LOW_STOCK }]
   if (c.unknown) out.push({ text: ` (${c.unknown} sin sexo)` })
   return out
@@ -41,7 +42,7 @@ export function genusStock(stock: FrozenStock, name: string): string | null {
   return c?.total ? `Género ${genus}: ${c.total} congelado${c.total === 1 ? '' : 's'}` : null
 }
 
-/** «Inventario congelado al 31 oct 2026, 02:15» (the last time the server confirmed it). */
+/** «Inventario congelado al 31 oct 2026, 02:15» (when the server's copy last read the workbook). */
 export function stockDate(iso: string, locale = 'es-EC'): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return 'Inventario congelado: fecha desconocida'

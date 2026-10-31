@@ -26,7 +26,15 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('message', event => {
   // Sent on sign-out so another person on this device cannot read cached sheets.
-  if (event.data === 'clear') event.waitUntil(Promise.all([caches.delete(CACHE), caches.delete(INBOX)]))
+  // The offline identifier keeps its models (700 MB, nothing personal) but not the frozen-stock inventory.
+  if (event.data === 'clear')
+    event.waitUntil(
+      Promise.all([
+        caches.delete(CACHE),
+        caches.delete(INBOX),
+        caches.open(OFFLINE_ID).then(c => c.delete(new URL('prueba-offline/models/frozen-stock.json', self.registration.scope).href)),
+      ]),
+    )
 })
 
 async function networkFirst(request) {
