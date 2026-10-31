@@ -286,6 +286,7 @@ export const MAPS_TOOLS = [
         "Collection specimens with wing photos (the Wings Gallery's Collection tab, read from the workbook and Photo_links): by CAM ID, species, sex, locality or elevation, with a link to the gallery showing them, photo URLs, and what the models read from the photos.",
         '- Any of: `cam_ids`, `species` ["Genus species"], `subspecies`, `genus`, `sex` (male, female), `locality` (words of Collection_location), `country`, `elevation_min`/`elevation_max`. `with_photos` (default true). `limit` (default 12).',
         "- Each specimen: the database's species, subspecies, sex; `model` (the Wings Gallery's species/subspecies top 3 and the sex model's call, with `sex_trusted` false and `sex_not_trusted` saying why when the model is not trusted for it: not a Supported call, or a species on the model's unreliable list); `envelope` (the envelope's text lines as the reader read them, and its model); `differs` (where the model or envelope disagree with the database).",
+        '- `life_stage`: the collection photos are of adults; for eggs, larvae or pupae use taxon_photos.',
         '- `photo_sheet: true`: `photo_sheets`, contact sheets (3 by 3 numbered tiles) of the specimens\' photos to look at and pick from; then send_sheet_photos sends those chosen.',
         '- `markdown`: ready to put in the reply as it is. The first `thumbnails` specimens (default 4, at most 8) in full: a 600 px photo, the wings and envelope crops (each linked to the full photo), the model output and the envelope lines; the rest one plain line each.',
         'Model output and envelope readings are not checked: say so, never give them as facts. The database is the record. The gallery site is rebuilt when its update runs (update_websites): a specimen added since may not be there yet.',
@@ -304,6 +305,7 @@ export const MAPS_TOOLS = [
           elevation_max: { type: 'number' },
           with_photos: { type: 'boolean' },
           limit: { type: 'integer' },
+          life_stage: { type: 'string', enum: ['egg', 'larva', 'pupa', 'adult'] },
           photo_sheet: { type: 'boolean' },
           thumbnails: { type: 'integer' },
         },
@@ -2151,7 +2153,15 @@ export function createMapsTools({
     const tiles = [...first, ...ordered.filter(c => !first.includes(c))].slice(0, 2 * PER_SHEET);
     tiles.sort((a, b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
     const words = STAGE_WORDS[lang];
-    const answer = { taxon, life_stage: stages, counts, ...(errors.length ? { errors } : {}) };
+    // A stage asked with no photo anywhere is said plainly (the chat must not imply there are some).
+    const noneFor = stages.filter(stage => !candidates.some(c => c.stage === stage));
+    const answer = {
+      taxon,
+      life_stage: stages,
+      counts,
+      ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon), none annotated so on iNaturalist, none in GBIF's lifeStage. Say so plainly.` } : {}),
+      ...(errors.length ? { errors } : {}),
+    };
     if (!tiles.length)
       return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} in the project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage. Unannotated photos may exist on iNaturalist: say so.` };
     if (!sheets) return { ...answer, photo_sheet_error: 'Contact sheets are off on this server.' };
@@ -2474,6 +2484,8 @@ export function createMapsTools({
   }
 
   async function specimens(args) {
+    if (args.life_stage && args.life_stage !== 'adult')
+      return { error: `The collection's wing photos are of adults only: for ${args.life_stage} photos use taxon_photos (the project's clutch photos, iNaturalist, GBIF).` };
     const { rows, photos } = collection();
     const cams = new Set(list(args.cam_ids).map(c => c.replace(/[\s_-]+/g, '').toUpperCase()));
     const sp = new Set(list(args.species).map(s => fold(s).split(' ').slice(0, 2).join(' ')));

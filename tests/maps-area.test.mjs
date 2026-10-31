@@ -495,4 +495,8 @@ test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\
   assert.match((await tools.run('taxon_photos', { taxon: 'Oleria onega' })).error, /life_stage/);
   const none = await tools.run('taxon_photos', { taxon: 'Oleria onega', life_stage: 'pupa' });
   assert.match(none.note, /Unannotated photos may exist/);
+  // Eggs asked with larvae: the eggs said to be missing.
+  assert.deepEqual(out.none_for, ['egg']);
+  assert.match(out.none_note, /No photo of egg of Oleria onega: none in the project's clutch photos \(1 of this taxon\)/);
+  assert.match((await tools.run('gallery_specimens', { species: ['Oleria onega'], life_stage: 'larva' })).error, /adults only.*taxon_photos/);
 });
