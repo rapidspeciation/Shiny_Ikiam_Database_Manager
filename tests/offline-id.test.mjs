@@ -6,7 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
-import { serveOfflineId, MODELS, PART_BYTES, modelsWithoutParts, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { createHash } from 'node:crypto';
+import { serveOfflineId, MODELS, PART_BYTES, STUDENT, modelsWithoutParts, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+
+const student = MODELS.find(m => m.role === 'student');
+const REAL_STUDENT_SHA = STUDENT.sha256;
 
 function setup(sizes = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'offline-id-'));
@@ -21,6 +25,8 @@ function setup(sizes = {}) {
     const b = Buffer.alloc(n);
     for (let i = 0; i < n; i++) b[i] = (i % 256) & (i % 7 ? 0xff : 0x0f);
     writeFileSync(join(ident, m.path), b);
+    // The test's small model is these bytes: its expected hash is theirs.
+    if (m === student) m.sha256 = createHash('sha256').update(b).digest('hex');
   }
   let user = null;
   const server = http.createServer((req, res) => {
@@ -182,6 +188,50 @@ test('model parts: a folder still being made is read again once its manifest app
     await assert.rejects(precompressParts(ident, { stamp: '20261031T000002Z' }));
     renameSync(missing + '.away', missing);
     assert.equal(existsSync(join(ident, 'offline', 'parts-20261031T000002Z')), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('the small model: one constant, listed with its role and hash, hidden when missing or not the expected bytes', async () => {
+  assert.equal(student.name, STUDENT.name);
+  assert.equal(student.path, `offline/${STUDENT.name}`);
+  assert.match(REAL_STUDENT_SHA, /^[0-9a-f]{64}$/);
+  assert.equal(student.optional, true);
+  const { base, port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  try {
+    signIn();
+    let list = await (await fetch(`${base}/models/list.json`)).json();
+    const entry = list.files.find(f => f.name === student.name);
+    assert.equal(entry.role, 'student');
+    assert.equal(entry.sha256, student.sha256);
+    assert.equal((await raw(port, `${p}/${student.name}?part=0`)).status, 200);
+
+    // Other bytes than the constant says (a swap half done): not offered, not served; the rest unchanged.
+    const good = student.sha256;
+    student.sha256 = '0'.repeat(64);
+    list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.deepEqual(list.files.map(f => f.role), ['detector', 'encoder', 'head-meta', 'head']);
+    assert.equal((await raw(port, `${p}/${student.name}?part=0`)).status, 404);
+    assert.equal((await raw(port, `${p}/${student.name}`)).status, 404);
+    student.sha256 = good;
+
+    // Missing: the full model is still listed, parts are made for the rest, nothing waits for it.
+    const file = join(ident, student.path);
+    renameSync(file, file + '.away');
+    list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(list.files.length, MODELS.length - 1);
+    const { manifest } = await precompressParts(ident, { stamp: '20261031T000000Z' });
+    assert.equal(manifest.files[student.name], undefined);
+    assert.deepEqual(await modelsWithoutParts(ident), []);
+    // Put back: it needs parts now, and gets them compressed like the others.
+    renameSync(file + '.away', file);
+    assert.deepEqual(await modelsWithoutParts(ident), [student.name]);
+    await precompressParts(ident, { stamp: '20261031T000001Z' });
+    const r = await raw(port, `${p}/${student.name}?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(r.headers['content-encoding'], 'zstd');
+    assert.deepEqual(zstdDecompressSync(r.body), readFileSync(file));
   } finally {
     server.close();
   }

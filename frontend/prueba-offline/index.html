@@ -38,13 +38,16 @@
       .stock .low { color: #9a3412; font-weight: 700; text-decoration: underline 2px; text-underline-offset: 3px; }
       .stock .genus { color: #44403c; font-size: 0.85rem; }
       #stockNote { border-top: 1px solid #e7e5e4; padding: 6px 4px; }
+      .option { border-top: 1px solid #e7e5e4; padding: 8px 0 4px; }
+      fieldset { border: 1px solid #e7e5e4; border-radius: 8px; margin: 8px 0; padding: 6px 10px; }
+      fieldset label { display: block; padding: 4px 0; }
       a.back { display: inline-block; color: #1f4d3a; font-weight: 600; text-decoration: none; padding: 6px 0; }
     </style>
   </head>
   <body>
     <a class="back" href="../">← Volver a la app</a>
     <h1>Prueba: identificador sin conexión</h1>
-    <div class="muted">El identificador completo (BioCLIP 2.5-H int8, 638 MB) corriendo en este teléfono, sin internet. Solo una prueba.</div>
+    <div class="muted">Prueba del identificador sin conexión: corre en este teléfono, sin internet, con el modelo completo (BioCLIP 2.5-H int8, 638 MB) o con un modelo pequeño (≈25 MB). Solo una prueba; el identificador de la app no cambia.</div>
     <div id="crash" class="err" hidden></div>
     <div id="status" class="muted"></div>
 
@@ -62,7 +65,18 @@
     <section>
       <h2>1. Modelos</h2>
       <div id="files" class="muted"></div>
-      <button id="download">Descargar modelos para uso sin conexión</button>
+      <div class="option">
+        <div><b>Modelo completo</b> (BioCLIP 2.5-H int8, 638 MB)</div>
+        <div id="fullSize" class="muted" hidden></div>
+        <button id="download">Descargar modelo completo</button> <span id="fullReady" class="ok" hidden></span>
+      </div>
+      <div class="option">
+        <div><b>modelo pequeño (≈25 MB)</b>: <span>más rápido; algo menos preciso en ejemplares de colección</span></div>
+        <div class="muted">Un modelo de prueba, aprendido del completo; usa el mismo detector de alas y la misma cabeza.</div>
+        <div id="smallSize" class="muted" hidden></div>
+        <div id="smallMissing" class="muted" hidden></div>
+        <button id="downloadSmall">Descargar modelo pequeño</button> <span id="smallReady" class="ok" hidden></span>
+      </div>
       <button id="remove" class="light" hidden>Borrar modelos</button>
       <div id="progressBox" hidden><progress id="progress" max="1" value="0"></progress><div id="progressText" class="muted"></div></div>
       <div id="ready" class="ok" hidden></div>
@@ -78,6 +92,12 @@
       <label>Lado de los Andes (opcional, como en el identificador del servidor):
         <select id="side"><option value="">Sin indicar</option><option value="East">Este (Amazonía)</option><option value="West">Oeste</option></select>
       </label>
+      <fieldset id="modelPick">
+        <legend>Modelo para identificar</legend>
+        <label><input id="model-full" type="radio" name="model" value="full" disabled /> modelo completo</label>
+        <label><input id="model-small" type="radio" name="model" value="small" disabled /> modelo pequeño (más rápido; algo menos preciso en ejemplares de colección)</label>
+        <div id="modelNone" class="muted" hidden></div>
+      </fieldset>
       <label class="muted"><input id="useGpu" type="checkbox" /> Usar WebGPU para detectar las alas (si el teléfono lo tiene)</label>
       <div>
         <label class="filebtn">Tomar foto<input id="camera" type="file" accept="image/*" capture="environment" /></label>
@@ -86,6 +106,7 @@
       <div id="running" class="muted" hidden></div>
       <div id="idErr" class="err" hidden></div>
       <div id="result" hidden>
+        <div id="answered" class="ok"></div>
         <div class="row">
           <div><canvas id="crop" width="224" height="224"></canvas><div id="cropNote" class="muted"></div></div>
           <div style="flex: 1; min-width: 220px">

@@ -12,6 +12,7 @@
  * 3. That box cut from the upright photo, padded to a grey (128) square and resized to 224 px with Pillow's
  *    bicubic filter in its own integer arithmetic.
  * 4. The encoder's feature, normalised, through the cosine head (fp16 weights), the leaves summed per species.
+ *    Or the small model's (studentInput: the same crop at 192 px), the same 1024-D feature and the same head.
  *
  * Where the server reads the mask's outline (cv2 contours) this reads the mask's pixels: same box, close shape
  * measures (they only decide rare cases: rectangle artefacts and overlapping duplicates).
@@ -407,6 +408,94 @@ export function encoderInput(rgb: Uint8Array, size = 224): Float32Array {
   const plane = size * size, x = new Float32Array(3 * plane)
   for (let i = 0; i < plane; i++) for (let c = 0; c < 3; c++) x[c * plane + i] = (rgb[i * 3 + c] / 255 - MEAN[c]) / STD[c]
   return x
+}
+
+/**
+ * torch F.interpolate(mode='bilinear', align_corners=False, antialias=False) of a CHW image: half-pixel centres,
+ * the source position clamped at 0, the next pixel clamped at the edge, no filtering when shrinking.
+ */
+export function resizeBilinear(x: Float32Array, channels: number, inH: number, inW: number, outH: number, outW: number): Float32Array {
+  const out = new Float32Array(channels * outH * outW)
+  const axis = (inSize: number, outSize: number) => {
+    const i0 = new Int32Array(outSize), i1 = new Int32Array(outSize), w = new Float32Array(outSize)
+    const scale = inSize / outSize
+    for (let o = 0; o < outSize; o++) {
+      const src = Math.max((o + 0.5) * scale - 0.5, 0)
+      const a = Math.min(Math.floor(src), inSize - 1)
+      i0[o] = a; i1[o] = Math.min(a + 1, inSize - 1); w[o] = src - a
+    }
+    return { i0, i1, w }
+  }
+  const ys = axis(inH, outH), xs = axis(inW, outW)
+  for (let c = 0; c < channels; c++) {
+    const src = c * inH * inW, dst = c * outH * outW
+    for (let y = 0; y < outH; y++) {
+      const r0 = src + ys.i0[y] * inW, r1 = src + ys.i1[y] * inW, wy = ys.w[y]
+      for (let xx = 0; xx < outW; xx++) {
+        const a = xs.i0[xx], b = xs.i1[xx], wx = xs.w[xx]
+        const top = x[r0 + a] * (1 - wx) + x[r0 + b] * wx
+        const bot = x[r1 + a] * (1 - wx) + x[r1 + b] * wx
+        out[dst + y * outW + xx] = top * (1 - wy) + bot * wy
+      }
+    }
+  }
+  return out
+}
+
+/** The small model's input: the same 224 px crop, the CLIP mean and std, resized to 192 (bilinear, no antialias). */
+export const STUDENT_SIZE = 192
+export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): Float32Array {
+  return resizeBilinear(encoderInput(rgb, size), 3, size, size, out, out)
+}
+
+// ---------------------------------------------------------------- the two models of the page
+
+/** «modelo completo» (BioCLIP 2.5-H int8) or «modelo pequeño» (the distilled ViT-S, server/offline-id.mjs STUDENT). */
+export type ModelKind = 'full' | 'small'
+export type FileRole = 'detector' | 'encoder' | 'student' | 'head' | 'head-meta'
+
+/** The files each model needs: the detector and the head serve both, each has its own encoder. */
+export const MODEL_ROLES: Record<ModelKind, FileRole[]> = {
+  full: ['detector', 'encoder', 'head-meta', 'head'],
+  small: ['detector', 'student', 'head-meta', 'head'],
+}
+export const ENCODER_ROLE: Record<ModelKind, FileRole> = { full: 'encoder', small: 'student' }
+export const MODEL_LABEL: Record<ModelKind, string> = { full: 'modelo completo', small: 'modelo pequeño' }
+
+/** A stored file's role: as stored, else from its name (stored.json written before the small model had none). */
+export function roleOf(name: string, role?: string | null): FileRole {
+  if (role) return role as FileRole
+  if (name.startsWith('wing_seg')) return 'detector'
+  if (name.startsWith('student')) return 'student'
+  if (name.startsWith('bioclip')) return 'encoder'
+  return name.endsWith('.json') ? 'head-meta' : 'head'
+}
+
+export interface StoredFile { etag: string; bytes: number; role?: string }
+export interface ListedFile { name: string; etag: string; bytes: number; role: string }
+
+/** The stored file of a role (its name), or null. */
+export function storedName(files: Record<string, StoredFile>, role: FileRole): string | null {
+  return Object.keys(files).find(n => roleOf(n, files[n].role) === role) ?? null
+}
+
+/**
+ * Whether a model can run from what is stored: every file it needs, and when the server's list is known (online),
+ * the very versions listed (a model missing from the list is not ready). Offline: the files stored.
+ */
+export function modelReady(kind: ModelKind, stored: Record<string, StoredFile> | null, listed: ListedFile[] | null): boolean {
+  if (!stored) return false
+  return MODEL_ROLES[kind].every(role => {
+    if (!listed) return storedName(stored, role) != null
+    const f = listed.find(l => l.role === role)
+    return !!f && stored[f.name]?.etag === f.etag
+  })
+}
+
+/** The model to identify with: the one asked for when it is ready, else the one that is, else none. */
+export function chooseModel(wanted: ModelKind | null, ready: Record<ModelKind, boolean>): ModelKind | null {
+  if (wanted && ready[wanted]) return wanted
+  return ready.full ? 'full' : ready.small ? 'small' : null
 }
 
 // ---------------------------------------------------------------- 4. the head

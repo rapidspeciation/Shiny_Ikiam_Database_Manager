@@ -21,13 +21,25 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  * (Chrome 123+), else gzip (Safari). The browser decompresses while downloading; the page stores the plain bytes.
  * A part's ETag stays the uncompressed file's (weak, the same for every encoding), so parts a phone already has
  * stay valid. Without a matching compressed part (none made, or the model changed since) the plain bytes go.
+ *
+ * Two models to choose from on the page: the full encoder (role encoder) and the small one (role student, STUDENT
+ * below); the detector and the head serve both. The page downloads either or both.
  */
+
+/**
+ * The small model («modelo pequeño»): a ViT-S/16 distilled from the encoder, the same 1024-D feature (so the same
+ * detector, crop and head), 192 px input. Kept in offline/ beside the head. To swap it: copy the new file there and
+ * change this one constant (name and sha256); the page offers it again under its new name. A file whose sha256 is
+ * not this one is not offered (checked once per file version), and a missing one only hides the option.
+ */
+export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb' };
 
 export const MODELS = [
   { name: 'wing_seg_v5n.onnx', path: 'app/assets/wing_seg_v5n.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
   { name: 'head_b8127dbf.json', path: 'offline/head_b8127dbf.json', role: 'head-meta' },
   { name: 'head_b8127dbf_fp16.bin', path: 'offline/head_b8127dbf_fp16.bin', role: 'head' },
+  { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true },
 ];
 
 const types = {
@@ -47,6 +59,28 @@ const isolated = {
 };
 
 const etagOf = s => `"${s.size.toString(36)}-${Math.floor(s.mtimeMs).toString(36)}"`;
+
+/** A model with a sha256 in MODELS is offered only when its bytes are those: hashed once per file version (ETag). */
+const hashMemo = new Map();
+async function usable(identifierDir, m, s) {
+  if (!s?.isFile()) return false;
+  if (!m.sha256) return true;
+  const file = join(identifierDir, m.path);
+  const key = `${file}|${etagOf(s)}`;
+  if (!hashMemo.has(key)) {
+    const h = createHash('sha256');
+    hashMemo.set(
+      key,
+      pipeline(createReadStream(file, { highWaterMark: 1 << 20 }), async source => {
+        for await (const b of source) h.update(b);
+      }).then(
+        () => h.digest('hex'),
+        () => (hashMemo.delete(key), ''),
+      ),
+    );
+  }
+  return (await hashMemo.get(key)) === m.sha256;
+}
 
 /** The page's part size (frontend/src/offline/main.ts PART). */
 export const PART_BYTES = 32 * 1024 * 1024;
@@ -99,7 +133,9 @@ async function compressedParts(identifierDir) {
 /** The models without compressed parts made from their current bytes (precompressParts needed when not empty). */
 export async function modelsWithoutParts(identifierDir) {
   const packed = await compressedParts(identifierDir);
-  return MODELS.filter(m => !packed[m.name]).map(m => m.name);
+  // An optional model (the small one) that is not on this server needs no parts.
+  const present = await Promise.all(MODELS.map(m => stat(join(identifierDir, m.path)).then(() => true, () => !m.optional)));
+  return MODELS.filter((m, i) => present[i] && !packed[m.name]).map(m => m.name);
 }
 
 /** What one part costs on the wire with `encoding` (null: plain). */
@@ -134,11 +170,14 @@ export async function serveOfflineId(req, res, { path, webRoot, identifierDir, u
         const packed = await compressedParts(identifierDir);
         for (const m of MODELS) {
           const s = await stat(join(identifierDir, m.path)).catch(() => null);
-          if (!s) throw new HttpError(404, `${m.name} is missing on the server`);
+          if (!(await usable(identifierDir, m, s))) {
+            if (m.optional) continue; // the small model: its option is not offered
+            throw new HttpError(404, `${m.name} is missing on the server`);
+          }
           const parts = packed[m.name]?.parts;
           // `wire`: the bytes the parts take on the wire for this browser's Accept-Encoding.
           const wire = parts && encoding ? parts.reduce((a, p) => a + wireBytes(p, encoding), 0) : s.size;
-          files.push({ name: m.name, bytes: s.size, etag: etagOf(s), role: m.role, wire, encoding: parts ? encoding : null });
+          files.push({ name: m.name, bytes: s.size, etag: etagOf(s), role: m.role, wire, encoding: parts ? encoding : null, ...(m.sha256 ? { sha256: m.sha256 } : {}) });
         }
         const body = JSON.stringify({ files, partBytes: PART_BYTES });
         res.writeHead(200, { ...isolated, 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'accept-encoding', 'content-length': Buffer.byteLength(body) });
@@ -146,6 +185,7 @@ export async function serveOfflineId(req, res, { path, webRoot, identifierDir, u
       }
       const model = MODELS.find(m => m.name === name);
       if (!model) throw new HttpError(404, 'File not found');
+      if (model.sha256 && !(await usable(identifierDir, model, await stat(join(identifierDir, model.path)).catch(() => null)))) throw new HttpError(404, 'File not found');
       const query = new URL(req.url, 'http://x').searchParams;
       if (query.has('part')) return await sendPart(req, res, identifierDir, model, query.get('part'));
       return await sendFile(req, res, join(identifierDir, model.path), { 'cache-control': 'private, no-store' });
@@ -254,7 +294,8 @@ async function compressInto(identifierDir, out, log) {
   const sha = () => createHash('sha256');
   for (const m of MODELS) {
     const file = join(identifierDir, m.path);
-    const s = await stat(file);
+    const s = await stat(file).catch(err => (m.optional && err.code === 'ENOENT' ? null : Promise.reject(err)));
+    if (!s) continue; // the small model, not on this server
     await mkdir(join(out, m.name));
     const parts = [];
     for (let i = 0, start = 0; start < s.size; i++, start += PART_BYTES) {

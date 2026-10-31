@@ -3,10 +3,21 @@
  * and its models behind the sign-in). Franz's phones: download the models once (Cache Storage, in parts of 32 MB so
  * a broken download resumes), then identify a photo in airplane mode: wing detector -> crop -> BioCLIP 2.5-H int8
  * encoder -> head, all in the browser (lib/offlineId.ts). «Copiar resultado» gives the device's numbers back.
+ * Two models to choose from: the full one and the small one (a distilled ViT-S, 192 px, the same feature and head),
+ * each downloaded on its own (the detector and the head once for both).
  */
 import type * as Ort from 'onnxruntime-web'
 import {
+  chooseModel,
   cropBox,
+  ENCODER_ROLE,
+  MODEL_LABEL,
+  MODEL_ROLES,
+  modelReady,
+  roleOf,
+  storedName,
+  studentInput,
+  STUDENT_SIZE,
   detectorInput,
   encoderInput,
   exifOrientation,
@@ -16,21 +27,26 @@ import {
   selectMasks,
   speciesTop,
   type Head,
+  type FileRole,
   type HeadMeta,
+  type ModelKind,
   type Rgba,
   type Side,
+  type StoredFile,
 } from '../lib/offlineId'
 import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { genusStock, speciesStock, stockDate, type FrozenStock } from '../lib/frozenStock'
 
 type OrtModule = typeof Ort
-interface ModelFile { name: string; bytes: number; etag: string; role: 'detector' | 'encoder' | 'head' | 'head-meta'; wire?: number; encoding?: string | null }
-interface Stored { files: Record<string, { etag: string; bytes: number }>; at: string }
+interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null }
+interface Stored { files: Record<string, StoredFile>; at: string }
 
 const CACHE = 'ithomiini-prueba-offline'
 const PART = 32 * 1024 * 1024
 const RUNNING = 'prueba-offline:running'
 const LAST = 'prueba-offline:last'
+const CHOSEN = 'prueba-offline:model'
+const KINDS: ModelKind[] = ['full', 'small']
 const ORT_FILES = ['ort.wasm.min.mjs', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']
 const ORT_GPU_FILES = ['ort.webgpu.min.mjs', 'ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm']
 
@@ -153,14 +169,35 @@ async function storageInfo() {
   render()
 }
 
+let ready: Record<ModelKind, boolean> = { full: false, small: false }
+
 async function refreshReady() {
   const s = await stored()
-  const done = s && files ? files.every(f => s.files[f.name]?.etag === f.etag) : !!s
+  ready = { full: modelReady('full', s?.files ?? null, files), small: modelReady('small', s?.files ?? null, files) }
+  const any = ready.full || ready.small
   const total = s ? Object.values(s.files).reduce((a, f) => a + f.bytes, 0) : 0
-  diag.modelsReady = !!(s && done)
-  show('ready', s && done ? `Listo sin conexión ✓ (${mb(total)} MB)` : s ? 'Hay modelos guardados, pero el servidor tiene otra versión: descargue de nuevo.' : null)
+  diag.modelsReady = any
+  diag.modelsReadyByKind = { ...ready }
+  const names = KINDS.filter(k => ready[k]).map(k => MODEL_LABEL[k]).join(' y ')
+  show('ready', any ? `Listo sin conexión ✓: ${names} (${mb(total)} MB guardados)` : s ? 'Hay modelos guardados, pero el servidor tiene otra versión: descargue de nuevo.' : null)
+  for (const k of KINDS) {
+    // Stored, but not the version the server lists now (a new small model, for example).
+    const stale = !ready[k] && !!s && !!storedName(s.files, ENCODER_ROLE[k])
+    show(`${k}Ready`, ready[k] ? 'Descargado ✓' : stale ? 'El servidor tiene otra versión: descargue de nuevo.' : null)
+    const radio = $<HTMLInputElement>(`model-${k}`)
+    radio.disabled = !ready[k]
+  }
+  const pick = chooseModel((localStorage.getItem(CHOSEN) as ModelKind | null) ?? null, ready)
+  for (const k of KINDS) $<HTMLInputElement>(`model-${k}`).checked = k === pick
+  show('modelNone', pick ? null : 'Descargue un modelo primero (paso 1).')
   $('remove').hidden = !s
   await storageInfo()
+}
+
+/** What a model still needs to download (files not stored in the listed version), plain and on the wire. */
+function toDownload(kind: ModelKind, s: Stored | null) {
+  const need = (files ?? []).filter(f => MODEL_ROLES[kind].includes(f.role) && s?.files[f.name]?.etag !== f.etag)
+  return { plain: need.reduce((a, f) => a + f.bytes, 0), wire: need.reduce((a, f) => a + (f.wire ?? f.bytes), 0) }
 }
 
 async function listFiles() {
@@ -185,7 +222,20 @@ async function listFiles() {
   diag.listWire = { plainMB: mb(plain), wireMB: mb(wire), encodings: [...new Set(files.map(f => f.encoding ?? 'none'))] }
   $('files').textContent =
     files.map(f => `${f.name} (${f.bytes < 1048576 ? '<1' : mb(f.bytes)} MB)`).join(' · ') + (wire < plain ? ` · ${mb(wire)} MB por la red (comprimido)` : '')
+  const hasSmall = files.some(f => f.role === 'student')
+  $<HTMLButtonElement>('downloadSmall').disabled = !hasSmall
+  show('smallMissing', hasSmall ? null : 'El modelo pequeño no está en el servidor por ahora.')
   await refreshReady()
+  await showSizes()
+}
+
+/** Each option's download: the files it still needs (the detector and the head are shared). */
+async function showSizes() {
+  const s = await stored()
+  for (const k of KINDS) {
+    const { plain, wire } = toDownload(k, s)
+    show(`${k}Size`, !files || !plain ? null : `Descarga: ${mb(plain)} MB${wire < plain ? `, ${mb(wire)} MB por la red (comprimido)` : ''}${k === 'small' ? ', con el detector de alas y la cabeza' : ''}`)
+  }
 }
 
 // ---------------------------------------------------------------- the flash-frozen stock (server/frozen-stock.mjs)
@@ -255,10 +305,11 @@ async function keepPage(cache: Cache) {
   }
 }
 
-async function download() {
+async function download(kind: ModelKind) {
   show('dlErr', null)
-  const button = $<HTMLButtonElement>('download')
-  button.disabled = true
+  const buttons = [$<HTMLButtonElement>('download'), $<HTMLButtonElement>('downloadSmall')]
+  const wasDisabled = buttons.map(b => b.disabled)
+  buttons.forEach(b => (b.disabled = true))
   // Asked first, still inside the click (Chrome weighs the gesture and the installed app); shown again after the download.
   const persist = navigator.storage?.persist?.().catch(() => null) ?? Promise.resolve(null)
   try {
@@ -266,6 +317,8 @@ async function download() {
     await storageInfo()
     if (!files) await listFiles()
     if (!files) throw new Error(signedIn ? 'No se pudo leer la lista de modelos.' : 'Inicie sesión primero.')
+    const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
+    if (wanted.length !== MODEL_ROLES[kind].length) throw new Error(`El ${MODEL_LABEL[kind]} no está en el servidor.`)
     const cache = await caches.open(CACHE)
     $('progressBox').hidden = false
     const t0 = performance.now()
@@ -273,15 +326,21 @@ async function download() {
     await keepPage(cache)
     await refreshStock()
     // Counted in plain bytes: the browser decompresses the parts (Content-Encoding) and hands over plain bytes.
-    const total = files.reduce((a, f) => a + f.bytes, 0)
+    const total = wanted.reduce((a, f) => a + f.bytes, 0)
     let done = 0
     const encodings: Record<string, number> = {}
     const progress = () => {
       $<HTMLProgressElement>('progress').value = done / total
       $('progressText').textContent = `${mb(done)} de ${mb(total)} MB`
     }
+    // The other model's files stay; files the server no longer lists (an older small model) go, with their parts.
+    const before = await stored()
     const keep: Stored = { files: {}, at: new Date().toISOString() }
-    for (const f of files) {
+    for (const [name, f] of Object.entries(before?.files ?? {})) {
+      if (files.some(l => l.name === name)) keep.files[name] = { ...f, role: roleOf(name, f.role) }
+      else for (let i = 0; i * PART < f.bytes; i++) await cache.delete(url(`./models/${name}?part=${i}`))
+    }
+    for (const f of wanted) {
       const parts = Math.ceil(f.bytes / PART)
       for (let i = 0; i < parts; i++) {
         const key = url(`./models/${f.name}?part=${i}`)
@@ -327,18 +386,21 @@ async function download() {
         }
         await cache.put(key, new Response(new Blob(chunks as BlobPart[]), { headers: { 'x-etag': f.etag, 'x-bytes': String(end - start + 1) } }))
       }
-      keep.files[f.name] = { etag: f.etag, bytes: f.bytes }
+      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role }
     }
     await cache.put(url('./models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
     diag.downloadSeconds = Math.round((performance.now() - t0) / 1000)
     diag.downloadEncodings = encodings
+    diag.downloadModel = kind
+    localStorage.setItem(CHOSEN, kind)
     show('progressText', `Descargado en ${diag.downloadSeconds} s.`)
   } catch (err) {
     show('dlErr', `La descarga falló: ${(err as Error).message}`)
     diag.downloadError = String((err as Error).message)
   } finally {
-    button.disabled = false
+    buttons.forEach((b, i) => (b.disabled = wasDisabled[i]))
     await refreshReady()
+    await showSizes()
   }
 }
 
@@ -358,24 +420,34 @@ async function readModel(name: string): Promise<Uint8Array> {
   return out
 }
 
-$('download').addEventListener('click', download)
+$('download').addEventListener('click', () => download('full'))
+$('downloadSmall').addEventListener('click', () => download('small'))
+for (const k of KINDS) $(`model-${k}`).addEventListener('change', () => localStorage.setItem(CHOSEN, k))
 $('remove').addEventListener('click', async () => {
   if (!confirm('¿Borrar los modelos guardados en este teléfono?')) return
   dropSessions()
   await caches.delete(CACHE)
   await loadStock() // gone with the models
   await refreshReady()
+  await showSizes()
 })
 
 // ---------------------------------------------------------------- identify
 
-interface Loaded { ort: OrtModule; gpuOrt: OrtModule | null; detector: Ort.InferenceSession; encoder: Ort.InferenceSession; head: Head; detectorBackend: string }
+interface Loaded {
+  ort: OrtModule
+  gpuOrt: OrtModule | null
+  detector: Ort.InferenceSession
+  encoders: Partial<Record<ModelKind, Ort.InferenceSession>>
+  head: Head
+  detectorBackend: string
+}
 let loaded: Loaded | null = null
 const loadTimes: Record<string, number> = {}
 
 function dropSessions() {
   loaded?.detector.release().catch(() => {})
-  loaded?.encoder.release().catch(() => {})
+  for (const e of Object.values(loaded?.encoders ?? {})) e?.release().catch(() => {})
   loaded = null
 }
 
@@ -386,53 +458,65 @@ async function importOrt(file: string): Promise<OrtModule> {
   return m
 }
 
-async function load(useGpu: boolean): Promise<Loaded> {
+async function load(useGpu: boolean, kind: ModelKind): Promise<Loaded> {
   const wanted = useGpu ? 'webgpu' : 'wasm'
-  if (loaded && loaded.detectorBackend.startsWith(wanted)) return loaded
+  if (loaded && loaded.detectorBackend.startsWith(wanted) && loaded.encoders[kind]) return loaded
   const s = await stored()
   if (!s) throw new Error('Primero descargue los modelos.')
-  const name = (role: string) => Object.keys(s.files).find(n => (role === 'encoder' ? n.startsWith('bioclip') : role === 'detector' ? n.startsWith('wing_seg') : role === 'meta' ? n.endsWith('.json') : n.endsWith('.bin')))!
+  const name = (role: FileRole) => {
+    const n = storedName(s.files, role)
+    if (!n) throw new Error(`Falta ${role}: descargue el ${MODEL_LABEL[kind]}.`)
+    return n
+  }
   let t = performance.now()
   const ort = loaded?.ort ?? (await importOrt(ORT_FILES[0]))
   ort.env.wasm.numThreads = threads
-  let detector: Ort.InferenceSession | null = null, detectorBackend = 'wasm', gpuOrt: OrtModule | null = null
-  const detBytes = await readModel(name('detector'))
-  if (useGpu) {
-    try {
-      gpuOrt = await importOrt(ORT_GPU_FILES[0])
-      gpuOrt.env.wasm.numThreads = 1
-      detector = await gpuOrt.InferenceSession.create(detBytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' })
-      detectorBackend = 'webgpu'
-    } catch (err) {
-      diag.webgpuError = String((err as Error).message).slice(0, 300)
-      detectorBackend = 'wasm (WebGPU falló)'
+  let detector: Ort.InferenceSession | null = null, detectorBackend = 'wasm', gpuOrt: OrtModule | null = loaded?.gpuOrt ?? null
+  if (loaded && loaded.detectorBackend.startsWith(wanted)) {
+    detector = loaded.detector
+    detectorBackend = loaded.detectorBackend
+  } else {
+    const detBytes = await readModel(name('detector'))
+    if (useGpu) {
+      try {
+        gpuOrt = await importOrt(ORT_GPU_FILES[0])
+        gpuOrt.env.wasm.numThreads = 1
+        detector = await gpuOrt.InferenceSession.create(detBytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' })
+        detectorBackend = 'webgpu'
+      } catch (err) {
+        diag.webgpuError = String((err as Error).message).slice(0, 300)
+        detectorBackend = 'wasm (WebGPU falló)'
+      }
     }
+    loaded?.detector.release().catch(() => {})
+    detector ??= await ort.InferenceSession.create(detBytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+    loadTimes.detector_load_ms = Math.round(performance.now() - t)
   }
-  loaded?.detector.release().catch(() => {})
-  detector ??= await ort.InferenceSession.create(detBytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
-  loadTimes.detector_load_ms = Math.round(performance.now() - t)
-  let encoder = loaded?.encoder
-  if (!encoder) {
+  const encoders = { ...loaded?.encoders }
+  if (!encoders[kind]) {
     t = performance.now()
-    encoder = await running('Cargando el codificador (638 MB) en memoria', async () => {
-      let bytes: Uint8Array | null = await readModel(name('encoder'))
-      loadTimes.encoder_read_ms = Math.round(performance.now() - t)
+    const key = kind === 'full' ? 'encoder' : 'small'
+    const file = name(ENCODER_ROLE[kind])
+    const step = kind === 'full' ? 'Cargando el codificador (638 MB) en memoria' : `Cargando el modelo pequeño (${mb(s.files[file].bytes)} MB) en memoria`
+    encoders[kind] = await running(step, async () => {
+      let bytes: Uint8Array | null = await readModel(file)
+      loadTimes[`${key}_read_ms`] = Math.round(performance.now() - t)
       const t1 = performance.now()
       const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
       bytes = null
-      loadTimes.encoder_session_ms = Math.round(performance.now() - t1)
+      loadTimes[`${key}_session_ms`] = Math.round(performance.now() - t1)
       return session
     })
   }
   let head = loaded?.head
   if (!head) {
     t = performance.now()
-    const meta = JSON.parse(new TextDecoder().decode(await readModel(name('meta')))) as HeadMeta
-    const w = await readModel(name('weights'))
+    const meta = JSON.parse(new TextDecoder().decode(await readModel(name('head-meta')))) as HeadMeta
+    const w = await readModel(name('head'))
     head = makeHead(meta, w.buffer as ArrayBuffer)
     loadTimes.head_load_ms = Math.round(performance.now() - t)
   }
-  loaded = { ort, gpuOrt, detector, encoder, head, detectorBackend }
+  loaded = { ort, gpuOrt, detector, encoders, head, detectorBackend }
   diag.backend = { detector: detectorBackend, encoder: `wasm, ${threads} hilo(s)` }
   return loaded
 }
@@ -468,9 +552,13 @@ async function identify(photo: Photo) {
   const times: Record<string, number> = {}
   const tick = (key: string, t: number) => (times[key] = Math.round(performance.now() - t))
   const side = ($<HTMLSelectElement>('side').value || null) as Side
+  // The model chosen, or the only one downloaded.
+  const kind = chooseModel(KINDS.find(k => $<HTMLInputElement>(`model-${k}`).checked) ?? null, ready)
   try {
+    if (!kind) throw new Error('Primero descargue un modelo (paso 1).')
     const useGpu = $<HTMLInputElement>('useGpu').checked
-    const m = await running('Cargando los modelos', () => load(useGpu))
+    const m = await running('Cargando los modelos', () => load(useGpu, kind))
+    const encoder = m.encoders[kind]!
     const out = await running('Identificando', async () => {
       let t = performance.now()
       const raw = photo.bytes
@@ -493,8 +581,10 @@ async function identify(photo: Photo) {
       const square = letterboxCrop(img, box)
       tick('crop_ms', t)
       t = performance.now()
-      const enc = await m.encoder.run({ [m.encoder.inputNames[0]]: new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224]) })
-      const feature = enc[m.encoder.outputNames[0]].data as Float32Array
+      // The small model: the same crop at 192 px (studentInput); the same 1024-D feature.
+      const x = kind === 'small' ? new m.ort.Tensor('float32', studentInput(square), [1, 3, STUDENT_SIZE, STUDENT_SIZE]) : new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
+      const enc = await encoder.run({ [encoder.inputNames[0]]: x })
+      const feature = enc[encoder.outputNames[0]].data as Float32Array
       tick('encoder_run_ms', t)
       t = performance.now()
       const top = speciesTop(m.head, feature, side)
@@ -502,6 +592,15 @@ async function identify(photo: Photo) {
       return { orientation, img, box, status, square, top, masks: masks.length, selected: selected.length }
     })
     const total = Object.values(times).reduce((a, b) => a + b, 0)
+    const s = await stored()
+    const answeredBy = {
+      model: kind,
+      label: MODEL_LABEL[kind],
+      file: s ? storedName(s.files, ENCODER_ROLE[kind]) : null,
+      encoder_ms: times.encoder_run_ms,
+      total_ms: total,
+    }
+    $('answered').textContent = `Respondió: ${MODEL_LABEL[kind]} · codificador ${(times.encoder_run_ms / 1000).toFixed(2)} s · total por foto ${(total / 1000).toFixed(2)} s`
     drawCrop(out.square)
     $('cropNote').textContent = out.status === 'success' ? `Alas encontradas (${out.selected})` : out.status === 'centre_crop_fallback' ? 'Sin alas: centro de la foto (90 %)' : 'Foto completa'
     $('top').innerHTML = ''
@@ -525,8 +624,10 @@ async function identify(photo: Photo) {
       $('top').append(tr)
     }
     const labels: Record<string, string> = {
-      encoder_read_ms: 'Leer codificador del almacenamiento', encoder_session_ms: 'Preparar codificador', detector_load_ms: 'Cargar detector', head_load_ms: 'Cargar cabeza',
-      decode_ms: 'Abrir foto', detector_prep_ms: 'Preparar foto', detector_run_ms: `Detector de alas (${m.detectorBackend})`, crop_ms: 'Recorte', encoder_run_ms: `Codificador (wasm, ${threads} hilo(s))`, head_ms: 'Cabeza',
+      encoder_read_ms: 'Leer codificador completo del almacenamiento', encoder_session_ms: 'Preparar codificador completo',
+      small_read_ms: 'Leer modelo pequeño del almacenamiento', small_session_ms: 'Preparar modelo pequeño', detector_load_ms: 'Cargar detector', head_load_ms: 'Cargar cabeza',
+      decode_ms: 'Abrir foto', detector_prep_ms: 'Preparar foto', detector_run_ms: `Detector de alas (${m.detectorBackend})`, crop_ms: 'Recorte',
+      encoder_run_ms: `Codificador, ${MODEL_LABEL[kind]} (wasm, ${threads} hilo(s))`, head_ms: 'Cabeza',
     }
     const rows = [...Object.entries(loadTimes).map(([k, v]) => [k, v, true] as const), ...Object.entries(times).map(([k, v]) => [k, v, false] as const)]
     $('times').innerHTML = ''
@@ -543,7 +644,7 @@ async function identify(photo: Photo) {
     $('result').hidden = false
     const result = {
       at: new Date().toISOString(), file: { name: photo.name, bytes: photo.size, type: photo.type }, size: [out.img.width, out.img.height], orientation: out.orientation,
-      side, crop: out.status, box: out.box, masks: out.masks, kept: out.selected, top5: out.top, times: { ...times, total_ms: total }, load: { ...loadTimes }, backend: diag.backend,
+      model: answeredBy, side, crop: out.status, box: out.box, masks: out.masks, kept: out.selected, top5: out.top, times: { ...times, total_ms: total }, load: { ...loadTimes }, backend: diag.backend,
     }
     diag.lastResult = result
     ;(diag.results as unknown[] | undefined) ? (diag.results as unknown[]).push(result) : (diag.results = [result])
