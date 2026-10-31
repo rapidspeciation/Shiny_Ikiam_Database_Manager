@@ -35,7 +35,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { appendNew, mediaTag, slug, ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
+import { appendNew, mediaTag, named, slug, ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -419,10 +419,12 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       runCommand(chat, msg, cmd).catch(e => log.error?.('command:', e.message));
       return { decision: 'command' };
     }
-    // The group: a tag or a reply to the bridge opens or refreshes the conversation; an untagged message inside one is a follow-up.
+    // The group: a tag or a reply to the bridge opens or refreshes the conversation; an untagged message inside one is a follow-up only if it is addressed to Claude by name.
     if (isGroup(chat)) {
       if (tagged(msg.text) || wakes(msg)) openConvo(chat);
-      else if (active(chat)) msg.followUp = true;
+      // Inside the window, an untagged message wakes Claude only when someone other than Franz quotes a Claude message
+      // (handled above) or addresses it by name; being close in time is not enough, and Franz's own untagged posts never do.
+      else if (active(chat) && !msg.fromMe && named(msg.text)) msg.followUp = true;
       else return out('skip', 'no @claude');
       save();
     } else if (!tagged(msg.text)) return out('skip', 'no @claude');
@@ -765,7 +767,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       // Where the older messages are, for questions that reach back further than the lines above.
       if (chat.history?.dir) lines.push(`History: the file wa-history/${chat.history.slug ?? slug(chat.label)}.jsonl in your workspace has every message of this group (one JSON per line: id, at, name, text, media, replyTo); search it with Grep or Read when the question needs earlier messages.`);
       else if (chat.key === 'self' && !chat.dryRun) lines.push(`History: your chat's older messages are in the WhatsApp store, read-only: wacli --store ${config.wacli.store} messages list --read-only --json --chat ${chat.jid} --after YYYY-MM-DD --limit N (this chat only).`);
-      if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it came inside a conversation you were in during the last 15 minutes. Answer only if it clearly continues that exchange with you (an answer to your question, a follow-up, a correction). If people are talking among themselves, or you are unsure, your last message must be exactly [silent].');
+      if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it addresses you by name («Claude, …») inside a conversation you were in during the last 15 minutes. Answer only if it clearly continues that exchange with you (an answer to your question, a follow-up, a correction). If people are talking among themselves, or you are unsure, your last message must be exactly [silent].');
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
       lines.push('(Answer per the whatsapp-bridge skill: your last message is sent as it is.)');

@@ -10,6 +10,13 @@ export const PREFIX = 'Claude: ';
 export const LOOP_GUARD = /^\s*claude\s*:/i;
 export const COMMANDS = ['help', 'status', 'whoami', 'usage', 'stop', 'start', 'ack'];
 
+/**
+ * Claude addressed by name as a vocative, at the start or the end of the text: «Claude, …», «claude ¿y…?»,
+ * «…, claude?». Not inside other words (claudette, claude.ai), not «Claude: …» (the bridge's own prefix).
+ */
+export const VOCATIVE = /^\s*[¿¡]*claude(?=[\s,¿¡?!])|[\s,]claude\s*[?!.]*\s*$/i;
+export const named = text => VOCATIVE.test(String(text ?? '')) && !LOOP_GUARD.test(String(text ?? ''));
+
 export const tagged = text => TRIGGER.test(String(text ?? ''));
 export const ownAnswer = text => LOOP_GUARD.test(String(text ?? ''));
 

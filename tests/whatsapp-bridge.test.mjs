@@ -4,7 +4,7 @@ import { createCipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
+import { named, command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
 import { createServer } from 'node:http';
 import { createBridge } from '../tools/whatsapp/bridge.mjs';
 
@@ -302,7 +302,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   assert.deepEqual(turns(), ['T']);
   const afterTag = outbox().length;
   clock += 5 * 60_000;
-  assert.equal(post('¿y para machos?').decision, 'queued');
+  assert.equal(post('Claude, ¿y para machos?').decision, 'queued');
   await settle();
   assert.deepEqual(turns(), ['T', 'F']);
   const sent = outbox().slice(afterTag);
@@ -312,7 +312,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   // Teammates talking among themselves inside the window: the chat answers [silent], nothing goes out.
   clock += 5 * 60_000;
   const before = outbox().length;
-  post('entre nosotros: ¿quién lleva las redes mañana?');
+  post('Claude, entre nosotros: ¿quién lleva las redes mañana?');
   await settle();
   assert.deepEqual(turns(), ['T', 'F', 'F']);
   assert.equal(outbox().length, before);
@@ -500,4 +500,53 @@ test('a phone message that arrives with empty text: filled from the store; if st
   assert.equal(hook('PH2', '').decision, 'queued');
   await settle();
   assert.equal(outbox().filter(s => s.text === 'Claude: Hay 12.').length, 2);
+});
+
+test('the name as a vocative', () => {
+  for (const t of ['Claude, ¿y para machos?', 'claude ¿y las hembras?', 'oye claude', 'gracias, claude!', '¿cuántas hay, Claude?', '¡Claude! mira']) assert.ok(named(t), t);
+  for (const t of ['claudette dijo que sí', 'escribe a franz@claude.ai', 'Claude: hay 12', 'el modelo claude es bueno ahora mismo sí', 'hola a todos', '']) assert.ok(!named(t), t);
+});
+
+test('untagged messages inside a conversation: only a quote of Claude or its name wake it; Franz never', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-wake-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(join(dir, 'turns'))}, 'x\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const turns = () => (existsSync(join(dir, 'turns')) ? readFileSync(join(dir, 'turns'), 'utf8').trim().split('\n').length : 0);
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `W${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+
+  post('@claude cuántas hay?'); // opens the window
+  await settle();
+  assert.equal(turns(), 1);
+  const ours = outbox().find(s => s.kind === 'reply').id;
+  const sentBefore = outbox().length;
+
+  // Franz's untagged image post and text inside the window: nothing, no turn.
+  assert.equal(post('', { FromMe: true, Media: { Type: 'image', Caption: 'Encontramos esta variedad en Cavernas' } }).reason, 'no @claude');
+  assert.equal(post('Claude, mira esto', { FromMe: true }).reason, 'no @claude');
+  // Someone else's untagged message, no quote and no name: no turn.
+  assert.equal(post('qué bonita, ¿dónde fue?').reason, 'no @claude');
+  await settle();
+  assert.equal(turns(), 1);
+  assert.equal(outbox().length, sentBefore);
+
+  // A quote of Claude's message wakes it (also Franz's); a name vocative wakes it.
+  assert.equal(post('y para las hembras?', { ReplyToID: ours }).decision, 'queued');
+  assert.equal(post('sí, gracias', { ReplyToID: ours, FromMe: true }).decision, 'queued');
+  await settle();
+  assert.equal(turns(), 3);
+  assert.equal(post('Claude, ¿y para machos?').decision, 'queued');
+  await settle();
+  assert.equal(turns(), 4);
 });
