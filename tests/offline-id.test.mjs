@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -145,11 +145,43 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
 
     // The model changes: the old compressed parts no longer match, plain bytes go.
     writeFileSync(join(ident, 'onnx', enc), Buffer.alloc(big, 7));
+    utimesSync(join(ident, 'onnx', enc), new Date(), new Date(Date.now() + 5000)); // a different mtime for sure
     assert.deepEqual(await modelsWithoutParts(ident), [enc]);
     r = await raw(port, `${p}/${enc}?part=0`, { 'accept-encoding': 'zstd' });
     assert.equal(r.headers['content-encoding'], undefined);
     assert.notEqual(r.headers.etag.replace(/-p0"$/, ''), plainEtag.replace(/-p1"$/, ''));
     assert.ok(r.body.every(b => b === 7));
+  } finally {
+    server.close();
+  }
+});
+
+test('model parts: a folder still being made is read again once its manifest appears; failed and older folders go', async () => {
+  const { port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  const name = 'head_b8127dbf_fp16.bin';
+  try {
+    signIn();
+    await precompressParts(ident, { stamp: '20261031T000000Z' });
+    const second = await precompressParts(ident, { stamp: '20261031T000001Z' });
+    // Only the newest folder is kept.
+    assert.deepEqual(readdirSync(join(ident, 'offline')).filter(d => d.startsWith('parts-')), ['parts-20261031T000001Z']);
+    // The same folder without its manifest yet (as while it is made): plain, and the memo must not keep that.
+    const manifest = join(second.dir, 'manifest.json');
+    renameSync(manifest, manifest + '.hold');
+    let r = await raw(port, `${p}/${name}?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(r.headers['content-encoding'], undefined);
+    renameSync(manifest + '.hold', manifest);
+    r = await raw(port, `${p}/${name}?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(r.headers['content-encoding'], 'zstd');
+    // A run that fails leaves nothing behind.
+    await assert.rejects(precompressParts(ident, { stamp: '20261031T000001Z' }));
+    assert.ok(existsSync(second.dir), 'an existing folder is never overwritten');
+    const missing = join(ident, MODELS[0].path);
+    renameSync(missing, missing + '.away');
+    await assert.rejects(precompressParts(ident, { stamp: '20261031T000002Z' }));
+    renameSync(missing + '.away', missing);
+    assert.equal(existsSync(join(ident, 'offline', 'parts-20261031T000002Z')), false);
   } finally {
     server.close();
   }

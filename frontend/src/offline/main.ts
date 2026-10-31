@@ -182,7 +182,7 @@ async function listFiles() {
   const wire = files.reduce((a, f) => a + (f.wire ?? f.bytes), 0), plain = files.reduce((a, f) => a + f.bytes, 0)
   diag.listWire = { plainMB: mb(plain), wireMB: mb(wire), encodings: [...new Set(files.map(f => f.encoding ?? 'none'))] }
   $('files').textContent =
-    files.map(f => `${f.name} (${mb(f.bytes)} MB)`).join(' · ') + (wire < plain ? ` · ${mb(wire)} MB por la red (comprimido)` : '')
+    files.map(f => `${f.name} (${f.bytes < 1048576 ? '<1' : mb(f.bytes)} MB)`).join(' · ') + (wire < plain ? ` · ${mb(wire)} MB por la red (comprimido)` : '')
   await refreshReady()
 }
 
@@ -244,8 +244,10 @@ async function download() {
             const r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
             if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
             // The part's ETag is the listed file's (W/"<file etag>-p<i>"): a model changed since the list is not mixed in.
-            if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1)
-              throw new Error('el modelo cambió en el servidor: recargue la página')
+            if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1) {
+              r.body?.cancel().catch(() => {})
+              throw Object.assign(new Error('el modelo cambió en el servidor: recargue la página'), { final: true })
+            }
             const enc = r.headers.get('content-encoding') || 'none'
             encodings[enc] = (encodings[enc] ?? 0) + 1
             const reader = r.body!.getReader()
@@ -261,7 +263,7 @@ async function download() {
             break
           } catch (err) {
             done -= got
-            if (attempt >= 4) throw new Error(`${f.name} parte ${i + 1}/${parts}: ${(err as Error).message}`)
+            if (attempt >= 4 || (err as { final?: boolean }).final) throw new Error(`${f.name} parte ${i + 1}/${parts}: ${(err as Error).message}`)
             show('progressText', `Reintentando (${(err as Error).message})…`)
             await new Promise(r => setTimeout(r, 2000 * attempt))
           }

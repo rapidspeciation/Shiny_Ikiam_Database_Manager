@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -79,7 +79,9 @@ async function compressedParts(identifierDir) {
   const root = join(identifierDir, 'offline');
   const dirs = (await readdir(root).catch(() => [])).filter(d => PARTS_DIR.test(d)).sort().reverse();
   const stats = await Promise.all(MODELS.map(m => stat(join(identifierDir, m.path)).catch(() => null)));
-  const key = root + '|' + dirs.join(',') + '|' + stats.map(s => (s ? etagOf(s) : '-')).join(',');
+  // Each folder's manifest too: a folder being made gets its manifest last, and must be read again then.
+  const manifests = await Promise.all(dirs.map(d => stat(join(root, d, 'manifest.json')).catch(() => null)));
+  const key = [root, ...dirs.map((d, i) => `${d}:${manifests[i] ? etagOf(manifests[i]) : '-'}`), ...stats.map(s => (s ? etagOf(s) : '-'))].join('|');
   if (partsMemo.key === key) return partsMemo.value;
   const value = {};
   for (const d of dirs) {
@@ -87,7 +89,7 @@ async function compressedParts(identifierDir) {
     if (!manifest || manifest.partBytes !== PART_BYTES) continue;
     MODELS.forEach((m, i) => {
       const entry = manifest.files?.[m.name];
-      if (!value[m.name] && stats[i] && entry?.etag === etagOf(stats[i])) value[m.name] = { dir: join(root, d, m.name), parts: entry.parts };
+      if (!value[m.name] && stats[i] && entry?.etag === etagOf(stats[i])) value[m.name] = { dir: join(root, d, m.name), etag: entry.etag, parts: entry.parts };
     });
   }
   partsMemo = { key, value };
@@ -175,8 +177,19 @@ export async function serveOfflineId(req, res, { path, webRoot, identifierDir, u
  */
 async function sendPart(req, res, identifierDir, model, index) {
   const file = join(identifierDir, model.path);
-  const s = await stat(file).catch(() => null);
-  if (!s?.isFile()) throw new HttpError(404, 'File not found');
+  // Opened once: the ETag and the bytes come from the same file, even if the model is replaced meanwhile.
+  const fh = await open(file, 'r').catch(() => null);
+  if (!fh) throw new HttpError(404, 'File not found');
+  try {
+    return await sendPartOf(req, res, identifierDir, model, index, fh);
+  } finally {
+    await fh.close().catch(() => {});
+  }
+}
+
+async function sendPartOf(req, res, identifierDir, model, index, fh) {
+  const s = await fh.stat();
+  if (!s.isFile()) throw new HttpError(404, 'File not found');
   const i = /^\d+$/.test(index) ? Number(index) : -1;
   const count = Math.ceil(s.size / PART_BYTES);
   if (i < 0 || i >= count) throw new HttpError(416, 'No such part');
@@ -197,7 +210,8 @@ async function sendPart(req, res, identifierDir, model, index) {
     return res.end();
   }
   const encoding = pickEncoding(req.headers['accept-encoding']);
-  const packed = encoding ? (await compressedParts(identifierDir))[model.name] : null;
+  let packed = encoding ? (await compressedParts(identifierDir))[model.name] : null;
+  if (packed && packed.etag !== etagOf(s)) packed = null;
   const part = packed?.parts?.[i];
   const suffix = encoding && ENCODINGS.find(e => e[0] === encoding)[1];
   const packedFile = part && part.bytes === end - start + 1 ? join(packed.dir, `${i}.${suffix}`) : null;
@@ -209,17 +223,33 @@ async function sendPart(req, res, identifierDir, model, index) {
   }
   res.writeHead(200, { ...headers, 'content-length': end - start + 1 });
   if (req.method === 'HEAD') return res.end();
-  await pipeline(createReadStream(file, { start, end, highWaterMark: 1 << 20 }), res).catch(() => {});
+  await pipeline(fh.createReadStream({ start, end, highWaterMark: 1 << 20, autoClose: false }), res).catch(() => {});
 }
 
 /**
  * Makes offline/parts-<stamp>/: each model's PART_BYTES parts as <name>/<i>.zst (level 3) and <i>.gz (level 6),
  * each checked by decompressing it again, and manifest.json (written last: a folder without it is ignored).
- * Derived files only: the models are read, never changed. Returns the folder and the manifest.
+ * Derived files only: the models are read, never changed. After a success the older parts-* folders are removed;
+ * a failed run removes its own. Returns the folder and the manifest.
  */
 export async function precompressParts(identifierDir, { stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z'), log = () => {} } = {}) {
-  const out = join(identifierDir, 'offline', `parts-${stamp}`);
+  const root = join(identifierDir, 'offline');
+  const out = join(root, `parts-${stamp}`);
   await mkdir(out); // a fresh folder: fails if it exists
+  let manifest;
+  try {
+    manifest = await compressInto(identifierDir, out, log);
+    await writeFile(join(out, 'manifest.json'), JSON.stringify(manifest, null, 1));
+  } catch (err) {
+    await rm(out, { recursive: true, force: true }); // a folder without its manifest is only dead weight
+    throw err;
+  }
+  // The new folder covers every model: older folders (and any left without a manifest) are not read any more.
+  for (const d of await readdir(root)) if (PARTS_DIR.test(d) && d !== `parts-${stamp}`) await rm(join(root, d), { recursive: true, force: true });
+  return { dir: out, manifest };
+}
+
+async function compressInto(identifierDir, out, log) {
   const manifest = { created: new Date().toISOString(), partBytes: PART_BYTES, levels: { zst: 3, gz: 6 }, files: {} };
   const sha = () => createHash('sha256');
   for (const m of MODELS) {
@@ -237,10 +267,15 @@ export async function precompressParts(identifierDir, { stamp = new Date().toISO
       const z = createZstdCompress({ params: { [zlibConstants.ZSTD_c_compressionLevel]: 3 } });
       const g = createGzip({ level: 6 });
       const read = createReadStream(file, { start, end, highWaterMark: 1 << 20 });
-      read.pipe(hashing);
       hashing.pipe(z);
       hashing.pipe(g);
-      await Promise.all([pipeline(z, createWriteStream(zst + '.tmp')), pipeline(g, createWriteStream(gz + '.tmp'))]);
+      // A read error ends every stream (pipeline), so nothing waits forever.
+      const fail = err => [z, g].forEach(x => x.destroy(err));
+      await Promise.all([
+        pipeline(read, hashing).catch(err => (fail(err), Promise.reject(err))),
+        pipeline(z, createWriteStream(zst + '.tmp')),
+        pipeline(g, createWriteStream(gz + '.tmp')),
+      ]);
       const want = plain.digest('hex');
       for (const [f, unpack] of [
         [zst, createZstdDecompress],
@@ -261,8 +296,7 @@ export async function precompressParts(identifierDir, { stamp = new Date().toISO
     if (etagOf(after) !== etagOf(s)) throw new Error(`${m.name} changed while it was compressed`);
     manifest.files[m.name] = { etag: etagOf(s), bytes: s.size, parts };
   }
-  await writeFile(join(out, 'manifest.json'), JSON.stringify(manifest, null, 1));
-  return { dir: out, manifest };
+  return manifest;
 }
 
 /** A file streamed from disk (never read whole), with an ETag, If-None-Match and one byte range (If-Range). */
