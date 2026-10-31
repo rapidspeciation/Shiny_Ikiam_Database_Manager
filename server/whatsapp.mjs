@@ -29,6 +29,8 @@ export const DEFAULTS = {
   maxWaitMs: 60_000,
   /** A protocol question waits this long for a teammate's answer before it goes to the chat. */
   questionWaitMs: 20 * MINUTE,
+  /** No unprompted replies at night (quietHours); false only for lab runs. */
+  quietHours: true,
   perNumberHour: 20,
   perNumberDay: 80,
   groupUnpromptedDay: 3,
@@ -51,7 +53,7 @@ const MODEL = {
   ],
 };
 const PROTOCOL_WORDS =
-  /\b(marc\w*|preserv\w*|transect\w*|recaptur\w*|clima|weather|lluvia|protocol\w*|cam\w*|tubo\w*|ala\w*|wing\w*|insectario|insectary|colect\w*|collect\w*|muert\w*|emergid\w*|clutch\w*|huevo\w*|larva\w*|pupa\w*|T[1-4])\b|\b30\b/i;
+  /\b(marc\w*|preserv\w*|transect\w*|monitor\w*|recaptur\w*|clima|weather|lluvi\w*|lluev\w*|rain\w*|protocol\w*|cam\w*|tubo\w*|ala\w*|wing\w*|insectario|insectary|colect\w*|collect\w*|muert\w*|emergid\w*|clutch\w*|huevo\w*|larva\w*|pupa\w*|T[1-4])\b|\b30\b/i;
 const QUESTION_START =
   /^\s*(¿|qu[eé]|c[oó]mo|cu[aá]nd[oa]s?|cu[aá]nt[oa]s?|d[oó]nde|cu[aá]l(es)?|por qu[eé]|se puede|hay que|alguien|what|how|when|where|which|why|should|do we|does|is it|can we)\b/i;
 const CAM = /\bCAM\d{6}\b/gi;
@@ -157,6 +159,8 @@ export function groupWake(msg, bot) {
 /** Whether a message reads as a protocol question. Pure, for tests. */
 export function protocolQuestion(text) {
   const t = String(text ?? '').trim();
+  // A question that tags someone is theirs to answer.
+  if (/(^|\s)@\S/.test(t)) return false;
   return (t.endsWith('?') || QUESTION_START.test(t)) && PROTOCOL_WORDS.test(t);
 }
 
@@ -452,11 +456,11 @@ export function createWhatsAppRelay({
       if (!wakeReason && grp.mode === 'helpful') {
         const mismatch = camMismatches(msg.text, lookupCam, genera());
         if (mismatch.length) wakeReason = 'candidate:cam';
-        else if (protocolQuestion(msg.text)) wakeReason = 'candidate:question';
+        else if (!msg.mentions.length && protocolQuestion(msg.text)) wakeReason = 'candidate:question';
       }
       if (!wakeReason) return out('context', 'no wake rule');
       if (wakeReason.startsWith('candidate:')) {
-        if (quietHours(t)) return out('context', 'quiet hours');
+        if (o.quietHours && quietHours(t)) return out('context', 'quiet hours');
         if (unpromptedToday(msg.chat, t) >= (grp.daily_cap ?? o.groupUnpromptedDay)) return out('context', 'group daily cap');
       }
     } else {

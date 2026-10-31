@@ -106,6 +106,8 @@ test('the wake rules, alone', () => {
   assert.ok(protocolQuestion('¿Marcamos o preservamos las Mechanitis de T2?'));
   assert.ok(!protocolQuestion('¿vamos a almorzar?'));
   assert.ok(!protocolQuestion('Marcamos 7 en T2.'));
+  assert.ok(protocolQuestion('Oigan, si llueve, ¿se pospone o se cancela el monitoreo?'));
+  assert.ok(!protocolQuestion('@Ana ¿marcamos en el ala anterior o en el abdomen?'));
 });
 
 test('a CAM named with another genus or sex than the database is a mismatch', () => {

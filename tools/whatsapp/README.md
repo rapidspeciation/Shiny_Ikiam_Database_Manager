@@ -26,7 +26,7 @@ in the lab only, and its answers go to an outbox file. **Nothing is sent to What
    the bot's name (`WA_BOT_NAME`, default `\b(ithobot|asistente|assistant)\b`) or a `/command`.
    In `helpful` groups two more things count as candidates:
    - a CAM whose genus or sex disagrees with the database, or a CAM it does not have;
-   - a protocol question that no teammate answered within 20 min.
+   - a protocol question that tags nobody and that no teammate answered within 20 min.
 
    Candidates are limited to 3 a day per group and never sent between 21:00 and 06:30 Ecuador time.
    Every other group message is kept as context for the next envelope.
@@ -63,6 +63,7 @@ In the lab these files are in `~/.cache/ithomiini-lab/app-workbook/` (or `app/` 
 | `WA_BOT_JIDS`, `WA_BOT_NAME` | The bot's JIDs/LIDs (comma-separated) and the name regex |
 | `WA_LAB=1` | Lets the simulator set the whitelist (`POST /api/wa/setup`), and only when the workbook is not the team's |
 | `WA_DEBOUNCE_MS` | The 20 s quiet time, for experiments |
+| `WA_QUESTION_WAIT_MS`, `WA_QUIET_HOURS=0` | Lab only (`WA_LAB=1`): a shorter wait for unanswered questions, and no quiet hours, so the simulator can run the unprompted cases at any time |
 
 `tools/lab/app.sh` sets the secret file and `WA_LAB=1`, and unsets `WA_SENDER`. It also adds the
 secret to the paths the lab chats may not read.
@@ -79,6 +80,7 @@ node tools/whatsapp/simulate.mjs tools/whatsapp/examples/cases.jsonl /tmp/wa-sim
   `{ id, chat: "dm" | "<group>@g.us", chatName?, sender: "+593…", senderName?, preceding?: [{ sender, senderName?, text }], message, image?: "/abs/path.jpg", quoted?: "out:<n>", mentions?: [jid] }`.
   `preceding` messages are posted first, one minute apart.
 - `--setup` loads the whitelist, and `--fresh-thread` starts a new «WhatsApp» chat on the next wake.
+- Every message of a case is followed, the preceding ones too (one of them may wake the chat).
 - Output, in a new, empty folder: `results.jsonl`, one line per case with `{ id, decision, reason, outcome, reply | "no reply", replies, proposalLinks, seconds }`, and `run.json`.
 - The simulator waits for each case to finish: a final decision (dropped, context, limited) or the
   end of the chat's turn.

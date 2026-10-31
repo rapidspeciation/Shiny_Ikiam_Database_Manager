@@ -106,32 +106,40 @@ for (const c of cases) {
     ...(m.image ? { media_type: 'image', local_path: resolve(m.image) } : {}),
   });
   const preceding = c.preceding ?? [];
-  for (const [i, p] of preceding.entries()) await call('POST', '/api/wa/inbound', event(p, Date.now() - (preceding.length - i) * 60_000));
+  // Every message of the case is followed, the preceding ones too: one of them may wake the chat
+  // (an unanswered question in a `helpful` group), and its answer belongs to this case.
+  const posted = [];
+  for (const [i, p] of preceding.entries()) {
+    const e = event(p, Date.now() - (preceding.length - i) * 60_000);
+    posted.push({ e, r: await call('POST', '/api/wa/inbound', e) });
+  }
   const last = event({ sender: c.sender, senderName: c.senderName, text: c.message, image: c.image, quoted: c.quoted, mentions: c.mentions }, Date.now());
-  const posted = await call('POST', '/api/wa/inbound', last);
-  let state = null;
+  posted.push({ e: last, r: await call('POST', '/api/wa/inbound', last) });
+  const done = s => s && (FINAL.has(s.status) || ((s.status === 'answered' || s.status === 'unanswered') && s.turnDone));
+  let states = [];
   let outcome = 'timeout';
   while (Date.now() - started < timeoutS * 1000) {
     await sleep(3000);
-    const got = await call('GET', `/api/wa/messages/${encodeURIComponent(last.msg_id)}`);
-    state = got.json;
-    if (!state) continue;
-    if (FINAL.has(state.status)) {
-      outcome = state.status;
-      break;
-    }
-    if ((state.status === 'answered' || state.status === 'unanswered') && state.turnDone) {
-      outcome = state.status;
+    states = await Promise.all(posted.map(async p => (await call('GET', `/api/wa/messages/${encodeURIComponent(p.e.msg_id)}`)).json));
+    if (states.every(done)) {
+      outcome = states.at(-1).status;
       break;
     }
   }
-  const replies = (state?.replies ?? []).map(r => ({ text: r.text, file: r.file, by: r.by, replyTo: r.reply_n ? `#m${r.reply_n}` : null }));
+  const state = states.at(-1) ?? null;
+  const seen = new Set();
+  const replies = states
+    .flatMap(s => s?.replies ?? [])
+    .filter(r => !seen.has(r.n) && seen.add(r.n))
+    .map(r => ({ text: r.text, file: r.file, by: r.by, replyTo: r.reply_n ? `#m${r.reply_n}` : null }));
+  const woken = states.filter(s => s?.wake).map(s => ({ id: s.id, wake: s.wake, status: s.status }));
   const line = {
     id: c.id,
     chat: isGroup ? 'group' : 'dm',
     message: state?.id ?? null,
-    decision: posted.json?.results?.[0]?.decision ?? `http ${posted.status}`,
-    reason: state?.reason ?? posted.json?.results?.[0]?.reason ?? null,
+    decision: posted.at(-1).r.json?.results?.[0]?.decision ?? `http ${posted.at(-1).r.status}`,
+    reason: state?.reason ?? posted.at(-1).r.json?.results?.[0]?.reason ?? null,
+    woken,
     outcome,
     reply: replies.length ? replies.map(r => r.text).join('\n---\n') : 'no reply',
     replies,

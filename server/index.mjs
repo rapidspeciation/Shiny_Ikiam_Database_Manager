@@ -345,6 +345,9 @@ export function configFromEnv(env = process.env) {
           // The lab: the simulator may set the list up (POST /api/wa/setup).
           lab: env.WA_LAB === '1',
           debounceMs: env.WA_DEBOUNCE_MS ? Number(env.WA_DEBOUNCE_MS) : undefined,
+          // Lab runs of the simulator only: a shorter wait for unanswered questions, and no quiet hours.
+          questionWaitMs: env.WA_LAB === '1' && env.WA_QUESTION_WAIT_MS ? Number(env.WA_QUESTION_WAIT_MS) : undefined,
+          quietHours: env.WA_LAB === '1' && env.WA_QUIET_HOURS === '0' ? false : undefined,
         }
       : null,
     // The app's address for links the assistant gives (e.g. to a save in the Historial).
@@ -557,7 +560,9 @@ function createWhatsApp(store, config, assistant) {
     outboxFile: beside('wa-outbox.jsonl'),
     logFile: beside('wa-relay.log.jsonl'),
     lab: wa.lab,
-    options: wa.debounceMs ? { debounceMs: wa.debounceMs } : {},
+    options: Object.fromEntries(
+      Object.entries({ debounceMs: wa.debounceMs, questionWaitMs: wa.questionWaitMs, quietHours: wa.quietHours }).filter(([, v]) => v !== undefined),
+    ),
     lookupCam: id => {
       const row = cam.get(id);
       if (!row) return null;
