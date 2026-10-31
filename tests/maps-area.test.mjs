@@ -243,6 +243,7 @@ test('host_plants with an area: in the area, only nearby (candidates) or far, an
   assert.match(candidate.caption, /^_Cestrum megalophyllum_ — CANDIDATA: sin registros en Napo, 2 a menos de 50 km\nPuyo, Pastaza, Ecuador, 2005 \(foto fuera de Napo: Pastaza, Pastaza\)\nFoto: Rosa \(CC BY-NC 4\.0\)\n/);
   // Its original was 4000 px: the proxy's 2048 px copy instead.
   assert.match(candidate.url, /^https:\/\/wsrv\.nl\/.*w=2048/);
+  assert.equal(out.images_block, `[images]\n${inNapo.path} | ${inNapo.caption.split('\n').join(' — ')}\n${candidate.path} | ${candidate.caption.split('\n').join(' — ')}\n[/images]`);
   // Photo files asked: no thumbnails, a small answer.
   assert.equal(out.markdown, '');
   assert.ok(JSON.stringify(out).length < 12000, JSON.stringify(out).length);

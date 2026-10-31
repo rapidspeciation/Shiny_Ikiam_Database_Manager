@@ -161,7 +161,7 @@ export const MAPS_TOOLS = [
         '- `min_confidence`: low, medium (default) or high. `include_unchecked`: also the rows the review marked needs_check.',
         "- Area (optional): `area` (a province or canton of Ecuador by its outline: {province: \"Napo\"}, {canton: \"Tena\"}), `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
         "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
-        '- `send_photos` (0-8): photo files to send (WhatsApp), one per plant, those in the area first, then the nearby candidates: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}]; then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions. Send each `path` with its `caption` as it is.',
+        '- `send_photos` (0-8): photo files to send (WhatsApp), one per plant, those in the area first, then the nearby candidates: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}] and `images_block` (the same as a WhatsApp [images] block: end the reply with it as it is); then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions.',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
@@ -1596,7 +1596,14 @@ export function createMapsTools({
             not_near: plants.filter(p => p.status === 'far' && mapped.includes(p.e) && !p.sameAs).map(p => p.e.taxon.name),
           }
         : {}),
-      ...(files ? { images: files.images, ...(files.note ? { images_note: files.note } : {}) } : {}),
+      ...(files
+        ? {
+            images: files.images,
+            // The WhatsApp bridge's picture block (tools/whatsapp/bridge-skill): one line per photo, `path | caption`.
+            images_block: files.images.length ? `[images]\n${files.images.map(im => `${im.path} | ${im.caption.split('\n').join(' — ')}`).join('\n')}\n[/images]` : '',
+            ...(files.note ? { images_note: files.note } : {}),
+          }
+        : {}),
       markdown,
       ...(photosLeftOut.length ? { photos_left_out: { plants: photosLeftOut, note: 'Not in `markdown` (its size): ask again with `plant` for these.' } } : {}),
       ...(photoFailed ? { photos_note: 'Some photo pages of the maps could not be read now: those plants have no photos in this answer.' } : {}),
