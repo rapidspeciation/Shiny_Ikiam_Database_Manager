@@ -177,7 +177,7 @@ export const MAPS_TOOLS = [
         "- Area (optional): `area` (a province or canton of Ecuador by its outline: {province: \"Napo\"}, {canton: \"Tena\"}), `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
         "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
         '- `photo_sheet: true` (with an area): `photo_sheets`, 1 or 2 contact sheets (JPEG, 3 by 3 numbered tiles of 512 px with the plant and its place) of the plants\' candidate photos (living plants first, those in the area or nearest). Look at them and pick the tiles that show the leaves or the whole plant, and a flower, then send_sheet_photos. This is how photos to send are chosen.',
-        '- `send_photos` (0-5, the total): photo files to send (WhatsApp): first one per plant (its leaves or the whole plant when the photo tags say so, a living plant before a herbarium sheet), those in the area first, then the nearby candidates; then a flower of the first plants as `second` photos while the total allows: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}] and `images_block` (the same as a WhatsApp [images] block: end the reply with it as it is); then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions.',
+        '- `send_photos` (a number): the same as `photo_sheet: true` (photos to send are always chosen by looking at a contact sheet first).',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
@@ -1548,10 +1548,14 @@ export function createMapsTools({
     for (const p of plants) if (p.sig && mapped.includes(p.e)) (firstOf.get(p.sig) ? (p.sameAs = firstOf.get(p.sig).e.taxon.name) : firstOf.set(p.sig, p));
     for (const p of plants) if (p.sameAs) (firstOf.get(p.sig).same ??= []).push(p.e.taxon.name);
     // The photo files, fetched while the thumbnails and site names are made.
-    // The WhatsApp bridge sends at most 5 pictures with an answer.
-    const sendPhotos = clamp(args.send_photos, 0, 5, 0);
+    // Photos to send are chosen by looking: `send_photos` gives the contact sheets (as `photo_sheet`), so a chat
+    // that asks for photos the older way still sees them before any is sent. `auto_pick` (tests, scripts) picks
+    // without looking. The WhatsApp bridge sends at most 5 pictures with an answer.
+    const wantsPhotos = clamp(args.send_photos, 0, 5, 0);
+    const sendPhotos = args.auto_pick === true ? wantsPhotos : 0;
+    const asSheet = args.photo_sheet === true || (wantsPhotos > 0 && args.auto_pick !== true);
     const photosStarted = Date.now();
-    const sheetLoading = args.photo_sheet === true ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
+    const sheetLoading = asSheet ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
     const filesLoading = sendPhotos
       ? photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').then(f => ({ ...f, ms: Date.now() - photosStarted }))
       : Promise.resolve(null);
@@ -1569,7 +1573,7 @@ export function createMapsTools({
           : null;
     const where = area ? (area.admin ? adminWhere(area.admin) : area.countries.length ? area.countries.join(', ') : area.near ? `${area.near.km} km around ${area.near.lat}, ${area.near.lng}` : 'the box asked') : 'their whole range';
     // With photo files asked, no thumbnails unless asked too: a small answer.
-    const want = clamp(args.photos, 0, 6, sendPhotos || args.photo_sheet === true ? 0 : 3);
+    const want = clamp(args.photos, 0, 6, sendPhotos || asSheet ? 0 : 3);
     // A photo page that cannot be read now leaves that plant without photos, not the answer without its records.
     let photoFailed = false;
     const photos = await Promise.all(
@@ -1917,7 +1921,7 @@ export function createMapsTools({
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
       ...(leftOut.length ? { photo_sheet_left_out: leftOut, photo_sheet_left_out_note: 'Not on the sheets (2 sheets at most): ask again with `plant` for these.' } : {}),
-      photo_sheet_note: 'Look at each sheet (read its path), choose per plant the tile that best shows its leaves or the whole plant (how it is found in the field), and one with its flower if there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5).',
+      photo_sheet_note: 'No photo is sent yet. Look at each sheet (read its path) and choose for every plant a tile that shows its leaves or the whole plant (how it is found in the field), then a flower where there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5). A plant with no such tile: say in the answer that no photo of its leaves was found.',
       photo_sheet_ms: Date.now() - started,
     };
   }

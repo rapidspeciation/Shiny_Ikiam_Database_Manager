@@ -212,7 +212,7 @@ test('host_plants with an area: in the area, only nearby (candidates) or far, an
   const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
   const web = fakeWeb();
   const tools = createMapsTools({ fetchImpl: web.fetchImpl, mapsBase: MAPS, cacheDir: dir });
-  const out = await tools.run('host_plants', { butterfly: 'Oleria onega', area: { province: 'Napo' }, send_photos: 5, lang: 'es' });
+  const out = await tools.run('host_plants', { butterfly: 'Oleria onega', area: { province: 'Napo' }, send_photos: 5, auto_pick: true, lang: 'es' });
   assert.equal(out.error, undefined, out.error);
   const plant = name => out.plants.find(p => p.plant === name);
   // Solanum mite: 2 records inside (the Pastaza and Sucumbíos ones 2 km out are nearby, not inside).
@@ -261,7 +261,7 @@ test('host_plants with an area: in the area, only nearby (candidates) or far, an
 
   // Another process with the same folder: records, outlines, photos and credits from the disk.
   const web2 = fakeWeb();
-  const again = await createMapsTools({ fetchImpl: web2.fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5 });
+  const again = await createMapsTools({ fetchImpl: web2.fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5, auto_pick: true });
   assert.equal(again.plant_data.records_from, 'disk');
   assert.ok(!web2.calls.some(u => /chunks|api\.gbif|amazonaws|wsrv|geoBoundaries/.test(u)), web2.calls.join('\n'));
   assert.match(again.images[1].caption, /CANDIDATE: no record in Napo, 2 within 50 km/);
@@ -277,7 +277,7 @@ test('host_plants with send_photos: a fallback photo is never sent; a photo with
   try {
     // GBIF does not answer for the Tena photo's record: the Sucumbíos photo, with its credit, goes instead.
     const noGbif1 = async url => (/occurrence\/1$/.test(url) ? new Response('down', { status: 503 }) : web.fetchImpl(url));
-    const out = await createMapsTools({ fetchImpl: noGbif1, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1 });
+    const out = await createMapsTools({ fetchImpl: noGbif1, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1, auto_pick: true });
     assert.equal(out.images.length, 1);
     assert.equal(out.images[0].source_url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg');
     assert.equal(out.images[0].credit.photographer, 'Luis');
@@ -290,7 +290,7 @@ test('host_plants with send_photos: a fallback photo is never sent; a photo with
 test('host_plants with send_photos: a photo that cannot be had gives way to the next', async () => {
   const web = fakeWeb();
   const broken = async url => (/photos\/11\//.test(url) ? new Response('gone', { status: 404 }) : web.fetchImpl(url));
-  const out = await createMapsTools({ fetchImpl: broken, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1 });
+  const out = await createMapsTools({ fetchImpl: broken, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1, auto_pick: true });
   assert.equal(out.images.length, 1);
   assert.equal(out.images[0].photo_in_area, false);
   assert.match(out.images[0].caption, /photo outside Napo: Gonzalo Pizarro, Sucumbíos/);
@@ -310,7 +310,7 @@ test('host_plants with send_photos: a living plant before a herbarium sheet, eve
   };
   FILES[cestrum] = { items: [{ ...saved[1].items[0], photo_context: 'preserved', basisOfRecord: 'PRESERVED_SPECIMEN' }] };
   try {
-    const out = await createMapsTools({ fetchImpl: web.fetchImpl, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2, lang: 'es' });
+    const out = await createMapsTools({ fetchImpl: web.fetchImpl, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2, auto_pick: true, lang: 'es' });
     // The Sucumbíos field photo, not the herbarium sheet from Tena.
     assert.equal(out.images[0].source_url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg');
     assert.equal(out.images[0].herbarium, false);
@@ -326,7 +326,7 @@ test('host_plants with send_photos: a living plant before a herbarium sheet, eve
 test('host_plants with send_photos and photo tags: leaves or the whole plant first, a flower as a second photo', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
   writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ model: 'test', photos: { 11: ['flower', 0.02, 0.95], 12: ['leaves', 0.97, 0.01], 13: ['habit', 0.9, 0.05] } }));
-  const out = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 3, lang: 'es' });
+  const out = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 3, auto_pick: true, lang: 'es' });
   // Solanum mite: its leaves (Sucumbíos) before its flower taken in Tena; Cestrum: the whole plant; then the flower.
   assert.deepEqual(out.images.map(im => [im.plant, im.view, im.second ?? false]), [
     ['Solanum mite', 'leaves', false],
@@ -336,7 +336,7 @@ test('host_plants with send_photos and photo tags: leaves or the whole plant fir
   assert.match(out.images[0].caption, /^_Solanum mite_ \(= Solanum mitis\) — registrada en Napo \(2 registros\) · hojas\n/);
   assert.match(out.images[2].caption, / · flor\n/);
   // Fewer photos than plants and flowers: the flower waits.
-  const two = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2 });
+  const two = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2, auto_pick: true });
   assert.deepEqual(two.images.map(im => im.view), ['leaves', 'habit']);
 });
 
@@ -344,7 +344,7 @@ test('photo tags: a leaves guess under the threshold is no view; a living flower
   const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
   const mite = 'host_plants/gallery/mite/p1.json';
   const saved = FILES[mite];
-  const run = (fetchImpl = fakeWeb().fetchImpl) => createMapsTools({ fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1 });
+  const run = (fetchImpl = fakeWeb().fetchImpl) => createMapsTools({ fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1, auto_pick: true });
   try {
     // 11 (Tena) a weak «leaves» (0.4), 12 (Sucumbíos) a sure «habit»: the sure one first.
     writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ photos: { 11: ['leaves', 0.4, 0.3], 12: ['habit', 0.95, 0.01] } }));
@@ -377,6 +377,10 @@ test('contact sheets: host_plants gives numbered sheets of candidate photos; sen
   assert.deepEqual(sheet.tiles, ['1: Solanum mite — Tena · 2019', '2: Solanum mite — 2 km, Sucumbíos · 2022', '3: Cestrum megalophyllum (candidata) — 28 km, Pastaza · 2011']);
   assert.match(out.photo_sheet_note, /send_sheet_photos/);
   assert.equal(out.markdown, '');
+  // Asked the older way (send_photos), the answer is the same sheet: nothing is picked without looking.
+  const older = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5, lang: 'es' });
+  assert.equal(older.images, undefined);
+  assert.equal(older.photo_sheets[0].id, sheet.id);
   const sent = await tools.run('send_sheet_photos', { sheets: [sheet.id], tiles: [2, 3], lang: 'es' });
   assert.deepEqual(sent.images.map(im => [im.plant, im.status, im.photo_in_area]), [['Solanum mite', 'in_area', false], ['Cestrum megalophyllum', 'nearby', false]]);
   assert.match(sent.images[1].caption, /^_Cestrum megalophyllum_ — CANDIDATA: sin registros en Napo, 2 a menos de 50 km\n/);
