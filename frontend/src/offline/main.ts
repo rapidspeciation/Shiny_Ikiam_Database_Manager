@@ -20,6 +20,7 @@ import {
   type Rgba,
   type Side,
 } from '../lib/offlineId'
+import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
 
 type OrtModule = typeof Ort
 interface ModelFile { name: string; bytes: number; etag: string; role: 'detector' | 'encoder' | 'head' | 'head-meta' }
@@ -384,8 +385,9 @@ async function sha256(buf: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function identify(file: File) {
+async function identify(photo: Photo) {
   show('idErr', null)
+  delete diag.identifyError
   const times: Record<string, number> = {}
   const tick = (key: string, t: number) => (times[key] = Math.round(performance.now() - t))
   const side = ($<HTMLSelectElement>('side').value || null) as Side
@@ -394,10 +396,10 @@ async function identify(file: File) {
     const m = await running('Cargando los modelos', () => load(useGpu))
     const out = await running('Identificando', async () => {
       let t = performance.now()
-      const raw = await file.arrayBuffer()
+      const raw = photo.bytes
       const orientation = exifOrientation(raw)
       const override = m.head.meta.full_photo_overrides.includes(await sha256(raw))
-      const img = await decode(file)
+      const img = await decode(photo.blob)
       tick('decode_ms', t)
       t = performance.now()
       const inp = detectorInput(img, orientation)
@@ -449,7 +451,7 @@ async function identify(file: File) {
     $('times').append(tr)
     $('result').hidden = false
     const result = {
-      at: new Date().toISOString(), file: { name: file.name, bytes: file.size, type: file.type }, size: [out.img.width, out.img.height], orientation: out.orientation,
+      at: new Date().toISOString(), file: { name: photo.name, bytes: photo.size, type: photo.type }, size: [out.img.width, out.img.height], orientation: out.orientation,
       side, crop: out.status, box: out.box, masks: out.masks, kept: out.selected, top5: out.top, times: { ...times, total_ms: total }, load: { ...loadTimes }, backend: diag.backend,
     }
     diag.lastResult = result
@@ -457,7 +459,7 @@ async function identify(file: File) {
     localStorage.setItem(LAST, JSON.stringify(result))
     ;(window as unknown as { offlineResult: unknown }).offlineResult = result
   } catch (err) {
-    const msg = String((err as Error)?.message ?? err)
+    const msg = errorText(err)
     diag.identifyError = msg.slice(0, 500)
     show('idErr', `Error: ${msg}${/memory|memoria|allocation|out of/i.test(msg) ? '\n(Parece falta de memoria.)' : ''}`)
     ;(window as unknown as { offlineResult: unknown }).offlineResult = { error: msg }
@@ -479,11 +481,18 @@ function drawCrop(rgb: Uint8Array) {
 }
 
 for (const id of ['camera', 'pick']) {
+  // The photo's bytes are read here, before the input is cleared and before any model loads: on
+  // Android the File's read grant is gone by then (NotReadableError). See lib/offlinePhoto.ts.
   $<HTMLInputElement>(id).addEventListener('change', e => {
-    const input = e.target as HTMLInputElement
-    const f = input.files?.[0]
-    input.value = ''
-    if (f) identify(f)
+    show('idErr', null)
+    takePhoto(e.target as HTMLInputElement, identify, err => {
+      const msg = errorText(err)
+      diag.identifyError = `photo read (${id}): ${msg}`.slice(0, 500)
+      show('idErr', `${PHOTO_UNREADABLE}.\n(${msg})`)
+      $('result').hidden = true // the last photo's result is not this one's
+      ;(window as unknown as { offlineResult: unknown }).offlineResult = { error: msg }
+      render()
+    })
   })
 }
 
