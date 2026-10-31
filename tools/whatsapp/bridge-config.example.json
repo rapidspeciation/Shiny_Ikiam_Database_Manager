@@ -19,7 +19,7 @@
       "home": "/home/franz/.t3-orchestrator-v2", "local": "http://127.0.0.1:3774", "tokenFile": "/home/franz/.config/ithomiini-wa-bridge/t3-local-token",
       "commandsModule": "/home/franz/.local/share/ithomiini-wa-bridge/server/t3commands.mjs", "script": "/home/franz/.local/share/ithomiini-wa-bridge/tools/whatsapp/t3-turn.mjs",
       "projectId": "<the «Ithomiini lab · WhatsApp» project>", "title": "Orchestrator wpp", "model": "claude-opus-5-5", "effort": "medium",
-      "attachmentsDir": "/home/franz/.t3-ithomiini-lab/userdata/attachments"
+      "attachmentsDir": "/home/franz/.t3-ithomiini-lab/userdata/attachments", "toolsHealth": "http://127.0.0.1:8795/health"
     },
     "labsim": { "...": "as local, with \"title\": \"WA group simulation (lab)\"" }
   },

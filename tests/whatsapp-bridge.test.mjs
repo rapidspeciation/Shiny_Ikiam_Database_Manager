@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
+import { createServer } from 'node:http';
 import { createBridge } from '../tools/whatsapp/bridge.mjs';
 
 test('@claude wakes only as a whole word', () => {
@@ -160,4 +161,37 @@ test('step lines name tools, not reasoning', async () => {
   assert.equal(stepLabel({ tool: 'mcp__db__new_tool' }), 'usando new tool');
   assert.equal(stepLabel({ tool: 'ToolSearch' }), null);
   assert.equal(statusMessage(['consultando la base', 'consultando la base', null, 'dibujando el mapa']), 'Claude: pensando…\n- consultando la base\n- dibujando el mapa');
+});
+
+test('the self-chat answers at once when the tools are down, without a model turn', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-tools-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(join(dir, 'turn-ran'))}, '1'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const tools = createServer((req, res) => res.end('{"status":"ok"}'));
+  await new Promise(r => tools.listen(0, '127.0.0.1', r));
+  const { port } = tools.address();
+  const config = {
+    chats: { self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att'), toolsHealth: `http://127.0.0.1:${port}/health` } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const post = text => bridge.handle({ Chat: 'ME@s.whatsapp.net', ID: `T${++n}`, SenderJID: 'ME@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: text });
+  post('@claude hola');
+  await settle();
+  assert.ok(existsSync(join(dir, 'turn-ran'))); // tools up: the turn runs
+  assert.ok(outbox().some(s => s.text === 'Claude: Hay 12.'));
+  await new Promise(r => tools.close(r));
+  const before = outbox().length;
+  post('@claude otra');
+  await settle();
+  const sent = outbox().slice(before).filter(s => s.kind !== 'react');
+  assert.deepEqual(sent.map(s => s.text), ['Claude: herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.']);
+  assert.equal(outbox().slice(before).filter(s => s.react).at(-1).react.emoji, '⚠️');
 });

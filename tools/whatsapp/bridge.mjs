@@ -495,6 +495,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     return ogg;
   }
 
+  /** The tools' /health answers within 2 s. */
+  const toolsUp = url => fetch(url, { signal: AbortSignal.timeout(2000) }).then(r => r.ok, () => false);
+
   async function turn(chat, msg) {
     const route = config.routes[chat.route];
     const started = now();
@@ -511,6 +514,12 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     };
     let ok = false;
     try {
+      // The route's tools (the lab app's MCP endpoint, for Franz's chat) answer before a model turn starts; if not, say so at once.
+      if (route.toolsHealth && !(await toolsUp(route.toolsHealth))) {
+        record({ dir: 'turn', chat: chat.key, id: msg.id, ok: false, error: 'tools down' });
+        await say(chat, 'herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.', 'notice', msg);
+        return;
+      }
       if (mode === 'edit') status.id = await send(chat, { kind: 'status', text: statusMessage([]), quote: msg }).catch(() => null);
       const attachments = [];
       let heardVoice = false;
