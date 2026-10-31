@@ -23,7 +23,7 @@ import {
 import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
 
 type OrtModule = typeof Ort
-interface ModelFile { name: string; bytes: number; etag: string; role: 'detector' | 'encoder' | 'head' | 'head-meta' }
+interface ModelFile { name: string; bytes: number; etag: string; role: 'detector' | 'encoder' | 'head' | 'head-meta'; wire?: number; encoding?: string | null }
 interface Stored { files: Record<string, { etag: string; bytes: number }>; at: string }
 
 const CACHE = 'ithomiini-prueba-offline'
@@ -173,8 +173,16 @@ async function listFiles() {
     show('dlErr', `No se pudo leer la lista de modelos (HTTP ${r.status}).`)
     return
   }
-  files = (await r.json()).files as ModelFile[]
-  $('files').textContent = files.map(f => `${f.name} (${mb(f.bytes)} MB)`).join(' · ')
+  const list = (await r.json()) as { files: ModelFile[]; partBytes?: number }
+  if (list.partBytes && list.partBytes !== PART) {
+    show('dlErr', 'El servidor usa otro tamaño de parte: recargue la página.')
+    return
+  }
+  files = list.files
+  const wire = files.reduce((a, f) => a + (f.wire ?? f.bytes), 0), plain = files.reduce((a, f) => a + f.bytes, 0)
+  diag.listWire = { plainMB: mb(plain), wireMB: mb(wire), encodings: [...new Set(files.map(f => f.encoding ?? 'none'))] }
+  $('files').textContent =
+    files.map(f => `${f.name} (${mb(f.bytes)} MB)`).join(' · ') + (wire < plain ? ` · ${mb(wire)} MB por la red (comprimido)` : '')
   await refreshReady()
 }
 
@@ -207,8 +215,10 @@ async function download() {
     const t0 = performance.now()
     show('progressText', 'La página y el motor…')
     await keepPage(cache)
+    // Counted in plain bytes: the browser decompresses the parts (Content-Encoding) and hands over plain bytes.
     const total = files.reduce((a, f) => a + f.bytes, 0)
     let done = 0
+    const encodings: Record<string, number> = {}
     const progress = () => {
       $<HTMLProgressElement>('progress').value = done / total
       $('progressText').textContent = `${mb(done)} de ${mb(total)} MB`
@@ -230,8 +240,14 @@ async function download() {
           chunks = []
           let got = 0
           try {
-            const r = await fetch(url(`./models/${f.name}`), { credentials: 'same-origin', cache: 'no-store', headers: { range: `bytes=${start}-${end}`, 'if-range': f.etag } })
-            if (r.status !== 206) throw new Error(`HTTP ${r.status}`)
+            // One part per request: the server sends it precompressed (zstd or gzip) when it can.
+            const r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
+            if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
+            // The part's ETag is the listed file's (W/"<file etag>-p<i>"): a model changed since the list is not mixed in.
+            if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1)
+              throw new Error('el modelo cambió en el servidor: recargue la página')
+            const enc = r.headers.get('content-encoding') || 'none'
+            encodings[enc] = (encodings[enc] ?? 0) + 1
             const reader = r.body!.getReader()
             for (;;) {
               const { done: end_, value } = await reader.read()
@@ -256,6 +272,7 @@ async function download() {
     }
     await cache.put(url('./models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
     diag.downloadSeconds = Math.round((performance.now() - t0) / 1000)
+    diag.downloadEncodings = encodings
     show('progressText', `Descargado en ${diag.downloadSeconds} s.`)
   } catch (err) {
     show('dlErr', `La descarga falló: ${(err as Error).message}`)
