@@ -414,7 +414,8 @@ export function sheetPicks(sorted, k) {
   const isLeaves = ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit');
   const isFlower = ph => ph.live === 0 && ph.view === 'flower';
   for (const want of [isLeaves, isFlower]) {
-    const extra = list.find(want);
+    // The nearest such photo, whatever its record's other photos (the record order only orders the plain tiles).
+    const extra = sorted.find(want);
     if (!extra || best.some(want) || best.length < k || k < 3) continue;
     const keptLeaves = best.find(isLeaves);
     const keptFlower = best.find(isFlower);
@@ -1905,7 +1906,6 @@ export function createMapsTools({
     // By place, as the chat will judge them: the living plant first, then in the area, nearer, newer.
     const byPlace = (a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0);
     for (const [i, p] of picked.entries()) {
-      const sorted = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
       const best = sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
       for (const ph of best) {
         seen.add(ph.img);

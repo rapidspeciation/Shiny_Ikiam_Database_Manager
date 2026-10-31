@@ -427,6 +427,9 @@ test('a plant\'s sheet tiles: one per record first; its leaves photo and a flowe
   // Only flowers in the first three (one record twice): the leaves photo replaces a second flower, one flower stays.
   const picks = sheetPicks([ph('A1', 'A', 'flower'), ph('A2', 'A', 'leaves'), ph('B', 'B', 'flower'), ph('C', 'C', 'flower')], 3);
   assert.deepEqual(picks.map(p => p.img), ['A1', 'B', 'A2']);
+  // The nearest leaves photo, even a second photo of a record, before a far record's first.
+  const near = sheetPicks([ph('A1', 'A', 'flower'), ph('A2', 'A', 'leaves'), ph('B', 'B', 'flower'), ph('C', 'C', 'flower'), ph('D', 'D', 'leaves')], 3);
+  assert.deepEqual(near.map(p => p.img), ['A1', 'B', 'A2']);
   // Untagged photos: the leaves and the flower come in for the last two, the nearest stays.
   const untagged = sheetPicks([ph('1', '1', null), ph('2', '2', null), ph('3', '3', null), ph('4', '4', 'leaves'), ph('5', '5', 'flower')], 3);
   assert.deepEqual(untagged.map(p => p.img), ['1', '5', '4']);
