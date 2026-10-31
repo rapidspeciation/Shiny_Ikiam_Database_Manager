@@ -1866,7 +1866,8 @@ export function createMapsTools({
     if (!sheets) return { photo_sheet_error: 'Contact sheets are off on this server (no folder for them).' };
     const words = SEND_WORDS[lang];
     const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
-    const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, 2 * PER_SHEET);
+    const ordered = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)];
+    const picked = ordered.slice(0, 2 * PER_SHEET);
     if (!picked.length) return { photo_sheets: [], photo_sheet_note: `No host plant recorded in or near ${short}: no photos to choose from.` };
     const ranked = await rankedFor(picked, area, nearbyKm, m);
     const adminData = area?.admin ? await adminAreas.data() : null;
@@ -1911,7 +1912,8 @@ export function createMapsTools({
     for (let i = 0; i < tiles.length && made.length < 2; i += PER_SHEET) made.push(sheets.make(tiles.slice(i, i + PER_SHEET), { first: i + 1 }));
     const out = await Promise.all(made);
     const onSheets = new Set(tiles.slice(0, 2 * PER_SHEET).map(t => t.name));
-    const leftOut = picked.map(p => p.e.taxon.name).filter(name => !onSheets.has(name));
+    // Plants with photos that did not fit (those with none in the gallery are not said to have been left out).
+    const leftOut = ordered.filter((p, i) => (i >= picked.length || ranked[i].length) && !onSheets.has(p.e.taxon.name)).map(p => p.e.taxon.name);
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
       ...(leftOut.length ? { photo_sheet_left_out: leftOut, photo_sheet_left_out_note: 'Not on the sheets (2 sheets at most): ask again with `plant` for these.' } : {}),
@@ -1923,7 +1925,7 @@ export function createMapsTools({
   /** send_sheet_photos: the tiles chosen on contact sheets, downloaded (about 2048 px) and credited, ready to send. */
   async function sendSheetPhotos(args) {
     if (!sheets) return { error: 'Contact sheets are off on this server.' };
-    const ids = list(args.sheets ?? args.sheet);
+    const ids = [...new Set(list(args.sheets ?? args.sheet))];
     const all = ids.flatMap(id => sheets.tilesOf(id) ?? []);
     if (!all.length) return { error: 'No such contact sheet: give the `id` of a sheet from photo_sheets.' };
     const numbers = [...new Set((Array.isArray(args.tiles) ? args.tiles : [args.tiles]).map(Number).filter(Number.isInteger))].slice(0, 5);

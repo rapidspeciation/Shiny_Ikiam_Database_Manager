@@ -79,8 +79,9 @@ export function createPhotoSheets({ dir, fetchImpl = fetch, python = 'python3', 
       if (!writeCacheFile(path, buf)) throw new Error('thumbnail not kept');
       return path;
     })();
+    // Only loads still running are shared: a finished one is found on disk (pruning may have deleted it since).
     thumbs.set(url, loading);
-    loading.catch(() => thumbs.delete(url));
+    loading.catch(() => {}).finally(() => thumbs.delete(url));
     return loading;
   }
 

@@ -388,7 +388,7 @@ test('contact sheets: host_plants gives numbered sheets of candidate photos; sen
   assert.match((await other.run('send_sheet_photos', { sheets: [sheet.id], tiles: [9] })).error, /None of tiles 9/);
 });
 
-test('contact sheets, review fixes: another reach is another sheet; a tile number on two calls\' sheets is refused; a kept leaves photo stays', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+test('contact sheets, review fixes: another reach is another sheet; a tile number on two calls\' sheets is refused', { skip: !pillow && 'no python3 with Pillow' }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
   const tools = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir });
   const a = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', photo_sheet: true, lang: 'es' });
