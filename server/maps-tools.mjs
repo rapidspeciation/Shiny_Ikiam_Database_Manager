@@ -2102,7 +2102,7 @@ export function createMapsTools({
           .all();
       } catch (e) {
         // No clutch photos table yet (a database the Clutches tab never used) is none; anything else is said.
-        if (!/no such table/.test(e.message)) {
+        if (!/no such table: clutch_photos/.test(e.message)) {
           errors.push(`clutch photos: ${e.message}`);
           failed.add('project');
         }
@@ -2188,14 +2188,22 @@ export function createMapsTools({
     const words = STAGE_WORDS[lang];
     // A stage asked with no photo anywhere is said plainly (the chat must not imply there are some).
     // Only stages every source answered for: a source that failed says nothing about absence.
-    const answered = stage => !failed.has('project') && !failed.has(`inat:${stage}`) && !failed.has(`gbif:${stage}`);
-    const noneFor = stages.filter(stage => !candidates.some(c => c.stage === stage) && answered(stage));
-    const unchecked = stages.filter(stage => !candidates.some(c => c.stage === stage) && !answered(stage));
+    // (Clutch photos are never adults: their failure leaves adults answered.)
+    const answered = stage => (stage === 'adult' || !failed.has('project')) && !failed.has(`inat:${stage}`) && !failed.has(`gbif:${stage}`);
+    const unnoted = candidates.filter(c => c.stage === 'unnoted').length;
+    // Records of the stage exist but none has a photo that may be sent (no licence): not "none".
+    const recorded = stage => (counts[`inaturalist_${stage}`] ?? 0) + (counts[`gbif_other_${stage}`] ?? 0) > 0;
+    const missing = stages.filter(stage => !candidates.some(c => c.stage === stage));
+    const noneFor = missing.filter(stage => answered(stage) && !recorded(stage) && !(unnoted && (stage === 'egg' || stage === 'larva')));
+    const unchecked = missing.filter(stage => !answered(stage));
+    const unusable = missing.filter(stage => answered(stage) && recorded(stage));
     const answer = {
       taxon,
       life_stage: stages,
       counts,
       ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon, stages by their notes), none annotated so on iNaturalist, none in GBIF's lifeStage. Say so plainly.` } : {}),
+      ...(unnoted && missing.some(st => st === 'egg' || st === 'larva') ? { unnoted_note: `${unnoted} clutch photo(s) of ${taxon} have no stage in their note (tiles "stage not noted"): look at them before saying there are no ${missing.filter(st => st === 'egg' || st === 'larva').join(' or ')} photos.` } : {}),
+      ...(unusable.length ? { no_usable_photo: unusable, no_usable_note: `Records of ${unusable.join(', ')} exist (counts) but none has a photo with a licence that allows sending it: say so, with the counts.` } : {}),
       ...(unchecked.length ? { not_checked: unchecked, not_checked_note: `No photo of ${unchecked.join(', ')} found, but a source did not answer (see errors): say the search was incomplete, not that there are none.` } : {}),
       ...(errors.length ? { errors } : {}),
     };

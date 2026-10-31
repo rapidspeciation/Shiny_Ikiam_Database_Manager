@@ -505,4 +505,16 @@ test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\
   const partial = await down.run('taxon_photos', { taxon: 'Oleria onega', life_stage: ['egg', 'larva'] });
   assert.equal(partial.none_for, undefined);
   assert.deepEqual(partial.not_checked, ['egg']);
+  // A clutch photo with no stage in its note: eggs are not said to be missing; an unlicensed annotated egg photo
+  // is not "none" either.
+  db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p3', 'r1', '2026-10-22', null, '2026-10/p3', 'u-ana');
+  writeFileSync(join(clutchDir, '2026-10', 'p3.jpg'), jpeg(1200, 900));
+  writeFileSync(join(clutchDir, '2026-10', 'p3.thumb.jpg'), jpeg(480, 360));
+  const withUnnoted = await tools.run('taxon_photos', { taxon: 'Oleria onega', life_stage: ['egg', 'larva'] });
+  assert.equal(withUnnoted.none_for, undefined);
+  assert.match(withUnnoted.unnoted_note, /1 clutch photo\(s\) of Oleria onega have no stage/);
+  const unlicensed = createMapsTools({ fetchImpl: async url => (/inat\.test/.test(url) && /term_value_id=7/.test(url) ? Response.json({ total_results: 1, results: [{ id: 9, geojson: { coordinates: [TENA.lng, TENA.lat] }, photos: [{ url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/31/square.jpg' }] }] }) : fetchImpl(url)), mapsBase: MAPS, cacheDir: dir, inatApi: 'https://inat.test/v1/observations', gbifApi: 'https://gbif.test/v1/occurrence/search' });
+  const eggs = await unlicensed.run('taxon_photos', { taxon: 'Oleria onega', life_stage: 'egg' });
+  assert.equal(eggs.none_for, undefined);
+  assert.deepEqual(eggs.no_usable_photo, ['egg']);
 });
