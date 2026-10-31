@@ -293,3 +293,29 @@ test('host_plants with send_photos: a photo that cannot be had gives way to the 
   assert.match(out.images[0].caption, /photo outside Napo: Gonzalo Pizarro, Sucumbíos/);
   assert.match(out.images_note, /1 photo/);
 });
+
+test('host_plants with send_photos: a living plant before a herbarium sheet, even one taken in the area; a sheet labelled', async () => {
+  const web = fakeWeb();
+  const mite = 'host_plants/gallery/mite/p1.json';
+  const cestrum = 'host_plants/gallery/cestrum/p1.json';
+  const saved = [FILES[mite], FILES[cestrum]];
+  FILES[mite] = {
+    items: [
+      { image_url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/11/original.jpg', observation_url: 'https://www.gbif.org/occurrence/1', ...TENA, observation_date: '2019-05-01', photo_context: 'preserved', basisOfRecord: 'PRESERVED_SPECIMEN', source: 'Herbario' },
+      saved[0].items[0],
+    ],
+  };
+  FILES[cestrum] = { items: [{ ...saved[1].items[0], photo_context: 'preserved', basisOfRecord: 'PRESERVED_SPECIMEN' }] };
+  try {
+    const out = await createMapsTools({ fetchImpl: web.fetchImpl, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2, lang: 'es' });
+    // The Sucumbíos field photo, not the herbarium sheet from Tena.
+    assert.equal(out.images[0].source_url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg');
+    assert.equal(out.images[0].herbarium, false);
+    // Cestrum has only a sheet: sent, and said so.
+    assert.equal(out.images[1].herbarium, true);
+    assert.match(out.images[1].caption, /^\[Ejemplar de herbario\] _Cestrum megalophyllum_/);
+    assert.match(out.images[1].caption, /ejemplar de herbario \(no hay foto de la planta viva\)/);
+  } finally {
+    [FILES[mite], FILES[cestrum]] = saved;
+  }
+});

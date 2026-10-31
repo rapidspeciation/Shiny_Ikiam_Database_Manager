@@ -75,7 +75,8 @@ const SEND_WORDS = {
     photoOutside: where => `photo outside ${where}`,
     photo: 'Photo',
     unknown: 'author not given',
-    herbarium: 'herbarium sheet',
+    herbariumTag: '[Herbarium specimen]',
+    herbarium: 'herbarium specimen (no photo of the living plant)',
   },
   es: {
     area: 'el área',
@@ -85,7 +86,8 @@ const SEND_WORDS = {
     photoOutside: where => `foto fuera de ${where}`,
     photo: 'Foto',
     unknown: 'autor no indicado',
-    herbarium: 'pliego de herbario',
+    herbariumTag: '[Ejemplar de herbario]',
+    herbarium: 'ejemplar de herbario (no hay foto de la planta viva)',
   },
 };
 /** A record's weight in a site's score: quartic kernel, 1 at the site, 0 at KERNEL_KM (0.92 at 2 km, 0.56 at 5 km). */
@@ -1181,6 +1183,8 @@ export function createMapsTools({
           lng: Number(p.lng),
           year: yearOf(p.observation_date),
           field: p.photo_context === 'field',
+          // A pressed museum specimen: its record says so, or the gallery's context.
+          herbarium: /preserved|fossil|material/i.test(text(p.basisOfRecord)) || p.photo_context === 'preserved',
           // A record without a photo shown with another record's photo of the plant: its place and credit are not the photo's.
           fallback: p.image_is_fallback === true,
           source: intern(text(p.source)),
@@ -1643,7 +1647,10 @@ export function createMapsTools({
           .map(ph => {
             const inside = !area || area.test(ph.lng, ph.lat);
             const away = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
-            const tier = inside && ph.field ? 0 : ph.field && away <= nearbyKm ? 1 : inside ? 2 : ph.field ? 3 : 4;
+            // Living plants first, wherever they are (a field trip needs the plant as it grows); a herbarium
+            // sheet only for a plant with no other photo.
+            const live = ph.field && !ph.herbarium;
+            const tier = live ? (inside ? 0 : away <= nearbyKm ? 1 : 2) : !ph.herbarium ? (inside ? 3 : 4) : inside ? 5 : 6;
             return { ...ph, inside, away, tier };
           })
           .sort((a, b) => a.tier - b.tier || a.away - b.away || (b.year ?? 0) - (a.year ?? 0));
@@ -1685,11 +1692,12 @@ export function createMapsTools({
       const status = p.status === 'in_area' ? words.inArea(short, p.own.length) : words.candidate(short, p.near.records, nearbyKm);
       return {
         path: file.path,
-        caption: [`_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.field ? '' : `, ${words.herbarium}`}`, link].filter(Boolean).join('\n'),
+        caption: [`${ph.herbarium ? `${words.herbariumTag} ` : ''}_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.herbarium ? `, ${words.herbarium}` : ''}`, link].filter(Boolean).join('\n'),
         plant: name,
         status: p.status,
         photo_in_area: ph.inside,
-        field_photo: ph.field,
+        field_photo: ph.field && !ph.herbarium,
+        herbarium: ph.herbarium,
         width: file.width,
         height: file.height,
         bytes: file.bytes,
