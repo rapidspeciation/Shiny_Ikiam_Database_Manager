@@ -57,6 +57,8 @@ export function createPhotoSheets({ dir, fetchImpl = fetch, python = 'python3', 
   const kept = new Map();
 
   function thumb(url) {
+    // A photo of this server (the project's own: clutch photos) is its own thumbnail.
+    if (url.startsWith('/')) return Promise.resolve(url);
     if (thumbs.has(url)) return thumbs.get(url);
     const path = join(dir, 'thumbs', `${createHash('sha1').update(url).digest('hex').slice(0, 20)}.jpg`);
     const loading = (async () => {

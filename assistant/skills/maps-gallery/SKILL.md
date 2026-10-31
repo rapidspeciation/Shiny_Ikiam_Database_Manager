@@ -5,7 +5,7 @@ description: Where to find a species (localities ranked by records in the Ithomi
 
 # Maps, host plants and the Wings Gallery
 
-Eight read-only tools; none changes the workbook. Use them before any outside API: they hold the maps' butterfly records, host plants, the plants' GBIF records and photos, and build the map links. Call GBIF, iNaturalist or other sites only for what they do not have, and say so.
+Nine read-only tools; none changes the workbook. Use them before any outside API: they hold the maps' butterfly records, host plants, the plants' GBIF records and photos, and build the map links. Call GBIF, iNaturalist or other sites only for what they do not have, and say so.
 
 | Question | Tool |
 |---|---|
@@ -17,6 +17,7 @@ Eight read-only tools; none changes the workbook. Use them before any outside AP
 | Which of X's host plants grow in Ecuador (near Tena, in a box)? Where to collect them, a map of their records | `host_plants` with `area`, `country`, `near` or `bbox` (one call) |
 | Near Ikiam (or another point), which site should I go to first to collect X's host plants? Where around here? | `host_plant_sites` with `near` {lat, lng, km} (Ikiam is about -0.95, -77.86); `rank: "grid"` for cells instead of the project's localities |
 | Show me specimens or photos of X (a sex, a locality, CAM IDs) | `gallery_specimens` |
+| Photos of the eggs, larvae or pupae of X | `taxon_photos` with `life_stage` (the project's clutch photos, iNaturalist's Life Stage annotation, GBIF's lifeStage); look at the sheets, then `send_sheet_photos` |
 
 ## Answering
 

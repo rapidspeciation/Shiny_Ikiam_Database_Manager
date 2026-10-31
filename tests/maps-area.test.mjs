@@ -436,3 +436,63 @@ test('a plant\'s sheet tiles: one per record first; its leaves photo and a flowe
   // Two photos of one record wait behind the other records' first.
   assert.deepEqual(sheetPicks([ph('a1', 'a', null), ph('a2', 'a', null), ph('b', 'b', null)], 2).map(p => p.img), ['a1', 'b']);
 });
+
+test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\'s annotation and GBIF\'s lifeStage, on a sheet to pick from', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
+  const clutchDir = mkdtempSync(join(tmpdir(), 'clutch-photos-'));
+  // The project's own: one clutch photo of the species (Insectary_stocks), one of another species.
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE records(id TEXT, sheet TEXT, values_json TEXT); CREATE TABLE clutch_photos(id TEXT, record_id TEXT, day TEXT, note TEXT, file TEXT, actor TEXT);`);
+  db.prepare('INSERT INTO records VALUES (?,?,?)').run('r1', 'Insectary_stocks', JSON.stringify({ SPECIES: 'Oleria onega', 'CLUTCH NUMBER': 'P12' }));
+  db.prepare('INSERT INTO records VALUES (?,?,?)').run('r2', 'Insectary_stocks', JSON.stringify({ SPECIES: 'Mechanitis menapis' }));
+  db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p1', 'r1', '2026-10-20', 'Larvas día 3', '2026-10/p1', 'Ana');
+  db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p2', 'r2', '2026-10-21', null, '2026-10/p2', 'Luis');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(clutchDir, '2026-10'));
+  writeFileSync(join(clutchDir, '2026-10', 'p1.jpg'), jpeg(1200, 900));
+  writeFileSync(join(clutchDir, '2026-10', 'p1.thumb.jpg'), jpeg(480, 360));
+  const asked = [];
+  const web = fakeWeb();
+  const fetchImpl = async url => {
+    asked.push(url);
+    const u = new URL(url);
+    if (u.host === 'inat.test') {
+      assert.equal(u.searchParams.get('term_id'), '1');
+      const larva = u.searchParams.get('term_value_id') === '6';
+      return Response.json({
+        total_results: larva ? 2 : 0,
+        results: larva
+          ? [
+              { id: 501, quality_grade: 'research', observed_on: '2021-03-01', place_guess: 'Tena', geojson: { coordinates: [TENA.lng, TENA.lat] }, photos: [{ url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/21/square.jpg', attribution: '(c) Ana, some rights reserved (CC BY-NC)', license_code: 'cc-by-nc' }, { url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/22/square.jpg', attribution: '(c) Ana', license_code: 'cc-by-nc' }] },
+              { id: 502, quality_grade: 'research', observed_on: '2019-01-01', place_guess: 'Bogotá', geojson: { coordinates: [BOGOTA.lng, BOGOTA.lat] }, photos: [{ url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/23/square.jpg', attribution: '(c) Luis', license_code: 'cc-by' }] },
+            ]
+          : [],
+      });
+    }
+    if (u.host === 'gbif.test') {
+      const larva = u.searchParams.get('lifeStage') === 'Larva';
+      return Response.json({ results: larva ? [{ key: 9, datasetKey: '50c9509d-22c7-4a22-a47d-8c48425ef4a7', media: [{ type: 'StillImage', identifier: 'https://x/inat.jpg' }] }, { key: 10, datasetKey: 'museum', year: 1990, country: 'Ecuador', decimalLatitude: PUYO.lat, decimalLongitude: PUYO.lng, media: [{ type: 'StillImage', identifier: 'https://museum.test/l.jpg', creator: 'Museo', license: 'http://creativecommons.org/licenses/by/4.0/' }] }] : [] });
+    }
+    return web.fetchImpl(url);
+  };
+  const tools = createMapsTools({ store: { db }, fetchImpl, mapsBase: MAPS, cacheDir: dir, clutchPhotoDir: clutchDir, inatApi: 'https://inat.test/v1/observations', gbifApi: 'https://gbif.test/v1/occurrence/search' });
+  const out = await tools.run('taxon_photos', { taxon: 'Oleria onega', life_stage: ['egg', 'larva'], area: 'Napo', lang: 'es' });
+  assert.deepEqual(out.counts, { project_clutch_photos: 1, inaturalist_egg: 0, gbif_other_egg: 0, inaturalist_larva: 2, gbif_other_larva: 1 });
+  // The project's photo first, then Tena (in Napo), then Puyo (GBIF, a museum), Bogotá; the Tena observation's second photo last.
+  const tiles = out.photo_sheets[0].tiles;
+  assert.match(tiles[0], /^1: Oleria onega · (huevos|larva) — Insectario Ikiam · 2026$/);
+  assert.match(tiles[1], /^2: Oleria onega · larva — Napo · 2021$/);
+  assert.match(tiles[2], /Puyo|Ecuador/);
+  assert.match(tiles.at(-1), /Napo · 2021$/);
+  // The iNaturalist record GBIF holds is not shown twice.
+  assert.ok(!tiles.some(t => /inat\.jpg/.test(t)));
+  const sent = await tools.run('send_sheet_photos', { sheets: [out.photo_sheets[0].id], tiles: [1, 2], lang: 'es' });
+  assert.equal(sent.images[0].path, join(clutchDir, '2026-10', 'p1.jpg'));
+  assert.match(sent.images[0].caption, /^_Oleria onega_ — puesta del insectario Ikiam P12\nLarvas día 3, 2026-10-20\nFoto: Ana \(Ithomiini Ikiam\)$/);
+  assert.match(sent.images[1].caption, /^_Oleria onega_ — larva\nTena, 2021\nFoto: Ana \(CC BY-NC 4\.0\)\nhttps:\/\/www\.inaturalist\.org\/observations\/501$/);
+  assert.match(sent.images[1].url, /photos\/21\/original\.jpg$/);
+  assert.match((await tools.run('taxon_photos', { taxon: 'Oleria onega' })).error, /life_stage/);
+  const none = await tools.run('taxon_photos', { taxon: 'Oleria onega', life_stage: 'pupa' });
+  assert.match(none.note, /Unannotated photos may exist/);
+});

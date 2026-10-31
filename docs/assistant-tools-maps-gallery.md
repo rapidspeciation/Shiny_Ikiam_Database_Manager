@@ -108,6 +108,13 @@ timing_ms { records, photos, area_total }, plant_data.records_from (memory, disk
 
 - Cache (`<photo cache>/maps-cache`): `admin/`, `plant-records/<layers version>/<plant>.json` (each plant's coordinates, years, basis and record keys: a new worker or a restart reads these instead of the 7.5 MB chunks; `host_plant_sites` uses them too), `plant-photos/photos/` and `plant-photos/gbif/`. All in memory as well; the maps' files as before (6 hours, ETag).
 
+### `taxon_photos`
+Photos of a taxon at a life stage ("fotos de huevos y larvas de Tithorea harmonia"), to look at and pick from. `taxon` (genus or species), `life_stage` (egg, larva, pupa, adult; one or a list), optional `area` or `near` (photos there first; without one, nearest Ikiam first), `lang`.
+
+- Sources, together: the project's clutch photos (Clutches tab, `clutch_photos` of Insectary_stocks rows of that species: eggs and larvae; production had none on 31 Oct 2026); iNaturalist observations annotated with Life Stage (term 1: egg 7, larva 6, pupa 4, adult 2), research grade and needs ID, the first 200 by votes, up to 3 photos each; GBIF records whose `lifeStage` says the stage, with images, from datasets other than iNaturalist's (those are already there). Unannotated iNaturalist photos are not found.
+- Answer: `counts` per source and stage, and 1–2 contact sheets (each stage gets its share of the 18 tiles; one photo per observation before a second). `send_sheet_photos` sends the tiles chosen: iNaturalist's `original` (at most 2048 px) with the photo's attribution and licence and the observation's link; a clutch photo as kept, credited to who took it.
+- Tithorea harmonia on 31 Oct 2026: eggs 0, pupae 0, larvae 10 annotated observations (Mindo, Orellana, Central America, Brazil); one annotated as larva shows a pupa: the chat judges by looking.
+
 ### `gallery_specimens`
 Collection specimens with wing photos, from the workbook and Photo_links.
 

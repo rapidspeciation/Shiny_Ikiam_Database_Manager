@@ -21,7 +21,7 @@ import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-
 import { unreliableFor } from './sex-check.mjs';
 import { PALETTE, createSnapshots } from './map-snapshot.mjs';
 import { cantonOf, createAdminAreas } from './admin-areas.mjs';
-import { createPlantPhotos, proxyUrl } from './plant-photos.mjs';
+import { createPlantPhotos, creditOf, licenceName, proxyUrl } from './plant-photos.mjs';
 import { PER_SHEET, TILE, createPhotoSheets } from './photo-sheets.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
@@ -67,6 +67,14 @@ const CHUNKS_AT_ONCE = 2;
 const NEARBY_KM = 50;
 const NEAREST_MAX_KM = 300;
 const SEND_PAGES = 12;
+// taxon_photos: iNaturalist's Life Stage annotation (term 1) and its values; GBIF's lifeStage words; the
+// iNaturalist dataset on GBIF (its records come from iNaturalist itself).
+const INAT_API = 'https://api.inaturalist.org/v1/observations';
+const GBIF_SEARCH = 'https://api.gbif.org/v1/occurrence/search';
+const LIFE_STAGES = { egg: { inat: 7, gbif: 'Egg' }, larva: { inat: 6, gbif: 'Larva' }, pupa: { inat: 4, gbif: 'Pupa' }, adult: { inat: 2, gbif: 'Adult' } };
+const INAT_DATASET = '50c9509d-22c7-4a22-a47d-8c48425ef4a7';
+const IKIAM = { lat: -0.95, lng: -77.86 };
+const STAGE_WORDS = { en: { egg: 'eggs', larva: 'larva', pupa: 'pupa', adult: 'adult' }, es: { egg: 'huevos', larva: 'larva', pupa: 'pupa', adult: 'adulto' } };
 // The photo tags file in the cache folder, and the probability of "leaves or whole plant" over which a photo counts
 // as showing them (tools/plant-photo-tags/CALIBRATION.md: over 80 photos checked by eye, 26 of 27 so tagged showed
 // them and 1 of 33 flower close-ups was so tagged; a small sample: no errors expected, not ruled out).
@@ -200,6 +208,29 @@ export const MAPS_TOOLS = [
           site_km: { type: 'number' },
           limit: { type: 'integer' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'taxon_photos',
+      description: [
+        'Photos of a butterfly (or any taxon) at a life stage, to show or send: eggs, larvae, pupae or adults. For "photos of the eggs and larvae of X". Without an area, the photos nearest Ikiam come first.',
+        '- `taxon`: species or genus. `life_stage`: egg, larva, pupa, adult (a list, or one). Optional `area` ({province}/{canton} of Ecuador) or `near` {lat, lng, km}: photos there first, then the nearest.',
+        "- Sources: the project's own clutch photos (Clutches tab: eggs and larvae of the insectary's clutches), iNaturalist observations annotated with that life stage (research grade first), and GBIF records of other datasets whose lifeStage says it. Unannotated iNaturalist photos are not found: say so when few come back.",
+        'Gives `counts` per source and stage, and `photo_sheets` (1–2 contact sheets of numbered tiles with the stage, place and year): look at them, pick the tiles that show the stage asked clearly (at most 5), then send_sheet_photos.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          taxon: { type: 'string' },
+          life_stage: { anyOf: [{ type: 'string', enum: ['egg', 'larva', 'pupa', 'adult'] }, { type: 'array', items: { type: 'string', enum: ['egg', 'larva', 'pupa', 'adult'] } }] },
+          area: AREA,
+          near: region.near,
+          lang: { type: 'string', enum: ['en', 'es'] },
+        },
+        required: ['taxon'],
       },
     },
   },
@@ -707,6 +738,9 @@ export function createMapsTools({
   snapshotOptions = {},
   cacheDir = null,
   sheetOptions = null,
+  clutchPhotoDir = null,
+  inatApi = INAT_API,
+  gbifApi = GBIF_SEARCH,
 } = {}) {
   const files = new Map();
   const dem = new Map();
@@ -1958,6 +1992,25 @@ export function createMapsTools({
     const got = await Promise.all(
       chosen.map(async t => {
         try {
+          if (t.kind === 'local') return { path: t.path, caption: t.caption, stage: t.stage, source: t.source };
+          if (t.kind === 'remote') {
+            const file = await photoFiles.photo(t.img);
+            const c = t.credit ?? {};
+            if (!(c.photographer || c.rights_holder)) throw new Error('no credit');
+            const stageWord = STAGE_WORDS[lang][t.stage];
+            return {
+              path: file.path,
+              caption: [`_${t.name}_ — ${stageWord}`, [t.place, t.year].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${c.photographer ?? c.rights_holder}${c.licence ? ` (${c.licence})` : ''}`, c.link ?? t.record].filter(Boolean).join('\n'),
+              stage: t.stage,
+              source: t.source,
+              width: file.width,
+              height: file.height,
+              bytes: file.bytes,
+              url: file.url,
+              source_url: t.img,
+              credit: c,
+            };
+          }
           if (t.kind === 'specimen') {
             const file = await photoFiles.photo(t.full);
             return { path: file.path, caption: t.caption, cam_id: t.cam_id, width: file.width, height: file.height, bytes: file.bytes, url: file.url };
@@ -1978,6 +2031,143 @@ export function createMapsTools({
       images_block: imagesBlock(images),
       ...(failed.length ? { failed, failed_note: 'Pick another tile of the same plant for these.' } : {}),
       timing_ms: Date.now() - started,
+    };
+  }
+
+  /** A JSON answer of an outside API, kept in memory for REFRESH_MS. */
+  const apiKept = new Map();
+  async function getJson(url) {
+    const kept = apiKept.get(url);
+    if (kept && now() - kept.at < REFRESH_MS) return kept.value;
+    const r = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
+    const value = await r.json();
+    apiKept.set(url, { at: now(), value });
+    return value;
+  }
+
+  /**
+   * taxon_photos: photos of a taxon at a life stage, from the project's clutch photos, iNaturalist's Life Stage
+   * annotation and GBIF's lifeStage (other datasets), on contact sheets to pick from (send_sheet_photos).
+   */
+  async function taxonPhotos(args) {
+    const taxon = text(args.taxon);
+    if (!/^[A-Za-z]+( [a-z-]+)?$/.test(taxon)) return { error: 'Give `taxon` as a genus or "Genus species".' };
+    const stages = [...new Set(list(args.life_stage).map(fold).filter(s => LIFE_STAGES[s]))];
+    if (!stages.length) return { error: 'Give `life_stage`: egg, larva, pupa or adult (one or a list).' };
+    const lang = args.lang === 'es' ? 'es' : 'en';
+    const admin = await areaOf(args);
+    if (admin?.error) return admin;
+    const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Number(args.near.km) || 25 } : null;
+    const box = admin?.bbox ?? null;
+    // Without an area, nearest to Ikiam first (the team's base).
+    const middle = box ? { lat: (box[1] + box[3]) / 2, lng: (box[0] + box[2]) / 2 } : near ?? IKIAM;
+    const placeOf = (lat, lng) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { inside: false, away: Infinity };
+      const inside = admin ? admin.test(lng, lat) : near ? km(near, { lat, lng }) <= near.km : false;
+      return { inside, away: inside ? 0 : middle ? km(middle, { lat, lng }) : Infinity };
+    };
+    const counts = {};
+    const errors = [];
+    const candidates = [];
+    const fold2 = v => fold(v).split(' ').slice(0, taxon.includes(' ') ? 2 : 1).join(' ');
+    // The project's own: clutch photos of this taxon (eggs and larvae of the insectary's clutches).
+    if (stages.some(s => s === 'egg' || s === 'larva') && store?.db) {
+      const dir = clutchPhotoDir;
+      let rows = [];
+      try {
+        rows = store.db.prepare("SELECT p.id, p.day, p.note, p.file, p.actor, r.values_json FROM clutch_photos p JOIN records r ON r.id = p.record_id WHERE r.sheet = 'Insectary_stocks'").all();
+      } catch {
+        rows = [];
+      }
+      const own = rows.filter(r => {
+        try {
+          return fold2(JSON.parse(r.values_json).SPECIES) === fold(taxon);
+        } catch {
+          return false;
+        }
+      });
+      counts.project_clutch_photos = own.length;
+      for (const r of own.slice(0, 2 * PER_SHEET)) {
+        const v = JSON.parse(r.values_json);
+        const path = dir ? join(dir, `${r.file}.jpg`) : null;
+        if (!path) continue;
+        candidates.push({ kind: 'local', source: 'project', stage: /larva|oruga/i.test(r.note ?? '') ? 'larva' : stages.includes('egg') ? 'egg' : 'larva', path, thumb: dir ? join(dir, `${r.file}.thumb.jpg`) : path, year: Number(String(r.day).slice(0, 4)) || null, place: 'Insectario Ikiam', inside: false, away: -1, caption: [`_${text(v.SPECIES)}_ — ${lang === 'es' ? 'puesta del insectario Ikiam' : 'clutch of the Ikiam insectary'} ${text(v['CLUTCH NUMBER'] ?? '')}`.trim(), [r.note, r.day].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${r.actor} (Ithomiini Ikiam)`].join('\n') });
+      }
+    }
+    // iNaturalist: research-grade observations annotated with the stage, with photos.
+    for (const stage of stages) {
+      try {
+        const url = `${inatApi}?taxon_name=${encodeURIComponent(taxon)}&term_id=1&term_value_id=${LIFE_STAGES[stage].inat}&photos=true&quality_grade=research,needs_id&per_page=200&order=desc&order_by=votes`;
+        const got = await getJson(url);
+        counts[`inaturalist_${stage}`] = got.total_results ?? (got.results ?? []).length;
+        for (const o of got.results ?? []) {
+          const [lng, lat] = o.geojson?.coordinates ?? [];
+          const at = placeOf(lat, lng);
+          for (const [i, ph] of (o.photos ?? []).slice(0, 3).entries()) {
+            const square = text(ph.url);
+            if (!/^https:\/\//.test(square)) continue;
+            candidates.push({
+              kind: 'remote',
+              source: 'inaturalist',
+              stage,
+              record: `inat:${o.id}`,
+              second: i > 0,
+              img: square.replace(/\/square\./, '/original.'),
+              thumb: square.replace(/\/square\./, '/medium.'),
+              year: Number(String(o.observed_on ?? '').slice(0, 4)) || null,
+              place: text(o.place_guess) || null,
+              research: o.quality_grade === 'research',
+              ...at,
+              credit: { photographer: text(ph.attribution).replace(/^\(c\)\s*/i, '').replace(/,.*$/, '') || null, licence: ph.license_code ? licenceName(`http://creativecommons.org/licenses/${ph.license_code.replace(/^cc-/, '')}/4.0/`) : null, link: `https://www.inaturalist.org/observations/${o.id}`, attribution: text(ph.attribution) || null },
+            });
+          }
+        }
+      } catch (e) {
+        errors.push(`iNaturalist (${stage}): ${e.message}`);
+      }
+      // GBIF: other datasets whose records say the stage (iNaturalist's are above already).
+      try {
+        const got = await getJson(`${gbifApi}?scientificName=${encodeURIComponent(taxon)}&lifeStage=${LIFE_STAGES[stage].gbif}&mediaType=StillImage&limit=100`);
+        const other = (got.results ?? []).filter(r => r.datasetKey !== INAT_DATASET);
+        counts[`gbif_other_${stage}`] = other.length;
+        for (const r of other) {
+          const at = placeOf(r.decimalLatitude, r.decimalLongitude);
+          for (const m of (r.media ?? []).filter(m => m.type === 'StillImage' && /^https?:\/\//.test(m.identifier ?? '')).slice(0, 2)) {
+            candidates.push({ kind: 'remote', source: 'gbif', stage, record: `https://www.gbif.org/occurrence/${r.key}`, img: m.identifier, thumb: proxyUrl(m.identifier).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`), year: r.year ?? null, place: [r.locality, r.stateProvince, r.country].filter(Boolean).join(', ') || null, research: true, ...at, credit: creditOf(r, m.identifier) });
+          }
+        }
+      } catch (e) {
+        errors.push(`GBIF (${stage}): ${e.message}`);
+      }
+    }
+    // The project's first, then in the area, nearer, research grade, newer; one photo per observation before a second.
+    candidates.sort((a, b) => (a.source === 'project' ? -1 : 0) - (b.source === 'project' ? -1 : 0) || b.inside - a.inside || a.away - b.away || (b.research ?? 0) - (a.research ?? 0) || (b.year ?? 0) - (a.year ?? 0));
+    const ordered = [...candidates.filter(c => !c.second), ...candidates.filter(c => c.second)];
+    // Each stage asked gets its share of the 18 tiles.
+    // Each stage asked gets its share of the 18 tiles; a stage with fewer photos leaves its share to the others.
+    const per = Math.max(3, Math.floor((2 * PER_SHEET) / stages.length));
+    const first = stages.flatMap(stage => ordered.filter(c => c.stage === stage).slice(0, per));
+    const tiles = [...first, ...ordered.filter(c => !first.includes(c))].slice(0, 2 * PER_SHEET);
+    tiles.sort((a, b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
+    const words = STAGE_WORDS[lang];
+    const answer = { taxon, life_stage: stages, counts, ...(errors.length ? { errors } : {}) };
+    if (!tiles.length)
+      return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} in the project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage. Unannotated photos may exist on iNaturalist: say so.` };
+    if (!sheets) return { ...answer, photo_sheet_error: 'Contact sheets are off on this server.' };
+    const made = [];
+    const shaped = tiles.map(c => ({
+      ...c,
+      name: taxon,
+      line1: `${taxon} · ${words[c.stage]}`,
+      line2: [(c.source === 'project' ? 'Insectario Ikiam' : c.inside ? admin?.name ?? (lang === 'es' ? 'en el área' : 'in the area') : c.place)?.slice(0, 38), c.year].filter(Boolean).join(' · '),
+    }));
+    for (let i = 0; i < shaped.length && made.length < 2; i += PER_SHEET) made.push(sheets.make(shaped.slice(i, i + PER_SHEET), { first: i + 1 }));
+    const out = await Promise.all(made);
+    return {
+      ...answer,
+      photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
+      photo_sheet_note: 'Look at each sheet (read its path), pick the tiles that clearly show the stage asked (an annotation can be wrong: a tile showing an adult or a plant is not a larva), at most 5, then send_sheet_photos with `sheets` and `tiles`.',
     };
   }
 
@@ -2425,6 +2615,7 @@ export function createMapsTools({
         if (name === 'host_plants') return await hostPlants(args);
         if (name === 'host_plant_sites') return await plantSitesNear(args);
         if (name === 'send_sheet_photos') return await sendSheetPhotos(args);
+        if (name === 'taxon_photos') return await taxonPhotos(args);
         if (name === 'gallery_specimens') return await specimens(args);
         if (name === 'maps_snapshot') return await snapshot(args);
       } catch (e) {

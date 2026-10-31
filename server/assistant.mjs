@@ -45,6 +45,7 @@ import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.m
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
 import { RACK_FIELDS, RACK_ROW_FIELDS, changesProblems, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
+import { clutchPhotoDir as clutchPhotoFolder } from './clutch-photos.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
@@ -928,6 +929,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     store,
     snapshotDir: mapsBase ? `${mapsBase}/map-snapshots` : null,
     cacheDir: mapsBase ? `${mapsBase}/maps-cache` : null,
+    // taxon_photos shows the project's own clutch photos (eggs and larvae) from where the app keeps them.
+    clutchPhotoDir: config.clutchPhotoDir || clutchPhotoFolder({}, db?.location?.() ?? null),
     ...(config.mapsTools ?? {}),
   });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
