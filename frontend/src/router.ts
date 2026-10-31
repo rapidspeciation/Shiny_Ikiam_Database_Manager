@@ -48,6 +48,14 @@ export const router = createRouter({
     { path: '/recuperar', name: 'forgot', component: () => import('./views/ForgotPasswordView.vue') },
     { path: '/restablecer', name: 'reset', component: () => import('./views/ResetPasswordView.vue') },
     { path: '/entrar', name: 'login', component: LoginView },
+    // The offline identifier test (a page of its own: it needs cross-origin isolation and WebAssembly, server/offline-id.mjs).
+    {
+      path: '/prueba-offline',
+      redirect: () => {
+        location.replace(new URL('prueba-offline/', location.href.split('#')[0]).href)
+        return '/inicio'
+      },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/inicio' },
   ],
 })

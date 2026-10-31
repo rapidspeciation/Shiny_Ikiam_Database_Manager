@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { brotliCompress, constants } from 'node:zlib'
@@ -46,6 +46,23 @@ const precompress = {
   },
 }
 
+// The offline identifier test page (prueba-offline/index.html, server/offline-id.mjs) loads onnxruntime-web's
+// runtime from its own folder, where the server sends it with the page's cross-origin isolation headers (its
+// threads are workers): the plain WebAssembly build (the encoder) and the WebGPU one (the wing detector).
+const ortFiles = [
+  'ort.wasm.min.mjs', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm',
+  'ort.webgpu.min.mjs', 'ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm',
+]
+const offlineRuntime = {
+  name: 'offline-runtime',
+  apply: 'build' as const,
+  async writeBundle() {
+    const to = join(outDir, 'prueba-offline', 'ort')
+    await mkdir(to, { recursive: true })
+    await Promise.all(ortFiles.map(f => copyFile(resolve(import.meta.dirname, 'node_modules/onnxruntime-web/dist', f), join(to, f))))
+  },
+}
+
 // Lib tests that need a page (document, window or localStorage).
 const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'proposalColumns'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
@@ -53,9 +70,14 @@ const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'proposalColu
 
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/ithomiini/' : './',
-  plugins: [vue(), tailwindcss(), version, precompress],
+  plugins: [vue(), tailwindcss(), version, precompress, offlineRuntime],
   define: { __BUILD_ID__: JSON.stringify(command === 'serve' ? 'dev' : buildId) },
-  build: { outDir: '../web', emptyOutDir: true, chunkSizeWarningLimit: 900 },
+  build: {
+    outDir: '../web',
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), offline: resolve(import.meta.dirname, 'prueba-offline/index.html') } },
+  },
   server: {
     port: 5173,
     proxy: { '/ithomiini/api': { target: process.env.API_TARGET || 'http://127.0.0.1:8794', changeOrigin: false } },

@@ -165,6 +165,8 @@ const props = defineProps<{
   loadRows?: (from: number, to: number) => Promise<SheetRows>
   /** Where the table's undo steps are kept while the page is open (the proposal and the table); none: while it is shown. */
   historyKey?: string
+  /** Columns only to read in these rows, with where they change instead (a rack deposit's Rack_ID and Sort). */
+  lockedFields?: Record<string, string>
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -230,7 +232,9 @@ function info(key: string, field: string) {
 }
 const canEditCell = (key: string, field: string) => {
   const change = byKey.get(key)
-  return props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && info(key, field)?.kind !== 'locked'
+  return (
+    props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && !props.lockedFields?.[field] && info(key, field)?.kind !== 'locked'
+  )
 }
 /** Why a row is only to read: a page line that writes nothing, or a sheet row between the proposal's rows. */
 const readOnlyText = (change: ProposalChange) =>
@@ -248,6 +252,18 @@ const canEdit: CanEdit = (row, field) => canEditCell((row.getData() as Row).__ke
 const choicesOf = (field: string) => (ID_COLUMN.test(field) ? null : rules.value?.lists[field]?.values)
 const hasChoices = (field: string) => !!choicesOf(field)?.size
 
+/** The assistant's note on a row; a new row whose pre-made row someone used meanwhile: why it is not written, then its note. */
+const noteOf = (c: ProposalChange) =>
+  c.rowTaken
+    ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
+        .filter(Boolean)
+        .join(' · ')
+    : pageNote(c)
+/** The one note all the rows share (a team rule said on each), said once above the table with no «Nota IA» column; null when they differ. */
+const sharedNote = computed(() => {
+  const notes = new Set(props.changes.map(noteOf))
+  return notes.size === 1 ? [...notes][0] : null
+})
 function toRow(c: ProposalChange): Row {
   const key = rowKey(c)
   const out = {
@@ -256,12 +272,7 @@ function toRow(c: ProposalChange): Row {
     // A page line with no sheet row: no row number (it is not a new row either).
     __row: c.row ? String(c.row) : c.placeholder ? '—' : t('nueva'),
     __label: c.label,
-    // A new row whose pre-made row someone used meanwhile: why it is not written, then its note.
-    __note: c.rowTaken
-      ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
-          .filter(Boolean)
-          .join(' · ')
-      : pageNote(c),
+    __note: noteOf(c),
     __line: lineText(c),
   } as Row
   let state = ''
@@ -432,6 +443,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-warned', !!c.warning)
   el.classList.toggle('is-formula-gives', !!c.fromFormula || !!c.formulaWrite)
   el.classList.toggle('is-formula-write', !!c.formulaWrite)
+  el.classList.toggle('is-field-locked', !!props.lockedFields?.[field])
   el.classList.toggle('is-sheet-edit', !!c.sheetEdit)
   el.classList.toggle('is-kept', c.kind === 'kept')
   el.classList.toggle('is-again', !!c.sheetEdit?.again)
@@ -486,6 +498,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
     c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     readOnlyRow(change) ? readOnlyText(change) : '',
+    props.lockedFields?.[field] ? t(props.lockedFields[field]) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -499,12 +512,12 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     mark.textContent = t('no se escribe: columna protegida')
     return mark
   }
-  // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
+  // A preserved butterfly would be left without it: an amber "missing" tag (or the warning's own, a rack's «conflicto»), then what the cell holds.
   if (c.warning && c.kind !== 'unreadable') {
     const box = document.createElement('span')
     const mark = document.createElement('span')
     mark.className = 'warn-mark'
-    mark.textContent = t('falta')
+    mark.textContent = c.warning.label ? t(c.warning.label).toLowerCase() : t('falta')
     box.append(mark)
     if (text) box.append(' ', withTotal(field, c.value, text))
     return box
@@ -729,22 +742,23 @@ function columns(): ColumnDefinition[] {
     })
   if (wide) cols.push(id)
   // The assistant's note on the row (where its values come from, what a line says), beside its ID:
-  // cut short, whole under the pointer and in the bar when selected.
-  cols.push({
-    title: t('Nota IA'),
-    field: '__note',
-    headerSort: false,
-    width: 150,
-    minWidth: 70,
-    cssClass: 'proposal-note',
-    headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
-    formatter: (cell: CellComponent) => {
-      if ((cell.getData() as Row).__marker) return ''
-      const note = String(cell.getValue() ?? '')
-      cell.getElement().title = note
-      return note
-    },
-  } as ColumnDefinition)
+  // cut short, whole under the pointer and in the bar when a cell of its row is selected.
+  if (sharedNote.value === null)
+    cols.push({
+      title: t('Nota IA'),
+      field: '__note',
+      headerSort: false,
+      width: 150,
+      minWidth: 70,
+      cssClass: 'proposal-note',
+      headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
+      formatter: (cell: CellComponent) => {
+        if ((cell.getData() as Row).__marker) return ''
+        const note = String(cell.getValue() ?? '')
+        cell.getElement().title = note
+        return note
+      },
+    } as ColumnDefinition)
   const rows = measured()
   for (const field of props.fields) {
     const choices = hasChoices(field)
@@ -840,22 +854,27 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const row = cell.getData() as Row
   const field = cell.getField()
   const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
+  // The row's note in full under any of its cells (the column cuts it short), unless said once above the table.
+  const rowNote: CellBarNote[] = sharedNote.value === null && row.__note && field !== '__note' ? [{ label: t('Nota IA'), text: row.__note, kind: 'hint' }] : []
   // The row's own columns: its note (where the values come from), its ID and row number.
   if (field === '__note') return { ...base, column: t('Nota IA'), text: row.__note }
   if (field === '__label') {
     // A butterfly dead in the sheet, or dying here: said in the bar too (a phone has no tooltips).
     const death = byKey.has(row.__key) ? deathMark(byKey.get(row.__key)!) : null
-    return { ...base, column: 'ID', text: row.__label, ...(death ? { notes: [{ text: death.text, kind: 'hint' as const }] } : {}) }
+    const notes: CellBarNote[] = [...(death ? [{ text: death.text, kind: 'hint' as const }] : []), ...rowNote]
+    return { ...base, column: 'ID', text: row.__label, ...(notes.length ? { notes } : {}) }
   }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
   if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
   const c = fieldSet.value.has(field) ? info(row.__key, field) : null
   const change = byKey.get(row.__key)
   if (!c || !change) return null
-  const notes: CellBarNote[] = []
+  const notes: CellBarNote[] = [...rowNote]
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
   const editable = canEditCell(row.__key, field)
+  // A column only to read in these rows (a rack deposit's Rack_ID, Sort): where it changes, said under the bar.
+  if (props.lockedFields?.[field]) notes.unshift({ label: t('Solo lectura'), text: t(props.lockedFields[field]), kind: 'hint' })
   // What the assistant says about it (as the cell's tooltip): a doubt, where it comes from, why unreadable.
   for (const n of cellComments(c, v => show(field, v)))
     notes.push(
@@ -888,7 +907,9 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     multiline: longText(field) && !hasChoices(field),
     readonly: editable
       ? ''
-      : c.kind === 'locked'
+      : props.lockedFields?.[field]
+        ? t(props.lockedFields[field])
+        : c.kind === 'locked'
         ? t('Calculado por la fórmula de la hoja: no se escribe')
         : readOnlyRow(change)
           ? readOnlyText(change)
@@ -1382,12 +1403,14 @@ const layoutKey = () =>
   [
     props.fields.join('|'),
     props.editable,
+    Object.keys(props.lockedFields ?? {}).join('|'),
     props.applied ? 1 : 0,
     rules.value ? 1 : 0,
     locale.value,
     paged() ? (severalPhotos() ? 'pp' : 'p') : '',
     offPhotoRows() ? 'o' : '',
     markedRows() ? 'm' : '',
+    sharedNote.value === null ? 'n' : '',
     repeatRows() ? `r${Math.max(0, ...props.changes.map(c => c.label.length))}` : '',
   ].join('\n')
 function sync() {
@@ -1681,6 +1704,8 @@ watch(
       <slot name="end" />
     </div>
     <slot name="panel" />
+    <!-- The note every row shares, whole, once: the «Nota IA» column would cut it short on each row. -->
+    <p v-if="sharedNote" class="proposal-shared-note"><b>{{ $t('Nota IA') }}:</b> {{ sharedNote }}</p>
     <div class="sheet-grid proposal-sheet">
       <CellBar :info="bar" notes-line @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
@@ -1749,6 +1774,13 @@ watch(
 </template>
 
 <style>
+.proposal-shared-note {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #57534e;
+}
 /* A notebook page's lines that write nothing: grey (as the sheet has them), or as written (no such row). */
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell,
 .legend.is-context {
@@ -1787,6 +1819,11 @@ watch(
   color: #57534e;
   background: #f3f4f1;
   font-style: italic;
+}
+/* A column the rack decides (Rack_ID, Sort): only to read here (its colour kept, a grey underline); its tooltip and the bar say where it changes. */
+.proposal-sheet .tabulator-cell.is-field-locked {
+  box-shadow: inset 0 -2px 0 #d6d3d1;
+  cursor: not-allowed;
 }
 /* A formula the proposal writes: the formula tint with the proposal's green edge, and an "ƒx" tag. */
 .proposal-sheet .tabulator-cell.is-formula-write {
