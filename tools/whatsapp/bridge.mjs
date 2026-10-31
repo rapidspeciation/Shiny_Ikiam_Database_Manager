@@ -17,8 +17,11 @@
 // only: its workspace's settings deny applying), over ssh with tools/whatsapp/t3-turn.mjs. Franz's chat → «Orchestrator wpp»
 // in this PC's T3, in the project on the lab's workspace (the lab app's tools).
 // Sends go through `wacli send`, and only to the group's and Franz's own JID (hard block in send()).
-// In the group the bridge never sends on its own: every send names the incoming message it answers,
-// and send() refuses unless that message tagged @claude or replied to one of the bridge's own messages.
+// In the group the bridge never speaks first: a conversation opens with an @claude message (or a reply
+// to one of the bridge's messages) and stays active 15 minutes from the last message Claude answered or
+// was replied to. Inside it, untagged messages go to the chat marked as follow-ups, and the chat answers
+// [silent] unless one is addressed to Claude. Outside it nothing is sent and no turn starts; send()
+// refuses a group send that names no incoming message or comes outside an active conversation.
 //
 //   node tools/whatsapp/bridge.mjs serve            the receiver (systemd: ithomiini-wa-bridge.service)
 //   node tools/whatsapp/bridge.mjs install          copy the bridge to ~/.local/share/ithomiini-wa-bridge and write the unit
@@ -86,6 +89,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const admin = msg => msg.fromMe;
   // The group's rule: a message wakes the bridge only if it tags @claude or replies to one of the bridge's own messages.
   const isGroup = chat => String(chat.jid ?? '').endsWith('@g.us');
+  const CONVO_MS = 15 * 60_000;
+  const active = chat => (state.convo?.[chat.key] ?? 0) > now();
+  const openConvo = chat => ((state.convo ??= {})[chat.key] = now() + CONVO_MS);
   const wakes = msg => Boolean(msg) && (tagged(msg.text) || Boolean(msg.replyToId && (state.botIds ?? []).includes(msg.replyToId)));
   const ring = new Map(); // dry-run chats' recent messages (the lab's fake group has no wacli history)
   const queues = new Map();
@@ -104,8 +110,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger }) {
     const entry = { dir: 'out', chat: chat.key, kind, chars: text?.length ?? 0, file: Boolean(file), ...(edit ? { edit: true } : {}), ...(react ? { emoji: react.emoji } : {}) };
     let id = null;
-    if (isGroup(chat) && !wakes(trigger)) {
-      record({ ...entry, refused: 'group send without a @claude or reply-to-bot trigger' });
+    if (isGroup(chat) && !(wakes(trigger) || (trigger && active(chat)))) {
+      record({ ...entry, refused: 'group send outside an active conversation' });
       throw new Error('Refused: no trigger');
     }
     if (chat.dryRun) {
@@ -148,6 +154,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
     }
     if (id && !edit) (state.botIds ??= []).push(String(id));
+    if (isGroup(chat) && ['reply', 'image', 'voice'].includes(kind)) openConvo(chat); // an answer of Claude's keeps the conversation open
     if (kind === 'reply') (state.sends[chat.key] ??= []).push(now());
     state.sends[chat.key] = lastHour(state.sends[chat.key], now());
     save();
@@ -228,6 +235,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   function overLimit(chat, msg) {
     const n = lastHour(state.sends[chat.key], now()).length;
     if (n < chat.repliesHour) return false;
+    if (msg?.followUp) {
+      record({ dir: 'in', chat: chat.key, decision: 'limited' });
+      return true;
+    }
     const hour = Math.floor(now() / 3_600_000);
     if (state.noticeHour?.[chat.key] !== hour) {
       (state.noticeHour ??= {})[chat.key] = hour;
@@ -273,14 +284,20 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       runCommand(chat, msg, cmd).catch(e => log.error?.('command:', e.message));
       return { decision: 'command' };
     }
-    if (!tagged(msg.text)) return out('skip', 'no @claude');
+    // The group: a tag or a reply to the bridge opens or refreshes the conversation; an untagged message inside one is a follow-up.
+    if (isGroup(chat)) {
+      if (tagged(msg.text) || wakes(msg)) openConvo(chat);
+      else if (active(chat)) msg.followUp = true;
+      else return out('skip', 'no @claude');
+      save();
+    } else if (!tagged(msg.text)) return out('skip', 'no @claude');
     if (overLimit(chat, msg)) return { decision: 'limited' };
     const q = queues.get(chat.key) ?? [];
     if (q.length >= 5) return out('skip', 'queue full');
     q.push(msg);
     queues.set(chat.key, q);
-    out('queued', null);
-    if (ackMode(chat) === 'reaction') msg.seen = reactTo(chat, msg, '👀');
+    out('queued', msg.followUp ? 'follow-up' : null);
+    if (ackMode(chat) === 'reaction' && !msg.followUp) msg.seen = reactTo(chat, msg, '👀');
     pump(chat);
     return { decision: 'queued' };
   }
@@ -296,7 +313,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     } catch (e) {
       log.error?.('turn:', e.message);
       record({ dir: 'turn', chat: chat.key, id: msg.id, ok: false, error: clip(e.message, 200) });
-      await say(chat, 'No pude responder ahora (error del puente). Prueba de nuevo en un rato.', 'notice', msg);
+      if (!msg.followUp) await say(chat, 'No pude responder ahora (error del puente). Prueba de nuevo en un rato.', 'notice', msg);
     } finally {
       busy.delete(chat.key);
       if (q.length) setImmediate(() => pump(chat));
@@ -516,7 +533,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     const route = config.routes[chat.route];
     const started = now();
     const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-'));
-    const mode = ackMode(chat);
+    const mode = msg.followUp ? 'quiet' : ackMode(chat); // a follow-up shows no 👀/✅/steps: it may end in silence
     // The edit mode: one message that lists the chat's steps (tool names, never its reasoning) and becomes the answer.
     const status = { id: null, steps: [], shown: '', editing: Promise.resolve(), last: 0 };
     const showSteps = () => {
@@ -531,7 +548,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       // The route's tools (the lab app's MCP endpoint, for Franz's chat) answer before a model turn starts; if not, say so at once.
       if (route.toolsHealth && !(await toolsUp(route.toolsHealth))) {
         record({ dir: 'turn', chat: chat.key, id: msg.id, ok: false, error: 'tools down' });
-        await say(chat, 'herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.', 'notice', msg);
+        if (!msg.followUp) await say(chat, 'herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.', 'notice', msg);
         return;
       }
       if (mode === 'edit') status.id = await send(chat, { kind: 'status', text: statusMessage([]), quote: msg, trigger: msg }).catch(() => null);
@@ -563,6 +580,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         lines.push('Recent messages (oldest first):');
         for (const r of recent) lines.push(`  ${hhmm(r.at)} ${r.name}: ${clip(String(r.text || '').replace(/\s*\n\s*/g, ' / '), 400)}${r.media ? ` [${r.media}]` : ''}`);
       }
+      if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it came inside a conversation you were in during the last 15 minutes. Answer only if it clearly continues that exchange with you (an answer to your question, a follow-up, a correction). If people are talking among themselves, or you are unsure, your last message must be exactly [silent].');
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
       lines.push('(Answer per the whatsapp-bridge skill: your last message is sent as it is.)');
@@ -573,6 +591,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       state.lastTurn[chat.key] = { at: started, ms: now() - started, ok: Boolean(r.ok) };
       save();
       record({ dir: 'turn', chat: chat.key, id: msg.id, ok: Boolean(r.ok), status: r.status ?? null, error: r.error ?? null, ms: now() - started, attachments: attachments.length, steps: status.steps.length });
+      if (!r.ok && !r.text && msg.followUp) return;
       if (!r.ok && !r.text) {
         const sorry = `No pude responder ahora (${r.error ?? r.status ?? 'error'}). Prueba de nuevo en un rato.`;
         if (status.id) await send(chat, { kind: 'notice', edit: status.id, text: PREFIX + sorry, trigger: msg }).catch(() => say(chat, sorry, 'notice', msg));

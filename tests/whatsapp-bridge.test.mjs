@@ -203,7 +203,7 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
   writeFileSync(join(dir, 'p.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]));
   const config = {
     chats: {
-      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 3, contextLines: 0 },
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 2, contextLines: 0 },
       self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0 },
     },
     routes: { r: { script, attachmentsDir: join(dir, 'att') } },
@@ -235,7 +235,7 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
   await assert.rejects(direct(group, { kind: 'status', edit: 'OUT1', text: 'Claude: x', trigger: { id: 'x', text: 'sin etiqueta' } }), /no trigger/);
   assert.deepEqual(outbox(), []);
   assert.ok(log().includes('refused'));
-  await direct(group, { kind: 'reply', text: 'Claude: hola', trigger: { id: 'x', text: 'oye @claude' } });
+  await direct(group, { kind: 'notice', text: 'Claude: hola', trigger: { id: 'x', text: 'oye @claude' } });
   assert.equal(outbox().length, 1);
 
   // Untagged group messages, commands included, send nothing at all.
@@ -258,7 +258,7 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
   post('G@g.us', '/status', { ReplyToID: 'SOMEONE-ELSE' });
   await settle();
   assert.equal(outbox().length, before);
-  assert.equal(outbox().filter(s => s.kind === 'reply').length, 3);
+  assert.equal(outbox().filter(s => s.kind === 'reply').length, 2);
 
   post('G@g.us', '@claude otra');
   await settle();
@@ -267,4 +267,64 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
   // The self chat needs no trigger.
   await direct({ key: 'self', jid: 'ME@s.whatsapp.net', dryRun: true }, { kind: 'reply', text: 'Claude: a mí' });
   assert.equal(outbox().at(-1).text, 'Claude: a mí');
+});
+
+test('group conversations: a tag opens a window, follow-ups inside it may be answered, outside nothing happens', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-convo-'));
+  const script = join(dir, 'turn.mjs');
+  // A stubbed turn: silent when the follow-up is people talking among themselves.
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(join(dir, 'turns'))}, r.text.includes('UNTAGGED FOLLOW-UP') ? 'F\\n' : 'T\\n'); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('entre nosotros') ? '[silent]' : 'Para machos hay 5.'}));`);
+  let clock = Date.now();
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 10, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), now: () => clock, log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const turns = () => (existsSync(join(dir, 'turns')) ? readFileSync(join(dir, 'turns'), 'utf8').trim().split('\n') : []);
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `C${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+
+  // No conversation: nothing is sent, no turn starts.
+  assert.equal(post('¿y para machos?').reason, 'no @claude');
+  await settle();
+  assert.deepEqual(outbox(), []);
+  assert.deepEqual(turns(), []);
+
+  // A tag opens one; the follow-up inside it starts a turn (no reaction) and is answered, quoting it.
+  post('@claude cuántas hembras hay?');
+  await settle();
+  assert.deepEqual(turns(), ['T']);
+  const afterTag = outbox().length;
+  clock += 5 * 60_000;
+  assert.equal(post('¿y para machos?').decision, 'queued');
+  await settle();
+  assert.deepEqual(turns(), ['T', 'F']);
+  const sent = outbox().slice(afterTag);
+  assert.deepEqual(sent.map(s => s.kind), ['reply']);
+  assert.equal(sent[0].text, 'Claude: Para machos hay 5.');
+
+  // Teammates talking among themselves inside the window: the chat answers [silent], nothing goes out.
+  clock += 5 * 60_000;
+  const before = outbox().length;
+  post('entre nosotros: ¿quién lleva las redes mañana?');
+  await settle();
+  assert.deepEqual(turns(), ['T', 'F', 'F']);
+  assert.equal(outbox().length, before);
+
+  // The silent exchange did not refresh the window: 15 minutes after Claude's last answer it is over.
+  clock += 11 * 60_000;
+  assert.equal(post('¿y para hembras?').reason, 'no @claude');
+  await settle();
+  assert.deepEqual(turns(), ['T', 'F', 'F']);
+  assert.equal(outbox().length, before);
+  // A reply to one of Claude's messages reopens it.
+  post('gracias', { ReplyToID: sent[0].id });
+  await settle();
+  assert.deepEqual(turns(), ['T', 'F', 'F', 'T']);
 });
