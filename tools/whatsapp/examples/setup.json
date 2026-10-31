@@ -1,0 +1,9 @@
+{
+  "people": [
+    { "phone": "+593990000001", "name": "Test Ana", "role": "admin", "language": "es" },
+    { "phone": "+593990000002", "name": "Test Luis", "role": "member", "language": "es" }
+  ],
+  "groups": [
+    { "jid": "120363000000000001@g.us", "name": "Insectario (prueba)", "enabled": true, "mode": "mention-only" }
+  ]
+}
