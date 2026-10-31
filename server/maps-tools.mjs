@@ -1244,7 +1244,9 @@ export function createMapsTools({
     const box = admin?.bbox ?? bbox;
     const toBox = (lng, lat) => (box ? km({ lat: Math.min(box[3], Math.max(box[1], lat)), lng: Math.min(box[2], Math.max(box[0], lng)) }, { lat, lng }) : 0);
     // One kind of area only: with two (a province and a box), "how far" has no single answer.
-    const distance = [admin, bbox, near, countries.length].filter(Boolean).length !== 1
+    // Ecuador asked beside a province or canton adds nothing: not a second kind of area.
+    const countryKind = countries.length && !(admin && countries.every(c => c === 'Ecuador'));
+    const distance = [admin, bbox, near, countryKind].filter(Boolean).length !== 1
       ? null
       : admin
       ? (lng, lat) => (toBox(lng, lat) > NEAREST_MAX_KM ? Infinity : admin.distanceKm(lng, lat))
@@ -1751,11 +1753,12 @@ export function createMapsTools({
         credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
       };
     });
-    const missing = picked.filter((_, i) => !got[i]).map(p => p.e.taxon.name);
+    // Plants that had photos to try and got none credited (not those with no photo in the gallery).
+    const missing = picked.filter((_, i) => !got[i] && jobs[i].list.length).map(p => p.e.taxon.name);
     // Seconds that found nothing are not said.
     const note = [
       failed ? `${failed} photo(s) could not be fetched or credited (GBIF's record of the photo): the next best was used.` : '',
-      missing.length ? `No credited photo could be had now for ${missing.join(', ')}.` : '',
+      missing.length ? `No photo with its credit could be had for ${missing.join(', ')}.` : '',
     ].filter(Boolean).join(' ');
     return { images, note: note || null };
   }

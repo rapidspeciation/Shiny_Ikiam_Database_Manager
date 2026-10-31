@@ -167,7 +167,7 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
           const response = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database (map snapshots)' }, signal: AbortSignal.timeout(8_000) });
           if (!response.ok) continue;
           const data = Buffer.from(await response.arrayBuffer());
-          writeCacheFile(path, data);
+          if (!writeCacheFile(path, data)) return { path: null, fetched: false, failed: true };
           return { path, fetched: true };
         } catch {
           // tried again once, then the tile is left blank

@@ -233,6 +233,9 @@ test('host_plants with an area: in the area, only nearby (candidates) or far, an
   assert.deepEqual(out.in_area, ['Solanum mite (= Solanum mitis) (2)']);
   assert.deepEqual(out.nearby_only, ['Cestrum megalophyllum (2 within 50 km)']);
   assert.deepEqual(out.not_near, ['Far away']);
+  // Ecuador asked beside the province changes nothing.
+  const withCountry = await tools.run('host_plants', { butterfly: 'Oleria onega', area: { province: 'Napo' }, country: ['Ecuador'] });
+  assert.deepEqual(withCountry.nearby_only, ['Cestrum megalophyllum (2 within 50 km)']);
   // A smaller reach: Puyo (about 30 km) drops out.
   const near10 = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', nearby_km: 10 });
   assert.equal(near10.plants.find(p => p.plant === 'Cestrum megalophyllum').nearby.records, 1);

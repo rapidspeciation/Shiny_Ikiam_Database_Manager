@@ -171,7 +171,8 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
       }
       if (!got.size) throw new Error('Not a JPEG');
       counts.photo_fetched++;
-      if (path) writeCacheFile(path, got.buf);
+      // The file is what is sent: one that could not be written is no photo.
+      if (path && !writeCacheFile(path, got.buf)) throw new Error('Could not keep the photo');
       return { path, bytes: got.buf.length, ...got.size, url: used, cached: false };
     })();
     photos.set(img, loading);
