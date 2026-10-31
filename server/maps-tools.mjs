@@ -1666,7 +1666,10 @@ export function createMapsTools({
     let failed = 0;
     const viewOf = ph => {
       const t = tags?.get(/inaturalist[^/]*\/photos\/(\d+)\//.exec(ph.img)?.[1] ?? '');
-      return !t ? null : t[1] >= TAG_LEAVES ? t[0] === 'habit' ? 'habit' : 'leaves' : t[0] === 'flower' ? 'flower' : t[0];
+      // Leaves or the whole plant only over the calibrated threshold; under it, a leaves/habit guess is no view.
+      if (!t) return null;
+      if (t[1] >= TAG_LEAVES) return t[0] === 'habit' ? 'habit' : 'leaves';
+      return t[0] === 'leaves' || t[0] === 'habit' ? null : t[0];
     };
     const rankedOf = gallery =>
       gallery
@@ -1685,20 +1688,11 @@ export function createMapsTools({
     // as a second photo of the plants in order, while `n` allows.
     const viewRank = ph => (ph.view === 'leaves' || ph.view === 'habit' ? 0 : ph.view === null ? 1 : 2);
     const ranked = galleries.map(rankedOf);
-    // A first photo's spares are other leaves or untagged photos (a flower kept for the second), unless it has none.
-    const firstOf = list => {
-      const sorted = [...list].sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b));
-      const notFlower = sorted.filter(ph => viewRank(ph) < 2);
-      return notFlower.length ? notFlower : sorted;
-    };
-    const jobs = picked.map((p, i) => ({ p, list: firstOf(ranked[i]), second: false }));
-    for (const [i, p] of picked.entries()) {
-      if (jobs.length >= n) break;
-      const flowers = ranked[i].filter(ph => ph.live === 0 && ph.view === 'flower');
-      if (flowers.length) jobs.push({ p, list: flowers, second: true });
-    }
-    const got = await Promise.all(
-      jobs.map(async ({ p, list, second }) => {
+    // The first photos: living plant first (its tier decides), within it leaves or whole plant, untagged, then the
+    // rest; the seconds (flowers) are chosen after, from what the firsts did not use.
+    const firsts = picked.map((p, i) => ({ p, list: [...ranked[i]].sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b)), second: false }));
+    const fetchOne = async ({ p, list, second }) => {
+      {
         // Taken in order, before any await, so two photos are never the same.
         const tries = [];
         for (const ph of list) {
@@ -1719,8 +1713,19 @@ export function createMapsTools({
           }
         }
         return null;
-      }),
-    );
+      }
+    };
+    const firstGot = await Promise.all(firsts.map(fetchOne));
+    // Spares the firsts did not need are free again for the seconds.
+    used.clear();
+    for (const g of firstGot) if (g) used.add(g.ph.img);
+    const seconds = [];
+    for (const [i, p] of picked.entries()) {
+      if (firstGot.filter(Boolean).length + seconds.length >= n) break;
+      const flowers = ranked[i].filter(ph => ph.live === 0 && ph.view === 'flower' && !used.has(ph.img));
+      if (flowers.length && firstGot[i]?.ph.view !== 'flower') seconds.push({ p, list: flowers, second: true });
+    }
+    const got = [...firstGot, ...(await Promise.all(seconds.map(fetchOne)))];
     const adminData = area?.admin ? await adminAreas.data() : null;
     const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
     const images = got.filter(Boolean).map(({ p, ph, credit, file, second }) => {
@@ -1754,7 +1759,7 @@ export function createMapsTools({
       };
     });
     // Plants that had photos to try and got none credited (not those with no photo in the gallery).
-    const missing = picked.filter((_, i) => !got[i] && jobs[i].list.length).map(p => p.e.taxon.name);
+    const missing = picked.filter((_, i) => !firstGot[i] && firsts[i].list.length).map(p => p.e.taxon.name);
     // Seconds that found nothing are not said.
     const note = [
       failed ? `${failed} photo(s) could not be fetched or credited (GBIF's record of the photo): the next best was used.` : '',

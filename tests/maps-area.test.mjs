@@ -339,3 +339,28 @@ test('host_plants with send_photos and photo tags: leaves or the whole plant fir
   const two = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2 });
   assert.deepEqual(two.images.map(im => im.view), ['leaves', 'habit']);
 });
+
+test('photo tags: a leaves guess under the threshold is no view; a living flower before a herbarium sheet; a failed leaf photo gives way to a flower', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
+  const mite = 'host_plants/gallery/mite/p1.json';
+  const saved = FILES[mite];
+  const run = (fetchImpl = fakeWeb().fetchImpl) => createMapsTools({ fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 1 });
+  try {
+    // 11 (Tena) a weak «leaves» (0.4), 12 (Sucumbíos) a sure «habit»: the sure one first.
+    writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ photos: { 11: ['leaves', 0.4, 0.3], 12: ['habit', 0.95, 0.01] } }));
+    assert.equal((await run()).images[0].source_url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/12/original.jpg');
+    // A living plant's flower (12) against an untagged herbarium sheet (11): the flower.
+    FILES[mite] = { items: [{ ...saved.items[1], photo_context: 'preserved', basisOfRecord: 'PRESERVED_SPECIMEN' }, saved.items[0]] };
+    writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ photos: { 12: ['flower', 0.01, 0.97] } }));
+    const living = (await run()).images[0];
+    assert.deepEqual([living.source_url.includes('/12/'), living.herbarium, living.view], [true, false, 'flower']);
+    // The leaf photo (11, field) cannot be had: the flower (12) is sent instead of nothing.
+    FILES[mite] = saved;
+    writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ photos: { 11: ['leaves', 0.97, 0.01], 12: ['flower', 0.01, 0.97] } }));
+    const web = fakeWeb();
+    const out = await run(async url => (/photos\/11\//.test(url) ? new Response('gone', { status: 404 }) : web.fetchImpl(url)));
+    assert.equal(out.images[0].view, 'flower');
+  } finally {
+    FILES[mite] = saved;
+  }
+});
