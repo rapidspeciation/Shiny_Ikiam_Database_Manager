@@ -305,7 +305,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   assert.equal(post('Claude, ¿y para machos?').decision, 'queued');
   await settle();
   assert.deepEqual(turns(), ['T', 'F']);
-  const sent = outbox().slice(afterTag);
+  const sent = outbox().slice(afterTag).filter(s => s.kind !== 'react');
   assert.deepEqual(sent.map(s => s.kind), ['reply']);
   assert.equal(sent[0].text, 'Claude: Para machos hay 5.');
 
@@ -315,18 +315,19 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   post('Claude, entre nosotros: ¿quién lleva las redes mañana?');
   await settle();
   assert.deepEqual(turns(), ['T', 'F', 'F']);
-  assert.equal(outbox().length, before);
+  assert.deepEqual(outbox().slice(before).map(s => s.react?.emoji ?? s.kind), ['👀', '✅']); // no text
 
   // The silent exchange did not refresh the window: 15 minutes after Claude's last answer it is over.
   clock += 11 * 60_000;
+  const quiet = outbox().length;
   assert.equal(post('¿y para hembras?').reason, 'no @claude');
   await settle();
   assert.deepEqual(turns(), ['T', 'F', 'F']);
-  assert.equal(outbox().length, before);
+  assert.equal(outbox().length, quiet); // never passed the gate: no reaction either
   // A reply to one of Claude's messages reopens it.
   post('gracias', { ReplyToID: sent[0].id });
   await settle();
-  assert.deepEqual(turns(), ['T', 'F', 'F', 'T']);
+  assert.deepEqual(turns(), ['T', 'F', 'F', 'F']);
 });
 
 function historySetup({ failing = false } = {}) {
@@ -549,4 +550,42 @@ test('untagged messages inside a conversation: only a quote of Claude or its nam
   assert.equal(post('Claude, ¿y para machos?').decision, 'queued');
   await settle();
   assert.equal(turns(), 4);
+});
+
+test('a quote of Claude aimed at the team: 👀 then ✅ and no text; a question by name is answered; an ungated message gets no reaction', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-quote-'));
+  const script = join(dir, 'turn.mjs');
+  // A stubbed turn: silent for «miren esto» (said to the team), an answer otherwise.
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('miren esto') ? '[silent]' : 'Para machos hay 5.'}));`);
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `QQ${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const marks = from => outbox().slice(from).map(s => s.react?.emoji ?? s.kind);
+
+  post('@claude cuántas hay?');
+  await settle();
+  const ours = outbox().find(s => s.kind === 'reply').id;
+  let from = outbox().length;
+  post('miren esto', { ReplyToID: ours });
+  await settle();
+  assert.deepEqual(marks(from), ['👀', '✅']); // no text
+  from = outbox().length;
+  post('Claude, ¿y para machos?');
+  await settle();
+  assert.deepEqual(marks(from), ['👀', 'reply', '✅']);
+  assert.equal(outbox().at(-2).text, 'Claude: Para machos hay 5.');
+  from = outbox().length;
+  post('qué bonita, ¿dónde fue?');
+  await settle();
+  assert.equal(outbox().length, from);
 });

@@ -421,7 +421,12 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     }
     // The group: a tag or a reply to the bridge opens or refreshes the conversation; an untagged message inside one is a follow-up only if it is addressed to Claude by name.
     if (isGroup(chat)) {
-      if (tagged(msg.text) || wakes(msg)) openConvo(chat);
+      if (tagged(msg.text)) openConvo(chat);
+      else if (wakes(msg)) {
+        // A quote of Claude's message may be aimed at the team: the chat decides whether an answer is expected.
+        openConvo(chat);
+        msg.followUp = true;
+      }
       // Inside the window, an untagged message wakes Claude only when someone other than Franz quotes a Claude message
       // (handled above) or addresses it by name; being close in time is not enough, and Franz's own untagged posts never do.
       else if (active(chat) && !msg.fromMe && named(msg.text)) msg.followUp = true;
@@ -434,7 +439,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     q.push(msg);
     queues.set(chat.key, q);
     out('queued', msg.followUp ? 'follow-up' : null);
-    if (ackMode(chat) === 'reaction' && !msg.followUp) msg.seen = reactTo(chat, msg, '👀');
+    // The 👀 only here, after the gate: a message that never passed it gets no reaction at all.
+    if (ackMode(chat) === 'reaction') msg.seen = reactTo(chat, msg, '👀');
     pump(chat);
     return { decision: 'queued' };
   }
@@ -713,7 +719,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     const route = config.routes[chat.route];
     const started = now();
     const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-'));
-    const mode = msg.followUp ? 'quiet' : ackMode(chat); // a follow-up shows no 👀/✅/steps: it may end in silence
+    // An untagged message that may end in silence never gets the edit mode's «pensando…» message: it uses the reaction (👀, then ✅ also on [silent]).
+    const mode = msg.followUp ? 'reaction' : ackMode(chat);
     // The edit mode: one message that lists the chat's steps (tool names, never its reasoning) and becomes the answer.
     const status = { id: null, steps: [], shown: '', editing: Promise.resolve(), last: 0 };
     const showSteps = () => {
@@ -767,7 +774,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       // Where the older messages are, for questions that reach back further than the lines above.
       if (chat.history?.dir) lines.push(`History: the file wa-history/${chat.history.slug ?? slug(chat.label)}.jsonl in your workspace has every message of this group (one JSON per line: id, at, name, text, media, replyTo); search it with Grep or Read when the question needs earlier messages.`);
       else if (chat.key === 'self' && !chat.dryRun) lines.push(`History: your chat's older messages are in the WhatsApp store, read-only: wacli --store ${config.wacli.store} messages list --read-only --json --chat ${chat.jid} --after YYYY-MM-DD --limit N (this chat only).`);
-      if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it addresses you by name («Claude, …») inside a conversation you were in during the last 15 minutes. Answer only if it clearly continues that exchange with you (an answer to your question, a follow-up, a correction). If people are talking among themselves, or you are unsure, your last message must be exactly [silent].');
+      if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it quotes one of your messages or addresses you by name («Claude, …») inside a conversation you were in during the last 15 minutes. That does not mean it is for you: people also quote you to point something out to the team. The default is [silent]; answer only if an answer from you is clearly expected, or you add something clearly useful (for instance a fact you got wrong). If unsure, your last message must be exactly [silent].');
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
       lines.push('(Answer per the whatsapp-bridge skill: your last message is sent as it is.)');
