@@ -3,13 +3,12 @@
 //   maps_species       the taxa recorded in a region
 //   host_plants        host plants of a butterfly, or the Ithomiini on a plant, with their sources; with an area, where
 //                      each host plant grows there (the maps' GBIF plant records), its photos and a map link
-//   host_plant_photos  a butterfly's host plants in a province or canton of Ecuador (server/admin-areas.mjs), one photo of
-//                      each ready to send with its credit (server/plant-photos.mjs), and a map link
 //   host_plant_sites   where to go first for some host plants near a point: the project's collection localities (or grid
 //                      cells) ranked by the plant records around them, weighted by distance
 //   gallery_specimens  collection specimens with wing photos (the workbook and Photo_links), gallery links, photos
 //                      with wing and envelope crops, and the models' readings stored for them (labelled model output)
 //   maps_snapshot      a picture of the maps with some taxa (one sex too) framed on the best sites (server/map-snapshot.mjs)
+// `area` (every tool with a region): a province or canton of Ecuador by its INEC outline (server/admin-areas.mjs).
 // The maps' data files are read over HTTPS from the published site, at most every 6 hours (and parsed again only
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
@@ -20,7 +19,7 @@ import { driveIdOf, specimenName } from './photo-links.mjs';
 import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-outlines.mjs';
 import { unreliableFor } from './sex-check.mjs';
 import { PALETTE, createSnapshots } from './map-snapshot.mjs';
-import { cantonOf, findArea } from './admin-areas.mjs';
+import { cantonOf, createAdminAreas } from './admin-areas.mjs';
 import { createPlantPhotos } from './plant-photos.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
@@ -61,51 +60,43 @@ const MARKDOWN_CHARS = 12000;
 const SITE_LINKS = 3;
 const AREA_BUDGET = 36000;
 const CHUNKS_AT_ONCE = 2;
-// host_plant_photos: gallery pages read per plant, and how far a field photo may be from the area to come before a
-// herbarium sheet taken in it (km).
-const PHOTO_ALL_PAGES = 12;
-const NEAR_FIELD_KM = 60;
-const WORDS_HP = {
+// Host plants with an area: the default reach (km) of `nearby_km`, the farthest a nearest record is looked for, and
+// the gallery pages read per plant for `send_photos`.
+const NEARBY_KM = 50;
+const NEAREST_MAX_KM = 300;
+const SEND_PAGES = 12;
+const SEND_WORDS = {
   en: {
+    area: 'the area',
     as: 'recorded as',
-    outside: where => `outside ${where}`,
+    inArea: (where, n) => `recorded in ${where} (${n} record${n === 1 ? '' : 's'})`,
+    candidate: (where, n, km) => `CANDIDATE: no record in ${where}, ${n} within ${km} km`,
+    photoOutside: where => `photo outside ${where}`,
     photo: 'Photo',
     unknown: 'author not given',
     herbarium: 'herbarium sheet',
-    records: (n, where) => `${n} GBIF record${n === 1 ? '' : 's'} in ${where}`,
-    direct: 'host from direct observation (literature)',
-    literature: 'host from the literature',
-    head: (b, where, n) => `Host plants of ${b} recorded in ${where} (${n}):`,
-    none: (b, where) => `None of the host plants of ${b} has GBIF records in ${where}.`,
-    close: (where, list) => `Not recorded in ${where} but within 60 km of it (records): ${list.join(', ')}.`,
-    closeTag: (where, n) => `none in ${where}, ${n} within 60 km`,
-    notIn: (where, list) => `Also hosts, but no records in or near ${where}: ${list.join(', ')}.`,
-    genera: list => `Genus-level hosts (any species of the genus) with records there: ${list}.`,
-    caveat: 'A plant record shows where the plant grows, not that the butterfly uses it there.',
   },
   es: {
+    area: 'el área',
     as: 'registrada como',
-    outside: where => `fuera de ${where}`,
+    inArea: (where, n) => `registrada en ${where} (${n} registro${n === 1 ? '' : 's'})`,
+    candidate: (where, n, km) => `CANDIDATA: sin registros en ${where}, ${n} a menos de ${km} km`,
+    photoOutside: where => `foto fuera de ${where}`,
     photo: 'Foto',
     unknown: 'autor no indicado',
     herbarium: 'pliego de herbario',
-    records: (n, where) => `${n} registro${n === 1 ? '' : 's'} GBIF en ${where}`,
-    direct: 'hospedera por observación directa (literatura)',
-    literature: 'hospedera según la literatura',
-    head: (b, where, n) => `Plantas hospederas de ${b} registradas en ${where} (${n}):`,
-    none: (b, where) => `Ninguna planta hospedera de ${b} tiene registros GBIF en ${where}.`,
-    close: (where, list) => `Sin registros en ${where} pero a menos de 60 km (registros): ${list.join(', ')}.`,
-    closeTag: (where, n) => `ninguno en ${where}, ${n} a menos de 60 km`,
-    notIn: (where, list) => `También hospederas, sin registros en ${where} ni cerca: ${list.join(', ')}.`,
-    genera: list => `Hospederas a nivel de género (cualquier especie del género) con registros allí: ${list}.`,
-    caveat: 'Un registro de la planta muestra dónde crece, no que la mariposa la use allí.',
   },
 };
 /** A record's weight in a site's score: quartic kernel, 1 at the site, 0 at KERNEL_KM (0.92 at 2 km, 0.56 at 5 km). */
 export const kernel = d => (d >= KERNEL_KM ? 0 : (1 - (d / KERNEL_KM) ** 2) ** 2);
 const CLUSTER_KM = 150;
 
+const AREA = {
+  anyOf: [{ type: 'string' }, { type: 'object', properties: { province: { type: 'string' }, canton: { type: 'string' } } }],
+  description: 'A province or canton of Ecuador, by its INEC outline: {province: "Napo"}, {canton: "Tena"} (with `province` when two share the name), or "Napo"',
+};
 const region = {
+  area: AREA,
   country: { type: 'array', items: { type: 'string' } },
   bbox: { type: 'array', items: { type: 'number' }, description: '[west, south, east, north] in degrees' },
   near: {
@@ -128,7 +119,7 @@ export const MAPS_TOOLS = [
       description: [
         "Where to find some taxa: the places with the most occurrence records of the Ithomiini maps (the project's own collection records, GBIF museum records, Dore et al. 2022, iNaturalist), best first, each with a link that opens the maps app on it with the filters set. For questions like \"where are the best places to find X?\".",
         '- `taxa`: species ("Oleria onega"), subspecies ("Oleria onega janarilla") or genus ("Oleria"); synonyms are resolved.',
-        '- Region (optional): `country`, `bbox` [west, south, east, north], `near` {lat, lng, km}. `elevation_min`/`elevation_max` in metres (the workbook\'s elevation for the project\'s records, the ground\'s from a 90 m DEM for the rest). `sources` (default all), `years` {from, to}.',
+        '- Region (optional): `area` (a province or canton of Ecuador by its outline: {province: "Napo"}, {canton: "Tena"}), `country`, `bbox` [west, south, east, north], `near` {lat, lng, km}. `elevation_min`/`elevation_max` in metres (the workbook\'s elevation for the project\'s records, the ground\'s from a 90 m DEM for the rest). `sources` (default all), `years` {from, to}.',
         '- `sex` (male, female): only the records of that sex. The project\'s records nearly all have it, GBIF\'s about four in ten, iNaturalist\'s and Dore et al.\'s almost never, so with it a site is ranked by its records of that sex; every site gives `by_sex` (all its records: male, female, unknown) and `own_by_sex` (the project\'s).',
         '- `site_km` (default 3): records closer than this are one site. `limit` (default 15).',
         "Ranked by records, then by the number of years seen. Dore et al. records are 0.25° grid cells, not sites: counted apart (`grid_cells`). Cite the data's dates (`freshness`) and give the links; a site's name is its records' commonest locality name.",
@@ -151,7 +142,7 @@ export const MAPS_TOOLS = [
       name: 'maps_species',
       description: [
         'The Ithomiini recorded in a region of the maps (the same records as maps_localities), most records first: for "what can we find around X?" or "which species live above 1500 m in Napo?".',
-        '- A region is needed: `country`, `bbox` or `near` {lat, lng, km}; with `elevation_min`/`elevation_max`, `sources`, `years`, `sex` as in maps_localities. `genus` narrows it. `limit` (default 30).',
+        '- A region is needed: `area` ({province} or {canton} of Ecuador), `country`, `bbox` or `near` {lat, lng, km}; with `elevation_min`/`elevation_max`, `sources`, `years`, `sex` as in maps_localities. `genus` narrows it. `limit` (default 30).',
         'Each taxon with its records, sites, sources and the last year seen, and a map link.',
       ].join('\n'),
       parameters: {
@@ -168,7 +159,9 @@ export const MAPS_TOOLS = [
         "Host plants of Ithomiini from the maps' literature review (Beccaloni et al. 2008 catalogue and direct observations), each with its source; with an area, also where each host plant grows there, its photos and a map link. One call answers \"photos of X's host plants in Ecuador\" or \"a map of X's host plants\": use it before any outside API (GBIF, iNaturalist).",
         '- `butterfly`: a species, subspecies or genus: its host plants. Or `plant`: a plant family, genus or species: the Ithomiini recorded on it.',
         '- `min_confidence`: low, medium (default) or high. `include_unchecked`: also the rows the review marked needs_check.',
-        "- Area (optional): `area` (a province or canton of Ecuador, by its outline: \"Napo\", \"cantón Tena\"), `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
+        "- Area (optional): `area` (a province or canton of Ecuador by its outline: {province: \"Napo\"}, {canton: \"Tena\"}), `country` (list), `bbox` [west, south, east, north] or `near` {lat, lng, km}; `records: true` for the whole range. Then `plants`: each host plant's records there (the maps' GBIF plant records, placed in countries by their coordinates), years and top sites; `sites`: the best sites for the species-level hosts together, with coordinates, years and the nearest named collecting place; `markdown`: `photos` (default 3, at most 6) thumbnails per plant, each linked to its full photo, with credit; `map_url`: the Wings Atlas with the host-plant layer, these plants and the country on. `site_km` (default 5), `limit` (sites, default 8).",
+        "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
+        '- `send_photos` (0-8): photo files to send (WhatsApp), one per plant, those in the area first, then the nearby candidates: `images` [{path (a JPEG on this server, about 2048 px on its long side), caption (ready to send: plant, in the area or CANDIDATE, place, year, photographer, licence, link), plant, status, photo_in_area, credit}]; then no thumbnails unless `photos` is given. `lang` "es" for Spanish captions. Send each `path` with its `caption` as it is.',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
@@ -178,7 +171,10 @@ export const MAPS_TOOLS = [
           plant: { type: 'string' },
           min_confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
           include_unchecked: { type: 'boolean' },
-          area: { type: 'string', description: 'A province or canton of Ecuador ("Napo", "cantón Tena")' },
+          area: AREA,
+          nearby_km: { type: 'number' },
+          send_photos: { type: 'integer' },
+          lang: { type: 'string', enum: ['en', 'es'] },
           country: region.country,
           bbox: region.bbox,
           near: region.near,
@@ -187,34 +183,6 @@ export const MAPS_TOOLS = [
           site_km: { type: 'number' },
           limit: { type: 'integer' },
         },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'host_plant_photos',
-      description: [
-        "A butterfly's host plants that grow in a province or canton of Ecuador, with a photo of each ready to send: for \"which host plants of X would we find in Napo? show me photos\". One call; the fastest way to answer it.",
-        '- `butterfly`: species, subspecies or genus. `area`: a province or canton of Ecuador ("Napo", "provincia de Napo", "cantón Tena", "Bolívar, Carchi"), placed by its outline (INEC cantons); or `country`, `bbox`, `near` {lat, lng, km} as in host_plants. `min_confidence`, `include_unchecked` as there.',
-        '- `photos` (default 5, at most 8): one photo per host plant recorded in the area, the best first (a field photo taken in the area, else the nearest field photo, else a herbarium sheet). `lang`: "es" or "en" (default) for the captions and `summary`.',
-        "Gives `plants` (each host plant's GBIF records in the area, by canton, years, the literature's evidence), `not_in_area`, `images` [{path, caption, plant, in_area, credit {photographer, licence, place, year, link}}]: JPEGs on this server at most 1280 px, `summary` (a short reply), `map_url` (Wings Atlas with the host-plant layer) and `markdown` (the photos for the Asistente tab).",
-        'Send each image (`path`) with its `caption` as it is (it carries the credit the licence asks for). The reply is `summary` as it is, then `map_url`: it already says what the records mean, so a short reply is the whole answer; add only what the person asked beyond it.',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          butterfly: { type: 'string' },
-          area: { type: 'string' },
-          country: region.country,
-          bbox: region.bbox,
-          near: region.near,
-          min_confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          include_unchecked: { type: 'boolean' },
-          photos: { type: 'integer' },
-          lang: { type: 'string', enum: ['en', 'es'] },
-        },
-        required: ['butterfly'],
       },
     },
   },
@@ -282,7 +250,7 @@ export const MAPS_TOOLS = [
       name: 'maps_snapshot',
       description: [
         'A picture of the Ithomiini maps (a JPEG of about 200 KB, small enough for WhatsApp) with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
-        '- `species`: as maps_localities\' `taxa` (species, subspecies or genus). `sex` (male, female). `country`, `sources`, `years`, `elevation_min`/`elevation_max`, `site_km` as there.',
+        '- `species`: as maps_localities\' `taxa` (species, subspecies or genus). `sex` (male, female). `area`, `country`, `sources`, `years`, `elevation_min`/`elevation_max`, `site_km` as there.',
         '- `bbox` [west, south, east, north] frames the picture (and limits the sites); left out ("auto"), it frames the best site and the next best within 150 km of it, up to `sites` (default 8); the best ones further away are in `elsewhere`. Give `country` to keep it to one country.',
         '- `lang`: "es" or "en" (default) for the words on the picture.',
         'Send `image` (a file on this server) as the picture and give `map_url` to open it live; the sites are numbered on the picture as their `on_map` (their `rank` is among all sites). `best_by_taxon`: each taxon\'s own best sites (of the sex asked), for a taxon the shared ranking puts low.',
@@ -292,6 +260,7 @@ export const MAPS_TOOLS = [
         properties: {
           species: { type: 'array', items: { type: 'string' } },
           sex: region.sex,
+          area: AREA,
           bbox: { anyOf: [region.bbox, { type: 'string', enum: ['auto'] }] },
           country: region.country,
           sources: region.sources,
@@ -677,12 +646,17 @@ export function createMapsTools({
   elevationApi = ELEVATION_API,
   snapshotDir = null,
   snapshotOptions = {},
-  hostPlantDir = null,
+  cacheDir = null,
 } = {}) {
   const files = new Map();
   const dem = new Map();
   const strings = new Map();
   const intern = s => strings.get(s) ?? (strings.set(s, s), s);
+  // Provinces and cantons (downloaded once into the cache folder), photos to send and their credits, plant records.
+  const adminAreas = createAdminAreas({ dir: cacheDir ? join(cacheDir, 'admin') : null, fetchImpl });
+  const photoFiles = createPlantPhotos({ dir: cacheDir ? join(cacheDir, 'plant-photos') : null, fetchImpl });
+  /** The `area` asked (a province or canton of Ecuador), null without one, or { error }. */
+  const areaOf = args => (args.area && (typeof args.area === 'object' || text(args.area)) ? adminAreas.area(args.area) : Promise.resolve(null));
 
   /** A data file of the maps site, made into `shape(json)`; read again after REFRESH_MS, parsed again when it changed. */
   async function remote(path, shape) {
@@ -827,8 +801,8 @@ export function createMapsTools({
     return { out, unknownPoints: keys.filter(k => !dem.has(k)).length };
   }
 
-  /** The records within the region and years asked. */
-  function inRegion(records, args) {
+  /** The records within the region (`admin`: the area asked, areaOf) and years asked. */
+  function inRegion(records, args, admin = null) {
     const countries = new Set(list(args.country).map(fold));
     const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox : null;
     const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { ...args.near, km: Number(args.near.km) || 25 } : null;
@@ -838,6 +812,7 @@ export function createMapsTools({
       if (countries.size && !countries.has(fold(r.country))) return false;
       if (bbox && (r.lng < bbox[0] || r.lat < bbox[1] || r.lng > bbox[2] || r.lat > bbox[3])) return false;
       if (near && km(near, r) > near.km) return false;
+      if (admin && !admin.test(r.lng, r.lat)) return false;
       if ((from !== null || to !== null) && (r.year === null || (from !== null && r.year < from) || (to !== null && r.year > to))) return false;
       return true;
     });
@@ -913,12 +888,13 @@ export function createMapsTools({
     const asked = list(args.taxa).slice(0, 20);
     if (!asked.length) return { error: 'Name at least one taxon in `taxa`.' };
     const sources = sourcesOf(args);
-    const { records, freshness } = await points(sources);
+    const [admin, { records, freshness }] = await Promise.all([areaOf(args), points(sources)]);
+    if (admin?.error) return admin;
     const taxa = await taxaOf(asked, records);
     if (!taxa.species.length && !taxa.genus.length)
       return { error: `The maps have no records of ${asked.join(', ')}.`, unknown: taxa.unknown, freshness };
     const ofTaxa = records.filter(taxa.match);
-    const regional = inRegion(ofTaxa, args);
+    const regional = inRegion(ofTaxa, args, admin);
     const { kept, elev: fromBand, unknown, unknownPoints } = await byElevation(regional, args);
     // Without an elevation asked: the workbook's for the project's records (no DEM look-ups).
     const own = collection().elevation;
@@ -977,7 +953,7 @@ export function createMapsTools({
       sources,
       sex,
     };
-    if (inner) Object.assign(inner, { records: sex ? kept.filter(r => sexOfKept.get(r) === sex) : kept, urlTaxa, taxa, countries: countriesIn(args.country, records), ranked });
+    if (inner) Object.assign(inner, { records: sex ? kept.filter(r => sexOfKept.get(r) === sex) : kept, urlTaxa, taxa, countries: countriesIn(admin ? [...list(args.country), 'Ecuador'] : args.country, records), ranked });
     const shown = ranked.slice(0, limit).map((s, i) => {
       const years = [...s.years].sort();
       return {
@@ -1011,17 +987,18 @@ export function createMapsTools({
       sites_total: ranked.length,
       sites: shown,
       ...(cells.length ? { grid_cells: { note: 'Dore et al. (2022): 0.25° cells, not collecting sites', cells: cells.length, top: cells.slice(0, 5).map(c => ({ lat: c.lat, lng: c.lng, country: c.country, records: c.records })) } } : {}),
-      map: mapsUrl({ ...urlTaxa, country: countriesIn(args.country, records), view }, mapsBase),
+      map: mapsUrl({ ...urlTaxa, country: countriesIn(admin ? [...list(args.country), 'Ecuador'] : args.country, records), view }, mapsBase),
       freshness,
     };
   }
 
   async function species(args) {
-    if (!list(args.country).length && !Array.isArray(args.bbox) && !args.near) return { error: 'Give a region: `country`, `bbox` or `near`.' };
+    if (!list(args.country).length && !Array.isArray(args.bbox) && !args.near && !args.area) return { error: 'Give a region: `area`, `country`, `bbox` or `near`.' };
     const sources = sourcesOf(args);
-    const { records, freshness } = await points(sources);
+    const [admin, { records, freshness }] = await Promise.all([areaOf(args), points(sources)]);
+    if (admin?.error) return admin;
     const genera = new Set(list(args.genus).map(fold));
-    const regional = inRegion(genera.size ? records.filter(r => genera.has(fold(r.genus))) : records, args);
+    const regional = inRegion(genera.size ? records.filter(r => genera.has(fold(r.genus))) : records, args, admin);
     const { kept: banded, unknown, unknownPoints } = await byElevation(regional, args);
     const sex = sexAsked(args);
     const { sexes } = collection();
@@ -1041,13 +1018,15 @@ export function createMapsTools({
       if (r.year && (!t.last || r.year > t.last)) t.last = r.year;
     }
     const limit = clamp(args.limit, 1, 100, 30);
-    const country = countriesIn(args.country, records);
+    const country = countriesIn(admin ? [...list(args.country), 'Ecuador'] : args.country, records);
     const ranked = [...byName].sort((a, b) => b[1].records - a[1].records);
     const view = args.near
       ? { lat: args.near.lat, lng: args.near.lng, zoom: Math.max(5, Math.min(12, Math.round(Math.log2(40000 / (Number(args.near.km) || 25))) - 1)) }
       : Array.isArray(args.bbox) && args.bbox.length === 4
         ? viewOf([{ lat: args.bbox[1], lng: args.bbox[0] }, { lat: args.bbox[3], lng: args.bbox[2] }])
-        : viewOf(kept);
+        : admin
+          ? viewOfBox(admin.bbox)
+          : viewOf(kept);
     return {
       records: { in_region: regional.length, kept: kept.length, ...(sex ? { sex, sex_note: `Only records with ${sex} as their sex (most of iNaturalist's and all of Dore et al.'s have none).` } : {}), ...(hasElevation(args) ? { elevation_unknown: unknown, ...(unknownPoints ? { note: `${unknownPoints} points had no DEM elevation: left out` } : {}) } : {}) },
       taxa_total: ranked.length,
@@ -1209,7 +1188,7 @@ export function createMapsTools({
     const asked = list(args.country);
     const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox : null;
     const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Number(args.near.km) || 25 } : null;
-    const admin = text(args.area) ? findArea(args.area) : null;
+    const admin = await areaOf(args);
     if (admin?.error) return admin;
     if (!asked.length && !bbox && !near && !admin) return null;
     let o = null;
@@ -1232,8 +1211,23 @@ export function createMapsTools({
       // Cheap reject first: outside every asked country's box (with the coast margin).
       return boxes.some(b => inBox(lng, lat, b, COAST_TOLERANCE_DEG, lngPadAt(lat))) && wanted.has(countryOfPoint(lng, lat, o));
     };
+    // How far a point outside is (km; Infinity past NEAREST_MAX_KM): from a province's or canton's edge, a box, a
+    // circle's rim. A lower bound first (the distance to the area's box), so most points cost one haversine.
+    const box = admin?.bbox ?? bbox;
+    const toBox = (lng, lat) => (box ? km({ lat: Math.min(box[3], Math.max(box[1], lat)), lng: Math.min(box[2], Math.max(box[0], lng)) }, { lat, lng }) : 0);
+    const distance = admin
+      ? (lng, lat) => (toBox(lng, lat) > NEAREST_MAX_KM ? Infinity : admin.distanceKm(lng, lat))
+      : near && !bbox && !countries.length
+        ? (lng, lat) => Math.max(0, km(near, { lat, lng }) - near.km)
+        : bbox && !near && !countries.length
+          ? toBox
+          : null;
+    // Where a point outside is: its province (Ecuador), else its country.
+    const adminData = admin ? await adminAreas.data() : null;
+    const world = distance ? (o ?? (await outlines().then(r => r.value).catch(() => null))) : null;
+    const regionOf = (lng, lat) => cantonOf(lng, lat, adminData)?.province ?? (world ? countryOfPoint(lng, lat, world) : null);
     // A province or canton is in Ecuador: the map link's country.
-    return { test, countries: admin && !countries.length ? ['Ecuador'] : countries, unknown, bbox, near, admin, outlines: o };
+    return { test, distance, regionOf, countries: admin && !countries.length ? ['Ecuador'] : countries, unknown, bbox, near, admin, outlines: o };
   }
 
   /** The named places of the maps' butterfly records (not Dore et al.'s grid cells), on a 0.1° grid; built once per file. */
@@ -1320,21 +1314,83 @@ export function createMapsTools({
    * species-level hosts together; their photos as Markdown; the maps link with the host-plant layer on.
    */
   /**
-   * The host plants of `kept` (ranked associations) with records layers, their refs and the chunks those name:
-   * { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks }. `mapped`: the plants that make sites,
+   * The host plants of `kept` (ranked associations) with records layers and their records (pointsOf):
+   * { m, modified, shown, mapped, withRecords, withoutRecords, points, from }. `mapped`: the plants that make sites,
    * photos and the map (species-level hosts; genus-level ones only when there are none, or that genus was asked).
    */
   async function hostPlantLayers(kept, args) {
     const { value: m, modified } = await plantLayers();
     usePlantVersion(m.generated_at);
     const { shown, mapped, withRecords, withoutRecords } = hostPlantList(kept, args, m);
-    const refs = await Promise.all(shown.map(e => plantRefs(m.refs[e.slug]).then(r => r.value)));
-    // Two chunks at a time (7.5 MB of JSON each): parsed and made small before the next ones.
-    const chunks = new Map();
-    const wanted = [...new Set(refs.flatMap(r => r.chunks.map(([c]) => c)))];
-    for (let i = 0; i < wanted.length; i += CHUNKS_AT_ONCE)
-      await Promise.all(wanted.slice(i, i + CHUNKS_AT_ONCE).map(async c => chunks.set(c, (await plantChunk(c)).value)));
-    return { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks };
+    const { points, from } = await pointsOf(m, shown.map(e => e.slug));
+    return { m, modified, shown, mapped, withRecords, withoutRecords, points, from };
+  }
+
+  // Each plant's records as small lists { total, lat, lng, year, basis, key } (key: the record's place in the
+  // download, shared by synonymous plants), per layers version, in memory and on disk: a new worker or a restart
+  // reads them there instead of the 7.5 MB chunks.
+  const plantPoints = new Map();
+  async function pointsOf(m, slugs) {
+    const out = new Map();
+    const missing = [];
+    let from = 'memory';
+    for (const slug of slugs) {
+      const kept = plantPoints.get(`${plantVersion}|${slug}`);
+      if (kept) out.set(slug, kept);
+      else missing.push(slug);
+    }
+    const dir = cacheDir ? join(cacheDir, 'plant-records', plantVersion ?? 'none') : null;
+    const fromChunks = [];
+    for (const slug of missing) {
+      try {
+        if (!dir) throw new Error('no folder');
+        const kept = JSON.parse(readFileSync(join(dir, `${slug.replace(/[^\w.-]/g, '_')}.json`), 'utf8'));
+        plantPoints.set(`${plantVersion}|${slug}`, kept);
+        out.set(slug, kept);
+        from = 'disk';
+      } catch {
+        fromChunks.push(slug);
+      }
+    }
+    if (fromChunks.length) {
+      from = 'download';
+      const refs = await Promise.all(fromChunks.map(slug => plantRefs(m.refs[slug]).then(r => r.value)));
+      const lists = refs.map(r => ({ total: r.total, lat: [], lng: [], year: [], basis: [], key: [] }));
+      const wanted = [...new Set(refs.flatMap(r => r.chunks.map(([c]) => c)))];
+      // Two chunks at a time (7.5 MB of JSON each): each made small before the next ones.
+      for (let i = 0; i < wanted.length; i += CHUNKS_AT_ONCE)
+        await Promise.all(
+          wanted.slice(i, i + CHUNKS_AT_ONCE).map(async c => {
+            const chunk = (await plantChunk(c)).value;
+            const tag = c.replace(/^.*\/|\.json$/g, '');
+            refs.forEach((r, k) => {
+              for (const [name, indexes] of r.chunks) {
+                if (name !== c) continue;
+                for (const j of indexes ?? []) {
+                  if (!Number.isFinite(chunk.lat[j]) || !Number.isFinite(chunk.lng[j])) continue;
+                  const l = lists[k];
+                  l.lat.push(round(chunk.lat[j], 5));
+                  l.lng.push(round(chunk.lng[j], 5));
+                  l.year.push(chunk.year[j] || 0);
+                  l.basis.push(chunk.basis[j] || 'unknown');
+                  l.key.push(`${tag}:${j}`);
+                }
+              }
+            });
+          }),
+        );
+      if (dir) mkdirSync(dir, { recursive: true });
+      fromChunks.forEach((slug, k) => {
+        plantPoints.set(`${plantVersion}|${slug}`, lists[k]);
+        out.set(slug, lists[k]);
+        if (dir) {
+          const file = join(dir, `${slug.replace(/[^\w.-]/g, '_')}.json`);
+          writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(lists[k]));
+          renameSync(`${file}.${process.pid}.tmp`, file);
+        }
+      });
+    }
+    return { points: out, from };
   }
 
   /** The host plants of `kept` with a records layer in `m`, ranked as the associations: { shown, mapped, withRecords, withoutRecords }. */
@@ -1380,31 +1436,49 @@ export function createMapsTools({
   }
 
   async function plantsInArea(kept, args, area, asked) {
-    const { m, modified, shown, mapped, withRecords, withoutRecords, refs, chunks } = await hostPlantLayers(kept, args);
+    const started = Date.now();
+    const { m, modified, shown, mapped, withRecords, withoutRecords, points: recs, from } = await hostPlantLayers(kept, args);
+    const recordsMs = Date.now() - started;
     const siteKm = Math.min(50, Math.max(0.5, Number(args.site_km) || 5));
+    // Records outside the area but within `nearby_km` of it (a province, canton, box or circle; not a country).
+    const nearbyKm = area?.distance ? clamp(args.nearby_km, 0, 200, NEARBY_KM) : 0;
     const points = new Map();
-    const plants = shown.map((e, i) => {
+    const plants = shown.map(e => {
+      const r = recs.get(e.slug) ?? { total: null, lat: [], lng: [], year: [], basis: [], key: [] };
       const own = [];
       const years = new Set();
       const basis = new Map();
-      for (const [c, indexes] of refs[i].chunks) {
-        const chunk = chunks.get(c);
-        for (const j of indexes ?? []) {
-          const [lat, lng] = [chunk.lat[j], chunk.lng[j]];
-          if (lat === undefined || (area && !area.test(lng, lat))) continue;
-          const key = `${c}:${j}`;
-          const p = points.get(key) ?? { lat, lng, year: chunk.year[j] || null, plants: new Set() };
-          own.push(p);
-          if (mapped.includes(e)) {
-            p.plants.add(e.taxon.name);
-            points.set(key, p);
+      const near = { records: 0, years: new Set(), regions: new Map(), nearest: null };
+      for (let j = 0; j < r.lat.length; j++) {
+        const [lat, lng] = [r.lat[j], r.lng[j]];
+        if (area && !area.test(lng, lat)) {
+          if (!area.distance) continue;
+          const d = area.distance(lng, lat);
+          if (d < (near.nearest?.d ?? Infinity)) near.nearest = { d, year: r.year[j] || null, lat, lng };
+          if (d <= nearbyKm) {
+            near.records++;
+            if (r.year[j]) near.years.add(r.year[j]);
+            count(near.regions, area.regionOf(lng, lat) ?? 'unknown');
           }
-          if (p.year) years.add(p.year);
-          count(basis, chunk.basis[j] || 'unknown');
+          continue;
         }
+        const p = points.get(r.key[j]) ?? { lat, lng, year: r.year[j] || null, plants: new Set() };
+        own.push(p);
+        if (mapped.includes(e)) {
+          p.plants.add(e.taxon.name);
+          points.set(r.key[j], p);
+        }
+        if (p.year) years.add(p.year);
+        count(basis, r.basis[j] || 'unknown');
       }
-      return { e, own, years, basis };
+      const status = own.length ? 'in_area' : near.records ? 'nearby' : 'far';
+      // Two plants with the same GBIF records (a synonym the review kept apart): said, and one photo for both.
+      const sig = r.key.length ? `${r.key.length}|${r.key[0]}|${r.key.at(-1)}` : null;
+      return { e, own, years, basis, near, total: r.total ?? r.lat.length, status, sig };
     });
+    const firstOf = new Map();
+    for (const p of plants) if (p.sig && mapped.includes(p.e)) (firstOf.get(p.sig) ? (p.sameAs = firstOf.get(p.sig).e.taxon.name) : firstOf.set(p.sig, p));
+    for (const p of plants) if (p.sameAs) (firstOf.get(p.sig).same ??= []).push(p.e.taxon.name);
     const named = await namedPlaces().catch(() => () => null);
     const sitesAll = plantSites([...points.values()], siteKm);
     const limit = clamp(args.limit, 1, 15, 8);
@@ -1419,7 +1493,9 @@ export function createMapsTools({
           ? viewOf([{ lat: area.bbox[1], lng: area.bbox[0] }, { lat: area.bbox[3], lng: area.bbox[2] }])
           : null;
     const where = area ? (area.admin ? adminWhere(area.admin) : area.countries.length ? area.countries.join(', ') : area.near ? `${area.near.km} km around ${area.near.lat}, ${area.near.lng}` : 'the box asked') : 'their whole range';
-    const want = clamp(args.photos, 0, 6, 3);
+    const sendPhotos = clamp(args.send_photos, 0, 8, 0);
+    // With photo files asked, no thumbnails unless asked too: a small answer.
+    const want = clamp(args.photos, 0, 6, sendPhotos ? 0 : 3);
     // A photo page that cannot be read now leaves that plant without photos, not the answer without its records.
     let photoFailed = false;
     const photos = await Promise.all(
@@ -1444,6 +1520,8 @@ export function createMapsTools({
         return { plant: e.taxon.name, text: [head, thumbs, credit].join('  \n') };
       })
       .filter(Boolean);
+    const photosStarted = Date.now();
+    const files = sendPhotos ? await photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en') : null;
     const shownBlocks = [];
     for (const b of blocks) if (shownBlocks.reduce((n, x) => n + x.text.length + 2, 0) + b.text.length <= MARKDOWN_CHARS) shownBlocks.push(b);
     const markdown = shownBlocks.map(b => b.text).join('\n\n');
@@ -1462,7 +1540,24 @@ export function createMapsTools({
         host_of: [...e.butterflies],
         evidence: [...e.evidence].join(', '),
         records: own.length,
-        records_total: refs[i].total,
+        records_total: plants[i].total,
+        ...(plants[i].sameAs ? { same_records_as: plants[i].sameAs } : plants[i].same ? { same_records_as: plants[i].same.join(', ') } : {}),
+        ...(area?.distance
+          ? {
+              status: plants[i].status,
+              nearby: {
+                within_km: nearbyKm,
+                records: plants[i].near.records,
+                years: yearsOf(plants[i].near.years),
+                by_region: Object.fromEntries([...plants[i].near.regions].sort((x, y) => y[1] - x[1]).slice(0, 5)),
+                nearest: plants[i].near.nearest
+                  ? { km: Math.round(plants[i].near.nearest.d * 10) / 10, year: plants[i].near.nearest.year, region: area.regionOf(plants[i].near.nearest.lng, plants[i].near.nearest.lat) }
+                  : plants[i].own.length
+                    ? null
+                    : `none within ${NEAREST_MAX_KM} km`,
+              },
+            }
+          : {}),
         years: yearsOf(years),
         by_basis: Object.fromEntries([...basis].sort((a, b) => b[1] - a[1])),
         ...(own.length
@@ -1488,12 +1583,105 @@ export function createMapsTools({
         ...(i < SITE_LINKS ? { map: mapsUrl({ ...urlTaxa, view: { lat: s.lat, lng: s.lng, zoom: siteKm <= 3 ? 12 : 11 } }, mapsBase) } : {}),
       })),
       map_url: mapsUrl({ ...urlTaxa, view }, mapsBase),
+      ...(area?.distance
+        ? {
+            in_area: plants.filter(p => p.status === 'in_area' && mapped.includes(p.e) && !p.sameAs).map(p => `${p.e.taxon.name}${p.same ? ` (= ${p.same.join(', ')})` : ''} (${p.own.length})`),
+            nearby_only: plants.filter(p => p.status === 'nearby' && mapped.includes(p.e) && !p.sameAs).map(p => `${p.e.taxon.name}${p.same ? ` (= ${p.same.join(', ')})` : ''} (${p.near.records} within ${nearbyKm} km)`),
+            not_near: plants.filter(p => p.status === 'far' && mapped.includes(p.e) && !p.sameAs).map(p => p.e.taxon.name),
+          }
+        : {}),
+      ...(files ? { images: files.images, ...(files.note ? { images_note: files.note } : {}) } : {}),
       markdown,
       ...(photosLeftOut.length ? { photos_left_out: { plants: photosLeftOut, note: 'Not in `markdown` (its size): ask again with `plant` for these.' } } : {}),
       ...(photoFailed ? { photos_note: 'Some photo pages of the maps could not be read now: those plants have no photos in this answer.' } : {}),
       records_note: `Plant records: the maps' GBIF occurrences of each plant (generated ${text(m.generated_at).slice(0, 10) || 'date unknown'}), placed in a country by their coordinates (Natural Earth 1:50m outlines: a record within a few km of a border can fall on the wrong side). They show where the plant has been collected or photographed, not that the butterfly uses it there. ${m.caveat ?? ''}`.trim(),
-      plant_data: { manifest: new URL(`data/${HP}host_plant_layers_manifest.json`, mapsBase).href, modified: modified ?? null },
+      plant_data: { manifest: new URL(`data/${HP}host_plant_layers_manifest.json`, mapsBase).href, modified: modified ?? null, records_from: from },
+      timing_ms: { records: recordsMs, ...(files ? { photos: Date.now() - photosStarted } : {}), area_total: Date.now() - started },
     };
+  }
+
+  /**
+   * Photo files to send (WhatsApp), one per plant: the plants recorded in the area first, then those only nearby
+   * (candidates), up to `n`. Per plant, from its first SEND_PAGES gallery pages: a field photo in the area, else a
+   * field photo within `nearbyKm`, else a herbarium sheet in the area, else the nearest field photo; newer first. A
+   * photo another plant has is skipped; one that cannot be fetched gives way to the next. Downloaded and credited
+   * together (server/plant-photos.mjs). -> { images, note }
+   */
+  async function photosToSend(plants, n, area, nearbyKm, m, lang) {
+    const words = SEND_WORDS[lang];
+    const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
+    const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, n);
+    const galleries = await Promise.all(
+      picked.map(async p => {
+        const path = m.galleries[p.e.slug];
+        if (!path) return [];
+        const index = (await galleryIndex(path)).value;
+        const pages = await Promise.all(index.pages.slice(0, SEND_PAGES).map(page => galleryPage(page).then(r => r.value)));
+        return pages.flat().filter(ph => Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
+      }).map(x => x.catch(() => [])),
+    );
+    const used = new Set();
+    let failed = 0;
+    const got = await Promise.all(
+      picked.map(async (p, i) => {
+        const ranked = galleries[i]
+          .map(ph => {
+            const inside = !area || area.test(ph.lng, ph.lat);
+            const away = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
+            const tier = inside && ph.field ? 0 : ph.field && away <= nearbyKm ? 1 : inside ? 2 : ph.field ? 3 : 4;
+            return { ...ph, inside, away, tier };
+          })
+          .sort((a, b) => a.tier - b.tier || a.away - b.away || (b.year ?? 0) - (a.year ?? 0));
+        // Taken in order, before any await, so two plants never pick the same photo.
+        const tries = [];
+        for (const ph of ranked) {
+          if (tries.length >= 4) break;
+          if (used.has(ph.img)) continue;
+          used.add(ph.img);
+          tries.push(ph);
+        }
+        for (const ph of tries) {
+          try {
+            const id = /(\d+)\/?$/.exec(ph.record ?? '')?.[1];
+            const [credit, file] = await Promise.all([photoFiles.credit(id, ph.img).catch(() => null), photoFiles.photo(ph.img)]);
+            return { p, ph, credit, file };
+          } catch {
+            failed++;
+          }
+        }
+        return null;
+      }),
+    );
+    const adminData = area?.admin ? await adminAreas.data() : null;
+    const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
+    const images = got.filter(Boolean).map(({ p, ph, credit, file }) => {
+      const name = p.e.taxon.name;
+      // "Mesechites trifidus" for "Mesechites trifida" is the same name: not said.
+      const asRecorded = credit?.as_recorded && ![name, p.e.taxon.gbif_name, ...(p.same ?? [])].filter(Boolean).map(stem).includes(stem(credit.as_recorded)) ? credit.as_recorded : null;
+      const place = credit?.place ?? `${ph.lat.toFixed(3)}, ${ph.lng.toFixed(3)}`;
+      const year = credit?.year ?? ph.year;
+      const by = credit?.photographer ?? credit?.rights_holder ?? null;
+      const link = credit?.link ?? ph.record ?? null;
+      // Outside the area: where the outlines put it (a GBIF locality may name the area across a changed border).
+      const canton = ph.inside || !adminData ? null : cantonOf(ph.lng, ph.lat, adminData);
+      const at = ph.inside ? '' : ` (${words.photoOutside(short)}${canton ? `: ${canton.name}, ${canton.province}` : ''})`;
+      const status = p.status === 'in_area' ? words.inArea(short, p.own.length) : words.candidate(short, p.near.records, nearbyKm);
+      return {
+        path: file.path,
+        caption: [`_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.field ? '' : `, ${words.herbarium}`}`, link].filter(Boolean).join('\n'),
+        plant: name,
+        status: p.status,
+        photo_in_area: ph.inside,
+        field_photo: ph.field,
+        width: file.width,
+        height: file.height,
+        bytes: file.bytes,
+        url: file.url,
+        source_url: ph.img,
+        credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
+      };
+    });
+    return { images, note: failed ? `${failed} photo(s) could not be fetched; the next best was used.` : null };
   }
 
   /** The associations asked (`butterfly` or `plant`, confidence): { got, matched, kept, okConfidence, rank, butterfly } or { error }. */
@@ -1545,24 +1733,21 @@ export function createMapsTools({
     if (!near) return { error: 'Give `near` {lat, lng, km}: the point to start from (Ikiam is about -0.95, -77.86).' };
     const found = await associationsFor(args);
     if (found.error) return found;
-    const { m, shown, mapped, withoutRecords, refs, chunks } = await hostPlantLayers(found.kept, args);
+    const { m, shown, mapped, withoutRecords, points: plantRecs } = await hostPlantLayers(found.kept, args);
     if (!mapped.length) return { error: 'None of these host plants has a records layer on the maps.', ...(withoutRecords.length ? { plants_without_records: withoutRecords } : {}) };
     // The mapped plants' records that can count for a site within near.km: one per GBIF record (synonymous plants share it).
     const reach = near.km + KERNEL_KM;
     const records = new Map();
-    shown.forEach((e, i) => {
-      if (!mapped.includes(e)) return;
-      for (const [c, indexes] of refs[i].chunks) {
-        const chunk = chunks.get(c);
-        for (const j of indexes ?? []) {
-          const [lat, lng] = [chunk.lat[j], chunk.lng[j]];
-          if (!Number.isFinite(lat) || km(near, { lat, lng }) > reach) continue;
-          const key = `${c}:${j}`;
-          const r = records.get(key) ?? records.set(key, { lat, lng, year: chunk.year[j] || null, plants: new Set() }).get(key);
-          r.plants.add(e.taxon.name);
-        }
+    for (const e of shown) {
+      if (!mapped.includes(e)) continue;
+      const p = plantRecs.get(e.slug);
+      for (let j = 0; j < (p?.lat.length ?? 0); j++) {
+        const [lat, lng] = [p.lat[j], p.lng[j]];
+        if (km(near, { lat, lng }) > reach) continue;
+        const r = records.get(p.key[j]) ?? records.set(p.key[j], { lat, lng, year: p.year[j] || null, plants: new Set() }).get(p.key[j]);
+        r.plants.add(e.taxon.name);
       }
-    });
+    }
     const plantRecords = [...records.values()];
     const scoreAt = site => {
       const out = { score: 0, rings: SCORE_RINGS.map(() => 0), plants: new Map(), years: [], undated: 0, nearest: null };
@@ -1705,282 +1890,6 @@ export function createMapsTools({
         'GBIF and iNaturalist records follow roads, field stations and observers: a high score can mean a well-sampled place rather than more plants. Each site gives the records and years behind its score.',
         'A plant record shows where the plant grows, not that the butterfly uses it there.',
       ],
-    };
-  }
-
-  // host_plant_photos: each plant's records as small lists, kept per layers version in memory and on disk (a new
-  // worker or a restart reads them there instead of the 7.5 MB chunks); photos and credits in server/plant-photos.mjs.
-  const photoFiles = createPlantPhotos({ dir: hostPlantDir, fetchImpl });
-  const plantPoints = new Map();
-  /** Each plant's records { lat, lng, year, total } for these slugs: memory, disk, else their refs and chunks. */
-  async function pointsOf(m, slugs) {
-    const out = new Map();
-    const missing = [];
-    let from = 'memory';
-    for (const slug of slugs) {
-      const key = `${plantVersion}|${slug}`;
-      if (plantPoints.has(key)) out.set(slug, plantPoints.get(key));
-      else missing.push(slug);
-    }
-    const dir = hostPlantDir ? join(hostPlantDir, 'records', plantVersion ?? 'none') : null;
-    const fromChunks = [];
-    for (const slug of missing) {
-      try {
-        if (!dir) throw new Error('no folder');
-        const kept = JSON.parse(readFileSync(join(dir, `${slug}.json`), 'utf8'));
-        plantPoints.set(`${plantVersion}|${slug}`, kept);
-        out.set(slug, kept);
-        from = 'disk';
-      } catch {
-        fromChunks.push(slug);
-      }
-    }
-    if (fromChunks.length) {
-      from = 'download';
-      const refs = await Promise.all(fromChunks.map(slug => plantRefs(m.refs[slug]).then(r => r.value)));
-      const lists = fromChunks.map((_, i) => ({ total: refs[i].total, lat: [], lng: [], year: [] }));
-      const wanted = [...new Set(refs.flatMap(r => r.chunks.map(([c]) => c)))];
-      // Two chunks at a time, as hostPlantLayers: each made small before the next ones.
-      for (let i = 0; i < wanted.length; i += CHUNKS_AT_ONCE)
-        await Promise.all(
-          wanted.slice(i, i + CHUNKS_AT_ONCE).map(async c => {
-            const chunk = (await plantChunk(c)).value;
-            refs.forEach((r, k) => {
-              for (const [name, indexes] of r.chunks) {
-                if (name !== c) continue;
-                for (const j of indexes ?? []) {
-                  if (!Number.isFinite(chunk.lat[j]) || !Number.isFinite(chunk.lng[j])) continue;
-                  lists[k].lat.push(round(chunk.lat[j], 5));
-                  lists[k].lng.push(round(chunk.lng[j], 5));
-                  lists[k].year.push(chunk.year[j] || 0);
-                }
-              }
-            });
-          }),
-        );
-      if (dir) mkdirSync(dir, { recursive: true });
-      fromChunks.forEach((slug, k) => {
-        plantPoints.set(`${plantVersion}|${slug}`, lists[k]);
-        out.set(slug, lists[k]);
-        if (dir) {
-          const file = join(dir, `${slug}.json`);
-          writeFileSync(`${file}.tmp`, JSON.stringify(lists[k]));
-          renameSync(`${file}.tmp`, file);
-        }
-      });
-    }
-    return { points: out, from };
-  }
-
-  /** A plant's gallery photos with coordinates (at most PHOTO_ALL_PAGES pages, read together). */
-  async function galleryOf(m, slug) {
-    const path = m.galleries[slug];
-    if (!path) return [];
-    const index = (await galleryIndex(path)).value;
-    const pages = await Promise.all(index.pages.slice(0, PHOTO_ALL_PAGES).map(page => galleryPage(page).then(r => r.value)));
-    return pages.flat().filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-  }
-
-  async function hostPlantPhotos(args) {
-    const started = Date.now();
-    let last = started;
-    const timing = {};
-    const lap = name => {
-      timing[name] = Date.now() - last;
-      last = Date.now();
-    };
-    if (!fold(args.butterfly)) return { error: 'Name the `butterfly` (a species, subspecies or genus).' };
-    const area = await plantArea(args);
-    if (area?.error) return area;
-    if (!area) return { error: 'Give `area` (a province or canton of Ecuador, e.g. "Napo"), or `country`, `bbox` or `near`.' };
-    lap('area');
-    const found = await associationsFor({ ...args, plant: undefined });
-    if (found.error) return found;
-    const { value: m, modified } = await plantLayers();
-    usePlantVersion(m.generated_at);
-    const { shown, withoutRecords } = hostPlantList(found.kept, { ...args, plant: undefined }, m);
-    lap('associations');
-    const { points, from } = await pointsOf(m, shown.map(e => e.slug));
-    lap('records');
-    const lang = args.lang === 'es' ? 'es' : 'en';
-    const where = area.admin ? area.admin.name : area.countries.length ? area.countries.join(', ') : lang === 'es' ? 'el área' : 'the area';
-    // Per plant: its records in the area, by canton (Ecuador) and years.
-    const citation = new Map();
-    for (const a of found.kept) {
-      const slug = text(a.host_taxon_slug);
-      if (slug && !citation.has(slug)) citation.set(slug, { source: text(a.citation_for_ui ?? a.source_citation) || null, link: a.doi_or_url ?? null });
-    }
-    // How far a point outside the area is from it: from its box (a province's, a canton's, the box asked), or past
-    // `near`'s circle; for a whole country, not measured (0).
-    const box = area.admin?.bbox ?? area.bbox ?? null;
-    const awayKm = pt => {
-      if (box) return km({ lat: Math.min(box[3], Math.max(box[1], pt.lat)), lng: Math.min(box[2], Math.max(box[0], pt.lng)) }, pt);
-      if (area.near) return Math.max(0, km(area.near, pt) - area.near.km);
-      return 0;
-    };
-    const measured = !!(box || area.near);
-    const plants = shown.map(e => {
-      const p = points.get(e.slug) ?? { lat: [], lng: [], year: [], total: null };
-      const here = [];
-      let nearby = 0;
-      for (let i = 0; i < p.lat.length; i++) {
-        if (area.test(p.lng[i], p.lat[i])) here.push(i);
-        else if (measured && awayKm({ lat: p.lat[i], lng: p.lng[i] }) <= NEAR_FIELD_KM) nearby++;
-      }
-      const years = new Set(here.map(i => p.year[i]).filter(Boolean));
-      const byCanton = new Map();
-      if (area.admin || area.countries.includes('Ecuador'))
-        for (const i of here) {
-          const c = cantonOf(p.lng[i], p.lat[i]);
-          if (c) count(byCanton, area.admin?.level === 'canton' ? c.name : `${c.name} (${c.province})`);
-        }
-      // The same GBIF records as an earlier plant (a synonym the review kept apart): one plant, both names.
-      const sig = p.lat.length ? `${p.lat.length}|${p.lat[0]},${p.lng[0]}|${p.lat.at(-1)},${p.lng.at(-1)}` : null;
-      return { e, sig, here: here.length, nearby, total: p.total ?? p.lat.length, years: yearsOf(years), byCanton };
-    });
-    const bySig = new Map();
-    for (const p of [...plants].sort((a, b) => b.e.evidence.has('direct') - a.e.evidence.has('direct') || b.e.confidence - a.e.confidence)) {
-      if (!p.sig) continue;
-      const first = bySig.get(p.sig);
-      if (!first) bySig.set(p.sig, p);
-      else (first.same ??= []).push(p.e.taxon.name), (p.merged = true);
-    }
-    const kept = plants.filter(p => !p.merged);
-    // Recorded in the area first; then direct observations, confidence, records there.
-    const order = (a, b) => (b.here > 0) - (a.here > 0) || b.e.evidence.has('direct') - a.e.evidence.has('direct') || b.e.confidence - a.e.confidence || b.here - a.here || b.nearby - a.nearby;
-    const species = kept.filter(p => p.e.taxon.rank === 'species').sort(order);
-    const genera = kept.filter(p => p.e.taxon.rank !== 'species');
-    const inArea = species.filter(p => p.here > 0);
-    // Not recorded in the area but within NEAR_FIELD_KM of it: likely there too (most of Ecuador is little sampled).
-    const close = species.filter(p => p.here === 0 && p.nearby > 0).sort((a, b) => b.nearby - a.nearby);
-    const want = clamp(args.photos, 0, 8, 5);
-    // The photos: one per plant recorded in the area, best first; a photo another plant already has (synonyms share
-    // GBIF records) is skipped.
-    const picked = [...inArea, ...close].slice(0, want);
-    const galleries = await Promise.all(picked.map(p => galleryOf(m, p.e.slug).catch(() => [])));
-    lap('gallery');
-    const used = new Set();
-    const choices = picked.map((p, i) =>
-      galleries[i]
-        .map(ph => {
-          const inside = area.test(ph.lng, ph.lat);
-          const away = inside ? 0 : awayKm(ph);
-          const tier = inside && ph.field ? 0 : !inside && ph.field && away <= NEAR_FIELD_KM ? 1 : inside ? 2 : ph.field ? 3 : 4;
-          return { ...ph, inside, away, tier };
-        })
-        .sort((a, b) => a.tier - b.tier || a.away - b.away || (b.year ?? 0) - (a.year ?? 0)),
-    );
-    let failed = 0;
-    const images = (
-      await Promise.all(
-        picked.map(async (p, i) => {
-          // The first candidate not taken by an earlier plant; the next one if its photo cannot be had.
-          for (const ph of choices[i].slice(0, 6)) {
-            if (used.has(ph.img)) continue;
-            used.add(ph.img);
-            try {
-              const [credit, file] = await Promise.all([photoFiles.credit(/(\d+)\/?$/.exec(ph.record ?? '')?.[1], ph.img).catch(() => null), photoFiles.photo(ph.img)]);
-              return { p, ph, credit, file };
-            } catch {
-              failed++;
-            }
-          }
-          return null;
-        }),
-      )
-    ).filter(Boolean);
-    lap('photos');
-    const words = WORDS_HP[lang];
-    // "Mesechites trifidus" for "Mesechites trifida" is the same name: not said.
-    const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
-    const images_ = images.map(({ p, ph, credit, file }) => {
-      const name = p.e.taxon.name;
-      const known = [name, p.e.taxon.gbif_name, ...(p.same ?? [])].filter(Boolean).map(stem);
-      const asRecorded = credit?.as_recorded && !known.includes(stem(credit.as_recorded)) ? credit.as_recorded : null;
-      // Outside the area: where the outlines put it (a GBIF locality may name the area across a changed border).
-      const canton = ph.inside ? null : cantonOf(ph.lng, ph.lat);
-      const outside = ph.inside ? '' : ` (${words.outside(where)}${canton ? `: ${canton.name}, ${canton.province}` : ''})`;
-      const status = p.here ? '' : ` — ${words.closeTag(where, p.nearby)}`;
-      const place = credit?.place ?? `${ph.lat.toFixed(3)}, ${ph.lng.toFixed(3)}`;
-      const year = credit?.year ?? ph.year;
-      const by = credit?.photographer ?? credit?.rights_holder ?? null;
-      const link = credit?.link ?? ph.record ?? null;
-      const caption = [
-        `_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''}${status}`,
-        [place, year].filter(Boolean).join(', ') + outside,
-        `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.field ? '' : `, ${words.herbarium}`}`,
-        link,
-      ]
-        .filter(Boolean)
-        .join('\n');
-      return {
-        path: file.path,
-        caption,
-        plant: name,
-        in_area: ph.inside,
-        plant_in_area: p.here > 0,
-        ...(ph.inside ? {} : { km_outside: Math.round(ph.away) }),
-        field_photo: ph.field,
-        width: file.width,
-        height: file.height,
-        bytes: file.bytes,
-        url: file.url,
-        source_url: ph.img,
-        credit: { photographer: by, licence: credit?.licence ?? null, licence_url: credit?.licence_url ?? null, place, year: year ?? null, link, gbif: credit?.gbif ?? ph.record ?? null, ...(asRecorded ? { as_recorded: asRecorded } : {}) },
-      };
-    });
-    const urlTaxa = plantUrlTaxa(shown, species.map(p => p.e), { butterfly: args.butterfly }, area.countries);
-    const view = box ? viewOfBox(box) : area.near ? { lat: area.near.lat, lng: area.near.lng, zoom: Math.max(5, Math.min(12, Math.round(Math.log2(40000 / area.near.km)) - 1)) } : null;
-    const map_url = mapsUrl({ ...urlTaxa, view }, mapsBase);
-    const notIn = species.filter(p => p.here === 0 && !close.includes(p)).map(p => p.e.taxon.name);
-    const lines = inArea.map(p => {
-      const cantons = [...p.byCanton].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c, n]) => `${c.replace(/ \(.*\)$/, '')} ${n}`);
-      const span = p.years ? `, ${p.years.first === p.years.last ? p.years.first : `${p.years.first}–${p.years.last}`}` : '';
-      return `- _${p.e.taxon.name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}: ${words.records(p.here, where)}${span}${cantons.length ? ` (${cantons.join(', ')})` : ''}; ${p.e.evidence.has('direct') ? words.direct : words.literature}`;
-    });
-    const summary = [
-      inArea.length ? words.head(args.butterfly, where, inArea.length) : words.none(args.butterfly, where),
-      ...lines,
-      ...(close.length ? [words.close(where, close.map(p => `${p.e.taxon.name} (${p.nearby})`))] : []),
-      ...(notIn.length ? [words.notIn(where, notIn)] : []),
-      ...(genera.filter(g => g.here > 0).length ? [words.genera(genera.filter(g => g.here > 0).map(g => `${g.e.taxon.name} ${g.here}`).join(', '))] : []),
-      words.caveat,
-    ].join('\n');
-    const markdown = images_.map(im => `[![${im.plant}](${im.url})](${im.credit.link ?? im.source_url})  \n${im.caption.split('\n').slice(1).join(' · ')}`).join('\n\n');
-    lap('answer');
-    return {
-      asked: { butterfly: args.butterfly, area: args.area ?? null, min_confidence: args.min_confidence ?? 'medium' },
-      area: { where: area.admin ? adminWhere(area.admin) : where, ...(area.admin ? { admin: adminOf(area.admin) } : {}), ...(area.unknown?.length ? { countries_not_known: area.unknown } : {}) },
-      found: found.kept.length,
-      plants: species.map(p => ({
-          plant: p.e.taxon.name,
-          ...(p.same ? { same_records_as: p.same } : {}),
-          ...(p.e.taxon.gbif_name && p.e.taxon.gbif_name !== p.e.taxon.name ? { gbif_name: p.e.taxon.gbif_name } : {}),
-          records_in_area: p.here,
-          ...(measured ? { records_within_60_km: p.nearby } : {}),
-          ...(p.byCanton.size ? { by_canton: Object.fromEntries([...p.byCanton].sort((a, b) => b[1] - a[1])) } : {}),
-          years: p.years,
-          records_total: p.total,
-          host_of: [...p.e.butterflies],
-          evidence: [...p.e.evidence].join(', '),
-          confidence: Object.keys(CONFIDENCE).find(k => CONFIDENCE[k] === p.e.confidence) ?? null,
-          source: citation.get(p.e.slug)?.source ?? null,
-          photo: images_.findIndex(im => im.plant === p.e.taxon.name) >= 0 ? images_.findIndex(im => im.plant === p.e.taxon.name) : null,
-        })),
-      ...(genera.length ? { genus_level: genera.map(g => ({ plant: g.e.taxon.name, records_in_area: g.here, note: 'any species of the genus: no photo' })) } : {}),
-      sources: Object.fromEntries([...citation.values()].filter(c => c.source).map(c => [c.source, c.link])),
-      nearby: close.map(p => p.e.taxon.name),
-      not_in_area: notIn,
-      ...(withoutRecords.length ? { plants_without_records: withoutRecords } : {}),
-      ...(inArea.length + close.length > want ? { photos_left_out: [...inArea, ...close].slice(want).map(p => p.e.taxon.name) } : {}),
-      images: images_,
-      ...(failed ? { photos_note: `${failed} photo(s) could not be fetched; the next best was used.` } : {}),
-      summary,
-      map_url,
-      markdown,
-      records_note: `Plant records: the maps' GBIF occurrences (generated ${text(m.generated_at).slice(0, 10) || 'date unknown'}), placed by their coordinates${area.admin ? ` in ${adminWhere(area.admin)} by the INEC canton outlines (simplified to about 200 m)` : ''}. They show where the plant grows, not that the butterfly uses it there.`,
-      plant_data: { manifest: new URL(`data/${HP}host_plant_layers_manifest.json`, mapsBase).href, modified: modified ?? null },
-      timing_ms: { ...timing, total: Date.now() - started, records_from: from, cache: photoFiles.stats() },
     };
   }
 
@@ -2191,7 +2100,6 @@ export function createMapsTools({
         if (name === 'host_plant_sites') return await plantSitesNear(args);
         if (name === 'gallery_specimens') return specimens(args);
         if (name === 'maps_snapshot') return await snapshot(args);
-        if (name === 'host_plant_photos') return await hostPlantPhotos(args);
       } catch (e) {
         return { error: e.message };
       }

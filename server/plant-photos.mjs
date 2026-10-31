@@ -1,5 +1,5 @@
-// Host-plant photos ready to send (host_plant_photos, server/maps-tools.mjs): each photo of the maps' plant gallery
-// downloaded at most 1280 px wide as a JPEG, with its credit read from its GBIF record (photographer, licence,
+// Host-plant photos ready to send (host_plants' `send_photos`, server/maps-tools.mjs): each photo of the maps' plant
+// gallery downloaded at about HD size (MAX_PX on its long side, a JPEG: not the original, not a thumbnail), with its credit read from its GBIF record (photographer, licence,
 // place, year, link). Photos and credits are kept on disk (`dir`) and in memory, so a photo asked again is ready
 // at once; all of one answer's are fetched together.
 
@@ -7,15 +7,21 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const MAX_PX = 1280;
+export const MAX_PX = 2048;
 const GBIF_API = 'https://api.gbif.org/v1/occurrence/';
 const TIMEOUT_MS = 20_000;
 
-/** The URL of a photo at most MAX_PX wide: iNaturalist's own 1024 px size, else the image proxy's JPEG. */
+/** The image proxy's JPEG of a photo, at most MAX_PX on its long side. */
+export const proxyUrl = img => `https://wsrv.nl/?url=${encodeURIComponent(img)}&w=${MAX_PX}&h=${MAX_PX}&fit=inside&we&output=jpg&q=82`;
+
+/**
+ * The URL of a photo at about MAX_PX on its long side: iNaturalist's own `original` size (at most 2048 px there; its
+ * `large` is 1024), else the image proxy's JPEG.
+ */
 export function sizedUrl(img) {
-  const inat = /^(https:\/\/(?:inaturalist-open-data\.s3\.amazonaws\.com|static\.inaturalist\.org)\/photos\/\d+\/)(?:original|large|medium)\.(jpe?g|png)$/i.exec(img);
-  if (inat) return `${inat[1]}large.${inat[2]}`;
-  return `https://wsrv.nl/?url=${encodeURIComponent(img)}&w=${MAX_PX}&h=${MAX_PX}&fit=inside&we&output=jpg&q=82`;
+  const inat = /^(https:\/\/(?:inaturalist-open-data\.s3\.amazonaws\.com|static\.inaturalist\.org)\/photos\/\d+\/)(?:original|large|medium)\.(jpe?g)$/i.exec(img);
+  if (inat) return `${inat[1]}original.${inat[2]}`;
+  return proxyUrl(img);
 }
 
 /** "CC BY-NC 4.0" from a Creative Commons URL ("http://creativecommons.org/licenses/by-nc/4.0/"), else the text. */
@@ -118,7 +124,7 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
     return loading;
   }
 
-  /** A photo at most MAX_PX wide on disk: { path, bytes, width, height, url, cached }. */
+  /** A photo of at most MAX_PX on disk: { path, bytes, width, height, url, cached }. */
   function photo(img) {
     if (photos.has(img)) return photos.get(img);
     const loading = (async () => {
@@ -138,15 +144,23 @@ export function createPlantPhotos({ dir = null, fetchImpl = fetch } = {}) {
           /* not kept yet */
         }
       }
-      const r = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
-      if (!r.ok) throw new Error(`The photo's site answered ${r.status}`);
-      const buf = Buffer.from(await r.arrayBuffer());
-      const size = jpegSize(buf);
-      if (!size) throw new Error('Not a JPEG');
-      if (Math.max(size.width, size.height) > MAX_PX && !/wsrv\.nl/.test(url)) throw new Error(`Larger than ${MAX_PX} px`);
+      const get = async u => {
+        const r = await fetchImpl(u, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+        if (!r.ok) throw new Error(`The photo's site answered ${r.status}`);
+        const buf = Buffer.from(await r.arrayBuffer());
+        return { buf, size: jpegSize(buf) };
+      };
+      let got = await get(url);
+      let used = url;
+      // An iNaturalist original larger than MAX_PX (or not a JPEG): the proxy's copy instead.
+      if (url !== proxyUrl(img) && (!got.size || Math.max(got.size.width, got.size.height) > MAX_PX)) {
+        used = proxyUrl(img);
+        got = await get(used);
+      }
+      if (!got.size) throw new Error('Not a JPEG');
       counts.photo_fetched++;
-      if (path) writeAtomic(path, buf);
-      return { path, bytes: buf.length, ...size, url, cached: false };
+      if (path) writeAtomic(path, got.buf);
+      return { path, bytes: got.buf.length, ...got.size, url: used, cached: false };
     })();
     photos.set(img, loading);
     loading.catch(() => photos.delete(img));
