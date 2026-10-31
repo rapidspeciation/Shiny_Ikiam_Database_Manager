@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { camMismatches, createWhatsAppRelay, groupWake, nameCall, normalizeEvent, protocolQuestion, quietHours, sign } from '../server/whatsapp.mjs';
+import { mkdtempSync, writeFileSync, statSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { camMismatches, chatModel, createWhatsAppRelay, groupWake, nameCall, normalizeEvent, protocolQuestion, quietHours, sign } from '../server/whatsapp.mjs';
+import { gateInput, haikuGate, parseGate } from '../server/whatsapp-gate.mjs';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { ecuadorTime, usageText } from '../server/claude-usage.mjs';
 
 const SECRET = 'test-secret-0123456789';
 const GROUP = '120363000000000001@g.us';
@@ -13,7 +20,7 @@ const BOT = '593980000000@s.whatsapp.net';
 // 10:00 in Ecuador (15:00 UTC): outside the quiet hours.
 const MORNING = Date.parse('2026-10-30T15:00:00Z');
 
-function fixture({ mode = 'mention-only', options = {}, lookupCam = () => null, genera = () => new Set() } = {}) {
+function fixture({ mode = 'mention-only', options = {}, lookupCam = () => null, genera = () => new Set(), gate = null, usage = null, mediaDir = null } = {}) {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
     CREATE TABLE ai_tokens(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);`);
@@ -35,6 +42,9 @@ function fixture({ mode = 'mention-only', options = {}, lookupCam = () => null, 
     busy: () => t3.busy,
     lookupCam,
     genera,
+    gate,
+    usage,
+    mediaDir,
     options,
     now: () => clock.t,
     log: {},
@@ -92,8 +102,8 @@ test('group messages wake only on a mention, a reply to the bot, its name or a c
   assert.equal(decision(post({ chat_jid: GROUP, sender_jid: LUIS, text: 'ok gracias', quoted_sender: BOT })), 'waiting');
   assert.equal(decision(post({ chat_jid: GROUP, sender_jid: LUIS, text: 'asistente, cuántas hay?' })), 'waiting');
   assert.equal(decision(post({ chat_jid: GROUP, sender_jid: LUIS, text: '/cam CAM026514' })), 'waiting');
-  // Someone in the group but not on the list: kept as context, never a wake.
-  assert.equal(decision(post({ chat_jid: GROUP, sender_jid: STRANGER, text: '@asistente hola', mentions: [BOT] })), 'context');
+  // Someone in the group but not on the list: dropped, never a wake.
+  assert.equal(decision(post({ chat_jid: GROUP, sender_jid: STRANGER, text: '@asistente hola', mentions: [BOT] })), 'dropped');
 });
 
 test('the wake rules, alone', () => {
@@ -252,12 +262,12 @@ test('admins add and remove people by DM, without the model', async () => {
   const { post, decision, relay, woken, clock } = fixture();
   assert.equal(decision(post({ chat_jid: ANA, sender_jid: ANA, text: '/add +593 993 333 333 Carla' })), 'handled');
   assert.equal(relay.people().find(p => p.phone === '+593993333333').name, 'Carla');
-  // Not an admin: an ordinary message for the chat.
-  assert.equal(decision(post({ chat_jid: LUIS, sender_jid: LUIS, text: '/add +593994444444 X' })), 'waiting');
+  // Not an admin: told so by the relay, and the model never sees it.
+  assert.equal(decision(post({ chat_jid: LUIS, sender_jid: LUIS, text: '/add +593994444444 X' })), 'handled');
+  assert.equal(relay.people().find(p => p.phone === '+593994444444'), undefined);
   clock.t += 30_000;
   await relay.pump();
-  assert.equal(woken.length, 1);
-  assert.doesNotMatch(woken[0], /Carla/);
+  assert.equal(woken.length, 0);
 });
 
 test('wacli bodies in other shapes read the same', () => {
@@ -267,4 +277,194 @@ test('wacli bodies in other shapes read the same', () => {
   assert.equal(m.at, MORNING);
   assert.deepEqual(m.media, { type: 'image', path: '/tmp/a.jpg', mime: null, bytes: null, name: null });
   assert.equal(normalizeEvent({ event: 'receipt', chat: ANA, id: 'r' }), null);
+});
+
+/** A gate that remembers what it was asked; `decide(line)` gives its answer. */
+function spyGate(decide = () => ({ wake: false, reason: 'social' })) {
+  const calls = [];
+  const gate = async input => {
+    calls.push(input);
+    return { ...decide(input.line), costUsd: 0.0005 };
+  };
+  return { gate, calls };
+}
+
+test('strangers and disabled groups never reach the gate, a command, the usage reading or the model', async () => {
+  const { gate, calls } = spyGate(() => ({ wake: true, reason: 'x' }));
+  let usageReads = 0;
+  const usage = { read: async () => (usageReads++, { text: 'u' }) };
+  const mediaDir = mkdtempSync(join(tmpdir(), 'wa-media-'));
+  const photo = join(mediaDir, 'in.jpg');
+  writeFileSync(photo, 'jpg');
+  const { post, decision, relay, db, clock, woken } = fixture({ mode: 'helpful', gate, usage, mediaDir });
+  const disabled = '120363000000000077@g.us';
+  relay.setGroup({ jid: disabled, name: 'Off', enabled: false, mode: 'helpful' });
+  const tries = [
+    { chat_jid: STRANGER, sender_jid: STRANGER, text: '/usage' },
+    { chat_jid: STRANGER, sender_jid: STRANGER, text: '/help' },
+    { chat_jid: STRANGER, sender_jid: STRANGER, text: '¿qué especie es?', media_type: 'image', local_path: photo },
+    { chat_jid: GROUP, sender_jid: STRANGER, text: '¿Después de 30 preservadas marcamos el resto?' },
+    { chat_jid: GROUP, sender_jid: STRANGER, text: '@asistente hola', mentions: [BOT] },
+    { chat_jid: disabled, sender_jid: ANA, text: '¿Cuántas Mechanitis marcamos ayer?' },
+    { chat_jid: '120363000000000088@g.us', sender_jid: ANA, text: '@asistente hola', mentions: [BOT] },
+  ];
+  for (const t of tries) assert.equal(decision(post(t)), 'dropped', t.text);
+  await relay.settled();
+  clock.t += 120_000;
+  await relay.pump();
+  assert.equal(calls.length, 0);
+  assert.equal(usageReads, 0);
+  assert.equal(woken.length, 0);
+  assert.equal(db.prepare('SELECT count(*) n FROM wa_outbox').get().n, 0);
+  // Nothing of theirs is kept: no text, no name, no photo.
+  const kept = db.prepare('SELECT count(*) n FROM wa_inbox WHERE text IS NOT NULL OR sender_name IS NOT NULL OR media_json IS NOT NULL OR quoted_id IS NOT NULL').get().n;
+  assert.equal(kept, 0);
+  assert.equal(relay.status().gateCalls, 0);
+});
+
+test('DM commands are answered by the relay without the model; unknown ones get the short help', async () => {
+  let reads = 0;
+  const usage = { read: async () => (reads++, { text: '*Claude use* 5 hours: 40 %' }) };
+  const { post, decision, relay, db, clock, woken } = fixture({ usage });
+  const answer = id => db.prepare("SELECT text FROM wa_outbox WHERE by = 'relay' AND reply_to = ?").get(id)?.text;
+  assert.equal(decision(post({ msg_id: 'h', chat_jid: LUIS, sender_jid: LUIS, text: '/help' })), 'handled');
+  assert.match(answer('h'), /\/usage[\s\S]*\/status[\s\S]*\/help/);
+  assert.equal(decision(post({ msg_id: 'u', chat_jid: LUIS, sender_jid: LUIS, text: '/usage' })), 'command');
+  await relay.settled();
+  assert.equal(relay.message('u').status, 'handled');
+  assert.equal(answer('u'), '*Claude use* 5 hours: 40 %');
+  assert.equal(reads, 1);
+  // A turn and an answer, then /status counts them.
+  post({ chat_jid: ANA, sender_jid: ANA, text: '¿Cuántas marcamos?' });
+  clock.t += 30_000;
+  await relay.pump();
+  relay.reply({ replyTo: '#m3', text: 'Siete.' });
+  assert.equal(decision(post({ msg_id: 's', chat_jid: LUIS, sender_jid: LUIS, text: '/status' })), 'handled');
+  assert.match(answer('s'), /Queue: 0[\s\S]*Last turn: 30\/10\/2026 10:00 \(answering\)[\s\S]*Answered today: 1/);
+  assert.match(answer('s'), /outbox only/);
+  assert.equal(decision(post({ msg_id: 'x', chat_jid: LUIS, sender_jid: LUIS, text: '/foo bar' })), 'handled');
+  assert.match(answer('x'), /^Unknown command \/foo\. Commands: \/usage, \/status, \/help\.$/);
+  // In Spanish for someone whose language is Spanish.
+  relay.setPerson({ phone: '+593992222222', name: 'Luis', language: 'es' });
+  post({ msg_id: 'x2', chat_jid: LUIS, sender_jid: LUIS, text: '/foo' });
+  assert.match(answer('x2'), /^No conozco \/foo/);
+  clock.t += 60_000;
+  await relay.pump();
+  assert.equal(woken.length, 1, 'only Ana\'s question went to the chat');
+  assert.doesNotMatch(woken[0], /\/help|\/usage|\/status|\/foo/);
+});
+
+test('the gate decides on helpful groups\' lines no rule woke; rules still wake by themselves', async () => {
+  const { gate, calls } = spyGate(line => (/CAM|\?/.test(line.text) ? { wake: true, reason: 'database question' } : { wake: false, reason: 'social chat' }));
+  const { post, decision, relay, clock, woken } = fixture({ mode: 'helpful', gate, options: { questionWaitMs: 60_000 } });
+  assert.equal(decision(post({ msg_id: 'a', chat_jid: GROUP, sender_jid: ANA, text: 'buenos días' })), 'gating');
+  await relay.settled();
+  assert.equal(relay.message('a').status, 'context');
+  assert.equal(relay.message('a').reason, 'gate: social chat');
+  assert.equal(decision(post({ msg_id: 'b', chat_jid: GROUP, sender_jid: LUIS, text: 'el CAM026514 ya está en la base' })), 'gating');
+  await relay.settled();
+  assert.equal(relay.message('b').status, 'waiting');
+  assert.equal(relay.message('b').wake, 'candidate:gate');
+  // The gate saw the group's earlier line, with its author.
+  assert.deepEqual(calls[1].context, [{ name: 'Ana', text: 'buenos días', photo: false }]);
+  assert.equal(calls[1].line.name, 'Luis');
+  // A mention wakes without the gate.
+  assert.equal(decision(post({ msg_id: 'c', chat_jid: GROUP, sender_jid: LUIS, text: 'hey', mentions: [BOT] })), 'waiting');
+  assert.equal(calls.length, 2);
+  // A protocol question the gate passes still waits for a teammate first.
+  post({ msg_id: 'q', chat_jid: GROUP, sender_jid: LUIS, text: '¿Después de 30 preservadas marcamos el resto?' });
+  await relay.settled();
+  assert.equal(relay.message('q').wake, 'candidate:question');
+  clock.t += 25_000;
+  await relay.pump();
+  assert.equal(woken.length, 1);
+  assert.match(woken[0], /\(unprompted gate\)/);
+  assert.doesNotMatch(woken[0], /#m\d+ .*30 preservadas/);
+  assert.equal(relay.status().gateCalls, 3);
+  assert.equal(relay.status().gateCostUsd, 0.0015);
+});
+
+test('the gate in mention-only groups is never asked; when it fails the rules decide', async () => {
+  const { gate, calls } = spyGate();
+  const one = fixture({ mode: 'mention-only', gate });
+  assert.equal(one.decision(one.post({ chat_jid: GROUP, sender_jid: LUIS, text: '¿Cuántas Mechanitis marcamos ayer en T2?' })), 'context');
+  assert.equal(calls.length, 0);
+  const lookupCam = cam => (cam === 'CAM026514' ? { genus: 'Mechanitis', species: 'Mechanitis messenoides', sex: 'female' } : null);
+  const broken = async () => ({ error: 'gate timed out' });
+  const two = fixture({ mode: 'helpful', gate: broken, lookupCam, genera: () => new Set(['Mechanitis', 'Melinaea']) });
+  two.post({ msg_id: 'm', chat_jid: GROUP, sender_jid: LUIS, text: 'el CAM026514 es Melinaea' });
+  two.post({ msg_id: 'n', chat_jid: GROUP, sender_jid: LUIS, text: 'ok' });
+  await two.relay.settled();
+  assert.equal(two.relay.message('m').wake, 'candidate:cam');
+  assert.equal(two.relay.message('n').status, 'context');
+  assert.equal(two.relay.status().gateErrors, 2);
+  // Past the day's gate calls, the rules decide without it.
+  const three = fixture({ mode: 'helpful', gate, options: { gateDay: 1 } });
+  three.post({ chat_jid: GROUP, sender_jid: LUIS, text: 'hola' });
+  assert.equal(three.decision(three.post({ chat_jid: GROUP, sender_jid: LUIS, text: 'hola de nuevo' })), 'context');
+  assert.equal(calls.length, 1);
+});
+
+test('a photo from someone on the list is kept in the relay\'s folder and its path goes in the envelope', async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), 'wa-media-'));
+  const src = join(mkdtempSync(join(tmpdir(), 'wa-in-')), 'IMG_1.JPG');
+  writeFileSync(src, 'photo bytes');
+  const { post, relay, clock, woken } = fixture({ mediaDir });
+  post({ chat_jid: ANA, sender_jid: ANA, text: '¿qué especie es?', media_type: 'image', local_path: src });
+  clock.t += 30_000;
+  await relay.pump();
+  const kept = join(mediaDir, '2026-10-30', 'm1.jpg');
+  assert.equal(readFileSync(kept, 'utf8'), 'photo bytes');
+  assert.equal(statSync(kept).mode & 0o777, 0o600);
+  assert.ok(woken[0].includes(`[photo ${kept}]`));
+});
+
+test('the gate\'s input and answer, the usage lines, and the chat model setting', () => {
+  assert.equal(
+    gateInput({ chatName: 'Underground', context: [{ name: 'Ana', text: 'hola\nya' }], line: { name: 'Luis', text: '¿CAM?', photo: true } }),
+    'Group: Underground\nRecent lines:\n  Ana: hola / ya\nMessage to decide on:\n  Luis: ¿CAM? [photo]',
+  );
+  assert.deepEqual(parseGate('```json\n{"wake": true, "reason": "CAM lookup"}\n```'), { wake: true, reason: 'CAM lookup' });
+  assert.equal(parseGate('{"wake": "yes"}'), null);
+  assert.equal(parseGate('no'), null);
+  assert.equal(ecuadorTime('2026-10-31T03:00:00+00:00'), 'Fri 30 Oct 22:00');
+  const text = usageText({ five_hour: { utilization: 73.4, resets_at: '2026-10-31T03:00:00+00:00' }, seven_day: { utilization: 32, resets_at: '2026-11-05T01:00:00+00:00' } });
+  assert.match(text, /5 hours: 73 % used, resets Fri 30 Oct 22:00\n- Week: 32 % used, resets Wed 04 Nov 20:00\n_Ecuador time_/);
+  assert.match(usageText({ five_hour: { utilization: 5 } }, { es: true }), /^\*Uso de Claude\*[\s\S]*5 horas: 5 % usado\n- Semana: sin lectura/);
+  assert.equal(chatModel().model, 'claude-opus-5-5');
+  assert.deepEqual(chatModel().options[0], { id: 'effort', value: 'medium' });
+  assert.equal(chatModel({ model: 'claude-sonnet-5-5', effort: 'high' }).model, 'claude-sonnet-5-5');
+  assert.throws(() => chatModel({ model: 'claude-fable-5-1' }), /only/);
+});
+
+test('the Haiku gate runs claude -p on Haiku with no tools, MCP or settings, the lines on stdin', async () => {
+  const seen = {};
+  const spawnImpl = (bin, args, opts) => {
+    Object.assign(seen, { bin, args, cwd: opts.cwd });
+    const proc = new EventEmitter();
+    proc.stdout = new PassThrough();
+    proc.stdin = new PassThrough();
+    let input = '';
+    proc.stdin.on('data', d => (input += d));
+    proc.stdin.on('end', () => {
+      seen.input = input;
+      proc.stdout.end(JSON.stringify({ result: '{"wake": false, "reason": "thanks"}', total_cost_usd: 0.0004 }));
+      setImmediate(() => proc.emit('close', 0));
+    });
+    proc.kill = () => {};
+    return proc;
+  };
+  const gate = haikuGate({ spawnImpl });
+  const out = await gate({ chatName: 'G', context: [], line: { name: 'Ana', text: 'gracias' } });
+  assert.equal(out.wake, false);
+  assert.equal(out.costUsd, 0.0004);
+  assert.equal(seen.bin, 'claude');
+  const arg = k => seen.args[seen.args.indexOf(k) + 1];
+  assert.equal(arg('--model'), 'claude-haiku-5-5');
+  assert.equal(arg('--tools'), '');
+  assert.equal(arg('--setting-sources'), '');
+  assert.equal(arg('--mcp-config'), '{"mcpServers":{}}');
+  assert.ok(seen.args.includes('--strict-mcp-config') && seen.args.includes('--no-session-persistence'));
+  assert.match(seen.input, /Ana: gracias/);
+  assert.match(seen.cwd, /wa-gate-/);
 });

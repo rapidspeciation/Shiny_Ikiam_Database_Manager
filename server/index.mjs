@@ -92,7 +92,12 @@ import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.m
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
-import { createWhatsAppRelay, ensureServiceUser, t3Glue, verifySignature, wacliSender } from './whatsapp.mjs';
+import { chatModel, createWhatsAppRelay, ensureServiceUser, t3Glue, verifySignature, wacliSender } from './whatsapp.mjs';
+import { haikuGate } from './whatsapp-gate.mjs';
+import { claudeUsage } from './claude-usage.mjs';
+
+/** The WhatsApp gate when WA_GATE is not set: the one the calibration passed (tools/whatsapp/README.md). */
+const WA_GATE_DEFAULT = 'rules';
 import { tellChat } from './t3tell.mjs';
 import { watchEventLoop } from './event-loop.mjs';
 import { createReadings } from './readings.mjs';
@@ -349,6 +354,16 @@ export function configFromEnv(env = process.env) {
           questionWaitMs: env.WA_LAB === '1' && env.WA_QUESTION_WAIT_MS ? Number(env.WA_QUESTION_WAIT_MS) : undefined,
           quietHours: env.WA_LAB === '1' && env.WA_QUIET_HOURS === '0' ? false : undefined,
           sendsHour: env.WA_LAB === '1' && env.WA_SENDS_HOUR ? Number(env.WA_SENDS_HOUR) : undefined,
+          // The shared chat's model and effort (Opus or Sonnet 5.5; low, medium or high).
+          chatModel: env.WA_MODEL || 'claude-opus-5-5',
+          chatEffort: env.WA_EFFORT || 'medium',
+          // The Haiku gate for helpful groups' lines no rule woke (server/whatsapp-gate.mjs): WA_GATE=haiku or rules.
+          gate: env.WA_GATE === 'rules' ? 'rules' : env.WA_GATE === 'haiku' ? 'haiku' : WA_GATE_DEFAULT,
+          claudeBin: env.WA_CLAUDE_BIN || 'claude',
+          // /usage: the Claude account the server runs on (its ~/.claude login); WA_USAGE=0 turns it off.
+          usage: env.WA_USAGE !== '0',
+          // Incoming photos, kept for the chat and identify_species: beside the database by default.
+          mediaDir: env.WA_MEDIA_DIR ? resolve(env.WA_MEDIA_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'wa-media') : undefined,
         }
       : null,
     // The app's address for links the assistant gives (e.g. to a save in the Historial).
@@ -538,7 +553,15 @@ function createWhatsApp(store, config, assistant) {
   const cam = db.prepare("SELECT values_json FROM records WHERE sheet = 'Collection_data' AND missing = 0 AND label = ? LIMIT 1");
   let genera = null;
   let relay = null;
+  let model;
+  try {
+    model = chatModel({ model: wa.chatModel, effort: wa.chatEffort });
+  } catch (e) {
+    console.error('WhatsApp relay off:', e.message);
+    return null;
+  }
   const glue = t3Glue({
+    model,
     t3: config.t3,
     chats: assistant?.t3 ?? null,
     provision: provisioner(config.t3?.provision),
@@ -560,6 +583,10 @@ function createWhatsApp(store, config, assistant) {
     busy: glue.busy,
     outboxFile: beside('wa-outbox.jsonl'),
     logFile: beside('wa-relay.log.jsonl'),
+    mediaDir: wa.mediaDir ?? beside('wa-media'),
+    gate: wa.gate === 'haiku' ? haikuGate({ bin: wa.claudeBin }) : null,
+    usage: wa.usage ? claudeUsage() : null,
+    chatModel: `${model.model.replace(/^claude-(\w)/, (_, c) => c.toUpperCase()).replace(/-(\d+)-(\d+)$/, ' $1.$2')} (${wa.chatEffort})`,
     lab: wa.lab,
     options: Object.fromEntries(
       Object.entries({ debounceMs: wa.debounceMs, questionWaitMs: wa.questionWaitMs, quietHours: wa.quietHours, sendsHour: wa.sendsHour }).filter(([, v]) => v !== undefined),

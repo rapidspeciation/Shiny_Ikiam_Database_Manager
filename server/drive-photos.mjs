@@ -16,9 +16,9 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, statfsSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { FOLDER, driveFor, driveTree, driveWriterFor } from './drive.mjs';
 import { driveIdOf, knownId, photoLinkRows, specimenName, specimens } from './photo-links.mjs';
@@ -86,7 +86,7 @@ export const DRIVE_PHOTO_TOOLS = [
       name: 'identify_species',
       description: [
         "The species a butterfly photo shows, by the team's AI Identifier (BioCLIP 2.5-H and the head trained on 15,347 names, release of 14 Oct 2026), run on this server: about 3 s a photo, 10 s for the first after a quiet while (it loads).",
-        "- `files` (up to 6): a Drive file ID, link, or name or path as photo_files_look takes them (read from Drive's 1600 px copy); a chat attachment's file name; with `batch`, rows of a drive_photos batch (the whole photo).",
+        "- `files` (up to 6): a Drive file ID, link, or name or path as photo_files_look takes them (read from Drive's 1600 px copy); a chat attachment's file name; a WhatsApp photo's path from the relay's envelope; with `batch`, rows of a drive_photos batch (the whole photo).",
         '- `side`: "East" or "West", the side of the Andes in Ecuador where it was photographed (Ikiam: East): names not recorded there weigh 2 %.',
         '- `box` [x0, y0, x1, y1], fractions of the photo as shown: that butterfly only, for a photo of several; otherwise the wings are found on their own (`crop` says when none were and the centre of the photo was used).',
         "Each photo: `species` and `subspecies` (up to 5, with probabilities, those under 1 % left out), `genus`, and `confidence`. On 303 labelled photos (258 of the team's), the first species was right 89 % of the time (the team's Ithomiini 92 %), within the five 97 %, the first subspecies 94 %; \"high\" (first species at 60 % or more, three photos in four) was right 96 %, \"low\" about two times in three.",
@@ -182,6 +182,19 @@ const VIEW_TIMEOUT_MS = 15_000;
 const COLLECTION_HEIGHT = 300;
 /** identify_species: photos a call (about 3 s each). */
 const IDENTIFY_MAX = 6;
+
+/** A photo the WhatsApp relay kept (its envelope's path), only inside the relay's photo folder. */
+export function waPhotoFile(dir, value) {
+  if (!dir || typeof value !== 'string' || !value.trim().startsWith('/')) return null;
+  try {
+    const root = realpathSync(dir);
+    const path = realpathSync(value.trim());
+    if (!path.startsWith(root + sep) || !/\.(jpe?g|png|webp|heic|gif)$/i.test(path) || !statSync(path).isFile()) return null;
+    return { name: basename(path), path };
+  } catch {
+    return null;
+  }
+}
 /** The first species' probability from which an identification is told as high: right 96 % of the time above, 67 % below (17 Oct 2026, 303 photos). */
 const HIGH = 0.6;
 /** What the identifier cropped, when it is not the wings it found. */
@@ -1037,7 +1050,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
           if (r) targets = [{ about: { file: r.file, name: r.name, id: r.camid, view: r.view }, key: r.file, local: () => original(r.file) }];
           else out.photos.push({ file: given, missing: 'no such row' });
         } else {
-          const attached = attachmentFile(config.t3?.home, given);
+          const attached = attachmentFile(config.t3?.home, given) ?? waPhotoFile(config.whatsapp?.mediaDir, given);
           if (attached) targets = [{ about: { file: given }, key: attached.path, local: async () => attached.path }];
           else {
             const named = await filesNamed(given);

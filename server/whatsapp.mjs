@@ -2,20 +2,24 @@
 // wacli posts each live WhatsApp message here (signed with HMAC-SHA256), and the relay decides,
 // without any model, whether the shared «WhatsApp» T3 chat should see it:
 //   1. the signature, then duplicates dropped by message id;
-//   2. the whitelist: a DM from an enabled person, or an enabled group (and the sender on the list
-//      for a wake). Strangers are logged without their text and get no answer;
-//   3. in groups: a mention of the bot, a reply to one of its messages, its name or a /command
-//      wakes the chat; a CAM whose species or sex disagrees with the database, or a protocol
-//      question nobody answered in 20 min, is a candidate (groups in `helpful` mode); the rest is context;
-//   4. rate limits per number, per group (unprompted replies) and for all wakes;
-//   5. a chat's messages wait 20 s after its last one (60 s after its first at most), then go to
+//   2. the whitelist: a DM from an enabled person, or an enabled person in an enabled group. Anyone
+//      else is dropped here, logged without their text: no gate, no command, no model, no answer;
+//   3. DMs: /usage, /status, /help (and the admins' /add, /remove) are answered by the relay itself;
+//   4. in groups: a mention of the bot, a reply to one of its messages, its name or a /command
+//      wakes the chat. In `helpful` groups every other line goes to the Haiku gate
+//      (server/whatsapp-gate.mjs), which decides whether the chat should see it; without the gate,
+//      a CAM whose species or sex disagrees with the database, or a protocol question nobody
+//      answered in 20 min, is a candidate. The rest is context;
+//   5. rate limits per number, per group (unprompted replies) and for all wakes;
+//   6. a chat's messages wait 20 s after its last one (60 s after its first at most), then go to
 //      T3 as one message, only while the WhatsApp chat is not answering (server/t3tell.mjs).
 // The chat answers with the MCP tool whatsapp_reply, which only its own token (the service user's)
 // has. In this prototype a reply goes to the outbox (wa_outbox and a JSONL file) and never to
 // WhatsApp; WA_SENDER=wacli is the switch for sending with `wacli send` later.
 // Everything in and out is kept in wa_inbox / wa_outbox and in a JSONL log beside the database.
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { appendFileSync, existsSync, statSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { t3Commands } from './t3commands.mjs';
 
@@ -42,16 +46,26 @@ export const DEFAULTS = {
   contextLines: 6,
   contextMs: 30 * MINUTE,
   maxVideoBytes: 20 * 1024 * 1024,
+  /** Haiku gate calls a day at most; past that the rule filter decides. */
+  gateDay: 600,
+  /** The group's recent lines the gate sees. */
+  gateContextLines: 8,
+  maxImageBytes: 16 * 1024 * 1024,
 };
-/** The shared chat's model (memory: Sonnet or Opus on the server, never Fable). */
-const MODEL = {
-  instanceId: 'claudeAgent',
-  model: 'claude-sonnet-5-5',
-  options: [
-    { id: 'effort', value: 'medium' },
-    { id: 'fastMode', value: false },
-  ],
-};
+/** The shared chat's model: Opus or Sonnet 5.5 (never Fable on the server), effort low to high. */
+export const CHAT_MODELS = new Set(['claude-opus-5-5', 'claude-sonnet-5-5']);
+export function chatModel({ model = 'claude-opus-5-5', effort = 'medium' } = {}) {
+  if (!CHAT_MODELS.has(model)) throw new Error(`WhatsApp chat model ${model}: only ${[...CHAT_MODELS].join(' or ')}`);
+  if (!['low', 'medium', 'high'].includes(effort)) throw new Error(`WhatsApp chat effort ${effort}: low, medium or high`);
+  return {
+    instanceId: 'claudeAgent',
+    model,
+    options: [
+      { id: 'effort', value: effort },
+      { id: 'fastMode', value: false },
+    ],
+  };
+}
 const PROTOCOL_WORDS =
   /\b(marc\w*|preserv\w*|transect\w*|monitor\w*|recaptur\w*|clima|weather|lluvi\w*|lluev\w*|rain\w*|protocol\w*|cam\w*|tubo\w*|ala\w*|wing\w*|insectario|insectary|colect\w*|collect\w*|muert\w*|emergid\w*|clutch\w*|huevo\w*|larva\w*|pupa\w*|T[1-4])\b|\b30\b/i;
 const QUESTION_START =
@@ -281,6 +295,9 @@ export const WITHHELD_TOOLS = new Set(['apply_proposal', 'undo_edits']);
  * `wake(text)` → { sent, reason } sends one message to the WhatsApp chat (or makes it);
  * `busy()` whether that chat is answering. `lookupCam(cam)` / `genera()` for the CAM check.
  * `send({ chat, replyTo, text, file })` the future wacli sender (used only when `sender` is 'wacli').
+ * `gate({ chatName, context, line })` → { wake, reason, costUsd } or { error }: the Haiku gate for
+ * `helpful` groups (null: the rule filter). `usage.read()` → { text } or { error }: /usage.
+ * `mediaDir`: where incoming photos are kept (one folder a day). `chatModel`: shown by /status.
  */
 export function createWhatsAppRelay({
   db,
@@ -296,6 +313,10 @@ export function createWhatsAppRelay({
   send = null,
   outboxFile = null,
   logFile = null,
+  gate = null,
+  usage = null,
+  mediaDir = null,
+  chatModel: modelLabel = null,
   lab = false,
   options = {},
   now = Date.now,
@@ -304,6 +325,8 @@ export function createWhatsAppRelay({
   const o = { ...DEFAULTS, ...options };
   initTables(db);
   const iso = t => new Date(t).toISOString();
+  /** The gate calls still running (tests and the simulator wait for them). */
+  const gating = new Set();
   const state = {
     get: key => db.prepare('SELECT value FROM wa_state WHERE key = ?').get(key)?.value ?? null,
     set: (key, value) =>
@@ -311,7 +334,7 @@ export function createWhatsAppRelay({
         ? db.prepare('DELETE FROM wa_state WHERE key = ?').run(key)
         : db.prepare('INSERT INTO wa_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value)),
   };
-  const stats = { received: 0, duplicates: 0, badSignature: 0, dropped: 0, woken: 0, turns: 0, replies: 0 };
+  const stats = { received: 0, duplicates: 0, badSignature: 0, dropped: 0, woken: 0, turns: 0, replies: 0, commands: 0, gateCalls: 0, gateWakes: 0, gateErrors: 0, gateCostUsd: 0 };
 
   function record(entry) {
     if (!logFile) return;
@@ -399,6 +422,141 @@ export function createWhatsAppRelay({
     return true;
   }
 
+  // --- the relay's own commands (DMs from people on the list; no model)
+  const HELP = {
+    en: [
+      '*Commands* (answered by the relay, no AI)',
+      '/usage – the Claude account\'s use: 5 hours and week',
+      '/status – connection, queue, last turn, answers today',
+      '/help – this list',
+      'Admins: /add +593… Name, /remove +593…',
+      'Anything else: just write; the assistant reads it.',
+    ].join('\n'),
+    es: [
+      '*Comandos* (los responde el relé, sin IA)',
+      '/usage – uso de la cuenta de Claude: 5 horas y semana',
+      '/status – conexión, cola, último turno, respuestas de hoy',
+      '/help – esta lista',
+      'Admins: /add +593… Nombre, /remove +593…',
+      'Lo demás: escribe sin más; el asistente lo lee.',
+    ].join('\n'),
+  };
+  const lang = who => (/^es/i.test(who?.language ?? '') ? 'es' : 'en');
+  function statusText(who) {
+    const t = now();
+    const day = ecuadorDay(t);
+    const lastIn = db.prepare('SELECT max(received_at) t FROM wa_inbox WHERE n < (SELECT max(n) FROM wa_inbox)').get().t;
+    const queue = db.prepare("SELECT count(*) n FROM wa_inbox WHERE status IN ('waiting','gating')").get().n;
+    const last = lastTurn();
+    const answered = db.prepare("SELECT count(*) n FROM wa_outbox WHERE by = 'assistant' AND at >= ?").get(day).n;
+    const ago = ms => (ms < HOUR ? `${Math.round(ms / MINUTE)} min` : `${Math.round(ms / HOUR)} h`);
+    const when = x => `${new Date(x + ECUADOR_MS).toISOString().slice(0, 10).split('-').reverse().join('/')} ${hhmm(x)}`;
+    const es = lang(who) === 'es';
+    const bridge =
+      sender === 'wacli' && send
+        ? `wacli${lastIn ? (es ? `, último mensaje hace ${ago(t - lastIn)}` : `, last message ${ago(t - lastIn)} ago`) : ''}`
+        : es
+          ? 'solo bandeja de salida (sin conexión a WhatsApp)'
+          : 'outbox only (no WhatsApp connection)';
+    const turn = last ? `${when(last.sent_at)}${last.done_at ? '' : es ? ' (respondiendo)' : ' (answering)'}` : es ? 'ninguno' : 'none';
+    return [
+      es ? '*Estado*' : '*Status*',
+      `- ${es ? 'Conexión' : 'Bridge'}: ${bridge}`,
+      `- ${es ? 'En cola' : 'Queue'}: ${queue}`,
+      `- ${es ? 'Último turno' : 'Last turn'}: ${turn}`,
+      `- ${es ? 'Respondidos hoy' : 'Answered today'}: ${answered}`,
+      `- ${es ? 'Filtro' : 'Gate'}: ${gate ? 'Haiku 5.5' : es ? 'reglas' : 'rules'}${modelLabel ? `; chat ${modelLabel}` : ''}`,
+    ].join('\n');
+  }
+  /** A DM starting with "/": answered here, never by the model. False when the text is no command. */
+  function relayCommand(msg, who, n) {
+    const m = /^\s*\/(\w+)/.exec(msg.text);
+    if (!m) return false;
+    const name = m[1].toLowerCase();
+    stats.commands++;
+    record({ dir: 'command', n, by: who.phone, command: name });
+    const es = lang(who) === 'es';
+    if (name === 'help') return relaySay(msg.chat, msg.id, HELP[lang(who)]), 'help';
+    if (name === 'status') return relaySay(msg.chat, msg.id, statusText(who)), 'status';
+    if (name === 'usage') {
+      if (!usage) return relaySay(msg.chat, msg.id, es ? 'No hay lectura de uso en este servidor.' : 'No usage reading on this server.'), 'usage';
+      const job = Promise.resolve()
+        .then(() => usage.read({ es }))
+        .catch(e => ({ error: String(e.message || e) }))
+        .then(r => {
+          relaySay(msg.chat, msg.id, r.text ?? r.error);
+          setStatus(n, 'handled', 'command usage');
+        });
+      gating.add(job);
+      job.finally(() => gating.delete(job));
+      return 'usage:later';
+    }
+    if (name === 'add' || name === 'remove')
+      return relaySay(msg.chat, msg.id, es ? 'Solo los admins pueden usar /add y /remove.' : 'Only admins can use /add and /remove.'), name;
+    relaySay(msg.chat, msg.id, es ? `No conozco /${clip(name, 20)}. Comandos: /usage, /status, /help.` : `Unknown command /${clip(name, 20)}. Commands: /usage, /status, /help.`);
+    return 'unknown';
+  }
+
+  // --- incoming photos: kept beside the database, one folder a day, so the chat and identify_species can open them
+  function keepMedia(n, media, at) {
+    if (!mediaDir || !media?.path || !/image|photo|sticker/.test(media.type)) return media;
+    try {
+      const size = statSync(media.path).size;
+      if (size > o.maxImageBytes) return { ...media, path: null, tooBig: true };
+      const day = new Date(at + ECUADOR_MS).toISOString().slice(0, 10);
+      const dir = join(mediaDir, day);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const ext = /^\.(jpe?g|png|webp|heic|gif)$/i.test(extname(media.path)) ? extname(media.path).toLowerCase() : '.jpg';
+      const path = join(dir, `m${n}${ext}`);
+      copyFileSync(media.path, path);
+      chmodSync(path, 0o600);
+      return { ...media, path, original: media.path };
+    } catch (e) {
+      log.error?.('WhatsApp photo:', e.code ?? e.message);
+      return { ...media, path: null };
+    }
+  }
+
+  // --- the gate: Haiku decides on a helpful group's lines that no rule woke
+  function gateCountToday(t) {
+    return Number(state.get(`gate:${ecuadorDay(t)}`) ?? 0);
+  }
+  function ruleCandidate(msg) {
+    if (camMismatches(msg.text, lookupCam, genera()).length) return 'candidate:cam';
+    if (!msg.mentions.length && protocolQuestion(msg.text)) return 'candidate:question';
+    return null;
+  }
+  async function gateLine(n, msg, out, finishWake) {
+    const t = now();
+    const key = `gate:${ecuadorDay(t)}`;
+    state.set(key, gateCountToday(t) + 1);
+    const context = db
+      .prepare("SELECT sender_name, text, media_json FROM wa_inbox WHERE chat = ? AND n < ? AND at > ? AND text IS NOT NULL ORDER BY n DESC LIMIT ?")
+      .all(msg.chat, n, msg.at - o.contextMs, o.gateContextLines)
+      .reverse()
+      .map(r => ({ name: r.sender_name, text: r.text, photo: Boolean(r.media_json) }));
+    const row = db.prepare('SELECT sender_name, chat_name FROM wa_inbox WHERE n = ?').get(n);
+    let r;
+    try {
+      r = await gate({ chatName: row?.chat_name ?? null, context, line: { name: row?.sender_name, text: msg.text, photo: Boolean(msg.media) } });
+    } catch (e) {
+      r = { error: String(e.message || e) };
+    }
+    stats.gateCalls++;
+    if (Number.isFinite(r?.costUsd)) stats.gateCostUsd = Math.round((stats.gateCostUsd + r.costUsd) * 1e6) / 1e6;
+    record({ dir: 'gate', n, wake: r?.wake ?? null, reason: r?.reason ?? null, error: r?.error ?? null, costUsd: r?.costUsd ?? null, ms: r?.ms ?? null });
+    if (r?.error || typeof r?.wake !== 'boolean') {
+      stats.gateErrors++;
+      // The gate failed: the rule filter decides, as without it.
+      const rule = ruleCandidate(msg);
+      return rule ? finishWake(rule) : out('context', `gate failed; no wake rule`);
+    }
+    if (!r.wake) return out('context', `gate: ${clip(r.reason, 80) || 'no'}`);
+    stats.gateWakes++;
+    // A question still gives a teammate its 20 min first; anything else goes with the next envelope.
+    return finishWake(!msg.mentions.length && protocolQuestion(msg.text) ? 'candidate:question' : 'candidate:gate', `gate: ${clip(r.reason, 80)}`);
+  }
+
   /** A webhook call: { status, body }. `raw`: the body's bytes as they came. */
   function receive(headers, raw) {
     if (!secret) return { status: 404, body: { error: 'WhatsApp relay is not configured' } };
@@ -426,9 +584,9 @@ export function createWhatsAppRelay({
     const who = person(msg.sender);
     const grp = msg.isGroup ? group(msg.chat) : null;
     const listed = Boolean(who?.enabled);
-    const chatOk = msg.isGroup ? Boolean(grp?.enabled) : listed;
-    // Text only from people on the list (and their groups); a stranger's is never kept.
-    const keepText = chatOk;
+    // The whitelist first: a person on the list, in a DM or in an enabled group. Anyone else is
+    // dropped here with neither their text nor their media kept: no gate, no command, no model.
+    const allowed = listed && (!msg.isGroup || Boolean(grp?.enabled));
     const inserted = db
       .prepare(
         `INSERT OR IGNORE INTO wa_inbox (msg_id, chat, chat_name, is_group, sender, sender_jid, sender_name, at, received_at, text, media_json, quoted_id, status)
@@ -437,16 +595,16 @@ export function createWhatsAppRelay({
       .run(
         msg.id,
         msg.chat,
-        keepText ? (msg.chatName ?? grp?.name ?? null) : null,
+        allowed ? (msg.chatName ?? grp?.name ?? null) : null,
         msg.isGroup ? 1 : 0,
         who?.phone ?? phoneOf(msg.sender) ?? msg.sender,
         msg.sender,
-        keepText ? (who?.name || msg.senderName) : null,
+        allowed ? (who?.name || msg.senderName) : null,
         msg.at,
         t,
-        keepText ? clip(msg.text, 4000) : null,
-        keepText && msg.media ? JSON.stringify(msg.media) : null,
-        msg.quotedId,
+        allowed ? clip(msg.text, 4000) : null,
+        null,
+        allowed ? msg.quotedId : null,
       );
     if (!inserted.changes) {
       stats.duplicates++;
@@ -456,7 +614,7 @@ export function createWhatsAppRelay({
     const out = (status, reason, extra = {}) => {
       setStatus(n, status, reason);
       if (status === 'dropped') stats.dropped++;
-      record({ dir: 'in', n, id: msg.id, chat: msg.chat, sender: who?.phone ?? phoneOf(msg.sender) ?? msg.sender, decision: status, reason, ...(keepText ? { text: clip(msg.text, 500) } : {}), ...extra });
+      record({ dir: 'in', n, id: msg.id, chat: msg.chat, sender: who?.phone ?? phoneOf(msg.sender) ?? msg.sender, decision: status, reason, ...(allowed ? { text: clip(msg.text, 500) } : {}), ...extra });
       log.info?.(`[wa] in #m${n} ${msg.isGroup ? 'group' : 'DM'} → ${status}${reason ? ` (${reason})` : ''}`);
       return { id: msg.id, n, decision: status, reason };
     };
@@ -465,51 +623,67 @@ export function createWhatsAppRelay({
       setGroup({ jid: msg.chat, name: msg.chatName ?? '', enabled: false });
       return out('dropped', 'group pending');
     }
-    if (!chatOk) return out('dropped', msg.isGroup ? 'group not enabled' : 'not on list');
+    if (!allowed) return out('dropped', msg.isGroup && !grp?.enabled ? 'group not enabled' : 'not on list');
+
+    if (msg.media) {
+      const kept = keepMedia(n, msg.media, msg.at);
+      db.prepare('UPDATE wa_inbox SET media_json = ? WHERE n = ?').run(JSON.stringify(kept), n);
+    }
     // A teammate wrote in the group: the questions waiting for an answer there have one (or need none).
     if (msg.isGroup)
       db.prepare(
         "UPDATE wa_inbox SET status = 'ignored', reason = 'a teammate wrote after it' WHERE chat = ? AND status = 'waiting' AND wake = 'candidate:question' AND sender != ?",
-      ).run(msg.chat, who?.phone ?? msg.sender ?? '');
-    if (msg.isGroup && !listed) return out('context', 'not on list');
+      ).run(msg.chat, who.phone);
 
-    let wakeReason = null;
-    if (msg.isGroup) {
-      // A quote of one of the bot's answers: its WhatsApp id once sent (wacli), or out:<n> in the outbox (the simulator).
-      const outboxIds = id => Boolean(db.prepare("SELECT 1 FROM wa_outbox WHERE ('out:' || n) = ? OR wa_id = ?").get(id, id));
-      wakeReason = groupWake(msg, { jids: botJids, name: botName, outboxIds });
-      if (!wakeReason && grp.mode === 'helpful') {
-        const mismatch = camMismatches(msg.text, lookupCam, genera());
-        if (mismatch.length) wakeReason = 'candidate:cam';
-        else if (!msg.mentions.length && protocolQuestion(msg.text)) wakeReason = 'candidate:question';
-      }
-      if (!wakeReason) return out('context', 'no wake rule');
+    // The rest of the way once a wake reason is known: the unprompted limits, the per-number limit, the queue.
+    const finishWake = (wakeReason, why = null) => {
+      const at = now();
       if (wakeReason.startsWith('candidate:')) {
-        if (o.quietHours && quietHours(t)) return out('context', 'quiet hours');
-        if (unpromptedToday(msg.chat, t) >= (grp.daily_cap ?? o.groupUnpromptedDay)) return out('context', 'group daily cap');
+        if (o.quietHours && quietHours(at)) return out('context', 'quiet hours');
+        if (unpromptedToday(msg.chat, at) >= (grp.daily_cap ?? o.groupUnpromptedDay)) return out('context', 'group daily cap');
       }
-    } else {
-      wakeReason = 'dm';
-      if (who.role === 'admin' && adminCommand(msg, who)) return out('handled', 'admin command');
-    }
+      const over = overNumber(who.phone, at);
+      if (over) {
+        const key = `notice:${who.phone}:${over}:${over === 'hour' ? Math.floor(at / HOUR) : ecuadorDay(at)}`;
+        if (!state.get(key)) {
+          state.set(key, iso(at));
+          relaySay(msg.chat, msg.id, 'Demasiados mensajes por ahora; vuelvo a leer más tarde. / Too many messages for now; I will read again later.');
+        }
+        return out('limited', `per-number ${over} limit`);
+      }
+      db.prepare('UPDATE wa_inbox SET counted = 1, wake = ? WHERE n = ?').run(wakeReason, n);
+      if (wakeReason === 'candidate:question') {
+        db.prepare('UPDATE wa_inbox SET ready_at = ? WHERE n = ?').run(at + o.questionWaitMs, n);
+        return out('waiting', why ?? wakeReason);
+      }
+      setStatus(n, 'waiting', why ?? wakeReason);
+      schedule(msg.chat, at);
+      return out('waiting', why ?? wakeReason);
+    };
 
-    const over = overNumber(who.phone, t);
-    if (over) {
-      const key = `notice:${who.phone}:${over}:${over === 'hour' ? Math.floor(t / HOUR) : ecuadorDay(t)}`;
-      if (!state.get(key)) {
-        state.set(key, iso(t));
-        relaySay(msg.chat, msg.id, 'Demasiados mensajes por ahora; vuelvo a leer más tarde. / Too many messages for now; I will read again later.');
-      }
-      return out('limited', `per-number ${over} limit`);
+    if (!msg.isGroup) {
+      if (who.role === 'admin' && adminCommand(msg, who)) return out('handled', 'admin command');
+      const command = relayCommand(msg, who, n);
+      if (command === 'usage:later') return out('command', 'command usage');
+      if (command) return out('handled', `command ${command}`);
+      return finishWake('dm');
     }
-    db.prepare('UPDATE wa_inbox SET counted = 1, wake = ? WHERE n = ?').run(wakeReason, n);
-    if (wakeReason === 'candidate:question') {
-      db.prepare('UPDATE wa_inbox SET ready_at = ? WHERE n = ?').run(t + o.questionWaitMs, n);
-      return out('waiting', wakeReason);
+    // A quote of one of the bot's answers: its WhatsApp id once sent (wacli), or out:<n> in the outbox (the simulator).
+    const outboxIds = id => Boolean(db.prepare("SELECT 1 FROM wa_outbox WHERE ('out:' || n) = ? OR wa_id = ?").get(id, id));
+    const rule = groupWake(msg, { jids: botJids, name: botName, outboxIds });
+    if (rule) return finishWake(rule);
+    if (grp.mode !== 'helpful') return out('context', 'no wake rule');
+    if (gate && gateCountToday(t) < o.gateDay) {
+      const job = gateLine(n, msg, out, finishWake).catch(e => {
+        log.error?.('WhatsApp gate:', e.message);
+        out('context', 'gate failed');
+      });
+      gating.add(job);
+      job.finally(() => gating.delete(job));
+      return out('gating', 'gate');
     }
-    setStatus(n, 'waiting', wakeReason);
-    schedule(msg.chat, t);
-    return out('waiting', wakeReason);
+    const candidate = ruleCandidate(msg);
+    return candidate ? finishWake(candidate) : out('context', 'no wake rule');
   }
 
   // --- the envelope
@@ -548,7 +722,7 @@ export function createWhatsAppRelay({
           .filter(c => !contextShown.has(c.n));
         for (const c of ctx) {
           contextShown.add(c.n);
-          lines.push(`  ctx ${line(c, c.reason === 'not on list' ? ' [not on list]' : '')}`);
+          lines.push(`  ctx ${line(c)}`);
         }
       }
       lines.push(line(r, followsOn(r)));
@@ -742,7 +916,19 @@ export function createWhatsAppRelay({
     groups: () => db.prepare('SELECT * FROM wa_groups ORDER BY jid').all(),
     thread: () => state.get('thread'),
     setThread: id => state.set('thread', id),
-    status: () => ({ ...stats, sender, lab, thread: state.get('thread'), openTurn: openTurn()?.id ?? null, waiting: db.prepare("SELECT count(*) n FROM wa_inbox WHERE status = 'waiting'").get().n }),
+    status: () => ({
+      ...stats,
+      sender,
+      lab,
+      gate: Boolean(gate),
+      chatModel: modelLabel,
+      thread: state.get('thread'),
+      openTurn: openTurn()?.id ?? null,
+      waiting: db.prepare("SELECT count(*) n FROM wa_inbox WHERE status = 'waiting'").get().n,
+      gating: gating.size,
+    }),
+    /** Resolves when the gate calls and /usage answers running now are done (tests). */
+    settled: () => Promise.all([...gating]),
     start(intervalMs = 5000) {
       if (timer) return;
       timer = setInterval(() => pump().catch(e => log.error?.('WhatsApp relay:', e.message)), intervalMs);
@@ -758,9 +944,9 @@ export function createWhatsAppRelay({
 /**
  * The glue to T3 (server/t3tell.mjs's way): the WhatsApp chat is a chat of the service user's own
  * T3 project (scripts/t3-provision.mjs). `relay.thread()` keeps its id; without one (or after a
- * reset) the first envelope makes it, on Sonnet 5.5.
+ * reset) the first envelope makes it, on `model` (chatModel(): Opus 5.5 at medium effort by default).
  */
-export function t3Glue({ t3, chats, provision, serviceUser, getThread, setThread, tell, log = console, wait = 500 }) {
+export function t3Glue({ t3, chats, provision, serviceUser, getThread, setThread, tell, model = chatModel(), log = console, wait = 500 }) {
   const send = t3 ? t3Commands({ local: t3.local, tokenFile: t3.tokenFile }) : null;
   async function project() {
     let own = chats?.projectOf(serviceUser) ?? null;
@@ -791,8 +977,8 @@ export function t3Glue({ t3, chats, provision, serviceUser, getThread, setThread
       text = `Read the whatsapp skill first, then answer.\n${text}`;
       try {
         await send(
-          { type: 'thread.create', threadId, projectId: own.id, title: 'WhatsApp', modelSelection: MODEL, runtimeMode: 'full-access', interactionMode: 'default', branch: null, worktreePath: null },
-          { type: 'thread.turn.start', threadId, message: { messageId: randomUUID(), role: 'user', text, attachments: [] }, modelSelection: MODEL, runtimeMode: 'full-access', interactionMode: 'default' },
+          { type: 'thread.create', threadId, projectId: own.id, title: 'WhatsApp', modelSelection: model, runtimeMode: 'full-access', interactionMode: 'default', branch: null, worktreePath: null },
+          { type: 'thread.turn.start', threadId, message: { messageId: randomUUID(), role: 'user', text, attachments: [] }, modelSelection: model, runtimeMode: 'full-access', interactionMode: 'default' },
         );
       } catch (e) {
         log.error?.('WhatsApp chat:', e.message);
