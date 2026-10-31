@@ -23,7 +23,10 @@ in the lab only, and its answers go to an outbox file. **Nothing is sent to What
    Strangers and unknown groups are logged without their text and get no answer. An unknown group
    is added as *pending* (disabled).
 3. In groups, these wake the chat: a mention of a bot JID (`WA_BOT_JIDS`), a quote of a bot answer,
-   the bot's name (`WA_BOT_NAME`, default `\b(ithobot|asistente|assistant)\b`) or a `/command`.
+   the bot's name (`WA_BOT_NAME`, default `\b(ithobot|asistente|assistant)\b`) used to call it, or a
+   `/command`. The name counts as «@asistente …» anywhere, or as a vocative at the start
+   («Asistente: …», «oye asistente, …») or after a comma at the end («…, asistente?»). A name that goes on
+   («@Asistente de campo A») or the word inside a sentence («la asistente llega mañana») does not wake it.
    In `helpful` groups two more things count as candidates:
    - a CAM whose genus or sex disagrees with the database, or a CAM it does not have;
    - a protocol question that tags nobody and that no teammate answered within 20 min.
@@ -32,14 +35,16 @@ in the lab only, and its answers go to an outbox file. **Nothing is sent to What
    Every other group message is kept as context for the next envelope.
 4. Rate limits: 20 handled messages an hour and 80 a day per number (one notice, then silence),
    150 wakes a day in total (above that only admins' DMs go through), and 40 answers an hour.
-5. A chat's messages are sent 20 s after its last message, and no later than 60 s after its first,
+5. In the envelope, a person's line that follows their own line in the same chat within 5 minutes is
+   marked `(goes on from #m33)`, so the chat reads the two as one message.
+6. A chat's messages are sent 20 s after its last message, and no later than 60 s after its first,
    as one envelope (`[WA] N new`, `#m12 DM …`). The envelope goes to the service user's T3 chat
    «WhatsApp» (Sonnet 5.5). The relay makes that chat on the first wake and provisions the
    `whatsapp` user's T3 project if it is missing. Only one turn runs at a time; messages wait while
    the chat is answering (`server/t3tell.mjs`).
-6. The chat answers with `whatsapp_reply({ replyTo: "#m12", text, file?, confirm? })`. A reply to a
+7. The chat answers with `whatsapp_reply({ replyTo: "#m12", text, file?, confirm? })`. A reply to a
    chat with no message in the current turn returns a warning unless `confirm: true`.
-7. Admins can DM `/add +593… Name` or `/remove +593…`. The relay handles these itself, without a
+8. Admins can DM `/add +593… Name` or `/remove +593…`. The relay handles these itself, without a
    model call.
 
 Everything is logged beside the app database:

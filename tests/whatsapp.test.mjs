@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { camMismatches, createWhatsAppRelay, groupWake, normalizeEvent, protocolQuestion, quietHours, sign } from '../server/whatsapp.mjs';
+import { camMismatches, createWhatsAppRelay, groupWake, nameCall, normalizeEvent, protocolQuestion, quietHours, sign } from '../server/whatsapp.mjs';
 
 const SECRET = 'test-secret-0123456789';
 const GROUP = '120363000000000001@g.us';
@@ -103,6 +103,11 @@ test('the wake rules, alone', () => {
   assert.equal(groupWake(msg({ quotedId: 'out:7' }), bot), 'reply');
   assert.equal(groupWake(msg({ text: 'Asistente: ayuda' }), bot), 'name');
   assert.equal(groupWake(msg({ text: 'nada que ver' }), bot), null);
+  const name = /\b(ithobot|asistente|assistant)\b/i;
+  for (const t of ['@asistente el CAM026514 es Melinaea?', 'asistente, cuántas hay?', 'oye asistente ¿cuántas hay?', '¿cuántas hay, asistente?', 'gracias @ithobot'])
+    assert.ok(nameCall(t, name), t);
+  for (const t of ['@Asistente de campo A ¿cuáles son tus iniciales?', 'Asistente de campo A trajo las mariposas', 'la asistente nueva llega mañana', 'my research assistant will check'])
+    assert.ok(!nameCall(t, name), t);
   assert.ok(protocolQuestion('¿Marcamos o preservamos las Mechanitis de T2?'));
   assert.ok(!protocolQuestion('¿vamos a almorzar?'));
   assert.ok(!protocolQuestion('Marcamos 7 en T2.'));
@@ -174,6 +179,8 @@ test('a burst goes as one turn after 20 s of quiet (60 s at most), and one turn 
   await relay.pump();
   assert.equal(woken.length, 1);
   assert.match(woken[0], /^\[WA\] 2 new\n#m1 DM Ana \(\+593991111111\) 10:00: Hola\n#m2 DM/);
+  // A person's next line is marked as going on from their last one.
+  assert.match(woken[0], /#m2 DM Ana \(\+593991111111\) 10:00 \(goes on from #m1\): ¿cuántas/);
   // The chat is answering: a new message waits for it.
   t3.busy = true;
   await relay.pump();

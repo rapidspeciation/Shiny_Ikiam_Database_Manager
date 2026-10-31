@@ -151,9 +151,34 @@ export function groupWake(msg, bot) {
   const digits = [...jids].map(j => /^(\d+)/.exec(j)?.[1]).filter(Boolean);
   if (msg.mentions.some(j => jids.has(j)) || digits.some(d => msg.text.includes('@' + d))) return 'mention';
   if ((msg.quotedSender && jids.has(msg.quotedSender)) || (msg.quotedId && bot.outboxIds?.(msg.quotedId))) return 'reply';
-  if (bot.name?.test(msg.text)) return 'name';
+  if (bot.name && nameCall(msg.text, bot.name)) return 'name';
   if (/^\s*\/\w/.test(msg.text)) return 'command';
   return null;
+}
+
+// A person's next line within this time reads as the same message.
+const FOLLOW_ON_MS = 5 * 60 * 1000;
+
+// The bot's name followed by more of a person's name or role ("@Asistente de campo A") is someone else.
+const NAME_GOES_ON = /^\s+(?:de|del|of|[A-ZÁÉÍÓÚÑ][a-záéíóúñ])/u;
+const CALL_OPENER = /^\s*(?:(?:hola|oye|hey|hi|buenas|buenos días|gracias|thanks)[\s,!]*)?@?$/i;
+
+/**
+ * Whether the text calls the bot by name: "@asistente …" anywhere, or the name as a vocative at the
+ * start ("Asistente: …", "oye asistente, …") or after a comma at the end ("…, asistente?").
+ * A role or ordinary word inside a sentence ("la asistente llega mañana") is not a call. Pure, for tests.
+ */
+export function nameCall(text, name) {
+  const t = String(text ?? '');
+  const re = new RegExp(name.source, name.flags.includes('g') ? name.flags : name.flags + 'g');
+  for (const m of t.matchAll(re)) {
+    const before = t.slice(0, m.index);
+    const after = t.slice(m.index + m[0].length);
+    if (NAME_GOES_ON.test(after)) continue;
+    if (before.endsWith('@') || CALL_OPENER.test(before)) return true;
+    if (/,\s*@?$/.test(before) && /^\s*[?!.¿¡]*\s*$/.test(after)) return true;
+  }
+  return false;
 }
 
 /** Whether a message reads as a protocol question. Pure, for tests. */
@@ -503,6 +528,11 @@ export function createWhatsAppRelay({
     const tag = r.wake && r.wake !== 'dm' ? ` (${r.wake.replace('candidate:', 'unprompted ')})` : '';
     return `${label(r)} ${where} ${r.sender_name ?? ''} (${r.sender}) ${hhmm(r.at)}${tag}${extra}: ${String(r.text ?? '').replace(/\s*\n\s*/g, ' / ')}${mediaLine(r.media_json)}`;
   }
+  /** " (goes on from #m33)" when the chat's previous message, a few minutes before, is the same person's. */
+  function followsOn(r) {
+    const prev = db.prepare('SELECT n, sender, at FROM wa_inbox WHERE chat = ? AND n < ? ORDER BY n DESC LIMIT 1').get(r.chat, r.n);
+    return prev && prev.sender === r.sender && r.at - prev.at <= FOLLOW_ON_MS ? ` (goes on from ${label(prev)})` : '';
+  }
   /** One T3 message for the messages ready now: their group context first, then them. */
   function envelope(rows) {
     const lines = [`[WA] ${rows.length} new`];
@@ -521,7 +551,7 @@ export function createWhatsAppRelay({
           lines.push(`  ctx ${line(c, c.reason === 'not on list' ? ' [not on list]' : '')}`);
         }
       }
-      lines.push(line(r));
+      lines.push(line(r, followsOn(r)));
     }
     lines.push('Reply with whatsapp_reply (replyTo #id); the whatsapp skill has how. Say nothing to messages that need no answer.');
     return lines.join('\n');
