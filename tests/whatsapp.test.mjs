@@ -115,6 +115,17 @@ test('the wake rules, alone', () => {
   assert.ok(!protocolQuestion('@Ana ¿marcamos en el ala anterior o en el abdomen?'));
 });
 
+test('a call by name brings the same chat\'s waiting question into its envelope', async () => {
+  const { post, decision, clock, relay, woken } = fixture({ mode: 'helpful' });
+  assert.equal(decision(post({ chat_jid: GROUP, sender_jid: LUIS, text: '¿Qué especies ya tienen las 30 preservadas y hay que marcar?' })), 'waiting');
+  clock.t += 60_000;
+  assert.equal(decision(post({ chat_jid: GROUP, sender_jid: LUIS, text: '@asistente lo pregunto para la salida de mañana' })), 'waiting');
+  clock.t += 25_000;
+  await relay.pump();
+  assert.equal(woken.length, 1);
+  assert.match(woken[0], /\[WA\] 2 new\n#m1 .*30 preservadas.*\n#m2 .*\(goes on from #m1\)/);
+});
+
 test('a CAM named with another genus or sex than the database is a mismatch', () => {
   const lookup = cam => (cam === 'CAM026514' ? { genus: 'Mechanitis', species: 'Mechanitis messenoides', sex: 'female' } : null);
   const genera = new Set(['Mechanitis', 'Melinaea']);
@@ -221,9 +232,12 @@ test('whatsapp_reply writes to the outbox, warns for a chat outside the turn, an
   assert.equal(text(await call('token-lab', 'whatsapp_reply', { replyTo: '#m1', text: 'Siete.' })).error, 'Only the WhatsApp chat sends WhatsApp answers.');
   assert.deepEqual(text(await call('token-whatsapp', 'whatsapp_reply', { replyTo: '#m1', text: 'Ayer en T2: 7 marcadas.' })), { sent: true, outbox: 1, via: 'outbox (test: nothing goes to WhatsApp)' });
   assert.equal(relay.message('m-1').status, 'answered');
+  // A second answer to the same message: a warning first.
+  assert.match(text(await call('token-whatsapp', 'whatsapp_reply', { replyTo: '#m1', text: 'Corrección: 8.' })).warning, /already has an answer/);
   // Luis's chat had nothing in this turn: a warning, then sent when confirmed.
   assert.match(text(await call('token-whatsapp', 'whatsapp_reply', { replyTo: '#m2', text: 'Hola Luis' })).warning, /no message in this turn/);
   assert.equal(text(await call('token-whatsapp', 'whatsapp_reply', { replyTo: '#m2', text: 'Hola Luis', confirm: true })).sent, true);
+  assert.equal(text(await call('token-whatsapp', 'whatsapp_reply', { replyTo: '#m1', text: 'Corrección: 8.', confirm: true })).sent, true);
   // No applying from WhatsApp; other tools pass through.
   assert.match(text(await call('token-whatsapp', 'apply_proposal', { proposalId: 'x' })).error, /not available from WhatsApp/);
   assert.deepEqual(text(await call('token-whatsapp', 'find_records', {})), { next: true });

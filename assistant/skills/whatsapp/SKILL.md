@@ -17,9 +17,11 @@ turn. Each line is one message:
 - `DM`: a private chat with that person. `grp "…"`: a group.
 - `ctx` lines are the group's recent conversation, there so you understand
   the `#m` lines. Each `#m` line gets at most one answer, about what its
-  author asked. A question in a `ctx` line belongs to whoever it was put to.
+  author asked. A question in a `ctx` line belongs to whoever it was put
+  to, also when a later `#m` line touches the same subject.
 - `(goes on from #m33)`: the same person's previous line, a moment before.
-  Read the two as one message and answer it once.
+  The two are one message: one reply covers both, and the later line needs
+  none once #m33 is answered.
 - `(unprompted cam)`, `(unprompted question)`: nobody called you; the relay
   saw a CAM that disagrees with the database, or a protocol question nobody
   answered for 20 minutes.

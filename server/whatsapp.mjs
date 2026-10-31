@@ -259,7 +259,7 @@ export const REPLY_TOOL = {
   description: [
     'Answers a WhatsApp message from the relay\'s envelope ("#m12 DM …"). `replyTo`: its #id; the answer goes to that message\'s chat, quoting it.',
     '`text`: what to say, in WhatsApp formatting. `file`: a picture or document on this computer to send with it (e.g. a proposal\'s screenshot), `text` as its caption.',
-    'A chat with no message in this turn answers with a warning instead; `confirm: true` sends anyway.',
+    'A chat with no message in this turn, or a person whose message (or the line it goes on from) already has an answer in this turn, answers with a warning instead; `confirm: true` sends anyway.',
     'Messages that need no answer get none: call nothing for them.',
   ].join('\n'),
   inputSchema: {
@@ -572,8 +572,17 @@ export function createWhatsAppRelay({
       const quiet = db.prepare("UPDATE wa_inbox SET status = 'unanswered', reason = 'no reply this turn' WHERE turn = ? AND status = 'delivered'").run(turn.id);
       record({ dir: 'turn', turn: turn.id, done: true, unanswered: Number(quiet.changes) });
     }
-    const rows = db.prepare("SELECT * FROM wa_inbox WHERE status = 'waiting' AND ready_at <= ? ORDER BY n").all(t);
-    if (!rows.length) return { waiting: null };
+    const due = db.prepare("SELECT * FROM wa_inbox WHERE status = 'waiting' AND ready_at <= ? ORDER BY n").all(t);
+    if (!due.length) return { waiting: null };
+    // A chat's earlier messages still waiting (an unprompted question's 20 min) go along, so the
+    // envelope shows what a later line ("I ask it for tomorrow") goes on from.
+    const earlier = db.prepare("SELECT * FROM wa_inbox WHERE status = 'waiting' AND ready_at > ? AND chat = ? AND n < ?");
+    const rows = [...due];
+    for (const chat of new Set(due.map(r => r.chat))) {
+      const last = Math.max(...due.filter(r => r.chat === chat).map(r => r.n));
+      rows.push(...earlier.all(t, chat, last));
+    }
+    rows.sort((a, b) => a.n - b.n);
     if (busy()) return { waiting: 'busy' };
     // Over the day's wakes, only admins' DMs go on; the rest waits for tomorrow.
     let ready = rows;
@@ -650,6 +659,17 @@ export function createWhatsAppRelay({
       return {
         sent: false,
         warning: `${label(msg)}'s chat (${msg.is_group ? `group "${msg.chat_name ?? msg.chat}"` : `DM with ${msg.sender_name ?? msg.sender}`}) had no message in this turn. Send anyway with confirm: true.`,
+      };
+    // One answer per message: the same person's lines a moment apart are one message.
+    const answered =
+      turn &&
+      db
+        .prepare("SELECT n FROM wa_inbox WHERE turn = ? AND chat = ? AND sender = ? AND status = 'answered' AND at BETWEEN ? AND ? ORDER BY n LIMIT 1")
+        .get(turn.id, msg.chat, msg.sender, msg.at - FOLLOW_ON_MS, msg.at + FOLLOW_ON_MS);
+    if (answered && !args?.confirm)
+      return {
+        sent: false,
+        warning: `${label(answered)}${answered.n === msg.n ? '' : `, ${label(msg)}'s line from the same person,`} already has an answer in this turn. A second message is only worth it for something they asked that the first left out; send it with confirm: true.`,
       };
     const n = deliver({ chat: msg.chat, replyTo: msg.msg_id, replyN: msg.n, replySender: msg.is_group ? msg.sender_jid : null, text, file, turn: turn?.id ?? null, toolUse, by: 'assistant' });
     db.prepare("UPDATE wa_inbox SET status = 'answered' WHERE n = ? AND status IN ('delivered','unanswered','waiting')").run(msg.n);

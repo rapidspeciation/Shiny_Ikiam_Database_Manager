@@ -36,7 +36,9 @@ in the lab only, and its answers go to an outbox file. **Nothing is sent to What
 4. Rate limits: 20 handled messages an hour and 80 a day per number (one notice, then silence),
    150 wakes a day in total (above that only admins' DMs go through), and 40 answers an hour.
 5. In the envelope, a person's line that follows their own line in the same chat within 5 minutes is
-   marked `(goes on from #m33)`, so the chat reads the two as one message.
+   marked `(goes on from #m33)`, so the chat reads the two as one message. When a line wakes the chat,
+   the same chat's earlier lines that are still waiting (an unprompted question's 20 min) go in the
+   same envelope. `whatsapp_reply` warns before a second answer to one person's message.
 6. A chat's messages are sent 20 s after its last message, and no later than 60 s after its first,
    as one envelope (`[WA] N new`, `#m12 DM …`). The envelope goes to the service user's T3 chat
    «WhatsApp» (Sonnet 5.5). The relay makes that chat on the first wake and provisions the
