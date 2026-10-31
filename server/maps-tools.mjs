@@ -1882,7 +1882,11 @@ export function createMapsTools({
     // By place, as the chat will judge them: the living plant first, then in the area, nearer, newer.
     const byPlace = (a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0);
     for (const [i, p] of picked.entries()) {
-      const list = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
+      const sorted = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
+      // One photo per GBIF record before a second of the same (an observation's photos are often near-repeats).
+      const records = new Set();
+      const firstOfRecord = sorted.filter(ph => !ph.record || (!records.has(ph.record) && records.add(ph.record)));
+      const list = [...firstOfRecord, ...sorted.filter(ph => !firstOfRecord.includes(ph))];
       const best = list.slice(0, k);
       // The photo tags help only to make sure the nearest leaves-or-plant photo and a flower are among them.
       const isLeaves = ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit');
