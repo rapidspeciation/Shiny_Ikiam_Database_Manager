@@ -14,7 +14,7 @@
 // written anywhere.
 
 import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { writeCacheFile } from './cache-write.mjs';
 import { driveIdOf, specimenName } from './photo-links.mjs';
 import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-outlines.mjs';
@@ -74,7 +74,23 @@ const GBIF_SEARCH = 'https://api.gbif.org/v1/occurrence/search';
 const LIFE_STAGES = { egg: { inat: 7, gbif: 'Egg' }, larva: { inat: 6, gbif: 'Larva' }, pupa: { inat: 4, gbif: 'Pupa' }, adult: { inat: 2, gbif: 'Adult' } };
 const INAT_DATASET = '50c9509d-22c7-4a22-a47d-8c48425ef4a7';
 const IKIAM = { lat: -0.95, lng: -77.86 };
-const STAGE_WORDS = { en: { egg: 'eggs', larva: 'larva', pupa: 'pupa', adult: 'adult' }, es: { egg: 'huevos', larva: 'larva', pupa: 'pupa', adult: 'adulto' } };
+const STAGE_WORDS = { en: { egg: 'eggs', larva: 'larva', pupa: 'pupa', adult: 'adult', unnoted: 'stage not noted' }, es: { egg: 'huevos', larva: 'larva', pupa: 'pupa', adult: 'adulto', unnoted: 'etapa no anotada' } };
+/** "Jane Smith" from iNaturalist's "(c) Jane Smith, some rights reserved (CC BY-NC)". */
+const inatAuthor = v =>
+  text(v)
+    .replace(/^\(c\)\s*/i, '')
+    .replace(/,\s*(some|all|no) rights reserved.*$/i, '')
+    .replace(/,\s*no known copyright restrictions.*$/i, '')
+    .trim() || null;
+/** iNaturalist's license_code as a name (no version: iNaturalist's codes carry none). */
+const inatLicence = code => {
+  const c = text(code).toLowerCase();
+  if (!c) return null;
+  if (c === 'cc0') return 'CC0';
+  if (c === 'pd') return 'Public domain';
+  if (c === 'gfdl') return 'GFDL';
+  return c.startsWith('cc-') ? `CC ${c.slice(3).toUpperCase()}` : c.toUpperCase();
+};
 // The photo tags file in the cache folder, and the probability of "leaves or whole plant" over which a photo counts
 // as showing them (tools/plant-photo-tags/CALIBRATION.md: over 80 photos checked by eye, 26 of 27 so tagged showed
 // them and 1 of 33 flower close-ups was so tagged; a small sample: no errors expected, not ruled out).
@@ -218,7 +234,7 @@ export const MAPS_TOOLS = [
       description: [
         'Photos of a butterfly (or any taxon) at a life stage, to show or send: eggs, larvae, pupae or adults. For "photos of the eggs and larvae of X". Without an area, the photos nearest Ikiam come first.',
         '- `taxon`: species or genus. `life_stage`: egg, larva, pupa, adult (a list, or one). Optional `area` ({province}/{canton} of Ecuador) or `near` {lat, lng, km}: photos there first, then the nearest.',
-        "- Sources: the project's own clutch photos (Clutches tab: eggs and larvae of the insectary's clutches), iNaturalist observations annotated with that life stage (research grade first), and GBIF records of other datasets whose lifeStage says it. Unannotated iNaturalist photos are not found: say so when few come back.",
+        "- Sources: the project's own clutch photos (Clutches tab; their stage is what their note says), iNaturalist observations annotated with that life stage (nearest first, research grade among equals), and GBIF records of other datasets whose lifeStage says it. Unannotated iNaturalist photos are not found: say so when few come back. `none_for`: stages with no photo in any source (say so plainly); `not_checked`: a source failed.",
         'Gives `counts` per source and stage, and `photo_sheets` (1–2 contact sheets of numbered tiles with the stage, place and year): look at them, pick the tiles that show the stage asked clearly (at most 5), then send_sheet_photos.',
       ].join('\n'),
       parameters: {
@@ -2031,7 +2047,7 @@ export function createMapsTools({
     return {
       images,
       images_block: imagesBlock(images),
-      ...(failed.length ? { failed, failed_note: 'Pick another tile of the same plant for these.' } : {}),
+      ...(failed.length ? { failed, failed_note: 'Pick another tile of the same plant or taxon for these.' } : {}),
       timing_ms: Date.now() - started,
     };
   }
@@ -2044,6 +2060,8 @@ export function createMapsTools({
     const r = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(20_000) });
     if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
     const value = await r.json();
+    // Old answers go; at most 40 are kept (an iNaturalist page can be a few MB).
+    for (const [key, k] of apiKept) if (now() - k.at >= REFRESH_MS || apiKept.size >= 40) apiKept.delete(key);
     apiKept.set(url, { at: now(), value });
     return value;
   }
@@ -2073,14 +2091,21 @@ export function createMapsTools({
     const errors = [];
     const candidates = [];
     const fold2 = v => fold(v).split(' ').slice(0, taxon.includes(' ') ? 2 : 1).join(' ');
-    // The project's own: clutch photos of this taxon (eggs and larvae of the insectary's clutches).
-    if (stages.some(s => s === 'egg' || s === 'larva') && store?.db) {
-      const dir = clutchPhotoDir;
+    // The project's own: clutch photos of this taxon. Their stage is only what their note says (a photo with no
+    // stage word is shown as "stage not noted" when eggs or larvae are asked, and never counts for a stage).
+    const failed = new Set();
+    if (stages.some(s => s === 'egg' || s === 'larva' || s === 'pupa') && store?.db && clutchPhotoDir) {
       let rows = [];
       try {
-        rows = store.db.prepare("SELECT p.id, p.day, p.note, p.file, p.actor, r.values_json FROM clutch_photos p JOIN records r ON r.id = p.record_id WHERE r.sheet = 'Insectary_stocks'").all();
-      } catch {
-        rows = [];
+        rows = store.db
+          .prepare("SELECT p.id, p.day, p.note, p.file, u.display_name name, r.values_json FROM clutch_photos p JOIN records r ON r.id = p.record_id LEFT JOIN users u ON u.id = p.actor WHERE r.sheet = 'Insectary_stocks'")
+          .all();
+      } catch (e) {
+        // No clutch photos table yet (a database the Clutches tab never used) is none; anything else is said.
+        if (!/no such table/.test(e.message)) {
+          errors.push(`clutch photos: ${e.message}`);
+          failed.add('project');
+        }
       }
       const own = rows.filter(r => {
         try {
@@ -2090,15 +2115,19 @@ export function createMapsTools({
         }
       });
       counts.project_clutch_photos = own.length;
-      for (const r of own.slice(0, 2 * PER_SHEET)) {
+      const dir = resolve(clutchPhotoDir);
+      const stageOfNote = note => (/huevo|egg|postura/i.test(note) ? 'egg' : /larva|oruga|instar/i.test(note) ? 'larva' : /pupa|cris[aá]lida/i.test(note) ? 'pupa' : null);
+      for (const r of own) {
         const v = JSON.parse(r.values_json);
-        const path = dir ? join(dir, `${r.file}.jpg`) : null;
-        if (!path) continue;
-        candidates.push({ kind: 'local', source: 'project', stage: /larva|oruga/i.test(r.note ?? '') ? 'larva' : stages.includes('egg') ? 'egg' : 'larva', path, thumb: dir ? join(dir, `${r.file}.thumb.jpg`) : path, year: Number(String(r.day).slice(0, 4)) || null, place: 'Insectario Ikiam', inside: false, away: -1, caption: [`_${text(v.SPECIES)}_ — ${lang === 'es' ? 'puesta del insectario Ikiam' : 'clutch of the Ikiam insectary'} ${text(v['CLUTCH NUMBER'] ?? '')}`.trim(), [r.note, r.day].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${r.actor} (Ithomiini Ikiam)`].join('\n') });
+        const path = resolve(dir, `${r.file}.jpg`);
+        if (!path.startsWith(`${dir}/`)) continue;
+        const noted = stageOfNote(r.note ?? '');
+        if (noted ? !stages.includes(noted) : !stages.some(s => s === 'egg' || s === 'larva')) continue;
+        candidates.push({ kind: 'local', source: 'project', stage: noted ?? 'unnoted', path, thumb: resolve(dir, `${r.file}.thumb.jpg`), year: Number(String(r.day).slice(0, 4)) || null, place: 'Insectario Ikiam', inside: false, away: -1, caption: [`_${text(v.SPECIES)}_ — ${lang === 'es' ? 'puesta del insectario Ikiam' : 'clutch of the Ikiam insectary'} ${text(v['CLUTCH NUMBER'] ?? '')}`.trim(), [r.note, r.day].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${text(r.name) || 'Ithomiini Ikiam'} (Ithomiini Ikiam)`].join('\n') });
       }
     }
     // iNaturalist: research-grade observations annotated with the stage, with photos.
-    for (const stage of stages) {
+    await Promise.all(stages.map(async stage => {
       try {
         const url = `${inatApi}?taxon_name=${encodeURIComponent(taxon)}&term_id=1&term_value_id=${LIFE_STAGES[stage].inat}&photos=true&quality_grade=research,needs_id&per_page=200&order=desc&order_by=votes`;
         const got = await getJson(url);
@@ -2108,7 +2137,8 @@ export function createMapsTools({
           const at = placeOf(lat, lng);
           for (const [i, ph] of (o.photos ?? []).slice(0, 3).entries()) {
             const square = text(ph.url);
-            if (!/^https:\/\//.test(square)) continue;
+            // A photo without a licence (all rights reserved) is not sent.
+            if (!/^https:\/\//.test(square) || !ph.license_code) continue;
             candidates.push({
               kind: 'remote',
               source: 'inaturalist',
@@ -2121,12 +2151,13 @@ export function createMapsTools({
               place: text(o.place_guess) || null,
               research: o.quality_grade === 'research',
               ...at,
-              credit: { photographer: text(ph.attribution).replace(/^\(c\)\s*/i, '').replace(/,.*$/, '') || null, licence: ph.license_code ? licenceName(`http://creativecommons.org/licenses/${ph.license_code.replace(/^cc-/, '')}/4.0/`) : null, link: `https://www.inaturalist.org/observations/${o.id}`, attribution: text(ph.attribution) || null },
+              credit: { photographer: inatAuthor(ph.attribution), licence: inatLicence(ph.license_code), link: `https://www.inaturalist.org/observations/${o.id}`, attribution: text(ph.attribution) || null },
             });
           }
         }
       } catch (e) {
         errors.push(`iNaturalist (${stage}): ${e.message}`);
+        failed.add(`inat:${stage}`);
       }
       // GBIF: other datasets whose records say the stage (iNaturalist's are above already).
       try {
@@ -2135,14 +2166,15 @@ export function createMapsTools({
         counts[`gbif_other_${stage}`] = other.length;
         for (const r of other) {
           const at = placeOf(r.decimalLatitude, r.decimalLongitude);
-          for (const m of (r.media ?? []).filter(m => m.type === 'StillImage' && /^https?:\/\//.test(m.identifier ?? '')).slice(0, 2)) {
-            candidates.push({ kind: 'remote', source: 'gbif', stage, record: `https://www.gbif.org/occurrence/${r.key}`, img: m.identifier, thumb: proxyUrl(m.identifier).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`), year: r.year ?? null, place: [r.locality, r.stateProvince, r.country].filter(Boolean).join(', ') || null, research: true, ...at, credit: creditOf(r, m.identifier) });
+          for (const [i, m] of (r.media ?? []).filter(m => m.type === 'StillImage' && /^https?:\/\//.test(m.identifier ?? '')).slice(0, 2).entries()) {
+            candidates.push({ kind: 'remote', source: 'gbif', stage, second: i > 0, record: `https://www.gbif.org/occurrence/${r.key}`, img: m.identifier, thumb: proxyUrl(m.identifier).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`), year: r.year ?? null, place: [r.locality, r.stateProvince, r.country].filter(Boolean).join(', ') || null, research: true, ...at, credit: creditOf(r, m.identifier) });
           }
         }
       } catch (e) {
         errors.push(`GBIF (${stage}): ${e.message}`);
+        failed.add(`gbif:${stage}`);
       }
-    }
+    }));
     // The project's first, then in the area, nearer, research grade, newer; one photo per observation before a second.
     candidates.sort((a, b) => (a.source === 'project' ? -1 : 0) - (b.source === 'project' ? -1 : 0) || b.inside - a.inside || a.away - b.away || (b.research ?? 0) - (a.research ?? 0) || (b.year ?? 0) - (a.year ?? 0));
     const ordered = [...candidates.filter(c => !c.second), ...candidates.filter(c => c.second)];
@@ -2151,19 +2183,24 @@ export function createMapsTools({
     const per = Math.max(3, Math.floor((2 * PER_SHEET) / stages.length));
     const first = stages.flatMap(stage => ordered.filter(c => c.stage === stage).slice(0, per));
     const tiles = [...first, ...ordered.filter(c => !first.includes(c))].slice(0, 2 * PER_SHEET);
-    tiles.sort((a, b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
+    const stageOrder = st => (stages.includes(st) ? stages.indexOf(st) : stages.length);
+    tiles.sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage));
     const words = STAGE_WORDS[lang];
     // A stage asked with no photo anywhere is said plainly (the chat must not imply there are some).
-    const noneFor = stages.filter(stage => !candidates.some(c => c.stage === stage));
+    // Only stages every source answered for: a source that failed says nothing about absence.
+    const answered = stage => !failed.has('project') && !failed.has(`inat:${stage}`) && !failed.has(`gbif:${stage}`);
+    const noneFor = stages.filter(stage => !candidates.some(c => c.stage === stage) && answered(stage));
+    const unchecked = stages.filter(stage => !candidates.some(c => c.stage === stage) && !answered(stage));
     const answer = {
       taxon,
       life_stage: stages,
       counts,
-      ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon), none annotated so on iNaturalist, none in GBIF's lifeStage. Say so plainly.` } : {}),
+      ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon, stages by their notes), none annotated so on iNaturalist, none in GBIF's lifeStage. Say so plainly.` } : {}),
+      ...(unchecked.length ? { not_checked: unchecked, not_checked_note: `No photo of ${unchecked.join(', ')} found, but a source did not answer (see errors): say the search was incomplete, not that there are none.` } : {}),
       ...(errors.length ? { errors } : {}),
     };
     if (!tiles.length)
-      return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} in the project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage. Unannotated photos may exist on iNaturalist: say so.` };
+      return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} found in the ${failed.size ? 'sources that answered' : "project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage"}. Unannotated photos may exist on iNaturalist: say so.` };
     if (!sheets) return { ...answer, photo_sheet_error: 'Contact sheets are off on this server.' };
     const made = [];
     const shaped = tiles.map(c => ({

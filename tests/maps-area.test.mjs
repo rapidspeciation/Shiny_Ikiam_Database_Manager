@@ -443,10 +443,11 @@ test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\
   const clutchDir = mkdtempSync(join(tmpdir(), 'clutch-photos-'));
   // The project's own: one clutch photo of the species (Insectary_stocks), one of another species.
   const db = new DatabaseSync(':memory:');
-  db.exec(`CREATE TABLE records(id TEXT, sheet TEXT, values_json TEXT); CREATE TABLE clutch_photos(id TEXT, record_id TEXT, day TEXT, note TEXT, file TEXT, actor TEXT);`);
+  db.exec(`CREATE TABLE records(id TEXT, sheet TEXT, values_json TEXT); CREATE TABLE clutch_photos(id TEXT, record_id TEXT, day TEXT, note TEXT, file TEXT, actor TEXT); CREATE TABLE users(id TEXT, display_name TEXT);`);
+  db.prepare('INSERT INTO users VALUES (?,?)').run('u-ana', 'Ana Pérez');
   db.prepare('INSERT INTO records VALUES (?,?,?)').run('r1', 'Insectary_stocks', JSON.stringify({ SPECIES: 'Oleria onega', 'CLUTCH NUMBER': 'P12' }));
   db.prepare('INSERT INTO records VALUES (?,?,?)').run('r2', 'Insectary_stocks', JSON.stringify({ SPECIES: 'Mechanitis menapis' }));
-  db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p1', 'r1', '2026-10-20', 'Larvas día 3', '2026-10/p1', 'Ana');
+  db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p1', 'r1', '2026-10-20', 'Larvas día 3', '2026-10/p1', 'u-ana');
   db.prepare('INSERT INTO clutch_photos VALUES (?,?,?,?,?,?)').run('p2', 'r2', '2026-10-21', null, '2026-10/p2', 'Luis');
   const { mkdirSync } = await import('node:fs');
   mkdirSync(join(clutchDir, '2026-10'));
@@ -481,7 +482,7 @@ test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\
   assert.deepEqual(out.counts, { project_clutch_photos: 1, inaturalist_egg: 0, gbif_other_egg: 0, inaturalist_larva: 2, gbif_other_larva: 1 });
   // The project's photo first, then Tena (in Napo), then Puyo (GBIF, a museum), Bogotá; the Tena observation's second photo last.
   const tiles = out.photo_sheets[0].tiles;
-  assert.match(tiles[0], /^1: Oleria onega · (huevos|larva) — Insectario Ikiam · 2026$/);
+  assert.match(tiles[0], /^1: Oleria onega · larva — Insectario Ikiam · 2026$/);
   assert.match(tiles[1], /^2: Oleria onega · larva — Napo · 2021$/);
   assert.match(tiles[2], /Puyo|Ecuador/);
   assert.match(tiles.at(-1), /Napo · 2021$/);
@@ -489,14 +490,19 @@ test('taxon_photos: a life stage from the project\'s clutch photos, iNaturalist\
   assert.ok(!tiles.some(t => /inat\.jpg/.test(t)));
   const sent = await tools.run('send_sheet_photos', { sheets: [out.photo_sheets[0].id], tiles: [1, 2], lang: 'es' });
   assert.equal(sent.images[0].path, join(clutchDir, '2026-10', 'p1.jpg'));
-  assert.match(sent.images[0].caption, /^_Oleria onega_ — puesta del insectario Ikiam P12\nLarvas día 3, 2026-10-20\nFoto: Ana \(Ithomiini Ikiam\)$/);
-  assert.match(sent.images[1].caption, /^_Oleria onega_ — larva\nTena, 2021\nFoto: Ana \(CC BY-NC 4\.0\)\nhttps:\/\/www\.inaturalist\.org\/observations\/501$/);
+  assert.match(sent.images[0].caption, /^_Oleria onega_ — puesta del insectario Ikiam P12\nLarvas día 3, 2026-10-20\nFoto: Ana Pérez \(Ithomiini Ikiam\)$/);
+  assert.match(sent.images[1].caption, /^_Oleria onega_ — larva\nTena, 2021\nFoto: Ana \(CC BY-NC\)\nhttps:\/\/www\.inaturalist\.org\/observations\/501$/);
   assert.match(sent.images[1].url, /photos\/21\/original\.jpg$/);
   assert.match((await tools.run('taxon_photos', { taxon: 'Oleria onega' })).error, /life_stage/);
   const none = await tools.run('taxon_photos', { taxon: 'Oleria onega', life_stage: 'pupa' });
   assert.match(none.note, /Unannotated photos may exist/);
   // Eggs asked with larvae: the eggs said to be missing.
   assert.deepEqual(out.none_for, ['egg']);
-  assert.match(out.none_note, /No photo of egg of Oleria onega: none in the project's clutch photos \(1 of this taxon\)/);
+  assert.match(out.none_note, /No photo of egg of Oleria onega: none in the project's clutch photos \(1 of this taxon, stages by their notes\)/);
   assert.match((await tools.run('gallery_specimens', { species: ['Oleria onega'], life_stage: 'larva' })).error, /adults only.*taxon_photos/);
+  // iNaturalist down: eggs are not said to be missing, only not checked.
+  const down = createMapsTools({ store: { db }, fetchImpl: async url => (/inat\.test/.test(url) ? new Response('down', { status: 503 }) : fetchImpl(url)), mapsBase: MAPS, cacheDir: dir, clutchPhotoDir: clutchDir, inatApi: 'https://inat.test/v1/observations', gbifApi: 'https://gbif.test/v1/occurrence/search' });
+  const partial = await down.run('taxon_photos', { taxon: 'Oleria onega', life_stage: ['egg', 'larva'] });
+  assert.equal(partial.none_for, undefined);
+  assert.deepEqual(partial.not_checked, ['egg']);
 });
