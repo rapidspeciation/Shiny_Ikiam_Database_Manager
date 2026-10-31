@@ -1,4 +1,61 @@
-# WhatsApp relay (lab prototype)
+# WhatsApp: the live bridge and the relay prototype
+
+Two pieces live here. **The live bridge** (31 Oct 2026, first section) runs on Franz's own WhatsApp
+and answers in two chats. **The relay** (the rest of this file) is the earlier lab prototype inside
+the app server, for a future project number; it sends nothing.
+
+## The live bridge (`bridge.mjs`)
+
+| Part | Where |
+|---|---|
+| Receiver: signature, chat filter, loop guard, commands, @claude trigger, hourly limit, one turn at a time per chat, media, voice, sends | `tools/whatsapp/bridge.mjs` (`serve`; `install` copies it to `~/.local/share/ithomiini-wa-bridge` and writes `ithomiini-wa-bridge.service`) |
+| Pure parts (trigger, commands, reply blocks, step lines, media decryption) | `tools/whatsapp/bridge-lib.mjs` |
+| One T3 turn: send, wait, last message (and tool steps as they start) | `tools/whatsapp/t3-turn.mjs` (copied to claudeclaw's `~/ithomiini/work/wa-bridge/`) |
+| The chats' guide | `tools/whatsapp/bridge-skill/SKILL.md` (copied into both workspaces' `.claude/skills/whatsapp-bridge`) |
+| Simulator for dry-run chats | `tools/whatsapp/bridge-sim.mjs` |
+| Config shape | `tools/whatsapp/bridge-config.example.json` (the real one: `~/.config/ithomiini-wa-bridge/config.json`, 600) |
+| Tests | `tests/whatsapp-bridge.test.mjs` |
+
+**Path.** `wacli-sync.service` runs `sync --webhook http://127.0.0.1:8789/wacli --webhook-secret … --webhook-allow-private`
+(secret from `~/.config/ithomiini-wa-bridge/wacli-webhook.env`). Every live message (Franz's own
+too: wacli does not filter `FromMe`) is posted, signed with HMAC-SHA256 in `X-Wacli-Signature`.
+A message wacli itself sends is not posted back.
+
+**Order, per message.** Bad signature → 403. A chat not in the config (or disabled) → dropped, and the
+log keeps only that a message was dropped. Then: duplicates, reactions, edits, deletions and messages
+older than 15 min are skipped; text starting with «Claude:» is the bridge's own (loop guard); in the
+self-chat only Franz's messages count. `/help`, `/status`, `/whoami`, `/usage` are answered without a
+model; `/stop` and `/start` (Franz only) switch everything off and on (the `stopped` flag in
+`~/.local/state/ithomiini-wa-bridge/state.json`); `/ack reaction|edit` (Franz only) chooses how a chat
+shows it is working. Anything else needs `@claude` as a whole word, and the chat's hourly limit
+(group 20, self-chat 60 answers; one notice when reached).
+
+**A turn.**
+- How it shows it is working (`ack`, per chat):
+  - `reaction`: 👀 on the message when it arrives, ✅ when answered (⚠️ on failure).
+  - `edit`: one «Claude: pensando…» message that lists the chat's tool steps (tool names, never its reasoning) and is edited into the answer.
+- What the chat gets: the group's last 15 messages from wacli's store, the message, and its media:
+  - the message's own, the quoted message's, and the sender's media of the last 3 minutes;
+  - media are downloaded from WhatsApp's CDN with the store's media key and decrypted, so the running sync is never interrupted;
+  - photos are copied into the route's T3 attachments folder, where `identify_species` finds them by name;
+  - voice notes are transcribed: ElevenLabs Scribe v2 with the genera as keyterms, faster-whisper `small` as fallback.
+- Where it goes:
+  - the group: the chat «Ithomiini 🦋 (underground) · WhatsApp» in the claudeclaw T3 project of the same name, over ssh;
+  - the self-chat: «Orchestrator wpp» in this PC's T3, project «Ithomiini lab · WhatsApp» (the lab workspace, the lab app's tools).
+- **Reply path.** The bridge waits for the turn and sends the chat's last message, starting with «Claude: ».
+  - `[images]` … `[/images]` lines (`<path or https URL> | caption`) become up to 5 pictures, each at most 2048 px on its long side as JPEG. wacli 0.22 has no HD flag; it uploads the file as given. Every picture's first bytes are checked to be an image.
+  - `[voice]`, or a voice note in the question, adds an Edge TTS voice note (es-EC / en-US).
+  - `[silent]` sends nothing.
+- **Hard block.** `send()` sends with wacli only to the config's group and self-chat JIDs, whatever else the config says. Dry-run chats write to `outbox.jsonl` instead.
+
+**The group's workspace on claudeclaw** (`shared/t3-workspaces/wa-underground`, app user `wa-underground`,
+editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
+- Its `.claude/settings.json` denies `Bash`, `Edit`, `Write`, `NotebookEdit` and the app tools that write without review: `apply_proposal`, `undo_edits`, `invite_person`, `list_invitations`, `organize_photos`, `sync_photo_links`, `update_websites`, `queue_walk`, `rename_photos_edit`, `drive_photos_edit`.
+- Proposals are drafted with the link and applied in the app by a person.
+
+**Logs.** `~/.local/state/ithomiini-wa-bridge/bridge.log.jsonl`: each message's decision, each send
+(kind, length, ok), each turn (time, steps). No message text; dropped chats appear without id or sender.
+
 
 The app server relays WhatsApp messages to one shared «WhatsApp» T3 chat and takes its answers
 back. The design is in `.work/whatsapp-assistant-20261030/bridge-design.md`. This prototype runs
