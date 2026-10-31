@@ -26,7 +26,9 @@ turn. Each line is one message:
 
 Answer with `whatsapp_reply` (`replyTo` the message's #id). A message with
 no reply simply stays unanswered. Several lines from one person in a row are
-usually one question: one answer to the last of them is enough.
+usually one question: one answer to the last of them is enough, and it
+answers what that person asked, not a question someone else left in a `ctx`
+line.
 
 ## When to answer in a group
 

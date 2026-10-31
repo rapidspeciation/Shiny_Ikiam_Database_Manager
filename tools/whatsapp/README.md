@@ -63,7 +63,7 @@ In the lab these files are in `~/.cache/ithomiini-lab/app-workbook/` (or `app/` 
 | `WA_BOT_JIDS`, `WA_BOT_NAME` | The bot's JIDs/LIDs (comma-separated) and the name regex |
 | `WA_LAB=1` | Lets the simulator set the whitelist (`POST /api/wa/setup`), and only when the workbook is not the team's |
 | `WA_DEBOUNCE_MS` | The 20 s quiet time, for experiments |
-| `WA_QUESTION_WAIT_MS`, `WA_QUIET_HOURS=0` | Lab only (`WA_LAB=1`): a shorter wait for unanswered questions, and no quiet hours, so the simulator can run the unprompted cases at any time |
+| `WA_QUESTION_WAIT_MS`, `WA_QUIET_HOURS=0`, `WA_SENDS_HOUR` | Lab only (`WA_LAB=1`): a shorter wait for unanswered questions, no quiet hours and a higher hourly answer limit, so the simulator can run the unprompted cases at any time |
 
 `tools/lab/app.sh` sets the secret file and `WA_LAB=1`, and unsets `WA_SENDER`. It also adds the
 secret to the paths the lab chats may not read.
