@@ -34,6 +34,9 @@
       canvas { border: 1px solid #d6d3d1; border-radius: 6px; width: 160px; height: 160px; }
       pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: #fafaf9; padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
       [hidden] { display: none !important; }
+      .stock { font-size: 0.85rem; color: #44403c; margin-top: 2px; }
+      .stock .low { color: #b45309; font-weight: 600; }
+      .stock .genus { color: #78716c; font-size: 0.8rem; }
       a.back { display: inline-block; color: #1f4d3a; font-weight: 600; text-decoration: none; padding: 6px 0; }
     </style>
   </head>
@@ -63,6 +66,7 @@
       <div id="progressBox" hidden><progress id="progress" max="1" value="0"></progress><div id="progressText" class="muted"></div></div>
       <div id="ready" class="ok" hidden></div>
       <div id="storage" class="muted"></div>
+      <div id="stockInfo" class="muted" hidden></div>
       <div id="notPersisted" class="warn" hidden>El teléfono no marcó estos datos como persistentes: si se queda sin espacio, puede borrar los modelos y habrá que descargarlos de nuevo.</div>
       <div id="dlErr" class="err" hidden></div>
     </section>
@@ -87,6 +91,7 @@
             <table><thead><tr><th>Especie</th><th class="num">Prob.</th></tr></thead><tbody id="top"></tbody></table>
           </div>
         </div>
+        <div id="stockNote" class="muted" hidden></div>
         <table id="times" style="margin-top: 8px"></table>
       </div>
     </section>

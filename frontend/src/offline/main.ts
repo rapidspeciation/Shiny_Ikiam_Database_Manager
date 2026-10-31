@@ -21,6 +21,7 @@ import {
   type Side,
 } from '../lib/offlineId'
 import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
+import { genusStock, speciesStock, stockDate, type FrozenStock } from '../lib/frozenStock'
 
 type OrtModule = typeof Ort
 interface ModelFile { name: string; bytes: number; etag: string; role: 'detector' | 'encoder' | 'head' | 'head-meta'; wire?: number; encoding?: string | null }
@@ -186,6 +187,50 @@ async function listFiles() {
   await refreshReady()
 }
 
+// ---------------------------------------------------------------- the flash-frozen stock (server/frozen-stock.mjs)
+
+/** The snapshot as kept with the models: its ETag and when the server last confirmed it (x-checked-at). */
+const STOCK_KEY = () => url('./models/frozen-stock.json')
+let stock: FrozenStock | null = null
+let stockCheckedAt: string | null = null
+
+function showStock(checkedAt: string | null) {
+  stockCheckedAt = checkedAt
+  show('stockInfo', stock ? `${stockDate(checkedAt || stock.generatedAt)} (${Object.keys(stock.species).length} especies)` : null)
+  diag.stock = stock ? { version: stock.version, generatedAt: stock.generatedAt, checkedAt } : null
+}
+
+async function loadStock() {
+  const r = await (await caches.open(CACHE)).match(STOCK_KEY())
+  if (!r) return
+  try {
+    stock = (await r.json()) as FrozenStock
+    showStock(r.headers.get('x-checked-at'))
+  } catch {
+    stock = null
+  }
+}
+
+/** Asked again whenever online (cheap: the ETag answers 304 when nothing changed). Never throws. */
+async function refreshStock() {
+  if (!navigator.onLine) return
+  try {
+    const cache = await caches.open(CACHE)
+    const have = await cache.match(STOCK_KEY())
+    const etag = have?.headers.get('etag')
+    const r = await fetch(url('../api/frozen-stock'), { credentials: 'same-origin', cache: 'no-store', headers: etag ? { 'if-none-match': etag } : {} })
+    const now = new Date().toISOString()
+    const keep = (body: string, tag: string) =>
+      cache.put(STOCK_KEY(), new Response(body, { headers: { 'content-type': 'application/json', etag: tag, 'x-checked-at': now } }))
+    if (r.status === 304 && have) await keep(await have.text(), etag!)
+    else if (r.ok) await keep(await r.text(), r.headers.get('etag') ?? '')
+    else return
+    await loadStock()
+  } catch (err) {
+    diag.stockError = errorText(err).slice(0, 200)
+  }
+}
+
 /** The page itself, its scripts and the runtime: kept for airplane mode (the service worker serves them). */
 async function keepPage(cache: Cache) {
   const own = [...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=manifest]')]
@@ -215,6 +260,7 @@ async function download() {
     const t0 = performance.now()
     show('progressText', 'La página y el motor…')
     await keepPage(cache)
+    await refreshStock()
     // Counted in plain bytes: the browser decompresses the parts (Content-Encoding) and hands over plain bytes.
     const total = files.reduce((a, f) => a + f.bytes, 0)
     let done = 0
@@ -451,6 +497,19 @@ async function identify(photo: Photo) {
       const tr = document.createElement('tr')
       tr.innerHTML = `<td><i></i></td><td class="num">${(p * 100).toFixed(1)} %</td>`
       tr.querySelector('i')!.textContent = name
+      if (stock) {
+        const line = document.createElement('div')
+        line.className = 'stock'
+        for (const part of speciesStock(stock, name)) {
+          const span = document.createElement('span')
+          span.textContent = part.text
+          if (part.low) span.className = 'low'
+          line.append(span)
+        }
+        const genus = genusStock(stock, name)
+        if (genus) line.append(Object.assign(document.createElement('div'), { className: 'genus', textContent: genus }))
+        tr.firstElementChild!.append(line)
+      }
       $('top').append(tr)
     }
     const labels: Record<string, string> = {
@@ -468,6 +527,7 @@ async function identify(photo: Photo) {
     const tr = document.createElement('tr')
     tr.innerHTML = `<td><b>Total por foto</b></td><td class="num"><b>${(total / 1000).toFixed(2)} s</b></td>`
     $('times').append(tr)
+    show('stockNote', stock ? stockDate(stockCheckedAt || stock.generatedAt) : 'Sin inventario de congelados: abra esta página una vez con conexión.')
     $('result').hidden = false
     const result = {
       at: new Date().toISOString(), file: { name: photo.name, bytes: photo.size, type: photo.type }, size: [out.img.width, out.img.height], orientation: out.orientation,
@@ -536,7 +596,8 @@ $('copy').addEventListener('click', async () => {
 
 $<HTMLInputElement>('useGpu').checked = 'gpu' in navigator
 $<HTMLInputElement>('useGpu').disabled = !('gpu' in navigator)
-addEventListener('online', () => { checkSession(); listFiles() })
+addEventListener('online', () => { checkSession().then(listFiles).then(refreshStock) })
 addEventListener('offline', () => show('status', 'Sin conexión.'))
 render()
-checkSession().then(listFiles).finally(refreshReady)
+loadStock()
+checkSession().then(listFiles).then(refreshStock).finally(refreshReady)

@@ -42,6 +42,7 @@ import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevisi
 import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
+import { frozenStock } from './frozen-stock.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -1117,6 +1118,17 @@ export async function createApp(config = {}, options = {}) {
       }
       // CAM pools running out and the 30-preserved rule (server/alerts.mjs): for the team (Inicio, Revisión).
       if (method === 'GET' && path === '/api/alerts') return json(res, 200, await freshAlerts(store));
+      // Flash-frozen specimens per species (server/frozen-stock.mjs), for the offline identifier page: asked again by ETag.
+      if (method === 'GET' && path === '/api/frozen-stock') {
+        if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
+        const stock = await frozenStock(store, config.identifierDir);
+        const headers = { etag: `"${stock.version}"`, 'cache-control': 'private, no-cache' };
+        if ((req.headers['if-none-match'] ?? '').split(/\s*,\s*/).includes(headers.etag)) {
+          res.writeHead(304, headers);
+          return res.end();
+        }
+        return json(res, 200, stock, headers);
+      }
       // Verdicts on what models read from the photos, kept as training labels.
       if (method === 'GET' && path === '/api/review/labels') {
         requireEditor(user);
