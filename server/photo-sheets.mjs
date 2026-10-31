@@ -6,13 +6,15 @@
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeCacheFile } from './cache-write.mjs';
 
 export const TILE = 512;
 export const PER_SHEET = 9;
 const THUMB_BYTES = 4 * 1024 * 1024;
+// Sheets and thumbnails older than this are deleted (checked at most once an hour).
+const KEEP_MS = 7 * 86400_000;
 
 const SCRIPT = String.raw`
 import json, sys
@@ -65,8 +67,15 @@ export function createPhotoSheets({ dir, fetchImpl = fetch, python = 'python3', 
       }
       const r = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(15_000) });
       if (!r.ok) throw new Error(`thumbnail ${r.status}`);
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > THUMB_BYTES) throw new Error('thumbnail too large');
+      if (Number(r.headers.get('content-length')) > THUMB_BYTES) throw new Error('thumbnail too large');
+      const parts = [];
+      let size = 0;
+      for await (const part of r.body ?? []) {
+        size += part.length;
+        if (size > THUMB_BYTES) throw new Error('thumbnail too large');
+        parts.push(Buffer.from(part));
+      }
+      const buf = Buffer.concat(parts);
       if (!writeCacheFile(path, buf)) throw new Error('thumbnail not kept');
       return path;
     })();
@@ -82,24 +91,29 @@ export function createPhotoSheets({ dir, fetchImpl = fetch, python = 'python3', 
   async function make(tiles, { first = 1 } = {}) {
     if (!dir) throw new Error('Contact sheets are off on this server (no folder for them).');
     const numbered = tiles.slice(0, PER_SHEET).map((t, i) => ({ ...t, n: first + i }));
-    const id = createHash('sha1').update(JSON.stringify(numbered.map(t => [t.n, t.thumb, t.line1, t.line2]))).digest('hex').slice(0, 16);
+    // Everything a tile stands for is in the id: the same photos asked in another way (another area, reach or
+    // language) make another sheet, so a pick never gets an earlier question's captions.
+    const id = createHash('sha1').update(JSON.stringify(numbered)).digest('hex').slice(0, 16);
+    prune();
     const out = join(dir, `sheet-${id}.jpg`);
     const record = join(dir, `sheet-${id}.json`);
     let exists = false;
     try {
-      exists = statSync(out).size > 0 && statSync(record).size > 0;
+      exists = statSync(out).size > 0 && !JSON.parse(readFileSync(record, 'utf8')).partial;
     } catch {
       /* not made yet */
     }
     if (!exists) {
       const paths = await Promise.all(numbered.map(t => thumb(t.thumb).catch(() => null)));
+      // A missing thumbnail is tried again next time: the sheet is kept only when all came.
+      const whole = paths.every(Boolean);
       await new Promise((resolve, reject) => {
         const child = execFile(python, ['-c', SCRIPT], { timeout: timeoutMs, maxBuffer: 1 << 20 }, (error, stdout, stderr) =>
           error ? reject(new Error(`The contact sheet failed: ${String(stderr || error.message).trim().split('\n').at(-1)}`)) : resolve(stdout),
         );
         child.stdin.end(JSON.stringify({ tile: TILE, out, tiles: numbered.map((t, i) => ({ n: t.n, line1: t.line1, line2: t.line2, path: paths[i] })) }));
       });
-      writeCacheFile(record, JSON.stringify({ id, made: new Date().toISOString(), tiles: numbered }));
+      writeCacheFile(record, JSON.stringify({ id, made: new Date().toISOString(), ...(whole ? {} : { partial: true }), tiles: numbered }));
     }
     kept.set(id, numbered);
     return { id, path: out, tiles: numbered.map(t => ({ n: t.n, line1: t.line1, line2: t.line2 })) };
@@ -115,6 +129,26 @@ export function createPhotoSheets({ dir, fetchImpl = fetch, python = 'python3', 
       return tiles;
     } catch {
       return null;
+    }
+  }
+
+  let pruned = 0;
+  function prune() {
+    if (Date.now() - pruned < 3600_000) return;
+    pruned = Date.now();
+    for (const sub of ['', 'thumbs']) {
+      try {
+        for (const name of readdirSync(join(dir, sub))) {
+          const file = join(dir, sub, name);
+          try {
+            if (Date.now() - statSync(file).mtimeMs > KEEP_MS && statSync(file).isFile()) unlinkSync(file);
+          } catch {
+            /* gone or a folder */
+          }
+        }
+      } catch {
+        /* no folder yet */
+      }
     }
   }
 

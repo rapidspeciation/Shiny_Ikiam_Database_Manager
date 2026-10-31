@@ -387,3 +387,16 @@ test('contact sheets: host_plants gives numbered sheets of candidate photos; sen
   assert.match((await other.run('send_sheet_photos', { sheets: ['0123456789abcdef'], tiles: [1] })).error, /No such contact sheet/);
   assert.match((await other.run('send_sheet_photos', { sheets: [sheet.id], tiles: [9] })).error, /None of tiles 9/);
 });
+
+test('contact sheets, review fixes: another reach is another sheet; a tile number on two calls\' sheets is refused; a kept leaves photo stays', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
+  const tools = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir });
+  const a = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', photo_sheet: true, lang: 'es' });
+  const b = await tools.run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', photo_sheet: true, lang: 'es', nearby_km: 80 });
+  // The same photos with another reach: another sheet, so its captions say 80 km.
+  assert.notEqual(a.photo_sheets[0].id, b.photo_sheets[0].id);
+  const fresh = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir });
+  assert.match((await fresh.run('send_sheet_photos', { sheets: [b.photo_sheets[0].id], tiles: [3], lang: 'es' })).images[0].caption, /a menos de 80 km/);
+  // Two calls' sheets both start at 1.
+  assert.match((await fresh.run('send_sheet_photos', { sheets: [a.photo_sheets[0].id, b.photo_sheets[0].id], tiles: [1] })).error, /more than one of these sheets/);
+});

@@ -1,4 +1,4 @@
-# Pass bar, written before looking at any calibration photo (31 Oct 2026)
+# Pass bar (31 Oct 2026; written before the calibration photos were looked at, committed with the results; the labels are the assistant's (Claude), not a person's)
 
 Decision the tools make: a photo's view, one of leaves (leaves clearly visible), habit (whole plant / vine / shrub),
 flower (flower close-up, leaves absent or marginal), fruit, herbarium, other. The tool prefers leaves|habit for the

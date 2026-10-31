@@ -14,6 +14,8 @@ Without the file the tools still put living plants before herbarium sheets.
 4. `node merge.mjs <dir> <out.json>` → the tools' file `{photos: {number: [view, p(leaves or habit), p(flower)]}}`.
    A photo counts as leaves or habit when that probability is at least 0.8 (`TAG_LEAVES`).
 
-Calibration (`CALIBRATION.md`): the pass bar was written before looking; 40 photos labelled by eye chose the prompts
-and the threshold; a fresh 40 (`validation-*.json`) checked them: 17 of 17 photos called leaves or habit were, no
-flower close-up was called leaves, 79 % of flowers were called flower. `score.mjs` scores a tags file against labels.
+Calibration (`CALIBRATION.md`): 40 photos labelled by eye (by the assistant, Claude, not by a person) chose the
+prompts and the threshold; another 40 checked them, but they had been seen before the threshold was chosen, so they
+are no untouched holdout. Over the 80: 26 of 27 photos called leaves or habit were, 1 of 33 flower close-ups was
+called leaves. A small sample: few errors seen, not a measured rate. `score.mjs` scores a tags file against labels.
+Since the contact sheets (the chat looks and picks), the tags only pre-sort a sheet's candidates.

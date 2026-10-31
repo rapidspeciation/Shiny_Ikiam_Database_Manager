@@ -209,7 +209,7 @@ export const MAPS_TOOLS = [
       name: 'send_sheet_photos',
       description: [
         'The photos chosen on contact sheets (host_plants or gallery_specimens with `photo_sheet`), ready to send: each downloaded at about 2048 px and credited (plant, in the area or candidate, place, year, photographer, licence, link; a specimen\'s CAM ID and data).',
-        '- `sheets`: the sheet ids; `tiles`: the numbers chosen (at most 5, in the order to send). `lang`: "es" or "en" for the captions.',
+        '- `sheets`: the sheet ids of one call; `tiles`: the numbers chosen, in the order to send: at most 5 in all for an answer (the WhatsApp limit). `lang`: "es" or "en" for the captions.',
         'Gives `images` [{path, caption, …}] and `images_block` (on WhatsApp, end the answer with it as it is). A tile whose photo or credit cannot be had is in `failed`: pick another of the same plant.',
       ].join('\n'),
       parameters: {
@@ -1682,14 +1682,6 @@ export function createMapsTools({
   }
 
   /**
-   * Photo files to send (WhatsApp), at most `n`: first one per plant (the plants recorded in the area, then those
-   * only nearby, most nearby records first), then a flower of the first plants as a second photo. A plant's photos
-   * from its first SEND_PAGES gallery pages are ranked: a living plant before anything else, a herbarium sheet last;
-   * within that, leaves or the whole plant (photo tags), untagged, then flowers and fruits; then in the area, within
-   * `nearbyKm`, nearer, newer. A photo goes only with its own credit, else the next; downloaded and credited together
-   * (server/plant-photos.mjs). -> { images, note }
-   */
-  /**
    * Each plant's gallery photos (its first SEND_PAGES pages, no fallback items), ranked: a living plant before
    * anything else, a herbarium sheet last; within that, leaves or the whole plant (photo tags), untagged, then flowers
    * and fruits; then in the area, within `nearbyKm`, nearer, newer. Each photo with inside, away, live, view.
@@ -1729,6 +1721,14 @@ export function createMapsTools({
     );
   }
 
+  /**
+   * Photo files to send (WhatsApp), at most `n`: first one per plant (the plants recorded in the area, then those
+   * only nearby, most nearby records first), then a flower of the first plants as a second photo. A plant's photos
+   * from its first SEND_PAGES gallery pages are ranked: a living plant before anything else, a herbarium sheet last;
+   * within that, leaves or the whole plant (photo tags), untagged, then flowers and fruits; then in the area, within
+   * `nearbyKm`, nearer, newer. A photo goes only with its own credit, else the next; downloaded and credited together
+   * (server/plant-photos.mjs). -> { images, note }
+   */
   async function photosToSend(plants, n, area, nearbyKm, m, lang) {
     const words = SEND_WORDS[lang];
     const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
@@ -1863,7 +1863,7 @@ export function createMapsTools({
    * (living plant, view tags when there are, place), one flower among them when it has one. At most 2 sheets of 9.
    */
   async function plantSheets(plants, area, nearbyKm, m, lang) {
-    if (!sheets) return { error: 'Contact sheets are off on this server (no folder for them).' };
+    if (!sheets) return { photo_sheet_error: 'Contact sheets are off on this server (no folder for them).' };
     const words = SEND_WORDS[lang];
     const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
     const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, 2 * PER_SHEET);
@@ -1880,9 +1880,14 @@ export function createMapsTools({
       const list = ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace);
       const best = list.slice(0, k);
       // The photo tags help only to make sure the nearest leaves-or-plant photo and a flower are among them.
-      for (const want of [ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit'), ph => ph.live === 0 && ph.view === 'flower']) {
+      const isLeaves = ph => ph.live === 0 && (ph.view === 'leaves' || ph.view === 'habit');
+      const isFlower = ph => ph.live === 0 && ph.view === 'flower';
+      for (const want of [isLeaves, isFlower]) {
         const extra = list.find(want);
-        if (extra && !best.includes(extra) && best.length === k && k >= 3) best.splice(best.findLastIndex(ph => !want(ph) && ph !== best[0]), 1, extra);
+        if (!extra || best.includes(extra) || best.length < k || k < 3) continue;
+        // The last tile that is neither the nearest photo nor one kept for its view gives way.
+        const at = best.findLastIndex((ph, j) => j > 0 && !isLeaves(ph) && !isFlower(ph));
+        if (at > 0) best[at] = extra;
       }
       for (const ph of best) {
         seen.add(ph.img);
@@ -1905,8 +1910,11 @@ export function createMapsTools({
     const made = [];
     for (let i = 0; i < tiles.length && made.length < 2; i += PER_SHEET) made.push(sheets.make(tiles.slice(i, i + PER_SHEET), { first: i + 1 }));
     const out = await Promise.all(made);
+    const onSheets = new Set(tiles.slice(0, 2 * PER_SHEET).map(t => t.name));
+    const leftOut = picked.map(p => p.e.taxon.name).filter(name => !onSheets.has(name));
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
+      ...(leftOut.length ? { photo_sheet_left_out: leftOut, photo_sheet_left_out_note: 'Not on the sheets (2 sheets at most): ask again with `plant` for these.' } : {}),
       photo_sheet_note: 'Look at each sheet (read its path), choose per plant the tile that best shows its leaves or the whole plant (how it is found in the field), and one with its flower if there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5).',
       photo_sheet_ms: Date.now() - started,
     };
@@ -1919,11 +1927,15 @@ export function createMapsTools({
     const all = ids.flatMap(id => sheets.tilesOf(id) ?? []);
     if (!all.length) return { error: 'No such contact sheet: give the `id` of a sheet from photo_sheets.' };
     const numbers = [...new Set((Array.isArray(args.tiles) ? args.tiles : [args.tiles]).map(Number).filter(Number.isInteger))].slice(0, 5);
+    // Sheets of one call are numbered on from each other; sheets of two calls both start at 1.
+    const twice = numbers.filter(n => all.filter(t => t.n === n).length > 1);
+    if (twice.length) return { error: `Tiles ${twice.join(', ')} are on more than one of these sheets (from different calls): call send_sheet_photos once per call's sheets.` };
     const chosen = numbers.map(n => all.find(t => t.n === n)).filter(Boolean);
     if (!chosen.length) return { error: `None of tiles ${numbers.join(', ')} is on these sheets (1–${all.at(-1).n}).` };
     const lang = args.lang === 'es' ? 'es' : 'en';
     const started = Date.now();
-    const seen = new Set();
+    // A plant's second tile in the order chosen is its second photo.
+    const secondOf = new Set(chosen.filter((t, i) => t.kind === 'plant' && chosen.slice(0, i).some(u => u.kind === 'plant' && u.name === t.name)));
     const got = await Promise.all(
       chosen.map(async t => {
         try {
@@ -1934,10 +1946,7 @@ export function createMapsTools({
           const id = /(\d+)\/?$/.exec(t.record ?? '')?.[1];
           const [credit, file] = await Promise.all([photoFiles.credit(id, t.img), photoFiles.photo(t.img)]);
           if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
-          // A second photo of a plant already sent is its second.
-          const second = seen.has(t.name);
-          seen.add(t.name);
-          return plantImage(t, credit, file, lang, second);
+          return plantImage(t, credit, file, lang, secondOf.has(t));
         } catch (e) {
           return { tile: t.n, error: e.message === 'no credit' ? 'its credit (GBIF record of the photo) could not be had' : e.message };
         }
@@ -2371,7 +2380,9 @@ export function createMapsTools({
           });
         const out = [];
         for (let i = 0; i < tiles.length; i += PER_SHEET) out.push(sheets.make(tiles.slice(i, i + PER_SHEET), { first: i + 1 }));
-        sheet = { photo_sheets: (await Promise.all(out)).map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })), photo_sheet_note: 'Look at each sheet (read its path), choose the tiles to send, then send_sheet_photos with `sheets` and `tiles`.' };
+        sheet = await Promise.all(out)
+          .then(made => ({ photo_sheets: made.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })), photo_sheet_note: 'Look at each sheet (read its path), choose the tiles to send, then send_sheet_photos with `sheets` and `tiles`.' }))
+          .catch(e => ({ photo_sheet_error: e.message }));
       }
     }
     return {
