@@ -160,7 +160,7 @@ export function groupWake(msg, bot) {
 const FOLLOW_ON_MS = 5 * 60 * 1000;
 
 // The bot's name followed by more of a person's name or role ("@Asistente de campo A") is someone else.
-const NAME_GOES_ON = /^\s+(?:de|del|of|[A-ZÁÉÍÓÚÑ][a-záéíóúñ])/u;
+const NAME_GOES_ON = /^\s+(?:de|del|of)\b/i;
 const CALL_OPENER = /^\s*(?:(?:hola|oye|hey|hi|buenas|buenos días|gracias|thanks)[\s,!]*)?@?$/i;
 
 /**

@@ -104,7 +104,7 @@ test('the wake rules, alone', () => {
   assert.equal(groupWake(msg({ text: 'Asistente: ayuda' }), bot), 'name');
   assert.equal(groupWake(msg({ text: 'nada que ver' }), bot), null);
   const name = /\b(ithobot|asistente|assistant)\b/i;
-  for (const t of ['@asistente el CAM026514 es Melinaea?', 'asistente, cuántas hay?', 'oye asistente ¿cuántas hay?', '¿cuántas hay, asistente?', 'gracias @ithobot'])
+  for (const t of ['@asistente el CAM026514 es Melinaea?', 'asistente, cuántas hay?', 'oye asistente ¿cuántas hay?', '¿cuántas hay, asistente?', 'gracias @ithobot', '@asistente Lo pregunto para mañana'])
     assert.ok(nameCall(t, name), t);
   for (const t of ['@Asistente de campo A ¿cuáles son tus iniciales?', 'Asistente de campo A trajo las mariposas', 'la asistente nueva llega mañana', 'my research assistant will check'])
     assert.ok(!nameCall(t, name), t);
