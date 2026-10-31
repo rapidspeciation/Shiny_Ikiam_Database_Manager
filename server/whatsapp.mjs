@@ -427,7 +427,7 @@ export function createWhatsAppRelay({
     const out = (status, reason, extra = {}) => {
       setStatus(n, status, reason);
       if (status === 'dropped') stats.dropped++;
-      record({ dir: 'in', n, id: msg.id, chat: msg.chat, sender: who?.phone ?? msg.sender, decision: status, reason, ...(keepText ? { text: clip(msg.text, 500) } : {}), ...extra });
+      record({ dir: 'in', n, id: msg.id, chat: msg.chat, sender: who?.phone ?? phoneOf(msg.sender) ?? msg.sender, decision: status, reason, ...(keepText ? { text: clip(msg.text, 500) } : {}), ...extra });
       log.info?.(`[wa] in #m${n} ${msg.isGroup ? 'group' : 'DM'} → ${status}${reason ? ` (${reason})` : ''}`);
       return { id: msg.id, n, decision: status, reason };
     };
@@ -733,6 +733,8 @@ export function t3Glue({ t3, chats, provision, serviceUser, getThread, setThread
       const own = await project();
       if (!own) return { sent: false, reason: 'no_project' };
       const threadId = randomUUID();
+      // A new chat starts by reading its guide (the skill), once.
+      text = `Read the whatsapp skill first, then answer.\n${text}`;
       try {
         await send(
           { type: 'thread.create', threadId, projectId: own.id, title: 'WhatsApp', modelSelection: MODEL, runtimeMode: 'full-access', interactionMode: 'default', branch: null, worktreePath: null },

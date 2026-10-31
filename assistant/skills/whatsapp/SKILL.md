@@ -78,7 +78,8 @@ A request to correct or add data becomes a proposal, as in the app:
 2. Answer with the proposal's `link` and one line on what it changes:
    “Propuesta: CAM026514 → *Mechanitis messenoides* ♀ (foto del sobre). Revísala y aplícala aquí: <link>”
 3. The person who asked (or another editor) reviews and applies it in the
-   app, signed in. From WhatsApp, proposals are drafted, never applied.
+   app, signed in: applying is done there only, so the answer ends with
+   the link, and an «aplica» sent on WhatsApp gets the link again.
 
 When the change is unclear (which row, which value), ask one short question
 first instead of drafting.
