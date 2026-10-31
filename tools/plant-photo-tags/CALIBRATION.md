@@ -22,3 +22,12 @@ Among passing models, the cheaper (ViT-B/32 over BioCLIP) wins ties within 5 poi
   ViT-L/14 top-1 90 % / 2 of 14 / 79 % (fails 2).
 - Threshold chosen on calibration only: ViT-L/14 with p(leaves or habit) >= 0.8 (calibration 90 % / 1 of 19 / 89 %).
   Validation: 100 % (17/17) / 0 of 14 / 79 %: passes all three. Used: ViT-L/14, prompts v2, threshold 0.8.
+
+## What the numbers support (pooled, both sets of 40, ViT-L/14, threshold 0.8)
+- 26 of 27 photos tagged leaves or habit showed them; 1 of 33 flower close-ups was tagged leaves or habit; 28 of 33
+  flowers were tagged flower. The validation set had been seen before the threshold was chosen, so it is not an
+  untouched holdout, and 80 photos labelled by one person are a small sample (17/17 has a 95 % lower bound near
+  80 %): few errors seen, not a measured rate.
+- Since 31 Oct 2026 the tags only pre-sort the candidates of a contact sheet (the nearest leaves-or-plant photo and
+  a flower are kept among a plant's tiles); the chat looks at the sheet and picks. Only the 6,620 photos of the
+  first part were tagged (all of Tithorea harmonia's hosts); the rest were not, on purpose.
