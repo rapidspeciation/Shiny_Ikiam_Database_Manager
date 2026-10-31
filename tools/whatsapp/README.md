@@ -8,53 +8,81 @@ in the lab only, and its answers go to an outbox file. **Nothing is sent to What
 
 | Part | Where |
 |---|---|
-| Relay: signature, duplicates, whitelist, group rules, rate limits, batching, one turn at a time | `server/whatsapp.mjs` |
+| Relay: signature, duplicates, whitelist, commands, group rules, rate limits, batching, one turn at a time | `server/whatsapp.mjs` |
+| The Haiku gate (off by default, see below) | `server/whatsapp-gate.mjs` |
+| `/usage`: the Claude account's use | `server/claude-usage.mjs` |
 | Routes `/api/wa/*`, the T3 glue, the CAM lookup | `server/index.mjs` (`createWhatsApp`, `whatsappRoute`) |
 | `whatsapp_reply` MCP tool (listed only for the service user's token, which also loses `apply_proposal`) | `server/whatsapp.mjs` (`REPLY_TOOL`, `mcp`) |
 | The assistant's guide for WhatsApp | `assistant/skills/whatsapp/SKILL.md` (every workspace gets it through `scripts/t3-provision.mjs`) |
 | Tests | `tests/whatsapp.test.mjs` (`node --test tests/whatsapp.test.mjs`) |
 | Simulator | `tools/whatsapp/simulate.mjs`, examples in `tools/whatsapp/examples/` |
+| Gate calibration | `tools/whatsapp/calibrate-gate.mjs` |
 
 ## How a message goes
 
 1. wacli (later) or the simulator POSTs `/api/wa/inbound`. The body is signed with
    `X-Wacli-Signature: sha256=<HMAC-SHA256 of the raw body>`.
-2. The relay drops duplicates (by message id) and checks the whitelist (`wa_people`, `wa_groups`).
-   Strangers and unknown groups are logged without their text and get no answer. An unknown group
-   is added as *pending* (disabled).
-3. In groups, these wake the chat: a mention of a bot JID (`WA_BOT_JIDS`), a quote of a bot answer,
+2. The relay drops duplicates (by message id) and checks the whitelist (`wa_people`, `wa_groups`)
+   before anything else. A message is kept only from an enabled person, in a DM or in an enabled
+   group. Everyone else (strangers, people not on the list writing in an enabled group, any message
+   in a disabled or unknown group) is logged without text, name, quote or media, and gets no answer:
+   no gate, no command and no model call. An unknown group is added as *pending* (disabled).
+3. DMs starting with `/` are answered by the relay, without a model:
+   - `/usage`: the 5-hour and weekly use of the Claude account the server runs on, with the reset
+     times in Ecuador time. It reads the account's `~/.claude/.credentials.json` on the server, as
+     the orchestrator's `claude_usage.py` does, and shares its 3-minute cache
+     (`/tmp/claude_usage_cache.json`). The token never leaves that one request.
+   - `/status`: the connection (outbox only, or wacli and the last message's age), the queue, the
+     last turn, the answers sent today, the gate and the chat's model.
+   - `/help`: the commands. Any other `/word` gets one line naming them.
+   - Admins also have `/add +593… Name` and `/remove +593…`. For anyone else these get a line saying
+     they are for admins.
+   In English, or in Spanish for people whose `language` is `es`.
+4. In groups, these wake the chat: a mention of a bot JID (`WA_BOT_JIDS`), a quote of a bot answer,
    the bot's name (`WA_BOT_NAME`, default `\b(ithobot|asistente|assistant)\b`) used to call it, or a
    `/command`. The name counts as «@asistente …» anywhere, or as a vocative at the start
    («Asistente: …», «oye asistente, …») or after a comma at the end («…, asistente?»). A name that goes on
    («@Asistente de campo A») or the word inside a sentence («la asistente llega mañana») does not wake it.
-   In `helpful` groups two more things count as candidates:
-   - a CAM whose genus or sex disagrees with the database, or a CAM it does not have;
-   - a protocol question that tags nobody and that no teammate answered within 20 min.
+   In `helpful` groups, the other lines go to one of two filters:
+   - **Rules** (the default): a CAM whose genus or sex disagrees with the database, or a CAM it does
+     not have; a protocol question that tags nobody and that no teammate answered within 20 min.
+   - **The Haiku gate** (`WA_GATE=haiku`): one `claude -p` call on Haiku 5.5 per line, with no tools,
+     MCP, settings or CLAUDE.md, in an empty folder. It sees a short prompt, the group's last 8 lines
+     and the line, and answers `{wake, reason}`. A protocol question it passes still waits 20 min for
+     a teammate. When the call fails, or past 600 calls a day, the rules decide. It costs about
+     $0.0003 and 3 s a line.
+     The calibration on 60 labelled group cases (30 Oct 2026) did not pass the bar set before the
+     run (wake recall ≥ 95 % on should-reply, false wakes ≤ 15 %): recall 95–97 %, false wakes
+     23 %. The rules got recall 55 % and false wakes 9 %. So the gate stays off by default; turn it
+     on to try it (`WA_GATE_DEFAULT` in `server/index.mjs` switches the default).
 
    Candidates are limited to 3 a day per group and never sent between 21:00 and 06:30 Ecuador time.
    Every other group message is kept as context for the next envelope.
-4. Rate limits: 20 handled messages an hour and 80 a day per number (one notice, then silence),
+5. Rate limits: 20 handled messages an hour and 80 a day per number (one notice, then silence),
    150 wakes a day in total (above that only admins' DMs go through), and 40 answers an hour.
-5. In the envelope, a person's line that follows their own line in the same chat within 5 minutes is
+6. In the envelope, a person's line that follows their own line in the same chat within 5 minutes is
    marked `(goes on from #m33)`, so the chat reads the two as one message. When a line wakes the chat,
    the same chat's earlier lines that are still waiting (an unprompted question's 20 min) go in the
    same envelope. `whatsapp_reply` warns before a second answer to one person's message.
-6. A chat's messages are sent 20 s after its last message, and no later than 60 s after its first,
+7. A chat's messages are sent 20 s after its last message, and no later than 60 s after its first,
    as one envelope (`[WA] N new`, `#m12 DM …`). The envelope goes to the service user's T3 chat
-   «WhatsApp» (Sonnet 5.5). The relay makes that chat on the first wake and provisions the
+   «WhatsApp» (Opus 5.5 at medium effort; `WA_MODEL`, `WA_EFFORT`). The relay makes that chat on the first wake and provisions the
    `whatsapp` user's T3 project if it is missing. Only one turn runs at a time; messages wait while
    the chat is answering (`server/t3tell.mjs`).
-7. The chat answers with `whatsapp_reply({ replyTo: "#m12", text, file?, confirm? })`. A reply to a
+8. The chat answers with `whatsapp_reply({ replyTo: "#m12", text, file?, confirm? })`. A reply to a
    chat with no message in the current turn returns a warning unless `confirm: true`.
-8. Admins can DM `/add +593… Name` or `/remove +593…`. The relay handles these itself, without a
-   model call.
+9. Photos from people on the list are copied into `wa-media/<date>/m<n>.<ext>` beside the database
+   (mode 600) and the envelope gives that path. `identify_species` takes the path (only inside that
+   folder), and the skill has the chat answer with the first species when the identifier is sure
+   (60 % or more) and the first two or three with their % when it is not.
 
 Everything is logged beside the app database:
 - `wa_inbox`: every message, its decision and reason. Text is kept only for whitelisted chats.
 - `wa_outbox`: every answer.
 - `wa_turns`: the turns.
 - `wa-outbox.jsonl`: the answers, which is what a test harness reads.
-- `wa-relay.log.jsonl`: everything in and out, including the envelopes.
+- `wa-relay.log.jsonl`: everything in and out, including the envelopes, the gate's decisions and costs.
+- `wa-media/`: the photos.
 
 In the lab these files are in `~/.cache/ithomiini-lab/app-workbook/` (or `app/` in offline mode).
 `/health` shows the relay's counters.
@@ -69,11 +97,29 @@ In the lab these files are in `~/.cache/ithomiini-lab/app-workbook/` (or `app/` 
 | `WA_SERVICE_USER` | The app user the chat's tools run as (`whatsapp`, made once, cannot sign in) |
 | `WA_BOT_JIDS`, `WA_BOT_NAME` | The bot's JIDs/LIDs (comma-separated) and the name regex |
 | `WA_LAB=1` | Lets the simulator set the whitelist (`POST /api/wa/setup`), and only when the workbook is not the team's |
+| `WA_MODEL`, `WA_EFFORT` | The chat's model (`claude-opus-5-5` by default, or `claude-sonnet-5-5`) and effort (`medium`; `low`, `high`). Read when the chat is made |
+| `WA_GATE` | `rules` (default) or `haiku` |
+| `WA_CLAUDE_BIN` | The `claude` the gate runs (`claude`) |
+| `WA_USAGE=0` | Turns `/usage` off |
+| `WA_MEDIA_DIR` | Where photos are kept (`wa-media` beside the database) |
 | `WA_DEBOUNCE_MS` | The 20 s quiet time, for experiments |
 | `WA_QUESTION_WAIT_MS`, `WA_QUIET_HOURS=0`, `WA_SENDS_HOUR` | Lab only (`WA_LAB=1`): a shorter wait for unanswered questions, no quiet hours and a higher hourly answer limit, so the simulator can run the unprompted cases at any time |
 
 `tools/lab/app.sh` sets the secret file and `WA_LAB=1`, and unsets `WA_SENDER`. It also adds the
-secret to the paths the lab chats may not read.
+secret to the paths the lab chats may not read. It points `IDENTIFIER_DIR` at the lab's copy of the
+identifier's files (`~/.cache/ithomiini-lab/identifier`, made as `tools/identifier/setup.sh` does)
+and keeps the background photo readings off (`READINGS=0`, unless set).
+
+## Gate calibration
+
+```sh
+node tools/whatsapp/calibrate-gate.mjs <new private folder> <cases.jsonl>... --repeats 2 --db ~/.cache/ithomiini-lab/app-workbook/app.sqlite
+```
+
+It runs the rules and the gate on each group case (DM cases are left out; `stranger` and
+`new_unknown_member` cases count as dropped) and writes `items.jsonl` and `summary.json`: recall and
+false wakes for the rules, the rule filter and each gate repeat, with the cost per call. Keep the
+cases and the output out of the repo.
 
 ## Simulator
 
@@ -85,7 +131,8 @@ node tools/whatsapp/simulate.mjs tools/whatsapp/examples/cases.jsonl /tmp/wa-sim
 
 - A case looks like this:
   `{ id, chat: "dm" | "<group>@g.us", chatName?, sender: "+593…", senderName?, preceding?: [{ sender, senderName?, text }], message, image?: "/abs/path.jpg", quoted?: "out:<n>", mentions?: [jid] }`.
-  `preceding` messages are posted first, one minute apart.
+  `preceding` messages are posted first, one minute apart. Name a photo without its species: the
+  chat sees its path.
 - `--setup` loads the whitelist, and `--fresh-thread` starts a new «WhatsApp» chat on the next wake.
 - Every message of a case is followed, the preceding ones too (one of them may wake the chat).
 - Output, in a new, empty folder: `results.jsonl`, one line per case with `{ id, decision, reason, outcome, reply | "no reply", replies, proposalLinks, seconds }`, and `run.json`.
@@ -112,5 +159,6 @@ node tools/whatsapp/simulate.mjs tools/whatsapp/examples/cases.jsonl /tmp/wa-sim
   carry any picture the chat already has.
 - **No catch-up after a restart.** Nothing is read from wacli's store after a restart. Rate-limit
   counts survive (they are in SQLite), and a turn left open is closed by the next pump.
-- **None of these yet:** the weekly chat rotation, the media retention clean-up, the bridge
-  disconnect alerts or the Haiku classifier.
+- **None of these yet:** the weekly chat rotation, the media retention clean-up and the bridge
+  disconnect alerts. `/status` reports the last message's age, not wacli's own connection state.
+- **Group `/commands`** still wake the chat; the relay answers commands in DMs only.

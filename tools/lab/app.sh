@@ -158,6 +158,10 @@ env_app=(
   # The WhatsApp relay, answers to the outbox only (WA_SENDER stays unset: nothing goes to WhatsApp).
   WA_WEBHOOK_SECRET_FILE="$LAB/wa-webhook-secret"
   WA_LAB=1
+  # The AI Identifier (identify_species) from the lab's own copy of its files (tools/identifier/setup.sh's
+  # folder, outside the repo); the background photo readings stay off unless READINGS=1.
+  IDENTIFIER_DIR="${LAB_IDENTIFIER_DIR:-$LAB/identifier}"
+  READINGS="${READINGS:-0}"
   # «Actualizar T3» updates the lab's T3 as the server's unit does, and starts it again (it is no service here).
   ITHOMIINI_T3_UPDATE_COMMAND="$HERE/tools/lab/t3.sh --update"
   "${env_provision[@]}"
