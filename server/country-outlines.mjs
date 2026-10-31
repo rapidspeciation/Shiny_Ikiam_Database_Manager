@@ -39,14 +39,14 @@ const inPolygon = (lng, lat, polygon) => inRing(lng, lat, polygon[0]) && !polygo
 export const inBox = (lng, lat, [w, s, e, n], pad = 0, lngPad = pad) => lng >= w - lngPad && lng <= e + lngPad && lat >= s - pad && lat <= n + pad;
 export const lngPadAt = lat => COAST_TOLERANCE_DEG / Math.max(0.05, Math.cos((lat * Math.PI) / 180));
 
-/** Squared distance (degrees, longitude scaled by latitude) from a point to a ring's edges. */
-function ringDistance2(lng, lat, ring) {
+/** Squared distance (degrees, longitude scaled by latitude) from a point to a ring's edges within `tolerance`. */
+function ringDistance2(lng, lat, ring, tolerance = COAST_TOLERANCE_DEG) {
   const k = Math.cos((lat * Math.PI) / 180);
   let best = Infinity;
   // Only edges in the bands within the coast margin can be that close.
   const bands = bandsOf(ring);
   const edges = [];
-  for (let b = Math.floor((lat - COAST_TOLERANCE_DEG) / BAND); b <= Math.floor((lat + COAST_TOLERANCE_DEG) / BAND); b++) edges.push(...(bands.get(b) ?? []));
+  for (let b = Math.floor((lat - tolerance) / BAND); b <= Math.floor((lat + tolerance) / BAND); b++) edges.push(...(bands.get(b) ?? []));
   for (let e = 0; e < edges.length; e += 2) {
     const [j, i] = [edges[e], edges[e + 1]];
     const [ax, ay, bx, by, px] = [ring[j][0] * k, ring[j][1], ring[i][0] * k, ring[i][1], lng * k];
@@ -59,19 +59,22 @@ function ringDistance2(lng, lat, ring) {
   return best;
 }
 
-/** The country a point lies in; the nearest one within COAST_TOLERANCE_DEG when it lies in none; else null. */
-export function countryOfPoint(lng, lat, outlines) {
+/**
+ * The country a point lies in; the nearest one within `tolerance` (degrees, default COAST_TOLERANCE_DEG) when it
+ * lies in none; else null. Any outlines of the same shape work: server/admin-areas.mjs gives it Ecuador's cantons.
+ */
+export function countryOfPoint(lng, lat, outlines, tolerance = COAST_TOLERANCE_DEG) {
   const countries = outlines?.countries ?? [];
   for (const c of countries)
     if (inBox(lng, lat, c.bbox) && c.polygons.some((p, i) => (!c.boxes || inBox(lng, lat, c.boxes[i])) && inPolygon(lng, lat, p))) return c.name;
   let nearest = null;
-  let best = COAST_TOLERANCE_DEG ** 2;
-  const lngPad = lngPadAt(lat);
+  let best = tolerance ** 2;
+  const lngPad = (lngPadAt(lat) * tolerance) / COAST_TOLERANCE_DEG;
   for (const c of countries) {
-    if (!inBox(lng, lat, c.bbox, COAST_TOLERANCE_DEG, lngPad)) continue;
+    if (!inBox(lng, lat, c.bbox, tolerance, lngPad)) continue;
     for (const [i, p] of c.polygons.entries()) {
-      if (c.boxes && !inBox(lng, lat, c.boxes[i], COAST_TOLERANCE_DEG, lngPad)) continue;
-      const d = ringDistance2(lng, lat, p[0]);
+      if (c.boxes && !inBox(lng, lat, c.boxes[i], tolerance, lngPad)) continue;
+      const d = ringDistance2(lng, lat, p[0], tolerance);
       if (d <= best) [best, nearest] = [d, c.name];
     }
   }

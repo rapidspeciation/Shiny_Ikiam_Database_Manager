@@ -1,6 +1,6 @@
 # Assistant tools: maps, host plants, Wings Gallery
 
-Six read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?", "show me photos of Tithorea harmonia's host plants found in Ecuador" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
+Seven read-only tools that let the assistant (Asistente tab) answer questions such as "where are the best places to find Oleria onega?", "what does Mechanitis feed on?", "show me photos of Tithorea harmonia's host plants found in Ecuador" or "show me female Melinaea from Tena", with links that open the public sites already filtered. Code: `server/maps-tools.mjs`. Tests: `tests/maps-tools.test.mjs`.
 
 None of them writes anything: they read the public sites' data files over HTTPS and the app's own database with `SELECT` only. What they keep is in memory, in the tools' worker (`server/assistant-host.mjs`: they are not in `MAIN_TOOLS`, so a 20 MB file read never holds up the app's thread).
 
@@ -77,6 +77,30 @@ Score: the plant records of the species-level hosts (as in `host_plants`' sites;
 Answer, per site: locality (or the nearest named place for a cell), coordinates, km from the point, score, records within 2, 5 and 10 km, records per plant within 10 km, the nearest record (plant, km, year), the oldest and newest years and the undated records, the elevation (the workbook's median for a locality; the 90 m DEM for a cell), the project's records there and those of the butterfly asked, and a map link on it. `map_url`: the first site's, with the host-plant layer on. `markdown`: for the first 3 sites, the plant photos nearest each (from the first 10 gallery pages of each plant with records in reach), with plant, year and distance, each linked to its full photo, and their GBIF records and datasets. `method` and `caveats`: the kernel; records follow roads, stations and observers (a high score can be a well-sampled place, not more plants); a plant record is not evidence that the butterfly uses the plant there.
 
 Tithorea harmonia near Ikiam (30 km, low confidence and unchecked rows too): 7 plant records in reach, so the scores rest on few, old records (1968 to 1995); about 11,000 characters, 0.8 s from local files.
+
+### `host_plant_photos`
+"Which host plants of Tithorea harmonia would we find in Napo? Show me photos": one call that places the plants' records by a province's or canton's outline, picks one photo per plant, downloads it ready to send and credits it. Code: `server/maps-tools.mjs` (`hostPlantPhotos`), `server/admin-areas.mjs` (outlines), `server/plant-photos.mjs` (photos and credits).
+
+- `butterfly` (species, subspecies or genus); `area`: a province or canton of Ecuador ("Napo", "provincia de Napo", "cantón Tena", "Bolívar, Manabí"; a province wins over a canton of the same name unless the words say canton, and the answer says the canton exists); or `country`, `bbox`, `near` as in `host_plants`. `min_confidence`, `include_unchecked` as there. `photos` (default 5, at most 8). `lang` `en`/`es` for the captions and `summary`. `host_plants` takes `area` too.
+- Outlines: `server/ecuador-admin.json` (660 KB), INEC's 223 cantons (2019, through geoBoundaries gbOpen ECU ADM2, CC BY 3.0 IGO) simplified to 0.002° (about 200 m), each with its province (read from geoBoundaries ECU ADM1, CC0, at points inside it). A province is the union of its cantons. A point in no canton (the simplification's slivers, or just past the border) counts in the nearest canton within 0.0055° (about 600 m). Read once per process (17 ms); 100,000 point tests take about 0.3 s. Rebuild with `node scripts/build-ecuador-admin.mjs`. Where INEC's 2019 limits differ from older maps (the Napo–Sucumbíos limit near El Chaco and Gonzalo Pizarro), INEC's are used, and a photo outside the area says the canton its outline puts it in.
+- Plants: the species-level hosts with a records layer; two plants whose GBIF records are the same (a synonym kept apart by the review, e.g. Prestonia acutifolia and P. quinquangularis) are one plant, both names given (`same_records_as`). Per plant: records in the area, by canton, years, records within 60 km outside it, all records, evidence, confidence and citation (`sources`: each citation's link once). `nearby`: hosts with no record in the area but some within 60 km of its box (likely there, not recorded); `not_in_area`: the rest. Genus-level hosts are counted in `genus_level`, without a photo.
+- Photos: one per plant, the plants recorded in the area first, then `nearby` ones, up to `photos`. For each plant, from its first 12 gallery pages: a field photo taken in the area, else a field photo within 60 km, else a herbarium sheet in the area, else the nearest field photo; newer first. A photo another plant already sent is skipped; one that cannot be fetched is replaced by the next. Downloaded at most 1280 px: iNaturalist's own `large` size (1024 px), others through wsrv.nl (`fit=inside`, JPEG). Credit from the GBIF occurrence API: photographer (the media's creator, else rights holder, else recorder), licence, place (locality, province, country), year, the iNaturalist observation (or the GBIF record) as the link.
+- Cache (`<photo cache>/host-plants`): `photos/` (JPEG by URL), `gbif/` (the credit fields of each record), `records/<layers version>/<plant>.json` (each plant's coordinates and years: a new worker or a restart reads these instead of the 7.5 MB chunks). All in memory too; the maps' files as for the other tools (6 hours, ETag). Photos and credits are fetched together, all plants at once.
+
+Answer, the shape the WhatsApp bridge reads:
+
+```
+images: [ { path,        // a JPEG on this server, at most 1280 px (null only without a cache folder: tests)
+            caption,     // ready to send, WhatsApp formatting: _Plant_ (notes) / place, year (outside the area: where) / Foto: author (licence) / link
+            plant, in_area, plant_in_area, km_outside?, field_photo, width, height, bytes,
+            url,         // the 1280 px source the file was made from
+            source_url,  // the gallery's original
+            credit: { photographer, licence, licence_url, place, year, link, gbif, as_recorded? } } ]
+summary   // a short reply (es/en): the plants in the area with records, years and cantons; nearby; the rest; the caveat
+map_url   // Wings Atlas: the butterfly, the host-plant layer with these plants, Ecuador, the area's view
+markdown  // the same photos for the Asistente tab
+plants, nearby, not_in_area, genus_level, sources, area, records_note, timing_ms { area, associations, records, gallery, photos, total, records_from, cache }
+```
 
 ### `gallery_specimens`
 Collection specimens with wing photos, from the workbook and Photo_links.

@@ -921,13 +921,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const walkIds = inWorker ? null : createWalkIds({ store, identifier, onRead: walkId => markWalkReadings(walkId) });
   // Butterflies' photos beside the chat (show_photos): a card that only shows.
   const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
-  // maps_snapshot's pictures and basemap tiles: beside the photo cache (none for an in-memory database).
+  // maps_snapshot's pictures and basemap tiles, host_plant_photos' photos, credits and plant records: beside the photo
+  // cache (none for an in-memory database).
+  const mapsBase = config.photoCacheDir || photoCacheDir({}, db?.location?.() ?? null);
   const mapsTools = createMapsTools({
     store,
-    snapshotDir: (() => {
-      const base = config.photoCacheDir || photoCacheDir({}, db?.location?.() ?? null);
-      return base ? `${base}/map-snapshots` : null;
-    })(),
+    snapshotDir: mapsBase ? `${mapsBase}/map-snapshots` : null,
+    hostPlantDir: mapsBase ? `${mapsBase}/host-plants` : null,
     ...(config.mapsTools ?? {}),
   });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
