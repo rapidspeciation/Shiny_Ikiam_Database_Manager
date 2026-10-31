@@ -13,7 +13,7 @@
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeCacheFile } from './cache-write.mjs';
 import { driveIdOf, specimenName } from './photo-links.mjs';
@@ -66,6 +66,10 @@ const CHUNKS_AT_ONCE = 2;
 const NEARBY_KM = 50;
 const NEAREST_MAX_KM = 300;
 const SEND_PAGES = 12;
+// The photo tags file in the cache folder, and the probability of "leaves or whole plant" over which a photo counts
+// as showing them (calibrated: 17 of 17 right, no flower close-up taken for leaves, on 40 photos checked by eye).
+export const TAGS_FILE = 'plant-photo-tags-v1.json';
+export const TAG_LEAVES = 0.8;
 const SEND_WORDS = {
   en: {
     area: 'the area',
@@ -76,6 +80,7 @@ const SEND_WORDS = {
     photo: 'Photo',
     unknown: 'author not given',
     herbariumTag: '[Herbarium specimen]',
+    views: { leaves: 'leaves', habit: 'whole plant', flower: 'flower', fruit: 'fruit' },
     herbarium: 'herbarium specimen (no photo of the living plant)',
   },
   es: {
@@ -87,6 +92,7 @@ const SEND_WORDS = {
     photo: 'Foto',
     unknown: 'autor no indicado',
     herbariumTag: '[Ejemplar de herbario]',
+    views: { leaves: 'hojas', habit: 'planta entera', flower: 'flor', fruit: 'fruto' },
     herbarium: 'ejemplar de herbario (no hay foto de la planta viva)',
   },
 };
@@ -658,6 +664,20 @@ export function createMapsTools({
   // Provinces and cantons (downloaded once into the cache folder), photos to send and their credits, plant records.
   const adminAreas = createAdminAreas({ dir: cacheDir ? join(cacheDir, 'admin') : null, fetchImpl });
   const photoFiles = createPlantPhotos({ dir: cacheDir ? join(cacheDir, 'plant-photos') : null, fetchImpl });
+  // What each gallery photo shows (scripts/plant-photo-tags: leaves, habit, flower, fruit…), by iNaturalist photo
+  // number, from the cache folder; read again when the file changes. Without it, photos are not told apart by view.
+  let tagsKept = null;
+  const photoTags = () => {
+    if (!cacheDir) return null;
+    const file = join(cacheDir, TAGS_FILE);
+    try {
+      const mtime = statSync(file).mtimeMs;
+      if (tagsKept?.mtime !== mtime) tagsKept = { mtime, map: new Map(Object.entries(JSON.parse(readFileSync(file, 'utf8')).photos ?? {})) };
+      return tagsKept.map;
+    } catch {
+      return null;
+    }
+  };
   /** The `area` asked (a province or canton of Ecuador), null without one, or { error }. */
   const areaOf = args => (args.area && (typeof args.area === 'object' || text(args.area)) ? adminAreas.area(args.area) : Promise.resolve(null));
 
@@ -1630,6 +1650,7 @@ export function createMapsTools({
     const words = SEND_WORDS[lang];
     const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
     const picked = [...plants.filter(p => p.status === 'in_area'), ...plants.filter(p => p.status === 'nearby').sort((a, b) => b.near.records - a.near.records)].slice(0, n);
+    const tags = photoTags();
     const galleries = await Promise.all(
       picked.map(async p => {
         const path = m.galleries[p.e.slug];
@@ -1641,22 +1662,44 @@ export function createMapsTools({
     );
     const used = new Set();
     let failed = 0;
+    const viewOf = ph => {
+      const t = tags?.get(/inaturalist[^/]*\/photos\/(\d+)\//.exec(ph.img)?.[1] ?? '');
+      return !t ? null : t[1] >= TAG_LEAVES ? t[0] === 'habit' ? 'habit' : 'leaves' : t[0] === 'flower' ? 'flower' : t[0];
+    };
+    const rankedOf = gallery =>
+      gallery
+        .map(ph => {
+          const inside = !area || area.test(ph.lng, ph.lat);
+          const away = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
+          // Living plants first, wherever they are (a field trip needs the plant as it grows); a herbarium
+          // sheet only for a plant with no other photo.
+          const live = ph.field && !ph.herbarium ? 0 : !ph.herbarium ? 1 : 2;
+          const view = viewOf(ph);
+          return { ...ph, inside, away, live, view, loc: inside ? 0 : away <= nearbyKm ? 1 : 2 };
+        })
+        .sort((a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0));
+    // The first photo of a plant shows its leaves or the whole plant (how it is found in the field): of the living
+    // plant's photos, those the tags call leaves or habit first, untagged next, flowers and fruits last; then a flower
+    // as a second photo of the plants in order, while `n` allows.
+    const viewRank = ph => (ph.view === 'leaves' || ph.view === 'habit' ? 0 : ph.view === null ? 1 : 2);
+    const ranked = galleries.map(rankedOf);
+    // A first photo's spares are other leaves or untagged photos (a flower kept for the second), unless it has none.
+    const firstOf = list => {
+      const sorted = [...list].sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b));
+      const notFlower = sorted.filter(ph => viewRank(ph) < 2);
+      return notFlower.length ? notFlower : sorted;
+    };
+    const jobs = picked.map((p, i) => ({ p, list: firstOf(ranked[i]), second: false }));
+    for (const [i, p] of picked.entries()) {
+      if (jobs.length >= n) break;
+      const flowers = ranked[i].filter(ph => ph.live === 0 && ph.view === 'flower');
+      if (flowers.length) jobs.push({ p, list: flowers, second: true });
+    }
     const got = await Promise.all(
-      picked.map(async (p, i) => {
-        const ranked = galleries[i]
-          .map(ph => {
-            const inside = !area || area.test(ph.lng, ph.lat);
-            const away = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
-            // Living plants first, wherever they are (a field trip needs the plant as it grows); a herbarium
-            // sheet only for a plant with no other photo.
-            const live = ph.field && !ph.herbarium;
-            const tier = live ? (inside ? 0 : away <= nearbyKm ? 1 : 2) : !ph.herbarium ? (inside ? 3 : 4) : inside ? 5 : 6;
-            return { ...ph, inside, away, tier };
-          })
-          .sort((a, b) => a.tier - b.tier || a.away - b.away || (b.year ?? 0) - (a.year ?? 0));
-        // Taken in order, before any await, so two plants never pick the same photo.
+      jobs.map(async ({ p, list, second }) => {
+        // Taken in order, before any await, so two photos are never the same.
         const tries = [];
-        for (const ph of ranked) {
+        for (const ph of list) {
           if (tries.length >= 4) break;
           if (used.has(ph.img)) continue;
           used.add(ph.img);
@@ -1668,7 +1711,7 @@ export function createMapsTools({
             const id = /(\d+)\/?$/.exec(ph.record ?? '')?.[1];
             const [credit, file] = await Promise.all([photoFiles.credit(id, ph.img), photoFiles.photo(ph.img)]);
             if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
-            return { p, ph, credit, file };
+            return { p, ph, credit, file, second };
           } catch {
             failed++;
           }
@@ -1678,7 +1721,7 @@ export function createMapsTools({
     );
     const adminData = area?.admin ? await adminAreas.data() : null;
     const stem = v => fold(v).split(' ').slice(0, 2).map(w => w.slice(0, -2)).join(' ');
-    const images = got.filter(Boolean).map(({ p, ph, credit, file }) => {
+    const images = got.filter(Boolean).map(({ p, ph, credit, file, second }) => {
       const name = p.e.taxon.name;
       // "Mesechites trifidus" for "Mesechites trifida" is the same name: not said.
       const asRecorded = credit?.as_recorded && ![name, p.e.taxon.gbif_name, ...(p.same ?? [])].filter(Boolean).map(stem).includes(stem(credit.as_recorded)) ? credit.as_recorded : null;
@@ -1692,9 +1735,11 @@ export function createMapsTools({
       const status = p.status === 'in_area' ? words.inArea(short, p.own.length) : words.candidate(short, p.near.records, nearbyKm);
       return {
         path: file.path,
-        caption: [`${ph.herbarium ? `${words.herbariumTag} ` : ''}_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.herbarium ? `, ${words.herbarium}` : ''}`, link].filter(Boolean).join('\n'),
+        caption: [`${ph.herbarium ? `${words.herbariumTag} ` : ''}_${name}_${p.same ? ` (= ${p.same.join(', ')})` : ''}${asRecorded ? ` (${words.as} ${asRecorded})` : ''} — ${status}${words.views[ph.view] ? ` · ${words.views[ph.view]}` : ''}`, `${[place, year].filter(Boolean).join(', ')}${at}`, `${words.photo}: ${by ?? words.unknown}${credit?.licence ? ` (${credit.licence})` : ''}${ph.herbarium ? `, ${words.herbarium}` : ''}`, link].filter(Boolean).join('\n'),
         plant: name,
         status: p.status,
+        view: ph.view,
+        ...(second ? { second: true } : {}),
         photo_in_area: ph.inside,
         field_photo: ph.field && !ph.herbarium,
         herbarium: ph.herbarium,
@@ -1707,6 +1752,7 @@ export function createMapsTools({
       };
     });
     const missing = picked.filter((_, i) => !got[i]).map(p => p.e.taxon.name);
+    // Seconds that found nothing are not said.
     const note = [
       failed ? `${failed} photo(s) could not be fetched or credited (GBIF's record of the photo): the next best was used.` : '',
       missing.length ? `No credited photo could be had now for ${missing.join(', ')}.` : '',

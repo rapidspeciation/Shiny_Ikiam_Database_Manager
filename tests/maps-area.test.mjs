@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOUNDARY_URLS, createAdminAreas } from '../server/admin-areas.mjs';
-import { createMapsTools } from '../server/maps-tools.mjs';
+import { TAGS_FILE, createMapsTools } from '../server/maps-tools.mjs';
 import { MAX_PX, creditOf, jpegSize, licenceName, proxyUrl, sizedUrl } from '../server/plant-photos.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
@@ -318,4 +318,21 @@ test('host_plants with send_photos: a living plant before a herbarium sheet, eve
   } finally {
     [FILES[mite], FILES[cestrum]] = saved;
   }
+});
+
+test('host_plants with send_photos and photo tags: leaves or the whole plant first, a flower as a second photo', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'maps-cache-'));
+  writeFileSync(join(dir, TAGS_FILE), JSON.stringify({ model: 'test', photos: { 11: ['flower', 0.02, 0.95], 12: ['leaves', 0.97, 0.01], 13: ['habit', 0.9, 0.05] } }));
+  const out = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 3, lang: 'es' });
+  // Solanum mite: its leaves (Sucumbíos) before its flower taken in Tena; Cestrum: the whole plant; then the flower.
+  assert.deepEqual(out.images.map(im => [im.plant, im.view, im.second ?? false]), [
+    ['Solanum mite', 'leaves', false],
+    ['Cestrum megalophyllum', 'habit', false],
+    ['Solanum mite', 'flower', true],
+  ]);
+  assert.match(out.images[0].caption, /^_Solanum mite_ \(= Solanum mitis\) — registrada en Napo \(2 registros\) · hojas\n/);
+  assert.match(out.images[2].caption, / · flor\n/);
+  // Fewer photos than plants and flowers: the flower waits.
+  const two = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: dir }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 2 });
+  assert.deepEqual(two.images.map(im => im.view), ['leaves', 'habit']);
 });
