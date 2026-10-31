@@ -465,3 +465,39 @@ test('pictures go out together, each with its own caption, through the same trig
   assert.equal(sent.length, 5);
   assert.deepEqual(sent.map(s => s.text).sort(), [0, 1, 2, 3, 4].map(i => `Claude: foto ${i}`));
 });
+
+test('a phone message that arrives with empty text: filled from the store; if still empty, not marked seen', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-empty-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const db = new DatabaseSync(join(dir, 'wacli.db'));
+  db.exec('CREATE TABLE messages (chat_jid TEXT, msg_id TEXT, text TEXT, display_text TEXT, media_caption TEXT)');
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  const hook = (id, text) => bridge.handle({ Chat: 'G@g.us', ID: id, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: text });
+
+  // Empty and not in the store yet: skipped, but not marked seen.
+  assert.equal(hook('PH1', '').reason, 'no @claude');
+  assert.ok(!bridge.state().seen.includes('PH1'));
+  // The second webhook has the text: handled, not a duplicate.
+  assert.equal(hook('PH1', '@claude cuántos hay?').decision, 'queued');
+  await settle();
+  assert.ok(outbox().some(s => s.text === 'Claude: Hay 12.'));
+  assert.equal(hook('PH1', '@claude cuántos hay?').reason, 'duplicate');
+
+  // Empty payload, text already in the store: read from it.
+  db.prepare('INSERT INTO messages VALUES (?, ?, ?, NULL, NULL)').run('G@g.us', 'PH2', '@claude otra');
+  assert.equal(hook('PH2', '').decision, 'queued');
+  await settle();
+  assert.equal(outbox().filter(s => s.text === 'Claude: Hay 12.').length, 2);
+});

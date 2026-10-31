@@ -180,7 +180,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     if (!flushTimer) flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(e => log.error?.('history:', e.message))), chat.dryRun && !config.routes[chat.route]?.ssh ? 0 : 3000).unref();
   };
   function mirror(chat, msg) {
-    if (!chat.history?.dir || msg.skip) return;
+    if (!chat.history?.dir || msg.skip || (!msg.text && !msg.media)) return;
     let reply = {};
     if (msg.replyToId) {
       let q = null;
@@ -376,6 +376,20 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       return { decision: 'drop' };
     }
     if (chat.dryRun && body._labMedia) msg.labMedia = String(body._labMedia);
+    // A message sent from Franz's phone can reach the webhook before its text is stored: read it from wacli.db
+    // (read-only); if it is still empty it is not marked seen below, so the later webhook with the text is handled.
+    if (!msg.text && !msg.media) {
+      let db = null;
+      try {
+        db = wacliDb();
+        const row = db.prepare("SELECT coalesce(text, display_text, media_caption, '') t FROM messages WHERE chat_jid = ? AND msg_id = ?").get(msg.chat, msg.id);
+        if (row?.t) msg.text = String(row.t);
+      } catch (e) {
+        log.error?.('text lookup:', e.message);
+      } finally {
+        db?.close();
+      }
+    }
     try {
       mirror(chat, msg);
     } catch (e) {
@@ -391,7 +405,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       return { decision, reason };
     };
     if (state.seen.includes(msg.id)) return out('skip', 'duplicate');
-    state.seen.push(msg.id);
+    if (msg.text || msg.media) state.seen.push(msg.id);
     save();
     if (msg.skip) return out('skip', msg.skip);
     if (now() - msg.at > STALE_MS) return out('skip', 'old');
