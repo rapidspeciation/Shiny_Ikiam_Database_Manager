@@ -1437,6 +1437,9 @@ export function createMapsTools({
 
   async function plantsInArea(kept, args, area, asked) {
     const started = Date.now();
+    // The places that name the sites come from the maps' butterfly records (the largest files, read one at a time):
+    // started now, so they load while the plants are counted and the photos fetched.
+    const namedLoading = namedPlaces().catch(() => () => null);
     const { m, modified, shown, mapped, withRecords, withoutRecords, points: recs, from } = await hostPlantLayers(kept, args);
     const recordsMs = Date.now() - started;
     const siteKm = Math.min(50, Math.max(0.5, Number(args.site_km) || 5));
@@ -1479,7 +1482,12 @@ export function createMapsTools({
     const firstOf = new Map();
     for (const p of plants) if (p.sig && mapped.includes(p.e)) (firstOf.get(p.sig) ? (p.sameAs = firstOf.get(p.sig).e.taxon.name) : firstOf.set(p.sig, p));
     for (const p of plants) if (p.sameAs) (firstOf.get(p.sig).same ??= []).push(p.e.taxon.name);
-    const named = await namedPlaces().catch(() => () => null);
+    // The photo files, fetched while the thumbnails and site names are made.
+    const sendPhotos = clamp(args.send_photos, 0, 8, 0);
+    const photosStarted = Date.now();
+    const filesLoading = sendPhotos
+      ? photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').then(f => ({ ...f, ms: Date.now() - photosStarted }))
+      : Promise.resolve(null);
     const sitesAll = plantSites([...points.values()], siteKm);
     const limit = clamp(args.limit, 1, 15, 8);
     const urlTaxa = plantUrlTaxa(shown, mapped, asked, area?.countries ?? []);
@@ -1493,7 +1501,6 @@ export function createMapsTools({
           ? viewOf([{ lat: area.bbox[1], lng: area.bbox[0] }, { lat: area.bbox[3], lng: area.bbox[2] }])
           : null;
     const where = area ? (area.admin ? adminWhere(area.admin) : area.countries.length ? area.countries.join(', ') : area.near ? `${area.near.km} km around ${area.near.lat}, ${area.near.lng}` : 'the box asked') : 'their whole range';
-    const sendPhotos = clamp(args.send_photos, 0, 8, 0);
     // With photo files asked, no thumbnails unless asked too: a small answer.
     const want = clamp(args.photos, 0, 6, sendPhotos ? 0 : 3);
     // A photo page that cannot be read now leaves that plant without photos, not the answer without its records.
@@ -1520,8 +1527,7 @@ export function createMapsTools({
         return { plant: e.taxon.name, text: [head, thumbs, credit].join('  \n') };
       })
       .filter(Boolean);
-    const photosStarted = Date.now();
-    const files = sendPhotos ? await photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en') : null;
+    const [files, named] = await Promise.all([filesLoading, namedLoading]);
     const shownBlocks = [];
     for (const b of blocks) if (shownBlocks.reduce((n, x) => n + x.text.length + 2, 0) + b.text.length <= MARKDOWN_CHARS) shownBlocks.push(b);
     const markdown = shownBlocks.map(b => b.text).join('\n\n');
@@ -1596,7 +1602,7 @@ export function createMapsTools({
       ...(photoFailed ? { photos_note: 'Some photo pages of the maps could not be read now: those plants have no photos in this answer.' } : {}),
       records_note: `Plant records: the maps' GBIF occurrences of each plant (generated ${text(m.generated_at).slice(0, 10) || 'date unknown'}), placed in a country by their coordinates (Natural Earth 1:50m outlines: a record within a few km of a border can fall on the wrong side). They show where the plant has been collected or photographed, not that the butterfly uses it there. ${m.caveat ?? ''}`.trim(),
       plant_data: { manifest: new URL(`data/${HP}host_plant_layers_manifest.json`, mapsBase).href, modified: modified ?? null, records_from: from },
-      timing_ms: { records: recordsMs, ...(files ? { photos: Date.now() - photosStarted } : {}), area_total: Date.now() - started },
+      timing_ms: { records: recordsMs, ...(files ? { photos: files.ms } : {}), area_total: Date.now() - started },
     };
   }
 
