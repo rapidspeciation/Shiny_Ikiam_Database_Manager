@@ -363,7 +363,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
 
     <p class="hint px-4 py-1">
       {{ $t('Últimos {n} registros de Collection_data.', { n: recentCount }) }}
-      <button class="underline" @click="recentCount += 20">{{ $t('ver más') }}</button>
+      <button class="hit-target underline" @click="recentCount += 20">{{ $t('ver más') }}</button>
     </p>
     <div class="min-h-80 flex-1">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Collection_data' }) }}</p>

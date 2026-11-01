@@ -120,7 +120,7 @@ async function toggleHistory() {
       <strong class="text-sm font-semibold">{{ i.cam || i.label }}</strong>
       <button
         v-if="i.row && !i.resolved"
-        class="text-brand-700 hover:underline"
+        class="hit-target text-brand-700 hover:underline"
         :title="$t('Abrir la fila en Tablas')"
         @click="emit('open', i.sheet, i.label)"
       >
@@ -221,7 +221,7 @@ async function toggleHistory() {
             <tbody>
               <tr v-for="(r, n) in i.table.rows" :key="r.recordId">
                 <td class="border-b border-stone-100 px-1.5 py-1 whitespace-nowrap">
-                  <button class="text-brand-700 hover:underline" @click="emit('open', r.sheet, r.label)">
+                  <button class="hit-target text-brand-700 hover:underline" @click="emit('open', r.sheet, r.label)">
                     {{ r.sheet === i.sheet ? '' : `${r.sheet} ` }}{{ r.row }}
                   </button>
                 </td>
@@ -313,7 +313,7 @@ async function toggleHistory() {
         >
           <Layers :size="14" class="text-stone-500" />
           <span>{{ $t('Lote «{label}»: {n}', { label: groupLabel(i.group), n: i.group.size }) }}</span>
-          <button class="text-brand-700 hover:underline" @click="emit('group', i.group.key)">{{ $t('ver solo el lote') }}</button>
+          <button class="hit-target text-brand-700 hover:underline" @click="emit('group', i.group.key)">{{ $t('ver solo el lote') }}</button>
           <template v-if="canEdit">
             <button class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="emit('batch', i, 'accepted')">
               {{ $t('Aceptar los {n}', { n: i.group.size }) }}

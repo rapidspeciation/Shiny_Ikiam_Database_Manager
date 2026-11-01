@@ -142,7 +142,7 @@ const counts = computed(() => page.value?.open ?? {})
             <a
               v-if="item.sheet && item.row && !item.solved.rowGone"
               :href="tablesLink(item.sheet, item.label ?? '')"
-              class="text-brand-700 hover:underline"
+              class="hit-target text-brand-700 hover:underline"
               :title="$t('Abrir la fila en Tablas')"
               >{{ $t('{sheet} fila {row}', { sheet: item.sheet, row: item.row }) }}</a
             >

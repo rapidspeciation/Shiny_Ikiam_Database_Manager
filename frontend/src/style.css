@@ -452,7 +452,18 @@ body {
   .hit-target {
     position: relative;
   }
+  /* Buttons too: on a touch screen each one answers a 44 px finger area, whatever size it is drawn (as in T3). */
   @media (pointer: coarse) {
+    .btn,
+    .btn-primary,
+    .btn-danger,
+    .btn-ghost {
+      position: relative;
+    }
+    .btn::after,
+    .btn-primary::after,
+    .btn-danger::after,
+    .btn-ghost::after,
     .hit-target::after {
       content: '';
       position: absolute;

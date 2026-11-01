@@ -478,7 +478,7 @@ const filtered = computed(
 
         <p v-if="group" class="flex items-center gap-2 bg-stone-100 px-3 py-1 text-xs">
           {{ $t('Solo el lote «{label}»', { label: groupLabel }) }}
-          <button class="text-brand-700 hover:underline" @click="group = ''">{{ $t('ver todos') }}</button>
+          <button class="hit-target text-brand-700 hover:underline" @click="group = ''">{{ $t('ver todos') }}</button>
         </p>
 
         <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">
