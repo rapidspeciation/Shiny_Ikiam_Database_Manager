@@ -476,7 +476,8 @@ let captured = []; // the pages' GET API calls, replayed by the concurrent clien
 async function pages(session) {
   needMemory('headless browser');
   const { chromium } = await import(PLAYWRIGHT);
-  const browser = await chromium.launch({ headless: true });
+  // PERF_CHROMIUM: a browser build of its own, where Playwright's own one is not installed (the server).
+  const browser = await chromium.launch({ headless: true, ...(process.env.PERF_CHROMIUM ? { executablePath: process.env.PERF_CHROMIUM } : {}) });
   try {
     const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1366, height: 900 } });
     const [name, value] = session.cookie.split('=');
