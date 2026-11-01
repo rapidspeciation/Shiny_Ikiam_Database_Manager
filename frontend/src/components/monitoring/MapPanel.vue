@@ -89,8 +89,12 @@ const showTransects = flagQuery('trazado', true)
 const showGps = flagQuery('gps', false)
 const showRecaptures = flagQuery('unir', false)
 const heatRadius = ref(22)
-/** The panel covers the whole map on a phone, so it starts closed there (the «Capas y filtros» button opens it). */
-const panel = ref(typeof matchMedia === 'undefined' || matchMedia('(min-width: 768px)').matches)
+/**
+ * The panel covers the whole map on a phone, so it starts closed there (the «Capas y filtros» button opens it),
+ * unless the link already filters the points: then the filters show first, so fewer points don't read as missing data.
+ */
+const linkFiltered = Object.values(QUERY).some(q => route.query[q]) || Boolean(route.query.individuo)
+const panel = ref(typeof matchMedia === 'undefined' || matchMedia('(min-width: 768px)').matches || linkFiltered)
 
 const filters = computed<MapFilters>(() => ({
   years: lists.years.value,
