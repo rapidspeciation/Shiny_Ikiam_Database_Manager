@@ -28,3 +28,6 @@
 - Atlas audit done: 0 P0/16 P1/12 P2/3 P3; dark exists (default), light incomplete, no system pref. Atlas wave A child (Opus high): themes + P1, vite :5192, writes WAVE_A.md. Atlas deploy = push to rapidspeciation/main (we have push; earlier chats pushed directly) → GitHub Actions Pages.
 - Wave 2 shots clean (disabled ≥3:1; boundary flags are inner inputs). Critics c2 r1 started (review-c2/BRIEF.md). Wave 3 (proposal-ai-marks, map empty state, 11px proposal views) after wave 2 ships.
 - Wave 2 critics r1: Sol B, Opus B+. Fix child (Sonnet) + emulator check running. Ledger review-c2/LEDGER.md.
+- 1 Nov 06:22Z DEPLOYED wave 2 = 20261101T062244Z (main 8c06770). Lock released, model lead told.
+- Wave 3 done eb9bc7a (Sonnet): AI-changed column scrolled into view, map empty state at top, 12 px in proposal views, shoot script stages a pending edit. Critics c3 r1 started (review-c3/BRIEF.md).
+- Wave 3 critics r1: both C; blocker = phone touch bar covers SaveBar Guardar (pre-existing live bug, first seen now that the save bar is shot). Fix child (Sonnet) running.
