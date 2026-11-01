@@ -14,6 +14,7 @@ import {
   Info,
   ShieldAlert,
   X,
+  ClipboardList,
 } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import SearchResults from '../components/search/SearchResults.vue'
@@ -30,6 +31,8 @@ import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
 import { t } from '../lib/i18n'
+import { persistentRef } from '../lib/persist'
+import { PHONE_VIEW_KEY, phoneViewFor } from '../lib/rowForm'
 
 /**
  * The "Buscador": a text searched in every sheet, as Google Sheets' Ctrl+F,
@@ -45,6 +48,9 @@ import { t } from '../lib/i18n'
 const session = useSession()
 const pending = usePending()
 const route = useRoute()
+// On a phone the sheet shows as the grid (default) or as a form, one row at a time; the choice is kept on the device.
+const phoneView = persistentRef<string | null>(PHONE_VIEW_KEY, null, { lasting: true })
+const formView = computed(() => phone.value && phoneViewFor(phoneView.value) === 'form')
 const router = useRouter()
 
 /** Group names in Spanish (the key of their English), translated where shown. */
@@ -263,8 +269,8 @@ const headerNotice = computed(() => {
           <Search :size="15" class="absolute top-2.5 left-2.5 text-stone-400" />
           <input
             v-model="search"
-            class="field-input pr-8 pl-8"
-            :placeholder="phone ? $t('Buscar en todas las hojas') : $t('Insectary ID, CAM, tubo, clutch, especie, nota…')"
+            class="field-input pr-8 pl-8 max-[379px]:placeholder:text-transparent"
+            :placeholder="phone ? $t('Buscar') : $t('Insectary ID, CAM, tubo, clutch, especie, nota…')"
             type="text"
             enterkeyhint="search"
             @keydown.esc="clearSearch"
@@ -285,6 +291,18 @@ const headerNotice = computed(() => {
         <ChoiceField v-model="module" class="field-input sm:min-w-52" :options="sheetChoices" :freetext="false" />
       </label>
       <template v-if="!searching && !past">
+        <button
+          v-if="phone"
+          type="button"
+          class="btn flex-none px-2"
+          :class="{ 'border-brand bg-brand text-on-brand hover:bg-brand-hover': formView }"
+          :aria-pressed="formView"
+          :aria-label="$t('Ver como formulario')"
+          :title="formView ? $t('Ver como tabla') : $t('Ver como formulario')"
+          @click="phoneView = formView ? null : 'form'"
+        >
+          <ClipboardList :size="17" />
+        </button>
         <button
           type="button"
           class="btn flex-none px-2 sm:hidden"
@@ -319,7 +337,12 @@ const headerNotice = computed(() => {
             </RouterLink>
             <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> {{ $t('Añadir fila') }}</button>
             <ExtendRowsButton v-if="session.isReviewer" :sheet="module" :count="50" @done="load(true)" />
-            <button class="btn" :title="$t('Copiar la primera fila seleccionada hacia abajo (Ctrl+D)')" @click="grid?.fillDown()">
+            <button
+              v-if="!formView"
+              class="btn"
+              :title="$t('Copiar la primera fila seleccionada hacia abajo (Ctrl+D)')"
+              @click="grid?.fillDown()"
+            >
               <ArrowDownToLine :size="15" /> {{ $t('Rellenar') }}
             </button>
             <button class="btn" :disabled="loading" :title="$t('Volver a cargar desde el servidor')" @click="load(true)">
@@ -336,7 +359,7 @@ const headerNotice = computed(() => {
             <a v-if="sheetLink" :href="sheetLink" target="_blank" rel="noopener" class="btn" :title="$t('Abrir en Google Sheets')">
               <ExternalLink :size="15" /> <span class="sm:hidden">{{ $t('Abrir en Google Sheets') }}</span>
             </a>
-            <button v-if="hintHidden" class="btn" :title="$t('Cómo usar la tabla')" @click="setHint(false)">
+            <button v-if="hintHidden && !formView" class="btn" :title="$t('Cómo usar la tabla')" @click="setHint(false)">
               <Info :size="15" /> <span class="sm:hidden">{{ $t('Cómo usar la tabla') }}</span>
             </button>
           </div>
@@ -385,11 +408,11 @@ const headerNotice = computed(() => {
               $t('Esas columnas se muestran con su último valor y no se pueden editar.')
             }}</template>
           </p>
-          <p v-if="!hintHidden" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
+          <p v-if="!hintHidden && !formView" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
             <span class="min-w-0 flex-1">
               <template v-if="touch">{{
                 $t(
-                  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.',
+                  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.',
                 )
               }}</template>
               <template v-else>{{
@@ -422,8 +445,10 @@ const headerNotice = computed(() => {
               :frozen="frozen"
               :create-formulas="createFormulas"
               :focus-row="opened?.id ?? null"
+              :focus-token="row"
               :mark="opened && lastSearch ? lastSearch.text : ''"
               cell-history
+              :form="formView"
               @notice="notify"
               @history="target => (historyTarget = target)"
               @remove-create="

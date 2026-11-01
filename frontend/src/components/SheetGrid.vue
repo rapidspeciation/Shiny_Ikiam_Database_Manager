@@ -70,6 +70,8 @@ const props = withDefaults(
     mark?: string
     /** Row id brought into view and marked, e.g. a search match or a row opened from a link. */
     focusRow?: string | null
+    /** Changes whenever a row is opened, so opening the same row again brings it back into the form. */
+    focusToken?: unknown
     /** The focused row's cell selected (when no searched text marks one), e.g. the cell a past view steps through. */
     focusField?: string | null
     /** Nothing can be edited (a sheet as it was): no editors, no row drawer, only Copiar on touch screens. */
@@ -84,6 +86,8 @@ const props = withDefaults(
     cellHistory?: boolean
     /** Per row id, cells of entries kept in the app, not in Google Sheets yet (lib/staged.ts overlayTable). */
     staged?: Record<string, StagedMark>
+    /** One row at a time as a form instead of the grid (a phone's choice in the Buscador). */
+    form?: boolean
   }>(),
   {
     creates: () => [],
@@ -133,6 +137,47 @@ let rowIndex = new Map<string, TableRow>()
 let fieldIndex = new Map<string, Field>()
 
 const touchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
+// The form view: one row at a time (RowDrawer in place of the grid), in the grid's order (new rows first), with
+// previous / next and «Ir a…». The grid stays built underneath, so switching back keeps its place.
+const rowForm = computed(() => props.form && !props.readonly)
+const hintOf = (values: Record<string, CellValue>) =>
+  [values.SPECIES, values.Sex, values['CLUTCH NUMBER']].filter(v => v !== null && v !== undefined && v !== '').join(' · ')
+// Bumped when the grid's filters or sort change, so the form follows them.
+const orderTick = ref(0)
+const formOrder = computed(() => {
+  if (!rowForm.value) return []
+  void orderTick.value
+  const entries = new Map<string, { id: string; row: number; label: string; hint: string }>()
+  for (const c of [...props.creates].reverse()) entries.set(c.clientId, { id: c.clientId, row: 0, label: labelOf(c.values), hint: hintOf(c.values) })
+  const rows = [...props.rows]
+  if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
+  for (const r of rows) entries.set(r.id, { id: r.id, row: r.row, label: labelOf(r.values), hint: hintOf(r.values) })
+  // The grid's own order and filters (header filters, search, a chosen sort) once it is built.
+  if (table && built) {
+    // Even when empty: filters that match nothing show «no rows», not every row.
+    return (table.getData('active') as GridRow[]).map(d => entries.get(d.__id)).filter(e => !!e)
+  }
+  return [...entries.values()]
+})
+const formId = ref<string | null>(null)
+const formShown = computed(() =>
+  formId.value && formOrder.value.some(o => o.id === formId.value) ? formId.value : formOrder.value[0]?.id || null,
+)
+// A row added, or opened from a search, is the one the form shows.
+watch(
+  () => props.creates.length,
+  (now, before) => {
+    if (now > before) formId.value = props.creates[now - 1].clientId
+  },
+)
+watch(
+  [() => props.focusRow, () => props.focusToken],
+  ([id]) => {
+    if (id) formId.value = id
+  },
+  { immediate: true },
+)
 
 function labelOf(values: Record<string, CellValue>) {
   const key = props.labelField || session.module(props.module)?.identityFields[0]
@@ -239,6 +284,7 @@ function updateChanged(): boolean {
         if (row) decorateRow(row)
       }
       applySearch()
+      orderTick.value++
     })
   return true
 }
@@ -739,8 +785,11 @@ function build() {
     const problem = list && !list.strict ? listProblem(rules.value, field, cell.getValue()) : null
     if (problem) notice(t('{problem}: se guarda igual; corrígelo si es un error', { problem }))
   })
+  table.on('dataFiltered', () => orderTick.value++)
+  table.on('dataSorted', () => orderTick.value++)
   table.on('tableBuilt', () => {
     built = true
+    orderTick.value++
     focusPending = !!props.focusRow
     if (refreshWhenBuilt) refresh()
     else {
@@ -873,6 +922,7 @@ function refresh() {
       restoreView()
       reselect?.()
       showFocus()
+      orderTick.value++
     })
   else {
     // Nothing was added above (or the rows were only updated): the view stays as it is.
@@ -963,7 +1013,26 @@ defineExpose({ refresh, fillDown, keepView })
 
 <template>
   <div class="sheet-grid flex flex-col" :style="{ height }">
-    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
+    <RowDrawer
+      v-if="rowForm && formShown"
+      inline
+      class="min-h-0 flex-1"
+      :order="formOrder"
+      :module="module"
+      :row-id="formShown"
+      :rows="rows"
+      :creates="creates"
+      :columns="columns"
+      :options="options"
+      :locked-fields="lockedFields"
+      :create-formulas="createFormulas"
+      :label-field="labelField"
+      @go="id => (formId = id)"
+      @changed="refresh"
+      @remove-create="id => emit('removeCreate', id)"
+    />
+    <p v-if="rowForm && !formShown" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
+    <CellBar v-show="!rowForm" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
       <template v-if="cellHistory" #actions>
         <button
           type="button"
@@ -978,7 +1047,7 @@ defineExpose({ refresh, fillDown, keepView })
       </template>
     </CellBar>
     <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, so they move with the grid. -->
-    <div class="relative min-h-0 flex-1">
+    <div v-show="!rowForm" class="relative min-h-0 flex-1">
       <div ref="host" class="h-full" tabindex="-1" />
     </div>
     <RowDrawer
