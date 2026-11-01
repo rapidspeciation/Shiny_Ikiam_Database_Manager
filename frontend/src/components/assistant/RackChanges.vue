@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { CheckCheck, FileSpreadsheet, Loader2 } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText } from '../../lib/notice'
-import { changesNotReady, type RackDeposit } from '../../lib/rackDeposit'
+import { changesNotReady, notReady, type RackDeposit } from '../../lib/rackDeposit'
 import type { Proposal, ProposalChange } from '../../lib/proposals'
 import { t } from '../../lib/i18n'
 
@@ -21,6 +21,8 @@ const busy = ref<'' | 'file' | 'hand'>('')
 const asking = ref(false)
 const problems = ref<string[]>([])
 const why = computed(() => changesNotReady(props.deposit, props.changes))
+// Inside the deposit's head, which says «Aún no: …» for its own buttons: the line here only when it says something else.
+const whyShown = computed(() => (why.value.length && (props.main || why.value[0] !== notReady(props.deposit)[0]) ? why.value : []))
 
 /** The kept file's address on this site (the download needs the person signed in). */
 const local = (url: string) => {
@@ -104,7 +106,9 @@ async function byHand() {
         <button type="button" class="btn h-7 px-2 text-xs" :disabled="!!busy" @click="asking = false">{{ $t('Cancelar') }}</button>
       </span>
     </template>
-    <span v-if="why.length" class="text-xs text-stone-500" :class="{ 'order-last basis-full': main }">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
+    <span v-if="whyShown.length" class="text-xs text-stone-500" :class="{ 'order-last basis-full': main }"
+      >{{ $t('Aún no: {why}', { why: whyShown[0] }) }}{{ whyShown.length > 1 ? ' …' : '' }}</span
+    >
     <span v-if="problems.length" class="order-last basis-full text-xs text-red-800">{{ problems.join(' · ') }}</span>
   </span>
 </template>

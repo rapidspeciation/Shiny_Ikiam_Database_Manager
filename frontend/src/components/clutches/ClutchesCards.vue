@@ -434,7 +434,8 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           >
             <AlertTriangle v-if="f === 'verify'" :size="13" class="-mt-0.5 inline text-orange-700" />
             {{ filterName(f) }}
-            <span class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
+            <!-- «Todos» is the count on «En curso» already. -->
+            <span v-if="f !== 'all'" class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
           </button>
           <button
             class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
@@ -454,14 +455,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <Settings :size="15" />
           </button>
         </div>
-        <!-- Today's review: every clutch starts unreviewed each day (marks only in the app). -->
+        <!--
+          Today's review: every clutch starts unreviewed each day (marks only in the app). «Por verificar» and «Sin revisar
+          hoy» carry their counts on the chips above, so only the reviewed ones are counted here.
+        -->
         <p v-if="!query && counts.all" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-stone-600" role="status">
           <span class="font-medium text-stone-700">{{ $t('Revisión de hoy') }}:</span>
           <span class="tabular-nums"><Check :size="12" class="-mt-0.5 inline text-brand-700" /> {{ $t('{n} revisados', { n: counts.checked }) }}</span>
-          <span class="tabular-nums" :class="counts.verify ? 'font-medium text-orange-800' : ''">
-            <AlertTriangle :size="12" class="-mt-0.5 inline" /> {{ $t('{n} por verificar', { n: counts.verify }) }}
-          </span>
-          <span class="tabular-nums">{{ $t('{n} sin revisar', { n: counts.todo }) }}</span>
         </p>
       </template>
     </div>
