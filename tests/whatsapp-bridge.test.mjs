@@ -787,3 +787,37 @@ test('only the two live routes make real sends; any other chat or route goes to 
     assert.equal(calls(), before, JSON.stringify(patch.toString()));
   }
 });
+
+test('a note to the operator before the reply is taken off; real text never', async () => {
+  const { stripPreamble } = await import('../tools/whatsapp/bridge-lib.mjs');
+  const s05 = 'Daniela asked how many *Mechanitis messenoides* females are alive in the insectary. Here is the reply for WhatsApp:\n\nEn la base hay *63 hembras* de _Mechanitis messenoides_ sin fecha de muerte.\n- 52 entraron entre agosto y octubre de 2026';
+  assert.deepEqual(stripPreamble(s05), { text: 'En la base hay *63 hembras* de _Mechanitis messenoides_ sin fecha de muerte.\n- 52 entraron entre agosto y octubre de 2026', stripped: 1, unsure: false });
+  assert.equal(stripPreamble('Respuesta:\nCon gusto.').text, 'Con gusto.');
+  for (const real of ['Tom asked for the list last week; it is in the database.', 'La base tiene 63 hembras.', 'Here is the map you asked for.', 'Con gusto.'])
+    assert.deepEqual(stripPreamble(real), { text: real, stripped: 0, unsure: false });
+  assert.equal(stripPreamble('Here is the reply for WhatsApp:\n\n').unsure, true); // nothing left
+});
+
+test('a reply that is only a note to the operator is not sent; the message gets ⚠️', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-pre-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('vacío') ? 'Here is the reply for WhatsApp:' : 'Ana asked how many there are. Here is the reply for WhatsApp:\\n\\nHay 12.'}));`);
+  const config = { chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 0 } }, routes: { r: { script, attachmentsDir: join(dir, 'att') } }, wacli: { bin: '/bin/false', store: dir } };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  let n = 0;
+  const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  post('@claude cuántos hay?');
+  await settle();
+  assert.deepEqual(outbox().filter(o => o.kind === 'reply').map(o => o.text), ['Claude: Hay 12.']);
+  post('@claude vacío');
+  await settle();
+  assert.deepEqual(outbox().slice(3).map(o => o.kind + (o.react?.emoji ?? '')), ['react👀', 'react⚠️']); // nothing sent
+  const log = readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(l => l.preamble);
+  assert.deepEqual(log.map(l => [l.preamble, l.unsure]), [[1, false], [1, true]]);
+  assert.ok(!JSON.stringify(log).includes('asked')); // the log keeps counts, not text
+});

@@ -36,7 +36,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { appendNew, mediaTag, named, slug, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
+import { appendNew, mediaTag, named, slug, stripPreamble, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -882,6 +882,17 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
       ok = true;
       const reply = parseReply(r.text);
+      // A note to the operator before the reply is taken off (logged); when that leaves nothing sure to send, nothing goes and the message gets ⚠️.
+      const cut = stripPreamble(reply.text);
+      if (cut.stripped) {
+        record({ dir: 'turn', chat: chat.key, id: msg.id, preamble: cut.stripped, unsure: cut.unsure, chars: reply.text.length - cut.text.length });
+        if (cut.unsure) {
+          ok = false;
+          if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}${EMOJI.failed}`, trigger: msg }).catch(() => null);
+          return;
+        }
+        reply.text = cut.text;
+      }
       spoke = Boolean(reply.text || reply.images.length || reply.files.length);
       if (reply.silent) {
         if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
