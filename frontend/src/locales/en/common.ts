@@ -34,6 +34,8 @@ export default {
   '{n} filas': '{n} rows',
   // AppHeader in the offline lab copy (LOCAL_MODE): no link to the team's sheet.
   'Copia de prueba': 'Test copy',
+  Prueba: 'Test',
+  'Filtrar {field}': 'Filter {field}',
   'Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo': 'Offline copy: changes are saved only here, never in the team\'s sheet',
   // CameraCapture: the computer's camera inside the app (the «Cámara» buttons on a desktop).
   'Tomar foto': 'Take photo',

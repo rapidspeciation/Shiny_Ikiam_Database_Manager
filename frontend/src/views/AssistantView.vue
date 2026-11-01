@@ -228,12 +228,12 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- One slim bar, so T3 keeps nearly the whole screen. -->
-    <div v-if="loaded" class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 py-0.5 text-sm">
+    <!-- One slim bar, so T3 keeps nearly the whole screen; on a phone it wraps rather than run off the screen. -->
+    <div v-if="loaded" class="flex flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-stone-200 bg-stone-100 px-2 py-0.5 text-sm *:whitespace-nowrap">
       <!-- Someone else's chat on screen: short here, the rest on hover. -->
       <span
         v-if="t3Url && chatOwner"
-        class="min-w-0 truncate rounded bg-amber-100 px-2 py-0.5 text-amber-900"
+        class="max-w-full min-w-0 truncate rounded bg-amber-100 px-2 py-0.5 text-amber-900"
         role="status"
         :title="
           $t('Lo que la IA escriba o guarde en este chat va a nombre de {name}. Lo que apliques desde Cambios propuestos se guarda a tu nombre.', {

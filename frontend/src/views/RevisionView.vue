@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import ChoiceField from '../components/ChoiceField.vue'
+import ScrollRow from '../components/ScrollRow.vue'
 import DateField from '../components/DateField.vue'
 import IssueCard from '../components/review/IssueCard.vue'
 import PhotoViewer from '../components/review/PhotoViewer.vue'
@@ -274,11 +275,12 @@ const filtered = computed(
 <template>
   <div class="flex h-full flex-col">
     <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">{{ $t('La revisión es para quienes editan la hoja.') }}</div>
-    <nav v-else class="flex gap-1 overflow-x-auto border-b border-stone-200 bg-surface px-2 pt-1.5" :aria-label="$t('Vistas')">
+    <ScrollRow v-else as="nav" :active="view" class="flex gap-1 border-b border-stone-200 bg-surface px-2 pt-1.5" :aria-label="$t('Vistas')">
       <button
         v-for="v in VIEWS"
         :key="v.key"
-        class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm whitespace-nowrap"
+        class="-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm whitespace-nowrap focus-visible:-outline-offset-2"
+        :data-active="view === v.key ? '' : undefined"
         :class="view === v.key ? 'border-brand-700 font-medium text-brand-800' : 'border-transparent text-stone-600 hover:text-stone-900'"
         @click="openView(v.key)"
       >
@@ -290,7 +292,7 @@ const filtered = computed(
           >{{ warnings }}</span
         >
       </button>
-    </nav>
+    </ScrollRow>
     <SuggestionsPanel v-if="session.canEdit && view === 'sugerencias'" />
     <SolvedPanel v-else-if="session.canEdit && view === 'resueltos'" />
     <AlertsPanel v-else-if="session.canEdit && view === 'alertas'" :data="alertsData" />
@@ -391,7 +393,8 @@ const filtered = computed(
 
       <section class="flex min-w-0 flex-1 flex-col">
         <!-- One slim bar: search, where you are in the list, the pages. -->
-        <div class="flex items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:px-3">
+        <!-- Two lines on a phone (search; order and pages), never wider than the screen. -->
+        <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:flex-nowrap sm:px-3">
           <button
             class="btn px-2 py-1 md:hidden"
             :class="{ 'bg-inverse text-on-inverse': filtered || kind }"
@@ -399,7 +402,7 @@ const filtered = computed(
           >
             <SlidersHorizontal :size="14" /> {{ $t('Filtros') }}
           </button>
-          <span class="relative min-w-0 flex-1 md:max-w-md">
+          <span class="relative min-w-0 flex-1 basis-40 md:max-w-md">
             <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
             <input
               v-model="search"

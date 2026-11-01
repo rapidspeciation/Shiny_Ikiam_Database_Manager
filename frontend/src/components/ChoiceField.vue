@@ -284,7 +284,7 @@ function onArrow() {
     />
     <button
       type="button"
-      class="absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-md text-[15px] text-stone-700 hover:bg-brand-50 hover:text-brand-700"
+      class="hit-target absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-md text-[15px] text-stone-700 hover:bg-brand-50 hover:text-brand-700"
       tabindex="-1"
       :aria-label="t('Ver la lista')"
       :title="t('Ver la lista')"

@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown, Monitor, Sun, Moon } from 'lucide-vue-next'
 import { tabs } from '../router'
+import DatabaseBadge from './DatabaseBadge.vue'
+import ScrollRow from './ScrollRow.vue'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
 import { useLive } from '../stores/live'
@@ -117,53 +119,43 @@ async function logout() {
         <img src="/logo.svg?v=1" alt="" class="h-9 w-auto" />
         <span>Ikiam Insectary DB</span>
       </RouterLink>
-      <nav
-        class="order-last -mx-3 -mb-px flex w-full min-w-0 overflow-x-auto px-1 sm:order-none sm:mx-0 sm:w-auto sm:flex-1 sm:px-0"
-        :aria-label="$t('Secciones')"
-      >
-        <RouterLink
-          v-for="tab in shown"
-          :key="tab.path"
-          :to="tab.path"
-          class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white"
-          :class="{ '!border-white !text-white': route.meta.tab === tab.path }"
-          active-class="!border-white !text-white"
+      <!-- The tabs and which database is open: on phones a full-width row of their own, the tabs scrolling sideways. -->
+      <div class="order-last -mx-3 flex w-[calc(100%+1.5rem)] min-w-0 items-center sm:order-none sm:mx-0 sm:w-auto sm:flex-1">
+        <ScrollRow
+          as="nav"
+          :active="route.meta.tab ?? route.path"
+          class="-mb-px flex min-w-0 flex-1 px-1 sm:px-0"
+          :aria-label="$t('Secciones')"
         >
-          {{ $t(tab.label) }}
-          <span
-            v-if="waiting[tab.path]"
-            class="ml-1 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
-            :title="
-              $tn(
-                waiting[tab.path],
-                '{n} fila cambiada en la app, aún no en Google Sheets',
-                '{n} filas cambiadas en la app, aún no en Google Sheets',
-              )
-            "
-            >{{ waiting[tab.path] }}</span
+          <RouterLink
+            v-for="tab in shown"
+            :key="tab.path"
+            :to="tab.path"
+            class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white focus-visible:-outline-offset-2 lg:px-2 2xl:px-3"
+            :class="{ '!border-white !text-white': route.meta.tab === tab.path }"
+            :data-active="route.meta.tab === tab.path || route.path === tab.path ? '' : undefined"
+            active-class="!border-white !text-white"
           >
-        </RouterLink>
-      </nav>
-      <span
-        v-if="session.settings?.localMode"
-        class="hidden shrink-0 items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 md:inline-flex"
-        :title="$t('Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo')"
-      >
-        {{ $t('Copia de prueba') }}
-      </span>
-      <a
-        v-else-if="session.settings?.sheetUrl"
-        :href="session.settings.sheetUrl"
-        target="_blank"
-        rel="noopener"
-        class="hidden shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold text-on-brand-muted ring-1 ring-on-brand-muted/50 hover:bg-brand-hover hover:text-white focus-visible:outline-2 focus-visible:outline-focus-on-brand md:inline-flex"
-        :title="$t('Abrir Google Sheet')"
-      >
-        Google Sheet <ExternalLink :size="12" />
-      </a>
+            {{ $t(tab.label) }}
+            <span
+              v-if="waiting[tab.path]"
+              class="ml-1 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
+              :title="
+                $tn(
+                  waiting[tab.path],
+                  '{n} fila cambiada en la app, aún no en Google Sheets',
+                  '{n} filas cambiadas en la app, aún no en Google Sheets',
+                )
+              "
+              >{{ waiting[tab.path] }}</span
+            >
+          </RouterLink>
+        </ScrollRow>
+        <DatabaseBadge class="mr-3 ml-2 sm:mr-0 sm:ml-3" />
+      </div>
       <!-- Interface language: English by default (lib/i18n.ts). -->
       <button
-        class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-on-brand-muted ring-1 ring-on-brand-muted/50 hover:bg-brand-hover hover:text-white focus-visible:outline-2 focus-visible:outline-focus-on-brand sm:ml-0"
+        class="hit-target ml-auto inline-flex min-h-6 shrink-0 items-center rounded px-1.5 text-xs font-semibold text-on-brand-muted ring-1 ring-on-brand-muted/50 hover:bg-brand-hover hover:text-white sm:ml-0"
         :title="$t('Cambiar idioma')"
         :aria-label="$t('Cambiar idioma')"
         @click="locale = locale === 'en' ? 'es' : 'en'"
@@ -175,14 +167,14 @@ async function logout() {
       <RouterLink
         v-if="!session.user"
         :to="{ path: '/entrar', query: { volver: route.fullPath } }"
-        class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-focus-on-brand"
+        class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover pointer-coarse:min-h-11"
       >
         <LogIn :size="15" /> {{ $t('Iniciar sesión') }}
       </RouterLink>
       <div v-else ref="holder" class="relative shrink-0">
         <button
           ref="trigger"
-          class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-focus-on-brand"
+          class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover pointer-coarse:min-h-11"
           :aria-expanded="menu"
           @click="toggleMenu"
         >

@@ -434,6 +434,45 @@ body {
   .hint {
     @apply text-xs text-fg-subtle;
   }
+  /* A small control with a finger-sized target on touch screens (44 px), without growing what is drawn. */
+  .hit-target {
+    position: relative;
+  }
+  @media (pointer: coarse) {
+    .hit-target::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+  /*
+   * A row that scrolls sideways when it does not fit (ScrollRow.vue): the edge with more to see fades out, and on a
+   * mouse a thin scrollbar shows under it.
+   */
+  .scroll-row {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    --fade: 2.5rem;
+  }
+  @media (pointer: coarse) {
+    .scroll-row {
+      scrollbar-width: none;
+    }
+  }
+  .scroll-row[data-more='end'] {
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+  }
+  .scroll-row[data-more='start'] {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent);
+  }
+  .scroll-row[data-more='both'] {
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  }
   /* A headline number (Inicio, reports). */
   .stat {
     @apply rounded-md border border-border bg-surface px-3 py-2;
