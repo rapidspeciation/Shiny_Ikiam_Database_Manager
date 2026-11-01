@@ -1,5 +1,5 @@
 /**
- * Light or dark: the system's choice by default, or the one picked with the header's button (System / Light / Dark),
+ * Light or dark: the system's choice by default, or the one picked with the header's sun/moon button (light ⇄ dark, never a third state),
  * remembered on the device. public/theme-boot.js sets the same attribute before the first paint, so a reload
  * in dark never flashes light; this module keeps it right afterwards and follows the system while on System.
  *
@@ -18,9 +18,8 @@ export const THEME_COLOR: Record<Theme, string> = { light: '#1f4d3a', dark: '#1f
 /** A stored value, anything unknown being the system's choice. */
 export const parsePref = (stored: string | null | undefined): ThemePref =>
   stored === 'light' || stored === 'dark' ? stored : 'system'
-/** The header's theme button: each press the next one, System → Light → Dark → System. */
-export const THEME_ORDER: readonly ThemePref[] = ['system', 'light', 'dark']
-export const nextPref = (pref: ThemePref): ThemePref => THEME_ORDER[(THEME_ORDER.indexOf(pref) + 1) % THEME_ORDER.length]!
+/** The header's sun/moon button: the opposite of the theme in effect, which is then a stored choice. The way back to System is `themePref.value = 'system'`. */
+export const oppositeTheme = (current: Theme): Theme => (current === 'dark' ? 'light' : 'dark')
 export const resolveTheme = (pref: ThemePref, systemDark: boolean): Theme =>
   pref === 'system' ? (systemDark ? 'dark' : 'light') : pref
 

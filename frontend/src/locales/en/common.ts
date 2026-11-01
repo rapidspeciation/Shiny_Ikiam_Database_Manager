@@ -20,7 +20,12 @@ export default {
   Sistema: 'System',
   Claro: 'Light',
   Oscuro: 'Dark',
-  'Tema: {current} (pulsa para {next})': 'Theme: {current} (press for {next})',
+  'Tema oscuro': 'Dark theme',
+  'Tema: claro (sistema)': 'Theme: light (system)',
+  'Tema: oscuro (sistema)': 'Theme: dark (system)',
+  'Tema: claro (elegido)': 'Theme: light (chosen)',
+  'Tema: oscuro (elegido)': 'Theme: dark (chosen)',
+  'Usar el tema del sistema': 'Use the system theme',
   Secciones: 'Sections',
   'Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?':
     'There are unsaved changes on this device. They will be kept for when you come back. Sign out?',

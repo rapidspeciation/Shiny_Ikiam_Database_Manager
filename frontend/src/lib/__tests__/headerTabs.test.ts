@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { HIDDEN_TABS, fitTabs, splitTabs } from '../headerTabs'
-import { nextPref } from '../theme'
 
 const tabs = ['/inicio', '/tablas', '/colecta', '/monitoreo', '/muertes', '/tubos', '/emergidos', '/clutches', '/censo', '/historial', '/revision'].map(path => ({ path }))
 const paths = (list: { path: string }[]) => list.map(t => t.path)
@@ -35,13 +34,5 @@ describe('fitTabs', () => {
   it('never moves the open tab, even when it is last', () => {
     expect(fitTabs(w, 300, 70, true, 4)).toEqual([0, 1, 4])
     expect(fitTabs(w, 100, 70, true, 4)).toEqual([4])
-  })
-})
-
-describe('nextPref', () => {
-  it('cycles System → Light → Dark → System', () => {
-    expect(nextPref('system')).toBe('light')
-    expect(nextPref('light')).toBe('dark')
-    expect(nextPref('dark')).toBe('system')
   })
 })

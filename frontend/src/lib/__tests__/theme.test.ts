@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
-import { THEME_COLOR, THEME_KEY, applyTheme, parsePref, resolveTheme, theme, themePref } from '../theme'
+import { describe, expect, it, vi } from 'vitest'
+import { THEME_COLOR, THEME_KEY, applyTheme, oppositeTheme, parsePref, resolveTheme, theme, themePref } from '../theme'
 
 describe('theme preference', () => {
   it('reads anything unknown as the system choice', () => {
@@ -42,6 +42,28 @@ describe('theme preference', () => {
     themePref.value = 'system'
     await nextTick()
     expect(localStorage.getItem(THEME_KEY)).toBeNull()
+  })
+  it('the toggle goes to the opposite of the theme in effect', () => {
+    expect(oppositeTheme('light')).toBe('dark')
+    expect(oppositeTheme('dark')).toBe('light')
+  })
+  it('follows an OS change live while on System, and ignores it once a theme is chosen', async () => {
+    const listeners: ((e: { matches: boolean }) => void)[] = []
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: (_: string, f: never) => listeners.push(f) }))
+    vi.resetModules()
+    const fresh = await import('../theme')
+    expect(fresh.theme.value).toBe('light')
+    listeners.forEach(f => f({ matches: true }))
+    expect(fresh.theme.value).toBe('dark')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    fresh.themePref.value = 'light'
+    expect(fresh.theme.value).toBe('light')
+    listeners.forEach(f => f({ matches: false }))
+    listeners.forEach(f => f({ matches: true }))
+    expect(fresh.theme.value).toBe('light')
+    fresh.themePref.value = 'system'
+    expect(fresh.theme.value).toBe('dark')
+    vi.unstubAllGlobals()
   })
   it('keeps the boot script in step (same key and bar colours)', () => {
     const boot = readFileSync(resolve(import.meta.dirname, '../../../public/theme-boot.js'), 'utf8')

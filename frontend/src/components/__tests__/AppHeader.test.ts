@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { t, tn } from '../../lib/i18n'
 import AppHeader from '../AppHeader.vue'
 import { useSession } from '../../stores/session'
+import { THEME_KEY, oppositeTheme, theme, themePref } from '../../lib/theme'
 
 // The header's two menus («Más» and the user's name) close the way people expect: outside click, Escape (focus back
 // on their button) and a change of page.
@@ -118,5 +119,52 @@ describe('AppHeader menus', () => {
     await h.router.push('/tablas')
     await h.tick()
     expect(open()).toBeNull()
+  })
+})
+
+describe('AppHeader theme toggle', () => {
+  const button = (h: { host: HTMLElement }) => h.host.querySelector<HTMLElement>('[data-theme-button]')!
+  const systemItem = (h: { host: HTMLElement }) => h.host.querySelector<HTMLElement>('[data-theme-system]')
+  const openMenu = async (h: Awaited<ReturnType<typeof mount>>) => {
+    h.host.querySelector<HTMLElement>('button[aria-expanded][title="Ana"]')!.click()
+    await h.tick()
+  }
+  afterEach(() => {
+    themePref.value = 'system'
+  })
+
+  it('is a two-state sun/moon button showing the theme in effect, with the state in aria-pressed and the tooltip', async () => {
+    themePref.value = 'system'
+    const h = await mount()
+    const was = theme.value
+    expect(button(h).getAttribute('aria-pressed')).toBe(String(was === 'dark'))
+    expect(button(h).title).toBe(`Tema: ${was === 'dark' ? 'oscuro' : 'claro'} (sistema)`)
+    button(h).click()
+    await h.tick()
+    expect(theme.value).toBe(oppositeTheme(was))
+    expect(themePref.value).toBe(oppositeTheme(was))
+    expect(localStorage.getItem(THEME_KEY)).toBe(oppositeTheme(was))
+    expect(button(h).getAttribute('aria-pressed')).toBe(String(theme.value === 'dark'))
+    expect(button(h).title).toBe(`Tema: ${theme.value === 'dark' ? 'oscuro' : 'claro'} (elegido)`)
+    expect(button(h).querySelector('svg')).not.toBeNull()
+    // Never a third state: pressing twice is back to the first theme.
+    button(h).click()
+    await h.tick()
+    expect(theme.value).toBe(was)
+  })
+
+  it('offers «Usar el tema del sistema» in the user menu only while a choice is stored, and it goes back to System', async () => {
+    themePref.value = 'system'
+    const h = await mount()
+    await openMenu(h)
+    expect(systemItem(h)).toBeNull()
+    button(h).click()
+    await h.tick()
+    expect(systemItem(h)).not.toBeNull()
+    systemItem(h)!.click()
+    await h.tick()
+    expect(themePref.value).toBe('system')
+    expect(localStorage.getItem(THEME_KEY)).toBeNull()
+    expect(systemItem(h)).toBeNull()
   })
 })

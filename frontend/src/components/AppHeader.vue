@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown, Monitor, Sun, Moon } from 'lucide-vue-next'
+import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown, MonitorSmartphone, Sun, Moon } from 'lucide-vue-next'
 import { tabs } from '../router'
 import DatabaseBadge from './DatabaseBadge.vue'
 import { useSession } from '../stores/session'
@@ -11,7 +11,7 @@ import { changeCount } from '../lib/staged'
 import { notify } from '../lib/notice'
 import { locale, t } from '../lib/i18n'
 import { menuLeft } from '../lib/menuPlace'
-import { nextPref, themePref, type ThemePref } from '../lib/theme'
+import { oppositeTheme, theme, themePref } from '../lib/theme'
 import { fitTabs, splitTabs } from '../lib/headerTabs'
 import { useDismiss } from '../composables/useDismiss'
 
@@ -154,18 +154,17 @@ onBeforeUnmount(() => {
 /** The offline identifier test page (a page of its own, server/offline-id.mjs), opened in this window: inside the installed app it stays in the app. */
 const offlineIdPage = new URL('prueba-offline/', location.href.split('#')[0]).href
 
-/** Light or dark (lib/theme.ts): the system's choice unless one is picked with this button, which goes to the next each press. */
-const THEMES: Record<ThemePref, { label: string; icon: typeof Sun }> = {
-  system: { label: 'Sistema', icon: Monitor },
-  light: { label: 'Claro', icon: Sun },
-  dark: { label: 'Oscuro', icon: Moon },
-}
+/** Sun/moon button (lib/theme.ts): always the theme in effect; a press picks the other one and remembers it on this device. */
 const themeTitle = computed(() =>
-  t('Tema: {current} (pulsa para {next})', {
-    current: t(THEMES[themePref.value].label),
-    next: t(THEMES[nextPref(themePref.value)].label),
-  }),
+  t(`Tema: ${theme.value === 'dark' ? 'oscuro' : 'claro'} (${themePref.value === 'system' ? 'sistema' : 'elegido'})`),
 )
+/** Re-plays the icon's turn on each press only (not on load or an OS change). */
+const themeFlip = ref(false)
+function toggleTheme() {
+  themePref.value = oppositeTheme(theme.value)
+  themeFlip.value = false
+  void nextTick(() => (themeFlip.value = true))
+}
 
 async function logout() {
   if (
@@ -286,16 +285,19 @@ async function logout() {
       </div>
       <div class="ml-auto flex shrink-0 items-center gap-2">
         <DatabaseBadge />
-        <!-- Light or dark: one button, the next choice each press. -->
+        <!-- Light or dark: a sun/moon toggle showing the theme in effect (the animation is Caligo's ThemeToggle). -->
         <button
           type="button"
-          class="hit-target inline-flex size-8 shrink-0 items-center justify-center rounded text-on-brand-muted hover:bg-brand-hover hover:text-white"
+          class="theme-toggle hit-target inline-flex size-8 shrink-0 items-center justify-center rounded text-on-brand-muted hover:bg-brand-hover hover:text-white"
+          :class="{ 'is-flipped': themeFlip }"
           :title="themeTitle"
-          :aria-label="themeTitle"
+          :aria-label="$t('Tema oscuro')"
+          :aria-pressed="theme === 'dark'"
           data-theme-button
-          @click="themePref = nextPref(themePref)"
+          @click="toggleTheme"
         >
-          <component :is="THEMES[themePref].icon" :size="17" aria-hidden="true" />
+          <Moon v-if="theme === 'dark'" :size="17" aria-hidden="true" />
+          <Sun v-else :size="17" aria-hidden="true" />
         </button>
         <!-- Interface language: English by default (lib/i18n.ts). -->
         <button
@@ -354,6 +356,14 @@ async function logout() {
             >
               <FlaskConical :size="15" /> {{ $t('Prueba: identificador sin conexión') }}
             </a>
+            <button
+              v-if="themePref !== 'system'"
+              class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-sunken"
+              data-theme-system
+              @click="themePref = 'system'"
+            >
+              <MonitorSmartphone :size="15" /> {{ $t('Usar el tema del sistema') }}
+            </button>
             <button class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-sunken" @click="logout">
               <LogOut :size="15" /> {{ $t('Cerrar sesión') }}
             </button>
@@ -363,3 +373,25 @@ async function logout() {
     </div>
   </header>
 </template>
+
+<style scoped>
+/* The icon turns into place each time the theme is flipped by hand (as Caligo's ThemeToggle). */
+.theme-toggle.is-flipped :deep(svg) {
+  animation: theme-turn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes theme-turn {
+  from {
+    transform: rotate(-90deg) scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle.is-flipped :deep(svg) {
+    animation: none;
+  }
+}
+</style>
