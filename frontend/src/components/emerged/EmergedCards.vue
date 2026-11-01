@@ -1363,7 +1363,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                     :class="[
                       d.kind === 'young' ? 'border-violet-300 text-violet-900' : d.sex === 'female' ? 'border-pink-300 text-pink-900' : d.sex === 'male' ? 'border-sky-300 text-sky-900' : 'border-stone-300 text-stone-800',
                       fresh.includes(d.key) ? 'ring-2 ring-brand-300' : '',
-                      d.hold === 'refused' || problems.get(d.key)?.length ? 'border-amber-500 bg-amber-50' : '',
+                      d.hold === 'refused' || problems.get(d.key)?.length ? 'border-amber-700 bg-amber-50' : '',
                     ]"
                     :title="d.hold === 'waiting' ? $t('Reservando el ID…') : d.hold === 'offline' ? $t('Sin conexión: el ID se reserva al volver la señal') : d.hold === 'refused' ? $t('Este ID no quedó reservado') : $t('ID reservado para esta mariposa')"
                   >
