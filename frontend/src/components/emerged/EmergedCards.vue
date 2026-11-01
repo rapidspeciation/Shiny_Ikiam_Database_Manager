@@ -1579,8 +1579,8 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                   <span class="w-14 shrink-0 font-semibold">{{ text(row.values.Insectary_ID) }}</span>
                   <SexBadge :sex="text(row.values.Sex)" />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
-                    <span class="block truncate text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
+                    <span class="block line-clamp-2 text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
+                    <span class="block line-clamp-2 text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
                   </span>
                   <!-- Kept in the app, not in Google Sheets yet (everyone sees it, with who entered it). -->
                   <span

@@ -160,7 +160,7 @@ const dueText = (i: Item) => {
               </span>
             </span>
             <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-              <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+              <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
               <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                 <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
               </span>

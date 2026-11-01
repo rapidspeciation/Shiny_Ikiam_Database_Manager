@@ -528,7 +528,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   </span>
                 </span>
                 <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-                  <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+                  <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
                   <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                     <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
                   </span>
@@ -547,7 +547,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <!-- Preserved ones kept counted: not in the sum (only in the app and NOTES). -->
                     <span
                       v-if="preservedText(item, s.stage)"
-                      class="block truncate text-xs leading-tight font-medium text-violet-700 tabular-nums"
+                      class="block line-clamp-2 text-xs leading-tight font-medium text-violet-700 tabular-nums"
                       :title="$t('No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.', { field: s.count })"
                       >{{ preservedText(item, s.stage) }}</span
                     >
