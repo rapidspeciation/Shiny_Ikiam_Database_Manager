@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ChoiceField from '../components/ChoiceField.vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   Plus,
@@ -25,6 +25,7 @@ import type { HeaderProblem } from '../lib/types'
 import type { AsOfSide, HistoryTarget } from '../lib/history'
 import { useSheet } from '../composables/useSheet'
 import { usePhoneWidth } from '../composables/usePhone'
+import { useDismiss } from '../composables/useDismiss'
 import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -189,11 +190,8 @@ function closePast() {
 const phone = usePhoneWidth()
 const menuOpen = ref(false)
 const toolbar = ref<HTMLElement>()
-function closeMenuOutside(event: PointerEvent) {
-  if (menuOpen.value && !toolbar.value?.contains(event.target as Node)) menuOpen.value = false
-}
-document.addEventListener('pointerdown', closeMenuOutside)
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOutside))
+// Closed by a tap outside it, Escape (focus back on ⋯) or focus moving away (composables/useDismiss.ts).
+useDismiss(menuOpen, toolbar)
 
 /** How to use the grid: shown until hidden, then behind the ⓘ button. */
 const HINT_KEY = 'buscador.hint-hidden'

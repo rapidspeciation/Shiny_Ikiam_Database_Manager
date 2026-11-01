@@ -6,6 +6,7 @@ import { errorText, notify } from '../lib/notice'
 import { intlLocale, t } from '../lib/i18n'
 import { siteRunLabel, type ReadingsStatus, type SiteStatus, type SitesAnswer } from '../lib/renameHost'
 import { KINDS, kindLabel, type CurationSummary } from '../lib/photoCuration'
+import { useDismiss } from '../composables/useDismiss'
 
 const ProposalsLive = defineAsyncComponent(() => import('./assistant/ProposalsLive.vue'))
 
@@ -91,6 +92,8 @@ const RECENT_KEY = 'photo-links:recent'
 type Recent = { id: string; kind: 'reading' | 'curation' | 'photos'; at: string }
 const recent = ref<Recent[]>(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'))
 const recentOpen = ref(false)
+const recentBox = ref<HTMLElement>()
+useDismiss(recentOpen, recentBox)
 function showCard(id: string, kind: Recent['kind']) {
   const before = card.value
   if (before && before !== id) {
@@ -477,7 +480,7 @@ onBeforeUnmount(() => {
         <Check :size="15" /> {{ $t('Photo_links ya está al día con esas carpetas (leídas a las {at}).', { at: upToDate }) }}
       </p>
       <!-- The cards this one replaced, to go back to. -->
-      <div v-if="recent.length" class="relative flex justify-end px-3 pt-2 text-xs" data-recent>
+      <div v-if="recent.length" ref="recentBox" class="relative flex justify-end px-3 pt-2 text-xs" data-recent>
         <button type="button" class="btn-ghost flex items-center gap-1 px-1.5 py-0.5 text-stone-600" :aria-expanded="recentOpen" @click="recentOpen = !recentOpen">
           <History :size="13" /> {{ $t('Tarjetas recientes') }} <ChevronDown :size="13" />
         </button>
