@@ -604,7 +604,7 @@ const withoutGps = computed(() => {
   <div class="relative flex h-full min-h-0">
     <aside
       v-if="panel"
-      class="flex w-76 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-[1200] max-md:pb-20 max-md:shadow-lg"
+      class="flex w-76 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm max-md:absolute max-md:inset-0 max-md:z-[1200] max-md:w-full"
     >
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
@@ -761,6 +761,10 @@ const withoutGps = computed(() => {
           )
         }}
       </p>
+      <!-- On a phone the panel covers the map: its way back stays at its foot, over nothing else. -->
+      <div class="sticky bottom-0 mt-auto border-t border-stone-200 bg-surface p-2 md:hidden">
+        <button class="btn w-full" @click="panel = false">{{ $t('Ocultar panel') }}</button>
+      </div>
     </aside>
 
     <div class="relative min-w-0 flex-1">
@@ -817,7 +821,9 @@ const withoutGps = computed(() => {
             ><span>{{ $t('muchas') }}</span>
           </div>
         </div>
-        <button class="btn shadow" @click="panel = !panel">{{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}</button>
+        <button class="btn shadow" :class="{ 'max-md:hidden': panel }" @click="panel = !panel">
+          {{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}
+        </button>
       </div>
     </div>
   </div>
