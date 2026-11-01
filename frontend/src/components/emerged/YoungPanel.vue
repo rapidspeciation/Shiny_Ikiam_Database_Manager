@@ -172,7 +172,7 @@ const ownText = (field: YoungField) => props.own[field].join(', ')
                   placeholder="FS90415474"
                 />
               </label>
-              <button class="btn h-11" :disabled="!typedTube">{{ $t('Usar') }}</button>
+              <button class="btn h-11" :disabled="!typedTube" :title="typedTube ? undefined : $t('Escribe primero el número')">{{ $t('Usar') }}</button>
             </form>
             <button v-if="chosen.tube" class="mt-2 min-h-10 text-sm underline" @click="emit('set', 'tubeFrom', '')">{{ $t('Que la app elija la gradilla') }}</button>
           </div>
@@ -188,7 +188,7 @@ const ownText = (field: YoungField) => props.own[field].join(', ')
                 :placeholder="shown.cam || camFirst"
               />
             </label>
-            <button class="btn h-11" :disabled="!typedCam">{{ $t('Usar') }}</button>
+            <button class="btn h-11" :disabled="!typedCam" :title="typedCam ? undefined : $t('Escribe primero el número')">{{ $t('Usar') }}</button>
           </form>
           <p class="text-xs text-stone-500">
             {{ $t('Vacío: el siguiente libre ({cam}).', { cam: camFirst }) }}

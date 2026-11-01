@@ -420,14 +420,15 @@ body {
 }
 
 @layer components {
+  /* Disabled at 64 % (T3's value): the label stays ≥ 3:1 on its own fill in both themes (PRINCIPLES P8); 50 % was 2.9. */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-surface px-3 py-1.5 text-sm font-medium text-fg hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-surface px-3 py-1.5 text-sm font-medium text-fg hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-error-text hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-error-text hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center rounded-md p-1.5 text-fg-muted hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;

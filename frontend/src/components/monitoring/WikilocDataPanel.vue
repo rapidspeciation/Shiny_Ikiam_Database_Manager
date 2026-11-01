@@ -321,10 +321,22 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
               <span class="field-label">{{ $t('Un recorrido') }}</span>
               <ChoiceField v-model="walk" class="field-input" :freetext="false" :options="walkOptions" :placeholder="$t('Elige un recorrido')" />
             </label>
-            <a class="btn" :class="{ 'pointer-events-none opacity-50': !walk }" :href="walk ? exportUrl('points.csv', walk) : undefined" download
+            <a
+              class="btn"
+              :class="{ 'cursor-not-allowed opacity-64': !walk }"
+              :aria-disabled="!walk || undefined"
+              :title="walk ? undefined : $t('Elige primero un recorrido')"
+              :href="walk ? exportUrl('points.csv', walk) : undefined"
+              download
               ><Download :size="15" /> {{ $t('Puntos (CSV)') }}</a
             >
-            <a class="btn" :class="{ 'pointer-events-none opacity-50': !walk }" :href="walk ? exportUrl('walks.gpx', walk) : undefined" download
+            <a
+              class="btn"
+              :class="{ 'cursor-not-allowed opacity-64': !walk }"
+              :aria-disabled="!walk || undefined"
+              :title="walk ? undefined : $t('Elige primero un recorrido')"
+              :href="walk ? exportUrl('walks.gpx', walk) : undefined"
+              download
               ><Download :size="15" /> {{ $t('Recorrido (GPX)') }}</a
             >
           </div>

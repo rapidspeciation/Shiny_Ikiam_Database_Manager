@@ -162,7 +162,12 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
         </button>
       </div>
       <button class="btn h-11 px-3" :aria-label="$t('Actualizar')" :disabled="refreshing" @click="refresh"><RefreshCw :size="16" :class="{ 'animate-spin': refreshing }" /></button>
-      <button class="btn-primary ml-auto h-11 px-4" :disabled="!groups.length && !unchanged.length" @click="copy">
+      <button
+        class="btn-primary ml-auto h-11 px-4"
+        :disabled="!groups.length && !unchanged.length"
+        :title="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')"
+        @click="copy"
+      >
         <Check v-if="copied" :size="16" /><Copy v-else :size="16" /> {{ $t('Copiar como texto') }}
       </button>
     </div>

@@ -455,8 +455,8 @@ function nextAfter(id: string) {
         <input v-model="autofillNa" type="checkbox" />
         {{ $t('Si el tejido es WHOLE_ORGANISM: tubos siguientes NA, tejido y medio NOT_COLLECTED') }}
       </label>
-      <button class="btn-primary" :disabled="!rows.length" @click="assign"><Wand2 :size="15" /> {{ $t('Asignar IDs') }}</button>
-      <button class="btn" :disabled="!rows.length" @click="printLabels">
+      <button class="btn-primary" :disabled="!rows.length" :title="rows.length ? undefined : $t('Elige IDs arriba y pulsa Cargar.')" @click="assign"><Wand2 :size="15" /> {{ $t('Asignar IDs') }}</button>
+      <button class="btn" :disabled="!rows.length" :title="rows.length ? undefined : $t('Elige IDs arriba y pulsa Cargar.')" @click="printLabels">
         <Printer :size="15" /> {{ $t('Imprimir etiquetas') }}
       </button>
     </div>

@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
             <option v-for="y in archiveYears" :key="y.name" :value="String(y.name)">{{ y.name }} · {{ y.n }}</option>
           </select>
         </div>
-        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="archiveBusy || !archiveCount" data-review-archive @click="reviewArchive">
+        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="archiveBusy || !archiveCount" :title="archiveCount ? undefined : $t('No hay casos con estos filtros')" data-review-archive @click="reviewArchive">
           <Loader2 v-if="archiveBusy" :size="15" class="animate-spin" />
           {{ $tn(archiveCount, 'Revisar {n} caso', 'Revisar {n} casos') }}
         </button>
@@ -458,6 +458,7 @@ onBeforeUnmount(() => {
             class="mt-1.5 w-full justify-center py-1"
             :class="written && KEYS[i] === 'gallery' ? 'btn-primary bg-fill-emerald hover:bg-fill-emerald-strong' : 'btn'"
             :disabled="!sitesReady || !!starting || running(s)"
+            :title="sitesReady ? undefined : $t('Este servidor no tiene la contraseña de las actualizaciones: solo se ve cómo van.')"
             :data-update="KEYS[i]"
             @click="update(KEYS[i])"
           >
