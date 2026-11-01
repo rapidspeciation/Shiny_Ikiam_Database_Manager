@@ -134,6 +134,32 @@ let fieldIndex = new Map<string, Field>()
 
 const touchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
+// Prototype (branch ui-rowform-proto, not for release): on phones, with localStorage proto:rowform = 1, one row at a
+// time as a form (RowDrawer inline) instead of the grid, in the grid's order, with previous / next and «Ir a…».
+const rowForm =
+  typeof window !== 'undefined' &&
+  !props.readonly &&
+  window.matchMedia('(max-width: 639px)').matches &&
+  (() => {
+    try {
+      return localStorage.getItem('proto:rowform') === '1'
+    } catch {
+      return false
+    }
+  })()
+const formOrder = computed(() => {
+  const rows = [...props.rows]
+  if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
+  return rows.map(r => ({
+    id: r.id,
+    row: r.row,
+    label: labelOf(r.values),
+    hint: [r.values.SPECIES, r.values.Sex, r.values['CLUTCH NUMBER']].filter(v => v !== null && v !== undefined && v !== '').join(' · '),
+  }))
+})
+const formId = ref<string | null>(null)
+const formShown = computed(() => formId.value || formOrder.value[0]?.id || null)
+
 function labelOf(values: Record<string, CellValue>) {
   const key = props.labelField || session.module(props.module)?.identityFields[0]
   return String((key && values[key]) || '')
@@ -963,7 +989,24 @@ defineExpose({ refresh, fillDown, keepView })
 
 <template>
   <div class="sheet-grid flex flex-col" :style="{ height }">
-    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
+    <RowDrawer
+      v-if="rowForm && formShown"
+      inline
+      class="min-h-0 flex-1"
+      :order="formOrder"
+      :module="module"
+      :row-id="formShown"
+      :rows="rows"
+      :creates="creates"
+      :columns="columns"
+      :options="options"
+      :locked-fields="lockedFields"
+      :create-formulas="createFormulas"
+      :label-field="labelField"
+      @go="id => (formId = id)"
+      @changed="refresh"
+    />
+    <CellBar v-show="!rowForm" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
       <template v-if="cellHistory" #actions>
         <button
           type="button"
@@ -978,7 +1021,7 @@ defineExpose({ refresh, fillDown, keepView })
       </template>
     </CellBar>
     <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, so they move with the grid. -->
-    <div class="relative min-h-0 flex-1">
+    <div v-show="!rowForm" class="relative min-h-0 flex-1">
       <div ref="host" class="h-full" tabindex="-1" />
     </div>
     <RowDrawer

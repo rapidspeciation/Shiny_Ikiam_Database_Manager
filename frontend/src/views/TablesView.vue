@@ -44,6 +44,14 @@ import { t } from '../lib/i18n'
 const session = useSession()
 const pending = usePending()
 const route = useRoute()
+// Prototype (ui-rowform-proto): the grid's touch hint does not apply to the row form.
+const protoRowForm = (() => {
+  try {
+    return localStorage.getItem('proto:rowform') === '1' && window.matchMedia('(max-width: 639px)').matches
+  } catch {
+    return false
+  }
+})()
 const router = useRouter()
 
 /** Group names in Spanish (the key of their English), translated where shown. */
@@ -387,7 +395,7 @@ const headerNotice = computed(() => {
               $t('Esas columnas se muestran con su último valor y no se pueden editar.')
             }}</template>
           </p>
-          <p v-if="!hintHidden" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
+          <p v-if="!hintHidden && !protoRowForm" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
             <span class="min-w-0 flex-1">
               <template v-if="touch">{{
                 $t(
