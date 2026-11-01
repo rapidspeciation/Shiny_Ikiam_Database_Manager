@@ -9,7 +9,8 @@ import { searchAll } from './search.mjs';
 import { layoutsFeed, workerMode, workerPool } from './worker-slot.mjs';
 
 const SEARCH_MS = 60_000;
-/** Searches at once: a second worker starts only while the first is busy (two people searching). */
+/** Searches at once (config.searchWorkers, SEARCH_WORKERS): a second worker starts only while the first is busy (two people
+ * searching), some 300 MB more while it runs; the lab's apps keep one. */
 const SEARCH_WORKERS = 2;
 
 /** { all(query) → the answer of searchAll, mode, status(), close() }. `workerUrl`: for tests. */
@@ -20,7 +21,7 @@ export function createSearchHost({ store, config = {}, workerUrl = new URL('./se
   // The columns missing from a live sheet are read from its layout: the worker gets them as the app has them.
   const layouts = layoutsFeed(store, changed => worker.post({ type: 'layouts', layouts: changed }));
   const worker = workerPool({
-    size: SEARCH_WORKERS,
+    size: Number(config.searchWorkers) || SEARCH_WORKERS,
     role: 'search',
     url: workerUrl,
     data: () => ({ path: decided.path, localMode: !!store.localMode, spreadsheetId: store.sheets?.spreadsheetId ?? null, layouts: layouts.current() }),

@@ -324,6 +324,8 @@ export function configFromEnv(env = process.env) {
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
     // How many workers answer the assistant's tool calls (server/worker-slot.mjs POOL_SIZE by default).
     assistantToolWorkers: env.ASSISTANT_TOOL_WORKERS || undefined,
+    // How many workers answer the Buscador's searches at once (server/search-host.mjs SEARCH_WORKERS by default).
+    searchWorkers: env.SEARCH_WORKERS || undefined,
     // Minutes a worker thread (the assistant's tools and views, the checks) waits for work before it stops and
     // gives its memory back (server/worker-slot.mjs IDLE_MS by default; 0: never).
     workerIdleMs: env.WORKER_IDLE_MINUTES !== undefined && env.WORKER_IDLE_MINUTES !== '' ? Number(env.WORKER_IDLE_MINUTES) * 60_000 : undefined,
