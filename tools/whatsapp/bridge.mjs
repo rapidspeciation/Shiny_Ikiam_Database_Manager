@@ -857,7 +857,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       // The text goes first; the pictures are fetched and sent meanwhile, three at a time.
       const textDone = (async () => {
       if (reply.text) {
-        const text = PREFIX + toWhatsApp(reply.text).slice(0, 3500);
+        const text = PREFIX + toWhatsApp(reply.text.replace(/^\s*claude\s*:\s*/i, '')).slice(0, 3500); // the bridge adds the «Claude: » itself
         // WhatsApp lets a message be edited for about 15 minutes; past that, or when the edit fails, the answer goes as a new message.
         const edited = status.id && now() - started < 14 * 60_000 ? await send(chat, { kind: 'reply', edit: status.id, text, trigger: msg }).then(() => true, () => false) : false;
         if (!edited) await send(chat, { kind: 'reply', text, quote: msg, trigger: msg });

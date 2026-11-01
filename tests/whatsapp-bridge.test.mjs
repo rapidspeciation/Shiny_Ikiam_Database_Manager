@@ -640,3 +640,20 @@ test('[files]: parsed; only the tools\' folders, by real path, only the allowed 
   assert.ok(!existsSync(join(dir, 'state2', 'outbox.jsonl')));
   assert.ok(readFileSync(join(dir, 'state2', 'bridge.log.jsonl'), 'utf8').includes('group send outside an active conversation'));
 });
+
+test('a reply that already starts with «Claude: » is not prefixed twice', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-prefix-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Claude: Hay 12.'}));`);
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  bridge.handle({ Chat: 'G@g.us', ID: 'PP1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Ana' });
+  for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 150));
+  const sent = readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.equal(sent.find(s => s.kind === 'reply').text, 'Claude: Hay 12.');
+});
