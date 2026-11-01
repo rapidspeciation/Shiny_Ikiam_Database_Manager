@@ -96,6 +96,8 @@ export function createAssistantHost({
   const onMessage = m => {
     if (m?.type === 'changed') main.notifyChanged(m.ownerId, m.page ?? null);
   };
+  // How long an idle worker waits before it stops (WORKER_IDLE_MINUTES; server/worker-slot.mjs IDLE_MS by default).
+  const idle = config.workerIdleMs !== undefined ? { idleMs: config.workerIdleMs } : {};
   // A few, so two people's chats calling tools at once are not answered one after the other.
   const tools = workerPool({
     role: 'tools',
@@ -105,6 +107,7 @@ export function createAssistantHost({
     backoffMs,
     onMessage,
     ...(config.assistantToolWorkers ? { size: Number(config.assistantToolWorkers) } : {}),
+    ...idle,
   });
   const views = workerSlot({
     role: 'views',
@@ -113,6 +116,7 @@ export function createAssistantHost({
     timeoutMs: viewsMs ?? VIEWS_MS,
     onMessage,
     onDegraded: () => main.useViews(null),
+    ...idle,
   });
   main.useViews({
     list: (rows, titles, have) => views.call({ type: 'views', rows, titles: [...titles], have: [...have] }),
