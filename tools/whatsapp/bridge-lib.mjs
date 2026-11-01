@@ -226,6 +226,7 @@ const STEP_LABELS = [
   [/__(maps_snapshot)$/, 'dibujando el mapa'],
   [/__(maps_localities|maps_species)$/, 'mirando los mapas'],
   [/__host_plants$/, 'buscando plantas hospederas'],
+  [/__weather_forecast$/, 'mirando el pronóstico del clima'],
   [/__(propose_changes|update_proposal|match_notebook)$/, 'preparando la propuesta'],
   [/__(get_proposal|list_proposals)$/, 'revisando propuestas'],
   [/__(review_issues|review_suggestions)$/, 'revisando problemas de la base'],
