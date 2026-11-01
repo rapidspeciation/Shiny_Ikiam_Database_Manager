@@ -390,6 +390,8 @@ function nextAfter(id: string) {
         <button class="btn-primary" @click="load(false)"><Download :size="15" /> {{ $t('Cargar') }}</button>
         <button class="btn" @click="load(true)"><Plus :size="15" /> {{ $t('Añadir a la tabla') }}</button>
       </div>
+      <!-- On a phone the empty table is two screens down, under the defaults: what to do is said here, by the picker. -->
+      <p v-if="ready && !rows.length" class="w-full text-sm text-fg-muted sm:hidden">{{ $t('Elige IDs arriba y pulsa Cargar.') }}</p>
       <TabHistoryButton class="ml-auto" purpose="tubos" :title="$t('Historial de Tubos')" />
       <EntryModeToggle v-model="mode" />
     </div>
@@ -477,7 +479,7 @@ function nextAfter(id: string) {
     </p>
     <div class="min-h-0 flex-1">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
-      <p v-else-if="!rows.length" class="p-6 text-stone-500">{{ $t('Elige IDs arriba y pulsa Cargar.') }}</p>
+      <p v-else-if="!rows.length" class="p-6 text-stone-500 max-sm:hidden">{{ $t('Elige IDs arriba y pulsa Cargar.') }}</p>
       <SheetGrid
         v-else
         :module="MODULE"
