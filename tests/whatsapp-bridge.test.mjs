@@ -688,8 +688,10 @@ test('/tono: per chat, without a model, and named in every envelope', async () =
   writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r.text)+'\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
   const soulFile = join(dir, 'soul.md');
   writeFileSync(soulFile, 'Habla como una persona.');
+  const header = join(dir, 'header.md');
+  writeFileSync(header, 'Estás en WhatsApp.');
   const config = {
-    soulFile,
+    soulFile: [header, soulFile],
     chats: {
       group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
       other: { jid: 'H@g.us', label: 'Otro', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
@@ -727,7 +729,7 @@ test('/tono: per chat, without a model, and named in every envelope', async () =
   const [first, other, second] = envelopes();
   assert.match(first, /Tone in this chat \(\/tono\): gracioso/);
   assert.match(other, /Tone in this chat \(\/tono\): normal/);
-  assert.match(first, /Habla como una persona\./);
+  assert.match(first, /Estás en WhatsApp\.\n\nHabla como una persona\./); // the header, then the core
   assert.match(second, /Tone in this chat \(\/tono\): gracioso/);
   assert.doesNotMatch(second, /Habla como una persona/); // the soul goes once per thread
   writeFileSync(soulFile, 'Habla como una persona, con calma.');

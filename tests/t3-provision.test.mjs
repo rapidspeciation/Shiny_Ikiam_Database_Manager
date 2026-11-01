@@ -42,9 +42,13 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
         .replaceAll('{{username}}', 'ana')
         .replaceAll('{{docs}}', docs.replace(/\/$/, ''))
         .replaceAll('{{knowledge}}', join(shared, 'knowledge'))
-        .replaceAll('{{sheets}}', join(shared, 'sheets.sqlite')),
+        .replaceAll('{{sheets}}', join(shared, 'sheets.sqlite'))
+        .trimEnd() +
+        // then how the assistant sounds: the app's header and the voice core shared with WhatsApp
+        ['app.md', 'core.md'].map(f => '\n\n' + readFileSync(new URL(`../assistant/voice/${f}`, import.meta.url), 'utf8').trim()).join('') +
+        '\n',
     );
-    assert.doesNotMatch(brief, /\{\{|Local test lab/);
+    assert.doesNotMatch(brief, /\{\{|Local test lab|Tone in this chat/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
       const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');
       assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);

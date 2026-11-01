@@ -3,7 +3,7 @@
 // route): each scenario gets its own state folder, so its own new chat, and nothing goes to WhatsApp. At most 4 chats
 // run at once, and each chat is archived as soon as its answer is in (also after a failure or a timeout): T3 keeps an
 // idle chat's Claude process for 30 minutes, so a burst of open chats fills this PC's memory.
-//   node tools/whatsapp/soul-run.mjs <scenarios.json> <soul.md> <new output folder> [--round r0] [--tono normal] [--only S01,S02] [--parallel 4]
+//   node tools/whatsapp/soul-run.mjs <scenarios.json> <voice file[,file…]> <new output folder> [--round r0] [--tono normal] [--only S01,S02] [--parallel 4]
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -147,7 +147,7 @@ async function main(args) {
   const lab = JSON.parse(readFileSync(process.env.WA_BRIDGE_CONFIG || join(process.env.HOME, '.config/ithomiini-wa-bridge/config.json'), 'utf8')).routes.labsim;
   const { createBridge } = await import(join(HERE, 'bridge.mjs'));
   const scenarios = JSON.parse(readFileSync(scenFile, 'utf8')).filter(s => !only || only.includes(s.id));
-  const options = { outDir, soulFile, round: opt('--round', 'r'), tono: opt('--tono', 'normal'), lab, createBridge };
+  const options = { outDir, soulFile: soulFile.split(','), round: opt('--round', 'r'), tono: opt('--tono', 'normal'), lab, createBridge };
   const results = await runPool(scenarios, chatLimit(opt('--parallel', MAX_CHATS)), s => runScenario(s, options));
   results.sort((a, b) => a.id.localeCompare(b.id));
   writeFileSync(join(outDir, 'results.json'), JSON.stringify(results, null, 1));

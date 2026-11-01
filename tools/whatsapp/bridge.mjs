@@ -852,9 +852,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       if (chat.history?.dir) lines.push(`History: the file wa-history/${chat.history.slug ?? slug(chat.label)}.jsonl in your workspace has every message of this group (one JSON per line: id, at, name, text, media, replyTo); search it with Grep or Read when the question needs earlier messages.`);
       else if (chat.key === 'self' && !chat.dryRun) lines.push(`History: your chat's older messages are in the WhatsApp store, read-only: wacli --store ${config.wacli.store} messages list --read-only --json --chat ${chat.jid} --after YYYY-MM-DD --limit N (this chat only).`);
       if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it quotes one of your messages or addresses you by name («Claude, …») inside a conversation you were in during the last 15 minutes. That does not mean it is for you: people also quote you to point something out to the team. The default is [silent]; answer only if an answer from you is clearly expected, or you add something clearly useful (for instance a fact you got wrong). If unsure, your last message must be exactly [silent].');
-      // The voice (config `soulFile`): sent on a thread's first turn, when the file changes, and every 20 turns so it outlives compaction.
+      // The voice (config `soulFile`, one file or a list read in order: the channel's header, then the shared core): sent on a
+      // thread's first turn, when it changes, and every 20 turns so it outlives compaction.
       const threadKey = chat.key;
-      const soul = config.soulFile ? readFileSync(config.soulFile, 'utf8').trim() : '';
+      const soul = [config.soulFile ?? []].flat().map(f => readFileSync(f, 'utf8').trim()).join('\n\n');
       if (soul) {
         const hash = createHash('sha256').update(soul).digest('hex').slice(0, 16);
         const sent = (state.soulSent ??= {})[threadKey];
@@ -968,7 +969,7 @@ function serve() {
 /** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
 function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
-  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/bridge-skill/soul.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
+  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
     copyFileSync(join(ROOT, f), join(target, f));
   }

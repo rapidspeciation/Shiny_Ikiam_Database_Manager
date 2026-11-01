@@ -1,6 +1,6 @@
 {
   "port": 8789,
-  "soulFile": "/home/franz/.local/share/ithomiini-wa-bridge/tools/whatsapp/bridge-skill/soul.md",
+  "soulFile": ["/home/franz/.local/share/ithomiini-wa-bridge/assistant/voice/whatsapp.md", "/home/franz/.local/share/ithomiini-wa-bridge/assistant/voice/core.md"],
   "secretFile": "/home/franz/.config/ithomiini-wa-bridge/webhook-secret",
   "wacli": { "bin": "/home/franz/.local/bin/wacli", "store": "/home/franz/.wacli" },
   "chats": {
