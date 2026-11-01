@@ -84,6 +84,8 @@ const props = withDefaults(
     cellHistory?: boolean
     /** Per row id, cells of entries kept in the app, not in Google Sheets yet (lib/staged.ts overlayTable). */
     staged?: Record<string, StagedMark>
+    /** One row at a time as a form instead of the grid (a phone's choice in the Buscador). */
+    form?: boolean
   }>(),
   {
     creates: () => [],
@@ -134,31 +136,38 @@ let fieldIndex = new Map<string, Field>()
 
 const touchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
-// Prototype (branch ui-rowform-proto, not for release): on phones, with localStorage proto:rowform = 1, one row at a
-// time as a form (RowDrawer inline) instead of the grid, in the grid's order, with previous / next and «Ir a…».
-const rowForm =
-  typeof window !== 'undefined' &&
-  !props.readonly &&
-  window.matchMedia('(max-width: 639px)').matches &&
-  (() => {
-    try {
-      return localStorage.getItem('proto:rowform') === '1'
-    } catch {
-      return false
-    }
-  })()
+// The form view: one row at a time (RowDrawer in place of the grid), in the grid's order (new rows first), with
+// previous / next and «Ir a…». The grid stays built underneath, so switching back keeps its place.
+const rowForm = computed(() => props.form && !props.readonly)
+const hintOf = (values: Record<string, CellValue>) =>
+  [values.SPECIES, values.Sex, values['CLUTCH NUMBER']].filter(v => v !== null && v !== undefined && v !== '').join(' · ')
 const formOrder = computed(() => {
+  if (!rowForm.value) return []
   const rows = [...props.rows]
   if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
-  return rows.map(r => ({
-    id: r.id,
-    row: r.row,
-    label: labelOf(r.values),
-    hint: [r.values.SPECIES, r.values.Sex, r.values['CLUTCH NUMBER']].filter(v => v !== null && v !== undefined && v !== '').join(' · '),
-  }))
+  return [
+    ...[...props.creates].reverse().map(c => ({ id: c.clientId, row: 0, label: labelOf(c.values), hint: hintOf(c.values) })),
+    ...rows.map(r => ({ id: r.id, row: r.row, label: labelOf(r.values), hint: hintOf(r.values) })),
+  ]
 })
 const formId = ref<string | null>(null)
-const formShown = computed(() => formId.value || formOrder.value[0]?.id || null)
+const formShown = computed(() =>
+  formId.value && formOrder.value.some(o => o.id === formId.value) ? formId.value : formOrder.value[0]?.id || null,
+)
+// A row added, or opened from a search, is the one the form shows.
+watch(
+  () => props.creates.length,
+  (now, before) => {
+    if (now > before) formId.value = props.creates[now - 1].clientId
+  },
+)
+watch(
+  () => props.focusRow,
+  id => {
+    if (id) formId.value = id
+  },
+  { immediate: true },
+)
 
 function labelOf(values: Record<string, CellValue>) {
   const key = props.labelField || session.module(props.module)?.identityFields[0]
@@ -1005,7 +1014,9 @@ defineExpose({ refresh, fillDown, keepView })
       :label-field="labelField"
       @go="id => (formId = id)"
       @changed="refresh"
+      @remove-create="id => emit('removeCreate', id)"
     />
+    <p v-if="rowForm && !formShown" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
     <CellBar v-show="!rowForm" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
       <template v-if="cellHistory" #actions>
         <button
