@@ -45,6 +45,7 @@ import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.m
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
 import { RACK_FIELDS, RACK_ROW_FIELDS, changesProblems, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
+import { WEATHER_TOOLS, WEATHER_TOOL_NAMES, createWeatherTool } from './weather-tool.mjs';
 import { clutchPhotoDir as clutchPhotoFolder } from './clutch-photos.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
@@ -468,6 +469,8 @@ const TOOLS = [
   ...RACK_TOOLS,
   // Read-only: the maps' occurrence records and host plants, and the Wings Gallery's specimens with links and thumbnails (server/maps-tools.mjs).
   ...MAPS_TOOLS,
+  // Read-only: the weather forecast for a collecting site, from Open-Meteo (server/weather-tool.mjs).
+  ...WEATHER_TOOLS,
   {
     type: 'function',
     function: {
@@ -933,6 +936,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     clutchPhotoDir: config.clutchPhotoDir || clutchPhotoFolder({}, db?.location?.() ?? null),
     ...(config.mapsTools ?? {}),
   });
+  // weather_forecast: Open-Meteo's answers kept an hour.
+  const weather = createWeatherTool({ store, ...(config.weatherTool ?? {}) });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
   const curation = createCuration({
     store,
@@ -6374,6 +6379,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
     if (MAPS_TOOL_NAMES.has(name)) return fitResult(await mapsTools.run(name, args), { narrow: 'ask for a smaller limit or a narrower region' });
+    if (WEATHER_TOOL_NAMES.has(name)) return weather.run(name, args);
     if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFactsTool(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
     if (CURATION_TOOL_NAMES.has(name)) {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot change the database' };

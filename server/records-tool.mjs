@@ -345,8 +345,8 @@ const pointOf = (values, latKey, lonKey) => {
   return lat === null || lon === null ? null : { lat, lon };
 };
 
-/** Location_data: each Collection_location with its coordinates. */
-function places(db) {
+/** Location_data: each Collection_location with its coordinates (keyed by its folded name). */
+export function places(db) {
   const mod = moduleMap.get('Location_data');
   if (!mod) return new Map();
   const out = new Map();
