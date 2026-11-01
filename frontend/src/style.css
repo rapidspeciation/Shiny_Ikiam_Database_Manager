@@ -483,6 +483,7 @@ body {
    */
   .scroll-row {
     overflow-x: auto;
+    overflow-y: clip;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
     --fade: 2.5rem;

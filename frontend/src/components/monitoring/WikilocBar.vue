@@ -188,7 +188,7 @@ watch(showProfiles, v => v && loadProfiles())
       <button
         class="btn"
         :disabled="!session.canEdit || !link.trim()"
-        :title="!session.canEdit ? $t('Tu usuario no tiene permiso de edición.') : link.trim() ? undefined : $t('Pega primero el enlace de la ruta')"
+        :title="!session.canEdit ? $t('Tu usuario no tiene permiso de edición.') : link.trim() ? undefined : $t('Pega primero el enlace de la ruta')" :data-why="!session.canEdit ? $t('Tu usuario no tiene permiso de edición.') : link.trim() ? undefined : $t('Pega primero el enlace de la ruta')"
       >{{ $t('Traer') }}</button>
       <button type="button" class="btn" :disabled="!session.canEdit" @click="sync">
         <RefreshCw :size="15" :class="{ 'animate-spin': active.some(j => j.kind === 'profile') }" />

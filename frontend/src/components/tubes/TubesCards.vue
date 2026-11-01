@@ -1199,7 +1199,7 @@ watch(
                         @keydown.enter.prevent="typedStart && pickRack(typedStart)"
                       />
                     </label>
-                    <button class="btn h-11" :disabled="!typedStart" :title="typedStart ? undefined : $t('Escribe primero el número')" @click="pickRack(typedStart)">{{ $t('Usar') }}</button>
+                    <button class="btn h-11" :disabled="!typedStart" :title="typedStart ? undefined : $t('Escribe primero el número')" :data-why="typedStart ? undefined : $t('Escribe primero el número')" @click="pickRack(typedStart)">{{ $t('Usar') }}</button>
                   </div>
                   <button v-if="rackChosen" class="mt-2 text-sm underline" @click="autoRackAgain">{{ $t('Que la app elija la gradilla') }}</button>
                 </div>

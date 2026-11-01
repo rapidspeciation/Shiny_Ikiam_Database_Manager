@@ -290,14 +290,14 @@ async function resetPassword(user: User) {
               <td>
                 <input
                   type="checkbox"
-                  class="size-4"
+                  class="hit-target size-5"
                   :checked="u.active"
                   :aria-label="$t('Cuenta de {name} activa', { name: u.username })"
                   @change="update(u, { active: !u.active })"
                 />
               </td>
               <td class="space-x-3 whitespace-nowrap">
-                <button class="hit-target text-xs underline disabled:cursor-not-allowed disabled:opacity-64" :disabled="!u.active" :title="u.active ? undefined : $t('La cuenta no está activa')" @click="resetLink(u)">
+                <button class="hit-target text-xs underline disabled:cursor-not-allowed disabled:opacity-64" :disabled="!u.active" :title="u.active ? undefined : $t('La cuenta no está activa')" :data-why="u.active ? undefined : $t('La cuenta no está activa')" @click="resetLink(u)">
                   {{ $t('Enlace para restablecer') }}
                 </button>
                 <button class="hit-target text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>

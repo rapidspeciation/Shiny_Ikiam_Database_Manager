@@ -165,7 +165,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
       <button
         class="btn-primary ml-auto h-11 px-4"
         :disabled="!groups.length && !unchanged.length"
-        :title="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')"
+        :title="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')" :data-why="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')"
         @click="copy"
       >
         <Check v-if="copied" :size="16" /><Copy v-else :size="16" /> {{ $t('Copiar como texto') }}

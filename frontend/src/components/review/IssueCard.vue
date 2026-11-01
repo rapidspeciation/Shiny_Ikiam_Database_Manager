@@ -204,7 +204,7 @@ async function toggleHistory() {
 
       <div class="min-w-0 space-y-2">
         <!-- The rows involved side by side, the cells that disagree in red. -->
-        <div v-if="i.table?.rows.length" class="overflow-x-auto">
+        <div v-if="i.table?.rows.length" class="overflow-x-auto overflow-y-clip">
           <table class="w-full border-collapse text-xs">
             <thead class="bg-stone-50 text-left text-stone-600">
               <tr>
@@ -221,7 +221,7 @@ async function toggleHistory() {
             <tbody>
               <tr v-for="(r, n) in i.table.rows" :key="r.recordId">
                 <td class="border-b border-stone-100 px-1.5 py-1 whitespace-nowrap">
-                  <button class="hit-target text-brand-700 hover:underline" @click="emit('open', r.sheet, r.label)">
+                  <button class="block py-2 text-brand-700 hover:underline" @click="emit('open', r.sheet, r.label)">
                     {{ r.sheet === i.sheet ? '' : `${r.sheet} ` }}{{ r.row }}
                   </button>
                 </td>

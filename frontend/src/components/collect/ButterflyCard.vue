@@ -430,7 +430,7 @@ const sexChoice = (sex: string, on: boolean) =>
         class="ml-9 flex min-h-11 items-center gap-2 rounded-lg border border-brand-600 bg-surface px-4 text-base font-medium text-brand-800 active:bg-brand-50"
         :disabled="!draft.species"
         :class="{ 'cursor-not-allowed opacity-64': !draft.species }"
-        :title="draft.species ? undefined : $t('Elige primero la especie')"
+        :title="draft.species ? undefined : $t('Elige primero la especie')" :data-why="draft.species ? undefined : $t('Elige primero la especie')"
         @click="emit('duplicate')"
       >
         <CopyPlus :size="18" /> {{ $t('Otra igual') }}

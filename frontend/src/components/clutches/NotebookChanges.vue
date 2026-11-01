@@ -180,10 +180,10 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
     </div>
     <p v-if="fromDate" class="mt-1 text-xs text-stone-600">{{ dayLabel(fromDate, todayIso()) }} {{ fromTime }} → {{ $t('ahora') }}</p>
     <div class="mt-2 flex flex-wrap items-center gap-2">
-      <button class="btn-primary h-11 px-4" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="copy">
+      <button class="btn-primary h-11 px-4" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" :data-why="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="copy">
         <Check v-if="copied" :size="16" /><Copy v-else :size="16" /> {{ $t('Copiar como texto') }}
       </button>
-      <button class="btn h-11 px-3" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="print"><Printer :size="16" /> {{ $t('Imprimir') }}</button>
+      <button class="btn h-11 px-3" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" :data-why="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="print"><Printer :size="16" /> {{ $t('Imprimir') }}</button>
       <label class="ml-auto flex min-h-11 items-center gap-1.5 text-sm text-stone-700">
         <input v-model="withSheets" type="checkbox" class="h-4 w-4" /> {{ $t('Incluir lo escrito en Google Sheets') }}
       </label>

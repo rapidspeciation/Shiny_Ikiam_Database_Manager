@@ -325,7 +325,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
               class="btn"
               :class="{ 'cursor-not-allowed opacity-64': !walk }"
               :aria-disabled="!walk || undefined"
-              :title="walk ? undefined : $t('Elige primero un recorrido')"
+              :title="walk ? undefined : $t('Elige primero un recorrido')" :data-why="walk ? undefined : $t('Elige primero un recorrido')"
               :href="walk ? exportUrl('points.csv', walk) : undefined"
               download
               ><Download :size="15" /> {{ $t('Puntos (CSV)') }}</a
@@ -334,7 +334,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
               class="btn"
               :class="{ 'cursor-not-allowed opacity-64': !walk }"
               :aria-disabled="!walk || undefined"
-              :title="walk ? undefined : $t('Elige primero un recorrido')"
+              :title="walk ? undefined : $t('Elige primero un recorrido')" :data-why="walk ? undefined : $t('Elige primero un recorrido')"
               :href="walk ? exportUrl('walks.gpx', walk) : undefined"
               download
               ><Download :size="15" /> {{ $t('Recorrido (GPX)') }}</a

@@ -126,8 +126,9 @@ function discard() {
     <button
       v-if="!pending.saving"
       type="button"
-      class="min-w-0 max-w-full truncate text-left text-xs text-pending-text hover:underline"
+      class="hit-target min-w-0 max-w-full truncate text-left text-xs text-pending-text hover:underline"
       :title="allPlaces"
+      :aria-label="$t('Revisar: {places}', { places: allPlaces })"
       data-pending-places
       @click="reviewing = true"
     >

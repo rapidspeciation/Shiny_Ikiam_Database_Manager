@@ -1283,7 +1283,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                         <ChevronDown :size="18" :class="{ 'rotate-180': gapsOpen }" />
                       </button>
                     </span>
-                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart" :title="startText.trim() ? undefined : $t('Escribe primero el número')">
+                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart" :title="startText.trim() ? undefined : $t('Escribe primero el número')" :data-why="startText.trim() ? undefined : $t('Escribe primero el número')">
                       <Loader2 v-if="checkingStart" :size="16" class="animate-spin" />{{ $t('Usar') }}
                     </button>
                   </span>
