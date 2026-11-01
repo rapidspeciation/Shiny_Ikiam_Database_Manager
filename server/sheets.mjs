@@ -324,6 +324,8 @@ export class LocalSheets {
   constructor(seed = {}, { evaluate, protectedRanges, spreadsheetId = REAL_ID, health } = {}) {
     this.rows = new Map();
     this.gridRows = new Map();
+    // Counts the writes (writeCells, batchUpdate: each changes the rows in one go), so a read in pieces knows one came.
+    this.revision = 0;
     this.spreadsheetId = spreadsheetId;
     this.evaluate = evaluate || defaultEvaluate;
     this.protectedRanges = protectedRanges || {};
@@ -373,19 +375,28 @@ export class LocalSheets {
   }
   async readSheet(sheet) {
     await this.gate(true);
-    const source = [...(this.rows.get(sheet) || [])];
-    const rows = [];
-    // Row by row: the whole sheet as one string is some hundred MB in the lab's workbook.
-    const digest = createHash('sha256');
-    // A piece at a time, as Google's ranges are read: a big sheet takes a second or two to copy (Insectary_data in
-    // the lab's workbook), and the app answers the others between pieces.
-    for (let i = 0; i < source.length; i += LOCAL_READ_ROWS) {
-      if (i) await new Promise(resolve => setImmediate(resolve));
-      for (const r of structuredClone(source.slice(i, i + LOCAL_READ_ROWS))) {
-        digest.update(JSON.stringify(r));
-        rows.push(r);
+    // A piece at a time: a big sheet takes a second or two to copy (Insectary_data in the lab's workbook), and the
+    // app answers the others between pieces. Still one moment's copy: a write landing meanwhile (each write changes
+    // the rows at once, `revision`) starts the copy again; after a few, the whole sheet is copied in one go.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const revision = this.revision;
+      const source = [...(this.rows.get(sheet) || [])];
+      const rows = [];
+      // Row by row: the whole sheet as one string is some hundred MB in the lab's workbook.
+      const digest = createHash('sha256');
+      for (let i = 0; i < source.length; i += LOCAL_READ_ROWS) {
+        if (i) await new Promise(resolve => setImmediate(resolve));
+        if (this.revision !== revision) break;
+        for (const r of structuredClone(source.slice(i, i + LOCAL_READ_ROWS))) {
+          digest.update(JSON.stringify(r));
+          rows.push(r);
+        }
       }
+      if (this.revision === revision) return withDigest(rows, digest.digest('base64'));
     }
+    const rows = structuredClone(this.rows.get(sheet) || []);
+    const digest = createHash('sha256');
+    for (const r of rows) digest.update(JSON.stringify(r));
     return withDigest(rows, digest.digest('base64'));
   }
   async readRow(sheet, row) {
@@ -453,6 +464,8 @@ export class LocalSheets {
   }
   /** Writes by field name: at `columns` when given (as the app does), else where this sheet's header has the field. */
   async writeCells(sheet, row, changes, columns) {
+    // No await below: the whole write happens at once (readSheet).
+    this.revision++;
     const rows = this.rows.get(sheet) || [];
     let target = rows.find(r => r.row === row);
     if (!target) {
@@ -493,6 +506,8 @@ export class LocalSheets {
           status: 400,
         });
     }
+    // No await below: the whole batch happens at once (readSheet).
+    this.revision++;
     const pasted = new Map();
     for (const request of requests) {
       if (request.appendDimension) {
