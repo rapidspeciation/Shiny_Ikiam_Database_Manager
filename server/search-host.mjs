@@ -31,9 +31,11 @@ export function createSearchHost({ store, config = {}, workerUrl = new URL('./se
       try {
         return await worker.call({ type: 'search', query: { q: query?.q, context: query?.context, sheets: query?.sheets, pin: query?.pin } });
       } catch (e) {
-        if (store.closed || e.code === 'WORKER_CLOSED') throw e;
-        // A worker left aside, failing or too slow: the search in the app's thread, as before.
-        if (e.code !== 'DEGRADED') console.error('Search worker:', e.message, '(searched in the app instead)');
+        if (store.closed) throw e;
+        // A worker left aside, failing, too slow or stopped as the app closes (the store is open until the server has
+        // closed): the search in the app's thread, as before. Too slow for its worker (a minute) never happens in
+        // practice (0.1–0.5 s a search), so it is not worth refusing.
+        if (e.code !== 'DEGRADED' && e.code !== 'WORKER_CLOSED') console.error('Search worker:', e.message, '(searched in the app instead)');
         return searchAll(store, query);
       }
     },
