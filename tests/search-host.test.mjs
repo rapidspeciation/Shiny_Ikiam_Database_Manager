@@ -57,3 +57,10 @@ test('the search in the app when there is no worker (ASSISTANT_WORKER=0)', async
   assert.equal(host.mode, 'inline');
   assert.deepEqual(took(await host.all({ q: 'onega' })), took(searchAll(store, { q: 'onega' })));
 });
+
+test('a search after the worker was closed (the app closing, its store still open): answered in the app', async t => {
+  const { store, host } = await fixture(t);
+  await host.all({ q: 'onega' });
+  host.close();
+  assert.deepEqual(took(await host.all({ q: 'onega' })), took(searchAll(store, { q: 'onega' })));
+});
