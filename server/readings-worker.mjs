@@ -16,8 +16,9 @@
 // with each wing's outline (server/wing-masks.mjs, server/wing-outlines.mjs: the Sanger backfill's code). Its species, and the butterfly's species and sex: the
 // identifier's Python worker (tools/identifier/worker.py, op "specimen"), started here with 2 threads at nice 19.
 //
-// stdin, one JSON line per butterfly: { id, cam, side, ecuador, species, photos: [{ fileId, name, dup, wings }],
-// sex: { d, v, wings?: { fileId: reading read before } } | null }. stdout, one line each, in order: { id, cam, wings: { fileId: reading | { error } },
+// stdin, one JSON line per butterfly: { id, cam, side, ecuador, species, photos: [{ fileId, name, dup, wings, path? }],
+// sex: { d, v, wings?: { fileId: reading read before } } | null, only?: 'sex' } (path: a photo on this computer, read
+// where it is; only 'sex': the sex model alone, no species: the «Fotos» tab's sex check, server/sex-check.mjs). stdout, one line each, in order: { id, cam, wings: { fileId: reading | { error } },
 // ident: the Python worker's answer | { error }, downloads: { fileId: error }, ms }. {"ready": true, models} first.
 
 import { spawn } from 'node:child_process';
@@ -165,7 +166,7 @@ function specimen(job) {
       state.proc.kill('SIGKILL');
     }, SPECIMEN_MS);
     state.waiting.set(id, { resolve, timer });
-    state.proc.stdin.write(`${JSON.stringify({ ...job, id, op: 'specimen' })}\n`);
+    state.proc.stdin.write(`${JSON.stringify({ op: 'specimen', ...job, id })}\n`);
   });
 }
 
@@ -198,9 +199,11 @@ async function butterfly(job) {
   const started = Date.now();
   const paths = new Map();
   const downloads = {};
+  // A photo given by its path (the «Fotos» tab's sex check, server/sex-check.mjs) is read where it is and left there.
+  const given = new Set(job.photos.filter(p => p.path).map(p => p.fileId));
   for (const p of job.photos)
     try {
-      paths.set(p.fileId, await download(p.fileId));
+      paths.set(p.fileId, p.path ?? (await download(p.fileId)));
     } catch (e) {
       downloads[p.fileId] = String(e.message || e).slice(0, 200);
     }
@@ -226,12 +229,14 @@ async function butterfly(job) {
       job.sex && paths.has(job.sex.d) && paths.has(job.sex.v)
         ? { cam: job.cam, d: job.sex.d, v: job.sex.v, species: job.species ?? null, wings: { d: wingOf(job.sex.d), v: wingOf(job.sex.v) } }
         : null;
-    ident = photos.length ? await specimen({ photos, side: job.side ?? null, ecuador: job.ecuador ?? null, sex }) : { error: 'no photo downloaded' };
+    // only: 'sex': the sex model alone, without the species (the Python worker's op "sex": no image encoder)
+    if (job.only === 'sex') ident = sex ? await specimen({ op: 'sex', photos, sex }) : { sex: { status: 'not_scored:photo_not_downloaded' } };
+    else ident = photos.length ? await specimen({ photos, side: job.side ?? null, ecuador: job.ecuador ?? null, sex }) : { error: 'no photo downloaded' };
     if (job.sex && !sex && !ident.error) ident.sex = { status: 'not_scored:photo_not_downloaded' };
   } catch (e) {
     ident = { error: String(e.message || e).slice(0, 300) };
   }
-  for (const path of paths.values()) rmSync(path, { force: true });
+  for (const [key, path] of paths) if (!given.has(key)) rmSync(path, { force: true });
   return { id: job.id, cam: job.cam, wings, ident, downloads, ms: Date.now() - started };
 }
 

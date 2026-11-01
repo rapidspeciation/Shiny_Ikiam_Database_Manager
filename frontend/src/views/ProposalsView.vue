@@ -3,6 +3,7 @@ import { computed, onActivated, onMounted, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from 'lucide-vue-next'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
+import DatabaseBadge from '../components/DatabaseBadge.vue'
 import { locale, t } from '../lib/i18n'
 
 /**
@@ -33,11 +34,12 @@ watch(locale, title)
 <template>
   <div class="flex h-full flex-col">
     <ProposalsLive layout="page" :only="only" :chat="chat" :photo="photo" class="min-h-0 flex-1" @chat="pick" @photo="showPhoto" />
-    <RouterLink
-      :to="back"
-      class="flex items-center gap-1 border-t border-stone-200 bg-white px-3 py-1 text-xs text-stone-500 hover:text-stone-800"
-    >
-      <ArrowLeft :size="12" /> {{ $t('Volver al Asistente') }}
-    </RouterLink>
+    <!-- The page has no header: the way back, and which database the changes go to. -->
+    <div class="flex items-center gap-2 border-t border-stone-200 bg-surface px-3 py-1">
+      <RouterLink :to="back" class="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-800">
+        <ArrowLeft :size="12" /> {{ $t('Volver al Asistente') }}
+      </RouterLink>
+      <DatabaseBadge tone="surface" class="ml-auto" />
+    </div>
   </div>
 </template>

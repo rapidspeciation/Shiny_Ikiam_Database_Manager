@@ -260,6 +260,33 @@ To add a case:
    `snapshot.sh` and restart `app.sh`, which rebuilds the seed with the new
    case's cells emptied.
 
+## Memory
+
+This PC has 15 GB of RAM and 15 GB of swap, and systemd-oomd kills the largest group of processes once swap is
+over 90 % full (on 31 Oct 2026 it took the whole T3). What things take, measured that day:
+
+- A lab app (`LOCAL_MODE`, the whole snapshot): about 2 GB once started and 2.4 GB at the peak of its start. The
+  workbook itself is about 0.7 GB of objects; V8 keeps most of the pages of the start's peak. Each tools worker that
+  served the maps adds 50 to 80 MB; the identifier, while it runs, 0.8 to 2.3 GB (it stops after a few idle minutes).
+- A Claude chat: about 300 MB, plus about 95 MB for each MCP server it starts on its own (stdio, such as hermes).
+  T3 keeps a chat's Claude for 30 minutes after its last turn, so 40 one-turn chats at once hold 12 to 15 GB for half
+  an hour.
+- A headless Chromium of a screenshot script: 0.3 to 0.8 GB.
+
+So:
+
+- A copy of the app for your own checks: `tools/lab/dev-app.sh --port <port>`. It has a time limit (90 min), a
+  memory ceiling (3 GB) and light settings, and stops when your chat ends. One per chat; `--stop` it when done. It
+  refuses to start with less than 2.5 GB available.
+- Scenario runs: at most 4 chats at once, each archived as soon as its answer is collected. `tools/lab/reap.mjs`
+  (a user timer every 5 minutes: `node tools/lab/reap.mjs --install`) archives scenario chats of the lab T3 left
+  idle 5 minutes (titles `WA soul lab`/`WA soul critic`; `--chats` for others), stops dev apps whose chat ended and
+  Playwright browsers left without their script.
+- One headless browser per chat, closed after each use.
+- `tools/lab/app.sh` runs one tools worker and one search worker, and stops idle worker threads after 5 minutes and
+  the identifier after 2 (`LAB_TOOL_WORKERS`, `LAB_SEARCH_WORKERS`, `LAB_WORKER_IDLE_MINUTES`, `LAB_IDENTIFIER_IDLE_MINUTES`). The server's own default stops idle
+  worker threads after 10 minutes (`WORKER_IDLE_MINUTES`; 0: never).
+
 ## Notes
 
 - Claude and Codex run with this PC's user settings (`~/.claude`, `~/.codex`),

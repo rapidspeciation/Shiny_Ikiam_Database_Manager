@@ -95,18 +95,18 @@ onBeforeUnmount(stop)
       <p v-if="starting" class="absolute inset-x-0 top-1/2 flex items-center justify-center gap-2 text-sm">
         <Loader2 :size="18" class="animate-spin" /> {{ $t('Abriendo la cámara…') }}
       </p>
-      <p v-if="failure" class="absolute inset-x-4 top-1/3 rounded-xl bg-white p-4 text-base text-red-800">{{ failure }}</p>
+      <p v-if="failure" class="absolute inset-x-4 top-1/3 rounded-xl bg-surface p-4 text-base text-red-800">{{ failure }}</p>
     </div>
     <div class="space-y-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       <p
         class="min-h-12 rounded-xl px-3 py-2.5 text-base font-semibold"
-        :class="props.statusKind === 'ok' ? 'bg-brand-700' : props.statusKind === 'error' ? 'bg-red-700' : 'bg-white/10'"
+        :class="props.statusKind === 'ok' ? 'bg-brand' : props.statusKind === 'error' ? 'bg-danger' : 'bg-white/10'"
         role="status"
       >
         {{ props.status || $t('Apunta al código del tubo (abajo o en el lado)') }}
       </p>
       <p v-if="props.next" class="text-sm text-white/80">{{ props.next }}</p>
-      <button class="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-white text-base font-semibold text-stone-900" @click="emit('close')">
+      <button class="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-surface text-base font-semibold text-stone-900" @click="emit('close')">
         <Check :size="20" /> {{ $t('Listo') }}
       </button>
     </div>

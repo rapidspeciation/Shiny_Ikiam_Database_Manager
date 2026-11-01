@@ -103,12 +103,12 @@ const undoTitle = (item: RecordedItem) =>
       </button>
       <div class="ml-auto flex flex-wrap items-center gap-2">
         <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="group" :aria-label="$t('De quién')">
-          <button class="h-9 px-2.5" :class="!mineOnly ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="!mineOnly" @click="mineOnly = false">
+          <button class="h-9 px-2.5" :class="!mineOnly ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="!mineOnly" @click="mineOnly = false">
             {{ $t('De todos') }}
           </button>
           <button
             class="h-9 border-l border-stone-300 px-2.5"
-            :class="mineOnly ? 'bg-brand-700 text-white' : 'bg-white'"
+            :class="mineOnly ? 'bg-brand text-white' : 'bg-surface'"
             :aria-pressed="mineOnly"
             @click="mineOnly = true"
           >
@@ -120,14 +120,14 @@ const undoTitle = (item: RecordedItem) =>
             v-for="(s, i) in sorts"
             :key="s.by"
             class="h-9 px-2.5"
-            :class="[order.by === s.by ? 'bg-brand-700 text-white' : 'bg-white', i ? 'border-l border-stone-300' : '']"
+            :class="[order.by === s.by ? 'bg-brand text-white' : 'bg-surface', i ? 'border-l border-stone-300' : '']"
             :aria-pressed="order.by === s.by"
             @click="sortBy(s.by)"
           >
             {{ s.label }}
           </button>
           <button
-            class="grid h-9 w-9 place-items-center border-l border-stone-300 bg-white"
+            class="grid h-9 w-9 place-items-center border-l border-stone-300 bg-surface"
             :aria-label="order.desc ? $t('Descendente: cambiar a ascendente') : $t('Ascendente: cambiar a descendente')"
             :title="order.desc ? $t('Descendente') : $t('Ascendente')"
             @click="flip"
@@ -148,7 +148,7 @@ const undoTitle = (item: RecordedItem) =>
       <ul
         v-if="group.length"
         class="mt-2 divide-y overflow-hidden rounded-xl border"
-        :class="group === waiting ? 'divide-amber-100 border-amber-300 bg-amber-50' : 'divide-stone-100 border-stone-200 bg-white'"
+        :class="group === waiting ? 'divide-amber-100 border-amber-300 bg-amber-50' : 'divide-stone-100 border-stone-200 bg-surface'"
         :data-unsaved="group === waiting ? '' : undefined"
       >
         <li

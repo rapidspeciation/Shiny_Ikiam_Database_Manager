@@ -81,13 +81,13 @@ const counts = computed(() => page.value?.open ?? {})
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-2 py-1.5 text-xs sm:px-3">
+    <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:px-3">
       <div class="flex gap-1" role="group" :aria-label="$t('Tipo')">
         <button
           v-for="opt in TYPES"
           :key="opt.key"
           class="rounded px-2 py-1"
-          :class="type === opt.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+          :class="type === opt.key ? 'bg-brand text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
           @click="type = opt.key"
         >
           {{ $t(opt.label) }}
@@ -95,7 +95,7 @@ const counts = computed(() => page.value?.open ?? {})
       </div>
       <span class="relative min-w-0 flex-1 md:max-w-md">
         <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
-        <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o problema…')" />
+        <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o problema…')" :aria-label="$t('Buscar ID, valor o problema…')" />
       </span>
       <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
         page.total
@@ -134,15 +134,15 @@ const counts = computed(() => page.value?.open ?? {})
       <p v-else-if="!page.items.length" class="p-6 text-sm text-stone-500">
         {{ $t('Nada resuelto todavía con estos filtros. Aparece aquí cuando la hoja cambia y el chequeo ya no lo encuentra.') }}
       </p>
-      <ul v-else class="divide-y divide-stone-200 bg-white">
+      <ul v-else class="divide-y divide-stone-200 bg-surface">
         <li v-for="item in page.items" :key="`${item.type}:${item.key}`" class="space-y-1 px-3 py-2 text-sm">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <span class="rounded bg-brand-100 px-1.5 py-0.5 font-medium text-brand-800">{{ $t('Resuelto') }}</span>
-            <span class="rounded bg-stone-800 px-1.5 py-0.5 text-white">{{ kindTitle(item) }}</span>
+            <span class="rounded bg-inverse px-1.5 py-0.5 text-on-inverse">{{ kindTitle(item) }}</span>
             <a
               v-if="item.sheet && item.row && !item.solved.rowGone"
               :href="tablesLink(item.sheet, item.label ?? '')"
-              class="text-brand-700 hover:underline"
+              class="hit-target text-brand-700 hover:underline"
               :title="$t('Abrir la fila en Tablas')"
               >{{ $t('{sheet} fila {row}', { sheet: item.sheet, row: item.row }) }}</a
             >

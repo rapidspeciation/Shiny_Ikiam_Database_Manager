@@ -65,7 +65,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-sm" data-drive-photos>
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-sm" data-drive-photos>
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stone-200 px-3 py-2">
       <Images :size="15" class="shrink-0 text-emerald-700" />
       <strong class="font-medium">{{ proposal.reason }}</strong>
@@ -96,7 +96,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             v-for="[key, label] in [['look', $t('Para revisar ({n})', { n: toLook })], ['all', $t('Todas ({n})', { n: rows.length })]] as const"
             :key="key"
             class="rounded px-1.5 py-0.5"
-            :class="which === key ? 'bg-emerald-700 text-white' : 'text-stone-600'"
+            :class="which === key ? 'bg-fill-emerald text-white' : 'text-stone-600'"
             @click="which = key"
           >
             {{ label }}
@@ -107,7 +107,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             v-for="[key, label] in [['photo', $t('Fotos')], ['envelope', $t('Sobres')]] as const"
             :key="key"
             class="rounded px-1.5 py-0.5"
-            :class="picture === key ? 'bg-stone-700 text-white' : 'text-stone-600'"
+            :class="picture === key ? 'bg-inverse text-on-inverse' : 'text-stone-600'"
             @click="picture = key"
           >
             {{ label }}
@@ -125,7 +125,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             <div class="flex items-center gap-1">
               <input
                 :value="r.camid ?? ''"
-                class="w-full min-w-0 rounded border border-stone-300 px-1 py-0.5 font-mono text-[11px] uppercase"
+                class="w-full min-w-0 rounded border border-control px-1 py-0.5 font-mono text-xs uppercase"
                 :aria-label="$t('ID de {name}', { name: r.name })"
                 :disabled="r.remove"
                 @change="setId(r, ($event.target as HTMLInputElement).value)"
@@ -133,7 +133,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
               />
               <select
                 :value="r.view"
-                class="rounded border border-stone-300 py-0.5 pr-4 pl-1 text-[11px]"
+                class="rounded border border-control py-0.5 pr-4 pl-1 text-xs"
                 :aria-label="$t('Vista')"
                 :disabled="r.remove || !r.camid"
                 @change="edit(r, { view: ($event.target as HTMLSelectElement).value })"
@@ -145,18 +145,18 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
               {{ r.name }}<template v-if="newName(r)"> → <span class="text-stone-800">{{ newName(r) }}</span></template>
             </p>
             <!-- The reader's ID beside the one set after, and by whom. -->
-            <p v-if="r.readAs && r.readAs !== r.camid" class="text-[11px] text-stone-500">
+            <p v-if="r.readAs && r.readAs !== r.camid" class="text-xs text-stone-500">
               <Sparkles v-if="r.setBy === 'assistant'" :size="10" class="inline text-sky-600" />
               {{ $t('leído {read}', { read: r.readAs }) }}
             </p>
-            <p v-for="why in r.review ?? []" :key="why" class="text-[11px] text-amber-800">{{ reasonText(why) }}</p>
-            <p v-if="r.note" class="text-[11px] text-stone-600 italic">{{ r.note }}</p>
-            <p v-if="r.error" class="text-[11px] text-red-700">{{ r.error }}</p>
+            <p v-for="why in r.review ?? []" :key="why" class="text-xs text-amber-800">{{ reasonText(why) }}</p>
+            <p v-if="r.note" class="text-xs text-stone-600 italic">{{ r.note }}</p>
+            <p v-if="r.error" class="text-xs text-red-700">{{ r.error }}</p>
             <div class="flex items-center gap-1">
               <button class="btn-ghost p-0.5" :title="$t('Girar 90° a la derecha')" :disabled="r.remove" @click="edit(r, { rotation: ((r.rotation ?? 0) + 90) % 360 })">
                 <RotateCw :size="13" />
               </button>
-              <span v-if="r.rotation" class="text-[11px] text-stone-500">{{ r.rotation }}°</span>
+              <span v-if="r.rotation" class="text-xs text-stone-500">{{ r.rotation }}°</span>
               <a v-if="r.url" class="btn-ghost p-0.5" :href="r.url" target="_blank" rel="noopener" :title="$t('Abrir en Drive')"><ExternalLink :size="13" /></a>
               <button
                 class="btn-ghost ml-auto p-0.5"
@@ -171,7 +171,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
         </li>
       </ul>
       <div class="flex flex-wrap items-center gap-2 border-t border-stone-200 px-3 py-2">
-        <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !changes" data-apply @click="apply">
+        <button class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="busy || !changes" data-apply @click="apply">
           <Check :size="15" /> {{ $tn(changes, 'Aplicar en Drive ({n} foto)', 'Aplicar en Drive ({n} fotos)') }}
         </button>
         <span class="text-xs text-stone-500">{{ $t('Renombra cada foto y su RAW, las gira y quita las marcadas. Después, «Leer Drive» las lista en Photo_links.') }}</span>

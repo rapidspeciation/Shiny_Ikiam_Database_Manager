@@ -26,8 +26,8 @@ async function submit() {
 </script>
 
 <template>
-  <div class="grid h-full place-items-center overflow-y-auto bg-brand-700 p-4">
-    <form class="w-full max-w-sm space-y-3 rounded-lg bg-white p-6 shadow-xl" @submit.prevent="submit">
+  <div class="grid h-full place-items-center overflow-y-auto bg-brand p-4">
+    <form class="w-full max-w-sm space-y-3 rounded-lg bg-surface p-6 shadow-xl" @submit.prevent="submit">
       <h1 class="text-lg font-semibold">{{ $t('Restablecer la contraseña') }}</h1>
       <template v-if="!done">
         <p class="text-sm text-stone-600">

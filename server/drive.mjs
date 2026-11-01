@@ -13,7 +13,8 @@
 // { account, limit, used, inBin } in bytes (limit null: no limit); owned() every file the account owns.
 // The writer also reads a file's bytes (download(id, path): written to that path; the reader's login
 // sees only the files' details) and replaces them (replaceContent(id, bytes, mimeType): the same file,
-// its link and ID kept; server/drive-photos.mjs turns photos so).
+// its link and ID kept; server/drive-photos.mjs turns photos so), and makes new ones (upload(name, bytes,
+// mimeType, parent): a rack's deposit sheet, server/rack-tools.mjs).
 
 import { createWriteStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -164,6 +165,29 @@ export class GoogleDrive {
     if (!response.ok) throw Object.assign(new Error(`Google Drive ${response.status}: ${(await response.text()).slice(0, 200)}`), { status: response.status });
     return response.json();
   }
+  /** A new file of `bytes` in folder `parent` (one request: its details and its bytes), answered as get() gives it. */
+  async upload(name, bytes, mimeType, parent, { timeoutMs = 60_000 } = {}) {
+    const boundary = `ithomiini${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, mimeType, parents: [parent] })}\r\n--${boundary}\r\ncontent-type: ${mimeType}\r\n\r\n`),
+      Buffer.from(bytes),
+      Buffer.from(`\r\n--${boundary}--`),
+    ]);
+    let response;
+    try {
+      response = await this.fetch(`${UPLOAD}?uploadType=multipart&supportsAllDrives=true&fields=${encodeURIComponent(FIELDS)}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await this.token()}`, 'content-type': `multipart/related; boundary=${boundary}` },
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (e) {
+      throw new Error(`Google Drive did not answer (${e?.name || e})`);
+    }
+    this.requests++;
+    if (!response.ok) throw Object.assign(new Error(`Google Drive ${response.status}: ${(await response.text()).slice(0, 200)}`), { status: response.status });
+    return response.json();
+  }
   /** Every file the account owns, anywhere in its Drive: [{ name, size, parent }] (what takes its space). */
   async owned() {
     const out = [];
@@ -280,6 +304,12 @@ export class LocalDrive {
   }
   async createShortcut(target, name, parent) {
     return this.make({ name, mimeType: SHORTCUT, shortcutDetails: { targetId: target }, parents: [parent] });
+  }
+  async upload(name, bytes, mimeType, parent) {
+    const file = this.make({ name, mimeType, parents: [parent], size: String(bytes.length) });
+    file.webViewLink = `https://drive.google.com/file/d/${file.id}/view`;
+    (this.contents ??= new Map()).set(file.id, Buffer.from(bytes));
+    return this.seen(file);
   }
   /** A file's bytes: those written last, else its `localPath` (a lab's photos on disk). */
   async download(id, path) {

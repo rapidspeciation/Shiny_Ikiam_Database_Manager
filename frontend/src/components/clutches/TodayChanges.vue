@@ -154,21 +154,26 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
   <div class="px-3 pt-3 pb-8">
     <div class="flex flex-wrap items-center gap-2">
       <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="group">
-        <button class="h-11 px-3" :class="onlyMine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="onlyMine" @click="onlyMine = true">
+        <button class="h-11 px-3" :class="onlyMine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="onlyMine" @click="onlyMine = true">
           {{ $t('Míos') }}
         </button>
-        <button class="h-11 border-l border-stone-300 px-3" :class="!onlyMine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="!onlyMine" @click="onlyMine = false">
+        <button class="h-11 border-l border-stone-300 px-3" :class="!onlyMine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="!onlyMine" @click="onlyMine = false">
           {{ $t('De todos') }}
         </button>
       </div>
       <button class="btn h-11 px-3" :aria-label="$t('Actualizar')" :disabled="refreshing" @click="refresh"><RefreshCw :size="16" :class="{ 'animate-spin': refreshing }" /></button>
-      <button class="btn-primary ml-auto h-11 px-4" :disabled="!groups.length && !unchanged.length" @click="copy">
+      <button
+        class="btn-primary ml-auto h-11 px-4"
+        :disabled="!groups.length && !unchanged.length"
+        :title="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')" :data-why="groups.length || unchanged.length ? undefined : $t('No hay cambios en estas fechas')"
+        @click="copy"
+      >
         <Check v-if="copied" :size="16" /><Copy v-else :size="16" /> {{ $t('Copiar como texto') }}
       </button>
     </div>
     <div class="mt-2 flex items-center gap-1">
       <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día anterior')" @click="step(-1)"><ChevronLeft :size="18" /></button>
-      <DateField v-model="chosen" class="field-input h-11 min-w-0 text-base" />
+      <DateField v-model="chosen" class="field-input h-11 min-w-0 text-base" :aria-label="$t('Día')" />
       <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día siguiente')" :disabled="isToday" @click="step(1)">
         <ChevronRight :size="18" />
       </button>
@@ -197,7 +202,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
       {{ isToday ? $t('Ningún cambio hoy todavía.') : $t('Ningún cambio ese día.') }}
     </p>
     <ul class="mt-2 space-y-2">
-      <li v-for="g in groups" :key="g.recordId" class="rounded-xl border border-stone-200 bg-white shadow-sm" :data-clutch="g.clutch">
+      <li v-for="g in groups" :key="g.recordId" class="rounded-xl border border-stone-200 bg-surface shadow-sm" :data-clutch="g.clutch">
         <div class="flex items-center gap-1 pr-1">
           <button class="flex min-h-12 min-w-0 flex-1 items-baseline gap-2 px-3 py-2 text-left" :aria-label="$t('Abrir el clutch {clutch}', { clutch: g.clutch })" @click="emit('open', g.recordId)">
             <span class="text-lg font-semibold">{{ g.clutch }}</span>
@@ -217,7 +222,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
         <ul class="divide-y divide-stone-100 border-t border-stone-100">
           <li v-for="c in g.changes" :key="c.field" class="flex items-center gap-1 py-1 pr-1 pl-3 leading-snug">
             <span class="min-w-0 flex-1">
-              <span class="block text-[11px] font-medium tracking-wide text-stone-500"
+              <span class="block text-xs font-medium tracking-wide text-stone-500"
                 >{{ c.field }}
                 <!-- Kept in the app, not in Google Sheets yet: undone from the bar above the tab. -->
                 <span v-if="c.staged" class="ml-1 rounded border border-dashed border-amber-500 bg-amber-50 px-1 font-normal text-amber-900">{{
@@ -237,7 +242,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
             </button>
           </li>
           <li v-for="e in g.events" :key="e.id" class="bg-sky-50/60 py-1.5 pr-1 pl-3 text-sm leading-snug">
-            <span class="block text-[11px] font-medium tracking-wide text-stone-500">{{ $t('Evento (solo en la app)') }}</span>
+            <span class="block text-xs font-medium tracking-wide text-stone-500">{{ $t('Evento (solo en la app)') }}</span>
             <span class="block break-words tabular-nums">{{ eventLine(e) }}</span>
           </li>
         </ul>

@@ -1,0 +1,33 @@
+# UI overhaul — lead state (times EC)
+
+- 31 Oct 19:57 start. Meter: 7-day 46.0 % (resets Wed 4 Nov 20:00). Budget: ≤ ~20 % of the week.
+- Worktree /home/franz/Documents/CodeProjs/ithomiini_database-uioverhaul, branch ui-overhaul-20261031 from origin/main 7392da7 (= live 20261031T190916Z).
+- Screenshots and scripts outside git: /home/franz/.local/share/ui-overhaul-20261031/
+- Deploy lock (new, announced to model lead): claudeclaw:/home/ubuntu/ithomiini/deploy.lock (holder, start, rollback).
+- Children: T3 UI research → PRINCIPLES.md (Opus medium); inventory + audit → INVENTORY.md, AUDIT.md (Opus medium).
+- Next: review PRINCIPLES + AUDIT → dark-theme foundation (tokens) → fix waves → phase 2 Wings Atlas (worktree off rapidspeciation/ithomiini_maps main; never touch ~/Documents/CodeProjs/ithomiini_maps).
+- RULE (Franz, 31 Oct): tests that open T3 chats (Asistente, T3 frame) use the LAB T3 (:3775, home ~/.t3-ithomiini-lab), never the main T3 (:3774); archive any test threads made in the main T3. Put this in every child brief. (Sent to the audit child.)
+- PRINCIPLES.md done (research child), committed 2cbd9d5 on ui-overhaul-20261031.
+- Dark-theme foundation started early (Opus high) in worktree ithomiini_database-uidark, branch ui-dark-20261031 (from 2cbd9d5); merge into ui-overhaul after the audit.
+- 20:1x audit child killed (OOM: PC 15 GB, other chats ~8 GB in 59 claude procs). Retry child started with memory rules (MemAvailable ≥2.5 GB, one app + one browser, heap 3072). Dark child told the same.
+- Dark child also OOM-killed after 5 commits (316bdec..d136612, clean tree). Continuation child started (Opus high), serialised behind the audit: code/tests first, app/browser only at MemAvailable ≥3 GB.
+- 20:24 systemd-oomd killed the main T3 service (all chats). Audit retry + dark continuation resumed in their own threads (context kept). Model lead told.
+- RULES (model lead, after the 20:24 OOM; put in every child brief): ≤2 of my children running at once (queue the rest); MemAvailable ≥ 2.5 GB before an app instance, browser or build, else wait (no busy loop) or reuse the lab app :8795; one headless Chromium per child, closed after each batch of screenshots; builds/tests preferably on claudeclaw or one shared lab instance, not one per worktree.
+- 1 Nov: model lead fixed the memory root cause (release 20261101T021806Z = main a6ad89e). 2-child cap lifted. Keep: child apps via tools/lab/dev-app.sh (on main a6ad89e; merge main into ui-overhaul first), one Chromium per child. Audit at 441 shots.
+- 1 Nov ~00:xx: audit done (INVENTORY/AUDIT/findings committed 6403ab2). Merged ui-dark (f503ea2) and origin/main a6ad89e (48ae635) into ui-overhaul. Built; dev-app on :8821 (dir w0-app). Wave 0 = dark theme: full shoot light+dark → wave0-after-{light,dark}, then dual critics, then deploy.
+- Wave 1 child (Opus medium) in worktree ithomiini_database-uiw1, branch ui-wave1-20261101: P0+P1 layout/focus/labels; app on :8841; writes WAVE1.md. phone-grid deferred (functional).
+- Wave 0 shots done (wave0-after-{light,dark}, menu reshot in wave0-menu-*; proposal/rack-photo views failed: no proposals in dev-app DB). Leftovers (focus, field boundaries) belong to wave 1. Critics r1 started (Sol + Opus), brief review-w0/BRIEF.md. Dev app :8821 still up (TTL 120m).
+- Wave 0 r1 critics: Sol B, Opus B+. Fixed (commit on ui-overhaul): formula-selected, heat blue, deaths hints, header deep green in dark + theme-color, leaflet zoom/layers, dark formula cell. Declined: disabled CSV link 3.35 (passes app's 3:1 disabled bar), Revisión chip tint (optional nit). Wave 1 done (11 commits, 714 tests), merged into ui-overhaul. Combined full shoot c1-after-{light,dark} on dev-app :8821 dir w1-app (proposals show there). Next: combined critics (wave0 r2 + wave1 r1), then deploy.
+- Combined critics r1 (dark r2 + wave1 r1) started; brief review-c1/BRIEF.md, ledger LEDGER-w0.md. Wave 2 child (P2/P3) started in ithomiini_database-uiw2, branch ui-wave2-20261101, app :8851. Dev app :8821 (dir w1-app) still up for critic-fix reshoots.
+- c1 critics: dark A/A; wave1 Sol B, Opus B+. Fix child (Sonnet medium) on ui-overhaul; B-F6/F7 sent to wave 2. Ledger review-c1/LEDGER-w0.md. Then round 2 critics (diff only) → deploy.
+- Fixes 262848b (Sonnet). Round 2 critics started (BRIEF-r2.md). Deploy plan: fetch team+origin, merge; check claudeclaw current; lock mkdir /home/ubuntu/ithomiini/deploy.lock; env -C uioverhaul bash scripts/deploy.sh; health; DEPLOYED.md; ff main to origin+team; release lock; FYI model lead.
+- Round 2 agreed (Sol A/A, Opus A/A-). B-N1 fixed af7315d. team/main moved (22 commits, perf E1b) and merged 71cf37c. Deploy lock held by model lead's perf child since 04:39Z; waiting for release (bg loop).
+- 1 Nov 04:51Z DEPLOYED 20261101T045130Z (71cf37c). main pushed origin+team. Lock released. Model lead told. Wave 2 running (uiw2); merge main 71cf37c+ into it before its review.
+- Phase 2 started: worktree /home/franz/Documents/CodeProjs/ithomiini_maps-uioverhaul (branch ui-overhaul-20261101 from rapidspeciation/main c8feb9f). Atlas audit child (Opus medium) → .work/ui-overhaul-20261101/{INVENTORY,AUDIT}.md, shots in ~/.local/share/ui-overhaul-20261031/atlas/.
+- Wave 2 done (18 commits, 717 tests), merged into ui-overhaul. Deferred: phone-grid, proposal-ai-marks, map empty state, 11px in ProposalGrid/ProposalsLive (→ wave 3). Full shoot c2-after-{light,dark} on dev-app :8821 dir w2-app. Next: critics (wave 2 r1) → deploy.
+- Atlas audit done: 0 P0/16 P1/12 P2/3 P3; dark exists (default), light incomplete, no system pref. Atlas wave A child (Opus high): themes + P1, vite :5192, writes WAVE_A.md. Atlas deploy = push to rapidspeciation/main (we have push; earlier chats pushed directly) → GitHub Actions Pages.
+- Wave 2 shots clean (disabled ≥3:1; boundary flags are inner inputs). Critics c2 r1 started (review-c2/BRIEF.md). Wave 3 (proposal-ai-marks, map empty state, 11px proposal views) after wave 2 ships.
+- Wave 2 critics r1: Sol B, Opus B+. Fix child (Sonnet) + emulator check running. Ledger review-c2/LEDGER.md.
+- 1 Nov 06:22Z DEPLOYED wave 2 = 20261101T062244Z (main 8c06770). Lock released, model lead told.
+- Wave 3 done eb9bc7a (Sonnet): AI-changed column scrolled into view, map empty state at top, 12 px in proposal views, shoot script stages a pending edit. Critics c3 r1 started (review-c3/BRIEF.md).
+- Wave 3 critics r1: both C; blocker = phone touch bar covers SaveBar Guardar (pre-existing live bug, first seen now that the save bar is shot). Fix child (Sonnet) running.

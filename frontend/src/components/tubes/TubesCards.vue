@@ -828,7 +828,7 @@ const line = (f: Facts) =>
     .filter(Boolean)
     .join(' · ')
 const choice = (on: boolean) =>
-  on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 const showHistory = ref(false)
 const drawerRow = ref<TableRow | null>(null)
 
@@ -901,14 +901,14 @@ watch(
   >
     <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <!-- The search stays at the top while the cards scroll. -->
-      <div class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
+      <div class="sticky top-0 z-20 border-b border-stone-200 bg-surface px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
         <div class="flex items-start gap-2">
           <div class="relative min-w-0 flex-1">
             <Search :size="20" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
             <input
               ref="searchInput"
               v-model="query"
-              class="h-13 w-full rounded-xl border border-stone-300 bg-white pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
+              class="h-13 w-full rounded-xl border border-control bg-surface pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
               :placeholder="$t('Insectary ID, CAM o tubo')"
               :aria-label="$t('Buscar una mariposa por Insectary ID, CAM o tubo')"
               type="text"
@@ -934,7 +934,7 @@ watch(
             </button>
             <ul
               v-if="focused && suggestions.length"
-              class="absolute inset-x-0 top-full z-30 mt-1 max-h-[60vh] divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
+              class="absolute inset-x-0 top-full z-30 mt-1 max-h-[60vh] divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-surface shadow-lg"
               role="listbox"
             >
               <li v-for="s in suggestions" :key="s.entry.id">
@@ -959,7 +959,7 @@ watch(
           </div>
           <EntryModeToggle v-model="mode" :compact="!roomy" class="h-13 shrink-0 short:h-11 *:min-w-11" />
           <button
-            class="flex h-13 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-white px-2 text-sm text-stone-700 active:bg-stone-100 short:h-11"
+            class="flex h-13 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-surface px-2 text-sm text-stone-700 active:bg-stone-100 short:h-11"
             :aria-label="$t('Historial de Tubos')"
             :title="$t('Historial de Tubos')"
             @click="showHistory = true"
@@ -978,7 +978,7 @@ watch(
             <button
               v-for="id in typedMissing ? typedMissing.alike : missingAlike"
               :key="id"
-              class="h-11 rounded-lg border border-brand-600 bg-white px-4 font-semibold text-brand-800"
+              class="h-11 rounded-lg border border-brand-600 bg-surface px-4 font-semibold text-brand-800"
               @mousedown.prevent
               @click="choose(id)"
             >
@@ -995,7 +995,7 @@ watch(
       <Teleport to="#tubes-panel" defer :disabled="!wide">
         <section v-if="canEdit && cards.length && !wide && !panelOpen" class="px-3 pt-3">
           <button
-            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-left text-sm active:bg-stone-100"
+            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-stone-300 bg-surface px-3 py-2 text-left text-sm active:bg-stone-100"
             :aria-expanded="false"
             @click="panelOpen = true"
           >
@@ -1010,7 +1010,7 @@ watch(
         <section v-else-if="canEdit && cards.length" ref="panel" class="space-y-4 px-3 pb-2 pt-3">
           <div
             class="sticky top-0 z-10 -mx-3 flex min-h-12 items-center gap-2 border-y px-3 py-1.5"
-            :class="selectedIds.length ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-200 bg-stone-100 text-stone-800'"
+            :class="selectedIds.length ? 'border-brand bg-brand text-white' : 'border-stone-200 bg-stone-100 text-stone-800'"
             role="status"
           >
             <p class="min-w-0 flex-1 text-sm">
@@ -1021,7 +1021,7 @@ watch(
               }}</span>
               <span v-if="selectedIds.length" class="block text-xs opacity-90">{{ $t('Solo a las seleccionadas; las demás siguen igual.') }}</span>
             </p>
-            <button v-if="selectedIds.length" class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50" @click="doneSelecting">
+            <button v-if="selectedIds.length" class="h-10 shrink-0 rounded-lg bg-surface px-4 text-sm font-semibold text-brand-800 active:bg-brand-50" @click="doneSelecting">
               {{ $t('Listo') }}
             </button>
             <button
@@ -1093,7 +1093,12 @@ watch(
                 >
                   {{ d.name }}
                 </button>
-                <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
+                <DateField
+                  :model-value="shownDate"
+                  class="field-input h-12 text-base"
+                  :aria-label="shownKind === 'clip' ? $t('Fecha del corte de ala') : 'Preservation_date'"
+                  @update:model-value="setField('date', $event)"
+                />
               </div>
               <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
               <p v-else-if="shownDate" class="mt-1 text-sm" :class="oldDate ? 'font-medium text-amber-800' : 'text-stone-600'">
@@ -1118,7 +1123,7 @@ watch(
               </div>
               <p v-if="ownOf('medium').length" class="mt-1 text-xs text-violet-800">{{ $t('Con medio propio: {ids}', { ids: ownOf('medium').join(', ') }) }}</p>
             </div>
-            <label v-if="shownKind === 'whole' || shownKind === 'parts'" class="flex min-h-12 items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm">
+            <label v-if="shownKind === 'whole' || shownKind === 'parts'" class="flex min-h-12 items-center gap-3 rounded-lg border border-stone-200 bg-surface px-3 py-2 text-sm">
               <input
                 type="checkbox"
                 class="h-5 w-5 shrink-0"
@@ -1138,7 +1143,7 @@ watch(
               />
             </label>
             <!-- Where the CAMs and tubes come from. -->
-            <div class="rounded-xl border border-stone-200 bg-white p-3 text-sm">
+            <div class="rounded-xl border border-stone-200 bg-surface p-3 text-sm">
               <div class="flex items-start gap-2">
                 <p class="min-w-0 flex-1">
                   <span class="block">
@@ -1194,7 +1199,7 @@ watch(
                         @keydown.enter.prevent="typedStart && pickRack(typedStart)"
                       />
                     </label>
-                    <button class="btn h-11" :disabled="!typedStart" @click="pickRack(typedStart)">{{ $t('Usar') }}</button>
+                    <button class="btn h-11" :disabled="!typedStart" :title="typedStart ? undefined : $t('Escribe primero el número')" :data-why="typedStart ? undefined : $t('Escribe primero el número')" @click="pickRack(typedStart)">{{ $t('Usar') }}</button>
                   </div>
                   <button v-if="rackChosen" class="mt-2 text-sm underline" @click="autoRackAgain">{{ $t('Que la app elija la gradilla') }}</button>
                 </div>
@@ -1248,7 +1253,7 @@ watch(
             :key="n.row.id"
             :data-card="n.id"
             class="relative flex flex-col rounded-xl border-2 shadow-sm"
-            :class="isSelected(n.row) ? 'border-brand-600 bg-brand-50 ring-4 ring-brand-600/30' : 'border-stone-200 bg-white'"
+            :class="isSelected(n.row) ? 'border-brand-600 bg-brand-50 ring-4 ring-brand-600/30' : 'border-stone-200 bg-surface'"
           >
             <button
               class="block w-full rounded-t-xl px-3 pt-2.5 pr-24 pb-1.5 text-left"
@@ -1314,7 +1319,7 @@ watch(
                     </button>
                   </div>
                   <div
-                    class="flex h-12 items-stretch overflow-hidden rounded-lg border bg-white focus-within:ring-2 focus-within:ring-brand-100"
+                    class="flex h-12 items-stretch overflow-hidden rounded-lg border bg-surface focus-within:ring-2 focus-within:ring-brand-100"
                     :class="problemsAt(n.id, 'cam').length ? (problemsAt(n.id, 'cam').some(p => p.kind === 'missing') ? 'border-amber-500' : 'border-red-500') : 'border-stone-300 focus-within:border-brand-600'"
                   >
                     <span class="grid place-items-center bg-stone-100 px-2.5 font-mono text-base text-stone-600">{{ prefixOf(n.id, 'cam') }}</span>
@@ -1365,7 +1370,7 @@ watch(
                   </div>
                   <div class="flex gap-2">
                     <div
-                      class="flex h-12 min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border bg-white focus-within:ring-2 focus-within:ring-brand-100"
+                      class="flex h-12 min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border bg-surface focus-within:ring-2 focus-within:ring-brand-100"
                       :class="
                         problemsAt(n.id, k - 1).length
                           ? problemsAt(n.id, k - 1).some(p => p.kind === 'missing')
@@ -1400,7 +1405,7 @@ watch(
                     </div>
                     <button
                       v-if="scanCan && canEdit"
-                      class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-stone-300 bg-white text-stone-700 active:bg-stone-100"
+                      class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-stone-300 bg-surface text-stone-700 active:bg-stone-100"
                       :aria-label="$t('Escanear el tubo de {id}', { id: n.id })"
                       @click="startScan({ id: n.id, k: k - 1 })"
                     >
@@ -1451,7 +1456,7 @@ watch(
     <Teleport to="#tubes-save" defer :disabled="!wide">
       <footer
         v-if="(lastSave && !cards.length) || (canEdit && cards.length)"
-        class="relative z-20 shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] short:pt-1.5 short:pb-1.5"
+        class="relative z-20 shrink-0 border-t border-stone-200 bg-surface px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] short:pt-1.5 short:pb-1.5"
         :class="{ hidden: fitted && !wide }"
       >
         <div v-if="lastSave && !cards.length" class="flex items-center gap-2" role="status">

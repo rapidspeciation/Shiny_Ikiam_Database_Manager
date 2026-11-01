@@ -3,7 +3,7 @@ import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
-import { ExternalLink, Link2, RotateCcw, Trash2, X } from 'lucide-vue-next'
+import { ExternalLink, Link2, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-vue-next'
 import FilterSelect, { type FilterOption } from './FilterSelect.vue'
 import { useMonitoring, type StoredCapture, type StoredTrack } from '../../composables/useMonitoring'
 import { api } from '../../lib/api'
@@ -89,7 +89,12 @@ const showTransects = flagQuery('trazado', true)
 const showGps = flagQuery('gps', false)
 const showRecaptures = flagQuery('unir', false)
 const heatRadius = ref(22)
-const panel = ref(true)
+/**
+ * The panel covers the whole map on a phone, so it starts closed there (the «Capas y filtros» button opens it),
+ * unless the link already filters the points: then the filters show first, so fewer points don't read as missing data.
+ */
+const linkFiltered = Object.values(QUERY).some(q => route.query[q]) || Boolean(route.query.individuo)
+const panel = ref(typeof matchMedia === 'undefined' || matchMedia('(min-width: 768px)').matches || linkFiltered)
 
 const filters = computed<MapFilters>(() => ({
   years: lists.years.value,
@@ -365,12 +370,12 @@ function popup(walk: StoredTrack, c: StoredCapture) {
       ? t(c.recapture ? 'Marca {mark} (recaptura)' : 'Marca {mark}', { mark: `<b>${escape(c.markId)}</b>` })
       : t('Preservado'),
     `${dateLabel(walk.date)} · ${escape(collectorOf(walk))}${c.section ? ` · T${c.section}` : ''}`,
-    `<span style="color:#78716c">${escape(c.text)}</span>`,
+    `<span style="color:var(--fg-subtle)">${escape(c.text)}</span>`,
     c.outside
-      ? `<span style="color:#b45309">${t('Recaptura solo en Wikiloc: no es una fila de la hoja')}</span>`
+      ? `<span style="color:var(--pending-text)">${t('Recaptura solo en Wikiloc: no es una fila de la hoja')}</span>`
       : row
         ? t('Collection_data fila {n}', { n: row.row })
-        : `<span style="color:#b45309">${t('Aún no está en la hoja')}</span>`,
+        : `<span style="color:var(--pending-text)">${t('Aún no está en la hoja')}</span>`,
     history || c.outside
       ? `<a href="#/monitoreo?vista=recapturas&individuo=${encodeURIComponent(key)}">${
           history ? t('Ver sus {n} capturas con fotos →', { n: history.events.length }) : t('Ver sus capturas con fotos →')
@@ -380,7 +385,7 @@ function popup(walk: StoredTrack, c: StoredCapture) {
   const photos = (c.photos || [])
     .map(
       id =>
-        `<a href="api/monitoring/photos/${id}" target="_blank" rel="noopener"><img src="api/monitoring/photos/${id}" alt="" width="200" height="150" style="width:200px;height:150px;object-fit:cover;border-radius:4px;margin-top:4px;background:#f5f5f4"></a>`,
+        `<a href="api/monitoring/photos/${id}" target="_blank" rel="noopener"><img src="api/monitoring/photos/${id}" alt="" width="200" height="150" style="width:200px;height:150px;object-fit:cover;border-radius:4px;margin-top:4px;background:var(--surface-sunken)"></a>`,
     )
     .join('')
   return lines.filter(Boolean).join('<br>') + photos
@@ -604,8 +609,15 @@ const withoutGps = computed(() => {
   <div class="relative flex h-full min-h-0">
     <aside
       v-if="panel"
-      class="flex w-76 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-[1200] max-md:pb-20 max-md:shadow-lg"
+      class="flex w-76 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm max-md:absolute max-md:inset-0 max-md:z-[1200] max-md:w-full"
     >
+      <p
+        v-if="tracksLoaded && !tracks.length"
+        role="status"
+        class="border-b border-stone-200 bg-stone-50 p-3 text-sm font-medium text-stone-800"
+      >
+        {{ $t('Aún no hay recorridos. Súbelos en «Importar».') }}
+      </p>
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
           <span class="text-2xl font-semibold text-brand-700 tabular-nums">{{ points.length }}</span>
@@ -661,7 +673,7 @@ const withoutGps = computed(() => {
               :aria-pressed="lists[g.key].value.includes(c.value)"
               @click="toggleChip(g.key, c.value)"
             >
-              {{ c.label }} <span class="tabular-nums opacity-70">{{ c.count }}</span>
+              {{ c.label }} <span class="text-fg-subtle tabular-nums">{{ c.count }}</span>
             </button>
           </div>
         </div>
@@ -689,7 +701,7 @@ const withoutGps = computed(() => {
               :key="m.id"
               type="button"
               class="py-1.5 not-first:border-l not-first:border-stone-300"
-              :class="mode === m.id ? 'bg-brand-700 font-medium text-white' : 'bg-white text-stone-700 hover:bg-stone-100'"
+              :class="mode === m.id ? 'bg-brand font-medium text-white' : 'bg-surface text-stone-700 hover:bg-stone-100'"
               @click="mode = m.id"
             >
               {{ $t(m.label) }}
@@ -752,7 +764,6 @@ const withoutGps = computed(() => {
         </ul>
       </div>
 
-      <p v-if="tracksLoaded && !tracks.length" class="hint p-3">{{ $t('Aún no hay recorridos. Súbelos en “Importar”.') }}</p>
       <p class="hint p-3">
         {{
           $t(
@@ -761,14 +772,26 @@ const withoutGps = computed(() => {
           )
         }}
       </p>
+      <!-- On a phone the panel covers the map: its way back stays at its foot, over nothing else. -->
+      <div class="sticky bottom-0 mt-auto border-t border-stone-200 bg-surface p-2 md:hidden">
+        <button class="btn w-full" @click="panel = false">{{ $t('Ver el mapa') }}</button>
+      </div>
     </aside>
 
     <div class="relative min-w-0 flex-1">
       <div ref="host" class="absolute inset-0" />
       <div class="absolute bottom-6 left-3 z-[1300] flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
+        <!-- The panel's own line is hidden while it is closed (phones start so). -->
+        <p
+          v-if="!panel && tracksLoaded && !tracks.length"
+          role="status"
+          class="rounded-md border border-stone-200 bg-surface/95 px-2.5 py-1.5 text-sm font-medium text-stone-800 shadow"
+        >
+          {{ $t('Aún no hay recorridos. Súbelos en «Importar».') }}
+        </p>
         <div
           v-if="mode !== 'calor' && legend.items.length"
-          class="max-h-[45vh] w-64 overflow-y-auto rounded-md border border-stone-200 bg-white/95 text-xs shadow"
+          class="max-h-[45vh] w-64 overflow-y-auto rounded-md border border-stone-200 bg-surface/95 text-xs shadow"
           :class="panel ? 'max-md:hidden' : ''"
         >
           <button
@@ -807,7 +830,7 @@ const withoutGps = computed(() => {
         </div>
         <div
           v-else-if="mode === 'calor'"
-          class="rounded-md border border-stone-200 bg-white/95 px-2.5 py-1.5 text-xs shadow"
+          class="rounded-md border border-stone-200 bg-surface/95 px-2.5 py-1.5 text-xs shadow"
           :class="panel ? 'max-md:hidden' : ''"
         >
           <p class="mb-1 text-stone-600">{{ $t('Capturas por zona') }}</p>
@@ -817,7 +840,10 @@ const withoutGps = computed(() => {
             ><span>{{ $t('muchas') }}</span>
           </div>
         </div>
-        <button class="btn shadow" @click="panel = !panel">{{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}</button>
+        <button class="btn shadow" :class="{ 'max-md:hidden': panel }" @click="panel = !panel">
+          <SlidersHorizontal v-if="!panel" :size="15" aria-hidden="true" />
+          {{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}
+        </button>
       </div>
     </div>
   </div>

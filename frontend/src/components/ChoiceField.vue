@@ -284,7 +284,7 @@ function onArrow() {
     />
     <button
       type="button"
-      class="absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-md text-[15px] text-stone-700 hover:bg-brand-50 hover:text-brand-700"
+      class="hit-target absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-md text-[15px] text-stone-700 hover:bg-brand-50 hover:text-brand-700"
       tabindex="-1"
       :aria-label="t('Ver la lista')"
       :title="t('Ver la lista')"
@@ -299,7 +299,7 @@ function onArrow() {
         :id="`${id}-list`"
         ref="popup"
         role="listbox"
-        class="choice-list fixed z-[10000] overflow-y-auto overscroll-contain rounded-md border border-stone-300 bg-white py-1 text-sm shadow-lg"
+        class="choice-list fixed z-[10000] overflow-y-auto overscroll-contain rounded-md border border-stone-300 bg-surface py-1 text-sm shadow-lg"
         :style="popStyle"
         @mousedown.prevent
       >
@@ -307,7 +307,7 @@ function onArrow() {
           <div
             v-if="o.group && o.group !== entries[i - 1]?.group"
             role="presentation"
-            class="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase"
+            class="px-2.5 pt-1.5 pb-0.5 text-xs font-semibold tracking-wide text-stone-500 uppercase"
           >
             {{ o.group }}
           </div>

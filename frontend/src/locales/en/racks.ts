@@ -1,0 +1,155 @@
+// A rack deposit at the LBI freezer in Cambios propuestos (RackDepositHead, RackSection, lib/rackDeposit).
+export default {
+  // RackDepositHead
+  'Depósito LBI · hoja Anexo1': 'LBI deposit · Anexo1 sheet',
+  Responsable: 'Depositor',
+  'Supuesto: quien tiene la sesión abierta. Cámbialo si deposita otra persona':
+    'Assumed: whoever is signed in. Change it if someone else is depositing',
+  supuesto: 'assumed',
+  Ultracongelador: 'Freezer',
+  'Racks del depósito': 'Racks of the deposit',
+  Racks: 'Racks',
+  'Le falta algo por decir': 'Something still to say',
+  'Aún no: {why}': 'Not yet: {why}',
+  'La hoja de depósito del LBI (Anexo1), una hoja por rack': "The LBI's deposit sheet (Anexo1), one sheet per rack",
+  'Descargar .xlsx': 'Download .xlsx',
+  'Sube una copia a la carpeta «Depósitos LBI (racks)» del Drive del proyecto':
+    "Uploads a copy to the project Drive's folder «Depósitos LBI (racks)»",
+  'Guardar en Google Drive': 'Save to Google Drive',
+  'En Drive': 'On Drive',
+  'No se pudo guardar en Drive: {why}': 'Could not save to Drive: {why}',
+  'La hoja {sheet} está protegida para la cuenta de la app: «Aplicar» lo rechazará Google hasta que su dueño le dé permiso. La hoja de depósito (.xlsx) sí funciona.':
+    "The sheet {sheet} is protected for the app's account: Google will refuse «Aplicar» until its owner gives it permission. The deposit sheet (.xlsx) works.",
+  'Nada que cambiar en la hoja de ubicaciones para este rack.': 'Nothing to change in the tube-locations sheet for this rack.',
+  'Las filas de este rack se proponen cuando se resuelva lo de arriba.': "This rack's rows are proposed once the above is resolved.",
+  'Sí, deposita esta persona': 'Yes, this person is depositing',
+  'Confirmar el responsable': 'Confirm the depositor',
+  'falta el ultracongelador': 'the freezer is missing',
+  '{rack}: falta {fields}': '{rack}: {fields} missing',
+  'Falta el código del rack: escríbelo en «Rack»': 'The rack code is missing: type it in «Rack»',
+  '{tube} está en varios racks: {racks}': '{tube} is on several racks: {racks}',
+  'En dos pocillos: {tubes}': 'On two wells: {tubes}',
+  '{well}: las fotos leyeron {read}, no {given}': '{well}: the photos read {read}, not {given}',
+  'En estas fotos el código solo puede estar junto a {a} o {b}, no {c}': 'In these photos the code can only be beside {a} or {b}, not {c}',
+  'No se sabe dónde está A1: dile al Asistente qué tubo está en A1 (mirando el rack desde arriba)':
+    "A1's place is not known: tell the Assistant which tube is in A1 (looking at the rack from above)",
+  '{code} no es un código de rack (FK…, FH…, FE…, SA… y 8 cifras)': '{code} is not a rack code (FK…, FH…, FE…, SA… and 8 digits)',
+  'Su lectura ya no está: vuelve a leer las fotos': 'Its reading is gone: read the photos again',
+  'otro sitio': 'elsewhere',
+  'Su fila en la tabla lo pone en otro rack o pocillo que las fotos: revísala': 'Its row in the table puts it on another rack or well than the photos: check it',
+  'La fila de la tabla dice: {place}': 'The table row says: {place}',
+  'La hoja tiene aquí otro tubo: {tube}; revisa la fila de ese tubo': "The sheet has another tube here: {tube}; check that tube's row",
+  'La hoja tiene en ese pocillo de este rack otro tubo, que las fotos no muestran ahí': "The sheet has another tube in that well of this rack, which the photos don't show there",
+  'la hoja tiene otro tubo aquí': 'the sheet has another tube here',
+  // lib/rackDeposit notReady
+  'ningún rack leído': 'no rack read',
+  'falta el responsable': 'the depositor is missing',
+  '{rack}: falta el código del rack': '{rack}: the rack code is missing',
+  '{rack}: {n} pocillo sin tubo ({wells})': '{rack}: {n} well without a tube ({wells})',
+  '{rack}: {n} pocillos sin tubo ({wells})': '{rack}: {n} wells without a tube ({wells})',
+  // RackSection
+  'Rack {code}': 'Rack {code}',
+  'Rack sin código': 'Rack without a code',
+  '{n} tubo leído de las fotos': '{n} tube read from the photos',
+  '{n} tubos leídos de las fotos': '{n} tubes read from the photos',
+  'Supuesto: en los racks del equipo el código está junto a A12. Míralo desde arriba y confírmalo':
+    "Assumed: on the team's racks the code sits beside A12. Look from above and confirm it",
+  'Confirmado por la persona': 'Confirmed by the person',
+  'Código junto a {well}': 'Code beside {well}',
+  'la secuencia de números de los tubos lo apoya': "the tubes' number sequence supports it",
+  'Gira el rack: los pocillos y las filas cambian': 'Turns the rack: the wells and the rows change',
+  'Está junto a {well}': "It's beside {well}",
+  'Datos de la hoja de depósito': 'Deposit sheet details',
+  'Se cambia arriba, para todo el depósito': 'Changed above, for the whole deposit',
+  Estantería: 'Shelf',
+  'Fila de rack': 'Rack row',
+  'Nro. Caja': 'Box no.',
+  Rack: 'Rack',
+  'código del rack': 'rack code',
+  'Código del rack': 'Rack code',
+  nuevo: 'new',
+  cambia: 'moves',
+  igual: 'same',
+  revisar: 'check',
+  vacío: 'empty',
+  quitado: 'removed',
+  'Fila nueva en la hoja de ubicaciones: el tubo, el rack y el pocillo': 'A new row in the tube-locations sheet: the tube, the rack and the well',
+  'La hoja lo tiene en otro rack o pocillo: se cambia al de las fotos': 'The sheet has it on another rack or well: moved to where the photos have it',
+  'La hoja ya lo tiene aquí: no cambia': 'The sheet already has it here: no change',
+  'El tubo está en dos filas de la hoja: no se cambia, revísalo': 'The tube is on two rows of the sheet: not changed, check it',
+  'Pocillo vacío (dicho por la persona)': 'Empty well (said by the person)',
+  'Ninguna foto leyó este tubo: escribe su número (etiqueta lateral) o márcalo vacío':
+    'No photo read this tube: type its number (side label) or mark it empty',
+  'Su fila se quitó de la propuesta: no se escribe': 'Its row was taken out of the proposal: not written',
+  'En la hoja: {rack} {well}': 'In the sheet: {rack} {well}',
+  'Sin fila en ninguna hoja del libro: necesita su fila': 'No row in any sheet of the workbook: it needs its row',
+  'Escrito a mano (etiqueta lateral)': 'Typed by hand (side label)',
+  'Las fotos no coinciden en este pocillo': 'The photos disagree on this well',
+  'sin fila en el libro': 'no row in the workbook',
+  'sin fila en ninguna hoja del libro': 'no row in any sheet of the workbook',
+  'Nº de la etiqueta lateral': 'Number on the side label',
+  'Número del tubo de {well}': 'Tube number of {well}',
+  Vacío: 'Empty',
+  'No está vacío': 'Not empty',
+  '{n} pocillo sin tubo: haz clic en él para escribir su número o marcarlo vacío':
+    '{n} well without a tube: click it to type its number or mark it empty',
+  '{n} pocillos sin tubo: haz clic en cada uno para escribir su número o marcarlo vacío':
+    '{n} wells without a tube: click each to type its number or mark it empty',
+  '{n} tubo no tiene fila en ninguna hoja del libro (Collection_data, Insectary_data…): necesita su fila; no se inventa':
+    '{n} tube has no row in any sheet of the workbook (Collection_data, Insectary_data…): it needs its row; none is invented',
+  '{n} tubos no tienen fila en ninguna hoja del libro (Collection_data, Insectary_data…): necesitan su fila; no se inventan':
+    '{n} tubes have no row in any sheet of the workbook (Collection_data, Insectary_data…): they need their rows; none are invented',
+  'La hoja pone en este rack tubos que las fotos no muestran ahí': "The sheet puts tubes on this rack that the photos don't show there",
+  'En dos filas de la hoja (no se cambian)': 'On two rows of the sheet (not changed)',
+  // A rack deposit's rows follow its rack (lib/rackDeposit, server/rack-deposit.mjs routeRowEdit)
+  conflicto: 'conflict',
+  'Una fila mueve aquí un tubo, o lo saca de aquí, pero el pocillo ya tiene otro: nada se sobrescribe; resuélvelo aquí':
+    'A row moves a tube here, or moves it from here, but the well already holds another: nothing is overwritten; resolve it here',
+  '{tube} va a {to} según su fila, pero {to} tiene {other}: resuélvelo en la cuadrícula':
+    '{tube} goes to {to} by its row, but {to} holds {other}: resolve it on the grid',
+  'Intercambiar: {tube} a {to}, {other} a {from}': 'Swap: {tube} to {to}, {other} to {from}',
+  'Dejar como en las fotos': 'Keep as in the photos',
+  'Volver a proponer su fila': 'Propose its row again',
+  'Se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)': "Changed in the rack's data (the «Rack» field beside its grid)",
+  'Automático: se numera solo': 'Automatic: numbered on its own',
+  'Rack_ID se cambia en los datos del rack (el campo «Rack» junto a su cuadrícula)':
+    "Rack_ID is changed in the rack's data (the «Rack» field beside its grid)",
+  'Sort es automático: no se cambia a mano': 'Sort is automatic: it is not changed by hand',
+  '{tube} ya no está en la cuadrícula del rack: mira la cuadrícula': "{tube} is no longer on the rack's grid: look at the grid",
+  'El ID del tubo no puede quedar vacío: se mantiene {tube}': 'The tube ID cannot be empty: {tube} is kept',
+  '{value} no es un ID de tubo (dos letras y de 6 a 10 cifras): se mantiene {tube}':
+    '{value} is not a tube ID (two letters and 6 to 10 digits): {tube} is kept',
+  '{tube} ya está en {rack} {well}: cámbialo en la cuadrícula': '{tube} is already in {rack} {well}: change it on the grid',
+  '{value} no es un pocillo (A1 a H12): se mantiene {well}': '{value} is not a well (A1 to H12): {well} is kept',
+  '{field} no se cambia aquí': '{field} is not changed here',
+  '{field} sigue a la cuadrícula del rack: escribe el valor o cámbialo en la cuadrícula':
+    "{field} follows the rack's grid: type the value or change it on the grid",
+  'Hay un conflicto en la cuadrícula de un rack (dos tubos en el mismo pocillo): resuélvelo allí antes de aplicar.':
+    "A rack's grid has a conflict (two tubes in the same well): resolve it there before applying.",
+  Conflicto: 'Conflict',
+  '{to} ya tiene otro tubo en la cuadrícula del rack: resuélvelo allí (este tubo sigue en {from})':
+    "{to} already holds another tube on the rack's grid: resolve it there (this tube is still in {from})",
+  // RackChanges, ProposalGrid (a deposit the app cannot write: its changes pasted by hand)
+  'Descargar cambios (.xlsx)': 'Download changes (.xlsx)',
+  'Las filas nuevas y las cambiadas de {sheet}, para pegarlas a mano, con instrucciones':
+    'The new and changed rows of {sheet}, to paste by hand, with instructions',
+  'Cuando alguien con acceso haya pegado los cambios en la hoja: la propuesta sale de pendientes. La app no escribe nada':
+    'Once someone with access has pasted the changes into the sheet: the proposal leaves the pending list. The app writes nothing',
+  'Primero descarga los cambios y pégalos en la hoja': 'First download the changes and paste them into the sheet',
+  'Aplicado a mano': 'Applied by hand',
+  '¿Ya están pegados en {sheet}?': 'Already pasted into {sheet}?',
+  'Sí, marcar aplicado a mano': 'Yes, mark applied by hand',
+  'no cambia nada en la hoja de tubos': 'it changes nothing in the tube sheet',
+  'La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».':
+    'The app has no edit access to the sheet {sheet}: download the changes for someone with access to paste, then press «Applied by hand».',
+  'Filas de {sheet}': 'Rows of {sheet}',
+  'Sin acceso de edición a {sheet}: los cambios se descargan abajo, en «Descargar cambios (.xlsx)», para pegarlos a mano.':
+    'No edit access to {sheet}: the changes are downloaded below, with «Download changes (.xlsx)», to paste by hand.',
+  'La app puede escribir en esta hoja: usa «Aplicar».': 'The app can write this sheet: use «Apply».',
+  'Algo de los racks está por resolver (mira la cuadrícula): resuélvelo y descarga los cambios de nuevo.':
+    'Something on the racks is still to resolve (see the grid): resolve it and download the changes again.',
+  'Aplicado a mano por {who} ({when}): la app no escribió nada en la hoja': 'Applied by hand by {who} ({when}): the app wrote nothing to the sheet',
+  'Descarga primero los cambios (.xlsx) y pégalos en la hoja.': 'First download the changes (.xlsx) and paste them into the sheet.',
+  'Los cambios propuestos cambiaron después de la descarga: descárgalos de nuevo y pega esa versión.':
+    'The proposed changes changed after the download: download them again and paste that version.',
+}

@@ -284,7 +284,7 @@ watch(() => [props.table, locale.value], sync)
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-sky-300 bg-white text-stone-800">
+  <div class="mt-2 rounded-md border border-sky-300 bg-surface text-stone-800">
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
       <Table2 :size="13" class="shrink-0 text-sky-700" />
       <span>
@@ -337,17 +337,17 @@ watch(() => [props.table, locale.value], sync)
   font-weight: 600;
 }
 .rows-table .tabulator-cell.rows-note {
-  color: #57534e;
+  color: var(--color-stone-600);
 }
 /* Marked by the assistant: the row, or a cell. */
 .rows-table .tabulator-row.is-marked-row .tabulator-cell,
 .rows-table .tabulator-cell.is-marked {
-  background: #fef9c3;
+  background: var(--color-yellow-100);
 }
 /* No longer in the sheet: grey, in italics. */
 .rows-table .tabulator-row.is-missing-row .tabulator-cell {
-  background: #fafaf9;
-  color: #a8a29e;
+  background: var(--color-stone-50);
+  color: var(--color-stone-400);
   font-style: italic;
 }
 /* The assistant says something about the cell: a corner, as a comment in Google Sheets. */
@@ -360,7 +360,7 @@ watch(() => [props.table, locale.value], sync)
   right: 0;
   border-style: solid;
   border-width: 0 7px 7px 0;
-  border-color: transparent #ea8600 transparent transparent;
+  border-color: transparent var(--pending-edge) transparent transparent;
   pointer-events: none;
 }
 </style>

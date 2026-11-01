@@ -214,7 +214,7 @@ export default {
   'Recorridos de ese día': 'Walks of that day',
   'Recorridos de esos días': 'Walks of those days',
   'Quitar recorrido del mapa': 'Remove walk from the map',
-  'Aún no hay recorridos. Súbelos en “Importar”.': 'No walks yet. Upload them in “Import”.',
+  'Aún no hay recorridos. Súbelos en «Importar».': 'No walks yet. Upload them in “Import”.',
   'Transectos T1–T4 reconstruidos del mapa QGIS de los reportes sobre el GPS del 26-Sep-26. {n} registros de monitoreo son de días sin recorrido subido; sube sus GPX con “Solo guardar el recorrido” para verlos.':
     'Transects T1–T4 rebuilt from the QGIS map of the reports over the GPS of 26-Sep-26. {n} monitoring records are from days without an uploaded walk; upload their GPX with “Only save the walk” to see them.',
   ocultar: 'hide',
@@ -228,6 +228,7 @@ export default {
   muchas: 'many',
   'Ocultar panel': 'Hide panel',
   'Capas y filtros': 'Layers and filters',
+  'Ver el mapa': 'Show the map',
 
   // Recaptures
   'solo en notas': 'only in notes',

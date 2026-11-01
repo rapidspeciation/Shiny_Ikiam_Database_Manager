@@ -1,0 +1,10 @@
+# Wave 3 (small fixes)
+
+Shots: before = c2-after-<theme>, after = c3-after-<theme> (in /home/franz/.local/share/ui-overhaul-20261031/). Tests 717/717, build ok.
+
+1. **proposal-ai-marks** (ProposalSheet.vue, `revealFirstChange`): after the table is built, if the first column the assistant writes is outside the visible area, the table scrolls it to the middle (on an editable proposal only). The one-row Collection_data proposal now opens on Notes_Collection_data (green IA cell in sight). Before c2-after-light/propuestas__390-es.jpg (Fila/Data_entry_order, no IA cell) → c3-after-light/propuestas__390-es.jpg; 1440: c3-after-light/propuestas__1440-es.jpg. /propuestas/<id> (`propuesta`) in the dev data only shows «Cargando…» (that proposal is gone), so `propuestas` is the check.
+2. **Monitoreo map empty state** (MapPanel.vue): «Aún no hay recorridos» is now the first line of the side panel (role=status, bold, on stone-50), not after the filters. c3-after-light/monitoreo-mapa__1440-es.jpg. 0 contrast failures, overflow 0 (both themes).
+3. **Text < 12 px**: ProposalGrid.vue (6×) and ProposalsLive.vue (3×) `text-[11px]` → `text-xs` (12 px). Left, in ProposalSheet.vue CSS (not in scope, still 10–11 px): `.doubt-quick-key`, marker-row cells, `.marker-action`, `.formula-mark`, the «was» value and row-number headers (11 px) — dense grid chrome. Rack wells (9–10 px tube series, TubeLabels/RackReader) untouched: justified by space.
+4. **views.mjs / shoot.mjs**: `tablas-pendiente` (and `tablas-revisar-cambios`) now turn auto-save off for the real user (the old injected key used a fake username and never loaded), double-click CLUTCH NUMBER of the first row, type `1006`, Enter. Save bar «1 cambio en 1 fila sin guardar» appears (c3-pend-light/tablas-pendiente__1440-es.jpg). Guardar is never pressed; the key and `:auto` are removed after.
+
+Measured: text<bar 0 in all five views, both themes; overflow 0. Bounds < 3:1: `propuestas` 1440 light 0 → 2 (readonly cell-bar textarea showing the selected ID cell; it has no border by design; dark already had it in c2). Other counts equal to c2.

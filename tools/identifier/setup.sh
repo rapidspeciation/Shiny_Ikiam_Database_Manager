@@ -23,11 +23,11 @@ dest=${1:-/home/ubuntu/ithomiini/shared/identifier}
 src=${2:-/home/ubuntu/bioclip-bench}
 encoder=onnx/bioclip25h_visual_int8.onnx
 
-for f in venv/bin/python app/v6_feature.py app/scripts/wings_v6 app/assets/head_hier.pt app/assets/wing_seg_v5n.pt app/assets/wing_seg_v5n.onnx app/assets/field_wingtip_override_v1.json "$encoder"; do
+for f in venv/bin/python app/v6_feature.py app/scripts/wings_v6 app/assets/head_hier_b8127dbf.pt app/assets/wing_seg_v5n.pt app/assets/wing_seg_v5n.onnx app/assets/field_wingtip_override_v1.json "$encoder"; do
   test -e "$src/$f" || { echo "Missing $src/$f" >&2; exit 1; }
 done
 check() { [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ] || { echo "$1: not the expected file (SHA-256)" >&2; exit 1; }; }
-check "$src/app/assets/head_hier.pt" 749fbffd5f73f12c0f8598b5b2e3f575c0510b93a61c3f3c0123ab2ee8990830
+check "$src/app/assets/head_hier_b8127dbf.pt" b8127dbf0591630c99a9e4af1c00eb8d50f217acfb795fe9e23093702e816d42
 check "$src/app/assets/wing_seg_v5n.pt" d74f9c1323d210aedbb15b1a446bf762b598446dae32449e972b3cba06b9b3ac
 check "$src/app/assets/wing_seg_v5n.onnx" a48730107024e3557b0de6626314a398d745151966a7727a67788c49601c8f4b
 check "$src/$encoder" bf27f8e52aa74c295fb725b98fb6bd2fd467f7d4a9e1e2e7f04c610f1245cca1

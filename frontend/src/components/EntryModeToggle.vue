@@ -15,7 +15,7 @@ defineProps<{ compact?: boolean }>()
     <button
       type="button"
       class="flex items-center justify-center gap-1 px-2.5 py-1.5"
-      :class="[mode === 'cards' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700 hover:bg-stone-50', { 'min-h-11 min-w-11': compact }]"
+      :class="[mode === 'cards' ? 'bg-brand text-white' : 'bg-surface text-stone-700 hover:bg-stone-50', { 'min-h-11 min-w-11': compact }]"
       :aria-pressed="mode === 'cards'"
       :title="compact ? $t('Tarjetas') : undefined"
       @click="mode = 'cards'"
@@ -25,7 +25,7 @@ defineProps<{ compact?: boolean }>()
     <button
       type="button"
       class="flex items-center justify-center gap-1 border-l border-stone-300 px-2.5 py-1.5"
-      :class="[mode === 'table' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700 hover:bg-stone-50', { 'min-h-11 min-w-11': compact }]"
+      :class="[mode === 'table' ? 'bg-brand text-white' : 'bg-surface text-stone-700 hover:bg-stone-50', { 'min-h-11 min-w-11': compact }]"
       :aria-pressed="mode === 'table'"
       :title="compact ? $t('Tabla') : undefined"
       @click="mode = 'table'"

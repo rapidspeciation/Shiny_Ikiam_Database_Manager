@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Clock, Loader2 } from 'lucide-vue-next'
+import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Clock, Loader2, PencilLine } from 'lucide-vue-next'
 import ReviewDialog from './ReviewDialog.vue'
 import { usePending } from '../stores/pending'
 import { errorText, notify } from '../lib/notice'
 import { t, tn } from '../lib/i18n'
+import { pendingPlaces } from '../lib/pendingPlaces'
 
 /**
  * Pending changes and how they reach Google Sheets. With automatic saving (the
@@ -16,6 +17,17 @@ const reviewing = ref(false)
 /** Pending cells that are not being saved, and why (the save bar shows the first reason). */
 const issues = computed(() => Object.values(pending.issues))
 const errorCount = computed(() => issues.value.length)
+/** Which rows are unsaved, named in the bar (sheet · row · columns), all of them on hover. */
+const placeText = (p: { module: string; label: string; row: number | null; fields: string[] }) =>
+  [p.module, p.label, p.row === null ? t('fila nueva') : t('fila {n}', { n: p.row })].filter(Boolean).join(' · ') +
+  (p.fields.length ? `: ${p.fields.join(', ')}` : '')
+const places = computed(() => {
+  const { shown, more } = pendingPlaces(Object.values(pending.edits), pending.creates)
+  return shown.map(placeText).join('; ') + (more ? ` ${t('y {n} más', { n: more })}` : '')
+})
+const allPlaces = computed(() =>
+  pendingPlaces(Object.values(pending.edits), pending.creates, Infinity).shown.map(placeText).join('\n'),
+)
 /** A walk's captures wait for Guardar (automatic saving leaves them). */
 const waitingRows = computed(() => pending.creates.filter(c => c.manual).length)
 
@@ -87,16 +99,19 @@ function discard() {
 </script>
 
 <template>
+  <!-- In the colour of the unsaved cells, with a strong edge: unlike the workbook's warnings above it (grey). -->
   <div
     v-if="pending.changeCount"
-    class="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-sm sm:px-4"
-    :class="pending.autoSave && !errorCount ? 'border-stone-200 bg-white' : 'border-amber-300 bg-amber-50'"
+    class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm sm:px-4"
+    :class="pending.autoSave && !errorCount ? 'border-t border-stone-200 bg-surface' : 'border-t-2 border-pending-edge bg-cell-pending'"
+    data-save-bar
   >
     <span v-if="pending.autoSave && pending.saving" class="flex items-center gap-1.5 font-medium text-stone-700">
       <Loader2 :size="15" class="animate-spin" />
       {{ $tn(pending.changeCount, 'Guardando {n} cambio en Google Sheets…', 'Guardando {n} cambios en Google Sheets…') }}
     </span>
-    <span v-else class="font-medium text-amber-950">
+    <span v-else class="flex items-center gap-1.5 font-medium text-pending-text">
+      <PencilLine :size="15" class="shrink-0" aria-hidden="true" />
       {{
         pending.autoSave && !pending.autoBlocked && errorCount < pending.changeCount
           ? $tn(pending.changeCount, '{n} cambio en {rows} por guardar', '{n} cambios en {rows} por guardar', {
@@ -107,6 +122,19 @@ function discard() {
             })
       }}
     </span>
+    <!-- The first places; all of them on hover, and a tap opens Revisar with the full list (a phone has no hover). -->
+    <button
+      v-if="!pending.saving"
+      type="button"
+      class="hit-target min-w-0 max-w-full text-left text-xs text-pending-text hover:underline"
+      :title="allPlaces"
+      :aria-label="$t('Revisar: {places}', { places: allPlaces })"
+      data-pending-places
+      @click="reviewing = true"
+    >
+      <!-- The ellipsis on the inner span: overflow on the button itself would clip its 44 px ::after tap area. -->
+      <span class="block truncate">{{ places }}</span>
+    </button>
     <button
       v-if="errorCount"
       type="button"
@@ -114,10 +142,11 @@ function discard() {
       :title="issues.join('\n')"
       @click="reviewing = true"
     >
-      <AlertTriangle :size="15" class="shrink-0" /> {{ $tn(errorCount, '{n} celda sin guardar:', '{n} celdas sin guardar:') }}
-      <span class="truncate font-normal">{{ issues[0] }}</span>
+      <AlertTriangle :size="15" class="shrink-0" />
+      <span class="shrink-0 whitespace-nowrap">{{ $tn(errorCount, '{n} celda sin guardar:', '{n} celdas sin guardar:') }}</span>
+      <span class="line-clamp-2 min-w-0 font-normal">{{ issues[0] }}</span>
     </button>
-    <span v-if="!online" class="rounded bg-stone-700 px-2 py-0.5 text-xs text-white">{{ $t('Sin conexión') }}</span>
+    <span v-if="!online" class="rounded bg-inverse px-2 py-0.5 text-xs text-on-inverse">{{ $t('Sin conexión') }}</span>
     <!-- Sent, and kept by the server until Google answers (server/outbox.mjs): written on their own. -->
     <span
       v-if="pending.queuedCount"
@@ -162,7 +191,7 @@ function discard() {
   </div>
   <div
     v-else-if="justSaved"
-    class="flex items-center gap-1.5 border-t border-stone-200 bg-white px-3 py-1.5 text-xs text-brand-700 sm:px-4"
+    class="flex items-center gap-1.5 border-t border-stone-200 bg-surface px-3 py-1.5 text-xs text-brand-700 sm:px-4"
     role="status"
   >
     <CheckCircle2 :size="14" />

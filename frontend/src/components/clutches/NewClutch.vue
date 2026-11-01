@@ -265,7 +265,7 @@ function reveal(e: FocusEvent) {
 
 <template>
   <div
-    :class="docked ? 'flex h-full min-h-0 flex-col bg-white' : 'fixed inset-x-0 z-40 flex flex-col bg-white'"
+    :class="docked ? 'flex h-full min-h-0 flex-col bg-surface' : 'fixed inset-x-0 z-40 flex flex-col bg-surface'"
     :style="overlayStyle"
     :role="docked ? 'region' : 'dialog'"
     :aria-label="$t('Nuevo clutch')"
@@ -341,7 +341,7 @@ function reveal(e: FocusEvent) {
           <button
             type="button"
             class="min-h-11 rounded-lg border px-2 text-sm font-medium"
-            :class="!withParents ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
+            :class="!withParents ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface'"
             :aria-pressed="!withParents"
             @click="withParents = false"
           >
@@ -350,7 +350,7 @@ function reveal(e: FocusEvent) {
           <button
             type="button"
             class="min-h-11 rounded-lg border px-2 text-sm font-medium"
-            :class="withParents ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
+            :class="withParents ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface'"
             :aria-pressed="withParents"
             @click="withParents = true"
           >
@@ -366,7 +366,7 @@ function reveal(e: FocusEvent) {
       <section>
         <span class="field-label">DATE LAID</span>
         <div class="flex gap-2">
-          <DateField v-model="date" class="field-input h-12 text-base" />
+          <DateField v-model="date" class="field-input h-12 text-base" aria-label="DATE LAID" />
           <button v-for="d in quickDates" :key="d.iso" type="button" class="btn h-12 shrink-0 px-3" :class="{ 'border-brand-600 text-brand-800': date === d.iso }" @click="date = d.iso">
             {{ d.name }}
           </button>
@@ -381,7 +381,7 @@ function reveal(e: FocusEvent) {
             :key="p"
             type="button"
             class="min-h-11 rounded-lg border text-sm font-medium"
-            :class="place === p ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
+            :class="place === p ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface'"
             :aria-pressed="place === p"
             @click="place = p"
           >
@@ -397,7 +397,7 @@ function reveal(e: FocusEvent) {
             :key="g"
             type="button"
             class="min-h-11 rounded-lg border text-sm font-medium"
-            :class="generation === g ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
+            :class="generation === g ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface'"
             :aria-pressed="generation === g"
             @click="generation = g"
           >
@@ -410,7 +410,7 @@ function reveal(e: FocusEvent) {
         <textarea v-model="note" class="field-input min-h-16 text-base" rows="2" :placeholder="$t('Nota, en inglés (opcional)')" />
       </label>
     </div>
-    <footer v-show="!tight" class="border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+    <footer v-show="!tight" class="border-t border-stone-200 bg-surface px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       <p class="mb-1.5 truncate text-xs" :class="message || blocker ? 'text-amber-900' : 'text-stone-600'">
         {{ message || blocker || [number, chosen, date && dayLabel(date).split(' · ')[0]].filter(Boolean).join(' · ') }}
       </p>

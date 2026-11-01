@@ -167,7 +167,7 @@ async function copyLink() {
 <template>
   <article
     :id="`grupo-${group.id}`"
-    class="scroll-mt-2 rounded-lg border bg-white shadow-sm transition-shadow"
+    class="scroll-mt-2 rounded-lg border bg-surface shadow-sm transition-shadow"
     :class="highlighted ? 'border-amber-400 ring-2 ring-amber-300' : 'border-stone-200'"
   >
     <header class="flex cursor-pointer items-start gap-3 p-3" @click="emit('toggle')">

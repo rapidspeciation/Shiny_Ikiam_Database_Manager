@@ -22,7 +22,11 @@ import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
 import PhotoThumbs from './assistant/PhotoThumbs.vue'
 import RowPhotos from './assistant/RowPhotos.vue'
 import SheetApply from './assistant/SheetApply.vue'
-import { api } from '../lib/api'
+import RackDepositHead from './assistant/RackDepositHead.vue'
+import RackChanges from './assistant/RackChanges.vue'
+import RackSection from './assistant/RackSection.vue'
+import { RACK_LOCKED, rackOfChange, type DepositRack } from '../lib/rackDeposit'
+import { api, learnItems } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
@@ -58,6 +62,7 @@ import type { CellValue } from '../lib/types'
 import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
 import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
+import { useMedia } from '../composables/usePhone'
 import { useLive } from '../stores/live'
 import { t, tx } from '../lib/i18n'
 
@@ -131,6 +136,9 @@ const emit = defineEmits<{
 }>()
 const session = useSession()
 const live = useLive()
+/** A phone beside the photo: the rack deposit's fields fold to one line, so the rack's grid shows with the photo. */
+const wide = useMedia('(min-width: 768px)')
+const narrow = computed(() => !wide.value)
 
 const pending = computed(() => props.proposal.status === 'pending')
 /** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
@@ -253,6 +261,8 @@ async function save(): Promise<void> {
       dropChoices(choices)
       savedRevision = Math.max(savedRevision, out.proposal.revision ?? 0)
       emit('replace', out.proposal)
+      // Refused cells come with their descriptors (a rack deposit's rows, …): said in the interface language.
+      learnItems(out.rejected)
       for (const r of out.rejected.slice(0, 3)) {
         const what = [r.field, r.label ? `(${r.label})` : ''].filter(Boolean).join(' ')
         const message = t(r.message)
@@ -514,6 +524,31 @@ const tables = computed(() =>
       : [table]
   }),
 )
+// ------------------------------------------------------------ a rack deposit (lib/rackDeposit)
+const deposit = computed(() => props.proposal.deposit ?? null)
+/** A rack deposit whose sheet the app's Google account cannot edit: its changes go by hand, no «Aplicar». */
+const byHand = computed(() => !!deposit.value?.protected)
+/**
+ * The tables as shown: as they are, or for a rack deposit one section per rack (its grid and fields,
+ * then its own rows: the tube-locations rows of its tubes); rows of no rack after them.
+ */
+type Table = (typeof tables.value)[number]
+const sections = computed((): { key: string; rack: DepositRack | null; number: number; tables: Table[] }[] => {
+  const d = deposit.value
+  if (!d) return [{ key: '', rack: null, number: 0, tables: tables.value }]
+  const of = new Map(shown.value.changes.map(c => [rowKey(c), rackOfChange(d, c)]))
+  const split = (reading: string | null): Table[] =>
+    tables.value.flatMap((g): Table[] => {
+      const rows = g.rows.filter(c => (of.get(rowKey(c)) ?? null) === reading)
+      return rows.length ? [{ ...g, id: `${g.id}:${reading ?? 'other'}`, rows, changes: rows, laid: undefined, photos: [] } as Table] : []
+    })
+  const racks = d.racks.map((r, i) => ({ key: r.reading, rack: r, number: i + 1, tables: split(r.reading) }))
+  const rest = split(null)
+  return rest.length ? [...racks, { key: 'other', rack: null, number: 0, tables: rest }] : racks
+})
+function jumpToRack(reading: string) {
+  document.querySelector(`[data-proposal="${props.proposal.id}"] [data-rack="${reading}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 /** A sheet's rows `from`–`to` as they are now: a slim row of its table opened with a click. */
 const sheetRows = (sheet: string) => (from: number, to: number) =>
   api<SheetRows>(`chat/proposals/${props.proposal.id}/rows?sheet=${encodeURIComponent(sheet)}&from=${from}&to=${to}`)
@@ -619,7 +654,7 @@ function reviewNext(
   const next = nextCell(cells, order.value, from)
   if (!next) return
   lastReviewed = next
-  const id = tables.value.find(g => g.rows.some(c => rowKey(c) === next.key))?.id
+  const id = sections.value.flatMap(s => s.tables).find(g => g.rows.some(c => rowKey(c) === next.key))?.id
   if (id) sheets.get(id)?.focusCell(next.key, next.field)
 }
 
@@ -679,6 +714,10 @@ const statusText = computed(
       applied: t('Aplicado en la hoja ({n} filas)', { n: props.proposal.applied?.length ?? props.proposal.changes.length }),
       needs_review: t('No se pudo aplicar: revisa las filas en la hoja'),
       discarded: t('Descartado'),
+      // A rack deposit pasted into the sheet by hand: who and when; the app wrote nothing.
+      closed: props.proposal.deposit?.manual
+        ? t('Aplicado a mano por {who} ({when}): la app no escribió nada en la hoja', { who: props.proposal.deposit.manual.by, when: whenText(props.proposal.deposit.manual.at) })
+        : '',
       applying: t('Aplicando…'),
       queued: t('Esperando a Google Sheets: se escribe solo cuando responda'),
     })[props.proposal.status as string] ?? '',
@@ -686,7 +725,7 @@ const statusText = computed(
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-stone-800">
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-stone-800">
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
       <span>
         {{ $t('Cambios propuestos') }} · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
@@ -819,11 +858,42 @@ const statusText = computed(
         <Send :size="12" /> {{ $t('Avisar al asistente') }}
       </button>
     </div>
-    <div v-for="g in tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
+    <!-- A rack deposit: its fields and files, then each rack as its own section (grid, fields, its rows). -->
+    <RackDepositHead
+      v-if="deposit"
+      :fold="reviewing && narrow"
+      :proposal-id="proposal.id"
+      :deposit="deposit"
+      :changes="shown.changes"
+      :editable="editable"
+      @replace="p => emit('replace', p)"
+      @notice="m => notify(m)"
+      @jump="jumpToRack"
+    />
+    <template v-for="s in sections" :key="s.key">
+    <RackSection
+      v-if="s.rack && deposit"
+      :proposal-id="proposal.id"
+      :rack="s.rack"
+      :number="s.number"
+      :freezer="deposit.ultracongelador"
+      :changes="shown.changes"
+      :editable="editable"
+      @replace="p => emit('replace', p)"
+      @notice="m => notify(m)"
+    />
+    <p v-if="s.rack && !s.tables.length" class="px-2 pb-2 text-xs text-stone-500">
+      {{
+        s.rack.problems.length
+          ? $t('Las filas de este rack se proponen cuando se resuelva lo de arriba.')
+          : $t('Nada que cambiar en la hoja de ubicaciones para este rack.')
+      }}
+    </p>
+    <div v-for="g in s.tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
       <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->
       <p
         v-if="g.near"
-        class="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-medium text-amber-900"
+        class="flex items-center gap-1 px-2 pt-1.5 text-xs font-medium text-amber-900"
         :title="$t('Filas cerca de la página con el mismo error de tecleo que una de sus líneas; no están en la foto. Revisa cada celda dudosa')"
       >
         <AlertTriangle :size="12" />
@@ -845,6 +915,7 @@ const statusText = computed(
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
         :editable="editable"
+        :locked-fields="s.rack && deposit && g.sheet === deposit.sheet ? RACK_LOCKED : undefined"
         :applied="
           proposal.status === 'applied'
             ? (proposal.applied ?? [])
@@ -939,7 +1010,7 @@ const statusText = computed(
           </button>
           <select
             v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
-            class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
+            class="rounded border border-control bg-surface px-1 py-0.5 text-xs"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
@@ -1056,20 +1127,38 @@ const statusText = computed(
         @apply="applyRows(g.sheet)"
       />
     </div>
+    </template>
     <!-- Each «Aplicar» of a proposal applied one sheet at a time (each a save of its own in Historial). -->
-    <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-[11px] text-stone-600" data-apply-log>
+    <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-xs text-stone-600" data-apply-log>
       <li v-for="a in applyLog" :key="a.n" class="flex items-center gap-1">
         <Check :size="11" class="shrink-0 text-brand-700" />
         {{ whenText(a.at) }} · {{ a.by }} · {{ a.sheets ? a.sheets.join(', ') : $t('todo') }} ·
         {{ $tn(a.rows, '{n} fila', '{n} filas') }} · {{ applyStatus(a.status) }}
       </li>
     </ul>
-    <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
+    <!-- While pending, «Aplicar» and «Descartar» stay at the foot of the screen as the table above scrolls by (not in
+         a phone's half-screen beside the photo, where the rack's grid needs the room). -->
+    <div
+      class="flex flex-wrap items-center gap-2 px-2 py-1.5"
+      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending, 'max-sm:py-1': pending && reviewing }"
+      data-apply-bar
+    >
       <template v-if="pending">
+        <!-- A rack deposit the app cannot write: the changes downloaded and pasted by hand, then «Aplicado a mano». -->
+        <RackChanges
+          v-if="byHand && deposit"
+          :proposal-id="proposal.id"
+          :deposit="deposit"
+          :changes="shown.changes"
+          :editable="editable"
+          main
+          @replace="p => emit('replace', p)"
+          @notice="m => notify(m)"
+        />
         <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
         <button
-          v-if="!perSheet.size || sheetsToApply.length > 1"
-          class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+          v-else-if="!perSheet.size || sheetsToApply.length > 1"
+          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
           :disabled="busy || !chosen.length"
           @click="applyRows(null)"
         >
@@ -1095,13 +1184,17 @@ const statusText = computed(
               >{{ $tn(setAside, '{n} sugerencia de la IA sin aplicar', '{n} sugerencias de la IA sin aplicar') }} ·
             </template>
           </template>
-          {{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}
+          <span v-if="!byHand" :class="{ 'max-sm:hidden': pending }">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</span>
         </span>
+        <!-- Why there is no «Aplicar»: the app's Google account cannot edit the deposit's sheet. -->
+        <p v-if="byHand && deposit" class="order-last basis-full text-xs text-stone-600" data-no-edit-access>
+          {{ $t('La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».', { sheet: deposit.sheet ?? '' }) }}
+        </p>
       </template>
       <span
         v-else
         class="flex items-center gap-1 text-xs"
-        :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'"
+        :class="proposal.status === 'applied' || proposal.deposit?.manual ? 'text-brand-700' : 'text-amber-800'"
         :role="proposal.status === 'queued' ? 'status' : undefined"
       >
         <Clock v-if="proposal.status === 'queued'" :size="13" class="shrink-0" />

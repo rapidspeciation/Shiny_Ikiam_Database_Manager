@@ -34,7 +34,7 @@ function pick(stage: string) {
   pupaOpen.value = false
   emit('update:modelValue', stage)
 }
-const choice = (on: boolean) => (on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100')
+const choice = (on: boolean) => (on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100')
 </script>
 
 <template>

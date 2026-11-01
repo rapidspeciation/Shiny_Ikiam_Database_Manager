@@ -14,6 +14,8 @@ import { tn, t } from './i18n'
 export interface RenameRow {
   file: string
   id: string
+  /** d, v, d2…: which photo of the ID it is (by the order taken, or by its wings) */
+  view?: string
   skip?: boolean
   /** Why the reader left the photo for a person (none: sure, or confirmed). */
   review: string[]
@@ -30,6 +32,8 @@ export interface RenameState {
   reading: { on: boolean; percent: number; message: string }
   rows: RenameRow[]
 }
+/** A command to the frame's app, answered by it (set by RenameHost while the frame is loaded): the page's own work, like the sex check. */
+export const renameFrame: { ask: ((name: string, args: unknown) => Promise<{ ok: boolean; data?: unknown; error?: string }>) | null } = { ask: null }
 export const renameHost = reactive({
   /** The tab was opened this session: the frame is loaded and kept. */
   started: false,

@@ -16,6 +16,10 @@ export default {
   Cancelar: 'Cancel',
   Cerrar: 'Close',
   'Cambiar idioma': 'Change language',
+  Tema: 'Theme',
+  Sistema: 'System',
+  Claro: 'Light',
+  Oscuro: 'Dark',
   Secciones: 'Sections',
   'Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?':
     'There are unsaved changes on this device. They will be kept for when you come back. Sign out?',
@@ -23,12 +27,15 @@ export default {
   'Iniciar sesión': 'Sign in',
   'Abrir Google Sheet': 'Open Google Sheet',
   Usuarios: 'Users',
+  'Prueba: identificador sin conexión': 'Test: offline identifier',
   'Cerrar sesión': 'Sign out',
   '{n} filas nuevas': '{n} new rows',
   '{n} fila': '{n} row',
   '{n} filas': '{n} rows',
   // AppHeader in the offline lab copy (LOCAL_MODE): no link to the team's sheet.
   'Copia de prueba': 'Test copy',
+  Prueba: 'Test',
+  'Filtrar {field}': 'Filter {field}',
   'Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo': 'Offline copy: changes are saved only here, never in the team\'s sheet',
   // CameraCapture: the computer's camera inside the app (the «Cámara» buttons on a desktop).
   'Tomar foto': 'Take photo',
@@ -46,4 +53,13 @@ export default {
   'El navegador solo abre la cámara en una dirección segura (https://).': 'The browser only opens the camera on a secure address (https://).',
   'No se pudo abrir la cámara.': 'Could not open the camera.',
   'Ver detalles': 'See details',
+  // Why a button is switched off (its title; a tap shows it on touch screens).
+  'No hay filas que copiar en esta vista': 'No rows to copy in this view',
+  'No hay cambios en estas fechas': 'No changes in these dates',
+  'Escribe primero el número': 'Type the number first',
+  'No hay casos con estos filtros': 'No cases with these filters',
+  'Pega primero el enlace de la ruta': 'Paste the route link first',
+  'Elige primero la especie': 'Choose the species first',
+  'Elige primero un recorrido': 'Choose a walk first',
+  'Avisos del libro ({n})': 'Workbook warnings ({n})',
 } as Record<string, string>

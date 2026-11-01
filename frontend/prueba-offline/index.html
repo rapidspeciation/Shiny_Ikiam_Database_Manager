@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f4d3a" />
+    <meta name="color-scheme" content="light dark" />
+    <script src="../theme-boot.js"></script>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="../mark.svg?v=3" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png?v=3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Prueba IA" />
+    <title>Prueba: identificador sin conexión</title>
+    <style>
+      /* Light and dark as the app (src/style.css role tokens): the system's choice, or the one picked in the app's user menu. */
+      :root {
+        --canvas: #f5f5f4; --surface: #fff; --sunken: #fafaf9; --fg: #1c1917; --fg-2: #292524; --fg-3: #44403c; --muted: #57534e;
+        --border: #e7e5e4; --border-strong: #d6d3d1; --control: #8a837d; --brand: #1f4d3a; --brand-text: #1f4d3a; --on-brand: #fff; --focus: #2d6a4f;
+        --warn: #fef3c7; --warn-edge: #b45309; --err: #fee2e2; --err-edge: #c62828; --ok: #166534; --low: #9a3412;
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
+        --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff; --focus: #7cc6a0;
+        --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme]) {
+          --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
+          --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff; --focus: #7cc6a0;
+          --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
+          color-scheme: dark;
+        }
+      }
+      :root { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--fg); background: var(--canvas); }
+      body { margin: 0; padding: 12px; max-width: 720px; margin-inline: auto; }
+      h1 { font-size: 1.25rem; margin: 4px 0 2px; color: var(--brand-text); }
+      h2 { font-size: 1.05rem; margin: 0 0 8px; }
+      section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 12px 0; }
+      .muted { color: var(--muted); font-size: 0.9rem; }
+      .warn { background: var(--warn); border: 1px solid var(--warn-edge); padding: 8px 10px; border-radius: 8px; margin: 8px 0; }
+      .err { background: var(--err); border: 1px solid var(--err-edge); padding: 8px 10px; border-radius: 8px; margin: 8px 0; white-space: pre-wrap; }
+      .ok { color: var(--ok); font-weight: 600; }
+      button, .filebtn { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--brand); background: var(--brand); color: var(--on-brand); cursor: pointer; display: inline-block; margin: 4px 4px 4px 0; }
+      button.light, .filebtn.light { background: var(--surface); color: var(--brand-text); border-color: var(--control); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      input[type='file'] { display: none; }
+      input[type='text'], input[type='password'], select { font: inherit; padding: 8px; border: 1px solid var(--control); border-radius: 6px; width: 100%; background: var(--surface); color: var(--fg); box-sizing: border-box; margin: 4px 0; }
+      progress { width: 100%; height: 18px; }
+      table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+      td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+      canvas { border: 1px solid var(--border-strong); border-radius: 6px; width: 160px; height: 160px; }
+      pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: var(--sunken); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
+      [hidden] { display: none !important; }
+      .stock { font-size: 0.95rem; color: var(--fg-2); margin-top: 2px; }
+      .stock .low { color: var(--low); font-weight: 700; text-decoration: underline 2px; text-underline-offset: 3px; }
+      .stock .genus { color: var(--fg-3); font-size: 0.85rem; }
+      #stockNote { border-top: 1px solid var(--border); padding: 6px 4px; }
+      .option { border-top: 1px solid var(--border); padding: 8px 0 4px; }
+      fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; padding: 6px 10px; }
+      fieldset label { display: block; padding: 4px 0; }
+      /* Keyboard focus as in the app: a 2 px ring in the focus colour, 2 px off the control (≥ 3:1 in both themes). */
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+      /* Checkboxes and radios big enough for a finger (the label around each one is tappable too). */
+      input[type='checkbox'], input[type='radio'] { width: 1.25rem; height: 1.25rem; vertical-align: -0.3rem; margin: 0 6px 0 0; accent-color: var(--focus); }
+      a.back { display: inline-block; color: var(--brand-text); font-weight: 600; text-decoration: none; padding: 6px 0; }
+    </style>
+  </head>
+  <body>
+    <a class="back" href="../">← Volver a la app</a>
+    <h1>Prueba: identificador sin conexión</h1>
+    <div class="muted">Prueba del identificador sin conexión: corre en este teléfono, sin internet, con el modelo completo (BioCLIP 2.5-H int8, 638 MB) o con un modelo pequeño (≈25 MB). Solo una prueba; el identificador de la app no cambia.</div>
+    <div id="crash" class="err" hidden></div>
+    <div id="status" class="muted"></div>
+
+    <section id="login" hidden>
+      <h2>Iniciar sesión</h2>
+      <div class="muted">Hace falta para descargar los modelos (solo la primera vez). Usuario y contraseña de la base de datos.</div>
+      <form id="loginForm">
+        <input id="user" type="text" autocomplete="username" placeholder="Usuario o correo" />
+        <input id="pass" type="password" autocomplete="current-password" placeholder="Contraseña" />
+        <button type="submit">Entrar</button>
+      </form>
+      <div id="loginErr" class="err" hidden></div>
+    </section>
+
+    <section>
+      <h2>1. Modelos</h2>
+      <div id="files" class="muted"></div>
+      <div class="option">
+        <div><b>Modelo completo</b> (BioCLIP 2.5-H int8, 638 MB)</div>
+        <div id="fullSize" class="muted" hidden></div>
+        <button id="download">Descargar modelo completo</button> <span id="fullReady" class="ok" hidden></span>
+      </div>
+      <div class="option">
+        <div><b>modelo pequeño (≈25 MB)</b>: <span>más rápido; algo menos preciso en ejemplares de colección</span></div>
+        <div class="muted">Un modelo de prueba, aprendido del completo; usa el mismo detector de alas y la misma cabeza.</div>
+        <div id="smallSize" class="muted" hidden></div>
+        <div id="smallMissing" class="muted" hidden></div>
+        <button id="downloadSmall">Descargar modelo pequeño</button> <span id="smallReady" class="ok" hidden></span>
+      </div>
+      <button id="remove" class="light" hidden>Borrar modelos</button>
+      <div id="progressBox" hidden><progress id="progress" max="1" value="0"></progress><div id="progressText" class="muted"></div></div>
+      <div id="ready" class="ok" hidden></div>
+      <div id="storage" class="muted"></div>
+      <div id="stockInfo" class="muted" hidden></div>
+      <div id="notPersisted" class="warn" hidden>El teléfono no marcó estos datos como persistentes: si se queda sin espacio, puede borrar los modelos y habrá que descargarlos de nuevo.</div>
+      <div id="dlErr" class="err" hidden></div>
+    </section>
+
+    <section>
+      <h2>2. Identificar</h2>
+      <div class="muted">Funciona sin conexión cuando los modelos están descargados. La primera foto tarda más (carga los modelos en memoria).</div>
+      <label>Lado de los Andes (opcional, como en el identificador del servidor):
+        <select id="side"><option value="">Sin indicar</option><option value="East">Este (Amazonía)</option><option value="West">Oeste</option></select>
+      </label>
+      <fieldset id="modelPick">
+        <legend>Modelo para identificar</legend>
+        <label><input id="model-full" type="radio" name="model" value="full" disabled /> modelo completo</label>
+        <label><input id="model-small" type="radio" name="model" value="small" disabled /> modelo pequeño (más rápido; algo menos preciso en ejemplares de colección)</label>
+        <div id="modelNone" class="muted" hidden></div>
+      </fieldset>
+      <label class="muted"><input id="useGpu" type="checkbox" /> Usar WebGPU para detectar las alas (si el teléfono lo tiene)</label>
+      <div>
+        <label class="filebtn">Tomar foto<input id="camera" type="file" accept="image/*" capture="environment" /></label>
+        <label class="filebtn light">Elegir foto<input id="pick" type="file" accept="image/*" /></label>
+      </div>
+      <div id="running" class="muted" hidden></div>
+      <div id="idErr" class="err" hidden></div>
+      <div id="result" hidden>
+        <div id="answered" class="ok"></div>
+        <div class="row">
+          <div><canvas id="crop" width="224" height="224"></canvas><div id="cropNote" class="muted"></div></div>
+          <div style="flex: 1; min-width: 220px">
+            <table><thead><tr><th>Especie</th><th class="num">Prob.</th></tr></thead><tbody id="top"></tbody></table>
+          </div>
+        </div>
+        <div id="stockNote" class="muted" hidden></div>
+        <table id="times" style="margin-top: 8px"></table>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Enviar el resultado</h2>
+      <button id="copy">Copiar resultado</button> <span id="copied" class="ok" hidden>Copiado ✓</span>
+      <pre id="diag"></pre>
+    </section>
+
+    <section class="muted">
+      <h2>Instalar en la pantalla de inicio</h2>
+      <p>Si ya tiene instalada la app de la base de datos, no hace falta otra: ábrala, toque su nombre arriba a la derecha → «Prueba: identificador sin conexión».</p>
+      <p><b>Android (Chrome):</b> menú ⋮ → «Instalar app» o «Agregar a la pantalla principal». <button id="install" class="light" hidden>Instalar ahora</button></p>
+      <p><b>iPhone (Safari):</b> botón Compartir → «Agregar a inicio». Abra la app desde el ícono, inicie sesión y descargue los modelos <i>dentro</i> de la app: en iPhone la app instalada guarda sus datos aparte de Safari.</p>
+    </section>
+    <script type="module" src="../src/offline/main.ts"></script>
+  </body>
+</html>

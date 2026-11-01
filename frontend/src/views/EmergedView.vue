@@ -284,7 +284,7 @@ const recent = computed(() => {
               { recent: recentCount },
             )
       }}
-      <button class="underline" @click="recentCount += 15">{{ $t('ver más') }}</button>
+      <button class="hit-target underline" @click="recentCount += 15">{{ $t('ver más') }}</button>
     </p>
     <div class="min-h-0 flex-1">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>

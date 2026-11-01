@@ -40,7 +40,9 @@ import {
 import { freshCorrections, monitoringRowsCsv, pointsCsv, walksGpx } from './monitoring-export.mjs';
 import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevision, tableText } from './grid.mjs';
 import { holdId, releaseHold } from './holds.mjs';
-import { searchAll, searchRange } from './search.mjs';
+import { searchRange } from './search.mjs';
+import { serveOfflineId } from './offline-id.mjs';
+import { frozenStock, syncedAt } from './frozen-stock.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -81,6 +83,7 @@ import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
 import { CHECK_KINDS, checkData, freshIssues } from './checks.mjs';
 import { createChecksHost } from './checks-host.mjs';
+import { createSearchHost } from './search-host.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
@@ -101,8 +104,10 @@ const WA_GATE_DEFAULT = 'rules';
 import { tellChat } from './t3tell.mjs';
 import { watchEventLoop } from './event-loop.mjs';
 import { createReadings } from './readings.mjs';
+import { createSexCheck } from './sex-check.mjs';
 import { galleryFiles } from './gallery-public.mjs';
 import { createSiteUpdates } from './site-updates.mjs';
+import { reportFile, reportsDir } from './rack-tools.mjs';
 import {
   setup,
   login,
@@ -283,6 +288,12 @@ export function configFromEnv(env = process.env) {
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
+    // The assistant's rack readings and deposit sheets (server/rack-tools.mjs): rack-reports beside the database by default.
+    rackReportsDir: env.RACK_REPORTS_DIR || undefined,
+    // The deposit sheets' copies on the project account's Drive (rack_report, server/rack-tools.mjs): the folder
+    // «Depósitos LBI (racks)» by its ID, else found or made in RACK_DRIVE_PARENT, else in the account's My Drive.
+    rackDriveFolder: env.RACK_DRIVE_FOLDER || undefined,
+    rackDriveParent: env.RACK_DRIVE_PARENT || undefined,
     // The password of the Cloudflare Workers that start the two public sites' updates (update_websites, server/site-updates.mjs).
     siteUpdatePasswordFile: env.SITE_UPDATE_PASSWORD_FILE || undefined,
     // Where the Rename Photos app's build is (the «Fotos» tab's frame); rename-app/ beside the server by default.
@@ -320,6 +331,11 @@ export function configFromEnv(env = process.env) {
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
     // How many workers answer the assistant's tool calls (server/worker-slot.mjs POOL_SIZE by default).
     assistantToolWorkers: env.ASSISTANT_TOOL_WORKERS || undefined,
+    // How many workers answer the Buscador's searches at once (server/search-host.mjs SEARCH_WORKERS by default).
+    searchWorkers: env.SEARCH_WORKERS || undefined,
+    // Minutes a worker thread (the assistant's tools and views, the checks) waits for work before it stops and
+    // gives its memory back (server/worker-slot.mjs IDLE_MS by default; 0: never).
+    workerIdleMs: env.WORKER_IDLE_MINUTES !== undefined && env.WORKER_IDLE_MINUTES !== '' ? Number(env.WORKER_IDLE_MINUTES) * 60_000 : undefined,
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',
@@ -670,6 +686,8 @@ export async function createApp(config = {}, options = {}) {
   }
   // The Revisión checks' whole scan, the suggested edits, the alerts, Inicio's summaries and the Wikiloc corrections in a worker thread where it can (server/checks-host.mjs).
   const checks = createChecksHost({ store, config });
+  // The Buscador's search in a worker thread where it can (server/search-host.mjs).
+  const search = createSearchHost({ store, config });
   // Each person's own T3 project, made when missing (server/t3projects.mjs).
   const t3Projects = createT3Projects({
     chats: assistant?.t3 ?? null,
@@ -690,6 +708,8 @@ export async function createApp(config = {}, options = {}) {
       enabled: config.readings === true || (config.readings !== false && !config.localMode),
       ...(config.readingsThreads ? { threads: config.readingsThreads } : {}),
     });
+  // The «Fotos» tab's sex check of a batch before it goes to Drive (server/sex-check.mjs): asked by the tab, a butterfly at a time.
+  const sexCheck = options.sexCheck ?? createSexCheck({ store, readerDir: config.photoReaderDir ?? null, identifierDir: config.identifierDir ?? null });
   const publicGallery = galleryFiles(config.publicGalleryDir ?? null);
   // A first look a minute after the start (photos listed while the app was stopped), then after each sync.
   const readingsStart = setTimeout(() => readings.afterSync?.(), 60_000);
@@ -746,6 +766,7 @@ export async function createApp(config = {}, options = {}) {
           eventLoop: eventLoop.stats(),
           ...(assistant?.status ? { assistant: assistant.status() } : {}),
           checks: checks.status(),
+          search: search.status(),
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
           ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),
@@ -761,6 +782,14 @@ export async function createApp(config = {}, options = {}) {
         return res.end();
       }
       if (path === '/rename-app' || path.startsWith('/rename-app/')) return serveRenameApp(req, res, path.slice('/rename-app'.length), config.renameAppRoot);
+      // The offline identifier test page: its own headers (cross-origin isolated, WebAssembly) and its models behind the sign-in.
+      if (path === '/prueba-offline' || path.startsWith('/prueba-offline/'))
+        return serveOfflineId(req, res, {
+          path: path.slice('/prueba-offline'.length),
+          webRoot: config.webRoot ?? webRoot,
+          identifierDir: config.identifierDir ?? null,
+          user: path.startsWith('/prueba-offline/models/') ? getSession(store, req.headers.cookie)?.user ?? null : null,
+        });
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url, config.webRoot);
       // wacli's webhook and the lab's simulator, signed with the relay's secret instead of a session.
       if (path.startsWith('/api/wa/')) return whatsappRoute(req, res, whatsapp, path, url, method);
@@ -1044,7 +1073,7 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       // The Buscador: a text in every sheet, with the rows around each sheet's match; more rows by range.
-      if (method === 'GET' && path === '/api/search') return json(res, 200, searchAll(store, query));
+      if (method === 'GET' && path === '/api/search') return json(res, 200, await search.all(query));
       if (method === 'GET' && path === '/api/search/rows') return json(res, 200, searchRange(store, query));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
       // The runs of free pre-made Insectary IDs, newest first: Emergidos' «Siguiente ID».
@@ -1248,6 +1277,18 @@ export async function createApp(config = {}, options = {}) {
       }
       // CAM pools running out and the 30-preserved rule (server/alerts.mjs): for the team (Inicio, Revisión).
       if (method === 'GET' && path === '/api/alerts') return json(res, 200, await freshAlerts(store));
+      // Flash-frozen specimens per species (server/frozen-stock.mjs), for the offline identifier page: asked again by ETag.
+      if (method === 'GET' && path === '/api/frozen-stock') {
+        if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
+        const stock = await frozenStock(store, config.identifierDir);
+        // x-synced-at: when the copy last read the workbook, on a 304 too (the page dates the inventory by it).
+        const headers = { etag: `"${stock.version}"`, 'cache-control': 'private, no-cache', 'x-synced-at': syncedAt(store) ?? '' };
+        if ((req.headers['if-none-match'] ?? '').split(/\s*,\s*/).some(t => t.replace(/^W\//, '') === headers.etag)) {
+          res.writeHead(304, headers);
+          return res.end();
+        }
+        return json(res, 200, stock, headers);
+      }
       // Verdicts on what models read from the photos, kept as training labels.
       if (method === 'GET' && path === '/api/review/labels') {
         requireEditor(user);
@@ -1363,6 +1404,20 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, readings.run('asked'));
       }
+      // The «Fotos» tab's sex check (server/sex-check.mjs): a butterfly's d and v photos as the tab will upload them
+      // (JPEG, base64), its three sexes (the model's, the envelope's, the database's) and the flag. GET: whether it can run here.
+      if (path === '/api/sex-check' && method === 'GET') return json(res, 200, sexCheck.status());
+      if (path === '/api/sex-check' && method === 'POST') {
+        requireEditor(user);
+        const photo = v => (typeof v === 'string' && v.length > 100 ? Buffer.from(v, 'base64') : null);
+        const [d, v] = [photo(body?.d), photo(body?.v)];
+        if (!d || !v) throw fail('NO_PHOTOS', 'Send the d and v photos', 400);
+        try {
+          return json(res, 200, await sexCheck.check({ cam: body?.cam, d, v }));
+        } catch (e) {
+          throw fail(e.status === 400 ? 'NOT_A_CAM' : 'SEX_CHECK', e.message, e.status ?? 500);
+        }
+      }
       if (method === 'POST' && path === '/api/sync') {
         requireEditor(user);
         return json(res, 200, await store.sync({ force: true }));
@@ -1422,6 +1477,19 @@ export async function createApp(config = {}, options = {}) {
           'cache-control': 'no-store',
         });
         return res.end(csv);
+      }
+      // A rack's deposit sheet made by the assistant's rack_report (server/rack-tools.mjs): its maker or an admin.
+      if (method === 'GET' && /^\/api\/rack-reports\/[a-f0-9]{24}\/[\w.-]+\.xlsx$/.test(path)) {
+        const [, , , token, name] = path.split('/');
+        const file = reportFile(reportsDir(config), token, name, user);
+        if (!file) throw fail('NOT_FOUND', 'Report not found', 404);
+        res.writeHead(200, {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename="${file.name}"`,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        });
+        return res.end(readFileSync(file.path));
       }
       if (method === 'GET' && path === '/api/monitoring/tracks') return sendTagged(res, { tracks: listTracks(store, user) });
       // Monitoreo → Wikiloc: what the app holds, the corrections its points suggest, and the downloads (anyone signed in).
@@ -1814,8 +1882,10 @@ export async function createApp(config = {}, options = {}) {
       assistant?.close?.();
       whatsapp?.relay.close();
       checks.close();
+      search.close();
       clearTimeout(readingsStart);
       readings.close?.();
+      sexCheck.close?.();
       // A page's wait for news (wait=1, up to 25 s) would hold the stop until the 5 s limit: what is
       // still open after a second is cut (the pages ask again, as after any restart).
       const closed = new Promise(resolve => server.close(resolve));
@@ -1887,7 +1957,8 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
   const found = existsSync(target) && statSync(target).isFile();
   // A missing script or style (a page opened before a deploy asks for the old build's files) is a 404,
   // not the page itself: served as HTML it broke the page instead of letting it reload.
-  if (!found && /(^|\/)assets\//.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
+  // The same for an icon (an older manifest's name).
+  if (!found && /(^|\/)(assets|icons)\/|\.png$/.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
   // A page's address typed without its # (…/propuestas/<id>), or the base without its slash: the page
   // loads its files relative to its address, so it is sent to the app's own (#/propuestas/<id>).
   const { pathname, search } = new URL(req.url, 'http://localhost');
@@ -1909,10 +1980,11 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
     ...(br ? { 'content-encoding': 'br', 'content-length': statSync(`${file}.br`).size } : {}),
     'x-content-type-options': 'nosniff',
     'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-src 'self'${frameSrc ? ` ${frameSrc}` : ''}`,
-    // Built scripts and styles carry a content hash in their name: a new build gets new names.
-    'cache-control': file.endsWith('index.html')
+    // Built scripts and styles, and the app's icons, carry a content hash in their name: a new build or
+    // icon gets new names. The manifest is checked each time: installed apps compare it to update their icon.
+    'cache-control': /(index\.html|\.webmanifest)$/.test(file)
       ? 'no-cache'
-      : found && /^assets\//.test(clean)
+      : found && /^(assets|icons)\//.test(clean)
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=3600',
   });

@@ -31,7 +31,7 @@ const levelTone: Record<string, string> = {
     <div class="mx-auto max-w-6xl space-y-5 p-3 sm:p-4">
       <p v-if="!data" class="text-sm text-stone-500">{{ $t('Revisando…') }}</p>
       <template v-else>
-        <section class="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
+        <section class="rounded-lg border border-stone-300 bg-surface p-3 shadow-sm">
           <h2 class="mb-2 font-semibold">{{ $t('Alertas') }}</h2>
           <p v-if="!data.alerts.length" class="text-sm text-stone-500">{{ $t('Nada que avisar.') }}</p>
           <ul class="space-y-1">
@@ -54,7 +54,7 @@ const levelTone: Record<string, string> = {
           </ul>
         </section>
 
-        <section v-if="samples.length" class="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
+        <section v-if="samples.length" class="rounded-lg border border-stone-300 bg-surface p-3 shadow-sm">
           <h2 class="font-semibold">{{ $t('Preguntar al equipo') }}</h2>
           <p class="hint mb-2">
             {{
@@ -76,7 +76,7 @@ const levelTone: Record<string, string> = {
           </ul>
         </section>
 
-        <section class="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
+        <section class="rounded-lg border border-stone-300 bg-surface p-3 shadow-sm">
           <h2 class="font-semibold">{{ $t('Rangos de CAM') }}</h2>
           <p class="hint mb-2">
             {{
@@ -128,13 +128,13 @@ const levelTone: Record<string, string> = {
                 </tbody>
               </table>
             </div>
-            <p v-if="p.fullRanges" class="mt-0.5 text-[11px] text-stone-500">
+            <p v-if="p.fullRanges" class="mt-0.5 text-xs text-stone-500">
               {{ $t('{n} rangos anteriores, ya completos, no se muestran.', { n: p.fullRanges }) }}
             </p>
           </div>
         </section>
 
-        <section v-if="rule" class="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
+        <section v-if="rule" class="rounded-lg border border-stone-300 bg-surface p-3 shadow-sm">
           <h2 class="font-semibold">{{ $t('Regla de los {n} preservados', { n: rule.limit }) }}</h2>
           <p class="hint mb-2">
             {{

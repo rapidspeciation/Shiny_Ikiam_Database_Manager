@@ -80,7 +80,7 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
       >
         <RotateCcw :size="12" /> {{ $t('Restablecer') }}
       </button>
-      <button type="button" class="rounded p-0.5 hover:bg-stone-100" :aria-label="$t('Cerrar')" @click="emit('close')">
+      <button type="button" class="rounded p-0.5 hover:bg-stone-100 pointer-coarse:p-2" :aria-label="$t('Cerrar')" @click="emit('close')">
         <X :size="13" />
       </button>
     </div>
@@ -94,7 +94,7 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
       >
         <button
           type="button"
-          class="cursor-grab touch-none rounded p-0.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 active:cursor-grabbing"
+          class="cursor-grab touch-none rounded p-0.5 pointer-coarse:p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700 active:cursor-grabbing"
           :aria-label="$t('Arrastrar para mover {field}', { field: f })"
           @pointerdown="start(f, $event)"
         >
@@ -112,7 +112,7 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
         </label>
         <button
           type="button"
-          class="rounded p-0.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+          class="rounded p-0.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30 pointer-coarse:p-2"
           :disabled="i === 0"
           :aria-label="$t('Mover a la izquierda')"
           :title="$t('Mover a la izquierda')"
@@ -122,7 +122,7 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
         </button>
         <button
           type="button"
-          class="rounded p-0.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+          class="rounded p-0.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30 pointer-coarse:p-2"
           :disabled="i === list.length - 1"
           :aria-label="$t('Mover a la derecha')"
           :title="$t('Mover a la derecha')"
@@ -147,8 +147,8 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
   margin: 0.25rem 0.5rem;
   border: 1px solid var(--color-stone-300);
   border-radius: 0.375rem;
-  background: white;
-  font-size: 11px;
+  background: var(--surface);
+  font-size: 12px;
   color: var(--color-stone-700);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
 }

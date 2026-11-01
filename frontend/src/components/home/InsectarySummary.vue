@@ -78,7 +78,7 @@ const deathsChart = computed(() => {
       <ChartCard :title="$t('Vivas por especie')" :subtitle="$t('Sexo y origen')">
         <div class="max-h-80 overflow-auto text-sm">
           <table class="w-full">
-            <thead class="sticky top-0 bg-white text-xs text-stone-500">
+            <thead class="sticky top-0 bg-surface text-xs text-stone-500">
               <tr>
                 <th class="py-1 text-left">{{ $t('Especie') }}</th>
                 <th class="px-2 text-right">♀</th>
@@ -106,7 +106,7 @@ const deathsChart = computed(() => {
       <ChartCard :title="$t('Clutches en curso por especie')" :subtitle="$t('Individuos según la etapa más reciente registrada')">
         <div class="max-h-80 overflow-auto text-sm">
           <table class="w-full">
-            <thead class="sticky top-0 bg-white text-xs text-stone-500">
+            <thead class="sticky top-0 bg-surface text-xs text-stone-500">
               <tr>
                 <th class="py-1 text-left">{{ $t('Especie') }}</th>
                 <th class="px-2 text-right">{{ $t('Clutches') }}</th>

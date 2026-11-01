@@ -321,10 +321,22 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
               <span class="field-label">{{ $t('Un recorrido') }}</span>
               <ChoiceField v-model="walk" class="field-input" :freetext="false" :options="walkOptions" :placeholder="$t('Elige un recorrido')" />
             </label>
-            <a class="btn" :class="{ 'pointer-events-none opacity-50': !walk }" :href="walk ? exportUrl('points.csv', walk) : undefined" download
+            <a
+              class="btn"
+              :class="{ 'cursor-not-allowed opacity-64': !walk }"
+              :aria-disabled="!walk || undefined"
+              :title="walk ? undefined : $t('Elige primero un recorrido')" :data-why="walk ? undefined : $t('Elige primero un recorrido')"
+              :href="walk ? exportUrl('points.csv', walk) : undefined"
+              download
               ><Download :size="15" /> {{ $t('Puntos (CSV)') }}</a
             >
-            <a class="btn" :class="{ 'pointer-events-none opacity-50': !walk }" :href="walk ? exportUrl('walks.gpx', walk) : undefined" download
+            <a
+              class="btn"
+              :class="{ 'cursor-not-allowed opacity-64': !walk }"
+              :aria-disabled="!walk || undefined"
+              :title="walk ? undefined : $t('Elige primero un recorrido')" :data-why="walk ? undefined : $t('Elige primero un recorrido')"
+              :href="walk ? exportUrl('walks.gpx', walk) : undefined"
+              download
               ><Download :size="15" /> {{ $t('Recorrido (GPX)') }}</a
             >
           </div>
@@ -357,7 +369,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
             <div class="flex flex-wrap gap-1" role="group" :aria-label="$t('Certeza')">
               <button
                 class="rounded-full border px-2.5 py-1 text-sm"
-                :class="!certainty ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-300 bg-white'"
+                :class="!certainty ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-300 bg-surface'"
                 @click="certainty = ''"
               >
                 {{ $t('Todas') }} <span class="tabular-nums text-stone-500">{{ data.suggestions.length }}</span>
@@ -366,7 +378,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
                 v-for="c in ['certain', 'likely', 'check'] as Certainty[]"
                 :key="c"
                 class="rounded-full border px-2.5 py-1 text-sm"
-                :class="certainty === c ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-300 bg-white'"
+                :class="certainty === c ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-300 bg-surface'"
                 :title="$t(CERTAINTY_HINT[c])"
                 @click="certainty = certainty === c ? '' : c"
               >
@@ -396,7 +408,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
             </button>
           </div>
           <p v-if="!shown.length" class="hint">{{ $t('No hay correcciones con esos filtros.') }}</p>
-          <div v-else class="overflow-x-auto rounded-md border border-stone-200 bg-white">
+          <div v-else class="overflow-x-auto rounded-md border border-stone-200 bg-surface">
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-stone-50 text-left text-xs text-stone-500">
                 <tr>
@@ -450,7 +462,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
         <section class="space-y-2">
           <h2 class="text-base font-semibold">{{ $t('Otras diferencias') }}</h2>
           <p v-if="!groups.length" class="hint">{{ $t('Ninguna.') }}</p>
-          <details v-for="[kind, list] in groups" :key="kind" class="rounded-md border border-stone-200 bg-white">
+          <details v-for="[kind, list] in groups" :key="kind" class="rounded-md border border-stone-200 bg-surface">
             <summary class="cursor-pointer px-3 py-2 text-sm font-medium">
               {{ $t(KIND[kind]) }} <span class="tabular-nums text-stone-500">{{ list.length }}</span>
             </summary>
@@ -475,7 +487,7 @@ const megabytes = (bytes: number) => Math.round(bytes / 1e6)
               </li>
             </ul>
           </details>
-          <details v-if="data.daysWithoutWalk.length" class="rounded-md border border-stone-200 bg-white">
+          <details v-if="data.daysWithoutWalk.length" class="rounded-md border border-stone-200 bg-surface">
             <summary class="cursor-pointer px-3 py-2 text-sm font-medium">
               {{ $t('Días de monitoreo sin recorrido en la app') }}
               <span class="tabular-nums text-stone-500">{{ data.daysWithoutWalk.length }}</span>

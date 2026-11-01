@@ -1,0 +1,127 @@
+import { describe, expect, it } from 'vitest'
+import { RACK_LOCKED, cellCounts, changesNotReady, conflictText, notReady, problemText, rackCells, rackOfChange, splitTube, type DepositRack, type RackDeposit } from '../rackDeposit'
+import type { ProposalChange } from '../proposals'
+
+const rack = (over: Partial<DepositRack> = {}): DepositRack => ({
+  reading: 'r1',
+  rack_id: 'FK00274230',
+  code_beside: 'A12',
+  code_options: ['A12', 'H1'],
+  assumed: true,
+  wells: {
+    A1: { t: 'FS50849233', s: 'new', n: 1 },
+    B1: { t: 'FS50849234', s: 'same', r: 'rec-b1' },
+    C1: { t: 'FS50849235', s: 'moved', r: 'rec-c1', was: { rack: 'FK00999999', well: 'E5' } },
+    D1: { s: 'empty' },
+    E1: { t: 'FS50849237', s: 'check', was: [{ rack: 'FK1', well: 'A1' }, { rack: 'FK2', well: 'B2' }] },
+  },
+  missing: ['F1'],
+  problems: [],
+  need_rows: ['FS50849233'],
+  elsewhere: [],
+  duplicates: ['FS50849237'],
+  unset: ['caja'],
+  fill: { E1: 'FS50849237' },
+  ...over,
+})
+const change = (over: Partial<ProposalChange>): ProposalChange => ({ index: 0, key: 'k', recordId: null, sheet: 'T', row: null, label: '', values: {}, ...over })
+const created = change({ key: 'n1', create: true, values: { Tube_ID: 'FS50849233', Rack_ID: 'FK00274230', Tube_location: 'A1' } })
+const moved = change({ key: 'rec-c1', recordId: 'rec-c1', label: 'FS50849235', values: { Rack_ID: 'FK00274230', Tube_location: 'C1' } })
+
+describe('a rack of a deposit', () => {
+  it('each well as the proposal has it now: new, moved, same, empty, to check, missing', () => {
+    const cells = rackCells(rack(), [created, moved])
+    expect(cells.size).toBe(96)
+    expect(cells.get('A1')).toMatchObject({ tube: 'FS50849233', state: 'new', needsRows: true })
+    expect(cells.get('B1')?.state).toBe('same')
+    expect(cells.get('C1')).toMatchObject({ state: 'moved', was: [{ rack: 'FK00999999', well: 'E5' }] })
+    expect(cells.get('D1')?.state).toBe('empty')
+    expect(cells.get('E1')).toMatchObject({ state: 'check', byHand: true })
+    expect(cells.get('E1')?.was).toHaveLength(2)
+    expect(cells.get('F1')?.state).toBe('missing')
+    expect(cells.get('H12')?.state).toBe('missing')
+    const n = cellCounts(cells)
+    expect([n.new, n.moved, n.same, n.empty, n.check]).toEqual([1, 1, 1, 1, 1])
+  })
+
+  it('a row taken out of the table: its well says so (not «nuevo» any more)', () => {
+    const cells = rackCells(rack(), [moved])
+    expect(cells.get('A1')?.state).toBe('left')
+    expect(rackCells(rack(), [created]).get('C1')?.state).toBe('left')
+  })
+
+  it('a row edited in the table to another place: its well says so; the sheet\'s own tube in a well is marked', () => {
+    const elsewhere = { ...created, values: { ...created.values, Tube_location: 'B7' } }
+    const cells = rackCells(rack({ sheet_here: { H12: 'FS11111111' } }), [elsewhere, { ...moved, values: { Rack_ID: 'FK00274230' }, rowValues: { Tube_location: 'E5' } }])
+    expect(cells.get('A1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'B7' } })
+    expect(cells.get('C1')).toMatchObject({ state: 'off', rowPlace: { rack: 'FK00274230', well: 'E5' } })
+    expect(cells.get('H12')?.sheetHere).toBe('FS11111111')
+    // A well the sheet writes A01 is the same well A1: not «otro sitio».
+    const padded = { ...moved, values: { Rack_ID: 'FK00274230' }, rowValues: { Tube_location: 'C01' } }
+    expect(rackCells(rack(), [created, padded]).get('C1')?.state).toBe('moved')
+  })
+
+  it('a row of the table belongs to the rack holding its tube', () => {
+    const d: RackDeposit = { responsable: 'Franz', ultracongelador: 'LBI062', racks: [rack(), rack({ reading: 'r2', rack_id: 'FK2', wells: { A1: { t: 'FS1', s: 'new' } } })], sheet: 'T', unset: [] }
+    expect(rackOfChange(d, created)).toBe('r1')
+    expect(rackOfChange(d, moved)).toBe('r1')
+    expect(rackOfChange(d, change({ create: true, values: { Tube_ID: 'FS1' } }))).toBe('r2')
+    expect(rackOfChange(d, change({ create: true, values: { Tube_ID: 'FS9' } }))).toBeNull()
+  })
+
+  it('the .xlsx waits for the depositor, the rack code and every well', () => {
+    const d: RackDeposit = { responsable: '', ultracongelador: 'LBI062', racks: [rack({ rack_id: null })], sheet: 'T', unset: [] }
+    const why = notReady(d)
+    expect(why.some(w => /responsable|depositor/.test(w))).toBe(true)
+    expect(why.some(w => /código del rack|rack code/.test(w))).toBe(true)
+    expect(why.some(w => /F1/.test(w))).toBe(true)
+    expect(why.some(w => /Nro\. Caja|Box no\./.test(w))).toBe(true)
+    expect(notReady({ ...d, responsable: 'Franz', racks: [rack({ missing: [], estanteria: '2', fila_de_rack: '1', caja: '3' })] })).toEqual([])
+  })
+
+  it("the server's problems in the person's words", () => {
+    expect(problemText('FS1 is on FK1 and FK2 and FK3.')).toMatch(/FS1.*FK1, FK2, FK3/)
+    expect(problemText('The rack code was not read: ask the person for it (printed beside a corner).')).toMatch(/Rack/)
+    expect(problemText('something new')).toBe('something new')
+  })
+
+  it('a tube ID: its series apart from the four digits compared', () => {
+    expect(splitTube('FS50849233')).toEqual(['FS5084', '9233'])
+    expect(splitTube(null)).toEqual(['', ''])
+  })
+
+  it('a row moving its tube onto another tube: both wells show the conflict (not «otro sitio»), counted, and the .xlsx waits', () => {
+    const conflicts = [{ tube: 'FS50849233', from: 'A1', to: 'C1', other: 'FS50849235' }]
+    const r = rack({ conflicts, missing: [], estanteria: '2', fila_de_rack: '1', caja: '3' })
+    const kept = change({ ...created, values: { ...created.values, Tube_location: 'C1' }, personEdits: { Tube_location: { ai: 'A1', by: 'Ana', at: 'x' } } })
+    const cells = rackCells(r, [kept, moved])
+    expect(cells.get('A1')).toMatchObject({ state: 'conflict', tube: 'FS50849233', conflict: conflicts[0] })
+    expect(cells.get('C1')).toMatchObject({ state: 'conflict', tube: 'FS50849235', conflict: conflicts[0] })
+    expect(cellCounts(cells).conflict).toBe(2)
+    expect(conflictText(conflicts[0])).toMatch(/FS50849233.*C1.*FS50849235/)
+    const why = notReady({ responsable: 'Franz', ultracongelador: 'LBI062', racks: [r], sheet: 'T', unset: [] })
+    expect(why).toHaveLength(1)
+    expect(why[0]).toMatch(/FK00274230: FS50849233.*C1/)
+    // Resolved (no conflicts): the row's place agrees with the grid again.
+    expect(rackCells(rack(), [created, moved]).get('A1')?.state).toBe('new')
+  })
+
+  it('the columns the rack decides are only to read in its rows, with where they change; Tube_ID and Tube_location stay editable', () => {
+    expect(Object.keys(RACK_LOCKED).sort()).toEqual(['Rack_ID', 'Sort'])
+    expect(RACK_LOCKED.Rack_ID).toMatch(/datos del rack/)
+    expect(RACK_LOCKED.Sort).toMatch(/Automático/)
+  })
+
+  it('the changes to paste by hand wait for every well and no conflict, not for the deposit sheet\'s own fields', () => {
+    const d: RackDeposit = { responsable: '', ultracongelador: '', racks: [rack()], sheet: 'T', unset: [] }
+    // F1 has no tube yet: waits (the same rule as the deposit sheet's wells).
+    expect(changesNotReady(d, [created, moved]).some(w => /F1/.test(w))).toBe(true)
+    // Every well said: made, though responsable, freezer and box are still empty.
+    const ready = { ...d, racks: [rack({ missing: [] })] }
+    expect(changesNotReady(ready, [created, moved])).toEqual([])
+    // A conflict waits; no row to paste at all says so.
+    const conflicts = [{ tube: 'FS50849233', from: 'A1', to: 'C1', other: 'FS50849235' }]
+    expect(changesNotReady({ ...ready, racks: [rack({ missing: [], conflicts })] }, [created, moved])).toHaveLength(1)
+    expect(changesNotReady(ready, [{ ...created, applied: 1 }])[0]).toMatch(/no cambia nada|changes nothing/)
+  })
+})

@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeCacheFile } from './cache-write.mjs';
 
 export const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
 export const ATTRIBUTION = 'Tiles © Esri — Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors';
@@ -166,8 +167,7 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
           const response = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database (map snapshots)' }, signal: AbortSignal.timeout(8_000) });
           if (!response.ok) continue;
           const data = Buffer.from(await response.arrayBuffer());
-          mkdirSync(join(tileDir, String(z), String(x)), { recursive: true });
-          writeFileSync(path, data);
+          if (!writeCacheFile(path, data)) return { path: null, fetched: false, failed: true };
           return { path, fetched: true };
         } catch {
           // tried again once, then the tile is left blank

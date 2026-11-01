@@ -37,7 +37,7 @@ function open(n: number, e: MouseEvent) {
     <div
       v-for="p in photos"
       :key="p.photo"
-      class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-[11px] text-stone-600"
+      class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-xs text-stone-600"
       data-photo-thumb
     >
       <a
@@ -52,7 +52,7 @@ function open(n: number, e: MouseEvent) {
         <img
           :src="url(p.photo, 'thumb')"
           :alt="$t('Foto {n} del cuaderno', { n: p.photo + 1 })"
-          class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-white object-contain"
+          class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-surface object-contain"
           loading="lazy"
           @error="broken = new Set([...broken, p.photo])"
         />

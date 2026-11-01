@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { calendarDays, dayFirst, isoToSerial, parseDateInput, serialToIso, shiftMonth, todayIso } from '../lib/dates'
 import { intlLocale } from '../lib/i18n'
@@ -46,6 +46,12 @@ function commit() {
 
 // --- The calendar
 const box = ref<HTMLInputElement>()
+/** A box with no name of its own (no <label> around it, no aria-label) is read out as «Fecha». */
+const attrs = useAttrs()
+const unnamed = ref(false)
+onMounted(() => {
+  unnamed.value = !attrs['aria-label'] && !attrs['aria-labelledby'] && !box.value?.labels?.length
+})
 const toggle = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const isOpen = ref(false)
@@ -170,6 +176,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
   <span class="relative inline-flex w-full">
     <input
       ref="box"
+      :aria-label="unnamed ? $t('Fecha') : undefined"
       v-bind="$attrs"
       v-model="text"
       type="text"
@@ -202,7 +209,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
         ref="panel"
         role="dialog"
         :aria-label="$t('Calendario')"
-        class="fixed z-[9999] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white p-2 text-stone-800 shadow-xl"
+        class="fixed z-[9999] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-surface p-2 text-stone-800 shadow-xl"
         :class="[short ? 'w-[21rem]' : 'w-[19rem]', centred ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : '']"
         :style="centred ? undefined : { top: `${place.top}px`, left: `${place.left}px` }"
       >
@@ -219,7 +226,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
             <X :size="20" />
           </button>
         </div>
-        <div class="mt-1 grid grid-cols-7 text-center text-[11px] font-medium text-stone-500 uppercase">
+        <div class="mt-1 grid grid-cols-7 text-center text-xs font-medium text-stone-500 uppercase">
           <span v-for="w in weekdays" :key="w" class="py-1">{{ w }}</span>
         </div>
         <div class="grid grid-cols-7 gap-0.5">
@@ -233,7 +240,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
             class="rounded-md text-sm tabular-nums focus:ring-2 focus:ring-brand-600 focus:outline-none"
             :class="[
               short ? 'h-8' : 'h-10',
-              d.iso === model ? 'bg-brand-700 font-semibold text-white' : d.inMonth ? 'hover:bg-brand-50' : 'text-stone-400 hover:bg-stone-50',
+              d.iso === model ? 'bg-brand font-semibold text-white' : d.inMonth ? 'hover:bg-brand-50' : 'text-stone-400 hover:bg-stone-50',
               d.iso === today && d.iso !== model ? 'font-semibold text-brand-800 ring-1 ring-brand-600 ring-inset' : '',
             ]"
             :aria-label="dayName(d.iso)"

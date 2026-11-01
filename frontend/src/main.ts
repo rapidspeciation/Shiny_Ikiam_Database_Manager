@@ -3,9 +3,12 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import './style.css'
+// Light or dark on the page (public/theme-boot.js set it before the first paint).
+import './lib/theme'
 import { updateAvailable, watchForUpdates } from './lib/updates'
 import { t, tn } from './lib/i18n'
 import { askEarly } from './lib/api'
+import { explainDisabledTaps } from './lib/disabledReason'
 
 // Opening on Inicio: its summary is asked now, with the session, instead of after it (HomeView takes it).
 if (/^#?\/?(inicio)?(\?|$)/.test(location.hash)) askEarly('summary')
@@ -26,5 +29,7 @@ router.onError(error => {
     updateAvailable.value = true
 })
 watchForUpdates()
+// A tap on a switched-off button says why (its title), as hovering does with a mouse.
+explainDisabledTaps()
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {})

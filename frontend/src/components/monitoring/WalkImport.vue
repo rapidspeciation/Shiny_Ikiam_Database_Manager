@@ -233,7 +233,7 @@ const earlierDay = computed(() => (earlier.value ? formatSerial(isoToSerial(earl
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col" data-walk-import>
-    <div class="toolbar flex-wrap border-b border-stone-200 bg-white">
+    <div class="toolbar flex-wrap border-b border-stone-200 bg-surface">
       <div class="min-w-0">
         <span class="field-label">{{ $t('Recorrido de Wikiloc') }}</span>
         <p class="flex items-center gap-1 pb-1.5 text-sm">
@@ -357,7 +357,7 @@ const earlierDay = computed(() => (earlier.value ? formatSerial(isoToSerial(earl
         </div>
         <div v-if="prompt" class="space-y-1.5 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <p>{{ $t('No se pudo abrir el chat con el pedido. Pégalo en un chat nuevo:') }}</p>
-          <p class="rounded border border-amber-200 bg-white px-2 py-1 select-all">{{ prompt }}</p>
+          <p class="rounded border border-amber-200 bg-surface px-2 py-1 select-all">{{ prompt }}</p>
           <button class="btn px-2 py-0.5" @click="copyPrompt">
             <Check v-if="copied" :size="13" /><Copy v-else :size="13" /> {{ copied ? $t('Copiado') : $t('Copiar') }}
           </button>

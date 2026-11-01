@@ -76,6 +76,7 @@ export default {
   '¿Descartar {n} cambios sin guardar?': 'Discard {n} unsaved changes?',
   'Guardando {n} cambio en Google Sheets…': 'Saving {n} change to Google Sheets…',
   'Guardando {n} cambios en Google Sheets…': 'Saving {n} changes to Google Sheets…',
+  'Revisar: {places}': 'Review: {places}',
   '{n} cambio en {rows} por guardar': '{n} change in {rows} to save',
   '{n} cambios en {rows} por guardar': '{n} changes in {rows} to save',
   '{n} cambio en {rows} sin guardar': '{n} unsaved change in {rows}',

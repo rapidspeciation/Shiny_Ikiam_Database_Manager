@@ -14,5 +14,15 @@ bundled or deployed) uses playwright-core (Apache License 2.0).
 Map tiles are loaded at run time, not bundled: Esri World Imagery and
 OpenStreetMap (© OpenStreetMap contributors, ODbL), credited on the map.
 
-Exact versions are pinned in frontend/package-lock.json. The server has no
-third-party runtime dependencies. Code 128 patterns: see ZXing-LICENSE.
+Ecuador's province and canton outlines (the maps tools' `area`, server/admin-areas.mjs) are
+downloaded once at run time, not bundled: INEC (Instituto Nacional de Estadística y Censos)
+cantons 2019 via OCHA ROLAC and geoBoundaries gbOpen ECU ADM2, CC BY 3.0 IGO; provinces
+from geoBoundaries gbOpen ECU ADM1, CC0. A cut of both is a test fixture
+(tests/fixtures/ecuador-admin). geoBoundaries: Runfola et al. (2020), PLoS ONE 15(4):
+e0231866, https://www.geoboundaries.org.
+
+Exact versions are pinned in frontend/package-lock.json. The server's one
+third-party runtime dependency is vendored: zxing-wasm 3.1.6 (MIT,
+server/vendor/zxing-wasm/LICENSE), the reader build of zxing-cpp (Apache
+License 2.0, see ZXing-LICENSE), for the tube racks' 2D codes. Code 128
+patterns: see ZXing-LICENSE.

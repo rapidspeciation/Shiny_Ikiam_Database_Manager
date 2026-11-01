@@ -55,7 +55,7 @@ const boxes: { sex: ParentSex; label: () => string }[] = [
               <SexBadge :sex="parents.find(option.value)?.sex" />
               <span class="font-semibold tabular-nums">{{ option.value }}</span>
               <span class="min-w-0 truncate text-xs text-stone-600">{{ parents.find(option.value)?.species }}</span>
-              <span v-if="parents.find(option.value)?.alive" class="ml-auto shrink-0 rounded-full bg-brand-50 px-1.5 text-[11px] text-brand-800">{{ $t('vive') }}</span>
+              <span v-if="parents.find(option.value)?.alive" class="ml-auto shrink-0 rounded-full bg-brand-50 px-1.5 text-xs text-brand-800">{{ $t('vive') }}</span>
             </template>
           </ChoiceField>
         </label>

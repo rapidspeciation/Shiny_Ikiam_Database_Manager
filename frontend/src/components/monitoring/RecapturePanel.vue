@@ -153,7 +153,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <!-- Several butterflies per row: a card is as wide as its captures need. -->
     <div class="grid [grid-template-columns:repeat(auto-fill,minmax(min(100%,26rem),1fr))] items-start gap-2 p-2 sm:p-3">
       <p v-if="!all.length" class="hint">{{ $t('Aún no hay recapturas en Collection_data.') }}</p>
-      <section v-for="i in shown" :key="i.key" class="min-w-0 rounded-md border border-stone-200 bg-white">
+      <section v-for="i in shown" :key="i.key" class="min-w-0 rounded-md border border-stone-200 bg-surface">
         <header class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-stone-100 px-2.5 py-1.5 text-sm">
           <h2 class="font-semibold">{{ i.id }}</h2>
           <span
@@ -178,7 +178,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <li v-for="(e, n) in i.events" :key="e.row?.id ?? `${i.key}-${n}`" class="flex shrink-0 items-start gap-2">
             <div
               v-if="n"
-              class="flex h-32 w-11 flex-col items-center justify-center text-center text-[11px] text-stone-500"
+              class="flex h-32 w-11 flex-col items-center justify-center text-center text-xs text-stone-500"
               :title="e.metres !== null ? $t('Distancia entre los puntos GPS de las dos capturas') : ''"
             >
               <ChevronRight :size="18" />
@@ -203,7 +203,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   {{ $t('Sin foto') }}
                 </div>
               </div>
-              <figcaption class="mt-1 text-[11px] leading-snug">
+              <figcaption class="mt-1 text-xs leading-snug">
                 <span class="font-medium">{{ n ? $t('Recaptura {n}', { n }) : $t('Marcado') }}</span> · {{ date(e.date) }}<br />
                 <span
                   v-if="e.outside"
@@ -235,7 +235,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="flex items-center gap-3 px-4 py-2 text-sm">
         <span class="font-medium">{{ viewer.individual.id }}</span>
         <i>{{ viewer.individual.species }}</i>
-        <span class="text-stone-300">
+        <span class="text-on-photo-muted">
           {{ current.capture === 1 ? $t('Marcado') : $t('Recaptura {n}', { n: current.capture - 1 }) }} ·
           {{ date(current.event.date) }} · {{ current.event.collector
           }}<template v-if="current.event.outside"> · {{ $t(OUTSIDE[current.event.outside]) }}</template> ·

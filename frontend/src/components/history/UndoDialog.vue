@@ -38,7 +38,7 @@ const empty = (value: UndoPreviewItem['before']) => value === null || value === 
 
 <template>
   <div class="fixed inset-0 z-[60] grid place-items-center bg-black/40 p-2" @click.self="!busy && emit('cancel')">
-    <section class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl" role="dialog" :aria-label="review.title">
+    <section class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-surface shadow-xl" role="dialog" :aria-label="review.title">
       <header class="flex items-start gap-2 border-b border-stone-200 px-4 py-3">
         <div class="min-w-0 flex-1">
           <h2 v-if="summary" class="text-lg font-semibold">{{ review.title }}</h2>

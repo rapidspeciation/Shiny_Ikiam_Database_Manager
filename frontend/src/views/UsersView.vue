@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ChoiceField from '../components/ChoiceField.vue'
+import ScrollRow from '../components/ScrollRow.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Copy, Mail, RefreshCw, UserPlus, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
@@ -166,7 +167,7 @@ async function resetPassword(user: User) {
     <template v-else>
       <h1 class="mb-3 text-lg font-semibold">{{ $t('Usuarios') }}</h1>
       <form
-        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-surface p-4"
         @submit.prevent="sendInvite"
       >
         <label>
@@ -179,7 +180,7 @@ async function resetPassword(user: User) {
         </label>
         <label>
           <span class="field-label">{{ $t('Permiso') }}</span>
-          <ChoiceField v-model="invite.role" class="field-input" :options="roleChoices" :freetext="false" />
+          <ChoiceField v-model="invite.role" class="field-input" :aria-label="$t('Permiso')" :options="roleChoices" :freetext="false" />
         </label>
         <button class="btn-primary" :disabled="sending">
           <Mail :size="15" /> {{ sending ? $t('Enviando…') : $t('Enviar invitación') }}
@@ -194,7 +195,13 @@ async function resetPassword(user: User) {
         </p>
       </form>
 
-      <table v-if="invitations.length" class="mb-6 w-full max-w-4xl text-sm">
+      <!--
+        On a phone the tables scroll sideways at a width they can be read at (squeezed, their columns ran into each
+        other): the edge with more fades out, and a line above says so.
+      -->
+      <p class="hint mb-1 sm:hidden">{{ $t('Desliza las tablas a un lado para ver «Activa» y las acciones.') }}</p>
+      <ScrollRow v-if="invitations.length" class="mb-6 max-w-4xl">
+      <table class="w-full min-w-[34rem] text-sm [&_th]:pr-3">
         <thead class="text-left text-xs text-stone-600">
           <tr>
             <th class="py-2">{{ $t('Invitación') }}</th>
@@ -250,8 +257,10 @@ async function resetPassword(user: User) {
           </tr>
         </tbody>
       </table>
+      </ScrollRow>
 
-      <table class="w-full max-w-4xl text-sm">
+      <ScrollRow class="max-w-4xl">
+      <table class="w-full min-w-[44rem] text-sm [&_td]:pr-3 [&_th]:pr-3">
         <thead class="text-left text-xs text-stone-600">
           <tr>
             <th class="py-2">{{ $t('Usuario') }}</th>
@@ -272,17 +281,26 @@ async function resetPassword(user: User) {
                 <ChoiceField
                   :model-value="u.role"
                   class="field-input w-40"
+                  :aria-label="$t('Permiso de {name}', { name: u.username })"
                   :options="roleChoices"
                   :freetext="false"
                   @update:model-value="update(u, { role: $event })"
                 />
               </td>
-              <td><input type="checkbox" :checked="u.active" @change="update(u, { active: !u.active })" /></td>
+              <td>
+                <input
+                  type="checkbox"
+                  class="hit-target size-5"
+                  :checked="u.active"
+                  :aria-label="$t('Cuenta de {name} activa', { name: u.username })"
+                  @change="update(u, { active: !u.active })"
+                />
+              </td>
               <td class="space-x-3 whitespace-nowrap">
-                <button class="text-xs underline" :disabled="!u.active" @click="resetLink(u)">
+                <button class="hit-target text-xs underline disabled:cursor-not-allowed disabled:opacity-64" :disabled="!u.active" :title="u.active ? undefined : $t('La cuenta no está activa')" :data-why="u.active ? undefined : $t('La cuenta no está activa')" @click="resetLink(u)">
                   {{ $t('Enlace para restablecer') }}
                 </button>
-                <button class="text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>
+                <button class="hit-target text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>
               </td>
             </tr>
             <!-- The link is also shown, to send it by WhatsApp when the email does not arrive. -->
@@ -292,6 +310,7 @@ async function resetPassword(user: User) {
                   <input
                     :id="`reset-${u.id}`"
                     class="field-input min-w-0 flex-1 font-mono text-xs"
+                    :aria-label="$t('Enlace para restablecer')"
                     :value="resetLinks[u.id]"
                     readonly
                     @focus="($event.target as HTMLInputElement).select()"
@@ -307,13 +326,14 @@ async function resetPassword(user: User) {
           </template>
         </tbody>
       </table>
+      </ScrollRow>
 
       <details class="mt-6 max-w-4xl">
         <summary class="cursor-pointer text-sm text-stone-600">
           {{ $t('Crear una cuenta sin correo (con contraseña inicial)') }}
         </summary>
         <form
-          class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+          class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-surface p-4"
           @submit.prevent="create"
         >
           <label>
@@ -338,7 +358,7 @@ async function resetPassword(user: User) {
           </label>
           <label>
             <span class="field-label">{{ $t('Permiso') }}</span>
-            <ChoiceField v-model="form.role" class="field-input" :options="roleChoices" :freetext="false" />
+            <ChoiceField v-model="form.role" class="field-input" :aria-label="$t('Permiso')" :options="roleChoices" :freetext="false" />
           </label>
           <button class="btn"><UserPlus :size="15" /> {{ $t('Crear cuenta') }}</button>
         </form>

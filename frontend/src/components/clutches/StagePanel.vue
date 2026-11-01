@@ -469,7 +469,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         <div
           v-if="grouped"
           class="flex min-w-0 flex-wrap items-center gap-1 rounded-xl border-2 p-1"
-          :class="selected.includes(g) ? 'border-brand-600 bg-brand-50' : 'border-stone-200 bg-white'"
+          :class="selected.includes(g) ? 'border-brand-600 bg-brand-50' : 'border-stone-200 bg-surface'"
           role="group"
           :aria-label="$t('Grupo {name}', { name: nameOf(g) })"
           @click.self="emit('emptyTap')"
@@ -477,7 +477,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           <button
             type="button"
             class="flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm font-semibold"
-            :class="selected.includes(g) ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-800 active:bg-stone-200'"
+            :class="selected.includes(g) ? 'bg-brand text-white' : 'bg-stone-100 text-stone-800 active:bg-stone-200'"
             :aria-pressed="selected.includes(g)"
             :title="$t('Toca para seleccionar el grupo')"
             @click="tapGroup(g)"
@@ -502,7 +502,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             type="button"
             class="flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold tabular-nums"
             :class="[
-              isActive(c.g, c.i) ? 'bg-brand-700 text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-50',
+              isActive(c.g, c.i) ? 'bg-brand text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-50',
               isActive(c.g, c.i) ? '' : c.term < 0 ? 'text-red-800' : 'text-stone-800',
             ]"
             :aria-pressed="isActive(c.g, c.i)"
@@ -519,7 +519,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             type="button"
             class="flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-base font-semibold tabular-nums"
             :class="[
-              isActive(c.g, c.i) ? 'bg-brand-700 text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-100',
+              isActive(c.g, c.i) ? 'bg-brand text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-100',
               isActive(c.g, c.i) ? '' : c.term < 0 ? 'text-red-800' : 'text-stone-800',
             ]"
             :aria-pressed="isActive(c.g, c.i)"
@@ -534,7 +534,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
       <button
         v-if="canWork && panel !== 'total'"
         type="button"
-        class="flex h-12 min-w-14 items-center justify-center rounded-lg border border-dashed border-stone-400 bg-white px-2 text-2xl font-semibold tabular-nums hover:border-brand-600 active:bg-brand-50"
+        class="flex h-12 min-w-14 items-center justify-center rounded-lg border border-dashed border-stone-400 bg-surface px-2 text-2xl font-semibold tabular-nums hover:border-brand-600 active:bg-brand-50"
         :class="dirty ? 'text-amber-800' : 'text-stone-900'"
         :aria-label="$t('Escribir el total de {field} (ahora {n})', { field, n: count.terms.length ? total : '—' })"
         :title="$t('Toca para escribir el total contado: la diferencia queda como corrección')"
@@ -549,7 +549,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         v-else
         ref="totalBox"
         v-model="totalText"
-        class="h-12 w-28 rounded-lg border-2 border-brand-600 bg-white px-2 text-right text-2xl font-semibold tabular-nums focus:ring-2 focus:ring-brand-100 focus:outline-none"
+        class="h-12 w-28 rounded-lg border-2 border-brand-600 bg-surface px-2 text-right text-2xl font-semibold tabular-nums focus:ring-2 focus:ring-brand-100 focus:outline-none"
         type="text"
         inputmode="numeric"
         autocomplete="off"
@@ -563,12 +563,12 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
       <button
         v-if="preserved"
         type="button"
-        class="ml-1 flex min-h-9 items-center gap-1.5 rounded-lg border border-dashed border-violet-400 bg-white px-2 text-sm font-medium text-violet-800 tabular-nums"
+        class="ml-1 flex min-h-9 items-center gap-1.5 rounded-lg border border-dashed border-violet-400 bg-surface px-2 text-sm font-medium text-violet-800 tabular-nums"
         :title="preservedWhy"
         :aria-expanded="explainPreserved"
         @click="explainPreserved = !explainPreserved"
       >
-        {{ preservedLabel }} <span class="rounded bg-violet-100 px-1 text-[10px] font-semibold tracking-wide text-violet-700 uppercase">{{ $t('solo en la app') }}</span>
+        {{ preservedLabel }} <span class="rounded bg-violet-100 px-1 text-xs font-semibold tracking-wide text-violet-700 uppercase">{{ $t('solo en la app') }}</span>
       </button>
     </div>
     <p v-if="preserved && explainPreserved" class="mt-1 text-xs text-violet-800">{{ preservedWhy }}</p>
@@ -601,7 +601,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         <span class="mx-1 text-stone-500">→</span>
         <span class="text-stone-600">{{ $t('ahora') }}</span> <strong class="text-base text-amber-900">{{ shown(count) }}</strong>
       </p>
-      <button type="button" class="btn h-10 shrink-0 border-amber-400 bg-white px-2.5 text-sm text-amber-950" @click="emit('backToMorning')">
+      <button type="button" class="btn h-10 shrink-0 border-amber-400 bg-surface px-2.5 text-sm text-amber-950" @click="emit('backToMorning')">
         <Undo2 :size="16" /> {{ $t('Deshacer lo de hoy') }}
       </button>
     </div>
@@ -610,10 +610,10 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- Groups: all at once, or regrouped. -->
     <div v-if="canWork && stage && stage !== 'adult' && total > 0" class="mt-2 flex flex-wrap items-center gap-2 text-sm">
-      <button v-if="grouped" type="button" class="flex h-9 items-center gap-1 rounded-full border border-stone-300 bg-white px-3 text-stone-700" :aria-pressed="allSelected" @click="selectAll">
+      <button v-if="grouped" type="button" class="flex h-9 items-center gap-1 rounded-full border border-stone-300 bg-surface px-3 text-stone-700" :aria-pressed="allSelected" @click="selectAll">
         <CheckSquare :size="14" /> {{ allSelected ? $t('Ninguno') : $t('Seleccionar todos') }}
       </button>
-      <button type="button" class="flex h-9 items-center gap-1 rounded-full border border-stone-300 bg-white px-3 text-stone-700" :aria-expanded="panel === 'regroup'" @click="startRegroup">
+      <button type="button" class="flex h-9 items-center gap-1 rounded-full border border-stone-300 bg-surface px-3 text-stone-700" :aria-expanded="panel === 'regroup'" @click="startRegroup">
         <Shuffle :size="14" /> {{ $t('Reagrupar') }}
       </button>
       <span v-if="grouped && selected.length" class="text-xs text-stone-600">{{ tn(selected.length, '{n} grupo seleccionado', '{n} grupos seleccionados') }}</span>
@@ -643,7 +643,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         <input
           ref="gainBox"
           v-model="gainText"
-          class="h-12 w-28 rounded-lg border border-stone-300 bg-white text-center text-xl font-semibold tabular-nums focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+          class="h-12 w-28 rounded-lg border border-control bg-surface text-center text-xl font-semibold tabular-nums focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -662,7 +662,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           type="button"
           role="radio"
           class="h-9 rounded-full border px-3"
-          :class="gainDay === d ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :class="gainDay === d ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
           :aria-checked="gainDay === d"
           @click="gainDay = d"
         >
@@ -678,7 +678,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           type="button"
           role="radio"
           class="h-9 rounded-full border px-3"
-          :class="gainFrom === s.index ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :class="gainFrom === s.index ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
           :aria-checked="gainFrom === s.index"
           @click="gainFrom = gainFrom === s.index ? null : s.index"
         >
@@ -706,16 +706,16 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
       </template>
       <template v-else>
         <div class="flex flex-wrap items-center gap-2">
-          <button type="button" class="flex h-10 items-center gap-1 rounded-full border border-red-300 bg-white px-3 text-sm font-semibold text-red-800" :title="$t('Cambiar la causa')" @click="lossKind = null">
+          <button type="button" class="flex h-10 items-center gap-1 rounded-full border border-red-300 bg-surface px-3 text-sm font-semibold text-red-800" :title="$t('Cambiar la causa')" @click="lossKind = null">
             {{ lossWord(lossKind) }} <PenLine :size="13" class="opacity-60" />
           </button>
           <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
-          <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
+          <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-control bg-surface">
             <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
             <input
               ref="lossBox"
               v-model="lossText"
-              class="h-11 w-14 border-x border-stone-300 text-center text-xl font-semibold tabular-nums outline-none"
+              class="h-11 w-14 border-x border-control text-center text-xl font-semibold tabular-nums outline-none"
               type="text"
               inputmode="numeric"
               maxlength="4"
@@ -736,7 +736,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             type="button"
             role="radio"
             class="h-9 rounded-full border px-3"
-            :class="lossGroup === g ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+            :class="lossGroup === g ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
             :aria-checked="lossGroup === g"
             @click="lossGroup = g"
           >
@@ -750,7 +750,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
               :key="st"
               type="button"
               class="min-h-10 rounded-lg border px-2 text-sm font-medium"
-              :class="lifestage === st ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+              :class="lifestage === st ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800'"
               :aria-pressed="lifestage === st"
               @click="lifestage = st"
             >
@@ -803,7 +803,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           <span class="min-w-16 text-sm font-semibold">{{ r.name || $t('Todos') }}</span>
           <input
             v-model="r.text"
-            class="h-11 w-20 rounded-lg border border-stone-300 bg-white text-center text-lg font-semibold tabular-nums"
+            class="h-11 w-20 rounded-lg border border-control bg-surface text-center text-lg font-semibold tabular-nums"
             type="text"
             inputmode="numeric"
             maxlength="4"
@@ -838,9 +838,9 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         @keydown.enter.prevent="confirmRegroup"
       />
       <div v-if="regroupCounts.length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <span v-for="(n, i) in regroupCounts" :key="i" class="flex items-center gap-1 rounded-lg bg-white px-1.5 py-1 ring-1 ring-stone-200">
+        <span v-for="(n, i) in regroupCounts" :key="i" class="flex items-center gap-1 rounded-lg bg-surface px-1.5 py-1 ring-1 ring-stone-200">
           <span class="font-semibold tabular-nums">{{ n }}</span> ·
-          <input v-model="regroupLabels[i]" class="h-8 w-20 rounded border border-stone-300 px-1 text-sm" maxlength="40" :aria-label="$t('Nombre del grupo {n}', { n: i + 1 })" />
+          <input v-model="regroupLabels[i]" class="h-8 w-20 rounded border border-control px-1 text-sm" maxlength="40" :aria-label="$t('Nombre del grupo {n}', { n: i + 1 })" />
         </span>
         <span class="text-sm tabular-nums" :class="regroupSum === total ? 'text-brand-800' : 'text-red-700'">= {{ regroupSum }} / {{ total }}</span>
       </div>
@@ -859,7 +859,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
     </div>
 
     <!-- The whole formula, by hand (advanced). -->
-    <div v-if="panel === 'formula' && canWork" class="mt-2 rounded-lg border border-stone-300 bg-white p-2.5">
+    <div v-if="panel === 'formula' && canWork" class="mt-2 rounded-lg border border-stone-300 bg-surface p-2.5">
       <PanelHead :title="$t('Editar la fórmula')" @close="panel = null" />
       <label class="block text-xs text-stone-600" :for="`formula-${field}`">{{ $t('La fórmula (un espacio suma; «-» resta; paréntesis por grupo)') }}</label>
       <input
@@ -914,7 +914,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
   gap: 0.375rem;
   border-radius: 0.5rem;
   border-width: 1px;
-  background: white;
+  background: var(--surface);
   padding: 0.25rem 0.5rem;
   font-size: 0.9375rem;
   font-weight: 500;

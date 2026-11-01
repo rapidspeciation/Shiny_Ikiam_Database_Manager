@@ -169,6 +169,12 @@ env_app=(
   ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh"
   GOG_ACCOUNT=lab
   NODE_OPTIONS=--max-old-space-size=8192
+  # Light on this PC's memory (tools/lab/README.md, «Memory»): one tools worker and one search worker, worker
+  # threads and the identifier stopped after a few idle minutes (each LAB_* overrides).
+  ASSISTANT_TOOL_WORKERS="${LAB_TOOL_WORKERS:-1}"
+  SEARCH_WORKERS="${LAB_SEARCH_WORKERS:-1}"
+  WORKER_IDLE_MINUTES="${LAB_WORKER_IDLE_MINUTES:-5}"
+  IDENTIFIER_IDLE_MINUTES="${LAB_IDENTIFIER_IDLE_MINUTES:-2}"
 )
 # No Google credentials or keys reach the lab app but the copy's login in workbook mode; never an account that
 # changes files on Drive. Its mail goes to $LAB/mail.

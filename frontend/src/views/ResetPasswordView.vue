@@ -50,7 +50,7 @@ async function submit() {
 
 <template>
   <div class="grid h-full place-items-center overflow-y-auto bg-stone-50 p-4">
-    <form class="w-full max-w-sm space-y-3 rounded-lg border border-stone-200 bg-white p-6 shadow-sm" @submit.prevent="submit">
+    <form class="w-full max-w-sm space-y-3 rounded-lg border border-stone-200 bg-surface p-6 shadow-sm" @submit.prevent="submit">
       <h1 class="text-lg font-semibold">{{ $t('Nueva contraseña') }}</h1>
       <template v-if="reset?.status === 'valid'">
         <p class="text-sm text-stone-600">

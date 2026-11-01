@@ -130,11 +130,11 @@ const gridKey = computed(() => `${props.action}:${props.side}:${props.row}`)
         </p>
       </div>
       <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <div class="flex overflow-hidden rounded-md border border-amber-300 bg-white text-xs" role="group">
+        <div class="flex overflow-hidden rounded-md border border-amber-300 bg-surface text-xs" role="group">
           <button
             type="button"
             class="px-2 py-1.5"
-            :class="side === 'before' ? 'bg-amber-800 text-white' : 'hover:bg-amber-100'"
+            :class="side === 'before' ? 'bg-fill-amber-strong text-white' : 'hover:bg-amber-100'"
             :aria-pressed="side === 'before'"
             @click="emit('move', { action: props.action, side: 'before' })"
           >
@@ -143,7 +143,7 @@ const gridKey = computed(() => `${props.action}:${props.side}:${props.row}`)
           <button
             type="button"
             class="border-l border-amber-300 px-2 py-1.5"
-            :class="side === 'after' ? 'bg-amber-800 text-white' : 'hover:bg-amber-100'"
+            :class="side === 'after' ? 'bg-fill-amber-strong text-white' : 'hover:bg-amber-100'"
             :aria-pressed="side === 'after'"
             @click="emit('move', { action: props.action, side: 'after' })"
           >
@@ -183,11 +183,11 @@ const gridKey = computed(() => `${props.action}:${props.side}:${props.row}`)
         </RouterLink>
       </div>
       <div v-if="view" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span><span class="mr-1 inline-block size-3 rounded-sm bg-[#fdf0b8] align-[-2px] ring-1 ring-amber-300" />{{
+        <span><span class="mr-1 inline-block size-3 rounded-sm bg-cell-pending align-[-2px] ring-1 ring-pending-edge" />{{
           tn(differing, '{n} celda distinta de ahora', '{n} celdas distintas de ahora')
         }}</span>
         <span v-if="save && touchedCount"
-          ><span class="mr-1 inline-block size-3 rounded-sm align-[-2px] ring-2 ring-[#b45309] ring-inset" />{{
+          ><span class="mr-1 inline-block size-3 rounded-sm align-[-2px] ring-2 ring-amber-700 ring-inset" />{{
             tn(touchedCount, '{n} celda de este guardado', '{n} celdas de este guardado')
           }}</span
         >

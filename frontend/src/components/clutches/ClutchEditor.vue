@@ -820,7 +820,7 @@ const endedText = (e: ClutchState['ended']) =>
   <div
     v-if="row"
     ref="root"
-    :class="docked ? 'flex h-full min-h-0 flex-col bg-white' : 'fixed inset-x-0 z-40 flex flex-col bg-white'"
+    :class="docked ? 'flex h-full min-h-0 flex-col bg-surface' : 'fixed inset-x-0 z-40 flex flex-col bg-surface'"
     :style="overlayStyle"
     :role="docked ? 'region' : 'dialog'"
     :aria-label="$t('Clutch {clutch}', { clutch: label })"
@@ -883,11 +883,11 @@ const endedText = (e: ClutchState['ended']) =>
             {{ a.name }} ≈ {{ formatSerial(a.day) }}<template v-if="a.day <= today"> ({{ a.day === today ? $t('hoy') : $t('ya') }})</template>
           </span>
         </p>
-        <p class="mt-0.5 text-[11px] text-stone-600">{{ daysText }}</p>
+        <p class="mt-0.5 text-xs text-stone-600">{{ daysText }}</p>
       </div>
 
       <!-- One stage at a time: each count on its tab, the clutch's stage chosen when it opens. -->
-      <div class="sticky top-0 z-10 -mx-4 mt-2 border-b border-stone-200 bg-white px-4 pt-1" role="tablist" :aria-label="$t('Etapa')">
+      <div class="sticky top-0 z-10 -mx-4 mt-2 border-b border-stone-200 bg-surface px-4 pt-1" role="tablist" :aria-label="$t('Etapa')">
         <div class="grid grid-cols-4 gap-1">
           <button
             v-for="s in STAGES"
@@ -1158,7 +1158,7 @@ const endedText = (e: ClutchState['ended']) =>
                   :key="g"
                   type="button"
                   class="min-h-11 rounded-lg border px-1 text-sm font-medium"
-                  :class="get('Generation') === g ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                  :class="get('Generation') === g ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800'"
                   :aria-pressed="get('Generation') === g"
                   :disabled="!editable('Generation')"
                   @click="setValue('Generation', g)"
@@ -1175,7 +1175,7 @@ const endedText = (e: ClutchState['ended']) =>
                   :key="p"
                   type="button"
                   class="min-h-11 rounded-lg border px-1 text-sm font-medium"
-                  :class="get('INSECTARY OR LABORATORY') === p ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                  :class="get('INSECTARY OR LABORATORY') === p ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800'"
                   :aria-pressed="get('INSECTARY OR LABORATORY') === p"
                   :disabled="!editable('INSECTARY OR LABORATORY')"
                   @click="setValue('INSECTARY OR LABORATORY', p)"
@@ -1222,7 +1222,7 @@ const endedText = (e: ClutchState['ended']) =>
           v-for="r in VERIFY_REASONS"
           :key="r"
           type="button"
-          class="min-h-9 rounded-full border border-orange-300 bg-white px-3 text-sm text-orange-950"
+          class="min-h-9 rounded-full border border-orange-300 bg-surface px-3 text-sm text-orange-950"
           @click="verifyNote = r"
         >
           {{ r }}
@@ -1243,7 +1243,7 @@ const endedText = (e: ClutchState['ended']) =>
     </div>
     <footer
       v-show="!tight"
-      class="relative z-10 flex items-center gap-2 border-t border-stone-200 bg-white px-3 py-2"
+      class="relative z-10 flex items-center gap-2 border-t border-stone-200 bg-surface px-3 py-2"
       :class="docked ? '' : 'pb-[calc(0.5rem+env(safe-area-inset-bottom))]'"
       :style="lift ? { transform: `translateY(-${lift}px)` } : undefined"
     >

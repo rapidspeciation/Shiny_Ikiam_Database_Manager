@@ -134,7 +134,7 @@ async function finish() {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <header class="flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <button
         class="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
         :aria-label="$t('Volver a marcar')"
@@ -172,7 +172,7 @@ async function finish() {
           <p v-if="!missing.length" class="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm font-medium text-brand-900">
             {{ $t('Ninguna: todas vistas o no contadas.') }}
           </p>
-          <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white">
+          <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-surface">
             <li v-for="b in missing" :key="b.recordId" class="px-3 py-2">
               <div class="flex items-center gap-2">
                 <span class="w-16 text-lg font-semibold">{{ b.id }}</span>
@@ -201,7 +201,7 @@ async function finish() {
                 <button
                   v-for="r in REASONS"
                   :key="r"
-                  class="min-h-11 rounded-lg border border-stone-300 bg-white px-3 text-sm"
+                  class="min-h-11 rounded-lg border border-stone-300 bg-surface px-3 text-sm"
                   @click="leaveOut(b, r)"
                 >
                   {{ r }}
@@ -239,7 +239,7 @@ async function finish() {
           <h2 class="mb-1 text-sm font-semibold text-stone-700">
             {{ $tn(excluded.length, '{n} no contada', '{n} no contadas') }}
           </h2>
-          <ul class="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-white">
+          <ul class="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-surface">
             <li v-for="b in excluded" :key="b.recordId" class="flex items-center gap-2 px-3 py-1.5 text-sm">
               <span class="w-16 font-semibold">{{ b.id }}</span>
               <span class="min-w-0 flex-1 truncate text-stone-600"
@@ -282,7 +282,7 @@ async function finish() {
       </div>
     </div>
 
-    <footer class="border-t border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <footer class="border-t border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <div class="mx-auto flex max-w-3xl items-center gap-3">
         <p class="min-w-0 flex-1 text-xs text-stone-600">
           {{

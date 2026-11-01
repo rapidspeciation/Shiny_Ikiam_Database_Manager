@@ -192,15 +192,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-stone-800 text-stone-100">
-    <div class="flex flex-wrap items-center gap-1 border-b border-stone-700 bg-stone-900 px-2 py-1 text-xs">
+  <div class="flex h-full min-h-0 flex-col bg-photo-mat text-on-photo">
+    <div class="flex flex-wrap items-center gap-1 border-b border-white/15 bg-black/30 px-2 py-1 text-xs">
       <!-- The proposal's photos: the one shown outlined. -->
       <div v-if="count > 1" class="flex items-center gap-1 overflow-x-auto">
         <button
           v-for="n in count"
           :key="n"
           type="button"
-          class="shrink-0 rounded border-2 bg-white"
+          class="shrink-0 rounded border-2 bg-surface"
           :class="n - 1 === photo ? 'border-emerald-400' : 'border-transparent opacity-70 hover:opacity-100'"
           :title="[altOf(n - 1), noteOf(n - 1)].filter(Boolean).join(' · ')"
           :aria-pressed="n - 1 === photo"
@@ -209,10 +209,10 @@ onBeforeUnmount(() => {
           <img :src="url(n - 1, 'thumb')" :alt="altOf(n - 1)" class="h-9 w-auto max-w-16 object-contain" />
         </button>
       </div>
-      <span class="px-1 text-stone-300">{{ where }}</span>
+      <span class="px-1 text-on-photo-muted">{{ where }}</span>
       <span class="ml-auto flex items-center gap-0.5">
         <button type="button" class="viewer-btn" :title="$t('Alejar')" :aria-label="$t('Alejar')" @click="zoomOut"><ZoomOut :size="15" /></button>
-        <span class="w-10 text-center tabular-nums text-stone-300">{{ Math.round(scale * 100) }}%</span>
+        <span class="w-10 text-center tabular-nums text-on-photo-muted">{{ Math.round(scale * 100) }}%</span>
         <button type="button" class="viewer-btn" :title="$t('Acercar')" :aria-label="$t('Acercar')" @click="zoomIn"><ZoomIn :size="15" /></button>
         <button type="button" class="viewer-btn" :title="$t('Girar a la izquierda')" :aria-label="$t('Girar a la izquierda')" @click="rotate(-1)">
           <RotateCcw :size="15" />
@@ -264,7 +264,7 @@ onBeforeUnmount(() => {
           @error="failed = true"
         />
       </div>
-      <p v-if="failed" class="absolute inset-x-0 top-1/3 text-center text-sm text-stone-300">
+      <p v-if="failed" class="absolute inset-x-0 top-1/3 text-center text-sm text-on-photo-muted">
         {{ $t('No se pudo cargar la foto.') }}
       </p>
     </div>
@@ -279,10 +279,10 @@ onBeforeUnmount(() => {
   min-width: 2rem;
   min-height: 2rem;
   border-radius: 0.25rem;
-  color: var(--color-stone-200);
+  color: var(--on-photo);
 }
 .viewer-btn:hover {
-  background: var(--color-stone-700);
+  background: rgb(255 255 255 / 0.15);
   color: white;
 }
 </style>

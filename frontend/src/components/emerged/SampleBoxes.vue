@@ -77,17 +77,17 @@ const border = (field: Field) =>
     <div v-for="field in ['cam', 'tube'] as const" :key="field" class="min-w-0">
       <div class="flex h-6 items-center justify-between gap-1">
         <span class="field-label mb-0">{{ field === 'cam' ? 'CAM_ID' : 'Tube_1_id' }}</span>
-        <span v-if="sample(field).auto && sample(field).value" class="truncate text-[11px] text-stone-500">{{ $t('siguiente libre') }}</span>
+        <span v-if="sample(field).auto && sample(field).value" class="truncate text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
         <button
           v-else-if="!sample(field).auto && canEdit"
-          class="flex h-6 items-center gap-0.5 text-[11px] text-stone-600 underline"
+          class="flex h-6 items-center gap-0.5 text-xs text-stone-600 underline"
           :title="$t('Volver al siguiente libre')"
           @click="emit('type', field, undefined)"
         >
           <RotateCcw :size="12" /> {{ $t('siguiente libre') }}
         </button>
       </div>
-      <div class="flex h-11 items-stretch overflow-hidden rounded-lg border bg-white focus-within:ring-2 focus-within:ring-brand-100" :class="border(field)">
+      <div class="flex h-11 items-stretch overflow-hidden rounded-lg border bg-surface focus-within:ring-2 focus-within:ring-brand-100" :class="border(field)">
         <span v-if="field === 'cam'" class="grid place-items-center bg-stone-100 px-1.5 font-mono text-sm text-stone-600">CAM</span>
         <select
           v-else

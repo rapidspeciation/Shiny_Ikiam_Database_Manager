@@ -31,7 +31,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <section class="mt-2 rounded-lg border border-stone-300 bg-white p-2.5" role="region" :aria-label="$t('Nota de hoy del clutch {clutch}', { clutch })">
+  <section class="mt-2 rounded-lg border border-stone-300 bg-surface p-2.5" role="region" :aria-label="$t('Nota de hoy del clutch {clutch}', { clutch })">
       <PanelHead :title="$t('Nota de hoy del clutch {clutch}', { clutch })" @close="emit('close')" />
       <p class="text-sm text-stone-600">{{ dayLabel(day) }} · {{ $t('solo en la app (no va a Google Sheets)') }}<template v-if="by"> · {{ $t('última vez: {who}', { who: by }) }}</template></p>
       <textarea ref="box" v-model="draft" class="field-input mt-2 min-h-32 text-base" rows="5" :placeholder="$t('Lo que viste hoy: plantas, larvas, dudas…')" />

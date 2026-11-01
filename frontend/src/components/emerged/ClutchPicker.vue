@@ -127,7 +127,7 @@ const dueText = (i: Item) => {
         <Search :size="18" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
         <input
           v-model="query"
-          class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+          class="h-12 w-full rounded-xl border border-control bg-surface pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
           type="search"
           inputmode="search"
           autocomplete="off"
@@ -148,7 +148,7 @@ const dueText = (i: Item) => {
       <ul class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
         <li v-for="item in group.items" :key="item.row.id">
           <button
-            class="block w-full rounded-xl border bg-white px-3 py-2 text-left shadow-sm active:bg-stone-50"
+            class="block w-full rounded-xl border bg-surface px-3 py-2 text-left shadow-sm active:bg-stone-50"
             :class="item.number === current ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200'"
             @click="emit('pick', item.number)"
           >
@@ -160,22 +160,22 @@ const dueText = (i: Item) => {
               </span>
             </span>
             <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-              <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+              <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
               <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                 <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
               </span>
             </span>
             <span class="mt-1.5 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.pupae ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.adults ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(item.number)?.n ?? 0 }}</span>
               </span>
             </span>

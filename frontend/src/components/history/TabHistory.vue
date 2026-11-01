@@ -95,7 +95,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-black/30" @click.self="emit('close')">
     <section class="flex h-full w-full flex-col bg-stone-50 shadow-xl sm:max-w-xl" role="dialog" :aria-label="title">
-      <header class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5">
+      <header class="flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-1.5">
         <History :size="20" class="shrink-0 text-stone-600" />
         <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ title }}</h2>
         <button class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Actualizar')" :disabled="loading" @click="load()">
@@ -103,19 +103,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </button>
         <button class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="22" /></button>
       </header>
-      <div class="space-y-2 border-b border-stone-200 bg-white px-3 py-2">
+      <div class="space-y-2 border-b border-stone-200 bg-surface px-3 py-2">
         <div class="flex flex-wrap items-center gap-2">
           <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="group">
-            <button class="h-11 px-3" :class="mine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="mine" @click="mine = true">
+            <button class="h-11 px-3" :class="mine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="mine" @click="mine = true">
               {{ $t('Míos') }}
             </button>
-            <button class="h-11 border-l border-stone-300 px-3" :class="!mine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="!mine" @click="mine = false">
+            <button class="h-11 border-l border-stone-300 px-3" :class="!mine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="!mine" @click="mine = false">
               {{ $t('De todos') }}
             </button>
           </div>
           <div class="flex min-w-0 flex-1 items-center gap-1">
             <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día anterior')" @click="step(-1)"><ChevronLeft :size="18" /></button>
-            <DateField v-model="day" class="field-input h-11 min-w-0 text-base" />
+            <DateField v-model="day" class="field-input h-11 min-w-0 text-base" :aria-label="$t('Día')" />
             <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día siguiente')" :disabled="isToday" @click="step(1)">
               <ChevronRight :size="18" />
             </button>

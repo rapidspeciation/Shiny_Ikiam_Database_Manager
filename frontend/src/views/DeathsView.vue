@@ -219,7 +219,7 @@ function write() {
         </section>
         <p class="hint px-4 py-1">
           <strong>{{ $t('Últimas {n} muertes registradas', { n: recentDeaths.length }) }}</strong>
-          <button class="ml-1 underline" @click="recentCount += 30">{{ $t('ver más') }}</button>
+          <button class="hit-target ml-1 underline" @click="recentCount += 30">{{ $t('ver más') }}</button>
         </p>
         <p v-if="!recentDeaths.length" class="p-6 text-stone-500">{{ $t('No hay muertes registradas.') }}</p>
         <div v-else class="min-h-0 flex-1">

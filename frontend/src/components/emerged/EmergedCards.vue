@@ -1139,7 +1139,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
   <div class="flex h-full flex-col bg-stone-50" @focusin="onFocusIn">
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
       <!-- Focus (from Clutches): what is being preserved, from which clutch. -->
-      <div v-if="focus" class="flex items-center gap-2 border-b border-stone-200 bg-white py-1 pr-1 pl-3">
+      <div v-if="focus" class="flex items-center gap-2 border-b border-stone-200 bg-surface py-1 pr-1 pl-3">
         <div class="min-w-0 flex-1">
           <h2 class="truncate text-lg leading-tight font-semibold">{{ $t('Preservar del clutch {clutch}', { clutch: focus.clutch }) }}</h2>
           <p class="truncate text-xs text-stone-600">
@@ -1151,7 +1151,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         </button>
       </div>
       <!-- The day the butterflies emerged, the mode and the tab's history. -->
-      <div v-else class="border-b border-stone-200 bg-white px-3 pt-2.5 pb-2">
+      <div v-else class="border-b border-stone-200 bg-surface px-3 pt-2.5 pb-2">
         <!-- Upright phone: the day on its own row, the mode and history beside its label; wider: one row. -->
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
           <div class="grid min-w-0 flex-[1_1_20rem] grid-cols-[auto_auto_minmax(8.5rem,1fr)] gap-1.5">
@@ -1159,7 +1159,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               v-for="d in quickDates"
               :key="d.iso"
               class="h-11 rounded-lg border px-3 text-base font-medium"
-              :class="date === d.iso ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'"
+              :class="date === d.iso ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'"
               :aria-pressed="date === d.iso"
               @click="date = d.iso"
             >
@@ -1173,7 +1173,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
           <span class="ml-auto flex shrink-0 gap-2">
             <EntryModeToggle v-model="mode" :compact="!roomy" class="h-11 *:min-w-11" />
             <button
-              class="flex h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-stone-300 bg-white px-2 text-sm text-stone-700 active:bg-stone-100"
+              class="flex h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-stone-300 bg-surface px-2 text-sm text-stone-700 active:bg-stone-100"
               :aria-label="$t('Historial de Emergidos')"
               :title="$t('Historial de Emergidos')"
               @click="showHistory = true"
@@ -1208,7 +1208,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
 
         <!-- The clutch: what it has, and the buttons that add what emerged today. -->
         <section v-else-if="!focus" class="px-3 pt-3">
-          <div class="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
+          <div class="rounded-xl border border-stone-200 bg-surface p-3 shadow-sm">
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <p class="text-xs text-stone-500">Clutch</p>
@@ -1221,15 +1221,15 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             </div>
             <div class="mt-2 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF PUPA') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF ADULTS') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(clutch)?.n ?? 0 }}</span>
               </span>
             </div>
@@ -1283,12 +1283,12 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                         <ChevronDown :size="18" :class="{ 'rotate-180': gapsOpen }" />
                       </button>
                     </span>
-                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart">
+                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart" :title="startText.trim() ? undefined : $t('Escribe primero el número')" :data-why="startText.trim() ? undefined : $t('Escribe primero el número')">
                       <Loader2 v-if="checkingStart" :size="16" class="animate-spin" />{{ $t('Usar') }}
                     </button>
                   </span>
                 </form>
-                <ul v-if="gapsOpen" id="emerged-gap-list" role="listbox" class="mt-1 max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-white">
+                <ul v-if="gapsOpen" id="emerged-gap-list" role="listbox" class="mt-1 max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-surface">
                   <li v-for="o in gapList" :key="o.key" role="option" :aria-selected="o.key === gapKey">
                     <button
                       type="button"
@@ -1303,7 +1303,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                 <div v-if="startProblem" class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-red-800" role="alert">
                   <AlertTriangle :size="15" class="shrink-0" />
                   <span class="min-w-0 flex-1">{{ startProblem.text }}</span>
-                  <button v-if="startProblem.next" type="button" class="h-9 shrink-0 rounded-lg border border-stone-300 bg-white px-3 font-medium text-stone-800" @click="useStart(startProblem.next)">
+                  <button v-if="startProblem.next" type="button" class="h-9 shrink-0 rounded-lg border border-stone-300 bg-surface px-3 font-medium text-stone-800" @click="useStart(startProblem.next)">
                     {{ $t('Usar {id}, el siguiente libre', { id: startProblem.next }) }}
                   </button>
                   <ExtendRowsButton v-if="startProblem.beyond" class="h-9 w-full justify-center" sheet="Insectary_data" :count="200" @done="state.loadFreeIds()" />
@@ -1318,7 +1318,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                     </template>
                     <template v-else>{{ $t('Hueco anterior: los botones dan {span} en orden, no los IDs del final.', { span: gapSpan(gapLeft) }) }}</template>
                   </span>
-                  <button type="button" class="h-9 shrink-0 rounded-lg border border-amber-500 bg-white px-3 font-medium" @click="backToLatest">
+                  <button type="button" class="h-9 shrink-0 rounded-lg border border-amber-500 bg-surface px-3 font-medium" @click="backToLatest">
                     {{ $t('Volver al último') }}
                   </button>
                 </p>
@@ -1326,7 +1326,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               <!-- One tap, one butterfly: tap again for the next (each gets the next free ID, held at once). -->
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <button
-                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-pink-600 text-white shadow-sm select-none active:scale-[0.98] active:bg-pink-700 disabled:opacity-50"
+                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-fill-pink text-white shadow-sm select-none active:scale-[0.98] active:bg-fill-pink-strong disabled:opacity-50"
                   :disabled="!next"
                   :aria-label="next ? $t('Añadir una hembra: {id}', { id: next }) : $t('Añadir una hembra')"
                   @click="add('adult', 'female')"
@@ -1335,7 +1335,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                   <span class="mt-1 text-base leading-none font-semibold tabular-nums opacity-95">{{ next ?? (idsLoaded ? $t('sin IDs libres') : '…') }}</span>
                 </button>
                 <button
-                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm select-none active:scale-[0.98] active:bg-sky-700 disabled:opacity-50"
+                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-fill-sky text-white shadow-sm select-none active:scale-[0.98] active:bg-fill-sky-strong disabled:opacity-50"
                   :disabled="!next"
                   :aria-label="next ? $t('Añadir un macho: {id}', { id: next }) : $t('Añadir un macho')"
                   @click="add('adult', 'male')"
@@ -1359,11 +1359,11 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                   <li
                     v-for="d in tapped"
                     :key="d.key"
-                    class="flex h-9 items-center rounded-full border bg-white pl-2.5 text-sm font-semibold tabular-nums transition-shadow"
+                    class="flex h-9 items-center rounded-full border bg-surface pl-2.5 text-sm font-semibold tabular-nums transition-shadow"
                     :class="[
                       d.kind === 'young' ? 'border-violet-300 text-violet-900' : d.sex === 'female' ? 'border-pink-300 text-pink-900' : d.sex === 'male' ? 'border-sky-300 text-sky-900' : 'border-stone-300 text-stone-800',
                       fresh.includes(d.key) ? 'ring-2 ring-brand-300' : '',
-                      d.hold === 'refused' || problems.get(d.key)?.length ? 'border-amber-500 bg-amber-50' : '',
+                      d.hold === 'refused' || problems.get(d.key)?.length ? 'border-amber-700 bg-amber-50' : '',
                     ]"
                     :title="d.hold === 'waiting' ? $t('Reservando el ID…') : d.hold === 'offline' ? $t('Sin conexión: el ID se reserva al volver la señal') : d.hold === 'refused' ? $t('Este ID no quedó reservado') : $t('ID reservado para esta mariposa')"
                   >
@@ -1547,7 +1547,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         <section v-if="canEdit && stockLines.length && !focus" class="px-3 pt-4">
           <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Al guardar, en Insectary_stocks') }}</h2>
           <ul class="space-y-2">
-            <li v-for="line in stockLines" :key="line.clutch" class="rounded-xl border border-stone-200 bg-white p-2.5 text-sm">
+            <li v-for="line in stockLines" :key="line.clutch" class="rounded-xl border border-stone-200 bg-surface p-2.5 text-sm">
               <label v-if="line.plan?.cells.length" class="flex items-start gap-2.5">
                 <input type="checkbox" class="mt-1 size-5 shrink-0" :checked="line.on" @change="toggleStock(line.clutch)" />
                 <span class="min-w-0">
@@ -1573,14 +1573,14 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
           <p v-if="!recent.length" class="py-3 text-sm text-stone-500">{{ $t('No hay emergidos registrados.') }}</p>
           <template v-for="group in recentGroups" :key="group.label">
             <h3 class="mt-3 mb-1 text-xs font-semibold tracking-wide text-stone-500 uppercase">{{ group.label }}</h3>
-            <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white">
+            <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-surface">
               <li v-for="row in group.rows" :key="row.id">
                 <button class="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left active:bg-stone-50" @click="drawerRow = row">
                   <span class="w-14 shrink-0 font-semibold">{{ text(row.values.Insectary_ID) }}</span>
                   <SexBadge :sex="text(row.values.Sex)" />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
-                    <span class="block truncate text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
+                    <span class="block line-clamp-2 text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
+                    <span class="block line-clamp-2 text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
                   </span>
                   <!-- Kept in the app, not in Google Sheets yet (everyone sees it, with who entered it). -->
                   <span
@@ -1602,7 +1602,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
     <footer
       v-if="(lastSave && !drafts.length) || (canEdit && toSave.length)"
       v-show="!keyboard.open.value"
-      class="shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+      class="shrink-0 border-t border-stone-200 bg-surface px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
     >
       <div v-if="lastSave && !drafts.length" class="flex items-center gap-2" role="status">
         <Check :size="22" class="shrink-0 text-brand-700" />

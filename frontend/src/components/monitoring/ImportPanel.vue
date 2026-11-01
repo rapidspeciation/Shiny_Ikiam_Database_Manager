@@ -938,7 +938,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       <!-- The walks read from Wikiloc: a click opens one in its review table. -->
       <div
         v-if="walks.length && !walkOpen"
-        class="mt-1 max-h-72 overflow-y-auto rounded-md border border-stone-200 bg-white"
+        class="mt-1 max-h-72 overflow-y-auto rounded-md border border-stone-200 bg-surface"
         :class="showWaiting ? 'block' : 'hidden sm:block'"
         data-walk-list
       >
@@ -994,7 +994,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           </tbody>
         </table>
         <div class="flex gap-3 px-2 py-1 text-xs">
-          <button v-if="listed.length > walkCount" class="underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
+          <button v-if="listed.length > walkCount" class="hit-target underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
           <button
             v-if="training.size"
             class="text-stone-600 underline"
@@ -1008,7 +1008,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       <!-- Walks on the map: review one again, or remove it (uploader, whoever brought it in, reviewers). -->
       <ul
         v-if="showStored"
-        class="mt-1 max-h-48 divide-y divide-stone-200 overflow-y-auto rounded-md border border-stone-200 bg-white text-xs"
+        class="mt-1 max-h-48 divide-y divide-stone-200 overflow-y-auto rounded-md border border-stone-200 bg-surface text-xs"
       >
         <li v-for="t in tracks.slice(0, storedCount)" :key="t.id" class="flex flex-wrap items-center gap-2 px-2 py-1">
           <span class="font-medium">{{ dayLabel(t.date) }}</span>
@@ -1049,7 +1049,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           </span>
         </li>
         <li v-if="tracks.length > storedCount" class="px-2 py-1">
-          <button class="underline" @click="storedCount += 40">{{ $t('Ver más') }}</button>
+          <button class="hit-target underline" @click="storedCount += 40">{{ $t('Ver más') }}</button>
         </li>
       </ul>
     </div>
@@ -1069,7 +1069,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       @followed="() => (loadProfiles(), bar?.loadProfiles())"
     />
 
-    <section v-if="file && !walkOpen" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
+    <section v-if="file && !walkOpen" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-surface">
       <p v-if="file.walk" class="bg-stone-50 px-3 py-1.5 text-xs text-stone-600">
         {{ $t('Leído de la página pública de Wikiloc: sin horas GPS del recorrido (SamplingDay_data no se completa).') }}
         <template v-if="!date">
@@ -1228,7 +1228,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       <span v-if="dayCreates.length">· {{ $t('{n} fila nueva en SamplingDay_data', { n: dayCreates.length }) }}</span>
       <span v-if="dayNote" :class="{ 'text-amber-800': dayNote.warn }">· {{ $t(dayNote.key, dayNote.vars) }}</span>
       <span class="hidden sm:inline">· {{ $t('últimos {n} registros', { n: recentCount }) }}</span>
-      <button class="underline" @click="recentCount += 15">{{ $t('Cargar más') }}</button>
+      <button class="hit-target underline" @click="recentCount += 15">{{ $t('Cargar más') }}</button>
       <button
         class="btn ml-auto py-0.5"
         :disabled="!selectedId || !session.canEdit"
@@ -1303,7 +1303,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
     >
       <div class="flex items-center gap-3 px-4 py-2 text-sm">
         <span class="font-medium">{{ viewer.photos[viewer.index].label }}</span>
-        <span class="text-stone-300">{{ $t('foto {n} de {total}', { n: viewer.index + 1, total: viewer.photos.length }) }}</span>
+        <span class="text-on-photo-muted">{{ $t('foto {n} de {total}', { n: viewer.index + 1, total: viewer.photos.length }) }}</span>
         <button class="ml-auto rounded p-1 hover:bg-white/10" :title="$t('Cerrar (Esc)')" @click="viewer = null">
           <X :size="20" />
         </button>

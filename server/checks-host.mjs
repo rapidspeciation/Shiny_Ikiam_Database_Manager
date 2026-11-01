@@ -64,6 +64,7 @@ export function createChecksHost({
       config: structuredClone(config),
     }),
     timeoutMs: scanMs,
+    ...(config.workerIdleMs !== undefined ? { idleMs: config.workerIdleMs } : {}),
     name: "The checks'",
     log: 'Checks worker',
   });

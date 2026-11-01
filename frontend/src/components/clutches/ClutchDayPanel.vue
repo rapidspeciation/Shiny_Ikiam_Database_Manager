@@ -28,17 +28,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-black/30" @click.self="emit('close')">
     <section class="flex h-full w-full flex-col bg-stone-50 shadow-xl sm:max-w-xl" role="dialog" :aria-label="$t('Historial de Clutches')">
-      <header class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5">
+      <header class="flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-1.5">
         <History :size="20" class="shrink-0 text-stone-600" />
-        <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ $t('Historial de Clutches') }}</h2>
+        <!-- On a phone the tabs leave room for one word: «Historial» (the dialog is named in full). -->
+        <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">
+          <span class="sm:hidden">{{ $t('Historial') }}</span><span class="max-sm:hidden">{{ $t('Historial de Clutches') }}</span>
+        </h2>
         <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="tablist">
-          <button role="tab" class="h-10 px-3" :class="tab === 'today' ? 'bg-brand-700 text-white' : 'bg-white'" :aria-selected="tab === 'today'" @click="tab = 'today'">
+          <button role="tab" class="h-10 px-3" :class="tab === 'today' ? 'bg-brand text-white' : 'bg-surface'" :aria-selected="tab === 'today'" @click="tab = 'today'">
             {{ $t('Hoy') }}
           </button>
           <button
             role="tab"
             class="h-10 border-l border-stone-300 px-3"
-            :class="tab === 'notebook' ? 'bg-brand-700 text-white' : 'bg-white'"
+            :class="tab === 'notebook' ? 'bg-brand text-white' : 'bg-surface'"
             :aria-selected="tab === 'notebook'"
             @click="tab = 'notebook'"
           >

@@ -165,6 +165,8 @@ const props = defineProps<{
   loadRows?: (from: number, to: number) => Promise<SheetRows>
   /** Where the table's undo steps are kept while the page is open (the proposal and the table); none: while it is shown. */
   historyKey?: string
+  /** Columns only to read in these rows, with where they change instead (a rack deposit's Rack_ID and Sort). */
+  lockedFields?: Record<string, string>
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -230,7 +232,9 @@ function info(key: string, field: string) {
 }
 const canEditCell = (key: string, field: string) => {
   const change = byKey.get(key)
-  return props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && info(key, field)?.kind !== 'locked'
+  return (
+    props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && !props.lockedFields?.[field] && info(key, field)?.kind !== 'locked'
+  )
 }
 /** Why a row is only to read: a page line that writes nothing, or a sheet row between the proposal's rows. */
 const readOnlyText = (change: ProposalChange) =>
@@ -248,6 +252,18 @@ const canEdit: CanEdit = (row, field) => canEditCell((row.getData() as Row).__ke
 const choicesOf = (field: string) => (ID_COLUMN.test(field) ? null : rules.value?.lists[field]?.values)
 const hasChoices = (field: string) => !!choicesOf(field)?.size
 
+/** The assistant's note on a row; a new row whose pre-made row someone used meanwhile: why it is not written, then its note. */
+const noteOf = (c: ProposalChange) =>
+  c.rowTaken
+    ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
+        .filter(Boolean)
+        .join(' · ')
+    : pageNote(c)
+/** The one note all the rows share (a team rule said on each), said once above the table with no «Nota IA» column; null when they differ. */
+const sharedNote = computed(() => {
+  const notes = new Set(props.changes.map(noteOf))
+  return notes.size === 1 ? [...notes][0] : null
+})
 function toRow(c: ProposalChange): Row {
   const key = rowKey(c)
   const out = {
@@ -256,12 +272,7 @@ function toRow(c: ProposalChange): Row {
     // A page line with no sheet row: no row number (it is not a new row either).
     __row: c.row ? String(c.row) : c.placeholder ? '—' : t('nueva'),
     __label: c.label,
-    // A new row whose pre-made row someone used meanwhile: why it is not written, then its note.
-    __note: c.rowTaken
-      ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
-          .filter(Boolean)
-          .join(' · ')
-      : pageNote(c),
+    __note: noteOf(c),
     __line: lineText(c),
   } as Row
   let state = ''
@@ -432,6 +443,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-warned', !!c.warning)
   el.classList.toggle('is-formula-gives', !!c.fromFormula || !!c.formulaWrite)
   el.classList.toggle('is-formula-write', !!c.formulaWrite)
+  el.classList.toggle('is-field-locked', !!props.lockedFields?.[field])
   el.classList.toggle('is-sheet-edit', !!c.sheetEdit)
   el.classList.toggle('is-kept', c.kind === 'kept')
   el.classList.toggle('is-again', !!c.sheetEdit?.again)
@@ -486,6 +498,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
     c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     readOnlyRow(change) ? readOnlyText(change) : '',
+    props.lockedFields?.[field] ? t(props.lockedFields[field]) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -499,12 +512,12 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     mark.textContent = t('no se escribe: columna protegida')
     return mark
   }
-  // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
+  // A preserved butterfly would be left without it: an amber "missing" tag (or the warning's own, a rack's «conflicto»), then what the cell holds.
   if (c.warning && c.kind !== 'unreadable') {
     const box = document.createElement('span')
     const mark = document.createElement('span')
     mark.className = 'warn-mark'
-    mark.textContent = t('falta')
+    mark.textContent = c.warning.label ? t(c.warning.label).toLowerCase() : t('falta')
     box.append(mark)
     if (text) box.append(' ', withTotal(field, c.value, text))
     return box
@@ -729,22 +742,23 @@ function columns(): ColumnDefinition[] {
     })
   if (wide) cols.push(id)
   // The assistant's note on the row (where its values come from, what a line says), beside its ID:
-  // cut short, whole under the pointer and in the bar when selected.
-  cols.push({
-    title: t('Nota IA'),
-    field: '__note',
-    headerSort: false,
-    width: 150,
-    minWidth: 70,
-    cssClass: 'proposal-note',
-    headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
-    formatter: (cell: CellComponent) => {
-      if ((cell.getData() as Row).__marker) return ''
-      const note = String(cell.getValue() ?? '')
-      cell.getElement().title = note
-      return note
-    },
-  } as ColumnDefinition)
+  // cut short, whole under the pointer and in the bar when a cell of its row is selected.
+  if (sharedNote.value === null)
+    cols.push({
+      title: t('Nota IA'),
+      field: '__note',
+      headerSort: false,
+      width: 150,
+      minWidth: 70,
+      cssClass: 'proposal-note',
+      headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
+      formatter: (cell: CellComponent) => {
+        if ((cell.getData() as Row).__marker) return ''
+        const note = String(cell.getValue() ?? '')
+        cell.getElement().title = note
+        return note
+      },
+    } as ColumnDefinition)
   const rows = measured()
   for (const field of props.fields) {
     const choices = hasChoices(field)
@@ -840,22 +854,27 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const row = cell.getData() as Row
   const field = cell.getField()
   const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
+  // The row's note in full under any of its cells (the column cuts it short), unless said once above the table.
+  const rowNote: CellBarNote[] = sharedNote.value === null && row.__note && field !== '__note' ? [{ label: t('Nota IA'), text: row.__note, kind: 'hint' }] : []
   // The row's own columns: its note (where the values come from), its ID and row number.
   if (field === '__note') return { ...base, column: t('Nota IA'), text: row.__note }
   if (field === '__label') {
     // A butterfly dead in the sheet, or dying here: said in the bar too (a phone has no tooltips).
     const death = byKey.has(row.__key) ? deathMark(byKey.get(row.__key)!) : null
-    return { ...base, column: 'ID', text: row.__label, ...(death ? { notes: [{ text: death.text, kind: 'hint' as const }] } : {}) }
+    const notes: CellBarNote[] = [...(death ? [{ text: death.text, kind: 'hint' as const }] : []), ...rowNote]
+    return { ...base, column: 'ID', text: row.__label, ...(notes.length ? { notes } : {}) }
   }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
   if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
   const c = fieldSet.value.has(field) ? info(row.__key, field) : null
   const change = byKey.get(row.__key)
   if (!c || !change) return null
-  const notes: CellBarNote[] = []
+  const notes: CellBarNote[] = [...rowNote]
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
   const editable = canEditCell(row.__key, field)
+  // A column only to read in these rows (a rack deposit's Rack_ID, Sort): where it changes, said under the bar.
+  if (props.lockedFields?.[field]) notes.unshift({ label: t('Solo lectura'), text: t(props.lockedFields[field]), kind: 'hint' })
   // What the assistant says about it (as the cell's tooltip): a doubt, where it comes from, why unreadable.
   for (const n of cellComments(c, v => show(field, v)))
     notes.push(
@@ -888,7 +907,9 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     multiline: longText(field) && !hasChoices(field),
     readonly: editable
       ? ''
-      : c.kind === 'locked'
+      : props.lockedFields?.[field]
+        ? t(props.lockedFields[field])
+        : c.kind === 'locked'
         ? t('Calculado por la fórmula de la hoja: no se escribe')
         : readOnlyRow(change)
           ? readOnlyText(change)
@@ -1382,12 +1403,14 @@ const layoutKey = () =>
   [
     props.fields.join('|'),
     props.editable,
+    Object.keys(props.lockedFields ?? {}).join('|'),
     props.applied ? 1 : 0,
     rules.value ? 1 : 0,
     locale.value,
     paged() ? (severalPhotos() ? 'pp' : 'p') : '',
     offPhotoRows() ? 'o' : '',
     markedRows() ? 'm' : '',
+    sharedNote.value === null ? 'n' : '',
     repeatRows() ? `r${Math.max(0, ...props.changes.map(c => c.label.length))}` : '',
   ].join('\n')
 function sync() {
@@ -1455,6 +1478,36 @@ let cuts: ReturnType<typeof attachPendingCut> | null = null
 let sizeWatch: { disconnect: () => void } | null = null
 let fit: { destroy: () => void } | null = null
 
+/**
+ * The first column the assistant changes, brought into view when it starts off-screen to the right
+ * (a note column after many others): otherwise the table opens with no marked cell in sight.
+ */
+function revealFirstChange() {
+  if (!table || !host.value || !props.editable) return
+  const written = new Set(props.changes.flatMap(c => Object.keys(c.values)))
+  const column = table.getColumns().find(col => col.isVisible() && written.has(col.getField()))
+  if (!column) return
+  const holder = host.value.querySelector('.tabulator-tableholder')
+  if (!holder) return
+  const box = column.getElement().getBoundingClientRect()
+  const view = holder.getBoundingClientRect()
+  if (box.left >= view.left && box.right <= view.right) return
+  const field = column.getField()
+  void table
+    .scrollToColumn(field, 'middle', false)
+    .then(() => {
+      // The cell bar follows the selection: show the changed cell, not the first one now out of view.
+      const first = props.changes[0] && table?.getRow(rowKey(props.changes[0]))
+      const cell = first && first.getCell(field)
+      if (!cell) return
+      try {
+        ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(cell, cell)
+      } catch {
+        /* Range selection is off on touch screens. */
+      }
+    })
+    .catch(() => {})
+}
 onMounted(() => {
   if (!host.value) return
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
@@ -1487,6 +1540,7 @@ onMounted(() => {
   table.on('tableBuilt', () => {
     built = true
     sync()
+    setTimeout(revealFirstChange, 150)
   })
   table.on('cellEdited', onCellEdited)
   table.on('cellEditCancelled', () => stale && sync())
@@ -1582,7 +1636,7 @@ watch(
 
 <template>
   <div>
-    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-[11px] text-stone-500">
+    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-xs text-stone-500">
       <slot />
       <template v-if="editable">
         <!-- Kept from taking the focus: the grid keeps its selection while the button is pressed. -->
@@ -1617,6 +1671,7 @@ watch(
                 ? $t('Sube las celdas elegidas una fila: cambian de sitio con las de arriba; una muerte se lleva sus columnas y su nota ({key})', { key: upKey })
                 : $t('Elige celdas para moverlas una fila ({key})', { key: upKey })
             "
+            :data-why="moves.up ? undefined : $t('Elige celdas para moverlas una fila ({key})', { key: upKey })"
             :aria-label="$t('Mover arriba')"
             @mousedown.prevent
             @click="moveCells('up')"
@@ -1631,6 +1686,7 @@ watch(
                 ? $t('Baja las celdas elegidas una fila: cambian de sitio con las de abajo; una muerte se lleva sus columnas y su nota ({key})', { key: downKey })
                 : $t('Elige celdas para moverlas una fila ({key})', { key: downKey })
             "
+            :data-why="moves.down ? undefined : $t('Elige celdas para moverlas una fila ({key})', { key: downKey })"
             :aria-label="$t('Mover abajo')"
             @mousedown.prevent
             @click="moveCells('down')"
@@ -1646,6 +1702,7 @@ watch(
               ? $t('Las celdas elegidas vuelven al valor de la hoja (en una fila nueva, vacías): la sugerencia de la IA queda marcada y no se aplica')
               : $t('Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna')
           "
+          :data-why="actions.sheet ? undefined : $t('Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna')"
           @mousedown.prevent
           @click="use('sheet')"
         >
@@ -1659,6 +1716,7 @@ watch(
               ? $t('Las celdas elegidas vuelven a tomar el valor que propuso la IA')
               : $t('Elige celdas con una sugerencia de la IA que cambiaste o no se aplica')
           "
+          :data-why="actions.ai ? undefined : $t('Elige celdas con una sugerencia de la IA que cambiaste o no se aplica')"
           @mousedown.prevent
           @click="use('ai')"
         >
@@ -1672,6 +1730,7 @@ watch(
               ? $t('Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen')
               : $t('Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda')
           "
+          :data-why="actions.check ? undefined : $t('Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda')"
           @mousedown.prevent
           @click="markChecked"
         >
@@ -1681,6 +1740,8 @@ watch(
       <slot name="end" />
     </div>
     <slot name="panel" />
+    <!-- The note every row shares, whole, once: the «Nota IA» column would cut it short on each row. -->
+    <p v-if="sharedNote" class="proposal-shared-note"><b>{{ $t('Nota IA') }}:</b> {{ sharedNote }}</p>
     <div class="sheet-grid proposal-sheet">
       <CellBar :info="bar" notes-line @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
@@ -1749,20 +1810,27 @@ watch(
 </template>
 
 <style>
+.proposal-shared-note {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-stone-600);
+}
 /* A notebook page's lines that write nothing: grey (as the sheet has them), or as written (no such row). */
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell,
 .legend.is-context {
-  background: #fafaf9;
-  color: #a8a29e;
+  background: var(--color-stone-50);
+  color: var(--color-stone-400);
 }
 .proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell {
-  background: #fafaf9;
-  color: #a8a29e;
+  background: var(--color-stone-50);
+  color: var(--color-stone-400);
   font-style: italic;
 }
 .proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell.proposal-note,
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell.proposal-note {
-  color: #78716c;
+  color: var(--color-stone-500);
 }
 /*
  * Marked by the assistant (highlight): the row yellow, as in show_rows tables. Its cells with a
@@ -1773,32 +1841,37 @@ watch(
 .proposal-sheet .tabulator-row.is-marked-row.is-context-row .tabulator-cell,
 .proposal-sheet .tabulator-row.is-marked-row.is-placeholder-row .tabulator-cell,
 .legend.is-marked {
-  background: #fef9c3;
+  background: var(--color-yellow-100);
 }
 /* A line the save refused: red, with why in its note. */
 .proposal-sheet .tabulator-row.is-error-row .tabulator-cell,
 .legend.is-line-error {
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--color-red-50);
+  color: var(--color-red-800);
 }
 /* A formula cell (grey, as in every grid), and what it will give once applied (tagged): never written. */
 .proposal-sheet .tabulator-cell.is-formula-gives,
 .legend.is-formula-gives {
-  color: #57534e;
-  background: #f3f4f1;
+  color: var(--color-stone-600);
+  background: var(--color-stone-100);
   font-style: italic;
+}
+/* A column the rack decides (Rack_ID, Sort): only to read here (its colour kept, a grey underline); its tooltip and the bar say where it changes. */
+.proposal-sheet .tabulator-cell.is-field-locked {
+  box-shadow: inset 0 -2px 0 var(--color-stone-300);
+  cursor: not-allowed;
 }
 /* A formula the proposal writes: the formula tint with the proposal's green edge, and an "ƒx" tag. */
 .proposal-sheet .tabulator-cell.is-formula-write {
-  box-shadow: inset 3px 0 0 #15803d;
+  box-shadow: inset 3px 0 0 var(--color-green-700);
 }
 .proposal-sheet .tabulator-cell .fx-mark,
 .legend.is-formula-write::before {
   display: inline-block;
   padding: 0 3px;
-  border: 1px solid #15803d;
+  border: 1px solid var(--color-green-700);
   border-radius: 3px;
-  color: #15803d;
+  color: var(--color-green-700);
   font-style: normal;
   font-size: 11px;
   line-height: 14px;
@@ -1809,12 +1882,12 @@ watch(
 }
 /* The formula gives an error with the proposed values (#N/A): red, the only colour for errors. */
 .proposal-sheet .tabulator-cell.is-formula-error {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--color-red-700);
+  background: var(--color-red-50);
 }
 /* A formula that could not be calculated here: the sheet's value, underlined dotted. */
 .proposal-sheet .tabulator-cell.is-formula-stale {
-  text-decoration: underline dotted #a8a29e;
+  text-decoration: underline dotted var(--color-stone-400);
 }
 /* The assistant says something about the cell (hover, or select it to read it in the bar): a corner, as a comment in Google Sheets. */
 .proposal-sheet .tabulator-cell.has-comment {
@@ -1826,7 +1899,7 @@ watch(
   right: 0;
   border-style: solid;
   border-width: 0 7px 7px 0;
-  border-color: transparent #ea8600 transparent transparent;
+  border-color: transparent var(--pending-edge) transparent transparent;
   pointer-events: none;
 }
 /* Beside the red corner of a value outside the list. */
@@ -1843,13 +1916,13 @@ watch(
   gap: 4px;
   width: max-content;
   max-width: calc(100% - 8px);
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 6px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 3px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
   font-size: 12px;
-  color: #78350f;
+  color: var(--color-amber-900);
 }
 .proposal-sheet .doubt-quick.is-above {
   transform: translateY(-100%);
@@ -1859,27 +1932,27 @@ watch(
   align-items: center;
   gap: 3px;
   min-height: 24px;
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   padding: 0 8px;
   font-variant-numeric: tabular-nums;
 }
 .proposal-sheet .doubt-quick button:hover {
-  background: #fde68a;
+  background: var(--color-amber-200);
 }
 .proposal-sheet .doubt-quick .doubt-quick-ok {
-  border-color: #6ee7b7;
-  background: #ecfdf5;
-  color: #065f46;
+  border-color: var(--color-emerald-300);
+  background: var(--color-emerald-50);
+  color: var(--color-emerald-800);
   font-weight: 600;
 }
 .proposal-sheet .doubt-quick .doubt-quick-ok:hover {
-  background: #d1fae5;
+  background: var(--color-emerald-100);
 }
 .proposal-sheet .doubt-quick-key {
   padding: 0 4px;
-  color: #a16207;
+  color: var(--color-yellow-700);
   font-family: inherit;
   font-size: 10px;
 }
@@ -1898,7 +1971,7 @@ watch(
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
   min-height: 0;
   border-color: transparent;
-  background: #e7e5e4;
+  background: var(--color-stone-200);
 }
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
   padding-top: 7px;
@@ -1933,24 +2006,24 @@ watch(
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover,
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .tabulator-cell {
-  background: #d6d3d1;
+  background: var(--color-stone-300);
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .marker-text:not(.is-jump-down) {
-  color: #44403c;
+  color: var(--color-stone-700);
 }
 .proposal-sheet .marker-action {
-  color: #57534e;
+  color: var(--color-stone-600);
   font-size: 10px;
   white-space: nowrap;
 }
 .proposal-sheet .marker-action.is-open {
   padding: 0 5px;
-  border: 1px solid #a8a29e;
+  border: 1px solid var(--color-stone-400);
   border-radius: 3px;
-  background: #fafaf9;
+  background: var(--color-stone-50);
 }
 .proposal-sheet .marker-action.is-error {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 /* «Sin línea en la foto»: a heading over the rows below it (they are in the table), not a gap: no tear. */
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading::before,
@@ -1959,13 +2032,13 @@ watch(
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading,
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
-  background: #f5f5f4;
+  background: var(--color-stone-100);
   cursor: default;
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
   padding-top: 3px;
   padding-bottom: 3px;
-  border-top: 1px solid #d6d3d1;
+  border-top: 1px solid var(--color-stone-300);
 }
 /* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {
@@ -1974,7 +2047,7 @@ watch(
 }
 .proposal-sheet .marker-text {
   white-space: nowrap;
-  color: #78716c;
+  color: var(--color-stone-500);
   font-style: italic;
 }
 .proposal-sheet .marker-text.is-jump-down,
@@ -1987,17 +2060,17 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 .proposal-sheet .marker-text.is-jump-down {
-  background: #e0f2fe;
-  color: #075985;
+  background: var(--color-sky-100);
+  color: var(--color-sky-800);
 }
 .proposal-sheet .marker-text.is-jump-up {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-amber-100);
+  color: var(--color-amber-800);
 }
 .proposal-sheet .marker-text.is-apart {
   font-style: normal;
   font-weight: 600;
-  color: #57534e;
+  color: var(--color-stone-600);
 }
 /*
  * A butterfly dead in the sheet already: its ID in highlighter yellow, as the person marks the line
@@ -2006,29 +2079,29 @@ watch(
  */
 .proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dead-sheet,
 .legend.is-dead-sheet {
-  background: #fde047;
+  background: var(--color-yellow-300);
 }
 .proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dies-here,
 .legend.is-dies-here {
-  box-shadow: inset 0 -4px 0 #facc15;
+  box-shadow: inset 0 -4px 0 var(--color-yellow-400);
 }
 /* A repeated ID (A0E.1): which ID it repeats and that ID's row. */
 .proposal-sheet .repeat-chip,
 .proposal-sheet .off-photo {
   display: inline-block;
   padding: 0 4px;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--color-stone-300);
   border-radius: 3px;
-  color: #57534e;
-  background: #f5f5f4;
+  color: var(--color-stone-600);
+  background: var(--color-stone-100);
   font-size: 10px;
   line-height: 13px;
   white-space: nowrap;
 }
 .proposal-sheet .repeat-chip {
-  border-color: #99f6e4;
-  background: #f0fdfa;
-  color: #115e59;
+  border-color: var(--color-teal-200);
+  background: var(--color-teal-50);
+  color: var(--color-teal-800);
 }
 .proposal-sheet .repeat-chip.is-link {
   cursor: pointer;
@@ -2037,9 +2110,9 @@ watch(
 .proposal-sheet .tabulator-cell .formula-mark {
   display: inline-block;
   padding: 0 4px;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--color-stone-300);
   border-radius: 3px;
-  color: #78716c;
+  color: var(--color-stone-500);
   font-size: 10px;
   font-style: normal;
   line-height: 13px;

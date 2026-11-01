@@ -55,7 +55,7 @@ function findingText(f: Finding) {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <header class="sticky top-0 z-10 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <header class="sticky top-0 z-10 flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <button
         class="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
         :aria-label="$t('Volver a los censos')"
@@ -130,8 +130,8 @@ function findingText(f: Finding) {
           class="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border px-3 text-base font-medium"
           :class="
             c.notebookAt
-              ? 'border-brand-700 bg-brand-700 text-white'
-              : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+              ? 'border-brand bg-brand text-white'
+              : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
           "
           :aria-pressed="!!c.notebookAt"
           @click="census.notebook(!c.notebookAt)"

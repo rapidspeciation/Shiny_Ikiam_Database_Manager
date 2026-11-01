@@ -303,7 +303,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden" data-photo-links-panel>
-    <aside class="flex shrink-0 flex-col gap-4 border-b border-stone-200 bg-white p-3 text-sm md:w-80 md:overflow-y-auto md:border-r md:border-b-0">
+    <aside class="flex shrink-0 flex-col gap-4 border-b border-stone-200 bg-surface p-3 text-sm md:w-80 md:overflow-y-auto md:border-r md:border-b-0">
       <!-- The photo archive against the database: a section to review in the workspace. -->
       <section class="space-y-2" data-archive-summary>
         <h2 class="flex items-center gap-1.5 font-medium text-stone-800"><ScanSearch :size="15" class="text-emerald-700" /> {{ $t('Revisión del archivo de fotos') }}</h2>
@@ -315,8 +315,8 @@ onBeforeUnmount(() => {
         </p>
         <p v-if="archive?.sandboxDrive" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-lab-drive>{{ $t('Lab: los cambios de archivos son simulados. Los cambios en la base se guardan en la copia de prueba.') }}</p>
         <div v-if="archive" class="overflow-hidden rounded border border-stone-200 text-xs" role="listbox" :aria-label="$t('Tipo de problema')" data-kinds>
-          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-[10px] text-stone-500" aria-hidden="true">
-            <span class="flex-1" /><span class="w-7 text-right">{{ $t('seguro') }}</span><span class="w-7 text-right">{{ $t('pensar') }}</span><span class="w-7 text-right">{{ $t('mirar') }}</span>
+          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-xs text-stone-500" aria-hidden="true">
+            <span class="flex-1" /><span class="w-12 text-right">{{ $t('seguro') }}</span><span class="w-12 text-right">{{ $t('pensar') }}</span><span class="w-12 text-right">{{ $t('mirar') }}</span>
           </p>
           <button
             v-for="k in [{ kind: '', n: archive.total, clear: archive.tiers.clear ?? 0, reason: archive.tiers.reason ?? 0, look: archive.tiers.look ?? 0 }, ...kindRows]"
@@ -330,22 +330,22 @@ onBeforeUnmount(() => {
             @click="archiveKind = k.kind"
           >
             <span class="min-w-0 flex-1 truncate">{{ k.kind ? kindLabel(k.kind) : $t('Todos los problemas') }}</span>
-            <span class="w-7 text-right text-emerald-800 tabular-nums" :title="$t('Seguros')">{{ k.clear }}</span>
-            <span class="w-7 text-right text-sky-800 tabular-nums" :title="$t('A pensar')">{{ k.reason }}</span>
-            <span class="w-7 text-right text-amber-800 tabular-nums" :title="$t('Mirar la foto')">{{ k.look }}</span>
+            <span class="w-12 text-right text-emerald-800 tabular-nums" :title="$t('Seguros')">{{ k.clear }}</span>
+            <span class="w-12 text-right text-sky-800 tabular-nums" :title="$t('A pensar')">{{ k.reason }}</span>
+            <span class="w-12 text-right text-amber-800 tabular-nums" :title="$t('Mirar la foto')">{{ k.look }}</span>
           </button>
         </div>
         <div v-if="archive" class="grid grid-cols-2 gap-1.5">
-          <select v-model="archiveFolder" class="min-w-0 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs" :aria-label="$t('Carpeta')">
+          <select v-model="archiveFolder" class="min-w-0 rounded border border-control bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Carpeta')">
             <option value="">{{ $t('Todas las carpetas') }}</option>
             <option v-for="f in archiveFolders" :key="f.name" :value="f.name">{{ f.name.split('/').slice(-2).join('/') }} · {{ f.n }}</option>
           </select>
-          <select v-model="archiveYear" class="min-w-0 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs" :aria-label="$t('Año')">
+          <select v-model="archiveYear" class="min-w-0 rounded border border-control bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Año')">
             <option value="">{{ $t('Todos los años') }}</option>
             <option v-for="y in archiveYears" :key="y.name" :value="String(y.name)">{{ y.name }} · {{ y.n }}</option>
           </select>
         </div>
-        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-emerald-700 hover:bg-emerald-800" :disabled="archiveBusy || !archiveCount" data-review-archive @click="reviewArchive">
+        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="archiveBusy || !archiveCount" :title="archiveCount ? undefined : $t('No hay casos con estos filtros')" :data-why="archiveCount ? undefined : $t('No hay casos con estos filtros')" data-review-archive @click="reviewArchive">
           <Loader2 v-if="archiveBusy" :size="15" class="animate-spin" />
           {{ $tn(archiveCount, 'Revisar {n} caso', 'Revisar {n} casos') }}
         </button>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
           <input
             v-model="filter"
             type="search"
-            class="w-full border-0 border-b border-stone-200 px-2 py-1 text-xs"
+            class="w-full border-0 border-b border-control px-2 py-1 text-xs"
             :placeholder="$t('Buscar una carpeta (también las de dentro)')"
           />
           <ul class="max-h-56 overflow-y-auto py-0.5 text-xs" data-folder-list>
@@ -386,9 +386,9 @@ onBeforeUnmount(() => {
         </div>
         <label class="block text-xs text-stone-600">
           {{ $t('Una carpeta nueva para listar (enlace de Drive):') }}
-          <input v-model="added" type="text" class="mt-0.5 w-full rounded border border-stone-300 px-2 py-1 text-xs" placeholder="https://drive.google.com/drive/folders/…" />
+          <input v-model="added" type="text" class="mt-0.5 w-full rounded border border-control px-2 py-1 text-xs" placeholder="https://drive.google.com/drive/folders/…" />
         </label>
-        <button class="btn-primary w-full justify-center bg-emerald-700 hover:bg-emerald-800" :disabled="reading" data-read-drive @click="read">
+        <button class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="reading" data-read-drive @click="read">
           <Loader2 v-if="reading" :size="15" class="animate-spin" /><FolderSearch v-else :size="15" />
           {{ reading ? $t('Leyendo Drive (hasta medio minuto)…') : $t('Leer Drive') }}
         </button>
@@ -405,8 +405,9 @@ onBeforeUnmount(() => {
         <input
           v-model="uploaded"
           type="text"
-          class="w-full rounded border border-stone-300 px-2 py-1 text-xs"
+          class="w-full rounded border border-control px-2 py-1 text-xs"
           :placeholder="$t('Enlace de la carpeta en Drive, o su ruta')"
+          :aria-label="$t('Enlace de la carpeta en Drive, o su ruta')"
           @keydown.enter="readIds"
         />
          <button class="btn w-full justify-center py-1" :disabled="readingIds" data-read-ids @click="readIds">
@@ -456,8 +457,9 @@ onBeforeUnmount(() => {
           </label>
           <button
             class="mt-1.5 w-full justify-center py-1"
-            :class="written && KEYS[i] === 'gallery' ? 'btn-primary bg-emerald-700 hover:bg-emerald-800' : 'btn'"
+            :class="written && KEYS[i] === 'gallery' ? 'btn-primary bg-fill-emerald hover:bg-fill-emerald-strong' : 'btn'"
             :disabled="!sitesReady || !!starting || running(s)"
+            :title="sitesReady ? undefined : $t('Este servidor no tiene la contraseña de las actualizaciones: solo se ve cómo van.')" :data-why="sitesReady ? undefined : $t('Este servidor no tiene la contraseña de las actualizaciones: solo se ve cómo van.')"
             :data-update="KEYS[i]"
             @click="update(KEYS[i])"
           >
@@ -479,7 +481,7 @@ onBeforeUnmount(() => {
         <button type="button" class="btn-ghost flex items-center gap-1 px-1.5 py-0.5 text-stone-600" :aria-expanded="recentOpen" @click="recentOpen = !recentOpen">
           <History :size="13" /> {{ $t('Tarjetas recientes') }} <ChevronDown :size="13" />
         </button>
-        <ul v-if="recentOpen" class="absolute top-full right-3 z-30 mt-1 w-64 overflow-hidden rounded border border-stone-200 bg-white shadow-lg">
+        <ul v-if="recentOpen" class="absolute top-full right-3 z-30 mt-1 w-64 overflow-hidden rounded border border-stone-200 bg-surface shadow-lg">
           <li v-for="r in recent" :key="r.id">
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-stone-50" @click="showCard(r.id, r.kind)">{{ recentLabel(r) }}</button>
           </li>

@@ -15,6 +15,7 @@
     "leaflet.heat": "^0.2.0",
     "leaflet.markercluster": "^1.5.3",
     "lucide-vue-next": "^1.0.0",
+    "onnxruntime-web": "1.30.0",
     "pinia": "^4.0.3",
     "tabulator-tables": "^6.5.3",
     "vue": "^3.5.43",

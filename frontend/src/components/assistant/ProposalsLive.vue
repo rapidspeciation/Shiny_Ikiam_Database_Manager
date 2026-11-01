@@ -42,7 +42,7 @@ const ProposalGrid = defineAsyncComponent({
     render: () =>
       h(
         'p',
-        { class: 'mt-2 rounded-md border border-stone-200 bg-white px-3 py-6 text-sm text-stone-500' },
+        { class: 'mt-2 rounded-md border border-stone-200 bg-surface px-3 py-6 text-sm text-stone-500' },
         t('Cargando la tabla…'),
       ),
   },
@@ -66,7 +66,7 @@ const RowsTable = defineAsyncComponent({
     render: () =>
       h(
         'p',
-        { class: 'mt-2 rounded-md border border-stone-200 bg-white px-3 py-6 text-sm text-stone-500' },
+        { class: 'mt-2 rounded-md border border-stone-200 bg-surface px-3 py-6 text-sm text-stone-500' },
         t('Cargando la tabla…'),
       ),
   },
@@ -494,14 +494,14 @@ const origin = (p: Proposal) =>
 
 <template>
   <aside class="flex min-h-0 flex-col bg-stone-50">
-    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-white px-3 py-1.5">
+    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-surface px-3 py-1.5">
       <ListChecks :size="15" class="text-emerald-700" />
       <h2 class="text-sm font-medium">{{ $t('Cambios propuestos') }}</h2>
       <span class="text-xs text-stone-500">{{
         pending.length ? $t('{n} por revisar', { n: pending.length }) : $t('nada por revisar')
       }}</span>
       <span
-        class="ml-auto flex items-center gap-1 text-[11px]"
+        class="ml-auto flex items-center gap-1 text-xs"
         :class="connected ? 'text-emerald-700' : 'text-stone-400'"
         :title="
           connected ? $t('Se actualiza en cuanto el asistente propone o corrige algo') : $t('Sin conexión; se vuelve a intentar')
@@ -548,10 +548,10 @@ const origin = (p: Proposal) =>
     <!-- Whose proposals: the chat open in T3 (followed), another chat with proposals, those outside T3, all. -->
     <div
       v-if="!only && (chat || hasChats(tracked, chats))"
-      class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1 text-xs text-stone-600"
+      class="flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-1 text-xs text-stone-600"
     >
       <select
-        class="min-w-0 max-w-full truncate rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+        class="min-w-0 max-w-full truncate rounded border border-control bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
         :value="chosen"
         :aria-label="$t('Propuestas de qué chat')"
         :title="
@@ -568,7 +568,7 @@ const origin = (p: Proposal) =>
       </button>
     </div>
     <!-- A size container: each table is at most its height (ProposalSheet), so its column names stay in sight. -->
-    <div ref="listBox" class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]" data-lazy-root>
+    <div ref="listBox" class="min-h-0 flex-1 overflow-y-auto px-3 [container-type:size]" data-lazy-root>
       <p v-if="!cards.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ scope ? $t('No se encontró esta propuesta en tu cuenta.') : $t('Cargando…') }}</template>
         <template v-else>
@@ -590,12 +590,12 @@ const origin = (p: Proposal) =>
         class="rounded-md transition-shadow duration-700"
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
-        <div class="mt-2 flex items-center gap-1 px-1 text-[11px] text-stone-500">
+        <div class="mt-2 flex items-center gap-1 px-1 text-xs text-stone-500">
           <span class="min-w-0 truncate">{{ origin(p) }}</span>
           <button
             v-if="photosOf(p)"
             type="button"
-            class="ml-auto flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-white px-1.5 py-0.5 text-stone-700 hover:border-emerald-600 hover:text-emerald-800"
+            class="ml-auto flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-surface px-1.5 py-0.5 text-stone-700 hover:border-emerald-600 hover:text-emerald-800"
             :title="$t('La tabla y la foto del cuaderno juntas, en esta pestaña: la foto se acerca, se mueve y se gira')"
             @click="review(p)"
           >
@@ -626,7 +626,7 @@ const origin = (p: Proposal) =>
         <!-- Open with its photo over the tab: its table is there meanwhile. -->
         <p
           v-if="reviewing?.id === p.id"
-          class="mt-2 flex items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-3 text-xs text-stone-600"
+          class="mt-2 flex items-center gap-2 rounded-md border border-stone-300 bg-surface px-3 py-3 text-xs text-stone-600"
         >
           <ImageIcon :size="14" class="text-emerald-700" /> {{ $t('Abierta con la foto') }}
           <button type="button" class="btn ml-auto" @click="endReview">{{ $t('Volver a la lista') }}</button>
@@ -666,7 +666,7 @@ const origin = (p: Proposal) =>
           class="rounded-md transition-shadow duration-700"
           :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
         >
-          <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
+          <p class="mt-2 px-1 text-xs text-stone-500">{{ origin(p) }}</p>
           <WhenSeen :height="heightOf(p)">
             <PhotoFilesCard v-if="p.kind === 'photo_files'" :proposal="p" />
             <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" />
@@ -677,6 +677,8 @@ const origin = (p: Proposal) =>
           </WhenSeen>
         </div>
       </details>
+      <!-- Room after the last card without leaving a gap under the sticky «Aplicar» bar. -->
+      <div class="h-3" aria-hidden="true" />
     </div>
     <Teleport to="body">
       <PhotoReview

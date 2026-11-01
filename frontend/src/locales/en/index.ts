@@ -18,10 +18,12 @@ import instructions from './instructions'
 import monitoring from './monitoring'
 import photoCuration from './photo-curation'
 import photoFiles from './photo-files'
+import racks from './racks'
 import review from './review'
 import search from './search'
 import server from './server'
 import serverBuilt from './server-built'
+import sexCheck from './sex-check'
 import speciesPhotos from './species-photos'
 import tubes from './tubes'
 
@@ -34,11 +36,13 @@ export const en: Record<string, string> = Object.assign(
   emerged,
   google,
   tubes,
+  racks,
   clutches,
   collect,
   monitoring,
   photoCuration,
   photoFiles,
+  sexCheck,
   speciesPhotos,
   home,
   review,

@@ -51,7 +51,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="emit('close')">
-    <section class="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-xl">
+    <section class="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-lg bg-surface shadow-xl">
       <header class="flex items-center border-b border-stone-200 px-4 py-3">
         <h2 class="flex-1 text-lg font-semibold">{{ $t('Revisar cambios antes de guardar') }}</h2>
         <button class="btn-ghost" @click="emit('close')"><X :size="20" /></button>

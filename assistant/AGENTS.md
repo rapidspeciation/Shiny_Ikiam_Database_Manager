@@ -131,6 +131,7 @@ Insectary ID».
 | `photos` | wing photos: naming the files and double-checking a batch in the «Fotos» tab before it is renamed, the Drive folders and putting them in order (renaming, moving, removing duplicates), updating Photo_links so the sheets show them, updating the Wings Gallery and the maps, which photos are missing, space on Drive |
 | `data-review` | working through the data's inconsistencies, the corrections agreed or suggested in Revisión, the alerts |
 | `historial` | who changed what and when; undoing a save |
+| `rack-reader` | photos of a tube rack's bottom: the tubes on A1..H12, the LBI freezer deposit Excel (Anexo1), tubes looked up in the workbook |
 | `google-account` | the project's Gmail, Calendar, or a Drive file that is not among the project documents |
 | `invitar` | an administrator invites someone to the app, or asks how the invitations stand |
 | `app-guide` | how to do something in the app, where it is, a link to it |

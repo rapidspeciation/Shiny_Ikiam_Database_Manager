@@ -181,7 +181,7 @@ const seconds = (n: number) => (n < 1 ? '<1 s' : `${Math.round(n)} s`)
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" @click.self="emit('close')">
     <section
-      class="flex max-h-full w-full flex-col overflow-y-auto rounded-t-2xl bg-white p-4 text-sm shadow-xl sm:max-w-2xl sm:rounded-2xl"
+      class="flex max-h-full w-full min-w-0 flex-col overflow-y-auto rounded-t-2xl bg-surface p-4 text-sm break-words shadow-xl sm:max-w-2xl sm:rounded-2xl"
       role="dialog"
       :aria-label="$t('Actualizar T3 Code')"
     >
@@ -279,7 +279,7 @@ const seconds = (n: number) => (n < 1 ? '<1 s' : `${Math.round(n)} s`)
         </p>
         <p v-if="run?.tokenError" class="mt-2 rounded bg-amber-50 p-2 text-amber-900">{{ $t('El acceso de la app no se renovó:') }} {{ run.tokenError }}</p>
         <p v-if="run?.backup" class="mt-2 text-xs text-stone-600">{{ $t('Copia de seguridad:') }} <code>{{ run.backup }}</code></p>
-        <pre ref="logBox" class="mt-2 max-h-48 overflow-y-auto rounded bg-stone-900 p-2 text-xs leading-snug break-all whitespace-pre-wrap text-stone-100">{{ status?.log || '…' }}</pre>
+        <pre ref="logBox" class="mt-2 max-h-48 overflow-y-auto rounded bg-photo-mat p-2 text-xs leading-snug break-all whitespace-pre-wrap text-on-photo">{{ status?.log || '…' }}</pre>
       </template>
 
       <!-- Afterwards (or on demand): what the app needs from T3. -->

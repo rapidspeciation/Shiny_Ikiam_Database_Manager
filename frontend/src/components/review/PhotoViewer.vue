@@ -32,13 +32,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   >
     <div class="flex items-center gap-2 px-3 py-2 text-sm">
       <span class="font-medium">{{ photo?.name }}</span>
-      <span class="text-stone-400">{{ index + 1 }} / {{ photos.length }}</span>
+      <span class="text-on-photo-muted">{{ index + 1 }} / {{ photos.length }}</span>
       <a
         v-if="photo"
         :href="`https://drive.google.com/file/d/${photo.id}/view`"
         target="_blank"
         rel="noopener"
-        class="ml-2 inline-flex items-center gap-1 text-stone-300 hover:text-white"
+        class="ml-2 inline-flex items-center gap-1 text-on-photo-muted hover:text-white"
         :title="$t('Abrir en Google Drive')"
       >
         Drive <ExternalLink :size="13" />

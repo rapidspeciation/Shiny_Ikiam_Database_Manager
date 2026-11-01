@@ -5,6 +5,7 @@ import type { Proposal } from '../../lib/proposals'
 import { panelShare } from '../../lib/proposals'
 import { persistentRef } from '../../lib/persist'
 import PhotoViewer from './PhotoViewer.vue'
+import DatabaseBadge from '../DatabaseBadge.vue'
 
 const ProposalGrid = defineAsyncComponent(() => import('../ProposalGrid.vue'))
 const RowsTable = defineAsyncComponent(() => import('./RowsTable.vue'))
@@ -93,11 +94,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="fixed inset-0 z-40 flex flex-col bg-stone-50" role="dialog" :aria-label="$t('Revisar con la foto')">
-    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-white px-3 py-1.5">
+    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-surface px-3 py-1.5">
       <ImageIcon :size="15" class="shrink-0 text-emerald-700" />
       <h2 class="shrink-0 text-sm font-medium">{{ $t('Revisar con la foto') }}</h2>
       <span class="min-w-0 truncate text-xs text-stone-500">{{ proposal.reason }}</span>
-      <span class="ml-auto hidden items-center gap-0.5 md:flex">
+      <DatabaseBadge tone="surface" class="ml-auto md:ml-2" />
+      <span class="hidden items-center gap-0.5 md:ml-auto md:flex">
         <button
           type="button"
           class="btn-ghost"
@@ -121,13 +123,13 @@ onBeforeUnmount(() => {
           <span class="text-xs">{{ $t('Foto al lado') }}</span>
         </button>
       </span>
-      <button type="button" class="btn-ghost max-md:ml-auto" :title="$t('Cerrar (Esc)')" :aria-label="$t('Cerrar')" @click="emit('close')">
+      <button type="button" class="btn-ghost" :title="$t('Cerrar (Esc)')" :aria-label="$t('Cerrar')" @click="emit('close')">
         <X :size="15" />
       </button>
     </header>
     <div ref="split" class="flex min-h-0 flex-1" :class="beside ? 'flex-row' : 'flex-col'" :style="{ '--share': `${share}%` }">
       <!-- A size container: the table is at most its height (ProposalSheet), so its column names stay in sight. -->
-      <div class="min-h-0 min-w-0 shrink-0 grow-0 basis-(--share) overflow-y-auto px-2 pb-2 [container-type:size]">
+      <div class="min-h-0 min-w-0 shrink-0 grow-0 basis-(--share) overflow-y-auto px-2 [container-type:size]" :class="{ 'pb-2': proposal.kind === 'table' }">
         <RowsTable v-if="proposal.kind === 'table'" :table="proposal" reviewing @close="emit('discard')" @row="onRow" @photo="pick" />
         <ProposalGrid
           v-else
@@ -162,9 +164,13 @@ onBeforeUnmount(() => {
 .divider {
   position: relative;
 }
+/* Only across the line: past its ends it made the dialog 6 px wider than a phone. */
 .divider::after {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -6px 0;
+}
+.divider.cursor-col-resize::after {
+  inset: 0 -6px;
 }
 </style>

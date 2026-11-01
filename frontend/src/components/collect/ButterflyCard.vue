@@ -73,20 +73,20 @@ const value = (e: Event) => (e.target as HTMLInputElement).value
 /** The folded card's line: what was chosen, at a glance. */
 const idText = computed(() => (d.value.fate === 'insectario' ? d.value.insectaryId : d.value.fate === 'preservada' ? d.value.cam : t('Liberada')))
 const choice = (on: boolean) =>
-  on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 const sexChoice = (sex: string, on: boolean) =>
   on
     ? sex.startsWith('female')
-      ? 'border-pink-600 bg-pink-600 text-white'
+      ? 'border-fill-pink bg-fill-pink text-white'
       : sex.startsWith('male')
-        ? 'border-sky-600 bg-sky-600 text-white'
-        : 'border-stone-700 bg-stone-700 text-white'
-    : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+        ? 'border-fill-sky bg-fill-sky text-white'
+        : 'border-inverse bg-inverse text-on-inverse'
+    : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>
   <li
-    class="rounded-xl border-2 bg-white shadow-sm"
+    class="rounded-xl border-2 bg-surface shadow-sm"
     :class="open ? 'border-brand-600' : issues.length && !isEmptyDraft(draft) ? 'border-amber-300' : 'border-stone-200'"
     :data-card="draft.key"
   >
@@ -117,7 +117,7 @@ const sexChoice = (sex: string, on: boolean) =>
         <span class="w-7 shrink-0 pt-3 text-sm font-semibold text-stone-500 tabular-nums">{{ number }}</span>
         <button
           class="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-left"
-          :class="issueOf('species').length && !isEmptyDraft(draft) ? 'border-amber-500 bg-amber-50' : 'border-stone-300 bg-white active:bg-stone-50'"
+          :class="issueOf('species').length && !isEmptyDraft(draft) ? 'border-amber-700 bg-amber-50' : 'border-stone-300 bg-surface active:bg-stone-50'"
           data-species
           @click="emit('pickSpecies')"
         >
@@ -138,7 +138,7 @@ const sexChoice = (sex: string, on: boolean) =>
         <button
           v-for="s in quickSpecies"
           :key="s.label"
-          class="min-h-10 rounded-full border border-stone-300 bg-white px-3 text-sm italic active:bg-stone-100"
+          class="min-h-10 rounded-full border border-stone-300 bg-surface px-3 text-sm italic active:bg-stone-100"
           @click="
             () => {
               set('species', s.species)
@@ -328,7 +328,7 @@ const sexChoice = (sex: string, on: boolean) =>
           <input
             :value="draft.time"
             class="field-input h-11 w-24 text-base tabular-nums"
-            :class="{ 'border-amber-500 bg-amber-50': issueOf('time').length }"
+            :class="{ 'border-amber-700 bg-amber-50': issueOf('time').length }"
             inputmode="numeric"
             placeholder="hh:mm"
             autocomplete="off"
@@ -368,7 +368,7 @@ const sexChoice = (sex: string, on: boolean) =>
             <button
               v-for="p in COLLECT_NOTE_PHRASES"
               :key="p"
-              class="min-h-9 rounded-full border border-stone-300 bg-white px-3 text-left text-xs active:bg-stone-100"
+              class="min-h-9 rounded-full border border-stone-300 bg-surface px-3 text-left text-xs active:bg-stone-100"
               @click="
                 () => {
                   set('notes', addPhrase(draft.notes, p))
@@ -427,9 +427,10 @@ const sexChoice = (sex: string, on: boolean) =>
       <p v-for="text in otherIssues" v-show="!isEmptyDraft(draft)" :key="text" class="pl-9 text-sm text-amber-800">{{ text }}</p>
 
       <button
-        class="ml-9 flex min-h-11 items-center gap-2 rounded-lg border border-brand-600 bg-white px-4 text-base font-medium text-brand-800 active:bg-brand-50"
+        class="ml-9 flex min-h-11 items-center gap-2 rounded-lg border border-brand-600 bg-surface px-4 text-base font-medium text-brand-800 active:bg-brand-50"
         :disabled="!draft.species"
-        :class="{ 'opacity-50': !draft.species }"
+        :class="{ 'cursor-not-allowed opacity-64': !draft.species }"
+        :title="draft.species ? undefined : $t('Elige primero la especie')" :data-why="draft.species ? undefined : $t('Elige primero la especie')"
         @click="emit('duplicate')"
       >
         <CopyPlus :size="18" /> {{ $t('Otra igual') }}

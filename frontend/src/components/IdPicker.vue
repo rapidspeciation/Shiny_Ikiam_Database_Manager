@@ -162,7 +162,7 @@ function clear() {
   <div class="relative min-w-64 flex-1">
     <span class="field-label">{{ label }} ({{ modelValue.length }})</span>
     <div
-      class="flex min-h-9 flex-wrap items-center gap-1 rounded-md border border-stone-300 bg-white px-1.5 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-100"
+      class="flex min-h-9 flex-wrap items-center gap-1 rounded-md border border-stone-300 bg-surface px-1.5 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-100"
     >
       <span
         v-for="id in modelValue"
@@ -183,6 +183,7 @@ function clear() {
         ref="input"
         v-model="text"
         class="min-w-24 flex-1 border-0 p-0.5 text-sm outline-none"
+        :aria-label="label"
         :placeholder="modelValue.length ? '' : (placeholder ?? $t('Escribe, pega IDs o un rango (B0D-B9D)'))"
         autocapitalize="characters"
         enterkeyhint="done"
@@ -221,7 +222,7 @@ function clear() {
     </p>
     <ul
       v-if="open && matches.length"
-      class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 text-sm shadow-lg"
+      class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-stone-200 bg-surface py-1 text-sm shadow-lg"
     >
       <li v-for="(m, i) in matches" :key="m">
         <button

@@ -361,13 +361,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
   <!-- On a phone the controls scroll away with the cards (held at the top only when the screen is tall). -->
   <div ref="rootEl" class="h-full bg-stone-50" :class="wide ? 'flex flex-col' : 'overflow-y-auto'">
     <!-- What is shown, the search and the filters. -->
-    <div class="shrink-0 border-b border-stone-200 bg-white px-3 pt-2 pb-2" :class="{ 'sticky top-0 z-20': !wide && tall }">
+    <div class="shrink-0 border-b border-stone-200 bg-surface px-3 pt-2 pb-2" :class="{ 'sticky top-0 z-20': !wide && tall }">
       <div class="flex items-center gap-2">
         <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="tablist">
           <button
             role="tab"
             class="h-11 px-3 font-medium whitespace-nowrap"
-            :class="view === 'ongoing' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'ongoing' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'ongoing'"
             @click="view = 'ongoing'"
           >
@@ -376,7 +376,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <button
             role="tab"
             class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
-            :class="view === 'today' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'today' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'today'"
             :title="$t('Cambios de hoy: para el cuaderno y para deshacer')"
             @click="view = 'today'"
@@ -387,7 +387,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <button
             role="tab"
             class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
-            :class="view === 'notebook' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'notebook' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'notebook'"
             :title="$t('Para el cuaderno: lo cambiado en la app desde que se puso al día')"
             @click="view = 'notebook'"
@@ -405,7 +405,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <Search :size="18" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
           <input
             v-model="query"
-            class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+            class="h-12 w-full rounded-xl border border-control bg-surface pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
             type="search"
             inputmode="search"
             autocomplete="off"
@@ -427,18 +427,19 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 ? f === 'verify'
                   ? 'border-orange-500 bg-orange-50 font-medium text-orange-900'
                   : 'border-brand-700 bg-brand-50 font-medium text-brand-800'
-                : 'border-stone-300 bg-white text-stone-700'
+                : 'border-stone-300 bg-surface text-stone-700'
             "
             :aria-pressed="filter === f"
             @click="filter = f"
           >
             <AlertTriangle v-if="f === 'verify'" :size="13" class="-mt-0.5 inline text-orange-700" />
             {{ filterName(f) }}
-            <span class="tabular-nums opacity-70">{{ counts[f] }}</span>
+            <!-- «Todos» is the count on «En curso» already. -->
+            <span v-if="f !== 'all'" class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
           </button>
           <button
             class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
-            :class="pendingFirst ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+            :class="pendingFirst ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
             :aria-pressed="pendingFirst"
             :title="$t('Primero los por verificar, luego los sin revisar')"
             @click="pendingFirst = !pendingFirst"
@@ -446,7 +447,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <ArrowDownUp :size="13" /> {{ $t('Pendientes primero') }}
           </button>
           <button
-            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-stone-300 bg-white text-stone-600"
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-stone-300 bg-surface text-stone-600"
             :aria-label="$t('Ajustes de Clutches')"
             :title="$t('Ajustes de Clutches')"
             @click="showSettings = true"
@@ -454,14 +455,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <Settings :size="15" />
           </button>
         </div>
-        <!-- Today's review: every clutch starts unreviewed each day (marks only in the app). -->
+        <!--
+          Today's review: every clutch starts unreviewed each day (marks only in the app). «Por verificar» and «Sin revisar
+          hoy» carry their counts on the chips above, so only the reviewed ones are counted here.
+        -->
         <p v-if="!query && counts.all" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-stone-600" role="status">
           <span class="font-medium text-stone-700">{{ $t('Revisión de hoy') }}:</span>
           <span class="tabular-nums"><Check :size="12" class="-mt-0.5 inline text-brand-700" /> {{ $t('{n} revisados', { n: counts.checked }) }}</span>
-          <span class="tabular-nums" :class="counts.verify ? 'font-medium text-orange-800' : ''">
-            <AlertTriangle :size="12" class="-mt-0.5 inline" /> {{ $t('{n} por verificar', { n: counts.verify }) }}
-          </span>
-          <span class="tabular-nums">{{ $t('{n} sin revisar', { n: counts.todo }) }}</span>
         </p>
       </template>
     </div>
@@ -486,7 +486,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <li
               v-for="(item, i) in listed"
               :key="item.row.id"
-              class="overflow-hidden rounded-xl border bg-white shadow-sm"
+              class="overflow-hidden rounded-xl border bg-surface shadow-sm"
               :class="[
                 selectedId === item.row.id && wide ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200',
                 day.today(item.row.id).review === 'verify' ? 'border-l-4 border-l-orange-400' : day.today(item.row.id).review === 'checked' ? 'border-l-4 border-l-brand-600' : '',
@@ -528,7 +528,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   </span>
                 </span>
                 <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-                  <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+                  <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
                   <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                     <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
                   </span>
@@ -539,15 +539,15 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 <!-- The four counts: total big, the sum's history small. -->
                 <span class="mt-1.5 grid grid-cols-4 gap-1">
                   <span v-for="s in STAGES" :key="s.count" class="min-w-0 rounded-md bg-stone-50 px-1.5 py-1" :class="{ 'bg-amber-50': pending.isDirty(item.row.id, s.count) }">
-                    <span class="block text-[11px] leading-tight text-stone-500">{{ SHORT[s.count]() }}</span>
+                    <span class="block text-xs leading-tight text-stone-500">{{ SHORT[s.count]() }}</span>
                     <span class="block text-lg leading-tight font-semibold tabular-nums">
                       {{ item.counts[s.count].na ? 'NA' : item.counts[s.count].text ? '?' : item.counts[s.count].terms.length ? totalOf(item.counts[s.count].terms) : '—' }}
                     </span>
-                    <span v-if="item.counts[s.count].terms.length > 1" class="block truncate text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
+                    <span v-if="item.counts[s.count].terms.length > 1" class="block text-xs leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
                     <!-- Preserved ones kept counted: not in the sum (only in the app and NOTES). -->
                     <span
                       v-if="preservedText(item, s.stage)"
-                      class="block truncate text-[11px] leading-tight font-medium text-violet-700 tabular-nums"
+                      class="block line-clamp-2 text-xs leading-tight font-medium break-words hyphens-auto text-violet-700 tabular-nums"
                       :title="$t('No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.', { field: s.count })"
                       >{{ preservedText(item, s.stage) }}</span
                     >
@@ -560,7 +560,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <CalendarClock :size="12" /> {{ ahead(item).next }}
                   </span>
                 </span>
-                <span v-if="lastText(item.row) || day.today(item.row.id).photos" class="mt-1 flex items-center gap-2 text-[11px] text-stone-500">
+                <span v-if="lastText(item.row) || day.today(item.row.id).photos" class="mt-1 flex items-center gap-2 text-xs text-stone-500">
                   <span class="min-w-0 flex-1 truncate">{{ lastText(item.row) }}</span>
                   <span v-if="day.today(item.row.id).photos" class="flex shrink-0 items-center gap-0.5" :title="$t('Fotos de hoy')">
                     <Camera :size="12" /> {{ day.today(item.row.id).photos }}
@@ -574,15 +574,17 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 </span>
               </button>
               <!-- Today's mark: checked (no change), or checked but someone should look again. -->
-              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).review !== 'checked'" class="flex border-t border-stone-100">
+              <!-- «solo en la app» beside it only when the card has room (its width, not the window's: a desktop's cards are narrow too). -->
+              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).review !== 'checked'" class="@container flex border-t border-stone-100">
                 <button
                   class="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50"
                   :disabled="marking === item.row.id"
+                  :title="$t('Marca solo en la app, para hoy: no se escribe en la hoja.')"
                   @click="markChecked(item.row)"
                 >
                   <Check :size="16" />
                   {{ day.today(item.row.id).review === 'verify' ? $t('Marcar como verificado') : $t('Marcar como revisado') }}
-                  <span class="hidden text-xs font-normal text-stone-500 min-[400px]:inline">· {{ $t('solo en la app') }}</span>
+                  <span class="hidden text-xs font-normal text-stone-500 @min-[28rem]:inline">· {{ $t('solo en la app') }}</span>
                 </button>
                 <button
                   v-if="day.today(item.row.id).review === 'none'"
@@ -616,7 +618,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     v-for="r in VERIFY_REASONS"
                     :key="r"
                     type="button"
-                    class="min-h-9 rounded-full border border-orange-300 bg-white px-3 text-sm text-orange-950"
+                    class="min-h-9 rounded-full border border-orange-300 bg-surface px-3 text-sm text-orange-950"
                     @click="verifyNote = r"
                   >
                     {{ r }}
@@ -679,7 +681,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
     </div>
 
     <!-- A check marked from a card can be taken back for a moment. -->
-    <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm text-white shadow-lg" role="status">
+    <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-inverse px-4 py-2 text-sm text-on-inverse shadow-lg" role="status">
       <AlertTriangle v-if="lastMark.state === 'verify'" :size="16" /><Check v-else :size="16" />
       <span class="flex-1">
         {{
