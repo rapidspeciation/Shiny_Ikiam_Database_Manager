@@ -138,7 +138,7 @@ const counts = computed(() => page.value?.open ?? {})
         <li v-for="item in page.items" :key="`${item.type}:${item.key}`" class="space-y-1 px-3 py-2 text-sm">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <span class="rounded bg-brand-100 px-1.5 py-0.5 font-medium text-brand-800">{{ $t('Resuelto') }}</span>
-            <span class="rounded bg-stone-800 px-1.5 py-0.5 text-white">{{ kindTitle(item) }}</span>
+            <span class="rounded bg-inverse px-1.5 py-0.5 text-on-inverse">{{ kindTitle(item) }}</span>
             <a
               v-if="item.sheet && item.row && !item.solved.rowGone"
               :href="tablesLink(item.sheet, item.label ?? '')"

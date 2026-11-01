@@ -286,7 +286,7 @@ const filtered = computed(
         {{ $t(v.label) }}
         <span
           v-if="v.key === 'alertas' && warnings"
-          class="rounded-full bg-amber-500 px-1.5 text-[11px] leading-4 font-semibold text-white tabular-nums"
+          class="rounded-full bg-fill-amber px-1.5 text-[11px] leading-4 font-semibold text-white tabular-nums"
           >{{ warnings }}</span
         >
       </button>

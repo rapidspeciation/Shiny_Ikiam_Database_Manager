@@ -237,6 +237,8 @@
   --color-brand-700: #7cc6a0;
   --color-brand-800: #9bd5b6;
   --color-brand-900: #b5e2ca;
+  --color-slate-200: oklch(36% 0.02 257);
+  --color-slate-800: oklch(86% 0.025 257);
   --color-red-50: oklch(25% 0.035 17.4);
   --color-red-100: oklch(29% 0.055 17.7);
   --color-red-200: oklch(36% 0.075 18.3);
