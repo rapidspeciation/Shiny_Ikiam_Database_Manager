@@ -157,7 +157,10 @@
   /* Hint and placeholder greys at 4.5:1 on white, stone-50 and stone-100 (fg-subtle): Tailwind's are 2.6 and 4.4. */
   --color-stone-400: #6f6964;
   --color-stone-500: #6f6964;
-  /* Solid fills under a white label: the same in both themes (white on them is ≥ 4.5:1). */
+  /*
+   * Solid fills under a white label: the same in both themes (white on them is ≥ 4.5:1). Pink and sky mean the sex,
+   * female and male, wherever they appear (Emergidos' tiles, SexBadge); they are not used for anything else.
+   */
   --color-fill-emerald: oklch(50.8% 0.118 165.612);
   --color-fill-emerald-strong: oklch(43.2% 0.095 166.913);
   --color-fill-pink: oklch(52.5% 0.223 3.958);
