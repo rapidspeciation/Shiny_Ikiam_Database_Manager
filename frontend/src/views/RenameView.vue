@@ -248,8 +248,8 @@ function resize(event: PointerEvent) {
             {{ label }}
           </button>
         </div>
-        <!-- The way from the camera's files to the sheets: done, now, to come. -->
-        <ol v-if="section === 'rename'" class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
+        <!-- The way from the camera's files to the sheets: done, now, to come (not shown when the rename app is missing). -->
+        <ol v-if="section === 'rename' && !renameHost.missing" class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
           <li
             v-for="(name, i) in RENAME_STEPS"
             :key="name"
@@ -336,7 +336,7 @@ function resize(event: PointerEvent) {
         </span>
       </div>
       <!-- What to do now, the batch in a line, and where its files go once they are ready. -->
-      <p v-if="section === 'rename'" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
+      <p v-if="section === 'rename' && !renameHost.missing" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
         <span class="font-medium text-stone-800" data-hint>{{ hint }}</span>
         <template v-if="(step === 'upload' || step === 'rename') && upload">
           <template v-if="upload.photos">
