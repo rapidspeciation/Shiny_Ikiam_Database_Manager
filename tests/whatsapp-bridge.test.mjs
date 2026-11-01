@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { named, command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
@@ -588,4 +588,55 @@ test('a quote of Claude aimed at the team: 👀 then ✅ and no text; a question
   post('qué bonita, ¿dónde fue?');
   await settle();
   assert.equal(outbox().length, from);
+});
+
+test('[files]: parsed; only the tools\' folders, by real path, only the allowed types; the group guard applies', async () => {
+  assert.deepEqual(parseReply('Listo.\n[files]\n/a/b/Anexo1.xlsx | Anexo1\nhttps://app/api/rack-reports/aaaaaaaaaaaaaaaaaaaaaaaa/x.xlsx\n[/files]').files, [
+    { src: '/a/b/Anexo1.xlsx', caption: 'Anexo1' },
+    { src: 'https://app/api/rack-reports/aaaaaaaaaaaaaaaaaaaaaaaa/x.xlsx', caption: '' },
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-files-'));
+  const reports = join(dir, 'rack-reports');
+  const token = 'a1b2c3d4e5f6a1b2c3d4e5f6';
+  mkdirSync(join(reports, token), { recursive: true });
+  const good = join(reports, token, 'Anexo1-deposito-2026-10-31.xlsx');
+  writeFileSync(good, 'xlsx bytes');
+  writeFileSync(join(dir, 'secret.xlsx'), 'secret'); // outside
+  writeFileSync(join(reports, token, 'owner.json'), '{}'); // wrong type
+  symlinkSync(join(dir, 'secret.xlsx'), join(reports, token, 'link.xlsx')); // a link out of the folder
+  const old = join(reports, token, 'old.xlsx');
+  writeFileSync(old, 'old');
+  utimesSync(old, new Date(Date.now() - 5 * 3_600_000), new Date(Date.now() - 5 * 3_600_000));
+  const route = { rackReportsDir: reports };
+  const config = {
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+    routes: { r: route },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const log = () => readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8');
+  const group = { key: 'group', jid: 'G@g.us', dryRun: true };
+  const tagged = { id: 'x', text: '@claude mándame el Excel' };
+  const attempts = [
+    { src: good, caption: 'ok' },
+    { src: `https://app.example/api/rack-reports/${token}/Anexo1-deposito-2026-10-31.xlsx`, caption: 'by link' },
+    { src: join(reports, token, '..', '..', 'secret.xlsx'), caption: 'traversal' },
+    { src: join(reports, token, 'link.xlsx'), caption: 'symlink out' },
+    { src: '/etc/passwd', caption: 'elsewhere' },
+    { src: join(reports, token, 'owner.json'), caption: 'type' },
+    { src: old, caption: 'too old' },
+  ];
+  await bridge.sendFiles(group, tagged, route, dir, attempts.slice(0, 3));
+  await bridge.sendFiles(group, tagged, route, dir, attempts.slice(3));
+  const sent = outbox().filter(s => s.kind === 'document');
+  assert.deepEqual(sent.map(s => s.text), ['Claude: ok', 'Claude: by link']);
+  assert.equal(readFileSync(sent[0].file, 'utf8'), 'xlsx bytes');
+  assert.equal((log().match(/"refused":/g) ?? []).length, 5); // traversal, symlink, /etc/passwd, type, age: each logged
+  // The group guard: with no conversation open, an untagged trigger (or none) sends nothing.
+  const cold = createBridge({ config, stateDir: join(dir, 'state2'), log: { error() {}, info() {} } });
+  await cold.sendFiles(group, { id: 'y', text: 'hola' }, route, dir, attempts.slice(0, 1));
+  await cold.sendFiles(group, undefined, route, dir, attempts.slice(0, 1));
+  assert.ok(!existsSync(join(dir, 'state2', 'outbox.jsonl')));
+  assert.ok(readFileSync(join(dir, 'state2', 'bridge.log.jsonl'), 'utf8').includes('group send outside an active conversation'));
 });

@@ -77,7 +77,7 @@ export function parsePayload(body) {
 export const bareJid = jid => String(jid ?? '').replace(/:\d+(?=@)/, '');
 
 /**
- * The chat's final message split into what the bridge sends: { text, images: [{ src, caption }],
+ * The chat's final message split into what the bridge sends: { text, images: [{ src, caption }], files (same shape),
  * voice, silent }. Pictures come from an [images] … [/images] block, one per line as
  * "<path or https URL> | <caption>" (at most `max`); `[voice]` asks for a voice note; `[silent]`
  * alone means no answer. Pure.
@@ -92,10 +92,19 @@ export function parseReply(raw, { max = 5 } = {}) {
     }
     return '';
   });
+  // [files] … [/files]: documents the tools made, "<path or app link> | caption", at most 3.
+  const files = [];
+  text = text.replace(/\[files\]([\s\S]*?)(?:\[\/files\]|$)/gi, (_, block) => {
+    for (const line of block.split('\n')) {
+      const m = /^\s*[-*]?\s*(https?:\/\/\S+|\/\S+)\s*(?:\|\s*(.*))?$/.exec(line.trim());
+      if (m && files.length < 3) files.push({ src: m[1].replace(/^<|>$/g, ''), caption: (m[2] ?? '').trim() });
+    }
+    return '';
+  });
   const voice = /^\s*\[voice\]\s*$/im.test(text);
   text = text.replace(/^\s*\[voice\]\s*$/gim, '').trim();
   const silent = /^\[silent\]$/i.test(text);
-  return { text: silent ? '' : text, images, voice, silent };
+  return { text: silent ? '' : text, images, files, voice, silent };
 }
 
 /** Markdown the chat may write, in WhatsApp's own formatting. Pure. */

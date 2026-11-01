@@ -43,6 +43,7 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
   - the group: the chat «Ithomiini 🦋 (underground) · WhatsApp» in the claudeclaw T3 project of the same name, over ssh;
   - the self-chat: «Orchestrator wpp» in this PC's T3, project «Ithomiini lab · WhatsApp» (the lab workspace, the lab app's tools).
 - **Reply path.** The bridge waits for the turn and sends the chat's last message, starting with «Claude: ».
+  - `[files]` … `[/files]` lines (`<path or app rack-report link> | caption`, up to 3) become documents (`wacli send file --as document`), one after another, through send()'s group guard. Only files under the route's `rackReportsDir` (and `fileDirs`), by real path (symlinks and `..` resolved; over ssh with `realpath` on the route's host), of type xlsx/csv/pdf/docx/txt/png/jpg/gpx/kml, at most 25 MB, written in the last 3 hours; anything else is refused and logged (`refused`).
   - `[images]` … `[/images]` lines (`<path or https URL> | caption`) become up to 5 pictures, each at most 2048 px on its long side as JPEG. wacli 0.22 has no HD flag; it uploads the file as given. Every picture's first bytes are checked to be an image.
   - `[voice]`, or a voice note in the question, adds an Edge TTS voice note (es-EC / en-US).
   - `[silent]` sends nothing.

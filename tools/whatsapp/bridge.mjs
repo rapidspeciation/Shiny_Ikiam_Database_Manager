@@ -30,9 +30,9 @@
 // logs in ~/.local/state/ithomiini-wa-bridge. Design and test notes: tools/whatsapp/README.md.
 import { createServer } from 'node:http';
 import { execFile, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, renameSync, chmodSync } from 'node:fs';
+import { copyFileSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, renameSync, chmodSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { appendNew, mediaTag, named, slug, ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
@@ -223,7 +223,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
    * edit (`edit`: the id of one of the bridge's own messages, `text` its new text).
    * `trigger` is the incoming message being answered; in a group the send is refused unless it wakes the bridge.
    */
-  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger, postWait = null }) {
+  async function send(chat, { kind, text = null, file = null, voice = false, quote = null, react = null, edit = null, trigger, postWait = null, document = null }) {
     const entry = { dir: 'out', chat: chat.key, kind, chars: text?.length ?? 0, file: Boolean(file), ...(edit ? { edit: true } : {}), ...(react ? { emoji: react.emoji } : {}) };
     let id = null;
     if (isGroup(chat) && !(wakes(trigger) || (trigger && active(chat)))) {
@@ -254,7 +254,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
           : voice
             ? ['send', 'voice', '--to', chat.jid, '--file', file, ...q]
             : file
-              ? ['send', 'file', '--to', chat.jid, '--file', file, ...(text ? ['--caption', text] : []), ...(postWait ? ['--post-send-wait', postWait] : []), ...q]
+              ? ['send', 'file', '--to', chat.jid, '--file', file, ...(document ? ['--as', 'document', '--filename', document] : []), ...(text ? ['--caption', text] : []), ...(postWait ? ['--post-send-wait', postWait] : []), ...q]
               : ['send', 'text', '--to', chat.jid, '--message', text, ...(chat.key === 'self' ? ['--allow-self'] : []), ...q];
       try {
         const out = await wacli(['--json', ...args], { timeout: 90_000 });
@@ -270,7 +270,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
     }
     if (id && !edit) (state.botIds ??= []).push(String(id));
-    if (isGroup(chat) && ['reply', 'image', 'voice'].includes(kind)) openConvo(chat); // an answer of Claude's keeps the conversation open
+    if (isGroup(chat) && ['reply', 'image', 'voice', 'document'].includes(kind)) openConvo(chat); // an answer of Claude's keeps the conversation open
     if (kind === 'reply') (state.sends[chat.key] ??= []).push(now());
     state.sends[chat.key] = lastHour(state.sends[chat.key], now());
     save();
@@ -715,6 +715,62 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     record({ dir: 'images', chat: chat.key, n: images.length, ms: now() - t0 });
   }
 
+  /**
+   * A file a tool made for this request, ready to send: copied into `dir`. Only the route's rack-reports folder and its
+   * `fileDirs` (real paths), only office/PDF/text types, at most 25 MB, written in the last 3 hours; the app's own
+   * download link of a rack report counts as the file. Anything else throws (and is logged by the caller).
+   */
+  async function fetchFile(route, src, dir, i) {
+    let p = String(src);
+    if (/^https?:\/\//.test(p)) {
+      const m = /\/api\/rack-reports\/([a-f0-9]{24})\/([\w.-]+)$/.exec(p);
+      if (!m || !route.rackReportsDir) throw new Error('not a file of the tools');
+      p = join(route.rackReportsDir, m[1], m[2]);
+    }
+    if (!isAbsolute(p) || /['\0\n\\]/.test(p)) throw new Error('not an allowed path');
+    const allowed = [route.rackReportsDir, ...(route.fileDirs ?? [])].filter(Boolean).map(d => (route.ssh ? d : (() => { try { return realpathSync(d); } catch { return d; } })()).replace(/\/+$/, ''));
+    let real, mtime, size;
+    if (route.ssh) {
+      const out = (await run('ssh', ['-o', 'BatchMode=yes', route.ssh, `realpath -e -- '${p}' && stat -L -c '%Y %s' -- '${p}'`], { timeout: 30_000 })).trim().split('\n');
+      real = out[0];
+      [mtime, size] = String(out[1] ?? '').split(' ').map(Number);
+    } else {
+      real = realpathSync(p);
+      const st = statSync(real);
+      mtime = Math.floor(st.mtimeMs / 1000);
+      size = st.size;
+    }
+    if (!real || !allowed.some(d => real.startsWith(d + '/'))) throw new Error('outside the tools\' folders');
+    const name = basename(real);
+    if (!/^[\w][\w. ()-]{0,120}\.(xlsx|csv|pdf|docx|txt|png|jpg|jpeg|gpx|kml)$/i.test(name)) throw new Error('file type not allowed');
+    if (!(size > 0) || size > 25 * 1024 * 1024) throw new Error('file size not allowed');
+    if (now() / 1000 - mtime > 3 * 3600) throw new Error('not made for this request (older than 3 h)');
+    const out = join(dir, `file${i}`);
+    mkdirSync(out, { recursive: true, mode: 0o700 });
+    const file = join(out, name);
+    if (route.ssh) await run('scp', ['-q', '-o', 'BatchMode=yes', `${route.ssh}:${real}`, file], { timeout: 120_000 });
+    else copyFileSync(real, file);
+    return file;
+  }
+
+  /** The reply's [files], one after the other, as documents, each through send()'s trigger guard; a refused file is logged. */
+  async function sendFiles(chat, msg, route, dir, files) {
+    for (const [i, f] of files.entries()) {
+      let file;
+      try {
+        file = await fetchFile(route, f.src, dir, i);
+      } catch (e) {
+        record({ dir: 'out', chat: chat.key, kind: 'document', ok: false, refused: clip(e.message, 80), src: clip(f.src, 120) });
+        continue;
+      }
+      try {
+        await send(chat, { kind: 'document', file, document: basename(file), text: f.caption ? PREFIX + toWhatsApp(f.caption).slice(0, 900) : PREFIX.trim(), trigger: msg });
+      } catch (e) {
+        record({ dir: 'out', chat: chat.key, kind: 'document', ok: false, error: clip(e.message, 100) });
+      }
+    }
+  }
+
   async function turn(chat, msg) {
     const route = config.routes[chat.route];
     const started = now();
@@ -809,6 +865,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       })();
       textDone.catch(() => {});
       await sendImages(chat, msg, route, dir, reply.images);
+      await sendFiles(chat, msg, route, dir, reply.files);
       await textDone;
       if (reply.text && (reply.voice || heardVoice)) {
         try {
@@ -832,6 +889,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     send,
     flushHistory,
     sendImages,
+    sendFiles,
     state: () => state,
     idle: () => busy.size === 0 && [...queues.values()].every(q => !q.length),
   };
