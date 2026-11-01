@@ -43,3 +43,12 @@ test('a row deleted between two pieces: no row number twice, the copy is of one 
   assert.equal(new Set(numbers).size, numbers.length);
   assert.deepEqual(plain(read), plain(atOnce(sheets)));
 });
+
+test('writes landing in three reads in a row: the sheet copied at once, still of one moment', async () => {
+  const sheets = new LocalSheets(seed());
+  const reading = sheets.readSheet(SHEET);
+  // One write after the first piece of each of the three attempts.
+  for (const row of [1500, 900, 1200]) await between(() => sheets.externalEdit(SHEET, row, { SPECIES: 'Oleria onega' }));
+  const read = await reading;
+  assert.deepEqual(plain(read), plain(atOnce(sheets)));
+});
