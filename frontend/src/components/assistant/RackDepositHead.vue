@@ -102,7 +102,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
           @change="saveField('responsable', $event)"
           @keydown.enter="($event.target as HTMLInputElement).blur()"
         />
-        <em v-if="deposit.responsable_default" class="text-[10px] text-amber-800">{{ $t('supuesto') }}</em>
+        <em v-if="deposit.responsable_default" class="text-xs text-amber-800">{{ $t('supuesto') }}</em>
         <button
           v-if="editable && deposit.responsable_default && deposit.responsable"
           type="button"
@@ -129,7 +129,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
     </div>
     <!-- Several racks: a jump to each section. -->
     <nav v-if="deposit.racks.length > 1" class="flex flex-wrap items-center gap-1" :aria-label="$t('Racks del depósito')">
-      <span class="text-[11px] text-stone-500">{{ $t('Racks') }}:</span>
+      <span class="text-xs text-stone-500">{{ $t('Racks') }}:</span>
       <button
         v-for="(r, i) in deposit.racks"
         :key="r.reading"
@@ -173,7 +173,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
       <a v-if="deposit.xlsx?.download" class="file-link" :href="local(deposit.xlsx.download)" :download="deposit.xlsx.file">
         {{ deposit.xlsx.file }}
       </a>
-      <span v-if="why.length" class="text-[11px] text-stone-500">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
+      <span v-if="why.length" class="text-xs text-stone-500">{{ $t('Aún no: {why}', { why: why[0] }) }}{{ why.length > 1 ? ' …' : '' }}</span>
     </div>
     <!-- The tube-locations rows to paste by hand (the main action at the foot when the app cannot edit the sheet). -->
     <div v-if="!deposit.protected" class="flex flex-wrap items-center gap-2 border-t border-stone-200 pt-1.5">
@@ -191,7 +191,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
     <p v-else class="dep-note" role="status" data-no-edit-access-head>
       {{ $t('Sin acceso de edición a {sheet}: los cambios se descargan abajo, en «Descargar cambios (.xlsx)», para pegarlos a mano.', { sheet: deposit.sheet ?? '' }) }}
     </p>
-    <ul v-if="problems.length" class="text-[11px] text-red-800">
+    <ul v-if="problems.length" class="text-xs text-red-800">
       <li v-for="(p, i) in problems" :key="i">{{ p }}</li>
     </ul>
   </div>
@@ -219,7 +219,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-stone-600);
 }
 .dep-field input {
@@ -252,7 +252,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   border-radius: 9999px;
   background: var(--surface);
   padding: 0 0.5rem;
-  font-size: 11px;
+  font-size: 12px;
 }
 .jump:hover {
   border-color: var(--color-emerald-600);
@@ -265,14 +265,14 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   border-radius: 0.25rem;
   background: var(--color-amber-50);
   padding: 0.25rem 0.5rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-amber-950);
 }
 .file-link {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-emerald-800);
   text-decoration: underline;
 }

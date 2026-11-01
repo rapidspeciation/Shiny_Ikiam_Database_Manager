@@ -61,7 +61,7 @@ const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.start
               :turned="item.envelope.turned"
               class="h-32 w-auto"
             />
-            <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] text-white">{{ $t('Sobre') }}</span>
+            <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-xs text-white">{{ $t('Sobre') }}</span>
           </a>
           <a
             v-for="p in photosOf(item)"
@@ -74,13 +74,13 @@ const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.start
           >
             <CropImage v-if="p.wings" :src="photoUrl(p.file)" :alt="p.name" :box="p.wings" class="mx-auto h-32 w-auto!" />
             <img v-else :src="photoUrl(p.file)" :alt="p.name" loading="lazy" class="h-32 w-full object-contain" />
-            <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] text-white">{{ viewName(p.view) }} · {{ p.name }}</span>
+            <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-xs text-white">{{ viewName(p.view) }} · {{ p.name }}</span>
           </a>
           <p v-for="v in photosOf(item).length || !item.envelope ? item.missing : []" :key="v" class="flex h-32 w-[calc(50%-0.25rem)] min-w-[9rem] items-center justify-center gap-1 rounded border border-dashed border-amber-300 bg-amber-50 text-xs text-amber-900">
             <AlertTriangle :size="13" /> {{ $t('sin foto {view} en Photo_links', { view: viewName(v) }) }}
           </p>
         </div>
-        <a v-if="item.photos[0]" :href="item.photos[0].url" target="_blank" rel="noopener" class="mt-1 inline-flex items-center gap-1 text-[11px] text-stone-500 hover:text-emerald-800">
+        <a v-if="item.photos[0]" :href="item.photos[0].url" target="_blank" rel="noopener" class="mt-1 inline-flex items-center gap-1 text-xs text-stone-500 hover:text-emerald-800">
           {{ item.photos[0].folder }} <ExternalLink :size="10" />
         </a>
       </li>

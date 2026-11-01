@@ -1221,15 +1221,15 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             </div>
             <div class="mt-2 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF PUPA') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF ADULTS') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(clutch)?.n ?? 0 }}</span>
               </span>
             </div>

@@ -126,15 +126,15 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
         <div class="mt-1 grid grid-cols-3 gap-2 text-center">
           <div>
             <p class="text-xl font-semibold tabular-nums">{{ s.cage ?? '—' }}</p>
-            <p class="text-[11px] leading-tight text-stone-600">{{ $t('en la jaula (para contar hoy)') }}</p>
+            <p class="text-xs leading-tight text-stone-600">{{ $t('en la jaula (para contar hoy)') }}</p>
           </div>
           <div>
             <p class="text-xl font-semibold tabular-nums">{{ s.tally.preserved }}</p>
-            <p class="text-[11px] leading-tight text-stone-600">{{ $t('preservadas') }}</p>
+            <p class="text-xs leading-tight text-stone-600">{{ $t('preservadas') }}</p>
           </div>
           <div>
             <p class="text-xl font-semibold tabular-nums">{{ s.sheet }}</p>
-            <p class="text-[11px] leading-tight text-stone-600">{{ $t('en la hoja') }}</p>
+            <p class="text-xs leading-tight text-stone-600">{{ $t('en la hoja') }}</p>
           </div>
         </div>
         <p class="mt-1 text-xs text-stone-600 tabular-nums">
@@ -260,7 +260,7 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
           <li v-if="g.photos.length" class="flex gap-1.5 overflow-x-auto px-3 py-1.5">
             <button v-for="p in g.photos" :key="p.id" type="button" class="shrink-0 text-left" :aria-label="p.note || $t('Foto del día')" @click="open(p)">
               <img :src="photoUrl(p.id, 'thumb')" :alt="p.note || ''" loading="lazy" class="h-16 w-16 rounded object-cover" />
-              <span v-if="p.note" class="block w-16 truncate text-[11px] text-stone-600">{{ p.note }}</span>
+              <span v-if="p.note" class="block w-16 truncate text-xs text-stone-600">{{ p.note }}</span>
             </button>
           </li>
         </ul>

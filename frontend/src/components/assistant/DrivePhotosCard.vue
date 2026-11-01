@@ -125,7 +125,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             <div class="flex items-center gap-1">
               <input
                 :value="r.camid ?? ''"
-                class="w-full min-w-0 rounded border border-control px-1 py-0.5 font-mono text-[11px] uppercase"
+                class="w-full min-w-0 rounded border border-control px-1 py-0.5 font-mono text-xs uppercase"
                 :aria-label="$t('ID de {name}', { name: r.name })"
                 :disabled="r.remove"
                 @change="setId(r, ($event.target as HTMLInputElement).value)"
@@ -133,7 +133,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
               />
               <select
                 :value="r.view"
-                class="rounded border border-control py-0.5 pr-4 pl-1 text-[11px]"
+                class="rounded border border-control py-0.5 pr-4 pl-1 text-xs"
                 :aria-label="$t('Vista')"
                 :disabled="r.remove || !r.camid"
                 @change="edit(r, { view: ($event.target as HTMLSelectElement).value })"
@@ -145,18 +145,18 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
               {{ r.name }}<template v-if="newName(r)"> → <span class="text-stone-800">{{ newName(r) }}</span></template>
             </p>
             <!-- The reader's ID beside the one set after, and by whom. -->
-            <p v-if="r.readAs && r.readAs !== r.camid" class="text-[11px] text-stone-500">
+            <p v-if="r.readAs && r.readAs !== r.camid" class="text-xs text-stone-500">
               <Sparkles v-if="r.setBy === 'assistant'" :size="10" class="inline text-sky-600" />
               {{ $t('leído {read}', { read: r.readAs }) }}
             </p>
-            <p v-for="why in r.review ?? []" :key="why" class="text-[11px] text-amber-800">{{ reasonText(why) }}</p>
-            <p v-if="r.note" class="text-[11px] text-stone-600 italic">{{ r.note }}</p>
-            <p v-if="r.error" class="text-[11px] text-red-700">{{ r.error }}</p>
+            <p v-for="why in r.review ?? []" :key="why" class="text-xs text-amber-800">{{ reasonText(why) }}</p>
+            <p v-if="r.note" class="text-xs text-stone-600 italic">{{ r.note }}</p>
+            <p v-if="r.error" class="text-xs text-red-700">{{ r.error }}</p>
             <div class="flex items-center gap-1">
               <button class="btn-ghost p-0.5" :title="$t('Girar 90° a la derecha')" :disabled="r.remove" @click="edit(r, { rotation: ((r.rotation ?? 0) + 90) % 360 })">
                 <RotateCw :size="13" />
               </button>
-              <span v-if="r.rotation" class="text-[11px] text-stone-500">{{ r.rotation }}°</span>
+              <span v-if="r.rotation" class="text-xs text-stone-500">{{ r.rotation }}°</span>
               <a v-if="r.url" class="btn-ghost p-0.5" :href="r.url" target="_blank" rel="noopener" :title="$t('Abrir en Drive')"><ExternalLink :size="13" /></a>
               <button
                 class="btn-ghost ml-auto p-0.5"

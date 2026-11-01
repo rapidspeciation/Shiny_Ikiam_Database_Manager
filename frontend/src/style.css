@@ -1041,7 +1041,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   column-gap: 14px;
   padding: 0 7px 2px;
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 15px;
   overflow-wrap: anywhere;
 }
@@ -1191,7 +1191,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   border-bottom: 1px solid var(--color-amber-200);
   background: var(--color-amber-50);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-amber-800);
 }
 .warn-count {
@@ -1301,7 +1301,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   border-bottom: 1px solid var(--color-violet-200);
   background: var(--color-violet-50);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-violet-800);
 }
 .sheet-banner-go {
@@ -1341,7 +1341,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
 }
 .proposal-sheet .doubt-quick.is-sheet .sheet-quick-what {
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-violet-700);
 }
 .proposal-sheet .doubt-quick.is-sheet button {

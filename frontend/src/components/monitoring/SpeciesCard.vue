@@ -60,7 +60,7 @@ const ruleWidth = computed(() => `${Math.min(100, (100 * props.rule.preserved) /
       </h3>
 
       <div>
-        <div class="flex items-baseline justify-between gap-2 text-[11px]">
+        <div class="flex items-baseline justify-between gap-2 text-xs">
           <span class="shrink-0 whitespace-nowrap text-stone-500">{{ $t('Regla de {n}', { n: MARK_THRESHOLD }) }}</span>
           <span
             v-if="rule.applies"
@@ -86,7 +86,7 @@ const ruleWidth = computed(() => `${Math.min(100, (100 * props.rule.preserved) /
         <div class="flex h-1.5 gap-px overflow-hidden rounded-full bg-stone-100">
           <div v-for="p in bar" :key="p.key" class="h-full" :style="{ width: p.width, background: p.color }" />
         </div>
-        <div class="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-stone-600 tabular-nums">
+        <div class="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-stone-600 tabular-nums">
           <span v-for="p in bar" :key="p.key" class="inline-flex items-center gap-1">
             <span class="size-1.5 rounded-full" :style="{ background: p.color }" />
             <b class="font-medium text-stone-800">{{ p.n }}</b> {{ $t(p.label) }}

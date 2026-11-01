@@ -77,10 +77,10 @@ const border = (field: Field) =>
     <div v-for="field in ['cam', 'tube'] as const" :key="field" class="min-w-0">
       <div class="flex h-6 items-center justify-between gap-1">
         <span class="field-label mb-0">{{ field === 'cam' ? 'CAM_ID' : 'Tube_1_id' }}</span>
-        <span v-if="sample(field).auto && sample(field).value" class="truncate text-[11px] text-stone-500">{{ $t('siguiente libre') }}</span>
+        <span v-if="sample(field).auto && sample(field).value" class="truncate text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
         <button
           v-else-if="!sample(field).auto && canEdit"
-          class="flex h-6 items-center gap-0.5 text-[11px] text-stone-600 underline"
+          class="flex h-6 items-center gap-0.5 text-xs text-stone-600 underline"
           :title="$t('Volver al siguiente libre')"
           @click="emit('type', field, undefined)"
         >

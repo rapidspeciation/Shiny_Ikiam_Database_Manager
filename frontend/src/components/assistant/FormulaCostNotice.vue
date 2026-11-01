@@ -40,7 +40,7 @@ const heavy = computed(() => props.cost.some(p => p.heavy))
   border-bottom: 1px solid var(--color-stone-200);
   background: var(--color-stone-50);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-slate-600);
 }
 .formula-cost.is-heavy {

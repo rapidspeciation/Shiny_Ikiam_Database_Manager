@@ -288,7 +288,7 @@ function clearFilters() {
                 <span v-if="item.suggested !== null" class="font-medium break-all text-emerald-900"
                   ><span
                     v-if="item.formula"
-                    class="mr-1 rounded border border-emerald-700 px-0.5 text-[11px] font-normal"
+                    class="mr-1 rounded border border-emerald-700 px-0.5 text-xs font-normal"
                     :title="$t('Una fórmula: el asistente puede proponerla, con las demás de su grupo')"
                     >ƒx</span
                   >{{ cellText(item.suggested) }}</span
@@ -297,12 +297,12 @@ function clearFilters() {
               </span>
               <span
                 v-if="item.manual"
-                class="shrink-0 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700"
+                class="shrink-0 rounded bg-stone-200 px-1.5 py-0.5 text-xs text-stone-700"
                 :title="$t('Es una fórmula: se hace a mano en Google Sheets; las propuestas del asistente no la escriben')"
                 >{{ $t('en Google Sheets') }}</span
               >
               <span class="basis-full text-xs text-stone-600 md:basis-auto md:flex-1">{{ tx(item.reason, item.reasonMsg) }}</span>
-              <span v-if="item.firstSeen" class="shrink-0 text-[11px] text-stone-400" :title="$t('Visto por primera vez')">{{
+              <span v-if="item.firstSeen" class="shrink-0 text-xs text-stone-400" :title="$t('Visto por primera vez')">{{
                 $t('desde {date}', { date: stamp(item.firstSeen, false) })
               }}</span>
             </li>

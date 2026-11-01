@@ -22,11 +22,11 @@ const fieldWord = (f: string) => (f === 'species' ? t('la especie') : f === 'sex
   <div class="text-xs" data-compare>
     <table class="w-full border-collapse">
       <thead>
-        <tr class="align-bottom text-[10px] text-stone-500">
+        <tr class="align-bottom text-xs text-stone-500">
           <th class="w-24 py-0.5 pr-2 text-left font-normal" />
           <th class="py-0.5 pr-2 text-left font-normal">{{ $t('Foto') }}</th>
           <th v-for="(r, i) in [target, file]" :key="i" class="py-0.5 pr-2 text-left font-normal">
-            <span class="font-mono text-[11px] font-medium text-stone-800">{{ r?.cam }}</span>
+            <span class="font-mono text-xs font-medium text-stone-800">{{ r?.cam }}</span>
             · {{ i === 0 ? $t('el CAM leído') : $t('el CAM del archivo') }}
             <template v-for="d in rowsOf(r)" :key="d.sheet + d.row"><br />{{ d.sheet }} {{ $t('fila {n}', { n: d.row }) }}</template>
             <template v-if="!rowsOf(r).length"><br /><span class="text-amber-800">{{ $t('sin fila en la base de datos') }}</span></template>
@@ -45,7 +45,7 @@ const fieldWord = (f: string) => (f === 'species' ? t('la especie') : f === 'sex
     <template v-for="r in [target, file]" :key="'n' + r?.cam">
       <template v-for="d in rowsOf(r)" :key="'n' + d.sheet + d.row">
         <div v-if="d.note" class="mt-1.5 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-sky-950" data-note>
-          <p class="mb-0.5 text-[10px] text-sky-800">{{ $t('Notas de {cam}', { cam: r?.cam ?? '' }) }}</p>
+          <p class="mb-0.5 text-xs text-sky-800">{{ $t('Notas de {cam}', { cam: r?.cam ?? '' }) }}</p>
           <p v-for="n in (d.notes ?? []).filter(n => !n.checked)" :key="n.text" class="mb-0.5 font-medium text-amber-900">
             {{ $t('La nota cambia {field}: {from} → {to}.', { field: fieldWord(n.field), from: n.from ?? '?', to: n.to ?? '?' }) }}
           </p>

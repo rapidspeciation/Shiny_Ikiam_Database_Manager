@@ -218,16 +218,16 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
         <ul class="divide-y divide-stone-100 border-t border-stone-100">
           <li v-for="(l, i) in c.lines" :key="`${l.field}:${i}`" class="px-3 py-1 leading-snug">
             <span class="flex items-baseline gap-2">
-              <span class="min-w-0 flex-1 text-[11px] font-medium tracking-wide text-stone-500">{{ l.field }}</span>
-              <span class="shrink-0 text-[11px] text-stone-500">{{ who(l.actors) }} · {{ when(l.at) }}</span>
+              <span class="min-w-0 flex-1 text-xs font-medium tracking-wide text-stone-500">{{ l.field }}</span>
+              <span class="shrink-0 text-xs text-stone-500">{{ who(l.actors) }} · {{ when(l.at) }}</span>
             </span>
             <span class="block text-[15px] break-words tabular-nums">{{ changeText(l, formatSerial, $t('quitado')) }}</span>
-            <span v-if="l.sources.includes('assistant')" class="text-[11px] text-violet-700">{{ $t('por el asistente') }}</span>
-            <span v-if="l.staged" class="ml-1 text-[11px] text-amber-800">{{ $t('en la app, aún no en Google Sheets') }}</span>
+            <span v-if="l.sources.includes('assistant')" class="text-xs text-violet-700">{{ $t('por el asistente') }}</span>
+            <span v-if="l.staged" class="ml-1 text-xs text-amber-800">{{ $t('en la app, aún no en Google Sheets') }}</span>
           </li>
           <li v-for="e in c.events" :key="e.id" class="flex items-baseline gap-2 bg-sky-50/60 px-3 py-1 text-sm">
             <span class="min-w-0 flex-1 break-words tabular-nums">{{ eventLine(e) }}</span>
-            <span class="shrink-0 text-[11px] text-stone-500">{{ who([e.name || e.username || '']) }} · {{ when(e.createdAt) }}</span>
+            <span class="shrink-0 text-xs text-stone-500">{{ who([e.name || e.username || '']) }} · {{ when(e.createdAt) }}</span>
           </li>
         </ul>
       </li>

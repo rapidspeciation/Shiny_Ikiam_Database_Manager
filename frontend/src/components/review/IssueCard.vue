@@ -129,7 +129,7 @@ async function toggleHistory() {
       <span v-else class="text-stone-500">{{ i.sheet }}</span>
       <span v-if="i.date" class="text-xs text-stone-500">{{ i.date }}</span>
       <span v-if="i.who?.length" class="truncate text-xs text-stone-500">{{ i.who.join(' · ') }}</span>
-      <span v-if="i.firstSeen" class="text-[11px] text-stone-400" :title="$t('Visto por primera vez')">{{
+      <span v-if="i.firstSeen" class="text-xs text-stone-400" :title="$t('Visto por primera vez')">{{
         $t('desde {date}', { date: stamp(i.firstSeen, false) })
       }}</span>
       <span
@@ -161,7 +161,7 @@ async function toggleHistory() {
               class="h-52 w-auto"
             />
           </button>
-          <figcaption class="mt-0.5 flex items-center gap-2 text-[11px] text-stone-500">
+          <figcaption class="mt-0.5 flex items-center gap-2 text-xs text-stone-500">
             {{ $t('Sobre') }} · {{ envelope.name }}
             <button
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
@@ -181,7 +181,7 @@ async function toggleHistory() {
             >
               <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" class="h-24 w-auto!" />
             </button>
-            <figcaption class="max-w-[9rem] truncate text-[11px] text-stone-500">{{ p.name }}</figcaption>
+            <figcaption class="max-w-[9rem] truncate text-xs text-stone-500">{{ p.name }}</figcaption>
           </figure>
         </div>
         <div v-if="relatedList.length" class="rounded border border-dashed border-stone-300 p-1.5">

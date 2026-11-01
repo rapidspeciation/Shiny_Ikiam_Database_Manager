@@ -315,7 +315,7 @@ onBeforeUnmount(() => {
         </p>
         <p v-if="archive?.sandboxDrive" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-lab-drive>{{ $t('Lab: los cambios de archivos son simulados. Los cambios en la base se guardan en la copia de prueba.') }}</p>
         <div v-if="archive" class="overflow-hidden rounded border border-stone-200 text-xs" role="listbox" :aria-label="$t('Tipo de problema')" data-kinds>
-          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-[10px] text-stone-500" aria-hidden="true">
+          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-xs text-stone-500" aria-hidden="true">
             <span class="flex-1" /><span class="w-7 text-right">{{ $t('seguro') }}</span><span class="w-7 text-right">{{ $t('pensar') }}</span><span class="w-7 text-right">{{ $t('mirar') }}</span>
           </p>
           <button

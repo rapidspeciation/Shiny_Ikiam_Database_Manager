@@ -283,7 +283,7 @@ function resize(event: PointerEvent) {
                   :style="{ width: `${Math.min(100, space.percent)}%` }"
                 />
               </div>
-              <p class="mt-0.5 text-[11px] leading-tight text-stone-700">{{ space.text }}</p>
+              <p class="mt-0.5 text-xs leading-tight text-stone-700">{{ space.text }}</p>
             </div>
             <span v-if="space.level === 'full'" class="rounded bg-red-100 px-1.5 py-0.5 text-red-900">{{ $t('esta carpeta ocupa {gb} GB: no cabe', { gb: space.folderGb ?? 0 }) }}</span>
             <span v-else-if="space.folderGb" class="text-stone-500">{{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</span>

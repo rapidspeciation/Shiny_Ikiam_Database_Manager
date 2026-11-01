@@ -307,7 +307,7 @@ function onArrow() {
           <div
             v-if="o.group && o.group !== entries[i - 1]?.group"
             role="presentation"
-            class="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase"
+            class="px-2.5 pt-1.5 pb-0.5 text-xs font-semibold tracking-wide text-stone-500 uppercase"
           >
             {{ o.group }}
           </div>

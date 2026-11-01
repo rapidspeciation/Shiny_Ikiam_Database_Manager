@@ -25,7 +25,7 @@ export function monthly(months: string[], series: { label: string; color: string
               show: true,
               position: 'top',
               color: LABEL,
-              fontSize: 10,
+              fontSize: 12,
               formatter: (v: { dataIndex: number }) => (total(v.dataIndex) ? format(total(v.dataIndex)) : ''),
             }
           : { show: false },

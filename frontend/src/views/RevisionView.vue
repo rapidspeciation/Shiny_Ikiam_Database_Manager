@@ -288,7 +288,7 @@ const filtered = computed(
         {{ $t(v.label) }}
         <span
           v-if="v.key === 'alertas' && warnings"
-          class="rounded-full bg-fill-amber px-1.5 text-[11px] leading-4 font-semibold text-white tabular-nums"
+          class="rounded-full bg-fill-amber px-1.5 text-xs leading-4 font-semibold text-white tabular-nums"
           >{{ warnings }}</span
         >
       </button>
@@ -327,7 +327,7 @@ const filtered = computed(
             {{ $t('Todo') }} <span class="text-xs tabular-nums text-stone-500">{{ page ? allCount : '…' }}</span>
           </button>
           <template v-for="g in kindGroups" :key="g.title">
-            <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+            <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-xs font-semibold tracking-wide text-stone-500 uppercase">
               {{ g.title }}
             </p>
             <button

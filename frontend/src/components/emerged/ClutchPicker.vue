@@ -167,15 +167,15 @@ const dueText = (i: Item) => {
             </span>
             <span class="mt-1.5 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.pupae ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.adults ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(item.number)?.n ?? 0 }}</span>
               </span>
             </span>

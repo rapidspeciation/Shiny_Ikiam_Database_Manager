@@ -124,7 +124,7 @@ function onFocusOut(event: FocusEvent) {
         <template v-for="(o, i) in matches" :key="o.value">
           <li
             v-if="o.group && o.group !== matches[i - 1]?.group"
-            class="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase"
+            class="px-2.5 pt-1.5 pb-0.5 text-xs font-semibold tracking-wide text-stone-500 uppercase"
           >
             {{ o.group }}
           </li>

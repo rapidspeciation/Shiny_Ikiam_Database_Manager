@@ -148,7 +148,7 @@ const step = (i: number, by: number) => emit('order', moveColumn(props.shown, i,
   border: 1px solid var(--color-stone-300);
   border-radius: 0.375rem;
   background: var(--surface);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-stone-700);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
 }

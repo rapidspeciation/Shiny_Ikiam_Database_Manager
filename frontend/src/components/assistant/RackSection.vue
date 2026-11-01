@@ -113,7 +113,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
       <h3 class="flex items-center gap-1.5 text-sm font-semibold text-stone-900">
         <span class="font-mono">{{ rack.rack_id ?? $t('Rack sin código') }}</span>
       </h3>
-      <span class="text-[11px] text-stone-500">{{
+      <span class="text-xs text-stone-500">{{
         $tn(rack.tubes_read ?? 0, '{n} tubo leído de las fotos', '{n} tubos leídos de las fotos')
       }}</span>
       <!-- Which corner the code sits beside: assumed (the team's racks) until confirmed. -->
@@ -384,7 +384,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   gap: 0.25rem;
   border-radius: 0.25rem;
   padding: 0.05rem 0.4rem;
-  font-size: 11px;
+  font-size: 12px;
 }
 .corner.is-assumed {
   background: var(--color-amber-100);
@@ -402,7 +402,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   border-radius: 0.25rem;
   background: var(--surface);
   padding: 0.1rem 0.45rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-stone-700);
 }
 .rack-btn:hover:not(:disabled) {
@@ -465,6 +465,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   min-width: 0;
   overflow-x: auto;
 }
+/* Inside the rack's wells and their row and column numbers, text stays under 12 px so 96 wells fit beside the photo. */
 .rack-grid {
   border-collapse: collapse;
   font-size: 11px;
@@ -583,7 +584,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   flex-wrap: wrap;
   gap: 0.15rem 0.7rem;
   margin-top: 0.35rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-stone-600);
 }
 .legend-item {
@@ -661,7 +662,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 }
 .rack-notes {
   margin-top: 0.35rem;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-stone-700);
 }
 .rack-notes li {

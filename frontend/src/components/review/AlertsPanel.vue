@@ -128,7 +128,7 @@ const levelTone: Record<string, string> = {
                 </tbody>
               </table>
             </div>
-            <p v-if="p.fullRanges" class="mt-0.5 text-[11px] text-stone-500">
+            <p v-if="p.fullRanges" class="mt-0.5 text-xs text-stone-500">
               {{ $t('{n} rangos anteriores, ya completos, no se muestran.', { n: p.fullRanges }) }}
             </p>
           </div>

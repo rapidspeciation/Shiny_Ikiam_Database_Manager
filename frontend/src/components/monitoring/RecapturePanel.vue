@@ -178,7 +178,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <li v-for="(e, n) in i.events" :key="e.row?.id ?? `${i.key}-${n}`" class="flex shrink-0 items-start gap-2">
             <div
               v-if="n"
-              class="flex h-32 w-11 flex-col items-center justify-center text-center text-[11px] text-stone-500"
+              class="flex h-32 w-11 flex-col items-center justify-center text-center text-xs text-stone-500"
               :title="e.metres !== null ? $t('Distancia entre los puntos GPS de las dos capturas') : ''"
             >
               <ChevronRight :size="18" />
@@ -203,7 +203,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   {{ $t('Sin foto') }}
                 </div>
               </div>
-              <figcaption class="mt-1 text-[11px] leading-snug">
+              <figcaption class="mt-1 text-xs leading-snug">
                 <span class="font-medium">{{ n ? $t('Recaptura {n}', { n }) : $t('Marcado') }}</span> · {{ date(e.date) }}<br />
                 <span
                   v-if="e.outside"

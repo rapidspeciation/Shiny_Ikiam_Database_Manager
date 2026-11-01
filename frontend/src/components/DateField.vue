@@ -226,7 +226,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
             <X :size="20" />
           </button>
         </div>
-        <div class="mt-1 grid grid-cols-7 text-center text-[11px] font-medium text-stone-500 uppercase">
+        <div class="mt-1 grid grid-cols-7 text-center text-xs font-medium text-stone-500 uppercase">
           <span v-for="w in weekdays" :key="w" class="py-1">{{ w }}</span>
         </div>
         <div class="grid grid-cols-7 gap-0.5">
