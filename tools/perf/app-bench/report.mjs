@@ -3,13 +3,7 @@
 // run (--vs other/results.json) both side by side with the change in %.
 //   node tools/perf/app-bench/report.mjs <results.json> [--vs <before results.json>] [--json]
 import { readFileSync } from 'node:fs';
-
-const argv = process.argv.slice(2);
-const vsAt = argv.indexOf('--vs');
-const vsFile = vsAt >= 0 ? argv.splice(vsAt, 2)[1] : null;
-const asJson = argv.includes('--json');
-const file = argv.find(a => !a.startsWith('--'));
-if (!file) throw new Error('report.mjs <results.json> [--vs <before>]');
+import { pathToFileURL } from 'node:url';
 
 const median = xs => {
   const s = xs.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
@@ -79,6 +73,16 @@ export function metricsOf(rep) {
   return m;
 }
 
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+
+function main() {
+const argv = process.argv.slice(2);
+const vsAt = argv.indexOf('--vs');
+const vsFile = vsAt >= 0 ? argv.splice(vsAt, 2)[1] : null;
+const asJson = argv.includes('--json');
+const file = argv.find(a => !a.startsWith('--'));
+if (!file) throw new Error('report.mjs <results.json> [--vs <before>]');
+
 function summarize(path) {
   const data = JSON.parse(readFileSync(path, 'utf8'));
   const per = data.results.map(metricsOf);
@@ -95,7 +99,7 @@ const now = summarize(file);
 const before = vsFile ? summarize(vsFile) : null;
 if (asJson) {
   console.log(JSON.stringify({ now: now.metrics, before: before?.metrics ?? null }, null, 1));
-  process.exit(0);
+  return;
 }
 const lines = [];
 lines.push(`# ${now.meta.label} (${now.meta.at}, ${now.meta.host}, commit ${now.meta.commit}${now.meta.dirty ? '+' : ''}, ${now.meta.repeats} repeats)`);
@@ -128,3 +132,4 @@ if (prof) {
   }
 }
 console.log(lines.join('\n'));
+}
