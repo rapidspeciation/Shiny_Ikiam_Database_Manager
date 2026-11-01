@@ -109,6 +109,31 @@ export function parseReply(raw, { max = 5 } = {}) {
   return { text: silent ? '' : text, images, files, voice, silent };
 }
 
+/**
+ * A note to the operator before the reply («Daniela asked how many…. Here is the reply for WhatsApp:», «Respuesta:»):
+ * only whole leading lines that are clearly about the request or announce the reply are taken off, never later text.
+ * → { text, stripped: number of lines taken off, unsure: nothing left, or the next line still reads like such a note }. Pure.
+ */
+const PREAMBLE = [
+  /^[\p{L} .'-]{1,40}\b(asked|asks|is asking|wants to know|wanted to know)\b.*:\s*$/iu, // an English note about who asked what, leading into the reply
+  /\b(here is|here's|this is|below is)\b.{0,40}\b(reply|answer|response|message)\b.{0,40}:\s*$/i,
+  /^(draft |final )?(reply|answer|response|respuesta)( for whatsapp| para whatsapp| final)?\s*:\s*$/i,
+];
+const preamble = line => PREAMBLE.some(re => re.test(line));
+export function stripPreamble(raw) {
+  const lines = String(raw ?? '').split('\n');
+  let i = 0;
+  let stripped = 0;
+  while (i < lines.length && (lines[i].trim() === '' || preamble(lines[i].trim()))) {
+    if (lines[i].trim()) stripped++;
+    i++;
+  }
+  if (!stripped) return { text: String(raw ?? ''), stripped: 0, unsure: false };
+  const text = lines.slice(i).join('\n').trim();
+  const next = text.split('\n')[0] ?? '';
+  return { text, stripped, unsure: !text || /\b(here is|here's|the reply|the answer)\b/i.test(next) };
+}
+
 /** Markdown the chat may write, in WhatsApp's own formatting. Pure. */
 export function toWhatsApp(md) {
   return String(md ?? '')
