@@ -62,4 +62,24 @@ export default {
   // Server messages.
   'Falta la fila': 'The row is missing',
   'Momento no válido': 'Invalid moment',
+
+  // A phone shows the sheet as the grid or as a form, one row at a time.
+  'Ver como tabla': 'Show as table',
+  'Ver como formulario': 'Show as form',
+  'Ir a…': 'Go to…',
+  'Esta hoja no tiene filas.': 'This sheet has no rows.',
+  '{at} de {n}': '{at} of {n}',
+  'Ir a la fila: escribe su ID o su número de fila': 'Go to row: type its ID or its row number',
+  'Ninguna fila con ese ID o número.': 'No row with that ID or number.',
+  'Cerrar la búsqueda de fila': 'Close the row search',
+  '{n} cambio sin guardar en esta sección': '{n} unsaved change in this section',
+  '{n} cambios sin guardar en esta sección': '{n} unsaved changes in this section',
+  Identidad: 'Identity',
+  'En el campo': 'In the field',
+  'Fechas y muerte': 'Dates and death',
+  'Tubos y preservación': 'Tubes and preservation',
+  'Notas y fotos': 'Notes and photos',
+  'Racks y manifiestos': 'Racks and manifests',
+  'Manifiesto (fórmulas)': 'Manifest (formulas)',
+  'Otras columnas': 'Other columns',
 } as Record<string, string>
