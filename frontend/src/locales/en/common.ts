@@ -61,4 +61,5 @@ export default {
   'Pega primero el enlace de la ruta': 'Paste the route link first',
   'Elige primero la especie': 'Choose the species first',
   'Elige primero un recorrido': 'Choose a walk first',
+  'Avisos del libro ({n})': 'Workbook warnings ({n})',
 } as Record<string, string>
