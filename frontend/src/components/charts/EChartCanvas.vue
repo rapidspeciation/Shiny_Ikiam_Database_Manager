@@ -8,7 +8,9 @@ import { SVGRenderer } from 'echarts/renderers'
 import langES from 'echarts/i18n/langES-obj.js'
 import type { EChartsCoreOption } from 'echarts/core'
 import { needsExtras } from './extras'
+import { darkOption } from './chart'
 import { locale } from '../../lib/i18n'
+import { theme } from '../../lib/theme'
 
 // What every chart uses (Inicio's bars and lines). Monitoreo's report also has a heat map, zoom
 // bars and shaded areas: those parts load with the first chart that has them (echartsExtras.ts).
@@ -30,14 +32,15 @@ async function render() {
   // Another option arrived, or the chart was closed, while the extra parts loaded.
   if (run !== renders || !host.value) return
   chart ||= echarts.init(host.value, null, { renderer: 'svg', locale: locale.value === 'es' ? 'ES' : 'EN' })
-  chart.setOption(props.option, { notMerge: true })
+  chart.setOption(theme.value === 'dark' ? darkOption(props.option) : props.option, { notMerge: true })
 }
 onMounted(() => {
   void render()
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(host.value!)
 })
-watch(() => props.option, render)
+// A new theme: the same option in its colours (chart.ts darkOption).
+watch([() => props.option, theme], render)
 // Its locale is set when it is made: made again in the other language.
 watch(locale, () => {
   chart?.dispose()

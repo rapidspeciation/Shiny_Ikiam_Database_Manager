@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ChartCard from '../charts/ChartCard.vue'
 import EChart from '../charts/EChart.vue'
-import { BLUES, OTHER, SERIES, axis, barStyle, base, format, tipRow, tipTitle } from '../charts/chart'
+import { BLUES, LABEL, MUTED, OTHER, SERIES, axis, barStyle, base, format, tipRow, tipTitle } from '../charts/chart'
 import type { StoredTrack } from '../../composables/useMonitoring'
 import { formatSerial } from '../../lib/dates'
 import { t } from '../../lib/i18n'
@@ -245,7 +245,7 @@ const topOption = computed(() => ({
       'category',
       top.value.map(s => spName(s.species)),
     ),
-    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+    axisLabel: { color: LABEL, fontSize: 11, fontStyle: 'italic' },
   },
   series: (['preserved', 'marked', 'recaptured'] as const).map((key, n) => ({
     name: [t('Preservados'), t('Marcados'), t('Recapturas')][n],
@@ -319,7 +319,7 @@ const seasonOption = computed(() => ({
   xAxis: { ...axis('category', monthNames()), splitArea: { show: false } },
   yAxis: {
     ...axis('category', seasonSpecies.value.map(spName)),
-    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+    axisLabel: { color: LABEL, fontSize: 11, fontStyle: 'italic' },
   },
   visualMap: {
     min: 0,
@@ -331,7 +331,7 @@ const seasonOption = computed(() => ({
     itemHeight: 120,
     itemWidth: 10,
     text: [t('más'), t('menos')],
-    textStyle: { color: '#898781', fontSize: 11 },
+    textStyle: { color: MUTED, fontSize: 11 },
     inRange: { color: BLUES },
   },
   series: [
@@ -355,7 +355,7 @@ const sectionOption = computed(() => {
   const counts = [...bySection.value.bySpecies, bySection.value.other]
   return {
     ...base({ legend: true }),
-    legend: { ...base({ legend: true }).legend, textStyle: { color: '#52514e', fontSize: 11, fontStyle: 'italic' } },
+    legend: { ...base({ legend: true }).legend, textStyle: { color: LABEL, fontSize: 11, fontStyle: 'italic' } },
     tooltip: {
       ...base().tooltip,
       trigger: 'axis',
@@ -368,7 +368,7 @@ const sectionOption = computed(() => {
         )
       },
     },
-    xAxis: { ...axis('value'), max: 100, axisLabel: { color: '#898781', fontSize: 11, formatter: '{value} %' } },
+    xAxis: { ...axis('value'), max: 100, axisLabel: { color: MUTED, fontSize: 11, formatter: '{value} %' } },
     yAxis: axis('category', ['T4', 'T3', 'T2', 'T1']),
     series: names.map((n, i) => ({
       name: n,
@@ -404,13 +404,13 @@ const sexOption = computed(() => ({
       )
     },
   },
-  xAxis: { ...axis('value'), axisLabel: { color: '#898781', fontSize: 11, formatter: (v: number) => String(Math.abs(v)) } },
+  xAxis: { ...axis('value'), axisLabel: { color: MUTED, fontSize: 11, formatter: (v: number) => String(Math.abs(v)) } },
   yAxis: {
     ...axis(
       'category',
       sexSpecies.value.map(s => spName(s.species)),
     ),
-    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+    axisLabel: { color: LABEL, fontSize: 11, fontStyle: 'italic' },
   },
   series: [
     {
@@ -476,7 +476,7 @@ const timeOption = computed(() => {
         markArea: {
           silent: true,
           itemStyle: { color: 'rgba(42,120,214,.06)' },
-          label: { show: true, position: 'top', color: '#898781', fontSize: 11, formatter: t('horario habitual') },
+          label: { show: true, position: 'top', color: MUTED, fontSize: 11, formatter: t('horario habitual') },
           data: [[{ xAxis: '9:00' }, { xAxis: '10:50' }]],
         },
       },

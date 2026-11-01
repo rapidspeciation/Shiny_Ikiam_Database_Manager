@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ChartCard from '../charts/ChartCard.vue'
 import EChart from '../charts/EChart.vue'
-import { SERIES, axis, barStyle, base, format } from '../charts/chart'
+import { LABEL, MUTED, SERIES, axis, barStyle, base, format } from '../charts/chart'
 import { locale, t } from '../../lib/i18n'
 import { monthNames, table, type Nature } from '../../lib/summary'
 
@@ -14,7 +14,6 @@ import { monthNames, table, type Nature } from '../../lib/summary'
 const props = defineProps<{ nature: Nature }>()
 
 const hour = (h: number) => `${h}:00`
-const MUTED = '#898781'
 /** No hover popups on Inicio (they covered the chart): values are written on it, and "Tabla" lists them. */
 const still = () => ({ ...base(), tooltip: { show: false } })
 /** An axis title under or beside the axis. */
@@ -26,7 +25,7 @@ const title = (name: string, gap = 26) => ({
 })
 /** Labels of a line drawn over bars: on a white chip so they stay readable. */
 const chip = { backgroundColor: 'rgba(255,255,255,.9)', padding: [1, 3], borderRadius: 3 }
-const valueLabel = (position: string, color = '#52514e') => ({
+const valueLabel = (position: string, color = LABEL) => ({
   show: true,
   position,
   color,
@@ -51,7 +50,7 @@ const lifeOption = computed(() => ({
       'category',
       lifeRows.value.map(r => r.name),
     ),
-    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+    axisLabel: { color: LABEL, fontSize: 11, fontStyle: 'italic' },
   },
   series: [
     ...STAGES.map((s, n) => ({
@@ -137,7 +136,7 @@ function bars(rows: { label: string; value: number }[], color: string, suffix = 
         'category',
         list.map(r => r.label),
       ),
-      axisLabel: { color: '#52514e', fontSize: 11 },
+      axisLabel: { color: LABEL, fontSize: 11 },
     },
     series: [
       {
