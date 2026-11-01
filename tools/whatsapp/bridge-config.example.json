@@ -1,0 +1,31 @@
+{
+  "port": 8789,
+  "soulFile": ["/home/franz/.local/share/ithomiini-wa-bridge/assistant/voice/whatsapp.md", "/home/franz/.local/share/ithomiini-wa-bridge/assistant/voice/core.md"],
+  "secretFile": "/home/franz/.config/ithomiini-wa-bridge/webhook-secret",
+  "wacli": { "bin": "/home/franz/.local/bin/wacli", "store": "/home/franz/.wacli" },
+  "chats": {
+    "group": { "jid": "<group>@g.us", "label": "Ithomiini 🦋 (underground)", "route": "claudeclaw", "enabled": true, "repliesHour": 20, "contextLines": 15, "ack": "reaction" },
+    "self": { "jid": "<own number>@s.whatsapp.net", "aliases": ["<own LID>@lid"], "label": "tu chat contigo mismo", "route": "local", "enabled": true, "repliesHour": 60, "contextLines": 0, "ack": "reaction" },
+    "labgroup": { "jid": "120363999999999999@g.us", "label": "Ithomiini 🦋 (underground) [simulación]", "route": "labsim", "enabled": false, "dryRun": true, "repliesHour": 20, "contextLines": 15 }
+  },
+  "routes": {
+    "claudeclaw": {
+      "ssh": "claudeclaw", "node": "/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node",
+      "script": "/home/ubuntu/ithomiini/work/wa-bridge/t3-turn.mjs", "home": "/home/ubuntu/.t3", "local": "http://127.0.0.1:3773",
+      "tokenFile": "/home/ubuntu/.config/ithomiini/t3-admin-token", "commandsModule": "/home/ubuntu/ithomiini/current/server/t3commands.mjs",
+      "projectId": "<the «Ithomiini 🦋 (underground)» project>", "title": "Ithomiini 🦋 (underground) · WhatsApp",
+      "model": "claude-opus-5-5", "effort": "medium", "attachmentsDir": "/home/ubuntu/.t3/userdata/attachments"
+    },
+    "local": {
+      "home": "/home/franz/.t3-orchestrator-v2", "local": "http://127.0.0.1:3774", "tokenFile": "/home/franz/.config/ithomiini-wa-bridge/t3-local-token",
+      "commandsModule": "/home/franz/.local/share/ithomiini-wa-bridge/server/t3commands.mjs", "script": "/home/franz/.local/share/ithomiini-wa-bridge/tools/whatsapp/t3-turn.mjs",
+      "projectId": "<the «Ithomiini lab · WhatsApp» project>", "title": "Orchestrator wpp", "model": "claude-opus-5-5", "effort": "medium",
+      "attachmentsDir": "/home/franz/.t3-ithomiini-lab/userdata/attachments", "toolsHealth": "http://127.0.0.1:8795/health"
+    },
+    "labsim": { "...": "as local, with \"title\": \"WA group simulation (lab)\"" }
+  },
+  "voice": {
+    "elevenlabsEnv": "/home/franz/.config/videos-runner/elevenlabs.env", "whisperPython": "/home/franz/Projects/hermes-agent/venv/bin/python",
+    "edgeTts": "/home/franz/.local/bin/edge-tts", "ttsVoiceEs": "es-EC-AndreaNeural", "ttsVoiceEn": "en-US-AvaNeural"
+  }
+}

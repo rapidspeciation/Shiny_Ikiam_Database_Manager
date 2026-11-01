@@ -22,6 +22,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rm
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
+import { applyLabGuard } from './lab-guard.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shared = process.env.ITHOMIINI_SHARED || '/home/ubuntu/ithomiini/shared';
@@ -269,6 +270,8 @@ function provision(user, { freshToken, addProject }) {
       ...(labUrl ? ['Bash(scripts/deploy.sh:*)', 'Bash(./scripts/deploy.sh:*)', `Bash(${join(source, 'scripts/deploy.sh')}:*)`] : []),
     ]),
   ];
+  // The lab's chats can neither send WhatsApp nor make timers (scripts/lab-guard.mjs).
+  if (labUrl) applyLabGuard(settings, { home: process.env.HOME, source, cache: join(process.env.HOME, '.cache', 'ithomiini-lab') });
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
 
   // Claude Code only applies the folder's settings once the folder is trusted.

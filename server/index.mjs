@@ -95,6 +95,13 @@ import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.m
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
+import { chatModel, createWhatsAppRelay, ensureServiceUser, t3Glue, verifySignature, wacliSender } from './whatsapp.mjs';
+import { haikuGate } from './whatsapp-gate.mjs';
+import { claudeUsage } from './claude-usage.mjs';
+
+/** The WhatsApp gate when WA_GATE is not set: the one the calibration passed (tools/whatsapp/README.md). */
+const WA_GATE_DEFAULT = 'rules';
+import { tellChat } from './t3tell.mjs';
 import { watchEventLoop } from './event-loop.mjs';
 import { createReadings } from './readings.mjs';
 import { createSexCheck } from './sex-check.mjs';
@@ -345,6 +352,36 @@ export function configFromEnv(env = process.env) {
     // LOCAL_MODE (the lab): start with the sheets answering as a recalculating workbook, "mode:minutes" (tools/lab/README.md).
     localBusy: env.LOCAL_BUSY || null,
     sheetHookSecret: env.SHEET_HOOK_SECRET,
+    // The WhatsApp relay (server/whatsapp.mjs), on when its webhook secret is set (a file, mode 600).
+    // WA_SENDER=wacli would send answers with wacli; 'outbox' (the default) only writes them down.
+    whatsapp: env.WA_WEBHOOK_SECRET_FILE
+      ? {
+          secretFile: env.WA_WEBHOOK_SECRET_FILE,
+          serviceUser: env.WA_SERVICE_USER || 'whatsapp',
+          botJids: (env.WA_BOT_JIDS || '').split(',').map(s => s.trim()).filter(Boolean),
+          botName: env.WA_BOT_NAME || '\\b(ithobot|asistente|assistant)\\b',
+          sender: env.WA_SENDER === 'wacli' ? 'wacli' : 'outbox',
+          wacliBin: env.WA_WACLI_BIN || 'wacli',
+          wacliAccount: env.WA_WACLI_ACCOUNT || null,
+          // The lab: the simulator may set the list up (POST /api/wa/setup).
+          lab: env.WA_LAB === '1',
+          debounceMs: env.WA_DEBOUNCE_MS ? Number(env.WA_DEBOUNCE_MS) : undefined,
+          // Lab runs of the simulator only: a shorter wait for unanswered questions, no quiet hours, more answers an hour.
+          questionWaitMs: env.WA_LAB === '1' && env.WA_QUESTION_WAIT_MS ? Number(env.WA_QUESTION_WAIT_MS) : undefined,
+          quietHours: env.WA_LAB === '1' && env.WA_QUIET_HOURS === '0' ? false : undefined,
+          sendsHour: env.WA_LAB === '1' && env.WA_SENDS_HOUR ? Number(env.WA_SENDS_HOUR) : undefined,
+          // The shared chat's model and effort (Opus or Sonnet 5.5; low, medium or high).
+          chatModel: env.WA_MODEL || 'claude-opus-5-5',
+          chatEffort: env.WA_EFFORT || 'medium',
+          // The Haiku gate for helpful groups' lines no rule woke (server/whatsapp-gate.mjs): WA_GATE=haiku or rules.
+          gate: env.WA_GATE === 'rules' ? 'rules' : env.WA_GATE === 'haiku' ? 'haiku' : WA_GATE_DEFAULT,
+          claudeBin: env.WA_CLAUDE_BIN || 'claude',
+          // /usage: the Claude account the server runs on (its ~/.claude login); WA_USAGE=0 turns it off.
+          usage: env.WA_USAGE !== '0',
+          // Incoming photos, kept for the chat and identify_species: beside the database by default.
+          mediaDir: env.WA_MEDIA_DIR ? resolve(env.WA_MEDIA_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'wa-media') : undefined,
+        }
+      : null,
     // The app's address for links the assistant gives (e.g. to a save in the Historial).
     publicUrl: (env.APP_PUBLIC_URL || env.APP_ORIGIN || '').replace(/\/+$/, ''),
     // Specimen photos fetched from Drive for the Revisión tab (server/photos.mjs).
@@ -512,6 +549,114 @@ function csvEscape(value) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+/** The WhatsApp relay with its glue to T3 and the database's CAMs, or null when it is off. */
+function createWhatsApp(store, config, assistant) {
+  const wa = config.whatsapp;
+  if (!wa?.secretFile) return null;
+  let secret;
+  try {
+    secret = readFileSync(wa.secretFile, 'utf8').trim();
+  } catch (e) {
+    console.error('WhatsApp relay off: its secret file cannot be read:', e.code);
+    return null;
+  }
+  if (secret.length < 16) {
+    console.error('WhatsApp relay off: its secret is too short');
+    return null;
+  }
+  const db = store.db;
+  ensureServiceUser(db, wa.serviceUser);
+  const cam = db.prepare("SELECT values_json FROM records WHERE sheet = 'Collection_data' AND missing = 0 AND label = ? LIMIT 1");
+  let genera = null;
+  let relay = null;
+  let model;
+  try {
+    model = chatModel({ model: wa.chatModel, effort: wa.chatEffort });
+  } catch (e) {
+    console.error('WhatsApp relay off:', e.message);
+    return null;
+  }
+  const glue = t3Glue({
+    model,
+    t3: config.t3,
+    chats: assistant?.t3 ?? null,
+    provision: provisioner(config.t3?.provision),
+    serviceUser: wa.serviceUser,
+    getThread: () => relay.thread(),
+    setThread: id => relay.setThread(id),
+    tell: tellChat,
+  });
+  const beside = name => join(dirname(resolve(db.location?.() || config.databasePath || 'wa.sqlite')), name);
+  relay = createWhatsAppRelay({
+    db,
+    secret,
+    serviceUser: wa.serviceUser,
+    botJids: wa.botJids,
+    botName: new RegExp(wa.botName, 'i'),
+    sender: wa.sender,
+    send: wa.sender === 'wacli' ? wacliSender({ bin: wa.wacliBin, account: wa.wacliAccount }) : null,
+    wake: glue.wake,
+    busy: glue.busy,
+    outboxFile: beside('wa-outbox.jsonl'),
+    logFile: beside('wa-relay.log.jsonl'),
+    mediaDir: wa.mediaDir ?? beside('wa-media'),
+    gate: wa.gate === 'haiku' ? haikuGate({ bin: wa.claudeBin }) : null,
+    usage: wa.usage ? claudeUsage() : null,
+    chatModel: `${model.model.replace(/^claude-(\w)/, (_, c) => c.toUpperCase()).replace(/-(\d+)-(\d+)$/, ' $1.$2')} (${wa.chatEffort})`,
+    lab: wa.lab,
+    options: Object.fromEntries(
+      Object.entries({ debounceMs: wa.debounceMs, questionWaitMs: wa.questionWaitMs, quietHours: wa.quietHours, sendsHour: wa.sendsHour }).filter(([, v]) => v !== undefined),
+    ),
+    lookupCam: id => {
+      const row = cam.get(id);
+      if (!row) return null;
+      const v = JSON.parse(row.values_json);
+      return { genus: v.Genus ?? null, species: v.SPECIES ?? null, sex: v.Sex ?? null };
+    },
+    genera: () =>
+      (genera ??= new Set(
+        db
+          .prepare("SELECT DISTINCT json_extract(values_json, '$.Genus') g FROM records WHERE sheet = 'Collection_data' AND missing = 0")
+          .all()
+          .map(r => r.g)
+          .filter(g => typeof g === 'string' && /^[A-Z][a-z]{3,}$/.test(g)),
+      )),
+  });
+  // The relay's turns: the queue is looked at every 5 s (a read of T3's database, no model).
+  relay.start();
+  return { relay, secret, lab: wa.lab, spreadsheetId: config.spreadsheetId };
+}
+
+/** /api/wa/…: inbound (wacli), and for the lab's simulator the info, a message's state and the list's setup. */
+async function whatsappRoute(req, res, whatsapp, path, url, method) {
+  if (!whatsapp) throw fail('NOT_FOUND', 'Not found', 404);
+  const { relay, secret } = whatsapp;
+  if (method === 'POST' && path === '/api/wa/inbound') {
+    const raw = await bytesOf(req, 1024 * 1024);
+    const out = relay.receive(req.headers, raw);
+    return json(res, out.status, out.body);
+  }
+  // The rest: signed like the webhook, over the request's method, path and body.
+  const raw = method === 'POST' ? await bytesOf(req, 1024 * 1024) : Buffer.alloc(0);
+  const signed = Buffer.concat([Buffer.from(`${method} ${url.pathname}${url.search}\n`), raw]);
+  if (!verifySignature(secret, signed, req.headers['x-wacli-signature'])) throw fail('WA_FORBIDDEN', 'Invalid signature', 403);
+  if (method === 'GET' && path === '/api/wa/info')
+    return json(res, 200, { lab: whatsapp.lab, realWorkbook: whatsapp.spreadsheetId === REAL_ID, status: relay.status() });
+  if (method === 'GET' && path.startsWith('/api/wa/messages/')) {
+    const found = relay.message(decodeURIComponent(path.slice('/api/wa/messages/'.length)));
+    return found ? json(res, 200, found) : json(res, 404, { error: 'No such message' });
+  }
+  if (method === 'POST' && path === '/api/wa/setup') {
+    if (!whatsapp.lab || whatsapp.spreadsheetId === REAL_ID) throw fail('WA_LAB_ONLY', 'Setup from the simulator is for the lab only', 403);
+    const body = raw.length ? JSON.parse(raw.toString('utf8')) : {};
+    for (const p of body.people ?? []) relay.setPerson(p);
+    for (const g of body.groups ?? []) relay.setGroup(g);
+    if (body.resetThread) relay.setThread(null);
+    return json(res, 200, { people: relay.people().length, groups: relay.groups().length, thread: relay.thread() });
+  }
+  throw fail('NOT_FOUND', 'Not found', 404);
+}
+
 export async function createApp(config = {}, options = {}) {
   const given = config;
   config = { ...configFromEnv({}), ...config };
@@ -573,6 +718,7 @@ export async function createApp(config = {}, options = {}) {
   const eventLoop = watchEventLoop();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
+  const whatsapp = createWhatsApp(store, config, assistant);
   // The AI instructions page: the assistant's brief, skills, subagents and tools with their history.
   const instructions = createInstructions({ tools: () => assistant?.tools?.() ?? [], ...options.instructions });
   const photos = createPhotoService(store, {
@@ -623,6 +769,7 @@ export async function createApp(config = {}, options = {}) {
           search: search.status(),
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
+          ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),
         });
       // The Wings Gallery's files of the photo readings, for its update_data.yml: public (the collection's
       // predictions, on the gallery already), gzip when accepted, an ETag and Last-Modified.
@@ -644,6 +791,8 @@ export async function createApp(config = {}, options = {}) {
           user: path.startsWith('/prueba-offline/models/') ? getSession(store, req.headers.cookie)?.user ?? null : null,
         });
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url, config.webRoot);
+      // wacli's webhook and the lab's simulator, signed with the relay's secret instead of a session.
+      if (path.startsWith('/api/wa/')) return whatsappRoute(req, res, whatsapp, path, url, method);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);
       if (method === 'GET' && path === '/api/auth/session')
@@ -662,7 +811,8 @@ export async function createApp(config = {}, options = {}) {
           res.writeHead(405, { allow: 'POST' });
           return res.end();
         }
-        const out = await assistant.mcp(req.headers, body);
+        // The WhatsApp chat's token gets whatsapp_reply (and no apply_proposal): server/whatsapp.mjs.
+        const out = whatsapp ? await whatsapp.relay.mcp(req.headers, body, () => assistant.mcp(req.headers, body)) : await assistant.mcp(req.headers, body);
         if (out.status === 202) {
           res.writeHead(202);
           return res.end();
@@ -1730,6 +1880,7 @@ export async function createApp(config = {}, options = {}) {
       }
       t3Bridge?.close();
       assistant?.close?.();
+      whatsapp?.relay.close();
       checks.close();
       search.close();
       clearTimeout(readingsStart);

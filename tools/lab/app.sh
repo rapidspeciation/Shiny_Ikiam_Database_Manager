@@ -75,7 +75,7 @@ stop() {
 # password, the app's Google login, T3's tokens, the browser profile, the mails with codes) and the
 # benchmarks' answers (the real rows, the cases, the scores). The app's data (app*/, photos/…) stays
 # readable, as the server's shared/ is.
-LAB_DENY="$(printf '%s:' "$LAB"/credentials* "$LAB/google.json" "$LAB/setup-token" "$LAB"/t3-admin-token* "$LAB/browser" "$LAB/mail" \
+LAB_DENY="$(printf '%s:' "$LAB"/credentials* "$LAB/google.json" "$LAB/setup-token" "$LAB"/t3-admin-token* "$LAB/browser" "$LAB/mail" "$LAB/wa-webhook-secret" \
   "$LAB"/snapshot*.json "$LAB/blanked.json" "$LAB/cases.json" "$LAB/seed.json" "$LAB/results" "$LAB/run-*.log" "$LAB/pl-bench-*.log" "$HOME/.cache/ithomiini-test")"
 env_provision=(
   T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$APPDIR" DATABASE_PATH="$APPDIR/app.sqlite"
@@ -112,6 +112,8 @@ if [ "${LAB_SEED:-full}" = bench ]; then
 fi
 
 [ -s "$LAB/setup-token" ] || head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$LAB/setup-token"
+# The WhatsApp relay's webhook secret (server/whatsapp.mjs): wacli and tools/whatsapp/simulate.mjs sign with it.
+[ -s "$LAB/wa-webhook-secret" ] || head -c 32 /dev/urandom | base64 | tr -d '/+=' > "$LAB/wa-webhook-secret"
 if [ -n "$WORKBOOK" ]; then
   env_data=(
     # The copy, through the app's own login (as on the server); the photo folders read on Drive, read-only.
@@ -153,6 +155,13 @@ env_app=(
   ITHOMIINI_T3_ADMIN_TOKEN_FILE="$LAB/t3-admin-token"
   ITHOMIINI_T3_HOME="$T3HOME"
   ITHOMIINI_T3_PROVISION=direct
+  # The WhatsApp relay, answers to the outbox only (WA_SENDER stays unset: nothing goes to WhatsApp).
+  WA_WEBHOOK_SECRET_FILE="$LAB/wa-webhook-secret"
+  WA_LAB=1
+  # The AI Identifier (identify_species) from the lab's own copy of its files (tools/identifier/setup.sh's
+  # folder, outside the repo); the background photo readings stay off unless READINGS=1.
+  IDENTIFIER_DIR="${LAB_IDENTIFIER_DIR:-$LAB/identifier}"
+  READINGS="${READINGS:-0}"
   # «Actualizar T3» updates the lab's T3 as the server's unit does, and starts it again (it is no service here).
   ITHOMIINI_T3_UPDATE_COMMAND="$HERE/tools/lab/t3.sh --update"
   "${env_provision[@]}"
@@ -169,7 +178,7 @@ env_app=(
 )
 # No Google credentials or keys reach the lab app but the copy's login in workbook mode; never an account that
 # changes files on Drive. Its mail goes to $LAB/mail.
-run_app() { env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
+run_app() { env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET -u WA_SENDER "${env_app[@]}" node server/index.mjs; }
 
 stop
 # Its T3 (the Asistente tab's chats), started when it is not running (after a reboot, it is not).
@@ -182,7 +191,7 @@ refreshed=""
 if [ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && [ -s "$APPDIR/app.sqlite" ]; then provision --refresh-all; refreshed=1; fi
 if [ "${1:-}" != "--bg" ]; then
   echo "Lab app on $URL (foreground; the first start takes a minute to load the snapshot)"
-  exec env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs
+  exec env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET -u WA_SENDER "${env_app[@]}" node server/index.mjs
 fi
 nohup bash -c "$(declare -f run_app); $(declare -p env_app); run_app" > "$LAB/app.log" 2>&1 &
 echo $! > "$LAB/app.pid"

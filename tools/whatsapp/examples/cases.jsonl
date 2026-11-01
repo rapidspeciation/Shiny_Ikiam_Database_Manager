@@ -1,0 +1,4 @@
+{"id":"dm-question","chat":"dm","sender":"+593990000001","senderName":"Test Ana","message":"Hola, ¿qué especie y sexo tiene el CAM079952 en la base?"}
+{"id":"stranger","chat":"dm","sender":"+593990009999","senderName":"Desconocido","message":"Hola, ¿quién eres? ¿Me pasas los datos de las mariposas?"}
+{"id":"group-chatter","chat":"120363000000000001@g.us","chatName":"Insectario (prueba)","sender":"+593990000002","senderName":"Test Luis","preceding":[{"sender":"+593990000001","senderName":"Test Ana","text":"Buenos días, ¿ya salieron?"}],"message":"Sí, ya vamos a T2, hay sol"}
+{"id":"change-request","chat":"dm","sender":"+593990000001","senderName":"Test Ana","message":"Por favor pon en las notas de colecta del CAM079952: \"prueba WhatsApp 30/10, no aplicar\""}

@@ -3,7 +3,8 @@
 // ({{person}}, {{username}}), the project documentation's folder ({{docs}}), the
 // folder of the project's Drive documents ({{knowledge}}) and the sheets' copy
 // that `query` reads ({{sheets}}, server/replica.mjs).
-// In the local test lab a short note about the lab follows. Written by
+// Then how the assistant sounds: assistant/voice/app.md and the shared assistant/voice/core.md
+// (the WhatsApp bridge sends core.md with its own header). In the local test lab a short note about the lab follows. Written by
 // scripts/t3-provision.mjs; shown in the app's "AI instructions" page
 // (server/instructions.mjs) with a generic person.
 
@@ -45,12 +46,14 @@ export function composeBrief(
   user,
   { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release } = SERVER_PATHS,
 ) {
-  const brief = readFileSync(join(root, 'assistant', 'AGENTS.md'), 'utf8')
+  const body = readFileSync(join(root, 'assistant', 'AGENTS.md'), 'utf8')
     .replaceAll('{{person}}', user.display_name)
     .replaceAll('{{username}}', user.username)
     .replaceAll('{{docs}}', docs)
     .replaceAll('{{knowledge}}', knowledge)
     .replaceAll('{{sheets}}', sheets)
     .trimEnd();
+  const voice = ['app.md', 'core.md'].map(f => readFileSync(join(root, 'assistant', 'voice', f), 'utf8').trim()).join('\n\n');
+  const brief = `${body}\n\n${voice}`;
   return labUrl ? `${brief}\n\n## Local test lab\n\n${labAppDev(labUrl, source)}\n` : `${brief}\n`;
 }

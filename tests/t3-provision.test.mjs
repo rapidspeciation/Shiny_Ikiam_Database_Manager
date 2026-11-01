@@ -42,9 +42,13 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
         .replaceAll('{{username}}', 'ana')
         .replaceAll('{{docs}}', docs.replace(/\/$/, ''))
         .replaceAll('{{knowledge}}', join(shared, 'knowledge'))
-        .replaceAll('{{sheets}}', join(shared, 'sheets.sqlite')),
+        .replaceAll('{{sheets}}', join(shared, 'sheets.sqlite'))
+        .trimEnd() +
+        // then how the assistant sounds: the app's header and the voice core shared with WhatsApp
+        ['app.md', 'core.md'].map(f => '\n\n' + readFileSync(new URL(`../assistant/voice/${f}`, import.meta.url), 'utf8').trim()).join('') +
+        '\n',
     );
-    assert.doesNotMatch(brief, /\{\{|Local test lab/);
+    assert.doesNotMatch(brief, /\{\{|Local test lab|Tone in this chat/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
       const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');
       assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);
@@ -204,6 +208,13 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     assert.ok(deny.includes(`Read(/${join(lab, 'google.json')})`) && deny.includes(`Read(/${join(lab, 'run-*.log')})`) && deny.includes('Read(//secret/answers/**)'));
     assert.ok(deny.includes('Bash(rm -rf /:*)'), 'other rules are kept');
     assert.ok(deny.includes('Bash(scripts/deploy.sh:*)'), 'the lab never deploys');
+    // The lab's chats can neither send WhatsApp nor make timers: rules and sandbox (scripts/lab-guard.mjs).
+    for (const rule of ['Bash(wacli*)', 'Bash(*wacli*)', 'Bash(*systemd-run*)', 'Bash(at *)', 'Bash(*crontab*)', 'Bash(*systemctl*)', 'mcp__t3-code__schedule_task', 'mcp__t3-code__run_scheduled_task_now', 'CronCreate', `Read(/${join(home, '.wacli')}/**)`, `Read(/${join(home, '.config', 'ithomiini-wa-bridge')}/**)`]) assert.ok(deny.includes(rule), rule);
+    const sandbox = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).sandbox;
+    assert.equal(sandbox.enabled, true);
+    assert.equal(sandbox.allowUnsandboxedCommands, false);
+    assert.ok(sandbox.filesystem.denyRead.includes(join(home, '.wacli')) && sandbox.filesystem.denyRead.includes(join(home, '.local', 'bin', 'wacli')));
+    assert.ok(sandbox.filesystem.allowWrite.includes('/work/ithomiini'));
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     db.close();
   } finally {
