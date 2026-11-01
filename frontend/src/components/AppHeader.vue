@@ -64,7 +64,7 @@ const shown = computed(() =>
 )
 /** A tab of the row (and «Más», and their measured copies). */
 const TAB =
-  'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white focus-visible:-outline-offset-2 lg:px-2.5'
+  'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white focus-visible:-outline-offset-2 max-sm:px-2.5 lg:px-2.5'
 const activePath = computed(() => (route.meta.tab as string | undefined) ?? route.path)
 
 /**
