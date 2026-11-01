@@ -1,0 +1,926 @@
+[
+ {
+  "id": "mon-phone-overflow",
+  "severity": "P0",
+  "principle": "P11",
+  "title": "Monitoreo on phones is laid out wider than the screen and clipped: the «Wikiloc» sub-tab cannot be tapped and the species photo viewer has its close × and next arrow off-screen",
+  "views": [
+   "monitoreo",
+   "monitoreo-importar",
+   "monitoreo-mapa",
+   "monitoreo-recapturas",
+   "monitoreo-dudas",
+   "monitoreo-wikiloc",
+   "monitoreo-tabla",
+   "monitoreo-galeria",
+   "monitoreo-fotos-especie"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "main content 430 px (es) / 406 px (en) wide in a 390 or 360 px screen; #app clips it (no horizontal scroll); Playwright click on the «Wikiloc» tab times out at 390 and 360",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/monitoreo-fotos-especie__390-es.jpg",
+  "source": "views/MonitoringView.vue:38 (sub-tab nav without overflow-x-auto or wrap); App.vue main overflow",
+  "found_by": "script (clipped-width) + click failure + visual (confirmed by eye)",
+  "note": ""
+ },
+ {
+  "id": "rev-phone-overflow",
+  "severity": "P0",
+  "principle": "P11",
+  "title": "Revisión on phones is 465–468 px wide and clipped: the «Alertas» tab with its count, the pager's next arrow, the third status column and the «Hasta» date of the Filtros sheet are cut off",
+  "views": [
+   "revision",
+   "revision-filtros",
+   "revision-sugerencias",
+   "revision-resueltos",
+   "revision-alertas"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "section / main 468 px (es) / 465 px (en) in a 390 px screen, clipped by #app",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/revision-filtros__390-es.jpg",
+  "source": "views/RevisionView.vue (toolbar row with search, sort select and pager; filter sheet grid)",
+  "found_by": "script (clipped-width) + visual",
+  "note": ""
+ },
+ {
+  "id": "db-indicator-phone",
+  "severity": "P1",
+  "principle": "P6",
+  "title": "Which database is open is never shown on phones: the «Copia de prueba» chip (lab) and the «Google Sheet» link (real database) are md-and-up only; the bare /propuestas page shows neither at any width",
+  "views": [
+   "all signed-in views",
+   "propuestas",
+   "propuesta",
+   "rack"
+  ],
+  "widths": [
+   390,
+   360,
+   1440
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "chip class «hidden … md:inline-flex»; absent from every 390/360 capture; /propuestas has no header",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/emergidos__390-es.jpg",
+  "source": "components/AppHeader.vue:130-136; views/ProposalsView.vue",
+  "found_by": "visual (all 4 reviewers) + source",
+  "note": ""
+ },
+ {
+  "id": "header-tabs-clipped-1440",
+  "severity": "P1",
+  "principle": "P6",
+  "title": "At 1440 px the header tab row is cut: «Revisión» shows as «Revisió» under the chip, with no overflow cue",
+  "views": [
+   "every signed-in view"
+  ],
+  "widths": [
+   1440
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "last tab clipped at x≈1155; tab row scrolls horizontally without a cue",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/inicio__1440-es.jpg",
+  "source": "components/AppHeader.vue:104 (nav overflow-x-auto)",
+  "found_by": "visual (confirmed by eye on tablas/asistente shots)",
+  "note": ""
+ },
+ {
+  "id": "asistente-phone-overflow",
+  "severity": "P1",
+  "principle": "P11",
+  "title": "Asistente bar on phones is 431 px wide and clipped; the T3 update sheet's close × and line ends are cut off",
+  "views": [
+   "asistente",
+   "asistente-propuestas",
+   "asistente-t3-version"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "main 431 px (es) / 392 px (en) in 390/360 px",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/asistente-t3-version__390-es.jpg",
+  "source": "views/AssistantView.vue:232 (bar, no wrap); components/assistant/T3UpdateDialog.vue",
+  "found_by": "script (clipped-width) + visual",
+  "note": ""
+ },
+ {
+  "id": "stone-400-text",
+  "severity": "P1",
+  "principle": "P1",
+  "title": "Hint and count text in stone-400 is 2.59:1 on white (2.48 on canvas, 2.33 on brand-soft)",
+  "views": [
+   "colecta-calendario",
+   "monitoreo (6 views)",
+   "fotos",
+   "instrucciones (3)",
+   "revision",
+   "inicio («Nada en estos días»)",
+   "and 3 more"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#a6a09b on #ffffff = 2.59 (1,667 text nodes in 15 views); on #fafaf9 = 2.48; on #eef5f1 = 2.33",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/colecta-calendario__1440-es.jpg",
+  "source": "text-stone-400 in 48 .vue files (e.g. components/DateField.vue calendar, monitoring/*, review/*)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "enes-toggle",
+  "severity": "P1",
+  "principle": "P1",
+  "title": "Header EN/ES: the inactive language is 3.83:1 at 12 px, and the toggle is 45×20 px on phones (< 24)",
+  "views": [
+   "every view with the header (64)"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#8caa9c on #1f4d3a = 3.83 (744 nodes); 45×20 px tap target in 63 phone views",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/inicio__390-es.jpg",
+  "source": "components/AppHeader.vue:150-157 (opacity-60 spans, px-1.5 button)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "field-boundary",
+  "severity": "P1",
+  "principle": "P2",
+  "title": "Text-field and select boundaries are 1.49:1 (stone-300 on white), below the 3:1 for controls",
+  "views": [
+   "51 views (every form)"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#d6d3d1 on #ffffff = 1.49 (1,248 controls); on #fafaf9 = 1.43; amber DateField edge #fe9a00 = 2.13",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/entrar__1440-es.jpg",
+  "source": "style.css:59 .field-input",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "grid-filter-inputs",
+  "severity": "P1",
+  "principle": "P2/P3",
+  "title": "Grid header filter boxes have no label (placeholder «filtrar» only) and 1.15:1 boundaries",
+  "views": [
+   "tablas (+6 dialogs)",
+   "colecta-tabla",
+   "monitoreo-importar",
+   "emergidos-tabla",
+   "clutches-tabla"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "no accessible name (364 inputs, 15 views); #e7e5e4 on #f5f5f4 = 1.15, on #d6d6d6 = 1.16",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas__1440-es.jpg",
+  "source": "components/SheetGrid.vue:453-454 (headerFilter); style.css Tabulator header rules",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "grid-focus",
+  "severity": "P1",
+  "principle": "P3",
+  "title": "Keyboard focus on the grid body shows nothing: Tab reaches .tabulator-tableholder and nothing changes",
+  "views": [
+   "tablas",
+   "colecta-tabla",
+   "monitoreo-importar",
+   "emergidos-tabla",
+   "clutches-tabla",
+   "propuestas",
+   "rack",
+   "+6"
+  ],
+  "widths": [
+   1440
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "148 tab stops with no outline, shadow, border or fill change (13 views)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas__1440-es.jpg",
+  "source": "components/SheetGrid.vue, ProposalGrid.vue; style.css .tabulator rules",
+  "found_by": "script (Tab pass)",
+  "note": ""
+ },
+ {
+  "id": "header-focus-ring",
+  "severity": "P1",
+  "principle": "P3",
+  "title": "Header links and most buttons rely on Chromium's default 1 px auto ring (dark on the green header), not a 2 px white ring",
+  "views": [
+   "59 views"
+  ],
+  "widths": [
+   1440
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "outline auto 1px rgb(16,16,16); ring vs header green = 1.98 (1,894 tab stops)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/inicio__1440-es.jpg",
+  "source": "components/AppHeader.vue (no focus-visible classes); only 2 .vue files use focus-visible",
+  "found_by": "script (Tab pass)",
+  "note": "Chromium paints «auto» as a double ring, so the real contrast is somewhat higher than 1.98; the principle asks for an explicit white ring."
+ },
+ {
+  "id": "amber-badges",
+  "severity": "P1",
+  "principle": "P1",
+  "title": "White count on amber-500 badges is 2.13:1 (Revisión «Alertas 4»)",
+  "views": [
+   "revision",
+   "revision-filtros",
+   "revision-sugerencias",
+   "revision-resueltos",
+   "revision-alertas"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#ffffff on #fe9a00 = 2.13 at 11 px semibold",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/revision__1440-es.jpg",
+  "source": "views/RevisionView.vue (bg-amber-500 px-1.5 text-[11px])",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "date-unnamed",
+  "severity": "P1",
+  "principle": "P3/P7",
+  "title": "Date fields (DateField) in history panels, Muertes and Censo have no accessible name",
+  "views": [
+   "colecta-historial",
+   "muertes",
+   "muertes-historial",
+   "tubos-historial",
+   "emergidos-historial",
+   "clutches-hoy",
+   "clutches-nuevo",
+   "censo",
+   "censo-cuaderno"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "51 inputs with only a value / placeholder, no label or aria-label",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/muertes__1440-es.jpg",
+  "source": "components/DateField.vue (input without aria-label when no label prop)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "pending-vs-warnings",
+  "severity": "P1",
+  "principle": "P9/P6",
+  "title": "Unsaved-changes bar and the «Avisos del libro» warnings bar use the same amber, stacked together; the bar does not say or link to which cell is unsaved",
+  "views": [
+   "tablas-pendiente"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "both bars amber-50 / amber-800; pending cell row 13698 not on screen",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas-pendiente__1440-es.jpg",
+  "source": "components/SaveBar.vue; components/WorkbookWarnings.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "rack-apply-far",
+  "severity": "P1",
+  "principle": "P6",
+  "title": "Rack sheet: «Aplicar» / «Descartar» sit below the 8×12 grid and the 94-row table, with nothing at the screen edge saying an apply is pending",
+  "views": [
+   "rack",
+   "propuestas",
+   "rack-foto"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "apply buttons > 2 screens below the fold (1440) and several screens on phone",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/rack__1440-es.jpg",
+  "source": "components/assistant/ProposalGrid.vue, SheetApply.vue, RackSection.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "rack-photo-phone",
+  "severity": "P1",
+  "principle": "P7",
+  "title": "«Revisar con la foto» on phone: the top pane ends before the first tube cell, so the grid and the photo cannot be compared on one screen",
+  "views": [
+   "rack-foto"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "top pane holds the deposit header, 3 download buttons and a repeated «Aún no…» line; 0 grid cells visible",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/rack-foto__390-es.jpg",
+  "source": "components/assistant/PhotoReview.vue, RackDepositHead.vue",
+  "found_by": "visual",
+  "note": "A reviewer rated this P0; kept at P1 because the pane can be scrolled."
+ },
+ {
+  "id": "map-panel-phone",
+  "severity": "P1",
+  "principle": "P11",
+  "title": "Monitoreo map on phone: the filter panel covers ~78 % of the width and «Ocultar panel» overlaps the «Trazados GPS de Wikiloc» checkbox",
+  "views": [
+   "monitoreo-mapa"
+  ],
+  "widths": [
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "map strip ≈ 90 px wide; overlap at y≈800 css",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/monitoreo-mapa__390-es.jpg",
+  "source": "components/monitoring/MapPanel.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "menu-tap",
+  "severity": "P1",
+  "principle": "P11",
+  "title": "Header user menu button (84×28) and ChoiceField arrows (24×32) are below 44 px on phones",
+  "views": [
+   "62 views (menu)",
+   "21 views (ChoiceField ▾)"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "84×28 px in 62 views; 24×32 px arrow in 21 views (242 controls)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas__390-es.jpg",
+  "source": "components/AppHeader.vue (user button); components/ChoiceField.vue (absolute inset-y-px right-px button)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "phone-grid",
+  "severity": "P2",
+  "principle": "P7",
+  "title": "«Tabla» mode on phones is the desktop grid shrunk (2–4 columns visible, others cut) instead of a row form; same for proposal tables on /propuestas",
+  "views": [
+   "tablas",
+   "colecta-tabla",
+   "muertes-tabla",
+   "emergidos-tabla",
+   "clutches-tabla",
+   "monitoreo-importar",
+   "propuesta",
+   "propuestas"
+  ],
+  "widths": [
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "visible columns at 390 px: 3–4",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuesta__390-es.jpg",
+  "source": "components/SheetGrid.vue, CollectGrid.vue, ProposalGrid.vue",
+  "found_by": "visual",
+  "note": "Cards stay the default on phones; Tabla is opt-in except in Buscador and Cambios propuestos."
+ },
+ {
+  "id": "row-number",
+  "severity": "P2",
+  "principle": "P1",
+  "title": "Grid row numbers on phones are 4.40:1 (just under 4.5)",
+  "views": [
+   "propuestas",
+   "propuesta",
+   "propuesta-columnas",
+   "rack",
+   "rack-foto"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#78716c on #f5f5f4 = 4.40 (492 nodes)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuestas__390-es.jpg",
+  "source": "style.css:298 .tabulator-cell.row-number",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "row-remove",
+  "severity": "P2",
+  "principle": "P2",
+  "title": "Row remove ✕ in proposal grids is 2.52:1 and 12 px",
+  "views": [
+   "propuestas",
+   "rack",
+   "rack-foto"
+  ],
+  "widths": [
+   1440
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#a8a29e on #ffffff = 2.52 (140)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuestas__1440-es.jpg",
+  "source": "style.css:116 .row-remove",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "muted-on-sunken",
+  "severity": "P2",
+  "principle": "P1",
+  "title": "stone-500 on stone-100 bars is 4.39:1 (Asistente bar, Revisión counts), opacity-70 counts 4.31:1 and 1.88:1 for zeros (Clutches, map)",
+  "views": [
+   "asistente (3)",
+   "revision (2)",
+   "clutches (4)",
+   "monitoreo-mapa"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#79716b on #f5f5f4 = 4.39; #7c7976 on #fff = 4.31; #c1bdb9 on #fff = 1.88",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/asistente__1440-es.jpg",
+  "source": "views/AssistantView.vue:232-306; components/clutches/ClutchesCards.vue (opacity-70)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "chart-white-on-blue",
+  "severity": "P2",
+  "principle": "P1",
+  "title": "Monitoreo month table: white on blue cells 4.42:1",
+  "views": [
+   "monitoreo",
+   "monitoreo-tabla",
+   "monitoreo-galeria",
+   "monitoreo-fotos-especie"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#ffffff on #2a78d6 = 4.42 (48)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/monitoreo__1440-es.jpg",
+  "source": "components/monitoring/ReportCharts.vue / SummaryPanel.vue",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "sex-tiles",
+  "severity": "P2",
+  "principle": "P1/P9",
+  "title": "Emergidos sex tiles: white ID on pink 4.17:1 and on sky 3.78:1; pink/sky are extra hues without a stated meaning",
+  "views": [
+   "emergidos-clutch"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#fef2f8 on #e60076 = 4.17; #f2f9fd on #0084d1 = 3.78",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/emergidos-clutch__1440-es.jpg",
+  "source": "components/emerged/DraftCard.vue",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "formula-selected",
+  "severity": "P2",
+  "principle": "P1/P8",
+  "title": "A selected formula cell is 3.91:1 (stone-600 on the selection blue)",
+  "views": [
+   "tablas-fila"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#57534e on #9abcea = 3.91",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas-fila__1440-es.jpg",
+  "source": "style.css .is-formula + .tabulator-range-selected",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "disabled-low",
+  "severity": "P2",
+  "principle": "P8",
+  "title": "Disabled labels below the app's 3:1 bar: «Mover» 1.81 (11 px), «Revisar 0 casos» 2.48, «Otra igual» 2.87; disabled buttons give no reason",
+  "views": [
+   "propuestas",
+   "rack",
+   "fotos-photolinks",
+   "emergidos-clutch"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#c4c0bc on #fff = 1.81 (180); #80bdaa on #007a55 = 2.48; #8b9d96 on #fff = 2.87",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuestas__1440-es.jpg",
+  "source": "components/assistant/ProposalSheet.vue (.proposal-use); components/PhotoLinksPanel.vue",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "font-11",
+  "severity": "P2",
+  "principle": "P4",
+  "title": "Text under 12 px is common: 11 px labels on clutch and emerged cards, 9 px tube series in rack wells, 10.4 px well numbers",
+  "views": [
+   "emergidos (3)",
+   "clutches (4)",
+   "rack (3)",
+   "revision",
+   "propuestas"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "11 px ×4,179 (7 views); 9 px ×1,176 (3 views); 53 distinct small-text kinds overall",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/emergidos__1440-es.jpg",
+  "source": "components/clutches/ClutchesCards.vue, emerged/EmergedCards.vue (text-[11px]); assistant/RackSection.vue (.well-series)",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "small-taps",
+  "severity": "P2",
+  "principle": "P11",
+  "title": "Small tap targets on phones: inline «Tabla/Table» links 28×16, row links 16 px tall in Revisión, ColumnChooser arrows 16×16, ✕ hide-help 22×22, review buttons 32–34 px",
+  "views": [
+   "inicio",
+   "monitoreo",
+   "revision",
+   "propuesta-columnas",
+   "tablas"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "231 kinds under 24 px, 406 kinds 24–43 px (see issues.json)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuesta-columnas__390-es.jpg",
+  "source": "components/home/*, review/IssueCard.vue, assistant/ColumnChooser.vue",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "placeholder-labels",
+  "severity": "P2",
+  "principle": "P3",
+  "title": "Comment and search fields labelled only by placeholder (Revisión «Comentario (opcional)» ×250, «Buscar CAM, ID…», IdPicker «Escribe, pega IDs…»); two icon-only buttons have no name",
+  "views": [
+   "revision",
+   "revision-filtros",
+   "muertes",
+   "tablas-revisar-cambios"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "250 + 22 + 12 inputs; 10 unnamed .btn-ghost",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/revision__1440-es.jpg",
+  "source": "components/review/IssueCard.vue; components/IdPicker.vue; components/ReviewDialog.vue",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "redundant-counts",
+  "severity": "P2",
+  "principle": "P5",
+  "title": "Counts repeated in one view: Clutches shows 27 four times (tab, two chips, summary line); the rack card says 94 five times and «Aún no: … 2 pocillos sin tubo» twice",
+  "views": [
+   "clutches",
+   "rack",
+   "propuestas",
+   "rack-foto"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "27 ×4; 94 ×5; one line ×2",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/clutches__1440-es.jpg",
+  "source": "components/clutches/ClutchesCards.vue; components/assistant/RackDepositHead.vue, RackSection.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "proposal-ai-marks",
+  "severity": "P2",
+  "principle": "P6",
+  "title": "A one-row proposal does not mark which cell the assistant changed, while the legend shows IA / IA sin aplicar",
+  "views": [
+   "propuesta"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "no cell carries the IA mark in the capture",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/propuesta__1440-es.jpg",
+  "source": "components/assistant/ProposalSheet.vue",
+  "found_by": "visual",
+  "note": "May depend on this proposal's data; check with a proposal that changes values."
+ },
+ {
+  "id": "tablas-avisos-phone",
+  "severity": "P2",
+  "principle": "P11",
+  "title": "Workbook warnings panel on phone covers the lower half of the grid with no visible close",
+  "views": [
+   "tablas-avisos"
+  ],
+  "widths": [
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "panel y≈620–844 css",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tablas-avisos__390-es.jpg",
+  "source": "components/WorkbookWarnings.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "usuarios-phone",
+  "severity": "P2",
+  "principle": "P11",
+  "title": "Usuarios on phone drops the «Activa» column and the reset/password actions without a scroll cue",
+  "views": [
+   "usuarios"
+  ],
+  "widths": [
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "table cut at the right edge",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/usuarios__390-es.jpg",
+  "source": "views/UsersView.vue (max-w-4xl overflow-x-auto)",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "select-boundary",
+  "severity": "P2",
+  "principle": "P2",
+  "title": "Proposal chat picker and «+ Columna…» selects have 1.26:1 borders; the offline page's «Lado» select 2.52:1",
+  "views": [
+   "asistente-propuestas",
+   "propuestas",
+   "rack",
+   "prueba-offline"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "#e7e5e4 on #fff = 1.26; #a8a29e on #fff = 2.52",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/asistente-propuestas__1440-es.jpg",
+  "source": "components/assistant/ProposalsLive.vue; frontend/prueba-offline/index.html",
+  "found_by": "script",
+  "note": ""
+ },
+ {
+  "id": "t3-update-pulse",
+  "severity": "P2",
+  "principle": "P10",
+  "title": "«Cambios propuestos» button pulses (animate-pulse) while fresh proposals wait: continuous animation",
+  "views": [
+   "asistente"
+  ],
+  "widths": [
+   1440,
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "class animate-pulse while fresh",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/asistente__1440-es.jpg",
+  "source": "views/AssistantView.vue:258",
+  "found_by": "source",
+  "note": ""
+ },
+ {
+  "id": "truncation",
+  "severity": "P3",
+  "principle": "P4",
+  "title": "Truncated titles and names: «Historial de C…» dialog title on phone, species names with ellipsis in cards, «Avisos del libro…» summary",
+  "views": [
+   "clutches-historial",
+   "emergidos",
+   "clutches",
+   "tablas"
+  ],
+  "widths": [
+   390,
+   360
+  ],
+  "langs": [
+   "es",
+   "en"
+  ],
+  "measured": "46 truncated spans (script clipped-text)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/clutches-historial__390-es.jpg",
+  "source": "components/clutches/ClutchDayPanel.vue; cards",
+  "found_by": "script + visual",
+  "note": ""
+ },
+ {
+  "id": "empty-states",
+  "severity": "P3",
+  "principle": "P8",
+  "title": "Empty states far from the action: Monitoreo map explains «Aún no hay recorridos» at the bottom of the side panel; Tubos (Tabla) says «Elige IDs arriba y pulsa Cargar» below the fold on phone",
+  "views": [
+   "monitoreo-mapa",
+   "tubos-tabla"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "message at y≈820 (1440) / y≈870 css (phone)",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/tubos-tabla__390-es.jpg",
+  "source": "components/monitoring/MapPanel.vue; views/TubesView.vue",
+  "found_by": "visual",
+  "note": ""
+ },
+ {
+  "id": "fotos-stepper",
+  "severity": "P3",
+  "principle": "P8",
+  "title": "Fotos shows the 6-step stepper and «Pulsa Open folder» although the rename app is missing on this server",
+  "views": [
+   "fotos"
+  ],
+  "widths": [
+   1440,
+   390
+  ],
+  "langs": [
+   "es"
+  ],
+  "measured": "message «La app para renombrar fotos no está instalada en este servidor»",
+  "screenshot": "/home/franz/.local/share/ui-overhaul-20261031/audit-before/fotos__1440-es.jpg",
+  "source": "views/RenameView.vue, components/RenameHost.vue",
+  "found_by": "visual",
+  "note": "Environment: the audit instance has no rename-app build; production does."
+ }
+]
