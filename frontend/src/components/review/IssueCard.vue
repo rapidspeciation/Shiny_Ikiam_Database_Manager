@@ -360,6 +360,7 @@ async function toggleHistory() {
             v-model="comment"
             class="field-input min-w-40 flex-1 py-1 text-xs"
             :placeholder="$t('Comentario (opcional)')"
+            :aria-label="$t('Comentario (opcional)')"
             maxlength="500"
           />
         </div>

@@ -407,6 +407,7 @@ onBeforeUnmount(() => {
           type="text"
           class="w-full rounded border border-control px-2 py-1 text-xs"
           :placeholder="$t('Enlace de la carpeta en Drive, o su ruta')"
+          :aria-label="$t('Enlace de la carpeta en Drive, o su ruta')"
           @keydown.enter="readIds"
         />
          <button class="btn w-full justify-center py-1" :disabled="readingIds" data-read-ids @click="readIds">

@@ -142,7 +142,7 @@ function clearFilters() {
     >
       <div class="flex items-center justify-between px-3 pt-3 md:hidden">
         <strong>{{ $t('Filtros') }}</strong>
-        <button class="btn-ghost" @click="showFilters = false"><X :size="16" /></button>
+        <button class="btn-ghost" :aria-label="$t('Cerrar')" :title="$t('Cerrar')" @click="showFilters = false"><X :size="16" /></button>
       </div>
       <div class="grid grid-cols-2 gap-1 p-2" role="group" :aria-label="$t('Certeza')">
         <button
@@ -215,7 +215,7 @@ function clearFilters() {
         </button>
         <span class="relative min-w-0 flex-1 md:max-w-md">
           <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
-          <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o motivo…')" />
+          <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o motivo…')" :aria-label="$t('Buscar ID, valor o motivo…')" />
         </span>
         <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
           page.total

@@ -304,7 +304,7 @@ const filtered = computed(
       >
         <div class="flex items-center justify-between px-3 pt-3 md:hidden">
           <strong>{{ $t('Filtros') }}</strong>
-          <button class="btn-ghost" @click="showFilters = false"><X :size="16" /></button>
+          <button class="btn-ghost" :aria-label="$t('Cerrar')" :title="$t('Cerrar')" @click="showFilters = false"><X :size="16" /></button>
         </div>
         <div class="grid grid-cols-3 gap-1 p-2" role="group" :aria-label="$t('Estado')">
           <button
