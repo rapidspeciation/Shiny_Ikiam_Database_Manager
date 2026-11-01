@@ -501,7 +501,7 @@ const origin = (p: Proposal) =>
         pending.length ? $t('{n} por revisar', { n: pending.length }) : $t('nada por revisar')
       }}</span>
       <span
-        class="ml-auto flex items-center gap-1 text-[11px]"
+        class="ml-auto flex items-center gap-1 text-xs"
         :class="connected ? 'text-emerald-700' : 'text-stone-400'"
         :title="
           connected ? $t('Se actualiza en cuanto el asistente propone o corrige algo') : $t('Sin conexión; se vuelve a intentar')
@@ -590,7 +590,7 @@ const origin = (p: Proposal) =>
         class="rounded-md transition-shadow duration-700"
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
-        <div class="mt-2 flex items-center gap-1 px-1 text-[11px] text-stone-500">
+        <div class="mt-2 flex items-center gap-1 px-1 text-xs text-stone-500">
           <span class="min-w-0 truncate">{{ origin(p) }}</span>
           <button
             v-if="photosOf(p)"
@@ -666,7 +666,7 @@ const origin = (p: Proposal) =>
           class="rounded-md transition-shadow duration-700"
           :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
         >
-          <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
+          <p class="mt-2 px-1 text-xs text-stone-500">{{ origin(p) }}</p>
           <WhenSeen :height="heightOf(p)">
             <PhotoFilesCard v-if="p.kind === 'photo_files'" :proposal="p" />
             <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" />

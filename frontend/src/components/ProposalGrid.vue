@@ -882,7 +882,7 @@ const statusText = computed(
       @replace="p => emit('replace', p)"
       @notice="m => notify(m)"
     />
-    <p v-if="s.rack && !s.tables.length" class="px-2 pb-2 text-[11px] text-stone-500">
+    <p v-if="s.rack && !s.tables.length" class="px-2 pb-2 text-xs text-stone-500">
       {{
         s.rack.problems.length
           ? $t('Las filas de este rack se proponen cuando se resuelva lo de arriba.')
@@ -893,7 +893,7 @@ const statusText = computed(
       <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->
       <p
         v-if="g.near"
-        class="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-medium text-amber-900"
+        class="flex items-center gap-1 px-2 pt-1.5 text-xs font-medium text-amber-900"
         :title="$t('Filas cerca de la página con el mismo error de tecleo que una de sus líneas; no están en la foto. Revisa cada celda dudosa')"
       >
         <AlertTriangle :size="12" />
@@ -1010,7 +1010,7 @@ const statusText = computed(
           </button>
           <select
             v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
-            class="rounded border border-control bg-surface px-1 py-0.5 text-[11px]"
+            class="rounded border border-control bg-surface px-1 py-0.5 text-xs"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
@@ -1129,7 +1129,7 @@ const statusText = computed(
     </div>
     </template>
     <!-- Each «Aplicar» of a proposal applied one sheet at a time (each a save of its own in Historial). -->
-    <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-[11px] text-stone-600" data-apply-log>
+    <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-xs text-stone-600" data-apply-log>
       <li v-for="a in applyLog" :key="a.n" class="flex items-center gap-1">
         <Check :size="11" class="shrink-0 text-brand-700" />
         {{ whenText(a.at) }} · {{ a.by }} · {{ a.sheets ? a.sheets.join(', ') : $t('todo') }} ·
@@ -1187,7 +1187,7 @@ const statusText = computed(
           <span v-if="!byHand" :class="{ 'max-sm:hidden': pending }">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</span>
         </span>
         <!-- Why there is no «Aplicar»: the app's Google account cannot edit the deposit's sheet. -->
-        <p v-if="byHand && deposit" class="order-last basis-full text-[11px] text-stone-600" data-no-edit-access>
+        <p v-if="byHand && deposit" class="order-last basis-full text-xs text-stone-600" data-no-edit-access>
           {{ $t('La app no tiene acceso de edición a la hoja {sheet}: descarga los cambios para que los pegue alguien con acceso, y luego pulsa «Aplicado a mano».', { sheet: deposit.sheet ?? '' }) }}
         </p>
       </template>

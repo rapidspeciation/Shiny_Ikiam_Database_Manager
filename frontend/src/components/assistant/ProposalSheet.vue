@@ -1478,6 +1478,22 @@ let cuts: ReturnType<typeof attachPendingCut> | null = null
 let sizeWatch: { disconnect: () => void } | null = null
 let fit: { destroy: () => void } | null = null
 
+/**
+ * The first column the assistant changes, brought into view when it starts off-screen to the right
+ * (a note column after many others): otherwise the table opens with no marked cell in sight.
+ */
+function revealFirstChange() {
+  if (!table || !host.value || !props.editable) return
+  const written = new Set(props.changes.flatMap(c => Object.keys(c.values)))
+  const column = table.getColumns().find(col => col.isVisible() && written.has(col.getField()))
+  if (!column) return
+  const holder = host.value.querySelector('.tabulator-tableholder')
+  if (!holder) return
+  const box = column.getElement().getBoundingClientRect()
+  const view = holder.getBoundingClientRect()
+  if (box.left >= view.left && box.right <= view.right) return
+  void table.scrollToColumn(column.getField(), 'middle', false).catch(() => {})
+}
 onMounted(() => {
   if (!host.value) return
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
@@ -1510,6 +1526,7 @@ onMounted(() => {
   table.on('tableBuilt', () => {
     built = true
     sync()
+    setTimeout(revealFirstChange, 150)
   })
   table.on('cellEdited', onCellEdited)
   table.on('cellEditCancelled', () => stale && sync())

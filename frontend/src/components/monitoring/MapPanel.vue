@@ -611,6 +611,13 @@ const withoutGps = computed(() => {
       v-if="panel"
       class="flex w-76 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm max-md:absolute max-md:inset-0 max-md:z-[1200] max-md:w-full"
     >
+      <p
+        v-if="tracksLoaded && !tracks.length"
+        role="status"
+        class="border-b border-stone-200 bg-stone-50 p-3 text-sm font-medium text-stone-800"
+      >
+        {{ $t('Aún no hay recorridos. Súbelos en “Importar”.') }}
+      </p>
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
           <span class="text-2xl font-semibold text-brand-700 tabular-nums">{{ points.length }}</span>
@@ -757,7 +764,6 @@ const withoutGps = computed(() => {
         </ul>
       </div>
 
-      <p v-if="tracksLoaded && !tracks.length" class="hint p-3">{{ $t('Aún no hay recorridos. Súbelos en “Importar”.') }}</p>
       <p class="hint p-3">
         {{
           $t(
