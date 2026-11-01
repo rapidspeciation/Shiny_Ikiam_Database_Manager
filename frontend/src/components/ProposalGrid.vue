@@ -135,6 +135,8 @@ const emit = defineEmits<{
 }>()
 const session = useSession()
 const live = useLive()
+/** A phone beside the photo: the rack deposit's fields fold to one line, so the rack's grid shows with the photo. */
+const narrow = typeof matchMedia !== 'undefined' && !matchMedia('(min-width: 768px)').matches
 
 const pending = computed(() => props.proposal.status === 'pending')
 /** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
@@ -857,6 +859,7 @@ const statusText = computed(
     <!-- A rack deposit: its fields and files, then each rack as its own section (grid, fields, its rows). -->
     <RackDepositHead
       v-if="deposit"
+      :fold="reviewing && narrow"
       :proposal-id="proposal.id"
       :deposit="deposit"
       :changes="shown.changes"
@@ -1131,7 +1134,13 @@ const statusText = computed(
         {{ $tn(a.rows, '{n} fila', '{n} filas') }} · {{ applyStatus(a.status) }}
       </li>
     </ul>
-    <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
+    <!-- While pending, «Aplicar» and «Descartar» stay at the foot of the screen as the table above scrolls by (not in
+         a phone's half-screen beside the photo, where the rack's grid needs the room). -->
+    <div
+      class="flex flex-wrap items-center gap-2 px-2 py-1.5"
+      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending && !(reviewing && narrow) }"
+      data-apply-bar
+    >
       <template v-if="pending">
         <!-- A rack deposit the app cannot write: the changes downloaded and pasted by hand, then «Aplicado a mano». -->
         <RackChanges

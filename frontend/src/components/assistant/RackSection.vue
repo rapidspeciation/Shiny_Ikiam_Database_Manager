@@ -423,6 +423,33 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
     align-items: flex-start;
   }
 }
+/* On a phone the five fields go two to a line (label and box), so the rack's grid starts higher. */
+@container (max-width: 779px) {
+  .rack-fields tbody {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .rack-fields {
+    width: 100%;
+  }
+  .rack-fields tr {
+    display: flex;
+    flex: 1 1 10.5rem;
+    min-width: 0;
+  }
+  .rack-fields th {
+    flex: none;
+    width: 6.5rem;
+  }
+  .rack-fields td {
+    flex: 1;
+    min-width: 0;
+  }
+  .rack-fields input {
+    width: 100%;
+    min-width: 0;
+  }
+}
 .rack-fields {
   align-self: flex-start;
   border-collapse: collapse;
