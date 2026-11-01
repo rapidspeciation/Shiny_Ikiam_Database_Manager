@@ -680,3 +680,52 @@ test('the reaction emojis come from the config, with 👀 ✅ ☑️ as defaults
   assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, 'Hay 12.'), ['⏳', '👍']);
   assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, '[silent]'), ['⏳', '🤐']);
 });
+
+test('only the two live routes make real sends; any other chat or route goes to the outbox, whatever its dryRun says', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-live-'));
+  const stub = join(dir, 'wacli');
+  writeFileSync(stub, `#!/bin/sh\necho "$@" >> ${join(dir, 'wacli-calls')}\necho '{"data":{"id":"WAID"}}'\n`, { mode: 0o755 });
+  const config = {
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'claudeclaw', enabled: true, repliesHour: 50, contextLines: 0 },
+      self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'local', enabled: true, repliesHour: 50, contextLines: 0 },
+    },
+    routes: {
+      claudeclaw: { ssh: 'claudeclaw' },
+      local: { home: '/home/x/.t3-orchestrator-v2', local: 'http://127.0.0.1:3774' },
+      labsim: { home: '/home/x/.t3-ithomiini-lab', local: 'http://127.0.0.1:3775' },
+    },
+    wacli: { bin: stub, store: dir },
+  };
+  const make = patch => {
+    const c = JSON.parse(JSON.stringify(config));
+    patch(c);
+    return createBridge({ config: c, stateDir: mkdtempSync(join(tmpdir(), 'wa-bridge-live-s-')), log: { error() {}, info() {} } });
+  };
+  const calls = () => (existsSync(join(dir, 'wacli-calls')) ? readFileSync(join(dir, 'wacli-calls'), 'utf8').trim().split('\n').length : 0);
+  const trigger = { id: 'x', text: '@claude hola' };
+  const chatOf = (c, key) => ({ key, ...c.chats[key] });
+
+  // The two live routes really send (the stub stands for wacli).
+  const live = make(() => {});
+  await live.send(chatOf(config, 'group'), { kind: 'reply', text: 'Claude: a', trigger });
+  await live.send(chatOf(config, 'self'), { kind: 'reply', text: 'Claude: b', trigger });
+  assert.equal(calls(), 2);
+  // The group on a lab route, a route renamed, a lab T3 home behind the live name, and a chat of another name: outbox, no wacli call.
+  const cases = [
+    c => { c.chats.group.route = 'labsim'; },
+    c => { c.chats.group.route = 'other'; c.routes.other = { ssh: 'claudeclaw' }; },
+    c => { c.routes.claudeclaw = { home: '/home/x/.t3-ithomiini-lab', local: 'http://127.0.0.1:3775' }; },
+    c => { c.chats.self.route = 'labsim'; },
+    c => { c.chats.labgroup = { ...c.chats.group, key: undefined, route: 'labsim' }; },
+  ];
+  for (const patch of cases) {
+    const b = make(patch);
+    const c = JSON.parse(JSON.stringify(config));
+    patch(c);
+    const key = c.chats.labgroup ? 'labgroup' : c.chats.group.route !== 'claudeclaw' ? 'group' : c.chats.self.route !== 'local' ? 'self' : 'group';
+    const before = calls();
+    await b.send(chatOf(c, key), { kind: 'reply', text: 'Claude: no', trigger });
+    assert.equal(calls(), before, JSON.stringify(patch.toString()));
+  }
+});

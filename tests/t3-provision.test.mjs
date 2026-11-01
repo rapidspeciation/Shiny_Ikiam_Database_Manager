@@ -204,6 +204,13 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     assert.ok(deny.includes(`Read(/${join(lab, 'google.json')})`) && deny.includes(`Read(/${join(lab, 'run-*.log')})`) && deny.includes('Read(//secret/answers/**)'));
     assert.ok(deny.includes('Bash(rm -rf /:*)'), 'other rules are kept');
     assert.ok(deny.includes('Bash(scripts/deploy.sh:*)'), 'the lab never deploys');
+    // The lab's chats can neither send WhatsApp nor make timers: rules and sandbox (scripts/lab-guard.mjs).
+    for (const rule of ['Bash(wacli*)', 'Bash(*wacli*)', 'Bash(*systemd-run*)', 'Bash(at *)', 'Bash(*crontab*)', 'Bash(*systemctl*)', 'mcp__t3-code__schedule_task', 'mcp__t3-code__run_scheduled_task_now', 'CronCreate', `Read(/${join(home, '.wacli')}/**)`, `Read(/${join(home, '.config', 'ithomiini-wa-bridge')}/**)`]) assert.ok(deny.includes(rule), rule);
+    const sandbox = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).sandbox;
+    assert.equal(sandbox.enabled, true);
+    assert.equal(sandbox.allowUnsandboxedCommands, false);
+    assert.ok(sandbox.filesystem.denyRead.includes(join(home, '.wacli')) && sandbox.filesystem.denyRead.includes(join(home, '.local', 'bin', 'wacli')));
+    assert.ok(sandbox.filesystem.allowWrite.includes('/work/ithomiini'));
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     db.close();
   } finally {
