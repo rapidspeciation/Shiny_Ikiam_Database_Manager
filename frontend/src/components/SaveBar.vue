@@ -126,13 +126,14 @@ function discard() {
     <button
       v-if="!pending.saving"
       type="button"
-      class="hit-target min-w-0 max-w-full truncate text-left text-xs text-pending-text hover:underline"
+      class="hit-target min-w-0 max-w-full text-left text-xs text-pending-text hover:underline"
       :title="allPlaces"
       :aria-label="$t('Revisar: {places}', { places: allPlaces })"
       data-pending-places
       @click="reviewing = true"
     >
-      {{ places }}
+      <!-- The ellipsis on the inner span: overflow on the button itself would clip its 44 px ::after tap area. -->
+      <span class="block truncate">{{ places }}</span>
     </button>
     <button
       v-if="errorCount"

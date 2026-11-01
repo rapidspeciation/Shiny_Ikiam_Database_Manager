@@ -1640,6 +1640,7 @@ watch(
                 ? $t('Sube las celdas elegidas una fila: cambian de sitio con las de arriba; una muerte se lleva sus columnas y su nota ({key})', { key: upKey })
                 : $t('Elige celdas para moverlas una fila ({key})', { key: upKey })
             "
+            :data-why="moves.up ? undefined : $t('Elige celdas para moverlas una fila ({key})', { key: upKey })"
             :aria-label="$t('Mover arriba')"
             @mousedown.prevent
             @click="moveCells('up')"
@@ -1654,6 +1655,7 @@ watch(
                 ? $t('Baja las celdas elegidas una fila: cambian de sitio con las de abajo; una muerte se lleva sus columnas y su nota ({key})', { key: downKey })
                 : $t('Elige celdas para moverlas una fila ({key})', { key: downKey })
             "
+            :data-why="moves.down ? undefined : $t('Elige celdas para moverlas una fila ({key})', { key: downKey })"
             :aria-label="$t('Mover abajo')"
             @mousedown.prevent
             @click="moveCells('down')"
@@ -1669,6 +1671,7 @@ watch(
               ? $t('Las celdas elegidas vuelven al valor de la hoja (en una fila nueva, vacías): la sugerencia de la IA queda marcada y no se aplica')
               : $t('Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna')
           "
+          :data-why="actions.sheet ? undefined : $t('Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna')"
           @mousedown.prevent
           @click="use('sheet')"
         >
@@ -1682,6 +1685,7 @@ watch(
               ? $t('Las celdas elegidas vuelven a tomar el valor que propuso la IA')
               : $t('Elige celdas con una sugerencia de la IA que cambiaste o no se aplica')
           "
+          :data-why="actions.ai ? undefined : $t('Elige celdas con una sugerencia de la IA que cambiaste o no se aplica')"
           @mousedown.prevent
           @click="use('ai')"
         >
@@ -1695,6 +1699,7 @@ watch(
               ? $t('Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen')
               : $t('Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda')
           "
+          :data-why="actions.check ? undefined : $t('Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda')"
           @mousedown.prevent
           @click="markChecked"
         >
