@@ -163,6 +163,8 @@ const themeFlip = ref(false)
 function toggleTheme() {
   themePref.value = oppositeTheme(theme.value)
   themeFlip.value = false
+  // No turn to wait for under reduced motion; otherwise the flag is cleared when the turn ends, so a later OS swap does not replay it.
+  if (matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
   void nextTick(() => (themeFlip.value = true))
 }
 
@@ -295,6 +297,7 @@ async function logout() {
           :aria-pressed="theme === 'dark'"
           data-theme-button
           @click="toggleTheme"
+          @animationend="themeFlip = false"
         >
           <Moon v-if="theme === 'dark'" :size="17" aria-hidden="true" />
           <Sun v-else :size="17" aria-hidden="true" />
@@ -360,7 +363,10 @@ async function logout() {
               v-if="themePref !== 'system'"
               class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-sunken"
               data-theme-system
-              @click="themePref = 'system'"
+              @click="
+                themePref = 'system';
+                menu = false
+              "
             >
               <MonitorSmartphone :size="15" /> {{ $t('Usar el tema del sistema') }}
             </button>

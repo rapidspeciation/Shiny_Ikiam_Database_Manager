@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nextTick } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { THEME_COLOR, THEME_KEY, applyTheme, oppositeTheme, parsePref, resolveTheme, theme, themePref } from '../theme'
 
 describe('theme preference', () => {
+  afterEach(() => vi.unstubAllGlobals())
   it('reads anything unknown as the system choice', () => {
     expect(parsePref('dark')).toBe('dark')
     expect(parsePref('light')).toBe('light')
@@ -63,7 +64,6 @@ describe('theme preference', () => {
     expect(fresh.theme.value).toBe('light')
     fresh.themePref.value = 'system'
     expect(fresh.theme.value).toBe('dark')
-    vi.unstubAllGlobals()
   })
   it('keeps the boot script in step (same key and bar colours)', () => {
     const boot = readFileSync(resolve(import.meta.dirname, '../../../public/theme-boot.js'), 'utf8')
