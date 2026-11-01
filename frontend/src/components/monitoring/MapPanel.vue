@@ -616,7 +616,7 @@ const withoutGps = computed(() => {
         role="status"
         class="border-b border-stone-200 bg-stone-50 p-3 text-sm font-medium text-stone-800"
       >
-        {{ $t('Aún no hay recorridos. Súbelos en “Importar recorrido”.') }}
+        {{ $t('Aún no hay recorridos. Súbelos en «Importar».') }}
       </p>
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
@@ -787,7 +787,7 @@ const withoutGps = computed(() => {
           role="status"
           class="rounded-md border border-stone-200 bg-surface/95 px-2.5 py-1.5 text-sm font-medium text-stone-800 shadow"
         >
-          {{ $t('Aún no hay recorridos. Súbelos en “Importar recorrido”.') }}
+          {{ $t('Aún no hay recorridos. Súbelos en «Importar».') }}
         </p>
         <div
           v-if="mode !== 'calor' && legend.items.length"
