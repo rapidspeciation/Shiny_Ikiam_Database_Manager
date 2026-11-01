@@ -371,7 +371,10 @@ export class LocalSheets {
   async readSheet(sheet) {
     await this.gate(true);
     const rows = structuredClone(this.rows.get(sheet) || []);
-    return withDigest(rows, createHash('sha256').update(JSON.stringify(rows)).digest('base64'));
+    // Row by row: the whole sheet as one string is some hundred MB in the lab's workbook.
+    const digest = createHash('sha256');
+    for (const r of rows) digest.update(JSON.stringify(r));
+    return withDigest(rows, digest.digest('base64'));
   }
   async readRow(sheet, row) {
     return structuredClone((this.rows.get(sheet) || []).find(r => r.row === row) || { row, cells: [] });

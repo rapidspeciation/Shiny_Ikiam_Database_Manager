@@ -2,11 +2,15 @@
 // server/assistant-host.mjs; the Revisión checks, server/checks-host.mjs), so people's requests
 // are answered meanwhile. Each starts with the first call that needs it; a call that takes longer
 // than its time is answered "call again" and its worker is replaced; a worker that fails three
-// times in a minute is left aside (`degraded`: the caller does the work in the app's thread).
+// times in a minute is left aside (`degraded`: the caller does the work in the app's thread). A worker
+// with nothing to do for IDLE_MS stops, giving its memory back (its own copy of what it read: the maps'
+// data, a person's rows), and the next call starts another.
 // workerPool: a few such workers of one role, so one person's long call does not hold another's.
 import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 
+/** How long a worker waits for work before it stops (`idleMs`; 0: never). */
+export const IDLE_MS = 10 * 60_000;
 /** Failures in a minute that leave a worker aside. */
 const CRASHES = 3;
 const CRASH_WINDOW_MS = 60_000;
@@ -72,6 +76,7 @@ export function workerSlot({
   name = `The assistant's ${role}`,
   log = `Assistant ${role} worker`,
   backoffMs = 1000,
+  idleMs = IDLE_MS,
   // The failures counted, and whether the work is left aside: a pool's workers share them.
   group = { crashes: [], degraded: false },
 }) {
@@ -81,8 +86,27 @@ export function workerSlot({
   let failures = 0;
   let backoffUntil = 0;
   let closed = false;
+  let idleTimer = null;
+  let idleStops = 0;
   const { crashes } = group;
   const pending = new Map();
+
+  const clearIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  };
+  /** With nothing left to answer, the worker stops after idleMs unless a call comes first. */
+  function idleLater() {
+    clearIdle();
+    if (!idleMs || !worker || pending.size) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (!worker || pending.size) return;
+      idleStops++;
+      stop(fail('WORKER_IDLE', `${name} worker stopped while idle`));
+    }, idleMs);
+    idleTimer.unref?.();
+  }
 
   const rejectAll = error => {
     for (const [id, call] of pending) {
@@ -93,6 +117,7 @@ export function workerSlot({
   };
   /** Stops the worker we chose to stop (a call too long, closing): not a failure. */
   function stop(error) {
+    clearIdle();
     const w = worker;
     worker = null;
     rejectAll(error);
@@ -131,13 +156,17 @@ export function workerSlot({
       failures = 0;
       if (m.error) call.reject(fail(m.error.code ?? 'WORKER_ERROR', m.error.message));
       else call.resolve(m.out);
+      idleLater();
     });
     w.on('error', e => {
       if (!w.stopping) console.error(`${log}:`, e.stack || e.message);
       w.lastError = e;
     });
     w.on('exit', code => {
-      if (worker === w) worker = null;
+      if (worker === w) {
+        worker = null;
+        clearIdle();
+      }
       if (w.stopping || closed) return;
       console.error(`${log} exited (${code})`);
       crashed(w.lastError);
@@ -152,7 +181,7 @@ export function workerSlot({
       return !!worker;
     },
     inFlight: () => pending.size,
-    status: () => ({ mode: group.degraded ? 'degraded' : 'worker', inFlight: pending.size, restarts, running: !!worker }),
+    status: () => ({ mode: group.degraded ? 'degraded' : 'worker', inFlight: pending.size, restarts, running: !!worker, idleStops }),
     /** Tells the running worker something (the sheets' columns, how Google answers); a new one starts with data(). */
     post(message) {
       try {
@@ -167,6 +196,7 @@ export function workerSlot({
       const wait = backoffUntil - Date.now();
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait).unref?.());
       if (!worker) spawn();
+      clearIdle();
       const id = ++next;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -240,6 +270,7 @@ export function workerPool({ size = POOL_SIZE, log, ...options }) {
         mode: group.degraded ? 'degraded' : 'worker',
         inFlight: each.reduce((n, s) => n + s.inFlight, 0),
         restarts: each.reduce((n, s) => n + s.restarts, 0),
+        idleStops: each.reduce((n, s) => n + s.idleStops, 0),
         running: each.some(s => s.running),
         workers: `${each.filter(s => s.running).length} of ${slots.length}`,
       };
