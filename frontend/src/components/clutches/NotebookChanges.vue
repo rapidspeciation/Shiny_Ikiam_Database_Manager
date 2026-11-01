@@ -180,10 +180,10 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
     </div>
     <p v-if="fromDate" class="mt-1 text-xs text-stone-600">{{ dayLabel(fromDate, todayIso()) }} {{ fromTime }} → {{ $t('ahora') }}</p>
     <div class="mt-2 flex flex-wrap items-center gap-2">
-      <button class="btn-primary h-11 px-4" :disabled="!clutches.length" @click="copy">
+      <button class="btn-primary h-11 px-4" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="copy">
         <Check v-if="copied" :size="16" /><Copy v-else :size="16" /> {{ $t('Copiar como texto') }}
       </button>
-      <button class="btn h-11 px-3" :disabled="!clutches.length" @click="print"><Printer :size="16" /> {{ $t('Imprimir') }}</button>
+      <button class="btn h-11 px-3" :disabled="!clutches.length" :title="clutches.length ? undefined : $t('No hay cambios en estas fechas')" @click="print"><Printer :size="16" /> {{ $t('Imprimir') }}</button>
       <label class="ml-auto flex min-h-11 items-center gap-1.5 text-sm text-stone-700">
         <input v-model="withSheets" type="checkbox" class="h-4 w-4" /> {{ $t('Incluir lo escrito en Google Sheets') }}
       </label>
@@ -218,16 +218,16 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
         <ul class="divide-y divide-stone-100 border-t border-stone-100">
           <li v-for="(l, i) in c.lines" :key="`${l.field}:${i}`" class="px-3 py-1 leading-snug">
             <span class="flex items-baseline gap-2">
-              <span class="min-w-0 flex-1 text-[11px] font-medium tracking-wide text-stone-500">{{ l.field }}</span>
-              <span class="shrink-0 text-[11px] text-stone-500">{{ who(l.actors) }} · {{ when(l.at) }}</span>
+              <span class="min-w-0 flex-1 text-xs font-medium tracking-wide text-stone-500">{{ l.field }}</span>
+              <span class="shrink-0 text-xs text-stone-500">{{ who(l.actors) }} · {{ when(l.at) }}</span>
             </span>
             <span class="block text-[15px] break-words tabular-nums">{{ changeText(l, formatSerial, $t('quitado')) }}</span>
-            <span v-if="l.sources.includes('assistant')" class="text-[11px] text-violet-700">{{ $t('por el asistente') }}</span>
-            <span v-if="l.staged" class="ml-1 text-[11px] text-amber-800">{{ $t('en la app, aún no en Google Sheets') }}</span>
+            <span v-if="l.sources.includes('assistant')" class="text-xs text-violet-700">{{ $t('por el asistente') }}</span>
+            <span v-if="l.staged" class="ml-1 text-xs text-amber-800">{{ $t('en la app, aún no en Google Sheets') }}</span>
           </li>
           <li v-for="e in c.events" :key="e.id" class="flex items-baseline gap-2 bg-sky-50/60 px-3 py-1 text-sm">
             <span class="min-w-0 flex-1 break-words tabular-nums">{{ eventLine(e) }}</span>
-            <span class="shrink-0 text-[11px] text-stone-500">{{ who([e.name || e.username || '']) }} · {{ when(e.createdAt) }}</span>
+            <span class="shrink-0 text-xs text-stone-500">{{ who([e.name || e.username || '']) }} · {{ when(e.createdAt) }}</span>
           </li>
         </ul>
       </li>

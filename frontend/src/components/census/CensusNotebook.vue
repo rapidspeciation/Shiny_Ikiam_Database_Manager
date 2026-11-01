@@ -243,7 +243,7 @@ const chip = (on: boolean) =>
             { by: 'emergence', label: $t('Emergencia') },
           ]"
         />
-        <button type="button" class="btn h-10" :disabled="!shown.length" @click="copy">
+        <button type="button" class="btn h-10" :disabled="!shown.length" :title="shown.length ? undefined : $t('No hay filas que copiar en esta vista')" @click="copy">
           <Copy :size="15" /> {{ $t('Copiar como texto') }}
         </button>
       </div>

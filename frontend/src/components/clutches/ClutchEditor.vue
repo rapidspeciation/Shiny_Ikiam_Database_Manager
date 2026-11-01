@@ -883,7 +883,7 @@ const endedText = (e: ClutchState['ended']) =>
             {{ a.name }} ≈ {{ formatSerial(a.day) }}<template v-if="a.day <= today"> ({{ a.day === today ? $t('hoy') : $t('ya') }})</template>
           </span>
         </p>
-        <p class="mt-0.5 text-[11px] text-stone-600">{{ daysText }}</p>
+        <p class="mt-0.5 text-xs text-stone-600">{{ daysText }}</p>
       </div>
 
       <!-- One stage at a time: each count on its tab, the clutch's stage chosen when it opens. -->

@@ -994,7 +994,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           </tbody>
         </table>
         <div class="flex gap-3 px-2 py-1 text-xs">
-          <button v-if="listed.length > walkCount" class="underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
+          <button v-if="listed.length > walkCount" class="hit-target underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
           <button
             v-if="training.size"
             class="text-stone-600 underline"
@@ -1049,7 +1049,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           </span>
         </li>
         <li v-if="tracks.length > storedCount" class="px-2 py-1">
-          <button class="underline" @click="storedCount += 40">{{ $t('Ver más') }}</button>
+          <button class="hit-target underline" @click="storedCount += 40">{{ $t('Ver más') }}</button>
         </li>
       </ul>
     </div>
@@ -1228,7 +1228,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       <span v-if="dayCreates.length">· {{ $t('{n} fila nueva en SamplingDay_data', { n: dayCreates.length }) }}</span>
       <span v-if="dayNote" :class="{ 'text-amber-800': dayNote.warn }">· {{ $t(dayNote.key, dayNote.vars) }}</span>
       <span class="hidden sm:inline">· {{ $t('últimos {n} registros', { n: recentCount }) }}</span>
-      <button class="underline" @click="recentCount += 15">{{ $t('Cargar más') }}</button>
+      <button class="hit-target underline" @click="recentCount += 15">{{ $t('Cargar más') }}</button>
       <button
         class="btn ml-auto py-0.5"
         :disabled="!selectedId || !session.canEdit"

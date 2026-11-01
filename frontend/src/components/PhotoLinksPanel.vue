@@ -315,8 +315,8 @@ onBeforeUnmount(() => {
         </p>
         <p v-if="archive?.sandboxDrive" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-lab-drive>{{ $t('Lab: los cambios de archivos son simulados. Los cambios en la base se guardan en la copia de prueba.') }}</p>
         <div v-if="archive" class="overflow-hidden rounded border border-stone-200 text-xs" role="listbox" :aria-label="$t('Tipo de problema')" data-kinds>
-          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-[10px] text-stone-500" aria-hidden="true">
-            <span class="flex-1" /><span class="w-7 text-right">{{ $t('seguro') }}</span><span class="w-7 text-right">{{ $t('pensar') }}</span><span class="w-7 text-right">{{ $t('mirar') }}</span>
+          <p class="flex items-center gap-2 bg-stone-50 px-2 py-0.5 text-xs text-stone-500" aria-hidden="true">
+            <span class="flex-1" /><span class="w-12 text-right">{{ $t('seguro') }}</span><span class="w-12 text-right">{{ $t('pensar') }}</span><span class="w-12 text-right">{{ $t('mirar') }}</span>
           </p>
           <button
             v-for="k in [{ kind: '', n: archive.total, clear: archive.tiers.clear ?? 0, reason: archive.tiers.reason ?? 0, look: archive.tiers.look ?? 0 }, ...kindRows]"
@@ -330,9 +330,9 @@ onBeforeUnmount(() => {
             @click="archiveKind = k.kind"
           >
             <span class="min-w-0 flex-1 truncate">{{ k.kind ? kindLabel(k.kind) : $t('Todos los problemas') }}</span>
-            <span class="w-7 text-right text-emerald-800 tabular-nums" :title="$t('Seguros')">{{ k.clear }}</span>
-            <span class="w-7 text-right text-sky-800 tabular-nums" :title="$t('A pensar')">{{ k.reason }}</span>
-            <span class="w-7 text-right text-amber-800 tabular-nums" :title="$t('Mirar la foto')">{{ k.look }}</span>
+            <span class="w-12 text-right text-emerald-800 tabular-nums" :title="$t('Seguros')">{{ k.clear }}</span>
+            <span class="w-12 text-right text-sky-800 tabular-nums" :title="$t('A pensar')">{{ k.reason }}</span>
+            <span class="w-12 text-right text-amber-800 tabular-nums" :title="$t('Mirar la foto')">{{ k.look }}</span>
           </button>
         </div>
         <div v-if="archive" class="grid grid-cols-2 gap-1.5">
@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
             <option v-for="y in archiveYears" :key="y.name" :value="String(y.name)">{{ y.name }} · {{ y.n }}</option>
           </select>
         </div>
-        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="archiveBusy || !archiveCount" data-review-archive @click="reviewArchive">
+        <button v-if="archive" type="button" class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="archiveBusy || !archiveCount" :title="archiveCount ? undefined : $t('No hay casos con estos filtros')" data-review-archive @click="reviewArchive">
           <Loader2 v-if="archiveBusy" :size="15" class="animate-spin" />
           {{ $tn(archiveCount, 'Revisar {n} caso', 'Revisar {n} casos') }}
         </button>
@@ -407,6 +407,7 @@ onBeforeUnmount(() => {
           type="text"
           class="w-full rounded border border-control px-2 py-1 text-xs"
           :placeholder="$t('Enlace de la carpeta en Drive, o su ruta')"
+          :aria-label="$t('Enlace de la carpeta en Drive, o su ruta')"
           @keydown.enter="readIds"
         />
          <button class="btn w-full justify-center py-1" :disabled="readingIds" data-read-ids @click="readIds">
@@ -458,6 +459,7 @@ onBeforeUnmount(() => {
             class="mt-1.5 w-full justify-center py-1"
             :class="written && KEYS[i] === 'gallery' ? 'btn-primary bg-fill-emerald hover:bg-fill-emerald-strong' : 'btn'"
             :disabled="!sitesReady || !!starting || running(s)"
+            :title="sitesReady ? undefined : $t('Este servidor no tiene la contraseña de las actualizaciones: solo se ve cómo van.')"
             :data-update="KEYS[i]"
             @click="update(KEYS[i])"
           >

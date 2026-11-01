@@ -258,7 +258,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
     <header class="flex flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
       <ScanSearch :size="16" class="shrink-0 text-emerald-700" />
       <h3 class="font-medium text-stone-900">{{ card.title || sectionLabel(card)[0] }}</h3>
-      <span v-for="s in card.title ? sectionLabel(card) : sectionLabel(card).slice(1)" :key="s" class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] text-stone-600">{{ s }}</span>
+      <span v-for="s in card.title ? sectionLabel(card) : sectionLabel(card).slice(1)" :key="s" class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs text-stone-600">{{ s }}</span>
       <span class="text-xs text-stone-500 tabular-nums">{{ $t('{from}–{to} de {total}', { from, to, total: sectionTotal }) }}</span>
       <span class="ml-auto flex items-center gap-1">
         <button v-if="decidedCount" type="button" class="btn-ghost px-1.5 py-0.5 text-xs" :aria-pressed="showDecided" @click="showDecided = !showDecided">
@@ -313,13 +313,13 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
                 <s v-if="curationChange(e, values[e.id]).from && curationChange(e, values[e.id]).to" class="text-stone-400">{{ curationChange(e, values[e.id]).from }}</s>
                 <template v-if="curationChange(e, values[e.id]).to">→ <strong class="font-semibold text-stone-900">{{ curationChange(e, values[e.id]).to }}</strong></template>
                 <span v-else class="text-stone-600">{{ curationChange(e, values[e.id]).from ? $t('{value} (sin cambio propuesto)', { value: curationChange(e, values[e.id]).from }) : $t('Sin cambio propuesto') }}</span>
-                <span v-if="mixed" class="text-[11px] text-stone-400">{{ kindLabel(e.kind) }}</span>
+                <span v-if="mixed" class="text-xs text-stone-400">{{ kindLabel(e.kind) }}</span>
               </p>
               <p class="mt-1 flex flex-wrap gap-1">
                 <span
                   v-for="c in curationChips(e)"
                   :key="c.text"
-                  class="rounded border px-1.5 py-px text-[11px]"
+                  class="rounded border px-1.5 py-px text-xs"
                   :class="c.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : c.tone === 'against' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-stone-200 text-stone-600'"
                 >{{ c.text }}</span>
               </p>

@@ -21,7 +21,7 @@ const title = (name: string, gap = 26) => ({
   name,
   nameLocation: 'middle',
   nameGap: gap,
-  nameTextStyle: { color: MUTED, fontSize: 11 },
+  nameTextStyle: { color: MUTED, fontSize: 12 },
 })
 /** Labels of a line drawn over bars: on a white chip so they stay readable. */
 const chip = { backgroundColor: 'rgba(255,255,255,.9)', padding: [1, 3], borderRadius: 3 }
@@ -29,7 +29,7 @@ const valueLabel = (position: string, color = LABEL) => ({
   show: true,
   position,
   color,
-  fontSize: 10,
+  fontSize: 12,
   formatter: (v: { value: number | null }) => (v.value === null ? '' : format(v.value)),
 })
 
@@ -50,7 +50,7 @@ const lifeOption = computed(() => ({
       'category',
       lifeRows.value.map(r => r.name),
     ),
-    axisLabel: { color: LABEL, fontSize: 11, fontStyle: 'italic' },
+    axisLabel: { color: LABEL, fontSize: 12, fontStyle: 'italic' },
   },
   series: [
     ...STAGES.map((s, n) => ({
@@ -98,8 +98,8 @@ const activityOption = computed(() => {
       ...title(t('Hora del día')),
     },
     yAxis: [
-      { ...axis('value'), name: t('por hora'), nameTextStyle: { color: MUTED, fontSize: 11 } },
-      { ...axis('value'), name: t('% capturas'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('por hora'), nameTextStyle: { color: MUTED, fontSize: 12 } },
+      { ...axis('value'), name: t('% capturas'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 12 } },
     ],
     series: [
       {
@@ -136,14 +136,14 @@ function bars(rows: { label: string; value: number }[], color: string, suffix = 
         'category',
         list.map(r => r.label),
       ),
-      axisLabel: { color: LABEL, fontSize: 11 },
+      axisLabel: { color: LABEL, fontSize: 12 },
     },
     series: [
       {
         type: 'bar',
         barMaxWidth: 16,
         itemStyle: barStyle(color, true, true),
-        label: { ...valueLabel('right'), fontSize: 11, formatter: (v: { value: number }) => `${format(v.value)}${suffix}` },
+        label: { ...valueLabel('right'), fontSize: 12, formatter: (v: { value: number }) => `${format(v.value)}${suffix}` },
         data: list.map(r => r.value),
       },
     ],
@@ -179,8 +179,8 @@ const seasonsOption = computed(() => {
     labelLayout: { hideOverlap: true },
     xAxis: { ...axis('category', monthNames()), ...title(t('Mes')) },
     yAxis: [
-      { ...axis('value'), name: t('por día'), nameTextStyle: { color: MUTED, fontSize: 11 } },
-      { ...axis('value'), name: t('especies'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('por día'), nameTextStyle: { color: MUTED, fontSize: 12 } },
+      { ...axis('value'), name: t('especies'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 12 } },
     ],
     series: [
       {

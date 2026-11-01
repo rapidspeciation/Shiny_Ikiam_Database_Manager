@@ -1605,7 +1605,7 @@ watch(
 
 <template>
   <div>
-    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-[11px] text-stone-500">
+    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-xs text-stone-500">
       <slot />
       <template v-if="editable">
         <!-- Kept from taking the focus: the grid keeps its selection while the button is pressed. -->

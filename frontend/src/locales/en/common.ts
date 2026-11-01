@@ -53,4 +53,13 @@ export default {
   'El navegador solo abre la cámara en una dirección segura (https://).': 'The browser only opens the camera on a secure address (https://).',
   'No se pudo abrir la cámara.': 'Could not open the camera.',
   'Ver detalles': 'See details',
+  // Why a button is switched off (its title; a tap shows it on touch screens).
+  'No hay filas que copiar en esta vista': 'No rows to copy in this view',
+  'No hay cambios en estas fechas': 'No changes in these dates',
+  'Escribe primero el número': 'Type the number first',
+  'No hay casos con estos filtros': 'No cases with these filters',
+  'Pega primero el enlace de la ruta': 'Paste the route link first',
+  'Elige primero la especie': 'Choose the species first',
+  'Elige primero un recorrido': 'Choose a walk first',
+  'Avisos del libro ({n})': 'Workbook warnings ({n})',
 } as Record<string, string>

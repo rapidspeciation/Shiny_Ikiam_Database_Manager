@@ -1221,15 +1221,15 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             </div>
             <div class="mt-2 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF PUPA') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ totalIn(current, 'NUMBER OF ADULTS') ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-2 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(clutch)?.n ?? 0 }}</span>
               </span>
             </div>
@@ -1283,7 +1283,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                         <ChevronDown :size="18" :class="{ 'rotate-180': gapsOpen }" />
                       </button>
                     </span>
-                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart">
+                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart" :title="startText.trim() ? undefined : $t('Escribe primero el número')">
                       <Loader2 v-if="checkingStart" :size="16" class="animate-spin" />{{ $t('Usar') }}
                     </button>
                   </span>
@@ -1579,8 +1579,8 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                   <span class="w-14 shrink-0 font-semibold">{{ text(row.values.Insectary_ID) }}</span>
                   <SexBadge :sex="text(row.values.Sex)" />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
-                    <span class="block truncate text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
+                    <span class="block line-clamp-2 text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
+                    <span class="block line-clamp-2 text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
                   </span>
                   <!-- Kept in the app, not in Google Sheets yet (everyone sees it, with who entered it). -->
                   <span

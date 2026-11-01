@@ -288,7 +288,7 @@ const filtered = computed(
         {{ $t(v.label) }}
         <span
           v-if="v.key === 'alertas' && warnings"
-          class="rounded-full bg-fill-amber px-1.5 text-[11px] leading-4 font-semibold text-white tabular-nums"
+          class="rounded-full bg-fill-amber px-1.5 text-xs leading-4 font-semibold text-white tabular-nums"
           >{{ warnings }}</span
         >
       </button>
@@ -304,7 +304,7 @@ const filtered = computed(
       >
         <div class="flex items-center justify-between px-3 pt-3 md:hidden">
           <strong>{{ $t('Filtros') }}</strong>
-          <button class="btn-ghost" @click="showFilters = false"><X :size="16" /></button>
+          <button class="btn-ghost" :aria-label="$t('Cerrar')" :title="$t('Cerrar')" @click="showFilters = false"><X :size="16" /></button>
         </div>
         <div class="grid grid-cols-3 gap-1 p-2" role="group" :aria-label="$t('Estado')">
           <button
@@ -327,7 +327,7 @@ const filtered = computed(
             {{ $t('Todo') }} <span class="text-xs tabular-nums text-stone-500">{{ page ? allCount : '…' }}</span>
           </button>
           <template v-for="g in kindGroups" :key="g.title">
-            <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+            <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-xs font-semibold tracking-wide text-stone-500 uppercase">
               {{ g.title }}
             </p>
             <button
@@ -478,7 +478,7 @@ const filtered = computed(
 
         <p v-if="group" class="flex items-center gap-2 bg-stone-100 px-3 py-1 text-xs">
           {{ $t('Solo el lote «{label}»', { label: groupLabel }) }}
-          <button class="text-brand-700 hover:underline" @click="group = ''">{{ $t('ver todos') }}</button>
+          <button class="hit-target text-brand-700 hover:underline" @click="group = ''">{{ $t('ver todos') }}</button>
         </p>
 
         <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">

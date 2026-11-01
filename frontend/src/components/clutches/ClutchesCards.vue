@@ -434,7 +434,8 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           >
             <AlertTriangle v-if="f === 'verify'" :size="13" class="-mt-0.5 inline text-orange-700" />
             {{ filterName(f) }}
-            <span class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
+            <!-- «Todos» is the count on «En curso» already. -->
+            <span v-if="f !== 'all'" class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
           </button>
           <button
             class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
@@ -454,14 +455,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <Settings :size="15" />
           </button>
         </div>
-        <!-- Today's review: every clutch starts unreviewed each day (marks only in the app). -->
+        <!--
+          Today's review: every clutch starts unreviewed each day (marks only in the app). «Por verificar» and «Sin revisar
+          hoy» carry their counts on the chips above, so only the reviewed ones are counted here.
+        -->
         <p v-if="!query && counts.all" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-stone-600" role="status">
           <span class="font-medium text-stone-700">{{ $t('Revisión de hoy') }}:</span>
           <span class="tabular-nums"><Check :size="12" class="-mt-0.5 inline text-brand-700" /> {{ $t('{n} revisados', { n: counts.checked }) }}</span>
-          <span class="tabular-nums" :class="counts.verify ? 'font-medium text-orange-800' : ''">
-            <AlertTriangle :size="12" class="-mt-0.5 inline" /> {{ $t('{n} por verificar', { n: counts.verify }) }}
-          </span>
-          <span class="tabular-nums">{{ $t('{n} sin revisar', { n: counts.todo }) }}</span>
         </p>
       </template>
     </div>
@@ -528,7 +528,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   </span>
                 </span>
                 <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-                  <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+                  <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
                   <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                     <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
                   </span>
@@ -539,15 +539,15 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 <!-- The four counts: total big, the sum's history small. -->
                 <span class="mt-1.5 grid grid-cols-4 gap-1">
                   <span v-for="s in STAGES" :key="s.count" class="min-w-0 rounded-md bg-stone-50 px-1.5 py-1" :class="{ 'bg-amber-50': pending.isDirty(item.row.id, s.count) }">
-                    <span class="block text-[11px] leading-tight text-stone-500">{{ SHORT[s.count]() }}</span>
+                    <span class="block text-xs leading-tight text-stone-500">{{ SHORT[s.count]() }}</span>
                     <span class="block text-lg leading-tight font-semibold tabular-nums">
                       {{ item.counts[s.count].na ? 'NA' : item.counts[s.count].text ? '?' : item.counts[s.count].terms.length ? totalOf(item.counts[s.count].terms) : '—' }}
                     </span>
-                    <span v-if="item.counts[s.count].terms.length > 1" class="block text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
+                    <span v-if="item.counts[s.count].terms.length > 1" class="block text-xs leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
                     <!-- Preserved ones kept counted: not in the sum (only in the app and NOTES). -->
                     <span
                       v-if="preservedText(item, s.stage)"
-                      class="block truncate text-[11px] leading-tight font-medium text-violet-700 tabular-nums"
+                      class="block line-clamp-2 text-xs leading-tight font-medium break-words hyphens-auto text-violet-700 tabular-nums"
                       :title="$t('No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.', { field: s.count })"
                       >{{ preservedText(item, s.stage) }}</span
                     >
@@ -560,7 +560,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <CalendarClock :size="12" /> {{ ahead(item).next }}
                   </span>
                 </span>
-                <span v-if="lastText(item.row) || day.today(item.row.id).photos" class="mt-1 flex items-center gap-2 text-[11px] text-stone-500">
+                <span v-if="lastText(item.row) || day.today(item.row.id).photos" class="mt-1 flex items-center gap-2 text-xs text-stone-500">
                   <span class="min-w-0 flex-1 truncate">{{ lastText(item.row) }}</span>
                   <span v-if="day.today(item.row.id).photos" class="flex shrink-0 items-center gap-0.5" :title="$t('Fotos de hoy')">
                     <Camera :size="12" /> {{ day.today(item.row.id).photos }}

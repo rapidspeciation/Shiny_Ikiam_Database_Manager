@@ -17,20 +17,20 @@
       /* Light and dark as the app (src/style.css role tokens): the system's choice, or the one picked in the app's user menu. */
       :root {
         --canvas: #f5f5f4; --surface: #fff; --sunken: #fafaf9; --fg: #1c1917; --fg-2: #292524; --fg-3: #44403c; --muted: #57534e;
-        --border: #e7e5e4; --border-strong: #d6d3d1; --control: #8a837d; --brand: #1f4d3a; --brand-text: #1f4d3a; --on-brand: #fff;
+        --border: #e7e5e4; --border-strong: #d6d3d1; --control: #8a837d; --brand: #1f4d3a; --brand-text: #1f4d3a; --on-brand: #fff; --focus: #2d6a4f;
         --warn: #fef3c7; --warn-edge: #b45309; --err: #fee2e2; --err-edge: #c62828; --ok: #166534; --low: #9a3412;
         color-scheme: light;
       }
       :root[data-theme='dark'] {
         --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
-        --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff;
+        --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff; --focus: #7cc6a0;
         --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
         color-scheme: dark;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme]) {
           --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
-          --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff;
+          --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff; --focus: #7cc6a0;
           --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
           color-scheme: dark;
         }
@@ -64,6 +64,10 @@
       .option { border-top: 1px solid var(--border); padding: 8px 0 4px; }
       fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; padding: 6px 10px; }
       fieldset label { display: block; padding: 4px 0; }
+      /* Keyboard focus as in the app: a 2 px ring in the focus colour, 2 px off the control (≥ 3:1 in both themes). */
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+      /* Checkboxes and radios big enough for a finger (the label around each one is tappable too). */
+      input[type='checkbox'], input[type='radio'] { width: 1.25rem; height: 1.25rem; vertical-align: -0.3rem; margin: 0 6px 0 0; accent-color: var(--focus); }
       a.back { display: inline-block; color: var(--brand-text); font-weight: 600; text-decoration: none; padding: 6px 0; }
     </style>
   </head>

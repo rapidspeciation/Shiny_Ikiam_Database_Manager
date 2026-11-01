@@ -114,4 +114,8 @@ export default {
   'Tu usuario es': 'Your username is',
   '; también puedes entrar con tu correo ({email}).': '; you can also sign in with your email ({email}).',
   Continuar: 'Continue',
+  'Desliza las tablas a un lado para ver «Activa» y las acciones.': 'Swipe the tables sideways to see «Active» and the actions.',
+  'Permiso de {name}': 'Permission of {name}',
+  'Cuenta de {name} activa': 'Account of {name} active',
+  'La cuenta no está activa': 'The account is not active',
 } as Record<string, string>

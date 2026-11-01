@@ -95,7 +95,7 @@ const counts = computed(() => page.value?.open ?? {})
       </div>
       <span class="relative min-w-0 flex-1 md:max-w-md">
         <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
-        <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o problema…')" />
+        <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" :placeholder="$t('Buscar ID, valor o problema…')" :aria-label="$t('Buscar ID, valor o problema…')" />
       </span>
       <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
         page.total
@@ -142,7 +142,7 @@ const counts = computed(() => page.value?.open ?? {})
             <a
               v-if="item.sheet && item.row && !item.solved.rowGone"
               :href="tablesLink(item.sheet, item.label ?? '')"
-              class="text-brand-700 hover:underline"
+              class="hit-target text-brand-700 hover:underline"
               :title="$t('Abrir la fila en Tablas')"
               >{{ $t('{sheet} fila {row}', { sheet: item.sheet, row: item.row }) }}</a
             >

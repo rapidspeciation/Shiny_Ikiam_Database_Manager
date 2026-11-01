@@ -26,7 +26,7 @@ const fieldWord = (f: string) => (f === 'species' ? t('la especie') : f === 'sex
     </p>
     <table v-if="lines.length" class="w-full border-collapse">
       <thead>
-        <tr class="text-[10px] text-stone-500">
+        <tr class="text-xs text-stone-500">
           <th class="w-24 py-0.5 pr-2 text-left font-normal" />
           <th class="py-0.5 pr-2 text-left font-normal">{{ $t('Sobre (OCR)') }}</th>
           <th class="py-0.5 text-left font-normal">{{ $t('Base de datos') }}</th>

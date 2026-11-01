@@ -403,7 +403,7 @@ const headerNotice = computed(() => {
             </span>
             <button
               type="button"
-              class="-my-0.5 flex-none rounded p-1 text-stone-500 hover:bg-stone-100"
+              class="hit-target -my-0.5 flex-none rounded p-1 text-stone-500 hover:bg-stone-100"
               :title="$t('Ocultar la ayuda (vuelve con ⓘ)')"
               :aria-label="$t('Ocultar la ayuda (vuelve con ⓘ)')"
               @click="setHint(true)"

@@ -37,7 +37,7 @@ function open(n: number, e: MouseEvent) {
     <div
       v-for="p in photos"
       :key="p.photo"
-      class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-[11px] text-stone-600"
+      class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-xs text-stone-600"
       data-photo-thumb
     >
       <a

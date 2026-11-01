@@ -248,8 +248,8 @@ function resize(event: PointerEvent) {
             {{ label }}
           </button>
         </div>
-        <!-- The way from the camera's files to the sheets: done, now, to come. -->
-        <ol v-if="section === 'rename'" class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
+        <!-- The way from the camera's files to the sheets: done, now, to come (not shown when the rename app is missing). -->
+        <ol v-if="section === 'rename' && !renameHost.missing" class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
           <li
             v-for="(name, i) in RENAME_STEPS"
             :key="name"
@@ -283,7 +283,7 @@ function resize(event: PointerEvent) {
                   :style="{ width: `${Math.min(100, space.percent)}%` }"
                 />
               </div>
-              <p class="mt-0.5 text-[11px] leading-tight text-stone-700">{{ space.text }}</p>
+              <p class="mt-0.5 text-xs leading-tight text-stone-700">{{ space.text }}</p>
             </div>
             <span v-if="space.level === 'full'" class="rounded bg-red-100 px-1.5 py-0.5 text-red-900">{{ $t('esta carpeta ocupa {gb} GB: no cabe', { gb: space.folderGb ?? 0 }) }}</span>
             <span v-else-if="space.folderGb" class="text-stone-500">{{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</span>
@@ -336,7 +336,7 @@ function resize(event: PointerEvent) {
         </span>
       </div>
       <!-- What to do now, the batch in a line, and where its files go once they are ready. -->
-      <p v-if="section === 'rename'" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
+      <p v-if="section === 'rename' && !renameHost.missing" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
         <span class="font-medium text-stone-800" data-hint>{{ hint }}</span>
         <template v-if="(step === 'upload' || step === 'rename') && upload">
           <template v-if="upload.photos">

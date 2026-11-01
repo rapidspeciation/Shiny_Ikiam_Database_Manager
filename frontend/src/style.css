@@ -157,7 +157,10 @@
   /* Hint and placeholder greys at 4.5:1 on white, stone-50 and stone-100 (fg-subtle): Tailwind's are 2.6 and 4.4. */
   --color-stone-400: #6f6964;
   --color-stone-500: #6f6964;
-  /* Solid fills under a white label: the same in both themes (white on them is ≥ 4.5:1). */
+  /*
+   * Solid fills under a white label: the same in both themes (white on them is ≥ 4.5:1). Pink and sky mean the sex,
+   * female and male, wherever they appear (Emergidos' tiles, SexBadge); they are not used for anything else.
+   */
   --color-fill-emerald: oklch(50.8% 0.118 165.612);
   --color-fill-emerald-strong: oklch(43.2% 0.095 166.913);
   --color-fill-pink: oklch(52.5% 0.223 3.958);
@@ -420,14 +423,15 @@ body {
 }
 
 @layer components {
+  /* Disabled at 64 % (T3's value): the label stays ≥ 3:1 on its own fill in both themes (PRINCIPLES P8); 50 % was 2.9. */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-surface px-3 py-1.5 text-sm font-medium text-fg hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-surface px-3 py-1.5 text-sm font-medium text-fg hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-error-text hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-error-text hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-64;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center rounded-md p-1.5 text-fg-muted hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;
@@ -451,7 +455,18 @@ body {
   .hit-target {
     position: relative;
   }
+  /* Buttons too: on a touch screen each one answers a 44 px finger area, whatever size it is drawn (as in T3). */
   @media (pointer: coarse) {
+    .btn,
+    .btn-primary,
+    .btn-danger,
+    .btn-ghost {
+      position: relative;
+    }
+    .btn::after,
+    .btn-primary::after,
+    .btn-danger::after,
+    .btn-ghost::after,
     .hit-target::after {
       content: '';
       position: absolute;
@@ -1040,7 +1055,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   column-gap: 14px;
   padding: 0 7px 2px;
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 15px;
   overflow-wrap: anywhere;
 }
@@ -1190,7 +1205,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   border-bottom: 1px solid var(--color-amber-200);
   background: var(--color-amber-50);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-amber-800);
 }
 .warn-count {
@@ -1300,7 +1315,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   border-bottom: 1px solid var(--color-violet-200);
   background: var(--color-violet-50);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-violet-800);
 }
 .sheet-banner-go {
@@ -1340,7 +1355,7 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
 }
 .proposal-sheet .doubt-quick.is-sheet .sheet-quick-what {
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-violet-700);
 }
 .proposal-sheet .doubt-quick.is-sheet button {

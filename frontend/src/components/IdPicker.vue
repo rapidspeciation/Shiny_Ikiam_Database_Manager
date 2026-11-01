@@ -183,6 +183,7 @@ function clear() {
         ref="input"
         v-model="text"
         class="min-w-24 flex-1 border-0 p-0.5 text-sm outline-none"
+        :aria-label="label"
         :placeholder="modelValue.length ? '' : (placeholder ?? $t('Escribe, pega IDs o un rango (B0D-B9D)'))"
         autocapitalize="characters"
         enterkeyhint="done"

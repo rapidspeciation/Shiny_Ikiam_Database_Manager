@@ -326,7 +326,7 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
               </button>
               <div
                 v-else
-                class="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-stone-300 text-center text-[10px] text-stone-400"
+                class="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-stone-300 text-center text-xs text-stone-400"
               >
                 {{ $t('Sin foto') }}
               </div>

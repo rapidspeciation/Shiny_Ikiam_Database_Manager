@@ -84,7 +84,7 @@ const STYLE: Record<SexFlag, string> = {
         <tr v-for="r in shown" :key="pairKey(r)" class="border-t border-stone-100 align-top" :data-sex-flag="r.answer?.flag ?? 'error'" :data-cam="r.cam">
           <td class="pr-3 py-0.5 whitespace-nowrap">
             <span class="font-medium tabular-nums">{{ r.cam }}</span>
-            <span v-if="r.answer?.species" class="block text-[11px] text-stone-500 italic">{{ r.answer.species }}</span>
+            <span v-if="r.answer?.species" class="block text-xs text-stone-500 italic">{{ r.answer.species }}</span>
           </td>
           <template v-if="r.answer">
             <td class="pr-3 py-0.5 whitespace-nowrap" :title="typeof r.answer.model.unreliable === 'string' ? r.answer.model.unreliable : ''">{{ modelText(r.answer) }}</td>
@@ -92,7 +92,7 @@ const STYLE: Record<SexFlag, string> = {
             <td class="pr-3 py-0.5 whitespace-nowrap">{{ databaseText(r.answer) }}</td>
             <td class="py-0.5">
               <span class="rounded px-1.5 py-0.5" :class="STYLE[r.answer.flag]">{{ flagText(r.answer) }}</span>
-              <span class="ml-1 text-[11px] text-stone-400">{{ r.d }} · {{ r.v }}</span>
+              <span class="ml-1 text-xs text-stone-400">{{ r.d }} · {{ r.v }}</span>
             </td>
           </template>
           <td v-else colspan="4" class="py-0.5 text-stone-500">{{ $t('No se pudo comprobar: {why}', { why: r.error ?? '' }) }}</td>

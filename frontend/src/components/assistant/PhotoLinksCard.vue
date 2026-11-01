@@ -532,7 +532,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               <div class="mt-1 grid grid-cols-2 gap-1.5">
                 <a v-for="r in d.rows" :key="r.row" class="group block rounded border border-stone-200 hover:border-emerald-600" :href="r.url" target="_blank" rel="noopener">
                   <img :src="photoUrl(fileOf(r.url))" :alt="r.path" loading="lazy" class="h-28 w-full rounded-t bg-stone-100 object-contain" />
-                  <span class="block px-1 py-0.5 text-[11px]">
+                  <span class="block px-1 py-0.5 text-xs">
                     <span class="text-emerald-800 group-hover:underline">{{ r.path.split('/').slice(0, -1).join('/') }}</span>
                     <span class="text-stone-400"> · {{ $t('fila {row}', { row: r.row }) }}, {{ r.kb }} KB</span>
                   </span>

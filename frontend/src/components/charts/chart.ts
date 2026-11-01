@@ -143,7 +143,7 @@ export function axis(type: 'category' | 'value', data?: string[]) {
     data,
     axisLine: { show: type === 'category', lineStyle: { color: AXIS } },
     axisTick: { show: false },
-    axisLabel: { color: MUTED, fontSize: 11, hideOverlap: true },
+    axisLabel: { color: MUTED, fontSize: 12, hideOverlap: true },
     splitLine: { show: type === 'value', lineStyle: { color: GRID, type: 'solid' } },
   }
 }

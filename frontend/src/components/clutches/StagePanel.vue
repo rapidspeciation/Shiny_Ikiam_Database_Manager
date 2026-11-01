@@ -568,7 +568,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         :aria-expanded="explainPreserved"
         @click="explainPreserved = !explainPreserved"
       >
-        {{ preservedLabel }} <span class="rounded bg-violet-100 px-1 text-[10px] font-semibold tracking-wide text-violet-700 uppercase">{{ $t('solo en la app') }}</span>
+        {{ preservedLabel }} <span class="rounded bg-violet-100 px-1 text-xs font-semibold tracking-wide text-violet-700 uppercase">{{ $t('solo en la app') }}</span>
       </button>
     </div>
     <p v-if="preserved && explainPreserved" class="mt-1 text-xs text-violet-800">{{ preservedWhy }}</p>

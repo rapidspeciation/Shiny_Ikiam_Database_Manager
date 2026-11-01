@@ -160,22 +160,22 @@ const dueText = (i: Item) => {
               </span>
             </span>
             <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
-              <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+              <span class="min-w-0 line-clamp-2">{{ item.species || $t('sin especie') }}</span>
               <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
                 <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
               </span>
             </span>
             <span class="mt-1.5 grid grid-cols-3 gap-1">
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Pupas') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Pupas') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.pupae ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Adultos') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Adultos') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ item.adults ?? '—' }}</span>
               </span>
               <span class="rounded-md bg-stone-50 px-1.5 py-1" :title="$t('Mariposas de este clutch en Insectary_data')">
-                <span class="block text-[11px] leading-tight text-stone-500">{{ $t('Registrados') }}</span>
+                <span class="block text-xs leading-tight text-stone-500">{{ $t('Registrados') }}</span>
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(item.number)?.n ?? 0 }}</span>
               </span>
             </span>
