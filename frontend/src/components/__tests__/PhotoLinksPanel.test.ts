@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { t, tn } from '../../lib/i18n'
 
 // «Photo_links y sitios» of the «Fotos» tab: the folders «Ya las subí» names are read once, when the part opens.
@@ -31,14 +32,17 @@ async function mount(preset: { folders: string[]; at: number } | null) {
   const used: number[] = []
   const host = document.createElement('div')
   document.body.append(host)
+  const router = createRouter({ history: createMemoryHistory(), routes: ['/fotos', '/otra'].map(path => ({ path, component: { template: '<div />' } })) })
+  await router.push('/fotos')
   const app = createApp({ render: () => h(PhotoLinksPanel, { preset, onUsed: () => used.push(1) }) })
+  app.use(router)
   app.config.globalProperties.$t = t
   app.config.globalProperties.$tn = tn
   app.mount(host)
   unmount = () => app.unmount()
   for (let i = 0; i < 5; i++) await nextTick()
   await new Promise(resolve => setTimeout(resolve, 0))
-  return { host, used }
+  return { host, used, router }
 }
 
 describe('PhotoLinksPanel', () => {
@@ -75,5 +79,16 @@ describe('PhotoLinksPanel', () => {
     expect(localStorage.getItem('photo-links:card')).toBe('curation-card')
     expect(JSON.parse(localStorage.getItem('photo-links:recent') ?? '[]')[0].id).toBe('old-card')
     expect(host.querySelector('[data-extra-cards]')).toBeNull()
+  })
+
+  it('closes «Tarjetas recientes» on a change of page', async () => {
+    localStorage.setItem('photo-links:recent', JSON.stringify([{ id: 'old-card', kind: 'reading', at: new Date().toISOString() }]))
+    const { host, router } = await mount(null)
+    host.querySelector<HTMLElement>('[data-recent] button')!.click()
+    await nextTick()
+    expect(host.querySelector('[data-recent] ul')).not.toBeNull()
+    await router.push('/otra')
+    await nextTick()
+    expect(host.querySelector('[data-recent] ul')).toBeNull()
   })
 })

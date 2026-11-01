@@ -190,8 +190,8 @@ function closePast() {
 const phone = usePhoneWidth()
 const menuOpen = ref(false)
 const toolbar = ref<HTMLElement>()
-// Closed by a tap outside it, Escape (focus back on ⋯) or focus moving away (composables/useDismiss.ts).
-useDismiss(menuOpen, toolbar)
+// Closed by a tap outside it, Escape (focus back on ⋯), focus moving away or a change of page (composables/useDismiss.ts).
+useDismiss(menuOpen, toolbar, { closeOn: () => route.fullPath })
 
 /** How to use the grid: shown until hidden, then behind the ⓘ button. */
 const HINT_KEY = 'buscador.hint-hidden'

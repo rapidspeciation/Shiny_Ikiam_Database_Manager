@@ -90,6 +90,8 @@ export default defineConfig(({ command }) => ({
   // localStorage run in happy-dom, each file on its own.
   test: {
     setupFiles: ['./src/test-setup.ts'],
+    // Images of /public that templates name by their site path (src="/logo.svg?v=1") load as an empty module.
+    alias: [{ find: /^\/[\w-]+\.svg\?v=\d+$/, replacement: resolve(import.meta.dirname, 'src/test-asset.ts') }],
     projects: [
       {
         extends: true,

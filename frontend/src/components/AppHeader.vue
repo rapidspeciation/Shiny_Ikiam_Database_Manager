@@ -131,7 +131,9 @@ function moreKeys(event: KeyboardEvent) {
 function openMoreWithKeys(event: KeyboardEvent) {
   if (event.key !== 'ArrowDown') return
   event.preventDefault()
-  if (!more.value) toggleMore().then(() => moreBox.value?.querySelector<HTMLElement>('a')?.focus())
+  const first = () => moreBox.value?.querySelector<HTMLElement>('a')?.focus()
+  if (more.value) first()
+  else toggleMore().then(first)
 }
 
 onMounted(() => {
@@ -184,7 +186,7 @@ async function logout() {
       <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-1 font-semibold" :aria-label="$t('Inicio')">
         <!-- The butterfly alone (no tile), with a pale edge for the dark bar. -->
         <img src="/logo.svg?v=1" alt="" class="h-9 w-auto" />
-        <span class="max-sm:hidden">Ikiam Insectary DB</span>
+        <span class="max-sm:hidden lg:max-xl:hidden">Ikiam Insectary DB</span>
       </RouterLink>
       <!-- The tabs: as many as fit, the rest in «Más» (lib/headerTabs.ts); the row never scrolls nor cuts a label. -->
       <div ref="rowBox" class="relative order-last flex w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
@@ -271,11 +273,12 @@ async function logout() {
         <div class="pointer-events-none invisible absolute top-0 left-0 h-0 w-full overflow-hidden" aria-hidden="true">
           <div ref="measurer" class="flex w-max">
             <span v-for="tab in split.row" :key="tab.path" :class="TAB" data-measure-tab
-              >{{ $t(tab.label) }}<span v-if="waiting[tab.path]" class="ml-1 px-1.5 text-xs">{{ waiting[tab.path] }}</span></span
+              >{{ $t(tab.label) }}
+              <span v-if="waiting[tab.path]" class="ml-1 rounded-full px-1.5 text-xs font-semibold">{{ waiting[tab.path] }}</span></span
             >
             <span :class="[TAB, 'inline-flex items-center gap-0.5']" data-measure-more
               >{{ $t('Más')
-              }}<span v-if="waitingInMenu || split.menu.some(t => waiting[t.path])" class="ml-1 px-1.5 text-xs">99</span
+              }}<span v-if="waitingInMenu || split.menu.some(t => waiting[t.path])" class="ml-1 rounded-full px-1.5 text-xs font-semibold">99</span
               ><ChevronDown :size="14"
             /></span>
           </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Check, ChevronDown, ExternalLink, FolderSearch, Globe, History, Loader2, RefreshCw, ScanSearch, ScanText } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
@@ -93,7 +94,9 @@ type Recent = { id: string; kind: 'reading' | 'curation' | 'photos'; at: string 
 const recent = ref<Recent[]>(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'))
 const recentOpen = ref(false)
 const recentBox = ref<HTMLElement>()
-useDismiss(recentOpen, recentBox)
+// The route is absent only where the panel is mounted without a router.
+const route = useRoute() as ReturnType<typeof useRoute> | undefined
+useDismiss(recentOpen, recentBox, { closeOn: () => route?.fullPath })
 function showCard(id: string, kind: Recent['kind']) {
   const before = card.value
   if (before && before !== id) {
