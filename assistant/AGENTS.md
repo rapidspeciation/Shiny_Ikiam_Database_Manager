@@ -100,14 +100,25 @@ replaces it) is discarded with `update_proposal` `discard`.
   Spanish, and correct the English of those written in English.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and
   ask.
-- **Alive or dead**: for «how many are alive», say in one line which
-  assumption you use and where it comes from. No verified adult lifespan is
-  written down yet: if the question needs one, say so instead of giving a
-  number. Lifespans leave out disappearances (their date is when the butterfly
-  was missed, not when it died).
-  <!-- TODO: add the verified lifespan figures from
-  WingsClassificator/.work/field_sex_step2/page/insectary-stats-20261101/facts.md
-  once that file exists. -->
+- **Alive or dead**: for «how many are alive», count the open records (no
+  death date) and say how many of them entered over 90 days ago: those are
+  probably dead, to verify at the census. Never call a number confirmed alive.
+  The 90-day rule is a census check, never a death. Figures below are cited as
+  «según la base al 31/10/2026» with their qualifiers.
+
+  Insectary figures, según la base al 31/10/2026 (seen deaths only:
+  Disappearance, 2,752 of 10,983 reared or 25 %, and Killed_Preserved left out;
+  a disappearance's date is when the butterfly was missed, not when it died):
+  - Reared, recorded natural deaths (n 6,578): median 22 days; 95 % dead by day
+    65, 99 % by 86; 35 %, 6 %, 0.8 % lived over 30, 60, 90 days; longest 226
+    (wings only, unverified).
+  - Reared medians: Mechanitis polymnia 18 d (n 2,531), M. messenoides 24 d
+    (n 1,920), M. lysimnia 21 d (n 1,150), Melinaea menophilus 30 d (n 592).
+  - Wild-caught (n 1,264): median 7 days after entry, a lower bound.
+  - Census check: 318 of 873 open records had entered over 90 days ago.
+  - Clutch first-event medians: laying to hatch 5 d (n 823), hatch to pupa 16
+    (n 642), pupa to adult 8 (n 492), laying to adult 28 (n 481).
+  - Recorded adults/pupae, pooled: 81 % (534 clutches).
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.
   Never explain a pattern by things left for Monday.
