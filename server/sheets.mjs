@@ -317,6 +317,9 @@ export class GoogleSheets {
  * formulas they need). `protectedRanges` lists, per sheet, ranges the
  * credential may not edit, as Google reports them.
  */
+/** Rows LocalSheets.readSheet copies between two turns of the others. */
+const LOCAL_READ_ROWS = 500;
+
 export class LocalSheets {
   constructor(seed = {}, { evaluate, protectedRanges, spreadsheetId = REAL_ID, health } = {}) {
     this.rows = new Map();
@@ -370,10 +373,19 @@ export class LocalSheets {
   }
   async readSheet(sheet) {
     await this.gate(true);
-    const rows = structuredClone(this.rows.get(sheet) || []);
+    const source = [...(this.rows.get(sheet) || [])];
+    const rows = [];
     // Row by row: the whole sheet as one string is some hundred MB in the lab's workbook.
     const digest = createHash('sha256');
-    for (const r of rows) digest.update(JSON.stringify(r));
+    // A piece at a time, as Google's ranges are read: a big sheet takes a second or two to copy (Insectary_data in
+    // the lab's workbook), and the app answers the others between pieces.
+    for (let i = 0; i < source.length; i += LOCAL_READ_ROWS) {
+      if (i) await new Promise(resolve => setImmediate(resolve));
+      for (const r of structuredClone(source.slice(i, i + LOCAL_READ_ROWS))) {
+        digest.update(JSON.stringify(r));
+        rows.push(r);
+      }
+    }
     return withDigest(rows, digest.digest('base64'));
   }
   async readRow(sheet, row) {
