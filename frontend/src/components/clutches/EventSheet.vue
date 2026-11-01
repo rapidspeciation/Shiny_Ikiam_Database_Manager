@@ -163,7 +163,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <section v-if="e?.kind !== 'transfer'" class="mt-3">
           <span class="field-label">{{ gain && stage === 'larva' ? $t('Día de la eclosión') : $t('Día') }}</span>
           <div v-if="editable" class="flex flex-wrap gap-2">
-            <DateField :model-value="dayKnown ? day : ''" class="field-input h-11 w-40 text-base" @update:model-value="pickDay" />
+            <DateField
+              :model-value="dayKnown ? day : ''"
+              class="field-input h-11 w-40 text-base"
+              :aria-label="gain && stage === 'larva' ? $t('Día de la eclosión') : $t('Día')"
+              @update:model-value="pickDay"
+            />
             <button type="button" class="btn h-11 px-3" @click="pickDay(todayIso())">{{ $t('Hoy') }}</button>
             <button type="button" class="btn h-11 px-3" @click="pickDay(yesterday())">{{ $t('Ayer') }}</button>
             <button v-if="gain" type="button" class="btn h-11 px-3" :class="{ 'border-brand-700 bg-brand-50': !dayKnown }" @click="dayKnown = false">

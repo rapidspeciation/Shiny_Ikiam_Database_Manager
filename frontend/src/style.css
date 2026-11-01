@@ -402,8 +402,21 @@ body,
 body {
   @apply bg-canvas text-fg antialiased;
 }
-:focus-visible {
-  outline-color: var(--focus);
+/*
+ * Keyboard focus (PRINCIPLES P3): a 2 px ring in the focus colour on every control, 2 px off its edge; white on the
+ * green header. In the base layer, so a component's own ring (focus-visible:…) still wins.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .app-header :focus-visible {
+    outline-color: var(--focus-on-brand);
+  }
+  .app-header [data-user-menu] :focus-visible {
+    outline-color: var(--focus);
+  }
 }
 
 @layer components {
@@ -423,7 +436,7 @@ body {
     @apply mb-1 block text-xs font-medium text-fg-muted;
   }
   .field-input {
-    @apply block w-full rounded-md border border-control bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-focus focus:ring-2 focus:ring-focus/25 focus:outline-none;
+    @apply block w-full rounded-md border border-control bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-focus focus:ring-1 focus:ring-focus focus:outline-none;
   }
   .field-input.is-dirty {
     @apply border-pending-edge bg-cell-pending;
@@ -547,6 +560,18 @@ html .tabulator-row.tabulator-selected:hover {
 /* The fill alone is 1.2:1 against a plain row: a bar in the focus colour on the row's first cell carries it. */
 html .tabulator-row.tabulator-selected > .tabulator-cell:first-child {
   box-shadow: inset 3px 0 0 var(--focus);
+}
+/*
+ * Keyboard focus on a grid's body (Tab reaches it; the arrows then move the picked cell): a ring inside its edge, in
+ * the focus colour, apart from the blue of the picked cells and the green bar of a picked row.
+ */
+html .tabulator .tabulator-tableholder:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+html .tabulator .tabulator-header .tabulator-header-filter input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
 }
 html .tabulator .tabulator-tableholder .tabulator-placeholder .tabulator-placeholder-contents,
 html .tabulator .tabulator-tableholder .tabulator-placeholder span {
@@ -772,7 +797,7 @@ body.touch-bar-open main {
 .sheet-grid .tabulator .tabulator-header-filter input {
   font-size: 12px;
   padding: 2px 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: 3px;
 }
 .sheet-grid .tabulator-row .tabulator-cell {

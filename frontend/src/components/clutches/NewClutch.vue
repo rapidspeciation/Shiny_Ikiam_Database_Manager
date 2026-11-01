@@ -366,7 +366,7 @@ function reveal(e: FocusEvent) {
       <section>
         <span class="field-label">DATE LAID</span>
         <div class="flex gap-2">
-          <DateField v-model="date" class="field-input h-12 text-base" />
+          <DateField v-model="date" class="field-input h-12 text-base" aria-label="DATE LAID" />
           <button v-for="d in quickDates" :key="d.iso" type="button" class="btn h-12 shrink-0 px-3" :class="{ 'border-brand-600 text-brand-800': date === d.iso }" @click="date = d.iso">
             {{ d.name }}
           </button>

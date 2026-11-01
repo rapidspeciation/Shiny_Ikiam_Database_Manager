@@ -1093,7 +1093,12 @@ watch(
                 >
                   {{ d.name }}
                 </button>
-                <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
+                <DateField
+                  :model-value="shownDate"
+                  class="field-input h-12 text-base"
+                  :aria-label="shownKind === 'clip' ? $t('Fecha del corte de ala') : 'Preservation_date'"
+                  @update:model-value="setField('date', $event)"
+                />
               </div>
               <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
               <p v-else-if="shownDate" class="mt-1 text-sm" :class="oldDate ? 'font-medium text-amber-800' : 'text-stone-600'">
