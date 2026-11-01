@@ -568,7 +568,7 @@ const origin = (p: Proposal) =>
       </button>
     </div>
     <!-- A size container: each table is at most its height (ProposalSheet), so its column names stay in sight. -->
-    <div ref="listBox" class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]" data-lazy-root>
+    <div ref="listBox" class="min-h-0 flex-1 overflow-y-auto px-3 [container-type:size]" data-lazy-root>
       <p v-if="!cards.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ scope ? $t('No se encontró esta propuesta en tu cuenta.') : $t('Cargando…') }}</template>
         <template v-else>
@@ -677,6 +677,8 @@ const origin = (p: Proposal) =>
           </WhenSeen>
         </div>
       </details>
+      <!-- Room after the last card without leaving a gap under the sticky «Aplicar» bar. -->
+      <div class="h-3" aria-hidden="true" />
     </div>
     <Teleport to="body">
       <PhotoReview

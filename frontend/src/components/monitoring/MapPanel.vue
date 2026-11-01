@@ -3,7 +3,7 @@ import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
-import { ExternalLink, Link2, RotateCcw, Trash2, X } from 'lucide-vue-next'
+import { ExternalLink, Link2, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-vue-next'
 import FilterSelect, { type FilterOption } from './FilterSelect.vue'
 import { useMonitoring, type StoredCapture, type StoredTrack } from '../../composables/useMonitoring'
 import { api } from '../../lib/api'
@@ -89,7 +89,8 @@ const showTransects = flagQuery('trazado', true)
 const showGps = flagQuery('gps', false)
 const showRecaptures = flagQuery('unir', false)
 const heatRadius = ref(22)
-const panel = ref(true)
+/** The panel covers the whole map on a phone, so it starts closed there (the «Capas y filtros» button opens it). */
+const panel = ref(typeof matchMedia === 'undefined' || matchMedia('(min-width: 768px)').matches)
 
 const filters = computed<MapFilters>(() => ({
   years: lists.years.value,
@@ -763,7 +764,7 @@ const withoutGps = computed(() => {
       </p>
       <!-- On a phone the panel covers the map: its way back stays at its foot, over nothing else. -->
       <div class="sticky bottom-0 mt-auto border-t border-stone-200 bg-surface p-2 md:hidden">
-        <button class="btn w-full" @click="panel = false">{{ $t('Ocultar panel') }}</button>
+        <button class="btn w-full" @click="panel = false">{{ $t('Ver el mapa') }}</button>
       </div>
     </aside>
 
@@ -822,6 +823,7 @@ const withoutGps = computed(() => {
           </div>
         </div>
         <button class="btn shadow" :class="{ 'max-md:hidden': panel }" @click="panel = !panel">
+          <SlidersHorizontal v-if="!panel" :size="15" aria-hidden="true" />
           {{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}
         </button>
       </div>

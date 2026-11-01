@@ -25,15 +25,27 @@ function reveal() {
   measure()
 }
 let observer: ResizeObserver | null = null
+let mutations: MutationObserver | null = null
 onMounted(() => {
   observer = new ResizeObserver(measure)
   if (row.value) {
     observer.observe(row.value)
     for (const child of Array.from(row.value.children)) observer.observe(child)
   }
+  // Items added later (tabs shown after logging in) are measured and the active one brought into sight.
+  if (row.value && typeof MutationObserver !== 'undefined') {
+    mutations = new MutationObserver(records => {
+      for (const r of records) for (const n of Array.from(r.addedNodes)) if (n instanceof Element) observer?.observe(n)
+      reveal()
+    })
+    mutations.observe(row.value, { childList: true })
+  }
   reveal()
 })
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  mutations?.disconnect()
+})
 watch(
   () => props.active,
   () => nextTick(reveal),

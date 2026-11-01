@@ -228,6 +228,7 @@ export default {
   muchas: 'many',
   'Ocultar panel': 'Hide panel',
   'Capas y filtros': 'Layers and filters',
+  'Ver el mapa': 'Show the map',
 
   // Recaptures
   'solo en notas': 'only in notes',

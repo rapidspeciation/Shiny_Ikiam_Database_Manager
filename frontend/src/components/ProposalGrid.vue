@@ -62,6 +62,7 @@ import type { CellValue } from '../lib/types'
 import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
 import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
+import { useMedia } from '../composables/usePhone'
 import { useLive } from '../stores/live'
 import { t, tx } from '../lib/i18n'
 
@@ -136,7 +137,8 @@ const emit = defineEmits<{
 const session = useSession()
 const live = useLive()
 /** A phone beside the photo: the rack deposit's fields fold to one line, so the rack's grid shows with the photo. */
-const narrow = typeof matchMedia !== 'undefined' && !matchMedia('(min-width: 768px)').matches
+const wide = useMedia('(min-width: 768px)')
+const narrow = computed(() => !wide.value)
 
 const pending = computed(() => props.proposal.status === 'pending')
 /** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
@@ -1138,7 +1140,7 @@ const statusText = computed(
          a phone's half-screen beside the photo, where the rack's grid needs the room). -->
     <div
       class="flex flex-wrap items-center gap-2 px-2 py-1.5"
-      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending && !(reviewing && narrow) }"
+      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending, 'max-sm:py-1': pending && reviewing }"
       data-apply-bar
     >
       <template v-if="pending">
@@ -1182,7 +1184,7 @@ const statusText = computed(
               >{{ $tn(setAside, '{n} sugerencia de la IA sin aplicar', '{n} sugerencias de la IA sin aplicar') }} ·
             </template>
           </template>
-          <template v-if="!byHand">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</template>
+          <span v-if="!byHand" :class="{ 'max-sm:hidden': pending }">{{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}</span>
         </span>
         <!-- Why there is no «Aplicar»: the app's Google account cannot edit the deposit's sheet. -->
         <p v-if="byHand && deposit" class="order-last basis-full text-[11px] text-stone-600" data-no-edit-access>
