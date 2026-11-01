@@ -28,8 +28,13 @@ export function metricsOf(rep) {
   const w = rep.workloads;
   put('start.listen_s', w.cold_start?.listenS);
   put('start.ready_s', w.cold_start?.readyS);
+  put('run.cgroup_peak_mb', rep.cgroupPeakMb?.mem);
+  put('run.cgroup_swap_peak_mb', rep.cgroupPeakMb?.swap);
+  put('run.server_hwm_mb', Math.max(0, ...Object.entries(rep.peakHwmMb ?? {}).filter(([k]) => k.startsWith('server:')).map(([, v]) => v)));
   for (const [phase, p] of Object.entries(rep.phases)) {
     put(`${phase}.peak_total_mb`, p.peakTotalMb);
+    put(`${phase}.anon_peak_mb`, p.peakAnonMb);
+    put(`${phase}.anon_end_mb`, p.endAnonMb);
     put(`${phase}.end_total_mb`, p.endTotalMb);
     put(`${phase}.seconds`, p.seconds);
     for (const [kind, v] of Object.entries(p.processes ?? {})) {

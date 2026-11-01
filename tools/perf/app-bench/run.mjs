@@ -19,7 +19,7 @@
 // Never writes to the lab's own files: only to its run folder (and two photos named perf-bench-* in the lab
 // T3's attachments folder, which the tools read the photos from).
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -47,7 +47,12 @@ const PROXY_PORT = Number(opt('--proxy-port', 3786));
 const ALL = ['cold_start', 'pages', 'search', 'sync', 'tools', 'offline', 'concurrent'];
 const ONLY = (opt('--only', ALL.join(',')) || '').split(',').filter(Boolean);
 const PROFILE = has('--profile');
-const NODE_OPTIONS = opt('--node-options', '--max-old-space-size=8192');
+// The app's NODE_OPTIONS (dev-app.sh's own, --max-old-space-size=2048, when not given), its unit's memory ceiling
+// (the identifier runs in it too) and time limit, and any other setting (--env K=V, repeatable: an experiment's switch).
+const NODE_OPTIONS = opt('--node-options', '');
+const MEMORY_MAX = opt('--max', '5G');
+const TTL = opt('--ttl', '30m');
+const EXTRA_ENV = Object.fromEntries(argv.flatMap((a, i) => (a === '--env' ? [argv[i + 1].split(/=(.*)/s).slice(0, 2)] : [])));
 const MIN_AVAILABLE_GB = Number(opt('--min-available-gb', 2.5));
 // Before each start: wait (up to 30 min) until this much is available, so the app and the browser fit together
 // (the app peaks near 3.5 GB in LOCAL_MODE) and the run does not push the PC into swap.
@@ -153,7 +158,7 @@ function threadCpu(pid) {
 }
 
 /** Samples the app's processes every 250 ms; `mark(name)` starts a phase, `phase()` summarises it. */
-function sampler(rootPid) {
+function sampler(rootPid, app = null) {
   const samples = [];
   const cpuSeen = new Map(); // pid → { kind, cpuS } (last seen, so exited children still count)
   let current = null;
@@ -161,6 +166,10 @@ function sampler(rootPid) {
     const procs = tree(rootPid);
     const t = performance.now();
     const row = { t, phase: current?.name ?? null, procs: procs.map(p => ({ pid: p.pid, kind: p.kind, rssKb: p.rssKb, swapKb: p.swapKb })) };
+    // The unit's own count (tools/lab/dev-app.sh): every process of the app, page cache of its files included.
+    // anon: the app's own memory (heap, buffers); file: page cache of what it read (the snapshot, the models), which
+    // the kernel takes back first.
+    if (app?.cgroup) row.cgroupKb = { mem: cgroupKb(app, 'memory.current'), swap: cgroupKb(app, 'memory.swap.current'), ...cgroupStat(app) };
     for (const p of procs) cpuSeen.set(p.pid, { kind: p.kind, cpuS: p.cpuS, hwmKb: Math.max(p.hwmKb, cpuSeen.get(p.pid)?.hwmKb ?? 0) });
     samples.push(row);
     return row;
@@ -198,6 +207,13 @@ function sampler(rootPid) {
     const out = {
       seconds: r1((performance.now() - current.t0) / 1000),
       peakTotalMb: r1(Math.max(...rows.map(total)) / 1024),
+      ...(rows.some(r => r.cgroupKb?.mem != null)
+        ? {
+            peakCgroupMb: r1(Math.max(...rows.map(r => (r.cgroupKb?.mem ?? 0) + (r.cgroupKb?.swap ?? 0))) / 1024),
+            peakAnonMb: r1(Math.max(...rows.map(r => (r.cgroupKb?.anon ?? 0) + (r.cgroupKb?.swap ?? 0))) / 1024),
+            endAnonMb: r1(((rows.at(-1).cgroupKb?.anon ?? 0) + (rows.at(-1).cgroupKb?.swap ?? 0)) / 1024),
+          }
+        : {}),
       endTotalMb: r1(total(rows.at(-1)) / 1024),
       processes: per,
       cpuS: cpu,
@@ -276,11 +292,13 @@ function baseCopy() {
 function repeatDir(name) {
   const base = baseCopy();
   const dir = join(OUT, name);
-  const app = join(dir, 'app');
+  // tools/lab/dev-app.sh's folder: app.sqlite, photos/ and app.log in it; the lab's admin login, so no setup.
+  const app = dir;
   mkdirSync(app, { recursive: true });
   for (const file of ['app.sqlite', 'sheets.sqlite']) if (existsSync(join(base, file))) cp(join(base, file), join(app, file));
   for (const sub of ['photos', 'drive-photos', 'clutch-photos', 'reference-photos', 'gallery-public', 'knowledge'])
     if (existsSync(join(LAB, 'app', sub))) cp(join(LAB, 'app', sub), join(app, sub));
+  copyFileSync(join(LAB, 'credentials.json'), join(app, 'credentials.json'));
   // The identifier's files (read only): the lab's, with the offline page's head, small model and parts as on the
   // server (~/.cache/ithomiini-perf/identifier, README.md), else the lab's alone.
   const ident = existsSync(IDENT) ? IDENT : join(LAB, 'identifier');
@@ -301,31 +319,16 @@ function attachments() {
 }
 
 // ---------- the app ----------
-function appEnv(run) {
-  const env = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (/^(T3CODE_|T3_SERVICE_|T3_BOOT_|GOOGLE_|OPENAI_|AI_|ITHOMIINI_AI_|GEMINI_)/.test(k)) continue;
-    if (['WORKBOOK_ID', 'SHEET_HOOK_SECRET', 'NODE_OPTIONS'].includes(k)) continue;
-    env[k] = v;
-  }
+// Started by tools/lab/dev-app.sh (its own user unit: memory ceiling, time limit, the memory check, LOCAL_MODE on
+// the lab's snapshot, one tools worker, 2 GB heap), with what the workloads need on top: the identifier, the test
+// photos, the lab T3 (Asistente tab, chat attachments) and, for --profile, the profilers.
+const UNIT = `ithomiini-dev-${PORT}`;
+const DEV_APP = join(HERE, 'tools/lab/dev-app.sh');
+function extraEnv(run, profileDir) {
   return {
-    ...env,
-    LOCAL_MODE: '1',
-    SEED_FILE: join(LAB, 'snapshot.json'),
-    DATABASE_PATH: join(run.app, 'app.sqlite'),
-    PHOTO_CACHE_DIR: join(run.app, 'photos'),
-    DRIVE_LISTING_FILE: join(LAB, 'drive-listing.json'),
-    DRIVE_ACCOUNT: 'jmithominii@gmail.com',
+    IDENTIFIER_DIR: run.ident,
     DRIVE_LOCAL_PHOTOS: join(LAB, 'test-batch'),
     ITHOMIINI_LAB_DRIVE_SANDBOX: '0',
-    IDENTIFIER_DIR: run.ident,
-    APP_HOST: '127.0.0.1',
-    APP_PORT: String(PORT),
-    APP_BASE_PATH: '/',
-    APP_PUBLIC_URL: URL_,
-    SECURE_COOKIES: '0',
-    SYNC_INTERVAL_MS: '0',
-    SETUP_TOKEN: randomUUID(),
     ITHOMIINI_T3_URL: `http://127.0.0.1:${PROXY_PORT}`,
     ITHOMIINI_T3_LOCAL: 'http://127.0.0.1:3775',
     ITHOMIINI_T3_PROXY_PORT: String(PROXY_PORT),
@@ -336,39 +339,45 @@ function appEnv(run) {
     ITHOMIINI_SHARED: run.app,
     ITHOMIINI_MCP_URL: `${URL_}/api/ai/mcp`,
     ITHOMIINI_SRC: HERE,
-    ITHOMIINI_LAB_URL: URL_,
     ITHOMIINI_DOCS: join(HERE, 'docs'),
     ITHOMIINI_KNOWLEDGE: join(run.app, 'knowledge'),
-    ITHOMIINI_GOG_BIN: join(HERE, 'tools/lab/fake-gog.sh'),
-    GOG_ACCOUNT: 'lab',
-    NODE_OPTIONS,
+    ...(NODE_OPTIONS || profileDir
+      ? {
+          NODE_OPTIONS: [
+            NODE_OPTIONS || '--max-old-space-size=2048',
+            ...(profileDir ? ['--cpu-prof', `--cpu-prof-dir=${profileDir}`, '--heap-prof', `--heap-prof-dir=${profileDir}`] : []),
+          ].join(' '),
+        }
+      : {}),
+    ...EXTRA_ENV,
   };
 }
+const mainPid = () => Number(spawnSync('systemctl', ['--user', 'show', '-p', 'MainPID', '--value', `${UNIT}.service`], { encoding: 'utf8' }).stdout.trim() || 0);
 async function startApp(run, { profileDir = null } = {}) {
   needMemory('lab app');
   const busy = spawnSync('ss', ['-ltn', `sport = :${PORT}`], { encoding: 'utf8' }).stdout.split('\n').length > 2;
   if (busy) throw new Error(`port ${PORT} is in use`);
-  const nodeArgs = profileDir
-    ? ['--cpu-prof', `--cpu-prof-dir=${profileDir}`, '--heap-prof', `--heap-prof-dir=${profileDir}`]
-    : [];
+  const args = ['--port', String(PORT), '--dir', run.app, '--ttl', TTL, '--max', MEMORY_MAX];
+  for (const [k, v] of Object.entries(extraEnv(run, profileDir))) args.push('--env', `${k}=${v}`);
   const t0 = performance.now();
-  const child = spawn(process.execPath, [...nodeArgs, 'server/index.mjs'], {
-    cwd: HERE,
-    env: appEnv(run),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const logFile = join(run.dir, 'app.log');
-  const chunks = [];
-  child.stdout.on('data', d => chunks.push(d));
-  child.stderr.on('data', d => chunks.push(d));
-  const flushLog = () => writeFileSync(logFile, Buffer.concat(chunks), { mode: 0o600 });
-  const exited = new Promise(r => child.once('exit', (code, signal) => r({ code, signal })));
-  return { child, t0, flushLog, exited };
+  const launcher = spawn(DEV_APP, args, { cwd: HERE, stdio: ['ignore', 'pipe', 'pipe'] });
+  const out = [];
+  launcher.stdout.on('data', d => out.push(d));
+  launcher.stderr.on('data', d => out.push(d));
+  const launched = new Promise(r => launcher.once('exit', code => r(code)));
+  let pid = 0;
+  while (!(pid = mainPid())) {
+    if (launcher.exitCode !== null) throw new Error(`dev-app.sh: ${Buffer.concat(out).toString().trim()}`);
+    if (performance.now() - t0 > 30_000) throw new Error('dev-app.sh: no process after 30 s');
+    await sleep(50);
+  }
+  const cg = readFileSync(`/proc/${pid}/cgroup`, 'utf8').trim().split('\n').find(l => l.startsWith('0::'))?.slice(3);
+  return { pid, t0, launched, launcherOut: out, cgroup: cg ? join('/sys/fs/cgroup', cg) : null };
 }
 async function waitReady(app) {
   let listenS = null;
   for (;;) {
-    if (app.child.exitCode !== null) throw new Error('app exited during start (see app.log)');
+    if (!existsSync(`/proc/${app.pid}`)) throw new Error(`app exited during start (see ${UNIT}'s app.log)`);
     try {
       const h = await (await fetch(`${URL_}/health`, { signal: AbortSignal.timeout(5000) })).json();
       listenS ??= (performance.now() - app.t0) / 1000;
@@ -379,11 +388,25 @@ async function waitReady(app) {
   }
 }
 async function stopApp(app) {
-  app.child.kill('SIGTERM');
-  const done = await Promise.race([app.exited, sleep(30_000).then(() => null)]);
-  if (!done) app.child.kill('SIGKILL');
-  await app.exited;
-  app.flushLog();
+  await Promise.race([app.launched, sleep(60_000)]);
+  spawnSync(DEV_APP, ['--stop', '--port', String(PORT)], { encoding: 'utf8' });
+  for (let i = 0; i < 600 && existsSync(`/proc/${app.pid}`); i++) await sleep(100);
+}
+function cgroupStat(app) {
+  try {
+    const text = readFileSync(join(app.cgroup, 'memory.stat'), 'utf8');
+    const kb = key => Number(new RegExp(`^${key} (\\d+)`, 'm').exec(text)?.[1] ?? 0) / 1024;
+    return { anon: kb('anon'), file: kb('file') };
+  } catch {
+    return {};
+  }
+}
+function cgroupKb(app, file) {
+  try {
+    return Number(readFileSync(join(app.cgroup, file), 'utf8').trim()) / 1024;
+  } catch {
+    return null;
+  }
 }
 
 // ---------- an HTTP client of the app ----------
@@ -432,7 +455,8 @@ async function mcp(token, method, params) {
   } catch {}
   const content = body?.result?.content ?? [];
   const isError = !!(body?.error || body?.result?.isError);
-  return { status: r.status, ms, bytes: Buffer.byteLength(text), isError, error: body?.error?.message ?? (isError ? String(content[0]?.text ?? '').slice(0, 300) : null), images: content.filter(c => c.type === 'image').length };
+  const first = String(content.find(c => c.type === 'text')?.text ?? '');
+  return { status: r.status, ms, bytes: Buffer.byteLength(text), isError, head: first.slice(0, 160), digest: createHash('sha256').update(first).digest('hex').slice(0, 12), error: body?.error?.message ?? (isError ? String(content[0]?.text ?? '').slice(0, 300) : null), images: content.filter(c => c.type === 'image').length };
 }
 
 // ---------- the workloads ----------
@@ -525,7 +549,15 @@ async function search(session) {
   for (const q of QUERIES)
     for (const pass of ['first', 'again']) {
       const r = await timed(session, `/api/search?q=${encodeURIComponent(q)}`);
-      out.push({ q, pass, status: r.status, ms: r1(r.ms), kb: r1(r.bytes / 1024) });
+      // What it found, and a digest of the whole answer but its timing (the same answer from a faster search).
+      let found = null;
+      let digest = null;
+      try {
+        const body = JSON.parse(r.buf.toString('utf8'));
+        found = body.sheets?.map(x => `${x.module}:${x.total}`).join(' ');
+        digest = createHash('sha256').update(JSON.stringify(body, (k, v) => (k === 'took' ? undefined : v))).digest('hex').slice(0, 12);
+      } catch {}
+      out.push({ q, pass, status: r.status, ms: r1(r.ms), kb: r1(r.bytes / 1024), found, digest });
     }
   return out;
 }
@@ -551,7 +583,7 @@ async function tools(token, files) {
         continue;
       }
       const r = await mcp(token, 'tools/call', { name, arguments: args });
-      out.push({ tool: name, pass, ms: r1(r.ms), kb: r1(r.bytes / 1024), images: r.images, error: r.error });
+      out.push({ tool: name, pass, ms: r1(r.ms), kb: r1(r.bytes / 1024), images: r.images, error: r.error, head: r.head, digest: r.digest });
       log(`  ${name} ${pass}: ${r1(r.ms)} ms, ${r1(r.bytes / 1024)} kB${r.error ? ` (error: ${r.error.slice(0, 120)})` : ''}`);
     }
   return out;
@@ -619,9 +651,14 @@ async function waitMemory() {
   const t0 = performance.now();
   // Another heavy job's processes (default: the memory audit's harness, which starts its own app instances).
   const other = () => (WAIT_ABSENT ? spawnSync('pgrep', ['-f', WAIT_ABSENT]).status === 0 : false);
-  while (memAvailableGb() < WAIT_GB || other()) {
+  // tools/lab/dev-app.sh runs at most two at once on this PC.
+  const slots = () =>
+    spawnSync('systemctl', ['--user', 'list-units', 'ithomiini-dev-*', '--plain', '--no-legend', '--state=active'], { encoding: 'utf8' })
+      .stdout.split('\n')
+      .filter(l => l.trim() && !l.startsWith(`${UNIT}.service`)).length;
+  while (memAvailableGb() < WAIT_GB || other() || slots() >= 2) {
     if (performance.now() - t0 > 120 * 60_000) throw new Error(`gave up waiting for memory after 2 h`);
-    if (Math.round((performance.now() - t0) / 1000) % 120 < 10) log(`waiting: ${memAvailableGb().toFixed(1)} of ${WAIT_GB} GB available${other() ? `, ${WAIT_ABSENT} running` : ''}`);
+    if (Math.round((performance.now() - t0) / 1000) % 120 < 10) log(`waiting: ${memAvailableGb().toFixed(1)} of ${WAIT_GB} GB available${other() ? `, ${WAIT_ABSENT} running` : ''}, ${slots()} other dev apps`);
     await sleep(10_000);
   }
   return r1((performance.now() - t0) / 1000);
@@ -633,7 +670,7 @@ async function repeat(name, { profileDir = null } = {}) {
   const result = { name, phases: {}, workloads: {}, waitedForMemoryS: waitedS, memAvailableAtStartGb: r1(memAvailableGb()) };
   log(`${name}: starting the app (MemAvailable ${memAvailableGb().toFixed(1)} GB)`);
   const app = await startApp(run, { profileDir });
-  const s = sampler(app.child.pid);
+  const s = sampler(app.pid, app);
   let probe = null;
   try {
     s.begin('cold_start');
@@ -673,6 +710,7 @@ async function repeat(name, { profileDir = null } = {}) {
     await sleep(10_000);
     result.phases.idle_end = { ...s.end(), probe: probe.take() };
     result.peakHwmMb = s.peakHwmMb();
+    result.cgroupPeakMb = { mem: r1(cgroupKb(app, 'memory.peak') / 1024), swap: r1(cgroupKb(app, 'memory.swap.peak') / 1024) };
   } finally {
     probe?.stop();
     s.stop();
@@ -694,7 +732,9 @@ const meta = {
   node: process.version,
   host: readFileSync('/etc/hostname', 'utf8').trim(),
   cpus: spawnSync('nproc', { encoding: 'utf8' }).stdout.trim(),
-  nodeOptions: NODE_OPTIONS,
+  nodeOptions: NODE_OPTIONS || '(dev-app.sh default)',
+  memoryMax: MEMORY_MAX,
+  env: EXTRA_ENV,
   only: ONLY,
   repeats: REPEATS,
 };
