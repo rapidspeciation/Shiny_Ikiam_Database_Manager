@@ -8,7 +8,9 @@ export const TRIGGER = /(^|[^\w@.])@claude(?![\w@])/i;
 /** The bridge's own answers start with this; such a message never wakes it (loop guard). */
 export const PREFIX = 'Claude: ';
 export const LOOP_GUARD = /^\s*claude\s*:/i;
-export const COMMANDS = ['help', 'status', 'whoami', 'usage', 'stop', 'start', 'ack'];
+export const COMMANDS = ['help', 'status', 'whoami', 'usage', 'stop', 'start', 'ack', 'tono'];
+/** The humour levels a chat can choose with /tono (soul.md says what each means); the first is the default. */
+export const TONES = ['normal', 'gracioso', 'picante'];
 
 /**
  * Claude addressed by name as a vocative, at the start or the end of the text: «Claude, …», «claude ¿y…?»,
@@ -22,7 +24,7 @@ export const ownAnswer = text => LOOP_GUARD.test(String(text ?? ''));
 
 /**
  * The relay's command in a message: { name, arg } for /help, /status, /whoami, /usage, /stop, /start,
- * /ack at the start (after an optional @claude), { name: 'unknown', word } for another /word that
+ * /ack, /tono at the start (after an optional @claude), { name: 'unknown', word } for another /word that
  * tags @claude, else null. Pure.
  */
 export function command(text) {

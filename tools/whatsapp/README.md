@@ -54,6 +54,12 @@ editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
 - Its `.claude/settings.json` denies `Bash`, `Edit`, `Write`, `NotebookEdit` and the app tools that write without review: `apply_proposal`, `undo_edits`, `invite_person`, `list_invitations`, `organize_photos`, `sync_photo_links`, `update_websites`, `queue_walk`, `rename_photos_edit`, `drive_photos_edit`.
 - Proposals are drafted with the link and applied in the app by a person.
 
+**Voice and `/tono`.** `bridge-skill/soul.md` is the chats' voice (tone only; the skill keeps the rules on facts,
+evidence and the group). With `soulFile` in the config, the bridge puts it in a thread's first envelope, again when
+the file changes and every 20 turns. Every envelope names the chat's humour level, `Tone in this chat (/tono): …`.
+`/tono normal | gracioso | picante` (anyone in the chat, with `@claude` in the group) sets it per chat, without a model;
+`/tono` alone shows it. Normal is the default (`chats.<key>.tono` changes it).
+
 **Logs.** `~/.local/state/ithomiini-wa-bridge/bridge.log.jsonl`: each message's decision, each send
 (kind, length, ok), each turn (time, steps). No message text; dropped chats appear without id or sender.
 

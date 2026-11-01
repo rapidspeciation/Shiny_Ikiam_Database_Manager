@@ -35,7 +35,8 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { appendNew, mediaTag, named, slug, ACK_MODES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
+import { createHash } from 'node:crypto';
+import { appendNew, mediaTag, named, slug, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -280,6 +281,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const EMOJI = { working: '👀', replied: '✅', silent: '☑️', failed: '⚠️', ...(config.reactions ?? {}) };
   /** How a chat shows it is working: Franz's /ack choice, else the config's (reaction by default). */
   const ackMode = chat => state.ack?.[chat.key] ?? chat.ack ?? 'reaction';
+  /** The chat's humour level: its /tono choice, else the config's, else normal. */
+  const toneOf = chat => state.tono?.[chat.key] ?? chat.tono ?? TONES[0];
   const reactTo = (chat, msg, emoji) =>
     send(chat, { kind: 'react', react: { id: msg.id, sender: msg.sender, emoji }, trigger: msg }).catch(e => log.error?.('react:', e.message));
   const say = (chat, text, kind = 'reply', trigger = null) => send(chat, { kind, text: text.startsWith(PREFIX) ? text : PREFIX + text, quote: kind === 'reply' ? trigger : null, trigger }).catch(e => log.error?.('send:', e.message));
@@ -311,7 +314,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     '- /whoami – quién eres para el asistente',
     '- /stop, /start – solo Franz: apagar o encender todo',
     '- /ack reaction | edit – solo Franz: reacciones en el mensaje (👀 trabajando, ✅ respondí, ☑️ sin respuesta), o un mensaje con los pasos',
+    '- /tono normal | gracioso | picante – cuánto humor pone Claude en este chat',
   ].join('\n');
+  const TONE_HELP = 'Opciones: /tono normal (cálido, casi sin bromas), /tono gracioso (con humor cuando encaja), /tono picante (juguetón y pícaro, siempre amable).';
 
   async function runCommand(chat, msg, cmd) {
     record({ dir: 'in', chat: chat.key, id: msg.id, decision: 'command', command: cmd.name });
@@ -330,6 +335,14 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       save();
       record({ dir: 'state', ack: mode, chat: chat.key });
       return say(chat, `Aviso de trabajo aquí: ${mode}.`, 'reply', msg);
+    }
+    if (cmd.name === 'tono') {
+      const level = String(cmd.arg ?? '').toLowerCase();
+      if (!TONES.includes(level)) return say(chat, `Tono aquí: ${toneOf(chat)}. ${TONE_HELP}`, 'reply', msg);
+      (state.tono ??= {})[chat.key] = level;
+      save();
+      record({ dir: 'state', tono: level, chat: chat.key });
+      return say(chat, `Tono aquí: ${level}.`, 'reply', msg);
     }
     if (overLimit(chat, msg)) return;
     if (cmd.name === 'help') return say(chat, HELP, 'reply', msg);
@@ -834,10 +847,20 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       if (chat.history?.dir) lines.push(`History: the file wa-history/${chat.history.slug ?? slug(chat.label)}.jsonl in your workspace has every message of this group (one JSON per line: id, at, name, text, media, replyTo); search it with Grep or Read when the question needs earlier messages.`);
       else if (chat.key === 'self' && !chat.dryRun) lines.push(`History: your chat's older messages are in the WhatsApp store, read-only: wacli --store ${config.wacli.store} messages list --read-only --json --chat ${chat.jid} --after YYYY-MM-DD --limit N (this chat only).`);
       if (msg.followUp) lines.push('UNTAGGED FOLLOW-UP: this message does not tag @claude; it quotes one of your messages or addresses you by name («Claude, …») inside a conversation you were in during the last 15 minutes. That does not mean it is for you: people also quote you to point something out to the team. The default is [silent]; answer only if an answer from you is clearly expected, or you add something clearly useful (for instance a fact you got wrong). If unsure, your last message must be exactly [silent].');
+      // The voice (config `soulFile`): sent on a thread's first turn, when the file changes, and every 20 turns so it outlives compaction.
+      const threadKey = chat.key;
+      const soul = config.soulFile ? readFileSync(config.soulFile, 'utf8').trim() : '';
+      if (soul) {
+        const hash = createHash('sha256').update(soul).digest('hex').slice(0, 16);
+        const sent = (state.soulSent ??= {})[threadKey];
+        const fresh = !state.threads[threadKey] || sent?.hash !== hash || (sent?.turns ?? 0) >= 20;
+        if (fresh) lines.splice(1, 0, 'Your voice (soul.md; the skill still decides what you say and when):', soul, '---');
+        state.soulSent[threadKey] = { hash, turns: fresh ? 1 : (sent.turns ?? 0) + 1 };
+      }
+      lines.push(`Tone in this chat (/tono): ${toneOf(chat)}`);
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
       lines.push('(Answer per the whatsapp-bridge skill: your last message is sent as it is.)');
-      const threadKey = chat.key;
       const onStep = mode === 'edit' ? step => (status.steps.push(stepLabel(step)), showSteps()) : null;
       const r = await t3Turn(route, threadKey, (state.threads[threadKey] ? '' : 'Read the whatsapp-bridge skill first.\n') + lines.join('\n'), onStep);
       await status.editing;
@@ -940,7 +963,7 @@ function serve() {
 /** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
 function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
-  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
+  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/bridge-skill/soul.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
     copyFileSync(join(ROOT, f), join(target, f));
   }

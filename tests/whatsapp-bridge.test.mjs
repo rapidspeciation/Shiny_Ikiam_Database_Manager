@@ -680,3 +680,59 @@ test('the reaction emojis come from the config, with 👀 ✅ ☑️ as defaults
   assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, 'Hay 12.'), ['⏳', '👍']);
   assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, '[silent]'), ['⏳', '🤐']);
 });
+
+test('/tono: per chat, without a model, and named in every envelope', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-tono-'));
+  const script = join(dir, 'turn.mjs');
+  const seen = join(dir, 'envelopes');
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r.text)+'\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const soulFile = join(dir, 'soul.md');
+  writeFileSync(soulFile, 'Habla como una persona.');
+  const config = {
+    soulFile,
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
+      other: { jid: 'H@g.us', label: 'Otro', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
+    },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const envelopes = () => readFileSync(seen, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  let n = 0;
+  const post = (chat, text) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  assert.deepEqual(command('@claude /tono picante'), { name: 'tono', arg: 'picante' });
+  assert.equal(post('G@g.us', '/tono gracioso').reason, 'command without trigger');
+  post('G@g.us', '@claude /tono');
+  await settle();
+  assert.match(outbox().at(-1).text, /^Claude: Tono aquí: normal\. Opciones/);
+  post('G@g.us', '@claude /tono GRACIOSO');
+  await settle();
+  assert.equal(outbox().at(-1).text, 'Claude: Tono aquí: gracioso.');
+  post('G@g.us', '@claude /tono sarcástico');
+  await settle();
+  assert.match(outbox().at(-1).text, /Tono aquí: gracioso\. Opciones/);
+  assert.equal(existsSync(seen), false); // no model turn for any of these
+  post('G@g.us', '@claude cuántos hay?');
+  await settle();
+  post('H@g.us', '@claude cuántos hay?');
+  await settle();
+  post('G@g.us', '@claude y ahora?');
+  await settle();
+  const [first, other, second] = envelopes();
+  assert.match(first, /Tone in this chat \(\/tono\): gracioso/);
+  assert.match(other, /Tone in this chat \(\/tono\): normal/);
+  assert.match(first, /Habla como una persona\./);
+  assert.match(second, /Tone in this chat \(\/tono\): gracioso/);
+  assert.doesNotMatch(second, /Habla como una persona/); // the soul goes once per thread
+  writeFileSync(soulFile, 'Habla como una persona, con calma.');
+  post('G@g.us', '@claude otra');
+  await settle();
+  assert.match(envelopes().at(-1), /con calma/); // and again when it changes
+  assert.equal(bridge.state().tono.group, 'gracioso');
+});
