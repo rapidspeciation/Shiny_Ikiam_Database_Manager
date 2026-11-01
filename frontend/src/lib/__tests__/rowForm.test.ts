@@ -53,7 +53,7 @@ describe('form sections', () => {
   it('sorts every Collection_data column', () => {
     const collection = formSections(headers('Collection_data'), ['CAM_ID', 'FieldMark_ID', 'Insectary_ID'])
     expect(collection.flatMap(s => s.fields).length).toBe(77)
-    expect(keysOf(collection, 'other') ?? keysOf(collection, 'manifest')).toContain('Select_TEMP')
+    expect(keysOf(collection, 'other')).toContain('Select_TEMP')
   })
 
   it('shows one plain list when all columns fall in one section', () => {

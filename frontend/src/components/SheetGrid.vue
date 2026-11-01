@@ -155,8 +155,8 @@ const formOrder = computed(() => {
   for (const r of rows) entries.set(r.id, { id: r.id, row: r.row, label: labelOf(r.values), hint: hintOf(r.values) })
   // The grid's own order and filters (header filters, search, a chosen sort) once it is built.
   if (table && built) {
-    const active = (table.getData('active') as GridRow[]).map(d => entries.get(d.__id)).filter(e => !!e)
-    if (active.length) return active
+    // Even when empty: filters that match nothing show «no rows», not every row.
+    return (table.getData('active') as GridRow[]).map(d => entries.get(d.__id)).filter(e => !!e)
   }
   return [...entries.values()]
 })

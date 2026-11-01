@@ -74,8 +74,9 @@ export function formSections(fields: Field[], identity: string[] = []): FormSect
   // that is folded the same way.
   for (let i = 0; i < sections.length && sections.length > 1; i++) {
     const s = sections[i]
-    if (s.fields.length !== 1 || s.key === 'id') continue
-    const into = [sections[i - 1], sections[i + 1]].find(n => n && n.folded === s.folded)
+    // «Otras columnas» keeps its own header (its columns belong nowhere else), and nothing is folded into the formula section.
+    if (s.fields.length !== 1 || s.key === 'id' || s.key === 'other') continue
+    const into = [sections[i - 1], sections[i + 1]].find(n => n && n.folded === s.folded && n.key !== 'manifest')
     if (!into) continue
     into.fields = i > 0 && into === sections[i - 1] ? [...into.fields, ...s.fields] : [...s.fields, ...into.fields]
     sections.splice(i, 1)
