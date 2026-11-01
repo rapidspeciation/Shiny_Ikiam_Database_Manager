@@ -246,7 +246,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
     <!-- Wells without a tube and tubes without a row are counted in the lines below the legend, so not here. -->
     <p class="rack-legend">
       <span v-for="s in legend" :key="s" class="legend-item" :title="$t(STATE[s].tip)">
-        <span class="swatch" :class="`is-${s}`" />{{ $t(STATE[s].label) }}<template v-if="s !== 'missing' || !rack.missing.length"> {{ counts[s] }}</template>
+        <span class="swatch" :class="`is-${s}`" />{{ $t(STATE[s].label) }}{{ s !== 'missing' || !rack.missing.length ? ` ${counts[s]}` : '' }}
       </span>
       <span v-if="occupied" class="legend-item" :title="$t('La hoja tiene en ese pocillo de este rack otro tubo, que las fotos no muestran ahí')">
         <span class="swatch is-sheet-here" />{{ $t('la hoja tiene otro tubo aquí') }} {{ occupied }}
