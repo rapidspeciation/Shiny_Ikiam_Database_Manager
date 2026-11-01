@@ -15,8 +15,9 @@ import { useSession } from '../stores/session'
  * A link to a chat (`open`, from #/asistente?chat=…) moves the frame to it: in
  * T3's own router when the bridge is there, else by loading the chat's address.
  * Lives for the whole session (T3Host): never taken out of the page, which would reload it.
- * Light or dark: the frame inherits the page's color-scheme (lib/theme.ts), which T3 on its own «System»
- * theme reads as the system's; a theme picked inside T3 stays T3's (it keeps it in its own storage).
+ * Light or dark: T3 has its own theme (its settings, kept in its own storage) and no way to be told one;
+ * on its default «System» it follows the device, as the app does on System. Light or Dark picked in the
+ * app's menu does not reach T3.
  */
 const props = defineProps<{
   url: string
