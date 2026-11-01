@@ -731,6 +731,13 @@ body.keyboard-open .touch-actions {
 body.touch-bar-open main {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
+/* The save bar sits below <main>: with it showing, it gets the room instead, so Revisar and Guardar stay clear of the floating bar. */
+body.touch-bar-open:has([data-save-bar]) main {
+  padding-bottom: 0;
+}
+body.touch-bar-open [data-save-bar] {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
 /* The suggestion Enter or Tab will take, in the grids' lists and in ChoiceField's. */
 .tabulator-edit-list .tabulator-edit-list-item.is-pick,
 .choice-list .is-pick {

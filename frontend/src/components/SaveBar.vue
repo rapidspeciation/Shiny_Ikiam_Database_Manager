@@ -142,8 +142,9 @@ function discard() {
       :title="issues.join('\n')"
       @click="reviewing = true"
     >
-      <AlertTriangle :size="15" class="shrink-0" /> {{ $tn(errorCount, '{n} celda sin guardar:', '{n} celdas sin guardar:') }}
-      <span class="truncate font-normal">{{ issues[0] }}</span>
+      <AlertTriangle :size="15" class="shrink-0" />
+      <span class="shrink-0 whitespace-nowrap">{{ $tn(errorCount, '{n} celda sin guardar:', '{n} celdas sin guardar:') }}</span>
+      <span class="line-clamp-2 min-w-0 font-normal">{{ issues[0] }}</span>
     </button>
     <span v-if="!online" class="rounded bg-inverse px-2 py-0.5 text-xs text-on-inverse">{{ $t('Sin conexión') }}</span>
     <!-- Sent, and kept by the server until Google answers (server/outbox.mjs): written on their own. -->

@@ -616,7 +616,7 @@ const withoutGps = computed(() => {
         role="status"
         class="border-b border-stone-200 bg-stone-50 p-3 text-sm font-medium text-stone-800"
       >
-        {{ $t('Aún no hay recorridos. Súbelos en “Importar”.') }}
+        {{ $t('Aún no hay recorridos. Súbelos en “Importar recorrido”.') }}
       </p>
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
@@ -781,6 +781,14 @@ const withoutGps = computed(() => {
     <div class="relative min-w-0 flex-1">
       <div ref="host" class="absolute inset-0" />
       <div class="absolute bottom-6 left-3 z-[1300] flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
+        <!-- The panel's own line is hidden while it is closed (phones start so). -->
+        <p
+          v-if="!panel && tracksLoaded && !tracks.length"
+          role="status"
+          class="rounded-md border border-stone-200 bg-surface/95 px-2.5 py-1.5 text-sm font-medium text-stone-800 shadow"
+        >
+          {{ $t('Aún no hay recorridos. Súbelos en “Importar recorrido”.') }}
+        </p>
         <div
           v-if="mode !== 'calor' && legend.items.length"
           class="max-h-[45vh] w-64 overflow-y-auto rounded-md border border-stone-200 bg-surface/95 text-xs shadow"

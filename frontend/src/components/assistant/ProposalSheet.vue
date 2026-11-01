@@ -1492,7 +1492,21 @@ function revealFirstChange() {
   const box = column.getElement().getBoundingClientRect()
   const view = holder.getBoundingClientRect()
   if (box.left >= view.left && box.right <= view.right) return
-  void table.scrollToColumn(column.getField(), 'middle', false).catch(() => {})
+  const field = column.getField()
+  void table
+    .scrollToColumn(field, 'middle', false)
+    .then(() => {
+      // The cell bar follows the selection: show the changed cell, not the first one now out of view.
+      const first = props.changes[0] && table?.getRow(rowKey(props.changes[0]))
+      const cell = first && first.getCell(field)
+      if (!cell) return
+      try {
+        ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(cell, cell)
+      } catch {
+        /* Range selection is off on touch screens. */
+      }
+    })
+    .catch(() => {})
 }
 onMounted(() => {
   if (!host.value) return
