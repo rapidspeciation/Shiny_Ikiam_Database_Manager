@@ -271,8 +271,8 @@ const headerNotice = computed(() => {
           <Search :size="15" class="absolute top-2.5 left-2.5 text-stone-400" />
           <input
             v-model="search"
-            class="field-input pr-8 pl-8"
-            :placeholder="phone ? $t('Buscar en todas las hojas') : $t('Insectary ID, CAM, tubo, clutch, especie, nota…')"
+            class="field-input pr-8 pl-8 max-[379px]:placeholder:text-transparent"
+            :placeholder="phone ? $t('Buscar') : $t('Insectary ID, CAM, tubo, clutch, especie, nota…')"
             type="text"
             enterkeyhint="search"
             @keydown.esc="clearSearch"

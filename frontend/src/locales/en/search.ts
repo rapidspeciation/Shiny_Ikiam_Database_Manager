@@ -67,6 +67,7 @@ export default {
   'Ver como tabla': 'Show as table',
   'Ver como formulario': 'Show as form',
   'Ir a…': 'Go to…',
+  Buscar: 'Search',
   'Esta hoja no tiene filas.': 'This sheet has no rows.',
   '{at} de {n}': '{at} of {n}',
   'Ir a la fila: escribe su ID o su número de fila': 'Go to row: type its ID or its row number',
