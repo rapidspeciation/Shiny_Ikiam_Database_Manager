@@ -67,7 +67,7 @@ const hourOf = time => Number(time.slice(11, 13));
 const pad = h => `${String(h).padStart(2, '0')}:00`;
 
 /** The day's hours as rows, and the monitoring window's line, from Open-Meteo's hourly arrays. Pure. */
-export function dayParts(hourly, date, { from = 7, to = 17 } = {}) {
+export function dayParts(hourly, date, { from = 7, to = 17, nowHour = null } = {}) {
   const at = [];
   hourly.time.forEach((t, i) => t.startsWith(date) && at.push(i));
   const value = (key, i) => hourly[key]?.[i] ?? null;
@@ -80,6 +80,8 @@ export function dayParts(hourly, date, { from = 7, to = 17 } = {}) {
     round(value('wind_speed_10m', i)),
   ];
   const hours = at.filter(i => hourOf(hourly.time[i]) >= from && hourOf(hourly.time[i]) <= to).map(row);
+  // The field hours' rain: the hours ending after from_hour, up to to_hour (the first row's rain fell before it).
+  const fieldRain = at.filter(i => hourOf(hourly.time[i]) > from && hourOf(hourly.time[i]) <= to);
   // 9:00–11:00: temperature, cloud and wind at 9, 10 and 11; precipitation of the hours ending at 10 and 11.
   const inWindow = at.filter(i => hourOf(hourly.time[i]) >= MONITORING.from && hourOf(hourly.time[i]) <= MONITORING.to);
   const rainHours = inWindow.filter(i => hourOf(hourly.time[i]) > MONITORING.from);
@@ -89,6 +91,8 @@ export function dayParts(hourly, date, { from = 7, to = 17 } = {}) {
   const mm = nums('precipitation', rainHours);
   const clouds = nums('cloud_cover', inWindow);
   const winds = nums('wind_speed_10m', inWindow);
+  const fieldMm = nums('precipitation', fieldRain);
+  const fieldProbs = nums('precipitation_probability', fieldRain);
   const monitoring = inWindow.length
     ? {
         window: `${pad(MONITORING.from)}–${pad(MONITORING.to)}`,
@@ -99,11 +103,18 @@ export function dayParts(hourly, date, { from = 7, to = 17 } = {}) {
         wind_max_kmh: winds.length ? round(Math.max(...winds)) : null,
       }
     : null;
-  return { hours, monitoring };
+  return {
+    field_precip_mm: fieldMm.length ? round(fieldMm.reduce((a, b) => a + b, 0)) : null,
+    field_precip_prob_max: fieldProbs.length ? Math.max(...fieldProbs) : null,
+    // Today's hours already gone: model values, not what fell.
+    ...(nowHour !== null && nowHour > from ? { past_until: pad(nowHour), ...(monitoring && nowHour >= MONITORING.to ? { monitoring_past: true } : {}) } : {}),
+    hours,
+    monitoring,
+  };
 }
 
 /** Open-Meteo's answer as the tool gives it: one entry per day. Pure. */
-export function forecastDays(data, { from = 7, to = 17 } = {}) {
+export function forecastDays(data, { from = 7, to = 17, today = null, nowHour = null } = {}) {
   const daily = data?.daily;
   const hourly = data?.hourly;
   if (!daily?.time?.length || !hourly?.time?.length) return null;
@@ -114,7 +125,7 @@ export function forecastDays(data, { from = 7, to = 17 } = {}) {
     temp_max_c: round(daily.temperature_2m_max?.[i]),
     precip_mm: round(daily.precipitation_sum?.[i]),
     precip_prob_max: daily.precipitation_probability_max?.[i] ?? null,
-    ...dayParts(hourly, date, { from, to }),
+    ...dayParts(hourly, date, { from, to, nowHour: date === today ? nowHour : null }),
   }));
 }
 
@@ -128,9 +139,19 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetchFn(url, { signal: controller.signal, headers: { accept: 'application/json' } });
-      const body = await res.json().catch(() => null);
+      let body = null;
+      let unreadable = null;
+      try {
+        body = await res.json();
+      } catch (e) {
+        unreadable = e;
+      }
       if (!res.ok) throw new Error(`Open-Meteo answered ${res.status}${body?.reason ? `: ${body.reason}` : ''}`);
+      if (unreadable || !body || typeof body !== 'object') throw unreadable ?? new Error('Open-Meteo answered with no data');
       const value = { body, at: now() };
+      // Only a real answer is kept: a forecast with its hours, or a place search (with or without results).
+      const real = url.startsWith(GEOCODE_URL) ? !body.error : body.hourly?.time?.length > 0;
+      if (!real) return value;
       if (cache.size > 300) for (const [k, v] of cache) if (now() - v.at >= cacheMs) cache.delete(k);
       cache.set(url, { at: value.at, value });
       return value;
@@ -152,14 +173,15 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
     }
     const key = fold(name);
     const exact = known.get(key);
-    const hits = [...known.values()].filter(p => p !== exact && fold(p.name).includes(key)).sort((a, b) => a.name.length - b.name.length);
+    const word = new RegExp(`(^|[^a-z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`);
+    const hits = key.length < 3 ? [] : [...known.values()].filter(p => p !== exact && word.test(fold(p.name))).sort((a, b) => a.name.length - b.name.length);
     const best = exact ?? hits.shift();
     if (!best) return null;
     return {
       name: best.name,
       lat: best.lat,
       lon: best.lon,
-      matched_by: 'database locality (Location_data)',
+      matched_by: exact ? 'database locality (Location_data)' : `database locality (Location_data), partial name: «${name}» is part of it`,
       ...(hits.length ? { other_matches: hits.slice(0, 8).map(p => p.name) } : {}),
     };
   }
@@ -205,10 +227,10 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
         try {
           place = await fromGeocoding(named);
         } catch (e) {
-          return { error: `${named} is not among the database's localities with coordinates, and the place search failed (${e.message}). Give lat and lon.`, source: SOURCE };
+          return { error: `${named} is not among the database's localities with coordinates, and the place search failed (${e.message}). Ask the person for the site's coordinates, or try the town's name alone.`, source: SOURCE };
         }
       }
-      if (!place) return { error: `No place «${named}» among the database's localities with coordinates (Location_data) nor in Open-Meteo's geocoding. Give lat and lon.` };
+      if (!place) return { error: `No place «${named}» among the database's localities with coordinates (Location_data) nor in Open-Meteo's geocoding (searched without commas or extra words? try the town's name alone). Or ask the person for the site's coordinates.` };
     } else return { error: 'Give place (a Collection_location or a place name) or lat and lon' };
 
     // About 1 km: the forecast grid is coarser, and nearby asks share the hour's answer.
@@ -228,7 +250,9 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
     } catch (e) {
       return { error: `${e.message}; try again in a minute.`, place, source: SOURCE };
     }
-    const list = forecastDays(got.body, { from, to });
+    const clock = localTime(now());
+    const today = `${clock.slice(6, 10)}-${clock.slice(3, 5)}-${clock.slice(0, 2)}`;
+    const list = forecastDays(got.body, { from, to, today, nowHour: Number(clock.slice(11, 13)) });
     if (!list) return { error: 'Open-Meteo answered without a forecast; try again in a minute.', place, source: SOURCE };
     return {
       place: { ...place, lat: qlat, lon: qlon },
@@ -239,8 +263,10 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
       issued: 'not given: best_match blends the models that cover the place; the forecast is the latest Open-Meteo had at `fetched`',
       field_hours: `${pad(from)}–${pad(to)}`,
       hour_columns: ['hour', 'temp_c', 'precip_prob_%', 'precip_mm', 'cloud_%', 'wind_kmh'],
-      hour_note: 'Precipitation and its probability at an hour are for the hour ending then; temperature, cloud and wind at that moment.',
+      hour_note:
+        "Precipitation and its probability at an hour are for the hour ending then (the first row's fell before the field hours; field_precip_* leave it out); temperature, cloud and wind at that moment. Today's hours before past_until have gone: model values, not observations.",
       days: list,
+      ...(/outside Ecuador/.test(place.matched_by) ? { warning: `«${named}» was found only outside Ecuador (${place.name}): check the place with the person before using this forecast.` } : {}),
       source: SOURCE,
     };
   }

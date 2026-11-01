@@ -13,7 +13,7 @@ for a site. Nothing is written.
 | Tomorrow at a site | `place`, `days: 2` (today is the first day) |
 | Which day this week | `place`, `days: 7` (or 8 to reach the same weekday next week) |
 | Early or late field work | `from_hour`/`to_hour` (default 7 to 17) |
-| A point with no name in the database | `lat` + `lon` (and `place` as its label) |
+| A point with no name in the database | `lat` + `lon` the person gives (and `place` as its label) |
 
 ## The site
 
@@ -22,14 +22,18 @@ database's localities with coordinates (Location_data), then in Open-Meteo's
 place search, Ecuador first. Say which one was used when it is not plainly the
 place asked (`place.matched_by`, `place.name`, `other_matches`): «Usé Tena,
 Napo (búsqueda de Open-Meteo); en la base no hay una localidad con ese
-nombre.» A match outside Ecuador is nearly always the wrong place: ask.
+nombre.» A partial name or a nearby town stands in for the site: say so and
+offer to repeat it with the site's coordinates from the person. A match
+outside Ecuador (`warning`) is nearly always the wrong place: ask.
 
 ## Reading it
 
 - Each day: min/max temperature, the day's rain (mm) and its highest hourly
   chance of rain; `hours` rows `[hour, °C, rain chance %, rain mm, cloud %,
-  wind km/h]`; `monitoring` for 9:00–11:00. Rain at an hour is the rain of
-  the hour ending then.
+  wind km/h]`; `monitoring` for 9:00–11:00; `field_precip_mm` and
+  `field_precip_prob_max` for the field hours. Rain at an hour is the rain of
+  the hour ending then. Today's hours before `past_until` have gone: they are
+  the model's, not what fell.
 - Which days or hours look dry: compare the days with each other from these
   numbers (lowest chance and fewest mm in the field hours), and quote the
   numbers behind the choice. How much rain calls off a walk is the team's

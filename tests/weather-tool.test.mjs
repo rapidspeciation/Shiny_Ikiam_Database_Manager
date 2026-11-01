@@ -128,6 +128,13 @@ test('a part of a locality name: the shortest match, the others listed; accents 
   const mariposario = await tool.run('weather_forecast', { place: 'mariposario' });
   assert.equal(mariposario.place.name, 'Mariposario Ikiam');
   assert.equal(mariposario.place.other_matches, undefined);
+  assert.match(mariposario.place.matched_by, /partial name/);
+  // An exact name wins and is said plainly; the localities containing it are listed.
+  const ikiam = await tool.run('weather_forecast', { place: 'Ikiam' });
+  assert.equal(ikiam.place.matched_by, 'database locality (Location_data)');
+  assert.deepEqual(ikiam.place.other_matches, ['Mariposario Ikiam']);
+  // Whole words only, and not for one or two letters: «ian» is not «Mariposario Ikiam».
+  assert.notEqual((await tool.run('weather_forecast', { place: 'kiam' })).place?.name, 'Ikiam');
 });
 
 test('lat and lon are used as given', async () => {
@@ -147,7 +154,46 @@ test('a place not in the database: Open-Meteo geocoding in Ecuador, the match sa
   assert.deepEqual(out.place.other_matches, ['Tenajas, Piñas, El Oro, Ecuador']);
   assert.equal(new URL(calls[0]).searchParams.get('countryCode'), 'EC');
   const none = await tool.run('weather_forecast', { place: 'Sin coordenadas' });
-  assert.match(none.error, /Give lat and lon/);
+  assert.match(none.error, /ask the person for the site's coordinates/i);
+});
+
+test('a place found only outside Ecuador: said in matched_by and in a warning', async () => {
+  const { tool, calls } = await setup({
+    route: url =>
+      url.hostname.startsWith('geocoding')
+        ? url.searchParams.get('countryCode')
+          ? {}
+          : { results: [{ name: 'Misahualli', latitude: 9.9, longitude: -84.1, country: 'Costa Rica', admin1: 'San José' }] }
+        : forecast(3),
+  });
+  const out = await tool.run('weather_forecast', { place: 'Misahualy' });
+  assert.match(out.place.matched_by, /outside Ecuador/);
+  assert.match(out.warning, /check the place with the person/);
+  assert.equal(calls.filter(u => u.includes('geocoding')).length, 2);
+});
+
+test('the place search failing: an error that asks for the coordinates', async () => {
+  const { tool } = await setup({
+    route: url => {
+      if (url.hostname.startsWith('geocoding')) throw new Error('network down');
+      return forecast(3);
+    },
+  });
+  assert.match((await tool.run('weather_forecast', { place: 'Tena' })).error, /place search failed \(network down\)/);
+});
+
+test("rain in the field hours leaves out the hour before them; today's gone hours are marked", async () => {
+  const { tool, tick } = await setup();
+  const out = await tool.run('weather_forecast', { place: 'Ikiam', days: 2, from_hour: 10, to_hour: 12 });
+  // Hours ending at 11 and 12 (0.5 + 0): not the 1.25 mm ending at 10.
+  assert.equal(out.days[0].field_precip_mm, 0.5);
+  assert.equal(out.days[0].field_precip_prob_max, 48);
+  assert.equal(out.days[0].past_until, undefined);
+  tick(6 * 3600_000); // 13:30 in Guayaquil
+  const later = await tool.run('weather_forecast', { place: 'Ikiam', days: 2 });
+  assert.equal(later.days[0].past_until, '13:00');
+  assert.equal(later.days[0].monitoring_past, true);
+  assert.equal(later.days[1].past_until, undefined);
 });
 
 test('the same point and days within the hour: one call to Open-Meteo, marked cached; after the hour, asked again', async () => {
@@ -161,6 +207,20 @@ test('the same point and days within the hour: one call to Open-Meteo, marked ca
   const later = await tool.run('weather_forecast', { place: 'Ikiam', days: 3 });
   assert.equal(calls.length, 2);
   assert.equal(later.cached, undefined);
+});
+
+test('an unreadable answer is an error and is not kept: the next call asks again', async () => {
+  let n = 0;
+  const store = new Store({ localMode: true }, { sheets: new LocalSheets(seed) });
+  await store.sync({ sheets: Object.keys(seed) });
+  const tool = createWeatherTool({
+    store,
+    fetch: async () => (++n === 1 ? { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } } : { ok: true, status: 200, json: async () => forecast(3) }),
+  });
+  assert.match((await tool.run('weather_forecast', { place: 'Ikiam' })).error, /Unexpected end of JSON/);
+  const again = await tool.run('weather_forecast', { place: 'Ikiam' });
+  assert.equal(again.error, undefined);
+  assert.equal(n, 2);
 });
 
 test('Open-Meteo too slow or failing: a clear error with the place', async () => {
