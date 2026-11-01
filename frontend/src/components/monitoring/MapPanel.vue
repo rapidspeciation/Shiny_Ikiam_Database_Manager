@@ -661,7 +661,7 @@ const withoutGps = computed(() => {
               :aria-pressed="lists[g.key].value.includes(c.value)"
               @click="toggleChip(g.key, c.value)"
             >
-              {{ c.label }} <span class="tabular-nums opacity-70">{{ c.count }}</span>
+              {{ c.label }} <span class="text-fg-subtle tabular-nums">{{ c.count }}</span>
             </button>
           </div>
         </div>

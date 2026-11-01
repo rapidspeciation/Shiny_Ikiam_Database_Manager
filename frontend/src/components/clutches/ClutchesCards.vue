@@ -434,7 +434,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           >
             <AlertTriangle v-if="f === 'verify'" :size="13" class="-mt-0.5 inline text-orange-700" />
             {{ filterName(f) }}
-            <span class="tabular-nums opacity-70">{{ counts[f] }}</span>
+            <span class="text-fg-subtle tabular-nums">{{ counts[f] }}</span>
           </button>
           <button
             class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
