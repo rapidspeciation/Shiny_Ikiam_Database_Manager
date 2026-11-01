@@ -35,7 +35,7 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
 
 <template>
   <div class="flex h-full flex-col">
-    <nav class="flex gap-0.5 border-b border-stone-200 bg-white px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
+    <nav class="flex gap-0.5 border-b border-stone-200 bg-surface px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
       <button
         v-for="p in PANELS"
         :key="p.id"

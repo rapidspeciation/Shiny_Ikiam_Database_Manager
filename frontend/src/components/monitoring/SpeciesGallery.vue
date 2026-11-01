@@ -78,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <p v-if="inat?.synonymOf" class="text-xs text-white/70">
             {{ $t('En iNaturalist: {name}', { name: inat.synonymOf }) }}
           </p>
-          <p v-if="broader" class="text-xs text-amber-200">{{ broader }}</p>
+          <p v-if="broader" class="text-xs text-on-photo-warn">{{ broader }}</p>
         </div>
         <a
           v-if="inat"

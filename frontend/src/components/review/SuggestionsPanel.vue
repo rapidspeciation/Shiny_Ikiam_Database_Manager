@@ -137,7 +137,7 @@ function clearFilters() {
 <template>
   <div class="flex min-h-0 flex-1">
     <aside
-      class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm"
+      class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm"
       :class="showFilters ? 'fixed inset-0 z-40 flex w-full md:static md:w-60' : 'hidden md:flex'"
     >
       <div class="flex items-center justify-between px-3 pt-3 md:hidden">
@@ -147,7 +147,7 @@ function clearFilters() {
       <div class="grid grid-cols-2 gap-1 p-2" role="group" :aria-label="$t('Certeza')">
         <button
           class="rounded px-1.5 py-1 text-xs leading-tight"
-          :class="!certainty ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+          :class="!certainty ? 'bg-brand text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
           @click="certainty = ''"
         >
           {{ $t('Todas') }}<span class="block tabular-nums opacity-80">{{ certaintyCounts.total }}</span>
@@ -156,7 +156,7 @@ function clearFilters() {
           v-for="c in CERTAINTIES"
           :key="c.key"
           class="rounded px-1.5 py-1 text-xs leading-tight"
-          :class="certainty === c.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+          :class="certainty === c.key ? 'bg-brand text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
           :title="$t(c.hint)"
           @click="certainty = certainty === c.key ? '' : c.key"
         >
@@ -209,8 +209,8 @@ function clearFilters() {
     </aside>
 
     <section class="flex min-w-0 flex-1 flex-col">
-      <div class="flex items-center gap-2 border-b border-stone-200 bg-white px-2 py-1.5 text-xs sm:px-3">
-        <button class="btn px-2 py-1 md:hidden" :class="{ 'bg-stone-800 text-white': filtered }" @click="showFilters = true">
+      <div class="flex items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:px-3">
+        <button class="btn px-2 py-1 md:hidden" :class="{ 'bg-inverse text-on-inverse': filtered }" @click="showFilters = true">
           <SlidersHorizontal :size="14" /> {{ $t('Filtros') }}
         </button>
         <span class="relative min-w-0 flex-1 md:max-w-md">
@@ -248,12 +248,12 @@ function clearFilters() {
           )
         }}
       </p>
-      <p v-if="chosen" class="border-b border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600">{{ $t(chosen.describe) }}</p>
+      <p v-if="chosen" class="border-b border-stone-200 bg-surface px-3 py-1.5 text-xs text-stone-600">{{ $t(chosen.describe) }}</p>
 
       <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">
         <p v-if="!page" class="p-6 text-sm text-stone-500">{{ $t('Revisando…') }}</p>
         <p v-else-if="!page.items.length" class="p-6 text-sm text-stone-500">{{ $t('No hay sugerencias con estos filtros.') }}</p>
-        <ul v-else class="divide-y divide-stone-200 bg-white">
+        <ul v-else class="divide-y divide-stone-200 bg-surface">
           <template v-for="{ item, heading, group } in rows" :key="item.key">
             <li v-if="heading" class="sticky top-0 z-10 bg-stone-100 px-3 py-1 text-xs font-semibold tracking-wide text-stone-600 uppercase">
               {{ titleOf(item.source) }}

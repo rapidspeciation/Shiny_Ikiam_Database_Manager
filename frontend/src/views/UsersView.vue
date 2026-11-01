@@ -166,7 +166,7 @@ async function resetPassword(user: User) {
     <template v-else>
       <h1 class="mb-3 text-lg font-semibold">{{ $t('Usuarios') }}</h1>
       <form
-        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-surface p-4"
         @submit.prevent="sendInvite"
       >
         <label>
@@ -318,7 +318,7 @@ async function resetPassword(user: User) {
           {{ $t('Crear una cuenta sin correo (con contraseña inicial)') }}
         </summary>
         <form
-          class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+          class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-surface p-4"
           @submit.prevent="create"
         >
           <label>

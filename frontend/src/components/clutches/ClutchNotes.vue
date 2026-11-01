@@ -193,7 +193,7 @@ watch(
 
         <div v-if="adding" class="mt-2">
           <div class="flex flex-wrap gap-1.5">
-            <button v-for="p in NOTE_PHRASES" :key="p" type="button" class="min-h-10 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100" @click="addPhrase(p)">
+            <button v-for="p in NOTE_PHRASES" :key="p" type="button" class="min-h-10 rounded-full border border-stone-300 bg-surface px-3 text-sm active:bg-stone-100" @click="addPhrase(p)">
               {{ p }}
             </button>
           </div>

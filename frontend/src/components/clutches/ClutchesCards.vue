@@ -361,13 +361,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
   <!-- On a phone the controls scroll away with the cards (held at the top only when the screen is tall). -->
   <div ref="rootEl" class="h-full bg-stone-50" :class="wide ? 'flex flex-col' : 'overflow-y-auto'">
     <!-- What is shown, the search and the filters. -->
-    <div class="shrink-0 border-b border-stone-200 bg-white px-3 pt-2 pb-2" :class="{ 'sticky top-0 z-20': !wide && tall }">
+    <div class="shrink-0 border-b border-stone-200 bg-surface px-3 pt-2 pb-2" :class="{ 'sticky top-0 z-20': !wide && tall }">
       <div class="flex items-center gap-2">
         <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="tablist">
           <button
             role="tab"
             class="h-11 px-3 font-medium whitespace-nowrap"
-            :class="view === 'ongoing' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'ongoing' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'ongoing'"
             @click="view = 'ongoing'"
           >
@@ -376,7 +376,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <button
             role="tab"
             class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
-            :class="view === 'today' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'today' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'today'"
             :title="$t('Cambios de hoy: para el cuaderno y para deshacer')"
             @click="view = 'today'"
@@ -387,7 +387,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <button
             role="tab"
             class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
-            :class="view === 'notebook' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :class="view === 'notebook' ? 'bg-brand text-white' : 'bg-surface text-stone-700'"
             :aria-selected="view === 'notebook'"
             :title="$t('Para el cuaderno: lo cambiado en la app desde que se puso al día')"
             @click="view = 'notebook'"
@@ -405,7 +405,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <Search :size="18" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
           <input
             v-model="query"
-            class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+            class="h-12 w-full rounded-xl border border-stone-300 bg-surface pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
             type="search"
             inputmode="search"
             autocomplete="off"
@@ -427,7 +427,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 ? f === 'verify'
                   ? 'border-orange-500 bg-orange-50 font-medium text-orange-900'
                   : 'border-brand-700 bg-brand-50 font-medium text-brand-800'
-                : 'border-stone-300 bg-white text-stone-700'
+                : 'border-stone-300 bg-surface text-stone-700'
             "
             :aria-pressed="filter === f"
             @click="filter = f"
@@ -438,7 +438,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           </button>
           <button
             class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
-            :class="pendingFirst ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+            :class="pendingFirst ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
             :aria-pressed="pendingFirst"
             :title="$t('Primero los por verificar, luego los sin revisar')"
             @click="pendingFirst = !pendingFirst"
@@ -446,7 +446,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <ArrowDownUp :size="13" /> {{ $t('Pendientes primero') }}
           </button>
           <button
-            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-stone-300 bg-white text-stone-600"
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-stone-300 bg-surface text-stone-600"
             :aria-label="$t('Ajustes de Clutches')"
             :title="$t('Ajustes de Clutches')"
             @click="showSettings = true"
@@ -486,7 +486,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             <li
               v-for="(item, i) in listed"
               :key="item.row.id"
-              class="overflow-hidden rounded-xl border bg-white shadow-sm"
+              class="overflow-hidden rounded-xl border bg-surface shadow-sm"
               :class="[
                 selectedId === item.row.id && wide ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200',
                 day.today(item.row.id).review === 'verify' ? 'border-l-4 border-l-orange-400' : day.today(item.row.id).review === 'checked' ? 'border-l-4 border-l-brand-600' : '',
@@ -618,7 +618,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     v-for="r in VERIFY_REASONS"
                     :key="r"
                     type="button"
-                    class="min-h-9 rounded-full border border-orange-300 bg-white px-3 text-sm text-orange-950"
+                    class="min-h-9 rounded-full border border-orange-300 bg-surface px-3 text-sm text-orange-950"
                     @click="verifyNote = r"
                   >
                     {{ r }}
@@ -681,7 +681,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
     </div>
 
     <!-- A check marked from a card can be taken back for a moment. -->
-    <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm text-white shadow-lg" role="status">
+    <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-inverse px-4 py-2 text-sm text-on-inverse shadow-lg" role="status">
       <AlertTriangle v-if="lastMark.state === 'verify'" :size="16" /><Check v-else :size="16" />
       <span class="flex-1">
         {{

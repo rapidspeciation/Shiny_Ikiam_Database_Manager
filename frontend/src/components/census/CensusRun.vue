@@ -252,7 +252,7 @@ function cancel() {
 <template>
   <div class="flex h-full flex-col">
     <!-- The census, and how far it is. -->
-    <header class="border-b border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <header class="border-b border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <div class="flex items-center gap-2">
         <button
           class="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
@@ -295,7 +295,7 @@ function cancel() {
               <input
                 ref="input"
                 v-model="query"
-                class="h-14 w-full rounded-xl border-2 border-stone-300 bg-white pr-12 pl-10 text-2xl font-semibold tracking-wider uppercase placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+                class="h-14 w-full rounded-xl border-2 border-stone-300 bg-surface pr-12 pl-10 text-2xl font-semibold tracking-wider uppercase placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
                 :placeholder="$t('ID del ala (A?B, A[16]B)')"
                 :aria-label="$t('Insectary ID leído en el ala')"
                 :disabled="!canEdit"
@@ -323,7 +323,7 @@ function cancel() {
             <!-- The butterflies that fit: tap one (or Enter for the first). -->
             <ul
               v-if="suggestions.length"
-              class="mt-2 max-h-[55vh] divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
+              class="mt-2 max-h-[55vh] divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-surface shadow-lg"
               role="listbox"
             >
               <li v-for="(s, i) in suggestions" :key="s.item.row.id">
@@ -357,7 +357,7 @@ function cancel() {
                 {{ $t('Prueba con ? en el carácter que no se lee (A?B) o con dos opciones (A[16]B).') }}
               </p>
               <button
-                class="mt-2 h-11 rounded-lg border border-amber-500 bg-white px-3 font-medium"
+                class="mt-2 h-11 rounded-lg border border-amber-500 bg-surface px-3 font-medium"
                 @mousedown.prevent
                 @click="keepUnknown"
               >
@@ -414,7 +414,7 @@ function cancel() {
                 </div>
                 <button
                   v-if="!feedback.already && !feedbackMark.sending"
-                  class="flex h-12 shrink-0 items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium active:bg-stone-100"
+                  class="flex h-12 shrink-0 items-center gap-1 rounded-lg border border-stone-300 bg-surface px-3 text-sm font-medium active:bg-stone-100"
                   @click="undo(feedbackMark)"
                 >
                   <Undo2 :size="16" /> {{ $t('Deshacer') }}
@@ -441,7 +441,7 @@ function cancel() {
                       v-for="d in ['sex', 'species'] as Doubt[]"
                       :key="d"
                       class="min-h-11 rounded-lg border px-2 text-sm font-medium"
-                      :class="doubt === d ? 'border-violet-700 bg-violet-700 text-white' : 'border-stone-300 bg-white'"
+                      :class="doubt === d ? 'border-fill-violet bg-fill-violet text-white' : 'border-stone-300 bg-surface'"
                       :aria-pressed="doubt === d"
                       @click="doubt = doubt === d ? null : d"
                     >
@@ -468,7 +468,7 @@ function cancel() {
           <!-- Everyone's latest marks (the other phones' too). -->
           <section v-if="latest.length" class="px-3 pt-4 sm:px-4">
             <h2 class="mb-1 text-sm font-semibold text-stone-700">{{ $t('Últimas marcas') }}</h2>
-            <ul class="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-white">
+            <ul class="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-surface">
               <li v-for="m in latest" :key="m.id" class="flex min-h-12 items-center gap-2 px-3 py-1.5 text-sm">
                 <span class="w-6 text-center text-lg" aria-hidden="true">{{
                   m.kind === 'seen' ? '☺' : m.kind === 'unknown' ? '?' : '–'
@@ -529,7 +529,7 @@ function cancel() {
               <li
                 v-for="b in shownLeft"
                 :key="b.recordId"
-                class="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1.5 pr-1.5 pl-3 shadow-sm"
+                class="flex items-center gap-2 rounded-xl border border-stone-200 bg-surface py-1.5 pr-1.5 pl-3 shadow-sm"
               >
                 <span class="min-w-0 flex-1">
                   <span class="block text-lg font-semibold">{{ b.id }}</span>
@@ -551,7 +551,7 @@ function cancel() {
               </li>
             </ul>
           </template>
-          <div v-else class="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <div v-else class="overflow-x-auto rounded-xl border border-stone-200 bg-surface">
             <table class="w-full text-sm">
               <thead class="bg-stone-100 text-left text-xs text-stone-600">
                 <tr>
@@ -597,7 +597,7 @@ function cancel() {
     </div>
 
     <!-- Done releasing them: review what is left. -->
-    <footer v-if="canEdit" class="border-t border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <footer v-if="canEdit" class="border-t border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <div class="mx-auto flex max-w-6xl items-center gap-3">
         <p class="min-w-0 flex-1 text-sm text-stone-700">
           {{ $tn(progress.left, '{n} sin ver', '{n} sin ver') }}

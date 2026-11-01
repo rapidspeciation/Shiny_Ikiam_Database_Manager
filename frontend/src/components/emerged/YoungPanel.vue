@@ -59,7 +59,7 @@ function useCam() {
   emit('set', 'camFrom', normalizeId(typedCam.value))
   typedCam.value = ''
 }
-const choice = (on: boolean) => (on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100')
+const choice = (on: boolean) => (on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100')
 const summary = computed(() =>
   [
     props.shown.medium ?? t('varios medios'),
@@ -117,7 +117,7 @@ const ownText = (field: YoungField) => props.own[field].join(', ')
         <span v-if="own.purpose.length" class="mt-1 block text-xs text-violet-800">{{ $t('Con propósito propio: {ids}', { ids: ownText('purpose') }) }}</span>
       </label>
       <!-- Where the tubes and CAMs come from. -->
-      <div class="rounded-lg border border-stone-200 bg-white p-2.5">
+      <div class="rounded-lg border border-stone-200 bg-surface p-2.5">
         <div class="flex items-start gap-2">
           <p class="min-w-0 flex-1">
             <span class="block">

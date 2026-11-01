@@ -251,7 +251,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
 
 <template>
   <section
-    class="curation mt-2 flex h-[calc(100dvh-12rem)] min-h-[34rem] flex-col overflow-hidden rounded-md border border-stone-300 bg-white text-sm"
+    class="curation mt-2 flex h-[calc(100dvh-12rem)] min-h-[34rem] flex-col overflow-hidden rounded-md border border-stone-300 bg-surface text-sm"
     data-photo-curation
   >
     <!-- The section: what it holds and where in it this page is. -->
@@ -352,7 +352,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
                 <label v-for="side in (['d', 'v'] as const)" :key="side" class="flex items-center gap-1">
                   {{ side === 'd' ? $t('Dorsal (d):') : $t('Ventral (v):') }}
                   <select
-                    class="rounded border border-stone-300 bg-white py-0.5 pr-6 pl-1 font-mono text-xs"
+                    class="rounded border border-stone-300 bg-surface py-0.5 pr-6 pl-1 font-mono text-xs"
                     :value="sideKeep(e, values[e.id])?.[side] ?? ''"
                     @change="keepAs(e, side, ($event.target as HTMLSelectElement).value)"
                   >
@@ -364,7 +364,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
               </div>
               <label v-if="e.choices?.length && can(e)" class="mt-1 flex items-center gap-1.5 text-xs text-stone-600" @click.stop>
                 {{ $t('Valor:') }}
-                <select v-model="values[e.id]" class="rounded border border-stone-300 bg-white py-0.5 pr-6 pl-1 text-xs" @change="tick(e, true)">
+                <select v-model="values[e.id]" class="rounded border border-stone-300 bg-surface py-0.5 pr-6 pl-1 text-xs" @change="tick(e, true)">
                   <option value="">{{ e.fix?.to }}</option>
                   <option v-for="v in e.choices.filter(c => c !== e.fix?.to)" :key="v" :value="v">{{ v }}</option>
                 </select>
@@ -406,10 +406,10 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
           named
           whole
         />
-        <p v-else class="grid h-full place-items-center bg-stone-800 p-6 text-center text-xs text-stone-300">{{ $t('Este caso no tiene fotos en Photo_links.') }}</p>
+        <p v-else class="grid h-full place-items-center bg-photo-mat p-6 text-center text-xs text-on-photo-muted">{{ $t('Este caso no tiene fotos en Photo_links.') }}</p>
         </div>
         <!-- The envelope beside the database, and the notes, of the butterflies the case involves. -->
-        <div v-if="selected?.records?.length" class="record max-h-[42%] shrink-0 space-y-3 overflow-y-auto border-t border-stone-300 bg-white p-2.5" data-records>
+        <div v-if="selected?.records?.length" class="record max-h-[42%] shrink-0 space-y-3 overflow-y-auto border-t border-stone-300 bg-surface p-2.5" data-records>
           <CurationCompare v-if="compare" :lines="compare" :records="selected.records" :file-cam="selected.cam" />
           <template v-else>
             <CurationRecord v-for="(r, i) in selected.records" :key="r.cam" :record="r" :second="i > 0" :sheet="selected.sheet ?? undefined" />
@@ -430,7 +430,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
       <p v-if="problems.length" class="text-amber-900">{{ problems.join('; ') }}</p>
     </div>
 
-    <footer v-if="open" class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-stone-300 bg-white px-3 py-2 text-xs">
+    <footer v-if="open" class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-stone-300 bg-surface px-3 py-2 text-xs">
       <span class="text-stone-700">
         <template v-if="total">
           {{ [toDrive ? $tn(toDrive, '{n} en Drive (empieza al aplicar)', '{n} en Drive (empiezan al aplicar)') : '', toDatabase ? $tn(toDatabase, '{n} en la base de datos', '{n} en la base de datos') : '', wrong.size ? $tn(wrong.size, '{n} lectura mala', '{n} lecturas malas') : ''].filter(Boolean).join(' · ') }}
@@ -441,7 +441,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
         <kbd>↑</kbd><kbd>↓</kbd> {{ $t('caso') }} · <kbd>{{ $t('Espacio') }}</kbd> {{ $t('marcar') }} · <kbd>X</kbd> {{ $t('lectura mala') }} · <kbd>F</kbd> {{ $t('otra foto') }}
       </span>
       <p v-if="error" role="alert" class="text-red-800">{{ error }}</p>
-      <button type="button" class="btn-primary ml-auto bg-emerald-700 hover:bg-emerald-800" :disabled="!total || busy" data-apply-curation @click="apply">
+      <button type="button" class="btn-primary ml-auto bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="!total || busy" data-apply-curation @click="apply">
         <Loader2 v-if="busy" :size="14" class="animate-spin" /><Check v-else :size="14" />
         {{ $tn(total, 'Aplicar {n}', 'Aplicar {n}') }}
       </button>
@@ -482,6 +482,6 @@ kbd {
   border-radius: 3px;
   padding: 0 4px;
   margin: 0 1px;
-  background: white;
+  background: var(--surface);
 }
 </style>

@@ -105,7 +105,7 @@ function onFocusOut(event: FocusEvent) {
     </div>
     <div
       v-if="open"
-      class="absolute inset-x-0 z-[1100] mt-1 flex max-h-80 flex-col rounded-md border border-stone-300 bg-white shadow-lg"
+      class="absolute inset-x-0 z-[1100] mt-1 flex max-h-80 flex-col rounded-md border border-stone-300 bg-surface shadow-lg"
     >
       <div class="flex items-center gap-1 border-b border-stone-200 p-1.5">
         <input

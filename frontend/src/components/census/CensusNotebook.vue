@@ -116,8 +116,8 @@ const look = (l: NotebookLine) =>
     : l.todo === 'highlight'
       ? 'bg-yellow-200 text-stone-900'
       : l.census?.status === 'seen'
-        ? 'bg-white text-emerald-900'
-        : 'bg-white text-stone-500'
+        ? 'bg-surface text-emerald-900'
+        : 'bg-surface text-stone-500'
 function details(l: NotebookLine) {
   return [
     several.value ? l.species.split(' ').slice(0, 2).join(' ') : '',
@@ -144,12 +144,12 @@ const quickDays = computed(() => [
   { iso: serialToIso(isoToSerial(todayIso()) - 1), name: t('Ayer') },
 ])
 const chip = (on: boolean) =>
-  on ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-inverse bg-inverse text-on-inverse' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>
   <div :class="free ? 'h-full overflow-y-auto' : ''" data-census-notebook>
-    <header v-if="free" class="sticky top-0 z-10 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 sm:px-4">
+    <header v-if="free" class="sticky top-0 z-10 flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-2 sm:px-4">
       <button
         class="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
         :aria-label="$t('Volver a los censos')"
@@ -220,7 +220,7 @@ const chip = (on: boolean) =>
           <button
             type="button"
             class="h-10 px-2.5"
-            :class="only ? 'bg-brand-700 text-white' : 'bg-white'"
+            :class="only ? 'bg-brand text-white' : 'bg-surface'"
             :aria-pressed="only"
             @click="only = true"
           >
@@ -229,7 +229,7 @@ const chip = (on: boolean) =>
           <button
             type="button"
             class="h-10 border-l border-stone-300 px-2.5"
-            :class="!only ? 'bg-brand-700 text-white' : 'bg-white'"
+            :class="!only ? 'bg-brand text-white' : 'bg-surface'"
             :aria-pressed="!only"
             @click="only = false"
           >

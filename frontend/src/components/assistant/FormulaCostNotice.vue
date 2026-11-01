@@ -37,15 +37,15 @@ const heavy = computed(() => props.cost.some(p => p.heavy))
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border-bottom: 1px solid var(--color-stone-200);
+  background: var(--color-stone-50);
   padding: 4px 8px;
   font-size: 11px;
-  color: #475569;
+  color: var(--color-slate-600);
 }
 .formula-cost.is-heavy {
-  border-bottom-color: #fde68a;
-  background: #fffbeb;
-  color: #92400e;
+  border-bottom-color: var(--color-amber-200);
+  background: var(--color-amber-50);
+  color: var(--color-amber-800);
 }
 </style>

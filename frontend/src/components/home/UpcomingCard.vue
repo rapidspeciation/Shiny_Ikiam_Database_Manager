@@ -41,7 +41,7 @@ const detail = (c: Coming) =>
 </script>
 
 <template>
-  <section class="rounded-lg border border-stone-300 bg-white p-4 shadow-sm">
+  <section class="rounded-lg border border-stone-300 bg-surface p-4 shadow-sm">
     <h2 class="text-lg font-semibold">{{ $t('Próximos días en el insectario') }}</h2>
     <p class="hint mb-3">
       {{

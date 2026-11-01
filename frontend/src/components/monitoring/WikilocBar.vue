@@ -173,7 +173,7 @@ watch(showProfiles, v => v && loadProfiles())
 </script>
 
 <template>
-  <div class="border-b border-stone-200 bg-white px-3 py-2 text-sm sm:px-4">
+  <div class="border-b border-stone-200 bg-surface px-3 py-2 text-sm sm:px-4">
     <form class="flex flex-wrap items-center gap-2" @submit.prevent="queue()">
       <label class="flex min-w-64 flex-1 items-center gap-2">
         <Link :size="15" class="shrink-0 text-stone-500" />

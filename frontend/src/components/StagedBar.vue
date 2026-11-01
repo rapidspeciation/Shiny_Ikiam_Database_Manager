@@ -135,7 +135,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </button>
       </div>
     </div>
-    <ul v-if="open && count" class="max-h-64 overflow-y-auto border-t border-amber-200 bg-white px-3 py-2 sm:px-4">
+    <ul v-if="open && count" class="max-h-64 overflow-y-auto border-t border-amber-200 bg-surface px-3 py-2 sm:px-4">
       <li v-for="group in summary" :key="group.sheet" class="mb-2">
         <p class="text-xs font-semibold text-stone-500">{{ group.sheet }}</p>
         <div v-for="row in group.rows" :key="row.items[0].rowId" class="flex flex-wrap items-baseline gap-x-2 border-b border-stone-100 py-1">
@@ -154,7 +154,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </ul>
     <!-- What will be written, before writing it. -->
     <div v-if="confirming" class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="!saving && (confirming = false)">
-      <section class="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-lg bg-white text-stone-900 shadow-xl">
+      <section class="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-lg bg-surface text-stone-900 shadow-xl">
         <header class="flex items-center border-b border-stone-200 px-4 py-3">
           <h2 class="flex-1 text-lg font-semibold">{{ $t('Guardar en Google Sheets') }}</h2>
           <button class="btn-ghost" :disabled="saving" @click="confirming = false"><X :size="20" /></button>

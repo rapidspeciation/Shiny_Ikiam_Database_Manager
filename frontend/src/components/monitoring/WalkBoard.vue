@@ -308,7 +308,7 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   : lit({ point: p.index })
                     ? 'border-sky-400 bg-sky-50'
                     : decided(p.index)
-                      ? 'border-stone-200 bg-white'
+                      ? 'border-stone-200 bg-surface'
                       : 'border-amber-300 bg-amber-50',
               ]"
               @click="select({ point: p.index })"
@@ -426,7 +426,7 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   : lit({ row: r.id })
                     ? 'border-sky-400 bg-sky-50'
                     : pointOf(r.id) >= 0
-                      ? 'border-stone-200 bg-white'
+                      ? 'border-stone-200 bg-surface'
                       : withoutPoint(r.id)
                         ? 'border-stone-200 bg-stone-50 text-stone-500'
                         : 'border-amber-300 bg-amber-50',

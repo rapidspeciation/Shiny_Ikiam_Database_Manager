@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="fixed inset-0 z-40 flex flex-col bg-stone-50" role="dialog" :aria-label="$t('Revisar con la foto')">
-    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-white px-3 py-1.5">
+    <header class="flex items-center gap-1.5 border-b border-stone-200 bg-surface px-3 py-1.5">
       <ImageIcon :size="15" class="shrink-0 text-emerald-700" />
       <h2 class="shrink-0 text-sm font-medium">{{ $t('Revisar con la foto') }}</h2>
       <span class="min-w-0 truncate text-xs text-stone-500">{{ proposal.reason }}</span>

@@ -34,7 +34,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="emit('close')">
-    <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl" role="dialog" :aria-label="$t('Guardar colecta')">
+    <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-surface shadow-xl" role="dialog" :aria-label="$t('Guardar colecta')">
       <header class="flex items-center border-b border-stone-200 px-4 py-3">
         <h2 class="flex-1 text-lg font-semibold">{{ $t('Guardar {n} mariposas', { n: drafts.length }) }}</h2>
         <button class="btn-ghost" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="20" /></button>

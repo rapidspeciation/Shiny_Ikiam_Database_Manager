@@ -81,13 +81,13 @@ const counts = computed(() => page.value?.open ?? {})
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-2 py-1.5 text-xs sm:px-3">
+    <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:px-3">
       <div class="flex gap-1" role="group" :aria-label="$t('Tipo')">
         <button
           v-for="opt in TYPES"
           :key="opt.key"
           class="rounded px-2 py-1"
-          :class="type === opt.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+          :class="type === opt.key ? 'bg-brand text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
           @click="type = opt.key"
         >
           {{ $t(opt.label) }}
@@ -134,7 +134,7 @@ const counts = computed(() => page.value?.open ?? {})
       <p v-else-if="!page.items.length" class="p-6 text-sm text-stone-500">
         {{ $t('Nada resuelto todavía con estos filtros. Aparece aquí cuando la hoja cambia y el chequeo ya no lo encuentra.') }}
       </p>
-      <ul v-else class="divide-y divide-stone-200 bg-white">
+      <ul v-else class="divide-y divide-stone-200 bg-surface">
         <li v-for="item in page.items" :key="`${item.type}:${item.key}`" class="space-y-1 px-3 py-2 text-sm">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <span class="rounded bg-brand-100 px-1.5 py-0.5 font-medium text-brand-800">{{ $t('Resuelto') }}</span>

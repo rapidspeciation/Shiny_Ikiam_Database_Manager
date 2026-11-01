@@ -299,7 +299,7 @@ function onArrow() {
         :id="`${id}-list`"
         ref="popup"
         role="listbox"
-        class="choice-list fixed z-[10000] overflow-y-auto overscroll-contain rounded-md border border-stone-300 bg-white py-1 text-sm shadow-lg"
+        class="choice-list fixed z-[10000] overflow-y-auto overscroll-contain rounded-md border border-stone-300 bg-surface py-1 text-sm shadow-lg"
         :style="popStyle"
         @mousedown.prevent
       >

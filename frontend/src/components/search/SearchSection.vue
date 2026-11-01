@@ -152,7 +152,7 @@ onBeforeUnmount(stop)
 </script>
 
 <template>
-  <section ref="root" class="rounded-lg border border-stone-200 bg-white">
+  <section ref="root" class="rounded-lg border border-stone-200 bg-surface">
     <!-- On a phone: the name and the ↑ ↓ buttons on one line, what matched under them. -->
     <header class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 max-sm:gap-x-2 max-sm:py-1.5">
       <button

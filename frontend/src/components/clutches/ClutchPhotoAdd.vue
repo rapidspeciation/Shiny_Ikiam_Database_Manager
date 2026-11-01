@@ -72,8 +72,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <section
       :class="
         inline
-          ? 'rounded-lg border border-stone-300 bg-white p-2.5'
-          : 'max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl'
+          ? 'rounded-lg border border-stone-300 bg-surface p-2.5'
+          : 'max-h-full w-full overflow-y-auto rounded-t-2xl bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl'
       "
       :role="inline ? 'region' : 'dialog'"
       :aria-label="$t('Fotos del clutch {clutch}', { clutch })"
@@ -91,7 +91,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           type="button"
           role="radio"
           class="min-h-10 rounded-full border px-3 text-sm"
-          :class="link === null && group === null ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :class="link === null && group === null ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
           :aria-checked="link === null && group === null"
           @click="pickEvent(null)"
         >
@@ -103,7 +103,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           type="button"
           role="radio"
           class="min-h-10 rounded-full border px-3 text-sm tabular-nums"
-          :class="link === e.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :class="link === e.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
           :aria-checked="link === e.id"
           @click="pickEvent(e.id)"
         >
@@ -115,7 +115,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           type="button"
           role="radio"
           class="min-h-10 rounded-full border px-3 text-sm"
-          :class="group === g.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :class="group === g.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-surface text-stone-700'"
           :aria-checked="group === g.id"
           @click="pickGroup(g.id)"
         >
@@ -126,7 +126,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <label class="mt-3 block">
         <span class="field-label">{{ $t('Leyenda (opcional, en inglés)') }}</span>
         <div class="mb-1.5 flex flex-wrap gap-1.5">
-          <button v-for="c in PHOTO_CAPTIONS" :key="c" type="button" class="min-h-9 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100" @click="note = c">
+          <button v-for="c in PHOTO_CAPTIONS" :key="c" type="button" class="min-h-9 rounded-full border border-stone-300 bg-surface px-3 text-sm active:bg-stone-100" @click="note = c">
             {{ c }}
           </button>
         </div>

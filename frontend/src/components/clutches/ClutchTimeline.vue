@@ -121,7 +121,7 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
       <p>{{ $t('Los eventos y las fotos se guardan solo en la app (no en Google Sheets), con quién y cuándo; cada evento escribe también su nota en NOTES. Las larvas preservadas en Emergidos cuentan también.') }}</p>
     </div>
     <ul v-if="numbers.length" class="mt-2 space-y-2">
-      <li v-for="s in numbers" :key="s.stage" class="rounded-lg border border-stone-200 bg-white px-3 py-2">
+      <li v-for="s in numbers" :key="s.stage" class="rounded-lg border border-stone-200 bg-surface px-3 py-2">
         <p class="text-xs font-semibold tracking-wide text-stone-500 uppercase">{{ stageWord(s.stage) }}</p>
         <div class="mt-1 grid grid-cols-3 gap-2 text-center">
           <div>
@@ -161,7 +161,7 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
       <span class="text-xs text-stone-500">{{ $t('Del clutch, o de un evento (+5 eclosionaron, −1 desapareció)') }}</span>
     </div>
     <ul v-if="sending.length" class="mt-2 space-y-1.5" :aria-label="$t('Fotos enviándose')">
-      <li v-for="u in sending" :key="u.id" class="flex items-center gap-2 rounded-md border border-stone-200 bg-white p-1.5 text-sm">
+      <li v-for="u in sending" :key="u.id" class="flex items-center gap-2 rounded-md border border-stone-200 bg-surface p-1.5 text-sm">
         <img v-if="u.preview" :src="u.preview" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
         <span v-else class="grid h-12 w-12 shrink-0 place-items-center rounded bg-stone-100"><Loader2 :size="18" class="animate-spin text-stone-500" /></span>
         <span class="min-w-0 flex-1">
@@ -206,7 +206,7 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
             <Camera :size="15" />
           </button>
         </div>
-        <ul class="mt-0.5 divide-y divide-stone-100 rounded-md border border-stone-200 bg-white">
+        <ul class="mt-0.5 divide-y divide-stone-100 rounded-md border border-stone-200 bg-surface">
           <li v-for="e in g.events" :key="e.id" class="py-1 pr-1 pl-3 text-sm">
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 break-words tabular-nums">

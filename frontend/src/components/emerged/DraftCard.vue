@@ -67,9 +67,9 @@ function commitId() {
 }
 
 const SEXES: { value: Sex; label: string; name: () => string; on: string }[] = [
-  { value: 'female', label: '♀', name: () => t('Hembra'), on: 'border-pink-600 bg-pink-600 text-white' },
-  { value: 'male', label: '♂', name: () => t('Macho'), on: 'border-sky-600 bg-sky-600 text-white' },
-  { value: 'NA', label: '?', name: () => t('Sexo no visible (NA)'), on: 'border-stone-600 bg-stone-600 text-white' },
+  { value: 'female', label: '♀', name: () => t('Hembra'), on: 'border-fill-pink bg-fill-pink text-white' },
+  { value: 'male', label: '♂', name: () => t('Macho'), on: 'border-fill-sky bg-fill-sky text-white' },
+  { value: 'NA', label: '?', name: () => t('Sexo no visible (NA)'), on: 'border-inverse bg-inverse text-on-inverse' },
 ]
 const FATES: { value: Fate; name: () => string; hint: () => string }[] = [
   { value: 'alive', name: () => t('Viva'), hint: () => t('Entra viva al insectario') },
@@ -94,14 +94,14 @@ function addPhrase(p: string) {
   const text = props.draft.note.trim()
   emit('update', { note: text ? `${text}; ${p}` : p })
 }
-const choice = (on: boolean, color = 'border-brand-700 bg-brand-700 text-white') =>
-  on ? color : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+const choice = (on: boolean, color = 'border-brand bg-brand text-white') =>
+  on ? color : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 const otherDay = computed(() => props.draft.date !== props.day)
 </script>
 
 <template>
   <li
-    class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm transition-shadow duration-700"
+    class="relative flex flex-col rounded-xl border-2 bg-surface shadow-sm transition-shadow duration-700"
     :class="[problems.length ? 'border-amber-400' : 'border-stone-200', fresh ? 'shadow-[0_0_0_4px_var(--color-brand-100)]' : '']"
     :data-draft="draft.id"
     :data-key="draft.key"
@@ -166,7 +166,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
           :title="$t('Seleccionar: el panel de preservación cambia solo las seleccionadas')"
           @click="emit('select')"
         >
-          <span class="grid size-6 place-items-center rounded-md border-2" :class="selected ? 'border-violet-700 bg-violet-700 text-white' : 'border-stone-400 bg-white'">
+          <span class="grid size-6 place-items-center rounded-md border-2" :class="selected ? 'border-fill-violet bg-fill-violet text-white' : 'border-stone-400 bg-surface'">
             <Check v-if="selected" :size="16" />
           </span>
         </button>
@@ -200,7 +200,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
       <button
         v-if="canEdit"
         class="h-9 shrink-0 rounded-full border px-3 text-xs font-medium"
-        :class="own || showSpecies ? 'border-violet-400 bg-violet-50 text-violet-900' : 'border-stone-300 bg-white text-stone-700'"
+        :class="own || showSpecies ? 'border-violet-400 bg-violet-50 text-violet-900' : 'border-stone-300 bg-surface text-stone-700'"
         :aria-expanded="showSpecies"
         @click="showSpecies = !showSpecies"
       >
@@ -213,7 +213,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
           v-for="s in siblings"
           :key="s"
           class="min-h-10 rounded-lg border px-2.5 text-left text-sm"
-          :class="choice(species === s, 'border-violet-700 bg-violet-700 text-white')"
+          :class="choice(species === s, 'border-fill-violet bg-fill-violet text-white')"
           :aria-pressed="species === s"
           @click="pickSpecies(s)"
         >
@@ -233,7 +233,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
           v-for="f in FATES"
           :key="f.value"
           class="min-h-10 rounded-lg border px-0.5 text-[13px] font-medium"
-          :class="choice(draft.fate === f.value, f.value === 'alive' ? 'border-brand-700 bg-brand-700 text-white' : 'border-amber-700 bg-amber-700 text-white')"
+          :class="choice(draft.fate === f.value, f.value === 'alive' ? 'border-brand bg-brand text-white' : 'border-fill-amber bg-fill-amber text-white')"
           :aria-pressed="draft.fate === f.value"
           :title="f.hint()"
           :disabled="!canEdit"
@@ -250,7 +250,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
         <button class="min-h-10 rounded-lg border text-sm font-medium" :class="choice(!draft.foundDead)" :aria-pressed="!draft.foundDead" :disabled="!canEdit" @click="emit('update', { foundDead: false })">
           {{ $t('Viva, preservada') }}
         </button>
-        <button class="min-h-10 rounded-lg border text-sm font-medium" :class="choice(draft.foundDead, 'border-amber-700 bg-amber-700 text-white')" :aria-pressed="draft.foundDead" :disabled="!canEdit" @click="emit('update', { foundDead: true })">
+        <button class="min-h-10 rounded-lg border text-sm font-medium" :class="choice(draft.foundDead, 'border-fill-amber bg-fill-amber text-white')" :aria-pressed="draft.foundDead" :disabled="!canEdit" @click="emit('update', { foundDead: true })">
           {{ $t('Encontrada muerta') }}
         </button>
       </div>
@@ -318,7 +318,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
     <!-- A note, in English: quick phrases or typed; Save adds it dated and signed. -->
     <div v-if="showNote" class="mt-1.5 px-2">
       <div v-if="canEdit && draft.kind === 'adult'" class="mb-1.5 flex flex-wrap gap-1">
-        <button v-for="p in EMERGED_NOTE_PHRASES" :key="p" type="button" class="min-h-9 rounded-full border border-stone-300 bg-white px-2.5 text-xs active:bg-stone-100" @click="addPhrase(p)">
+        <button v-for="p in EMERGED_NOTE_PHRASES" :key="p" type="button" class="min-h-9 rounded-full border border-stone-300 bg-surface px-2.5 text-xs active:bg-stone-100" @click="addPhrase(p)">
           {{ p }}
         </button>
       </div>
@@ -341,7 +341,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
       <button
         v-if="usedRow && !usedRow.on && canEdit"
         type="button"
-        class="mt-1.5 h-10 rounded-lg border border-red-300 bg-white px-3 text-sm font-medium text-red-800 active:bg-red-50"
+        class="mt-1.5 h-10 rounded-lg border border-red-300 bg-surface px-3 text-sm font-medium text-red-800 active:bg-red-50"
         @click="emit('overwrite', true)"
       >
         {{ $t('Sobrescribir de todas formas') }}

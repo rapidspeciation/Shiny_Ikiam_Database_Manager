@@ -202,7 +202,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
         ref="panel"
         role="dialog"
         :aria-label="$t('Calendario')"
-        class="fixed z-[9999] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white p-2 text-stone-800 shadow-xl"
+        class="fixed z-[9999] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-surface p-2 text-stone-800 shadow-xl"
         :class="[short ? 'w-[21rem]' : 'w-[19rem]', centred ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : '']"
         :style="centred ? undefined : { top: `${place.top}px`, left: `${place.left}px` }"
       >
@@ -233,7 +233,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
             class="rounded-md text-sm tabular-nums focus:ring-2 focus:ring-brand-600 focus:outline-none"
             :class="[
               short ? 'h-8' : 'h-10',
-              d.iso === model ? 'bg-brand-700 font-semibold text-white' : d.inMonth ? 'hover:bg-brand-50' : 'text-stone-400 hover:bg-stone-50',
+              d.iso === model ? 'bg-brand font-semibold text-white' : d.inMonth ? 'hover:bg-brand-50' : 'text-stone-400 hover:bg-stone-50',
               d.iso === today && d.iso !== model ? 'font-semibold text-brand-800 ring-1 ring-brand-600 ring-inset' : '',
             ]"
             :aria-label="dayName(d.iso)"

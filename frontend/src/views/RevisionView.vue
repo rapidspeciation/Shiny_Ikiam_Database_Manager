@@ -274,7 +274,7 @@ const filtered = computed(
 <template>
   <div class="flex h-full flex-col">
     <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">{{ $t('La revisión es para quienes editan la hoja.') }}</div>
-    <nav v-else class="flex gap-1 overflow-x-auto border-b border-stone-200 bg-white px-2 pt-1.5" :aria-label="$t('Vistas')">
+    <nav v-else class="flex gap-1 overflow-x-auto border-b border-stone-200 bg-surface px-2 pt-1.5" :aria-label="$t('Vistas')">
       <button
         v-for="v in VIEWS"
         :key="v.key"
@@ -297,7 +297,7 @@ const filtered = computed(
     <div v-else-if="session.canEdit" class="flex min-h-0 flex-1">
       <!-- Sidebar: status, kinds and filters in the height the screen has to spare (on phones, behind «Filtros»). -->
       <aside
-        class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm"
+        class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-surface text-sm"
         :class="showFilters ? 'fixed inset-0 z-40 flex w-full md:static md:w-60' : 'hidden md:flex'"
       >
         <div class="flex items-center justify-between px-3 pt-3 md:hidden">
@@ -309,7 +309,7 @@ const filtered = computed(
             v-for="st in STATUSES"
             :key="st.key"
             class="rounded px-1.5 py-1 text-xs leading-tight"
-            :class="status === st.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+            :class="status === st.key ? 'bg-brand text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
             @click="status = st.key"
           >
             {{ $t(st.label)
@@ -391,10 +391,10 @@ const filtered = computed(
 
       <section class="flex min-w-0 flex-1 flex-col">
         <!-- One slim bar: search, where you are in the list, the pages. -->
-        <div class="flex items-center gap-2 border-b border-stone-200 bg-white px-2 py-1.5 text-xs sm:px-3">
+        <div class="flex items-center gap-2 border-b border-stone-200 bg-surface px-2 py-1.5 text-xs sm:px-3">
           <button
             class="btn px-2 py-1 md:hidden"
-            :class="{ 'bg-stone-800 text-white': filtered || kind }"
+            :class="{ 'bg-inverse text-on-inverse': filtered || kind }"
             @click="showFilters = true"
           >
             <SlidersHorizontal :size="14" /> {{ $t('Filtros') }}

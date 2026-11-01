@@ -58,11 +58,11 @@ function addTeam(person: string) {
 const rainChips = computed(() => rainfalls.value.filter(v => !/^NA$/i.test(v)))
 const cloudChips = computed(() => clouds.value)
 const chip = (on: boolean) =>
-  on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>
-  <section class="space-y-4 border-b border-stone-200 bg-white px-3 py-3" :aria-label="$t('El día de colecta')">
+  <section class="space-y-4 border-b border-stone-200 bg-surface px-3 py-3" :aria-label="$t('El día de colecta')">
     <div>
       <h2 class="mb-1.5 text-sm font-semibold text-stone-700">Collection_date</h2>
       <div class="grid grid-cols-[1fr_1fr_minmax(9rem,1.4fr)] gap-2 sm:max-w-md">

@@ -18,7 +18,7 @@ const order = defineModel<RecordedOrder>({ required: true })
       :key="s.by"
       type="button"
       class="h-10 px-2.5"
-      :class="[order.by === s.by ? 'bg-brand-700 text-white' : 'bg-white', i ? 'border-l border-stone-300' : '']"
+      :class="[order.by === s.by ? 'bg-brand text-white' : 'bg-surface', i ? 'border-l border-stone-300' : '']"
       :aria-pressed="order.by === s.by"
       @click="order = { ...order, by: s.by }"
     >
@@ -26,7 +26,7 @@ const order = defineModel<RecordedOrder>({ required: true })
     </button>
     <button
       type="button"
-      class="grid h-10 w-10 place-items-center border-l border-stone-300 bg-white"
+      class="grid h-10 w-10 place-items-center border-l border-stone-300 bg-surface"
       :aria-label="order.desc ? $t('Descendente: cambiar a ascendente') : $t('Ascendente: cambiar a descendente')"
       :title="order.desc ? $t('Descendente') : $t('Ascendente')"
       @click="order = { ...order, desc: !order.desc }"

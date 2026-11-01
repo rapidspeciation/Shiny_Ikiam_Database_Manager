@@ -42,7 +42,7 @@ const STYLE: Record<SexFlag, string> = {
 </script>
 
 <template>
-  <div v-if="pairs.length" class="border-b border-stone-200 bg-white px-3 py-1 text-xs" data-sex-check>
+  <div v-if="pairs.length" class="border-b border-stone-200 bg-surface px-3 py-1 text-xs" data-sex-check>
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span class="flex items-center gap-1 font-medium text-stone-800"><VenusAndMars :size="14" /> {{ $t('Sexo') }}</span>
       <button

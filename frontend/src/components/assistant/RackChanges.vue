@@ -67,7 +67,7 @@ async function byHand() {
   <span class="contents">
     <button
       type="button"
-      :class="main ? 'btn-primary bg-emerald-700 hover:bg-emerald-800' : 'btn h-8 px-2.5 text-xs'"
+      :class="main ? 'btn-primary bg-fill-emerald hover:bg-fill-emerald-strong' : 'btn h-8 px-2.5 text-xs'"
       :disabled="!!busy || why.length > 0"
       :title="
         why.length

@@ -8,7 +8,7 @@ const files = computed(() => parseWordDiff(props.diff))
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-md border border-stone-200 bg-white font-mono text-xs leading-5">
+  <div class="overflow-x-auto rounded-md border border-stone-200 bg-surface font-mono text-xs leading-5">
     <template v-for="(file, f) in files" :key="f">
       <div
         v-if="showPaths && file.path"

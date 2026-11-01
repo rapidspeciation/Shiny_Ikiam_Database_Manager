@@ -32,7 +32,7 @@ onBeforeUnmount(() => watcher?.disconnect())
     <slot v-if="seen" />
     <div
       v-else
-      class="mt-2 rounded-md border border-stone-200 bg-white"
+      class="mt-2 rounded-md border border-stone-200 bg-surface"
       :style="{ height: `min(${height}px, calc(100cqh - 1rem))` }"
     />
   </div>

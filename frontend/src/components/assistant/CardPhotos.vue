@@ -27,7 +27,7 @@ const url = (n: number, size: 'thumb' | 'view') =>
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-col overflow-hidden rounded border border-stone-200 bg-stone-900" data-card-photos>
+  <div class="flex min-h-0 flex-col overflow-hidden rounded border border-stone-200 bg-photo-mat" data-card-photos>
     <PhotoViewer
       v-if="photos.length"
       v-model:photo="photo"
@@ -39,7 +39,7 @@ const url = (n: number, size: 'thumb' | 'view') =>
       :notes="photos.map(p => [p.name, p.note].filter(Boolean).join(' · '))"
       class="min-h-0 flex-1"
     />
-    <p v-else class="m-auto px-4 text-center text-xs text-stone-300">
+    <p v-else class="m-auto px-4 text-center text-xs text-on-photo-muted">
       {{ $t('Haz clic en una fila para ver su foto aquí; Ctrl o Mayús + clic para ver varias.') }}
     </p>
   </div>

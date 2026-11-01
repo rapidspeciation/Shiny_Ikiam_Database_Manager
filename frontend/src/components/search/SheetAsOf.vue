@@ -130,11 +130,11 @@ const gridKey = computed(() => `${props.action}:${props.side}:${props.row}`)
         </p>
       </div>
       <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <div class="flex overflow-hidden rounded-md border border-amber-300 bg-white text-xs" role="group">
+        <div class="flex overflow-hidden rounded-md border border-amber-300 bg-surface text-xs" role="group">
           <button
             type="button"
             class="px-2 py-1.5"
-            :class="side === 'before' ? 'bg-amber-800 text-white' : 'hover:bg-amber-100'"
+            :class="side === 'before' ? 'bg-fill-amber-strong text-white' : 'hover:bg-amber-100'"
             :aria-pressed="side === 'before'"
             @click="emit('move', { action: props.action, side: 'before' })"
           >
@@ -143,7 +143,7 @@ const gridKey = computed(() => `${props.action}:${props.side}:${props.row}`)
           <button
             type="button"
             class="border-l border-amber-300 px-2 py-1.5"
-            :class="side === 'after' ? 'bg-amber-800 text-white' : 'hover:bg-amber-100'"
+            :class="side === 'after' ? 'bg-fill-amber-strong text-white' : 'hover:bg-amber-100'"
             :aria-pressed="side === 'after'"
             @click="emit('move', { action: props.action, side: 'after' })"
           >
