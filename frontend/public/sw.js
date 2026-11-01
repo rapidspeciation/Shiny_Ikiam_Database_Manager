@@ -11,7 +11,7 @@ const OFFLINE_ID = 'ithomiini-prueba-offline'
 const READS = /\/api\/(auth\/session|bootstrap|table|ids|monitoring\/tracks|clutches\/(state|day))(\?|$)/
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', './index.html'])))
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', './index.html', './theme-boot.js'])))
   self.skipWaiting()
 })
 
@@ -114,5 +114,6 @@ self.addEventListener('fetch', event => {
   if (READS.test(url.pathname + url.search)) event.respondWith(networkFirst(request))
   // Assets, fonts and monitoring photos never change once published.
   else if (/\/assets\/|\/fonts\/|\/api\/monitoring\/photos\//.test(url.pathname)) event.respondWith(cacheFirst(request))
-  else if (request.mode === 'navigate') event.respondWith(networkFirst(request))
+  // The page and its light-or-dark boot script (it runs before the styles, so offline needs it too).
+  else if (request.mode === 'navigate' || url.pathname.endsWith('/theme-boot.js')) event.respondWith(networkFirst(request))
 })

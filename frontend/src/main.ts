@@ -3,6 +3,8 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import './style.css'
+// Light or dark on the page (public/theme-boot.js set it before the first paint).
+import './lib/theme'
 import { updateAvailable, watchForUpdates } from './lib/updates'
 import { t, tn } from './lib/i18n'
 import { askEarly } from './lib/api'
