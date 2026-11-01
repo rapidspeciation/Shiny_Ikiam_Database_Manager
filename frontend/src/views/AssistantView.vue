@@ -264,7 +264,7 @@ onMounted(async () => {
       </button>
       <button
         v-if="t3Url"
-        class="flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        class="flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:bg-transparent disabled:hover:text-stone-500"
         :disabled="!chatOnScreen"
         :title="chatOnScreen ? $t('Copiar un enlace a este chat para otra persona del equipo') : $t('Abre un chat para copiar su enlace')"
         @click="copyChatLink"
