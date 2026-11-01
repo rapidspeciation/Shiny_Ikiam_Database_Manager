@@ -20,6 +20,7 @@ export default {
   Sistema: 'System',
   Claro: 'Light',
   Oscuro: 'Dark',
+  'Tema: {current} (pulsa para {next})': 'Theme: {current} (press for {next})',
   Secciones: 'Sections',
   'Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?':
     'There are unsaved changes on this device. They will be kept for when you come back. Sign out?',

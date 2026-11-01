@@ -417,7 +417,8 @@ body {
   .app-header :focus-visible {
     outline-color: var(--focus-on-brand);
   }
-  .app-header [data-user-menu] :focus-visible {
+  .app-header [data-user-menu] :focus-visible,
+  .app-header [data-more-menu] :focus-visible {
     outline-color: var(--focus);
   }
 }
