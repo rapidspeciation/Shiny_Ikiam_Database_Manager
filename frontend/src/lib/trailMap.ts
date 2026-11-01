@@ -23,13 +23,19 @@ export function streetsLayer() {
     maxZoom: 20,
     maxNativeZoom: 19,
     attribution: '© OpenStreetMap',
+    // Dimmed a little in dark (trailMap.css), never inverted.
+    className: 'street-tiles',
   })
 }
 
-/** The four sections of the trail, coloured and labelled T1–T4. */
+/**
+ * The four sections of the trail, coloured and labelled T1–T4. Each line has a dark halo under it, so the
+ * pale section colours keep their edge on bright imagery and on the street map.
+ */
 export function transectsLayer({ weight = 5 }: { weight?: number } = {}) {
   const group = L.featureGroup()
   for (const s of SECTIONS) {
+    L.polyline(s.path, { color: '#0c0a09', weight: weight + 3, opacity: 0.6, interactive: false }).addTo(group)
     L.polyline(s.path, { color: s.color, weight, opacity: 0.95 })
       .bindTooltip(() => t('Transecto {n}', { n: s.section }), { sticky: true })
       .addTo(group)

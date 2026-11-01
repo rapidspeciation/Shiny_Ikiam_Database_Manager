@@ -11,3 +11,79 @@
   text-align: center;
   line-height: 16px;
 }
+
+/*
+ * Leaflet's controls, popups and tooltips on the app's surfaces, so they follow light and dark. The map
+ * itself is never filtered: satellite imagery stays as it is, and the street tiles are only dimmed in dark.
+ */
+.leaflet-container {
+  background: var(--surface-sunken);
+}
+[data-theme='dark'] .street-tiles {
+  filter: brightness(0.85);
+}
+.leaflet-bar a,
+.leaflet-bar a:hover,
+.leaflet-control-layers,
+.leaflet-control-layers-toggle {
+  background-color: var(--surface-raised);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.leaflet-bar a:hover {
+  background-color: var(--surface-sunken);
+}
+.leaflet-bar a.leaflet-disabled {
+  background-color: var(--surface-sunken);
+  color: var(--fg-subtle);
+}
+.leaflet-bar,
+.leaflet-control-layers {
+  box-shadow: 0 1px 5px var(--shadow);
+}
+[data-theme='dark'] .leaflet-control-layers-toggle {
+  /* Leaflet's layers icon is a dark PNG: a light tile behind it in dark keeps it readable. */
+  background-color: var(--fg-muted);
+}
+.leaflet-control-layers-separator {
+  border-top-color: var(--border);
+}
+.leaflet-container .leaflet-control-attribution,
+.leaflet-control-scale-line {
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--fg-muted);
+}
+.leaflet-control-scale-line {
+  border-color: var(--fg-muted);
+}
+.leaflet-container .leaflet-control-attribution a,
+.leaflet-container a {
+  color: var(--brand-text);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface-raised);
+  color: var(--fg);
+  box-shadow: 0 3px 14px var(--shadow);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--fg-muted);
+}
+.leaflet-tooltip {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--fg);
+  box-shadow: 0 1px 3px var(--shadow);
+}
+.leaflet-tooltip-top::before {
+  border-top-color: var(--surface-raised);
+}
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: var(--surface-raised);
+}
+.leaflet-tooltip-left::before {
+  border-left-color: var(--surface-raised);
+}
+.leaflet-tooltip-right::before {
+  border-right-color: var(--surface-raised);
+}
