@@ -291,7 +291,7 @@ function baseCopy() {
 }
 function repeatDir(name) {
   const base = baseCopy();
-  const dir = join(OUT, name);
+  const dir = join(armOut ?? OUT, name);
   // tools/lab/dev-app.sh's folder: app.sqlite, photos/ and app.log in it; the lab's admin login, so no setup.
   const app = dir;
   mkdirSync(app, { recursive: true });
@@ -323,7 +323,10 @@ function attachments() {
 // the lab's snapshot, one tools worker, 2 GB heap), with what the workloads need on top: the identifier, the test
 // photos, the lab T3 (Asistente tab, chat attachments) and, for --profile, the profilers.
 const UNIT = `ithomiini-dev-${PORT}`;
-const DEV_APP = join(HERE, 'tools/lab/dev-app.sh');
+// The checkout whose app is measured (--app-dir, or each arm's in turn): its server and its dev-app.sh.
+let APP = HERE;
+let armOut = null;
+const devApp = () => join(APP, 'tools/lab/dev-app.sh');
 function extraEnv(run, profileDir) {
   return {
     IDENTIFIER_DIR: run.ident,
@@ -338,8 +341,8 @@ function extraEnv(run, profileDir) {
     ITHOMIINI_T3_WORKSPACES: join(LAB_T3_HOME, 'workspaces'),
     ITHOMIINI_SHARED: run.app,
     ITHOMIINI_MCP_URL: `${URL_}/api/ai/mcp`,
-    ITHOMIINI_SRC: HERE,
-    ITHOMIINI_DOCS: join(HERE, 'docs'),
+    ITHOMIINI_SRC: APP,
+    ITHOMIINI_DOCS: join(APP, 'docs'),
     ITHOMIINI_KNOWLEDGE: join(run.app, 'knowledge'),
     ...(NODE_OPTIONS || profileDir
       ? {
@@ -360,7 +363,7 @@ async function startApp(run, { profileDir = null } = {}) {
   const args = ['--port', String(PORT), '--dir', run.app, '--ttl', TTL, '--max', MEMORY_MAX];
   for (const [k, v] of Object.entries(extraEnv(run, profileDir))) args.push('--env', `${k}=${v}`);
   const t0 = performance.now();
-  const launcher = spawn(DEV_APP, args, { cwd: HERE, stdio: ['ignore', 'pipe', 'pipe'] });
+  const launcher = spawn(devApp(), args, { cwd: APP, stdio: ['ignore', 'pipe', 'pipe'] });
   const out = [];
   launcher.stdout.on('data', d => out.push(d));
   launcher.stderr.on('data', d => out.push(d));
@@ -389,7 +392,7 @@ async function waitReady(app) {
 }
 async function stopApp(app) {
   await Promise.race([app.launched, sleep(60_000)]);
-  spawnSync(DEV_APP, ['--stop', '--port', String(PORT)], { encoding: 'utf8' });
+  spawnSync(devApp(), ['--stop', '--port', String(PORT)], { encoding: 'utf8' });
   for (let i = 0; i < 600 && existsSync(`/proc/${app.pid}`); i++) await sleep(100);
 }
 function cgroupStat(app) {
@@ -669,8 +672,19 @@ async function repeat(name, { profileDir = null } = {}) {
   const run = repeatDir(name);
   const files = attachments();
   const result = { name, phases: {}, workloads: {}, waitedForMemoryS: waitedS, memAvailableAtStartGb: r1(memAvailableGb()) };
-  log(`${name}: starting the app (MemAvailable ${memAvailableGb().toFixed(1)} GB)`);
-  const app = await startApp(run, { profileDir });
+  log(`${name}${armOut ? ` (${APP})` : ''}: starting the app (MemAvailable ${memAvailableGb().toFixed(1)} GB)`);
+  let app = null;
+  for (let tries = 0; !app; tries++) {
+    try {
+      app = await startApp(run, { profileDir });
+    } catch (e) {
+      // Another chat took the last dev-app slot meanwhile: wait for one again.
+      if (!/Two dev apps run already/.test(e.message) || tries >= 30) throw e;
+      log(`  ${e.message.trim()}; waiting`);
+      await sleep(30_000);
+      await waitMemory();
+    }
+  }
   const s = sampler(app.pid, app);
   let probe = null;
   try {
@@ -725,11 +739,22 @@ async function repeat(name, { profileDir = null } = {}) {
   return result;
 }
 
-const meta = {
-  label: LABEL,
+// Arms (--arms base=<dir>,e1=<dir>): the same workloads on several checkouts, their repeats interleaved (ABBA…), so
+// what else the PC does meanwhile weighs on each alike. Each arm's results in <out>/<label>/results.json.
+const ARMS = opt('--arms', '')
+  ? opt('--arms', '')
+      .split(',')
+      .map(a => {
+        const [label, dir] = a.split('=');
+        return { label, dir: resolve(dir) };
+      })
+  : [{ label: LABEL, dir: resolve(opt('--app-dir', HERE)), single: true }];
+const metaOf = arm => ({
+  label: arm.label,
   at: new Date().toISOString(),
-  commit: spawnSync('git', ['-C', HERE, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
-  dirty: !!spawnSync('git', ['-C', HERE, 'status', '--porcelain', 'server'], { encoding: 'utf8' }).stdout.trim(),
+  appDir: arm.dir,
+  commit: spawnSync('git', ['-C', arm.dir, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+  dirty: !!spawnSync('git', ['-C', arm.dir, 'status', '--porcelain', 'server'], { encoding: 'utf8' }).stdout.trim(),
   node: process.version,
   host: readFileSync('/etc/hostname', 'utf8').trim(),
   cpus: spawnSync('nproc', { encoding: 'utf8' }).stdout.trim(),
@@ -738,18 +763,31 @@ const meta = {
   env: EXTRA_ENV,
   only: ONLY,
   repeats: REPEATS,
+  arms: ARMS.map(a => a.label),
+});
+const use = arm => {
+  APP = arm.dir;
+  armOut = arm.single ? null : join(OUT, arm.label);
+  if (armOut) mkdirSync(armOut, { recursive: true });
 };
-const results = [];
-for (let i = 1; i <= REPEATS; i++) {
-  results.push(await repeat(`r${i}`));
-  captured = [];
+const results = Object.fromEntries(ARMS.map(a => [a.label, []]));
+const metas = Object.fromEntries(ARMS.map(a => [a.label, metaOf(a)]));
+for (let i = 1; i <= REPEATS; i++)
+  for (const arm of i % 2 ? ARMS : [...ARMS].reverse()) {
+    use(arm);
+    results[arm.label].push(await repeat(`r${i}`));
+    captured = [];
+  }
+for (const arm of ARMS) {
+  use(arm);
+  let profiles = null;
+  if (PROFILE) {
+    const dir = join(armOut ?? OUT, 'profile');
+    mkdirSync(dir, { recursive: true });
+    const prof = await repeat('profile', { profileDir: dir });
+    profiles = { cpu: summarizeCpuProfiles(dir), heap: summarizeHeapProfiles(dir), phases: prof.phases };
+  }
+  const file = join(armOut ?? OUT, 'results.json');
+  writeFileSync(file, JSON.stringify({ meta: metas[arm.label], results: results[arm.label], profiles }, null, 1));
+  log(`results: ${file}`);
 }
-let profiles = null;
-if (PROFILE) {
-  const dir = join(OUT, 'profile');
-  mkdirSync(dir, { recursive: true });
-  const prof = await repeat('profile', { profileDir: dir });
-  profiles = { cpu: summarizeCpuProfiles(dir), heap: summarizeHeapProfiles(dir), phases: prof.phases };
-}
-writeFileSync(join(OUT, 'results.json'), JSON.stringify({ meta, results, profiles }, null, 1));
-log(`results: ${join(OUT, 'results.json')}`);
