@@ -409,19 +409,23 @@ const filtered = computed(
               type="search"
               class="field-input py-1 pl-7 text-sm"
               :placeholder="$t('Buscar CAM, ID, especie…')"
+              :aria-label="$t('Buscar CAM, ID, especie…')"
             />
           </span>
-          <ChoiceField
-            v-model="sort"
-            class="field-input w-44 py-1 text-sm"
-            :aria-label="$t('Orden')"
-            :freetext="false"
-            :options="[
-              { value: 'recent', label: $t('Más recientes primero') },
-              { value: 'old', label: $t('Más antiguas primero') },
-              { value: 'kind', label: $t('Por tipo y hoja') },
-            ]"
-          />
+          <!-- On a phone it shares the second line with the pages, taking the room they leave. -->
+          <span class="min-w-0 basis-28 grow sm:w-44 sm:shrink-0 sm:grow-0 sm:basis-auto">
+            <ChoiceField
+              v-model="sort"
+              class="field-input py-1 text-sm"
+              :aria-label="$t('Orden')"
+              :freetext="false"
+              :options="[
+                { value: 'recent', label: $t('Más recientes primero') },
+                { value: 'old', label: $t('Más antiguas primero') },
+                { value: 'kind', label: $t('Por tipo y hoja') },
+              ]"
+            />
+          </span>
           <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
             page.total
               ? $t('{from}–{to} de {total}', {
