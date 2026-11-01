@@ -122,9 +122,17 @@ function discard() {
             })
       }}
     </span>
-    <span v-if="!pending.saving" class="min-w-0 max-w-full truncate text-xs text-pending-text" :title="allPlaces" data-pending-places>{{
-      places
-    }}</span>
+    <!-- The first places; all of them on hover, and a tap opens Revisar with the full list (a phone has no hover). -->
+    <button
+      v-if="!pending.saving"
+      type="button"
+      class="min-w-0 max-w-full truncate text-left text-xs text-pending-text hover:underline"
+      :title="allPlaces"
+      data-pending-places
+      @click="reviewing = true"
+    >
+      {{ places }}
+    </button>
     <button
       v-if="errorCount"
       type="button"
