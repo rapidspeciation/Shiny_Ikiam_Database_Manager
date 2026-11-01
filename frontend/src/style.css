@@ -402,8 +402,21 @@ body,
 body {
   @apply bg-canvas text-fg antialiased;
 }
-:focus-visible {
-  outline-color: var(--focus);
+/*
+ * Keyboard focus (PRINCIPLES P3): a 2 px ring in the focus colour on every control, 2 px off its edge; white on the
+ * green header. In the base layer, so a component's own ring (focus-visible:…) still wins.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .app-header :focus-visible {
+    outline-color: var(--focus-on-brand);
+  }
+  .app-header [data-user-menu] :focus-visible {
+    outline-color: var(--focus);
+  }
 }
 
 @layer components {
@@ -423,7 +436,7 @@ body {
     @apply mb-1 block text-xs font-medium text-fg-muted;
   }
   .field-input {
-    @apply block w-full rounded-md border border-control bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-focus focus:ring-2 focus:ring-focus/25 focus:outline-none;
+    @apply block w-full rounded-md border border-control bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-focus focus:ring-1 focus:ring-focus focus:outline-none;
   }
   .field-input.is-dirty {
     @apply border-pending-edge bg-cell-pending;
@@ -433,6 +446,45 @@ body {
   }
   .hint {
     @apply text-xs text-fg-subtle;
+  }
+  /* A small control with a finger-sized target on touch screens (44 px), without growing what is drawn. */
+  .hit-target {
+    position: relative;
+  }
+  @media (pointer: coarse) {
+    .hit-target::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+  /*
+   * A row that scrolls sideways when it does not fit (ScrollRow.vue): the edge with more to see fades out, and on a
+   * mouse a thin scrollbar shows under it.
+   */
+  .scroll-row {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    --fade: 2.5rem;
+  }
+  @media (pointer: coarse) {
+    .scroll-row {
+      scrollbar-width: none;
+    }
+  }
+  .scroll-row[data-more='end'] {
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+  }
+  .scroll-row[data-more='start'] {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent);
+  }
+  .scroll-row[data-more='both'] {
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
   }
   /* A headline number (Inicio, reports). */
   .stat {
@@ -508,6 +560,18 @@ html .tabulator-row.tabulator-selected:hover {
 /* The fill alone is 1.2:1 against a plain row: a bar in the focus colour on the row's first cell carries it. */
 html .tabulator-row.tabulator-selected > .tabulator-cell:first-child {
   box-shadow: inset 3px 0 0 var(--focus);
+}
+/*
+ * Keyboard focus on a grid's body (Tab reaches it; the arrows then move the picked cell): a ring inside its edge, in
+ * the focus colour, apart from the blue of the picked cells and the green bar of a picked row.
+ */
+html .tabulator .tabulator-tableholder:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+html .tabulator .tabulator-header .tabulator-header-filter input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
 }
 html .tabulator .tabulator-tableholder .tabulator-placeholder .tabulator-placeholder-contents,
 html .tabulator .tabulator-tableholder .tabulator-placeholder span {
@@ -730,10 +794,11 @@ body.touch-bar-open main {
   font-weight: 600;
   font-size: 12px;
 }
+/* Its edge at 3:1 on the header's grey and on a picked column's darker grey. */
 .sheet-grid .tabulator .tabulator-header-filter input {
   font-size: 12px;
   padding: 2px 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--fg-subtle);
   border-radius: 3px;
 }
 .sheet-grid .tabulator-row .tabulator-cell {

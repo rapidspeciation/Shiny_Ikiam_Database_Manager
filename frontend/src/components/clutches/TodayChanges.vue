@@ -168,7 +168,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
     </div>
     <div class="mt-2 flex items-center gap-1">
       <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día anterior')" @click="step(-1)"><ChevronLeft :size="18" /></button>
-      <DateField v-model="chosen" class="field-input h-11 min-w-0 text-base" />
+      <DateField v-model="chosen" class="field-input h-11 min-w-0 text-base" :aria-label="$t('Día')" />
       <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día siguiente')" :disabled="isToday" @click="step(1)">
         <ChevronRight :size="18" />
       </button>

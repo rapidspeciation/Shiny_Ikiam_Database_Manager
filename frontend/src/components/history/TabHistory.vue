@@ -115,7 +115,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
           <div class="flex min-w-0 flex-1 items-center gap-1">
             <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día anterior')" @click="step(-1)"><ChevronLeft :size="18" /></button>
-            <DateField v-model="day" class="field-input h-11 min-w-0 text-base" />
+            <DateField v-model="day" class="field-input h-11 min-w-0 text-base" :aria-label="$t('Día')" />
             <button class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Día siguiente')" :disabled="isToday" @click="step(1)">
               <ChevronRight :size="18" />
             </button>

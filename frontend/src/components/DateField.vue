@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { calendarDays, dayFirst, isoToSerial, parseDateInput, serialToIso, shiftMonth, todayIso } from '../lib/dates'
 import { intlLocale } from '../lib/i18n'
@@ -46,6 +46,12 @@ function commit() {
 
 // --- The calendar
 const box = ref<HTMLInputElement>()
+/** A box with no name of its own (no <label> around it, no aria-label) is read out as «Fecha». */
+const attrs = useAttrs()
+const unnamed = ref(false)
+onMounted(() => {
+  unnamed.value = !attrs['aria-label'] && !attrs['aria-labelledby'] && !box.value?.labels?.length
+})
 const toggle = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const isOpen = ref(false)
@@ -170,6 +176,7 @@ defineExpose({ openCalendar, closeCalendar, isOpen })
   <span class="relative inline-flex w-full">
     <input
       ref="box"
+      :aria-label="unnamed ? $t('Fecha') : undefined"
       v-bind="$attrs"
       v-model="text"
       type="text"

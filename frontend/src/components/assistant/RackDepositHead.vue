@@ -16,7 +16,14 @@ import { t } from '../../lib/i18n'
  * (.xlsx)» (the tube-locations rows to paste by hand; RackChanges) while the app can write the sheet (when it cannot,
  * that download is the proposal's main action, at its foot). Saved at once.
  */
-const props = defineProps<{ proposalId: string; deposit: RackDeposit; changes: ProposalChange[]; editable: boolean }>()
+const props = defineProps<{
+  proposalId: string
+  deposit: RackDeposit
+  changes: ProposalChange[]
+  editable: boolean
+  /** Folded to one line (a phone in «Revisar con la foto»): the rack's grid comes first; opened when something is wrong. */
+  fold?: boolean
+}>()
 const emit = defineEmits<{ replace: [proposal: Proposal]; notice: [message: string]; jump: [reading: string] }>()
 
 const busy = ref<'' | 'fields' | 'xlsx' | 'drive'>('')
@@ -76,6 +83,11 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
 </script>
 
 <template>
+  <component :is="fold ? 'details' : 'div'" :open="fold && problems.length ? true : undefined">
+  <summary v-if="fold" class="deposit-summary">
+    <span class="font-semibold text-stone-800">{{ $t('Depósito LBI · hoja Anexo1') }}</span>
+    · {{ deposit.responsable || $t('falta') }} · <span class="font-mono">{{ deposit.ultracongelador || '?' }}</span>
+  </summary>
   <div class="deposit-head">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="text-xs font-semibold text-stone-800">{{ $t('Depósito LBI · hoja Anexo1') }}</span>
@@ -183,9 +195,18 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
       <li v-for="(p, i) in problems" :key="i">{{ p }}</li>
     </ul>
   </div>
+  </component>
 </template>
 
 <style scoped>
+.deposit-summary {
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-stone-200);
+  background: var(--color-stone-50);
+  padding: 0.45rem 0.5rem;
+  font-size: 12px;
+  color: var(--color-stone-600);
+}
 .deposit-head {
   display: flex;
   flex-direction: column;
@@ -202,7 +223,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   color: var(--color-stone-600);
 }
 .dep-field input {
-  border: 1px solid var(--color-stone-300);
+  border: 1px solid var(--border-control);
   border-radius: 0.25rem;
   background: var(--surface);
   padding: 0.1rem 0.35rem;

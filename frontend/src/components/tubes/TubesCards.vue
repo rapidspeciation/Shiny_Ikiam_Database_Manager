@@ -908,7 +908,7 @@ watch(
             <input
               ref="searchInput"
               v-model="query"
-              class="h-13 w-full rounded-xl border border-stone-300 bg-surface pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
+              class="h-13 w-full rounded-xl border border-control bg-surface pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
               :placeholder="$t('Insectary ID, CAM o tubo')"
               :aria-label="$t('Buscar una mariposa por Insectary ID, CAM o tubo')"
               type="text"
@@ -1093,7 +1093,12 @@ watch(
                 >
                   {{ d.name }}
                 </button>
-                <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
+                <DateField
+                  :model-value="shownDate"
+                  class="field-input h-12 text-base"
+                  :aria-label="shownKind === 'clip' ? $t('Fecha del corte de ala') : 'Preservation_date'"
+                  @update:model-value="setField('date', $event)"
+                />
               </div>
               <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
               <p v-else-if="shownDate" class="mt-1 text-sm" :class="oldDate ? 'font-medium text-amber-800' : 'text-stone-600'">

@@ -181,7 +181,7 @@ const seconds = (n: number) => (n < 1 ? '<1 s' : `${Math.round(n)} s`)
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" @click.self="emit('close')">
     <section
-      class="flex max-h-full w-full flex-col overflow-y-auto rounded-t-2xl bg-surface p-4 text-sm shadow-xl sm:max-w-2xl sm:rounded-2xl"
+      class="flex max-h-full w-full min-w-0 flex-col overflow-y-auto rounded-t-2xl bg-surface p-4 text-sm break-words shadow-xl sm:max-w-2xl sm:rounded-2xl"
       role="dialog"
       :aria-label="$t('Actualizar T3 Code')"
     >

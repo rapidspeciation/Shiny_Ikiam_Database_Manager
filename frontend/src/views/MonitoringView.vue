@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ImportPanel from '../components/monitoring/ImportPanel.vue'
+import ScrollRow from '../components/ScrollRow.vue'
 import { useSession } from '../stores/session'
 
 // The report (ECharts) and the map (Leaflet) load only when opened.
@@ -35,11 +36,13 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
 
 <template>
   <div class="flex h-full flex-col">
-    <nav class="flex gap-0.5 border-b border-stone-200 bg-surface px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
+    <!-- One row that scrolls sideways on a phone (the last tab faded at the edge), never wider than the screen. -->
+    <ScrollRow as="nav" :active="panel" class="flex gap-0.5 border-b border-stone-200 bg-surface px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
       <button
         v-for="p in PANELS"
         :key="p.id"
-        class="-mb-px rounded-t-md border border-b-0 px-2 py-1.5 text-sm font-medium whitespace-nowrap sm:px-3"
+        class="-mb-px shrink-0 rounded-t-md border border-b-0 px-2 py-1.5 text-sm font-medium whitespace-nowrap focus-visible:-outline-offset-2 sm:px-3"
+        :data-active="panel === p.id ? '' : undefined"
         :class="
           panel === p.id
             ? 'border-stone-200 bg-stone-50 text-brand-700'
@@ -51,7 +54,7 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
         <span class="sm:hidden">{{ $t(p.short) }}</span
         ><span class="hidden sm:inline">{{ $t(p.label) }}</span>
       </button>
-    </nav>
+    </ScrollRow>
     <div class="min-h-0 flex-1">
       <ImportPanel v-if="panel === 'importar'" />
       <SummaryPanel v-else-if="panel === 'resumen'" />

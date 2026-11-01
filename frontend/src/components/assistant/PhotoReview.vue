@@ -162,9 +162,13 @@ onBeforeUnmount(() => {
 .divider {
   position: relative;
 }
+/* Only across the line: past its ends it made the dialog 6 px wider than a phone. */
 .divider::after {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -6px 0;
+}
+.divider.cursor-col-resize::after {
+  inset: 0 -6px;
 }
 </style>

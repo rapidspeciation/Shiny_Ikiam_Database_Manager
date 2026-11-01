@@ -63,7 +63,7 @@ const style = computed(() =>
           <input
             ref="input"
             v-model="query"
-            class="h-12 w-full rounded-xl border border-stone-300 bg-surface pr-3 pl-10 text-lg focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+            class="h-12 w-full rounded-xl border border-control bg-surface pr-3 pl-10 text-lg focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
             :placeholder="$t('Especie o forma (p. ej. mech mess, deceptus)')"
             :aria-label="$t('Buscar especie')"
             type="search"

@@ -363,7 +363,7 @@ onBeforeUnmount(dropGrid)
       </p>
       <div v-if="pending && rows" class="mt-2 flex flex-wrap items-center gap-2" data-file-selection>
         <label class="sr-only" for="file-change-kind">{{ $t('Tipo de cambio') }}</label>
-        <select id="file-change-kind" v-model="selectedKind" class="min-h-9 rounded border border-stone-300 bg-surface px-2 text-xs" data-select-kind>
+        <select id="file-change-kind" v-model="selectedKind" class="min-h-9 rounded border border-control bg-surface px-2 text-xs" data-select-kind>
           <option value="">{{ $t('Tipo de cambio') }}</option>
           <option v-for="kind in FILE_CHANGES.filter(kind => rows?.some(row => row.change === kind))" :key="kind" :value="kind">{{ fileChangeLabel(kind) }}</option>
         </select>

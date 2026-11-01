@@ -163,7 +163,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <section v-if="e?.kind !== 'transfer'" class="mt-3">
           <span class="field-label">{{ gain && stage === 'larva' ? $t('Día de la eclosión') : $t('Día') }}</span>
           <div v-if="editable" class="flex flex-wrap gap-2">
-            <DateField :model-value="dayKnown ? day : ''" class="field-input h-11 w-40 text-base" @update:model-value="pickDay" />
+            <DateField
+              :model-value="dayKnown ? day : ''"
+              class="field-input h-11 w-40 text-base"
+              :aria-label="gain && stage === 'larva' ? $t('Día de la eclosión') : $t('Día')"
+              @update:model-value="pickDay"
+            />
             <button type="button" class="btn h-11 px-3" @click="pickDay(todayIso())">{{ $t('Hoy') }}</button>
             <button type="button" class="btn h-11 px-3" @click="pickDay(yesterday())">{{ $t('Ayer') }}</button>
             <button v-if="gain" type="button" class="btn h-11 px-3" :class="{ 'border-brand-700 bg-brand-50': !dayKnown }" @click="dayKnown = false">
@@ -212,12 +217,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div class="flex flex-wrap items-center gap-2">
                 <button type="button" class="flex h-10 items-center rounded-full border border-red-300 bg-surface px-3 text-sm font-semibold text-red-800" @click="lossKind = null">{{ lossWord(lossKind) }}</button>
                 <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
-                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
+                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-control bg-surface">
                   <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
                   <input
                     ref="lossBox"
                     v-model="lossText"
-                    class="h-11 w-14 border-x border-stone-300 text-center text-xl font-semibold tabular-nums outline-none"
+                    class="h-11 w-14 border-x border-control text-center text-xl font-semibold tabular-nums outline-none"
                     type="text"
                     inputmode="numeric"
                     maxlength="4"

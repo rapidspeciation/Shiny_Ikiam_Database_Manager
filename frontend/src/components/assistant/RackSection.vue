@@ -443,9 +443,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 }
 .rack-fields input {
   width: 7.5rem;
-  border: 0;
-  background: transparent;
-  padding: 0.1rem 0;
+  border: 1px solid var(--border-control);
+  border-radius: 0.2rem;
+  background: var(--surface);
+  padding: 0.05rem 0.25rem;
   font-size: 12px;
 }
 .rack-fields input:focus {
@@ -683,5 +684,35 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 .rack-link {
   text-decoration: underline;
   color: inherit;
+}
+/* On a phone the five fields go two to a line (label and box), so the rack's grid starts higher. After the rules
+   above, which it overrides. */
+@container (max-width: 779px) {
+  .rack-fields {
+    display: block;
+    width: 100%;
+  }
+  .rack-fields tbody {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .rack-fields tr {
+    display: flex;
+    flex: 1 1 11rem;
+    min-width: 0;
+  }
+  .rack-fields th {
+    display: block;
+    flex: none;
+  }
+  .rack-fields td {
+    display: block;
+    flex: 1;
+    min-width: 0;
+  }
+  .rack-fields input {
+    width: 100%;
+    min-width: 0;
+  }
 }
 </style>

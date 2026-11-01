@@ -183,7 +183,7 @@ const chip = (on: boolean) =>
           >
             {{ d.name }}
           </button>
-          <DateField v-model="day" class="field-input h-11 text-base" />
+          <DateField v-model="day" class="field-input h-11 text-base" :aria-label="$t('Día del censo')" />
         </div>
         <p v-if="dayError" class="text-sm text-red-700">{{ dayError }}</p>
         <p v-else class="text-sm text-stone-600">{{ dayLabel(day) }}</p>

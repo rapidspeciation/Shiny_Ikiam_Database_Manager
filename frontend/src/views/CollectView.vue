@@ -189,7 +189,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span class="field-label"
           >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
         >
-        <DateField v-model="header.date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
+        <DateField v-model="header.date" class="field-input" :class="{ 'border-amber-700 bg-amber-50': isToday }" />
         <span v-if="isToday" class="block text-xs text-amber-800">{{ $t('¿Es hoy la fecha de la colecta?') }}</span>
       </label>
       <label class="min-w-52">

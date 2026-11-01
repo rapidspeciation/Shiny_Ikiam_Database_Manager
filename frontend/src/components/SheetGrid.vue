@@ -452,6 +452,8 @@ function columnDefs(): ColumnDefinition[] {
         ? {
             headerFilter: 'input' as const,
             headerFilterPlaceholder: t('filtrar'),
+            // A name for each box (the placeholder is not one): «Filtrar Insectary_ID».
+            headerFilterParams: { elementAttributes: { 'aria-label': t('Filtrar {field}', { field: field.key }) } },
             headerFilterFunc: textFilter,
             headerFilterFuncParams: { field },
           }

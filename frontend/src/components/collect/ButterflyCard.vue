@@ -117,7 +117,7 @@ const sexChoice = (sex: string, on: boolean) =>
         <span class="w-7 shrink-0 pt-3 text-sm font-semibold text-stone-500 tabular-nums">{{ number }}</span>
         <button
           class="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-left"
-          :class="issueOf('species').length && !isEmptyDraft(draft) ? 'border-amber-500 bg-amber-50' : 'border-stone-300 bg-surface active:bg-stone-50'"
+          :class="issueOf('species').length && !isEmptyDraft(draft) ? 'border-amber-700 bg-amber-50' : 'border-stone-300 bg-surface active:bg-stone-50'"
           data-species
           @click="emit('pickSpecies')"
         >
@@ -328,7 +328,7 @@ const sexChoice = (sex: string, on: boolean) =>
           <input
             :value="draft.time"
             class="field-input h-11 w-24 text-base tabular-nums"
-            :class="{ 'border-amber-500 bg-amber-50': issueOf('time').length }"
+            :class="{ 'border-amber-700 bg-amber-50': issueOf('time').length }"
             inputmode="numeric"
             placeholder="hh:mm"
             autocomplete="off"

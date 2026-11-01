@@ -88,6 +88,7 @@ const yesterday = () => serialToIso(isoToSerial(todayIso()) - 1)
         <DateField
           ref="dateField"
           :model-value="iso"
+          :aria-label="field"
           class="field-input h-12 text-base"
           :class="{ 'is-dirty': dirty, 'ring-2 ring-amber-300': suggest && !set }"
           @update:model-value="pick"

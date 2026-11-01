@@ -352,7 +352,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
                 <label v-for="side in (['d', 'v'] as const)" :key="side" class="flex items-center gap-1">
                   {{ side === 'd' ? $t('Dorsal (d):') : $t('Ventral (v):') }}
                   <select
-                    class="rounded border border-stone-300 bg-surface py-0.5 pr-6 pl-1 font-mono text-xs"
+                    class="rounded border border-control bg-surface py-0.5 pr-6 pl-1 font-mono text-xs"
                     :value="sideKeep(e, values[e.id])?.[side] ?? ''"
                     @change="keepAs(e, side, ($event.target as HTMLSelectElement).value)"
                   >
@@ -364,7 +364,7 @@ const problems = computed(() => [...(card.value.result?.skipped ?? []), ...(card
               </div>
               <label v-if="e.choices?.length && can(e)" class="mt-1 flex items-center gap-1.5 text-xs text-stone-600" @click.stop>
                 {{ $t('Valor:') }}
-                <select v-model="values[e.id]" class="rounded border border-stone-300 bg-surface py-0.5 pr-6 pl-1 text-xs" @change="tick(e, true)">
+                <select v-model="values[e.id]" class="rounded border border-control bg-surface py-0.5 pr-6 pl-1 text-xs" @change="tick(e, true)">
                   <option value="">{{ e.fix?.to }}</option>
                   <option v-for="v in e.choices.filter(c => c !== e.fix?.to)" :key="v" :value="v">{{ v }}</option>
                 </select>

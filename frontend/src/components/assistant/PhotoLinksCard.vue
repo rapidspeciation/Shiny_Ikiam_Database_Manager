@@ -450,7 +450,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
           <select
             v-if="showRows && rows && !applied"
             v-model="show"
-            class="rounded border border-stone-200 bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+            class="rounded border border-control bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
             :aria-label="$t('Qué filas mostrar')"
           >
             <option value="all">{{ $t('Todas ({n})', { n: writing }) }}</option>
