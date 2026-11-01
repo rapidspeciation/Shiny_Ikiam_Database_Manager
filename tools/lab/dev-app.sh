@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # A short-lived copy of the lab app for one chat's work (screenshots, UI checks, a quick try), from this checkout:
-# LOCAL_MODE on the lab's snapshot, its own folder and port, light settings (one tools worker, no photo readings,
+# LOCAL_MODE on the lab's snapshot, its own folder and port, light settings (one tools worker, one search worker, no photo readings,
 # idle workers and identifier stopped soon), no T3. It runs as its own user unit with a time limit (default 90 min)
 # and a memory ceiling (default 3 GB: a lab app needs about 2), and is stopped as soon as the chat that started it
 # ends (tools/lab/reap.mjs, every 5 minutes). Memory on this PC: tools/lab/README.md, «Memory».
-#   tools/lab/dev-app.sh --port 8821 [--dir <folder>] [--ttl 90m] [--max 3G]   start; waits until it answers
+#   tools/lab/dev-app.sh --port 8821 [--dir <folder>] [--ttl 90m] [--max 3G] [--env K=V …]   start; waits until it answers
+# --env (repeatable) adds or overrides one of the app's settings (the benchmark, tools/perf/app-bench, gives it the
+# identifier's folder, its database copy's photos and T3's addresses this way).
 #   tools/lab/dev-app.sh --stop --port 8821
 #   tools/lab/dev-app.sh --list
 # The admin `lab` is made at the first start of a folder; its password is in <folder>/credentials.json (600).
@@ -13,12 +15,14 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
 PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start
+EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
     --dir) DIR="$2"; shift 2 ;;
     --ttl) TTL="$2"; shift 2 ;;
     --max) MAX="$2"; shift 2 ;;
+    --env) [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }; EXTRA+=(-E "$2"); shift 2 ;;
     --stop) ACTION=stop; shift ;;
     --list) ACTION=list; shift ;;
     *) echo "Unknown option $1 (see the top of $0)" >&2; exit 2 ;;
@@ -63,8 +67,9 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
   -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
-  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
+  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
   -E NODE_OPTIONS=--max-old-space-size=2048 -E PATH="$PATH" -E HOME="$HOME" \
+  "${EXTRA[@]}" \
   node server/index.mjs
 URL="http://127.0.0.1:$PORT"
 for _ in $(seq 120); do

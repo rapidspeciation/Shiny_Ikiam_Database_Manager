@@ -40,7 +40,7 @@ import {
 import { freshCorrections, monitoringRowsCsv, pointsCsv, walksGpx } from './monitoring-export.mjs';
 import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevision, tableText } from './grid.mjs';
 import { holdId, releaseHold } from './holds.mjs';
-import { searchAll, searchRange } from './search.mjs';
+import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, syncedAt } from './frozen-stock.mjs';
 import { extendPremadeRows } from './premade.mjs';
@@ -83,6 +83,7 @@ import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
 import { CHECK_KINDS, checkData, freshIssues } from './checks.mjs';
 import { createChecksHost } from './checks-host.mjs';
+import { createSearchHost } from './search-host.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
@@ -323,6 +324,8 @@ export function configFromEnv(env = process.env) {
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
     // How many workers answer the assistant's tool calls (server/worker-slot.mjs POOL_SIZE by default).
     assistantToolWorkers: env.ASSISTANT_TOOL_WORKERS || undefined,
+    // How many workers answer the Buscador's searches at once (server/search-host.mjs SEARCH_WORKERS by default).
+    searchWorkers: env.SEARCH_WORKERS || undefined,
     // Minutes a worker thread (the assistant's tools and views, the checks) waits for work before it stops and
     // gives its memory back (server/worker-slot.mjs IDLE_MS by default; 0: never).
     workerIdleMs: env.WORKER_IDLE_MINUTES !== undefined && env.WORKER_IDLE_MINUTES !== '' ? Number(env.WORKER_IDLE_MINUTES) * 60_000 : undefined,
@@ -538,6 +541,8 @@ export async function createApp(config = {}, options = {}) {
   }
   // The Revisión checks' whole scan, the suggested edits, the alerts, Inicio's summaries and the Wikiloc corrections in a worker thread where it can (server/checks-host.mjs).
   const checks = createChecksHost({ store, config });
+  // The Buscador's search in a worker thread where it can (server/search-host.mjs).
+  const search = createSearchHost({ store, config });
   // Each person's own T3 project, made when missing (server/t3projects.mjs).
   const t3Projects = createT3Projects({
     chats: assistant?.t3 ?? null,
@@ -615,6 +620,7 @@ export async function createApp(config = {}, options = {}) {
           eventLoop: eventLoop.stats(),
           ...(assistant?.status ? { assistant: assistant.status() } : {}),
           checks: checks.status(),
+          search: search.status(),
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
         });
@@ -917,7 +923,7 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       // The Buscador: a text in every sheet, with the rows around each sheet's match; more rows by range.
-      if (method === 'GET' && path === '/api/search') return json(res, 200, searchAll(store, query));
+      if (method === 'GET' && path === '/api/search') return json(res, 200, await search.all(query));
       if (method === 'GET' && path === '/api/search/rows') return json(res, 200, searchRange(store, query));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
       // The runs of free pre-made Insectary IDs, newest first: Emergidos' «Siguiente ID».
@@ -1725,6 +1731,7 @@ export async function createApp(config = {}, options = {}) {
       t3Bridge?.close();
       assistant?.close?.();
       checks.close();
+      search.close();
       clearTimeout(readingsStart);
       readings.close?.();
       sexCheck.close?.();

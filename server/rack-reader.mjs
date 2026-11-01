@@ -215,22 +215,32 @@ function stretch(c) {
   return { ...c, data };
 }
 
-/** Bilinear enlargement to S × S, as the RGBA pixels zxing-wasm takes. */
+/**
+ * Bilinear enlargement to S × S, as the RGBA pixels zxing-wasm takes. Each column's source pixel and weight are
+ * the same on every row: worked out once (the same arithmetic per pixel as before, so the same bytes).
+ */
 function enlarge(c, S) {
   const out = new Uint8ClampedArray(S * S * 4);
   const k = c.s / S;
   const last = c.s - 1.001;
+  const xs = new Int32Array(S);
+  const axs = new Float64Array(S);
+  for (let x = 0; x < S; x++) {
+    const fx = Math.min(last, Math.max(0, (x + 0.5) * k - 0.5));
+    xs[x] = fx | 0;
+    axs[x] = fx - xs[x];
+  }
+  const d = c.data;
   for (let y = 0; y < S; y++) {
     const fy = Math.min(last, Math.max(0, (y + 0.5) * k - 0.5));
     const y0 = fy | 0;
     const ay = fy - y0;
-    for (let x = 0; x < S; x++) {
-      const fx = Math.min(last, Math.max(0, (x + 0.5) * k - 0.5));
-      const x0 = fx | 0;
-      const ax = fx - x0;
-      const i0 = y0 * c.s + x0;
-      const v = (c.data[i0] * (1 - ax) + c.data[i0 + 1] * ax) * (1 - ay) + (c.data[i0 + c.s] * (1 - ax) + c.data[i0 + c.s + 1] * ax) * ay;
-      const o = (y * S + x) * 4;
+    const row = y0 * c.s;
+    let o = y * S * 4;
+    for (let x = 0; x < S; x++, o += 4) {
+      const ax = axs[x];
+      const i0 = row + xs[x];
+      const v = (d[i0] * (1 - ax) + d[i0 + 1] * ax) * (1 - ay) + (d[i0 + c.s] * (1 - ax) + d[i0 + c.s + 1] * ax) * ay;
       out[o] = out[o + 1] = out[o + 2] = v;
       out[o + 3] = 255;
     }
@@ -251,9 +261,11 @@ export async function decodeAround(img, cx, cy, half, { sizes = [300, 450, 200, 
     const plain = crop(img, cx, cy, half * hk);
     for (const pre of [plain, null]) {
       const c = pre ?? stretch(plain);
-      for (const S of sizes)
+      for (const S of sizes) {
+        // One enlargement for both binarizers.
+        const image = enlarge(c, S);
         for (const binarizer of ['LocalAverage', 'GlobalHistogram']) {
-          const found = await readBarcodes(enlarge(c, S), { ...OPTIONS, binarizer, maxNumberOfSymbols: many ? 8 : 1 });
+          const found = await readBarcodes(image, { ...OPTIONS, binarizer, maxNumberOfSymbols: many ? 8 : 1 });
           const valid = found.filter(r => r.isValid && r.text);
           if (!valid.length) continue;
           const k = c.s / S;
@@ -264,6 +276,7 @@ export async function decodeAround(img, cx, cy, half, { sizes = [300, 450, 200, 
             return { text: r.text.trim(), x: c.x0 + mx * k, y: c.y0 + my * k };
           });
         }
+      }
     }
   }
   return [];
