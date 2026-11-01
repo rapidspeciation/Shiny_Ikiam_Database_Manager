@@ -1505,7 +1505,7 @@ const choice = (on: boolean) =>
                 @click="pickCause(c)"
               >
                 <!-- The number key that picks it (computers only). -->
-                <span v-if="!touch && i < 9" class="absolute top-0.5 left-1.5 text-[0.65rem] leading-none font-semibold opacity-50" aria-hidden="true">{{
+                <span v-if="!touch && i < 9" class="absolute top-0.5 left-1.5 text-[0.65rem] leading-none font-semibold opacity-80" aria-hidden="true">{{
                   i + 1
                 }}</span>
                 {{ c }}

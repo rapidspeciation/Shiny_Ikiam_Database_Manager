@@ -12,7 +12,7 @@ import { cssColor, theme } from '../../lib/theme'
 export const SERIES = ['#2a78d6', '#eb6834', '#00a571', '#cb8100', '#d86d96', '#008300', '#4a3aa7', '#e34948']
 export const OTHER = '#91908a'
 /** Sequential blue, light → dark, for magnitude (heat cells). */
-export const BLUES = ['#eef5fd', '#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#2a78d6', '#1c5cab', '#104281']
+export const BLUES = ['#eef5fd', '#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#2670cc', '#1c5cab', '#104281']
 const INK = '#0b0b0b'
 /** Value labels, legends and the species names on an axis. */
 export const LABEL = '#52514e'

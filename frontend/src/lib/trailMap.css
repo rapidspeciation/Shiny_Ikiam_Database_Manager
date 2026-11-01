@@ -43,7 +43,7 @@
 }
 [data-theme='dark'] .leaflet-control-layers-toggle {
   /* Leaflet's layers icon is a dark PNG: a light tile behind it in dark keeps it readable. */
-  background-color: var(--fg-muted);
+  background-color: var(--fg);
 }
 .leaflet-control-layers-separator {
   border-top-color: var(--border);
@@ -57,7 +57,7 @@
   border-color: var(--fg-muted);
 }
 .leaflet-container .leaflet-control-attribution a,
-.leaflet-container a {
+.leaflet-popup-content a {
   color: var(--brand-text);
 }
 .leaflet-popup-content-wrapper,

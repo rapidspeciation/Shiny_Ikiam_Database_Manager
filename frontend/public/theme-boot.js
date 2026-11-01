@@ -10,5 +10,5 @@
   root.setAttribute('data-theme', dark ? 'dark' : 'light')
   root.style.colorScheme = dark ? 'dark' : 'light'
   var meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', dark ? '#0e1210' : '#1f4d3a')
+  if (meta) meta.setAttribute('content', '#1f4d3a')
 })()

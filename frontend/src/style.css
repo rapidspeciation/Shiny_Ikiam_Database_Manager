@@ -107,7 +107,7 @@
   --focus: #7cc6a0;
   --focus-on-brand: #ffffff;
   --select: #1d3328;
-  --cell-formula: #1a1f1c;
+  --cell-formula: #222a25;
   --cell-pending: #3a2c0c;
   --pending-text: #fcd34d;
   --pending-edge: #f59e0b;
@@ -757,6 +757,11 @@ body.touch-bar-open main {
   background: var(--cell-formula);
   font-style: italic;
 }
+/* The header keeps the light theme's deep green in dark: the brighter dark brand (for buttons and picks) glared
+   as the largest block on the page at night. White on it is 9.6:1, and the browser bar matches it. */
+[data-theme='dark'] .app-header { background-color: #1f4d3a; border-color: #2d6a4f; }
+/* On the range fill the muted grey drops under 4.5:1; the italics still mark it as a formula. */
+html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selected { color: var(--fg); }
 .sheet-grid .tabulator-cell.is-locked {
   color: var(--fg-subtle);
 }

@@ -13,7 +13,7 @@ export type Theme = 'light' | 'dark'
 /** Also read by public/theme-boot.js: keep the two in step. */
 export const THEME_KEY = 'ui:theme'
 /** The browser bar's colour per theme: the header green in light, the dark canvas in dark (as theme-boot.js). */
-export const THEME_COLOR: Record<Theme, string> = { light: '#1f4d3a', dark: '#0e1210' }
+export const THEME_COLOR: Record<Theme, string> = { light: '#1f4d3a', dark: '#1f4d3a' }
 
 /** A stored value, anything unknown being the system's choice. */
 export const parsePref = (stored: string | null | undefined): ThemePref =>
