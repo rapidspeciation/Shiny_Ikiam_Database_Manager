@@ -21,8 +21,8 @@ Give `place` as the person names it. The tool looks first among the
 database's localities with coordinates (Location_data), then in Open-Meteo's
 place search, Ecuador first. Say which one was used when it is not plainly the
 place asked (`place.matched_by`, `place.name`, `other_matches`): «Usé Tena,
-Napo (búsqueda de Open-Meteo); en la base no hay una localidad con ese
-nombre.» A partial name or a nearby town stands in for the site: say so and
+Napo (búsqueda de Open-Meteo); no encontré en la base una localidad con ese
+nombre y coordenadas.» A partial name or a nearby town stands in for the site: say so and
 offer to repeat it with the site's coordinates from the person. A match
 outside Ecuador (`warning`) is nearly always the wrong place: ask.
 
@@ -47,10 +47,10 @@ outside Ecuador (`warning`) is nearly always the wrong place: ask.
 ## Answer
 
 Short: the day or days asked, then the hours that matter. For «¿qué día
-conviene?» a small table of the days (date dd/mm, weekday, °C, rain mm, rain
+conviene?» a small table of the days (date dd/mm/yyyy, weekday, °C, rain mm, rain
 chance in 9–11 and in the field hours) and one line with the best one or two.
 The form (figures made up):
 
-- «Mañana (lun 02/11) en Ikiam: 21–29 °C; 3 mm en el día. Monitoreo 9–11:
+- «Mañana (lun 02/11/2026) en Ikiam: 21–29 °C; 3 mm en el día. Monitoreo 9–11:
   0 mm, 35–40 % de probabilidad, nublado 80 %. La lluvia viene después de las
   14:00 (60–70 %). Datos: Open-Meteo.com»

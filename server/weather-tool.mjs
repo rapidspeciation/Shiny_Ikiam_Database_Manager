@@ -87,12 +87,15 @@ export function dayParts(hourly, date, { from = 7, to = 17, nowHour = null } = {
   const rainHours = inWindow.filter(i => hourOf(hourly.time[i]) > MONITORING.from);
   const nums = (key, list) => list.map(i => value(key, i)).filter(v => v !== null);
   const temps = nums('temperature_2m', inWindow);
-  const probs = nums('precipitation_probability', rainHours);
-  const mm = nums('precipitation', rainHours);
+  // The rain of 9–11 only when both hours have it: a missing one would make the total look complete.
+  const complete = key => rainHours.length === MONITORING.to - MONITORING.from && rainHours.every(i => value(key, i) !== null);
+  const probs = complete('precipitation_probability') ? nums('precipitation_probability', rainHours) : [];
+  const mm = complete('precipitation') ? nums('precipitation', rainHours) : [];
   const clouds = nums('cloud_cover', inWindow);
   const winds = nums('wind_speed_10m', inWindow);
-  const fieldMm = nums('precipitation', fieldRain);
-  const fieldProbs = nums('precipitation_probability', fieldRain);
+  const whole = key => fieldRain.length === to - from && fieldRain.every(i => value(key, i) !== null);
+  const fieldMm = whole('precipitation') ? nums('precipitation', fieldRain) : [];
+  const fieldProbs = whole('precipitation_probability') ? nums('precipitation_probability', fieldRain) : [];
   const monitoring = inWindow.length
     ? {
         window: `${pad(MONITORING.from)}–${pad(MONITORING.to)}`,
@@ -132,8 +135,8 @@ export function forecastDays(data, { from = 7, to = 17, today = null, nowHour = 
 export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fetch, now = () => Date.now(), timeoutMs = 8000, cacheMs = 3600_000 } = {}) {
   const cache = new Map();
 
-  async function getJson(url) {
-    const hit = cache.get(url);
+  async function getJson(url, key = url) {
+    const hit = cache.get(key);
     if (hit && now() - hit.at < cacheMs) return { ...hit.value, cached: true };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -153,7 +156,7 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
       const real = url.startsWith(GEOCODE_URL) ? !body.error : body.hourly?.time?.length > 0;
       if (!real) return value;
       if (cache.size > 300) for (const [k, v] of cache) if (now() - v.at >= cacheMs) cache.delete(k);
-      cache.set(url, { at: value.at, value });
+      cache.set(key, { at: value.at, value });
       return value;
     } catch (e) {
       if (controller.signal.aborted) throw new Error(`Open-Meteo did not answer within ${timeoutMs / 1000} s`);
@@ -244,9 +247,11 @@ export function createWeatherTool({ store = null, fetch: fetchFn = globalThis.fe
       timezone: TIMEZONE,
       forecast_days: String(days),
     })}`;
+    // Kept per Guayaquil date as well: after midnight the same days start a day later.
+    const date = localTime(now()).slice(0, 10);
     let got;
     try {
-      got = await getJson(url);
+      got = await getJson(url, `${date} ${url}`);
     } catch (e) {
       return { error: `${e.message}; try again in a minute.`, place, source: SOURCE };
     }

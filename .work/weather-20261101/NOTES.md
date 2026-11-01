@@ -40,8 +40,8 @@
   day-first dates, weekday, field-hour rows, monitoring window; other hours and argument checks; partial and
   accent-free names; lat/lon input; geocoding fallback in Ecuador and «not found»; cache hit and expiry; timeout and
   HTTP 429; a missing hourly value.
-- Full server suite (`node --test tests/*.test.mjs`): 890/890 pass on 95b6641; the weather file 13/13 after the
-  review fixes. Frontend untouched (no `npm --prefix frontend test`).
+- Full server suite (`node --test tests/*.test.mjs`): 890/890 pass on 95b6641; the weather file 14/14 after both
+  reviews' fixes (with assistant-tools and whatsapp-bridge: 59/59). Frontend untouched (no `npm --prefix frontend test`).
 - Live: `~/.local/share/ui-overhaul-20261031/weather/live-ikiam.json`, `live-tena-geocoded.json`, `live-raw-ikiam.json`
   (raw API). Tool output matched the raw answer (02/11: 21.0–29.3 °C, 3.0 mm, 73 %).
 
@@ -52,7 +52,10 @@
   names looked exact (now whole words, ≥3 letters, `matched_by` says «partial name»); the 07:00 row's rain fell
   before the field hours (new `field_precip_mm`/`field_precip_prob_max` from the hours after `from_hour`); today's
   gone hours unmarked (`past_until`, `monitoring_past`); a match abroad only in `matched_by` (now `warning`); tests.
-- GPT-6.1 Sol: see the end of this file.
+- GPT-6.1 Sol: 5 points. Body-read timeout cached: already fixed in 35944ef. Fixed after: the cache key adds the
+  Guayaquil date (a forecast cached at 23:50 is not reused after midnight); 9–11 and field-hour rain totals are
+  null unless every hour has a value (a missing hour no longer looks like 0 mm); skill wording «no encontré en la
+  base una localidad con ese nombre y coordenadas»; dates in the skill's table and example dd/mm/yyyy.
 
 ## Lab assistant test
 

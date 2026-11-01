@@ -242,5 +242,19 @@ test('dayParts: an hour missing from the window leaves the rest', () => {
   const { hours, monitoring } = dayParts(hourly, '2026-11-02', { from: 9, to: 10 });
   assert.deepEqual(hours[1], ['10:00', null, 30, 0.2, 70, 4]);
   assert.deepEqual(monitoring.temp_c, [22, 22]);
-  assert.equal(monitoring.precip_mm, 0.2);
+  // The hour ending at 11 is missing: no 9–11 rain total that would look complete.
+  assert.equal(monitoring.precip_mm, null);
+  assert.equal(monitoring.precip_prob_max, null);
+});
+
+test('after midnight in Guayaquil the same request is asked again (the days start a day later)', async () => {
+  const { tool, calls, tick } = await setup();
+  tick(16 * 3600_000); // 01/11 07:30 → 23:30
+  await tool.run('weather_forecast', { place: 'Ikiam', days: 2 });
+  tick(20 * 60_000); // 23:50
+  await tool.run('weather_forecast', { place: 'Ikiam', days: 2 });
+  assert.equal(calls.length, 1);
+  tick(20 * 60_000); // 02/11 00:10
+  await tool.run('weather_forecast', { place: 'Ikiam', days: 2 });
+  assert.equal(calls.length, 2);
 });
