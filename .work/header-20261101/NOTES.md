@@ -73,3 +73,11 @@ hunks.
   | 640–768 | all 7 main tabs |
   | 1024 | 6 (Asistente moves into «Más») |
   | 1280 and wider | all 7 |
+
+## Review round 1
+- **Dropdowns close on a page change.** The Buscador ⋯ menu (TablesView) and Photo_links «Tarjetas recientes» now pass `closeOn: () => route.fullPath` to `useDismiss`; the first stayed open on a cached view after history navigation. Tests: `TablesView.test.ts` (fails without the fix) and a new case in `PhotoLinksPanel.test.ts`.
+- **Measuring copy** of a tab in AppHeader now has the same markup as the real one (space before the count, `rounded-full font-semibold` badge), so tabs with a count are measured at their real width. Shots with one staged edit on #/emergidos at 640 and 1024: no tab past the row, «Más» clear of the buttons.
+- **1024–1279 px:** the title text hides between lg and xl (`lg:max-xl:hidden`), so Asistente stays in the row at 1024 as at 768. Chosen over moving the breakpoint (one class). 1280+ is unchanged.
+- **↓ on «Más»** while the menu is open now moves focus to its first link.
+- **Tests:** `AppHeader.test.ts` («Más» and the user menu: outside click, Escape with focus back, route change; ↓ on «Más»). Vitest now loads `/x.svg?v=N` template images as an empty module (`test.alias` in vite.config.ts, `src/test-asset.ts`). 83 files, 736 tests pass; build passes.
+- **Shots** `header-shots/r1-081516`: `shoot-header.mjs` (72 views, 0 problems; Escape closes «Más» in all open-menu cases; at 1024 the row shows all 7 tabs plus «Más» for the hidden ones) and `shoot-staged.mjs` (emergidos with one staged count, put in the live store; nothing sent). The header is 46 px from 1024 px, 90 px below it.
