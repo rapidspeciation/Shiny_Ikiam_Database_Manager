@@ -6,12 +6,19 @@ baseline's min–max range, no other key metric gets worse by more than its nois
 baseline's range), the behaviour fingerprint (search matches and digests, tool answers) is unchanged, and
 `npm test` passes. Baseline: `base-a6ad89e` (the merged main, run through `tools/lab/dev-app.sh`).
 
+Runs (folders under `~/.cache/ithomiini-perf/` on the PC, `/home/ubuntu/perf-bench/results/` on claudeclaw): `claw-round2`
+(base, E1, E2, E3, E4, combo; 3 interleaved repeats each, 7 GB ceiling: the 5 GB of `claw-round1` was reached and
+killed the app in its tools phase), `local-combo-*` (base, combo on the PC), `e1b-pool-*` (combo, E1b; search and
+concurrent only), `claw-final` (base, final). `compare.mjs <folder>` prints each.
+
 | id | change | metric it should move | status |
 |---|---|---|---|
-| E1 | `/api/search` in its own worker thread (stopped when idle), the main thread only waits | event loop max/p95 in `search` and `concurrent`; concurrent p95 | registered |
-| E2 | sync (lab): LocalSheets.readSheet copies and hashes a sheet 500 rows at a time with a turn for others in between (same rows, same digest) | sync event-loop max | registered |
-| E3 | big answers compressed with the async zlib calls instead of `brotliCompressSync`/`gzipSync` | event loop max in `pages` and `concurrent` | registered |
-| E4 | the rack reader's `enlarge`: made once per size for both binarizers, its column weights once per size (the same pixels) | `tools.rack_read_photos.*_ms` | registered |
+| E1 | `/api/search` in its own worker thread (stopped when idle), the main thread only waits | event loop max/p95 in `search` and `concurrent`; concurrent p95 | **kept**: search-phase event loop 572 → 5 ms (server), concurrent loop p95 −90 %, throughput +26 %; but searches queue in the one worker (concurrent p95 +17 %), hence E1b |
+| E1b | two search workers (the second only while the first is busy); `SEARCH_WORKERS`, 1 in the lab | concurrent p95, search latency under 5 clients | **kept** for the server: 5 clients searching, throughput +88 %, p95 −37 %; costs ~300 MB while the second runs (+11.5 % peak, over the 10 % rule: a choice, the server has 23 GB; the lab keeps 1) |
+| E1c | E1b plus `maxOldGenerationSizeMb: 256` for the search workers | search worker RSS | **dropped** before a run: in a worker on the lab copy, heap 166 → 174 MB and RSS 347 → 368 MB with the cap (no gain) |
+| E2 | sync (lab): LocalSheets.readSheet copies and hashes a sheet 500 rows at a time with a turn for others in between (same rows, same digest) | sync event-loop max | **kept**: sync event loop max 2981 → 179 ms (server), 1632 → 114 ms (PC) |
+| E3 | big answers compressed with the async zlib calls instead of `brotliCompressSync`/`gzipSync` | event loop max in `pages` and `concurrent` | **dropped**: search-phase loop p95 −23 % but concurrent p95 +21 % on the server (the 4 libuv threads queue the big answers); pages unchanged |
+| E4 | the rack reader's `enlarge`: made once per size for both binarizers, its column weights once per size (the same pixels) | `tools.rack_read_photos.*_ms` | **kept**: 13.2 → 8.4 s a rack photo (server), 6.4 → 4.5 s (PC); the same 94 tubes |
 | E5 | LOCAL_MODE: the in-memory workbook (LocalSheets rows) kept in SQLite instead | anon memory idle/peak, start time | deferred (budget), see below |
 
 ## E5, deferred: the lab's workbook in SQLite
@@ -29,3 +36,24 @@ insert/delete dimension), the in-memory store kept for the tests' seeds (144 `ne
 
 Not run in this round: it changes the lab's data path end to end, and the week's budget for this work (5 %) did not
 leave room for it and its review after E1–E4. Worth doing next if lab apps on this PC still matter.
+
+## Review (dual-critic-loop, 2 rounds, GPT-6.1 Sol + fresh Opus, on the combined diff a6ad89e..perf-combo)
+
+Grades: Sol C → A, Opus A− → A−.
+
+| round | critic | id | severity | outcome | reason |
+|---|---|---|---|---|---|
+| 1 | sol | F1 | blocker | fixed | E2's read in pieces could mix two moments (a write or a deleted row between pieces): a write counter, the copy started again when it moved, after three the whole sheet at once; tests/local-sheets-read.test.mjs fails without it |
+| 1 | opus | F1 | nit | fixed | a search while the app closes got a 500: answered in the app's thread while the store is open |
+| 1 | opus | F2 | nit | declined (comment) | after a 60 s worker timeout the search runs in the app; searches take 0.1–0.5 s |
+| 1 | opus | F3 | nit | fixed | same as sol F1 |
+| 1 | opus | F4 | nit | declined | dev-app.sh `${EXTRA[@]}` under bash < 4.4; the lab PC runs bash 5 |
+| 2 | sol | – | – | – | all round-1 ids resolved or declined, no new findings |
+| 2 | opus | F1 | nit | fixed | a test of the whole-sheet copy after three interrupted reads |
+| 2 | opus | F2 | nit | fixed | a test of the search answered in the app after the worker closed |
+| E1b, 1 | sol | – | – | – | grade A, no findings |
+| E1b, 1 | opus | F1 | nit | fixed | `SEARCH_WORKERS=0` gave 2: now at least 1, as the assistant's setting |
+| E1b, 1 | opus | F2 | nit | fixed | the comment: two searches at once can be one person typing fast |
+| E1b, 1 | opus | F3 | nit | fixed | `LAB_SEARCH_WORKERS` in tools/lab/README.md |
+| E1b, 1 | opus | F4 | nit | fixed | `SEARCH_WORKERS` in deploy/service.env.example |
+| E1b, 1 | opus | F5 | nit | fixed | the one-worker case checks the answers too |
