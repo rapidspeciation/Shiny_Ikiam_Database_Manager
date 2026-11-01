@@ -133,6 +133,11 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const chatOf = jid => chats.find(c => (c.jid === bareJid(jid) || (c.aliases ?? []).includes(bareJid(jid))) && c.enabled) ?? null;
   // The hard block: wacli sends only to these two JIDs, whatever the config's other chats say.
   const SENDABLE = new Set([config.chats?.group?.jid, config.chats?.self?.jid].filter(Boolean));
+  // Only the two live routes make real sends: Franz's own chat through «Orchestrator wpp» (route local, the main T3) and the group
+  // through claudeclaw. Any other chat or route (the lab's simulations, a lab T3 route, a renamed one) goes to the outbox, whatever
+  // its dryRun says, so a test can never reach WhatsApp.
+  const LIVE_ROUTES = { self: 'local', group: 'claudeclaw' };
+  const isLive = chat => LIVE_ROUTES[chat.key] === chat.route && !/ithomiini-lab|:3775\b/.test(`${config.routes?.[chat.route]?.home ?? ''} ${config.routes?.[chat.route]?.local ?? ''}`);
   const admin = msg => msg.fromMe;
   // The group's rule: a message wakes the bridge only if it tags @claude or replies to one of the bridge's own messages.
   const isGroup = chat => String(chat.jid ?? '').endsWith('@g.us');
@@ -231,7 +236,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       record({ ...entry, refused: 'group send outside an active conversation' });
       throw new Error('Refused: no trigger');
     }
-    if (chat.dryRun) {
+    if (chat.dryRun || !isLive(chat)) {
       // The file is kept for the test to look at (the turn's own copy is deleted after it).
       let kept = null;
       if (file) {
@@ -241,7 +246,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
       id = edit ?? `OUT${now()}${Math.random().toString(16).slice(2, 8)}`;
       appendFileSync(outboxFile, JSON.stringify({ at: new Date(now()).toISOString(), chat: chat.key, kind, id, text, file: kept, voice, quote: quote?.id ?? null, react, edit }) + '\n', { mode: 0o600 });
-      record({ ...entry, via: 'outbox' });
+      record({ ...entry, via: 'outbox', ...(chat.dryRun ? {} : { notLive: true }) });
     } else {
       if (!SENDABLE.has(chat.jid)) {
         record({ ...entry, refused: 'not an allowed chat' });
