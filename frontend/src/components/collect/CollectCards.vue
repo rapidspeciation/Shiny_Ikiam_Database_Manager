@@ -213,7 +213,7 @@ const today = todayIso()
   <div class="flex h-full flex-col bg-stone-50" @focusin="onFocusIn">
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" :style="keyboard.open.value ? { paddingBottom: `${keyboard.cover.value}px` } : undefined">
       <!-- The day in one line (a tap opens it), the view and the history: always at the top. -->
-      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-2">
+      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-2">
         <button
           class="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-sm"
           :class="dayReady ? 'border-stone-300 bg-stone-50' : 'border-amber-400 bg-amber-50 text-amber-900'"
@@ -227,7 +227,7 @@ const today = todayIso()
         </button>
         <EntryModeToggle v-model="mode" :compact="!roomy" class="h-11 shrink-0 *:min-w-11" />
         <button
-          class="flex h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-white px-2 text-sm text-stone-700 active:bg-stone-100"
+          class="flex h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-surface px-2 text-sm text-stone-700 active:bg-stone-100"
           :aria-label="$t('Historial de Colecta')"
           :title="$t('Historial de Colecta')"
           @click="showHistory = true"
@@ -264,7 +264,7 @@ const today = todayIso()
           </ul>
         </section>
         <div v-if="canEdit && !dayOpen" class="px-3 pt-3">
-          <button class="flex h-13 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-600 bg-white text-base font-semibold text-brand-800 active:bg-brand-50" data-add @click="addButterfly">
+          <button class="flex h-13 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-600 bg-surface text-base font-semibold text-brand-800 active:bg-brand-50" data-add @click="addButterfly">
             <Plus :size="20" /> {{ $t('Mariposa') }}
           </button>
         </div>
@@ -280,7 +280,7 @@ const today = todayIso()
         <!-- Totals per species, as the notebook's tally. -->
         <section v-if="totals.length" class="px-3 pt-5 pb-6">
           <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Por especie') }}</h2>
-          <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white text-sm">
+          <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-surface text-sm">
             <li v-for="s in totals" :key="s.species" class="flex items-center gap-2 px-3 py-2">
               <span class="min-w-0 flex-1 truncate italic">{{ s.species }}</span>
               <span v-if="s.female" class="flex items-center gap-0.5 tabular-nums"><SexBadge sex="female" />{{ s.female }}</span>
@@ -301,7 +301,7 @@ const today = todayIso()
       v-if="(canEdit && drafts.length) || lastSave"
       v-show="!keyboard.open.value"
       ref="footer"
-      class="shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+      class="shrink-0 border-t border-stone-200 bg-surface px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
     >
       <div class="mx-auto max-w-3xl">
         <div v-if="lastSave && !drafts.length" class="flex items-center gap-2" role="status">

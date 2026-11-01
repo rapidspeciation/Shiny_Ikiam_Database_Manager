@@ -1,4 +1,4 @@
-import { axis, barStyle, base, format } from './chart'
+import { LABEL, axis, barStyle, base, format } from './chart'
 import { monthLabel } from '../../lib/summary'
 
 /**
@@ -24,7 +24,7 @@ export function monthly(months: string[], series: { label: string; color: string
           ? {
               show: true,
               position: 'top',
-              color: '#52514e',
+              color: LABEL,
               fontSize: 10,
               formatter: (v: { dataIndex: number }) => (total(v.dataIndex) ? format(total(v.dataIndex)) : ''),
             }

@@ -58,25 +58,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div v-if="photo" class="fixed inset-0 z-50 flex flex-col bg-stone-900" role="dialog" :aria-label="$t('Fotos del clutch')">
-    <div class="flex items-center gap-2 bg-stone-900 px-2 py-1 text-stone-100">
+  <div v-if="photo" class="fixed inset-0 z-50 flex flex-col bg-photo-mat" role="dialog" :aria-label="$t('Fotos del clutch')">
+    <div class="flex items-center gap-2 bg-photo-mat px-2 py-1 text-on-photo">
       <p class="min-w-0 flex-1 truncate text-sm">
         {{ $t('Foto {n} de {total}', { n: index + 1, total: photos.length }) }} · {{ dayLabel(photo.day) }}
       </p>
-      <button v-if="canAdd" class="flex h-11 items-center gap-1 rounded-md px-2 text-sm text-stone-100" @click="emit('add')">
+      <button v-if="canAdd" class="flex h-11 items-center gap-1 rounded-md px-2 text-sm text-on-photo" @click="emit('add')">
         <Camera :size="20" /> {{ $t('Otra foto') }}
       </button>
-      <button v-if="mine" class="grid h-11 w-11 place-items-center rounded-md text-stone-200" :aria-label="$t('Quitar esta foto')" :disabled="removing" @click="remove">
+      <button v-if="mine" class="grid h-11 w-11 place-items-center rounded-md text-on-photo" :aria-label="$t('Quitar esta foto')" :disabled="removing" @click="remove">
         <Trash2 :size="20" />
       </button>
-      <button class="grid h-11 w-11 place-items-center rounded-md text-stone-100" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="24" /></button>
+      <button class="grid h-11 w-11 place-items-center rounded-md text-on-photo" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="24" /></button>
     </div>
     <div class="min-h-0 flex-1">
       <PhotoViewer :url="url" :count="photos.length" :photo="index" :alt="alt" @update:photo="index = $event" />
     </div>
-    <div class="bg-stone-900 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-sm text-stone-100">
+    <div class="bg-photo-mat px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-sm text-on-photo">
       <p v-if="event" class="font-medium">{{ eventLine(event) }}</p>
-      <p v-else class="text-stone-300">{{ $t('Foto del día') }}</p>
+      <p v-else class="text-on-photo-muted">{{ $t('Foto del día') }}</p>
       <p v-if="photo.note">{{ photo.note }}</p>
       <p class="text-xs text-stone-400">
         {{ initials(photo.name || photo.username || '') }} · {{ new Date(photo.createdAt).toLocaleString() }} · {{ photo.width }}×{{ photo.height }} · {{ sizeText(photo.bytes) }}

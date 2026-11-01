@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next'
+import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown, Monitor, Sun, Moon } from 'lucide-vue-next'
 import { tabs } from '../router'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
@@ -10,6 +10,7 @@ import { changeCount } from '../lib/staged'
 import { notify } from '../lib/notice'
 import { locale, t } from '../lib/i18n'
 import { menuLeft } from '../lib/menuPlace'
+import { themePref, type ThemePref } from '../lib/theme'
 
 const session = useSession()
 const pending = usePending()
@@ -79,6 +80,22 @@ const shown = computed(() =>
 /** The offline identifier test page (a page of its own, server/offline-id.mjs), opened in this window: inside the installed app it stays in the app. */
 const offlineIdPage = new URL('prueba-offline/', location.href.split('#')[0]).href
 
+/** Light or dark (lib/theme.ts): the system's choice unless one is picked here. Arrow keys move the choice, as in any radio group. */
+const themeOptions: { value: ThemePref; label: string; icon: typeof Sun }[] = [
+  { value: 'system', label: 'Sistema', icon: Monitor },
+  { value: 'light', label: 'Claro', icon: Sun },
+  { value: 'dark', label: 'Oscuro', icon: Moon },
+]
+function themeKeys(event: KeyboardEvent) {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+  if (!step) return
+  event.preventDefault()
+  const at = themeOptions.findIndex(o => o.value === themePref.value)
+  const next = (at + step + themeOptions.length) % themeOptions.length
+  themePref.value = themeOptions[next]!.value
+  ;(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus()
+}
+
 async function logout() {
   if (
     pending.changeCount &&
@@ -92,7 +109,7 @@ async function logout() {
 </script>
 
 <template>
-  <header class="app-header border-b border-brand-800 bg-brand-700 text-white">
+  <header class="app-header border-b border-brand-hover bg-brand text-white">
     <!-- One row on wide screens; on phones the tabs get their own full-width row. -->
     <div class="flex flex-wrap items-center gap-x-3 px-3 sm:flex-nowrap sm:px-4">
       <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-1 font-semibold">
@@ -108,7 +125,7 @@ async function logout() {
           v-for="tab in shown"
           :key="tab.path"
           :to="tab.path"
-          class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-brand-100 hover:text-white"
+          class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white"
           :class="{ '!border-white !text-white': route.meta.tab === tab.path }"
           active-class="!border-white !text-white"
         >
@@ -139,33 +156,33 @@ async function logout() {
         :href="session.settings.sheetUrl"
         target="_blank"
         rel="noopener"
-        class="hidden shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500 hover:bg-brand-800 hover:text-white md:inline-flex"
+        class="hidden shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold text-on-brand-muted ring-1 ring-on-brand-muted/50 hover:bg-brand-hover hover:text-white focus-visible:outline-2 focus-visible:outline-focus-on-brand md:inline-flex"
         :title="$t('Abrir Google Sheet')"
       >
         Google Sheet <ExternalLink :size="12" />
       </a>
       <!-- Interface language: English by default (lib/i18n.ts). -->
       <button
-        class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500 hover:bg-brand-800 hover:text-white sm:ml-0"
+        class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-on-brand-muted ring-1 ring-on-brand-muted/50 hover:bg-brand-hover hover:text-white focus-visible:outline-2 focus-visible:outline-focus-on-brand sm:ml-0"
         :title="$t('Cambiar idioma')"
         :aria-label="$t('Cambiar idioma')"
         @click="locale = locale === 'en' ? 'es' : 'en'"
       >
-        <span :class="locale === 'en' ? 'text-white' : 'opacity-60'">EN</span>
-        <span class="opacity-60">/</span>
-        <span :class="locale === 'es' ? 'text-white' : 'opacity-60'">ES</span>
+        <span :class="locale === 'en' ? 'text-white underline underline-offset-2' : ''">EN</span>
+        <span aria-hidden="true">/</span>
+        <span :class="locale === 'es' ? 'text-white underline underline-offset-2' : ''">ES</span>
       </button>
       <RouterLink
         v-if="!session.user"
         :to="{ path: '/entrar', query: { volver: route.fullPath } }"
-        class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800"
+        class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-focus-on-brand"
       >
         <LogIn :size="15" /> {{ $t('Iniciar sesión') }}
       </RouterLink>
       <div v-else ref="holder" class="relative shrink-0">
         <button
           ref="trigger"
-          class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800"
+          class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-focus-on-brand"
           :aria-expanded="menu"
           @click="toggleMenu"
         >
@@ -175,28 +192,47 @@ async function logout() {
           v-if="menu"
           ref="menuBox"
           data-user-menu
-          class="absolute z-50 mt-1 w-max max-w-[calc(100vw-1rem)] min-w-52 rounded-md border border-stone-200 bg-white py-1 text-sm text-stone-800 shadow-lg"
+          class="absolute z-50 mt-1 w-max max-w-[calc(100vw-1rem)] min-w-52 rounded-md border border-border-strong bg-surface-raised py-1 text-sm text-fg shadow-lg"
           :class="menuX === null ? 'right-0' : ''"
           :style="menuX === null ? undefined : { left: `${menuX}px` }"
           @click="menu = false"
         >
-          <p class="px-3 py-1 text-xs text-stone-500">{{ session.user?.username }} · {{ session.user?.role }}</p>
+          <p class="px-3 py-1 text-xs text-fg-subtle">{{ session.user?.username }} · {{ session.user?.role }}</p>
+          <!-- Picking a theme keeps the menu open, so the change can be seen and undone. -->
+          <div class="flex items-center justify-between gap-3 px-3 py-1.5" @click.stop>
+            <span id="theme-label" class="text-xs text-fg-subtle">{{ $t('Tema') }}</span>
+            <div role="radiogroup" aria-labelledby="theme-label" class="inline-flex rounded-md border border-control p-0.5" @keydown="themeKeys">
+              <button
+                v-for="o in themeOptions"
+                :key="o.value"
+                type="button"
+                role="radio"
+                :aria-checked="themePref === o.value"
+                :tabindex="themePref === o.value ? 0 : -1"
+                class="flex min-h-8 items-center gap-1 rounded px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+                :class="themePref === o.value ? 'bg-brand text-on-brand' : 'text-fg-muted hover:bg-surface-sunken'"
+                @click="themePref = o.value"
+              >
+                <component :is="o.icon" :size="14" aria-hidden="true" /> {{ $t(o.label) }}
+              </button>
+            </div>
+          </div>
           <a
             v-if="session.settings?.sheetUrl"
             :href="session.settings.sheetUrl"
             target="_blank"
             rel="noopener"
-            class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100 md:hidden"
+            class="flex items-center gap-2 px-3 py-2 hover:bg-surface-sunken md:hidden"
           >
             <ExternalLink :size="15" /> {{ $t('Abrir Google Sheet') }}
           </a>
-          <RouterLink v-if="session.isAdmin" to="/usuarios" class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100">
+          <RouterLink v-if="session.isAdmin" to="/usuarios" class="flex items-center gap-2 px-3 py-2 hover:bg-surface-sunken">
             <Users :size="15" /> {{ $t('Usuarios') }}
           </RouterLink>
-          <a v-if="session.isOfflineIdTester" :href="offlineIdPage" class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100">
+          <a v-if="session.isOfflineIdTester" :href="offlineIdPage" class="flex items-center gap-2 px-3 py-2 hover:bg-surface-sunken">
             <FlaskConical :size="15" /> {{ $t('Prueba: identificador sin conexión') }}
           </a>
-          <button class="flex w-full items-center gap-2 px-3 py-2 hover:bg-stone-100" @click="logout">
+          <button class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-sunken" @click="logout">
             <LogOut :size="15" /> {{ $t('Cerrar sesión') }}
           </button>
         </div>

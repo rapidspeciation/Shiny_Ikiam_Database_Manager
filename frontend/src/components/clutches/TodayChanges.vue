@@ -154,10 +154,10 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
   <div class="px-3 pt-3 pb-8">
     <div class="flex flex-wrap items-center gap-2">
       <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="group">
-        <button class="h-11 px-3" :class="onlyMine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="onlyMine" @click="onlyMine = true">
+        <button class="h-11 px-3" :class="onlyMine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="onlyMine" @click="onlyMine = true">
           {{ $t('Míos') }}
         </button>
-        <button class="h-11 border-l border-stone-300 px-3" :class="!onlyMine ? 'bg-brand-700 text-white' : 'bg-white'" :aria-pressed="!onlyMine" @click="onlyMine = false">
+        <button class="h-11 border-l border-stone-300 px-3" :class="!onlyMine ? 'bg-brand text-white' : 'bg-surface'" :aria-pressed="!onlyMine" @click="onlyMine = false">
           {{ $t('De todos') }}
         </button>
       </div>
@@ -197,7 +197,7 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
       {{ isToday ? $t('Ningún cambio hoy todavía.') : $t('Ningún cambio ese día.') }}
     </p>
     <ul class="mt-2 space-y-2">
-      <li v-for="g in groups" :key="g.recordId" class="rounded-xl border border-stone-200 bg-white shadow-sm" :data-clutch="g.clutch">
+      <li v-for="g in groups" :key="g.recordId" class="rounded-xl border border-stone-200 bg-surface shadow-sm" :data-clutch="g.clutch">
         <div class="flex items-center gap-1 pr-1">
           <button class="flex min-h-12 min-w-0 flex-1 items-baseline gap-2 px-3 py-2 text-left" :aria-label="$t('Abrir el clutch {clutch}', { clutch: g.clutch })" @click="emit('open', g.recordId)">
             <span class="text-lg font-semibold">{{ g.clutch }}</span>

@@ -35,7 +35,7 @@ watch(locale, title)
     <ProposalsLive layout="page" :only="only" :chat="chat" :photo="photo" class="min-h-0 flex-1" @chat="pick" @photo="showPhoto" />
     <RouterLink
       :to="back"
-      class="flex items-center gap-1 border-t border-stone-200 bg-white px-3 py-1 text-xs text-stone-500 hover:text-stone-800"
+      class="flex items-center gap-1 border-t border-stone-200 bg-surface px-3 py-1 text-xs text-stone-500 hover:text-stone-800"
     >
       <ArrowLeft :size="12" /> {{ $t('Volver al Asistente') }}
     </RouterLink>

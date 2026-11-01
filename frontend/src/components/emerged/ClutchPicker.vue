@@ -127,7 +127,7 @@ const dueText = (i: Item) => {
         <Search :size="18" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
         <input
           v-model="query"
-          class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+          class="h-12 w-full rounded-xl border border-stone-300 bg-surface pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
           type="search"
           inputmode="search"
           autocomplete="off"
@@ -148,7 +148,7 @@ const dueText = (i: Item) => {
       <ul class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
         <li v-for="item in group.items" :key="item.row.id">
           <button
-            class="block w-full rounded-xl border bg-white px-3 py-2 text-left shadow-sm active:bg-stone-50"
+            class="block w-full rounded-xl border bg-surface px-3 py-2 text-left shadow-sm active:bg-stone-50"
             :class="item.number === current ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200'"
             @click="emit('pick', item.number)"
           >

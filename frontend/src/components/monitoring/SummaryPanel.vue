@@ -295,31 +295,31 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
     <p v-if="!table" class="p-6 text-stone-500">{{ $t('Cargando Collection_data…') }}</p>
     <div v-else class="min-h-0 flex-1 space-y-4 overflow-auto bg-stone-50 p-4">
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
-        <div class="rounded-md border border-stone-200 bg-white px-3 py-2">
+        <div class="rounded-md border border-stone-200 bg-surface px-3 py-2">
           <p class="text-xs text-stone-500">{{ $t('Individuos') }}</p>
           <p class="text-2xl font-semibold">{{ format(totals.total) }}</p>
         </div>
         <div
-          class="rounded-md border border-stone-200 bg-white px-3 py-2"
+          class="rounded-md border border-stone-200 bg-surface px-3 py-2"
           :title="$t('Días por recolector (SamplingDay_data y días con capturas)')"
         >
           <p class="text-xs text-stone-500">{{ $t('Días de monitoreo') }}</p>
           <p class="text-2xl font-semibold">{{ format(effort.length) }}</p>
         </div>
-        <div class="rounded-md border border-stone-200 bg-white px-3 py-2">
+        <div class="rounded-md border border-stone-200 bg-surface px-3 py-2">
           <p class="text-xs text-stone-500">{{ $t('Individuos por día') }}</p>
           <p class="text-2xl font-semibold">{{ format(Math.round(perDay * 10) / 10) }}</p>
         </div>
-        <div class="rounded-md border border-stone-200 bg-white px-3 py-2">
+        <div class="rounded-md border border-stone-200 bg-surface px-3 py-2">
           <p class="text-xs text-stone-500">{{ $t('Especies') }}</p>
           <p class="text-2xl font-semibold">{{ speciesStats(filtered, false, recaptures).length }}</p>
         </div>
-        <div class="rounded-md border border-stone-200 bg-white px-3 py-2">
+        <div class="rounded-md border border-stone-200 bg-surface px-3 py-2">
           <p class="text-xs text-stone-500">{{ $t('Preservados · marcados') }}</p>
           <p class="text-2xl font-semibold">{{ totals.preserved }} · {{ totals.marked }}</p>
         </div>
         <div
-          class="rounded-md border border-stone-200 bg-white px-3 py-2"
+          class="rounded-md border border-stone-200 bg-surface px-3 py-2"
           :title="$t('Recapturas / individuos marcados en el periodo')"
         >
           <p class="text-xs text-stone-500">{{ $t('Recapturas') }}</p>
@@ -372,7 +372,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
         </div>
         <div v-if="species.length > 10" class="mt-3 text-center">
           <button
-            class="rounded-full border border-stone-300 bg-white px-4 py-1.5 text-xs text-brand-700 hover:bg-stone-50"
+            class="rounded-full border border-stone-300 bg-surface px-4 py-1.5 text-xs text-brand-700 hover:bg-stone-50"
             @click="allSpecies = !allSpecies"
           >
             {{ allSpecies ? $t('Mostrar solo las 10 más abundantes') : $t('Ver todas ({n} especies)', { n: species.length }) }}
@@ -383,7 +383,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
       <div class="grid gap-4 xl:grid-cols-2">
         <section>
           <h2 class="mb-2 font-semibold">{{ $t('Individuos por transecto y mes') }}</h2>
-          <div class="max-h-96 overflow-auto rounded-md border border-stone-200 bg-white">
+          <div class="max-h-96 overflow-auto rounded-md border border-stone-200 bg-surface">
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-stone-100 text-xs text-stone-600">
                 <tr>
@@ -427,7 +427,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
               })
             }}
           </p>
-          <div class="max-h-96 overflow-auto rounded-md border border-stone-200 bg-white">
+          <div class="max-h-96 overflow-auto rounded-md border border-stone-200 bg-surface">
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-stone-100 text-left text-xs text-stone-600">
                 <tr>

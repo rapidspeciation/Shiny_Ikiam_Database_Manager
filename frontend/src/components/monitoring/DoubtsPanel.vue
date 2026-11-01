@@ -438,7 +438,7 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
 
       <p v-if="data && !groups.length" class="hint">{{ $t('No hay dudas de emparejamiento.') }}</p>
 
-      <section v-for="g in groups" :key="walkKey(g.walk)" class="rounded-md border border-stone-200 bg-white">
+      <section v-for="g in groups" :key="walkKey(g.walk)" class="rounded-md border border-stone-200 bg-surface">
         <header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-stone-100 px-3 py-2">
           <h2 class="text-base font-semibold">{{ day(g.walk.date) }} · {{ initials(g.walk.collector) }}</h2>
           <span class="text-sm text-stone-500">{{ g.walk.name }}</span>

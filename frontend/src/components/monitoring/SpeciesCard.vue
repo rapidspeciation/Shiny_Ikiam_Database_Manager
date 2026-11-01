@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import SpeciesPhoto from './SpeciesPhoto.vue'
-import { OTHER, SERIES } from '../charts/chart'
+import { OTHER, PALE, SERIES, themed } from '../charts/chart'
 import { MARK_THRESHOLD, type SpeciesStat } from '../../lib/monitoring'
 
 /**
@@ -16,7 +16,9 @@ const props = defineProps<{
 }>()
 
 type Part = { key: string; label: string; n: number; color: string }
-const share = (parts: Part[], total: number) => parts.filter(p => p.n).map(p => ({ ...p, width: `${(100 * p.n) / total}%` }))
+// In the theme's colours (chart.ts themed): computed again when it changes.
+const share = (parts: Part[], total: number) =>
+  parts.filter(p => p.n).map(p => ({ ...p, color: themed(p.color), width: `${(100 * p.n) / total}%` }))
 const fates = computed(() =>
   share(
     [
@@ -33,7 +35,7 @@ const sexes = computed(() =>
     [
       { key: 'female', label: '♀', n: props.s.female, color: '#e34948' },
       { key: 'male', label: '♂', n: props.s.male, color: SERIES[0] },
-      { key: 'unknown', label: '?', n: props.s.total - props.s.female - props.s.male, color: '#e7e5e4' },
+      { key: 'unknown', label: '?', n: props.s.total - props.s.female - props.s.male, color: PALE },
     ],
     props.s.total,
   ),
@@ -42,11 +44,11 @@ const ruleWidth = computed(() => `${Math.min(100, (100 * props.rule.preserved) /
 </script>
 
 <template>
-  <article class="flex flex-col overflow-hidden rounded-lg border border-stone-200 bg-white">
+  <article class="flex flex-col overflow-hidden rounded-lg border border-stone-200 bg-surface">
     <div class="relative aspect-[4/3] bg-stone-100">
       <SpeciesPhoto :species="s.species" :subspecies="s.subspecies" />
       <span
-        class="pointer-events-none absolute top-2 right-2 rounded-full bg-white/90 px-2 py-0.5 text-xs font-semibold tabular-nums shadow-sm"
+        class="pointer-events-none absolute top-2 right-2 rounded-full bg-surface/90 px-2 py-0.5 text-xs font-semibold tabular-nums shadow-sm"
         :title="$t('{n} individuos', { n: s.total })"
         >{{ s.total }}</span
       >

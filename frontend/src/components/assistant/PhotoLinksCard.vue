@@ -307,7 +307,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-sm" data-photo-links>
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-sm" data-photo-links>
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stone-200 px-3 py-2">
       <Images :size="15" class="shrink-0 text-emerald-700" />
       <strong class="font-medium">{{ proposal.reason }}</strong>
@@ -320,7 +320,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
       <button
         v-if="pending && !sync.stale"
         type="button"
-        class="ml-auto flex items-center gap-1 rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs text-sky-800 hover:border-sky-600 disabled:opacity-50"
+        class="ml-auto flex items-center gap-1 rounded border border-sky-300 bg-surface px-1.5 py-0.5 text-xs text-sky-800 hover:border-sky-600 disabled:opacity-50"
         :disabled="!!asking"
         :title="$t('Abre un chat con Claude al lado que ve todos los problemas de esta lectura y las fotos que necesite, y propone cómo resolverlos')"
         data-ask-claude
@@ -331,7 +331,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
       <button
         v-if="pending"
         type="button"
-        class="flex items-center gap-1 rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs text-stone-700 hover:border-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+        class="flex items-center gap-1 rounded border border-stone-300 bg-surface px-1.5 py-0.5 text-xs text-stone-700 hover:border-emerald-600 hover:text-emerald-800 disabled:opacity-50"
         :class="{ 'ml-auto': sync.stale }"
         :disabled="!!busy"
         :title="$t('Vuelve a leer las carpetas de Drive y compara de nuevo con la hoja')"
@@ -450,7 +450,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
           <select
             v-if="showRows && rows && !applied"
             v-model="show"
-            class="rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+            class="rounded border border-stone-200 bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
             :aria-label="$t('Qué filas mostrar')"
           >
             <option value="all">{{ $t('Todas ({n})', { n: writing }) }}</option>
@@ -575,7 +575,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               <button
                 v-if="pending && fixes.get(c.kind)"
                 type="button"
-                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
+                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-surface px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
                 :disabled="!!fixing"
                 :title="fixes.get(c.kind)!.title"
                 data-fix
@@ -659,7 +659,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               <button
                 v-if="pending"
                 type="button"
-                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
+                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-surface px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
                 :disabled="!!listing"
                 :title="$t('Lee las carpetas de nuevo con esta, para empezar a listarla (sus filas aparecen en esta tarjeta para aplicar)')"
                 data-list-folder
@@ -684,7 +684,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
     <div v-if="pending" class="flex flex-wrap items-center gap-2 px-3 py-2">
       <button
         v-if="!sync.stale"
-        class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+        class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
         :disabled="!!busy || !writing"
         :title="$t('Escribe estas filas en Photo_links, unos cientos por guardado')"
         data-apply
@@ -692,7 +692,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
       >
         <Check :size="15" /> {{ $tn(writing, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
       </button>
-      <button v-else class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="!!busy" @click="readAgain()">
+      <button v-else class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="!!busy" @click="readAgain()">
         <RefreshCw :size="15" :class="{ 'animate-spin': busy === 'read' }" /> {{ busy === 'read' ? $t('Leyendo…') : $t('Leer de nuevo') }}
       </button>
       <span v-if="leftFolders" class="text-xs text-stone-500">
@@ -705,13 +705,13 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
 
 <style>
 .photo-links-rows .photo-link {
-  color: #065f46;
+  color: var(--color-emerald-800);
 }
 .photo-links-rows .photo-link:hover {
   text-decoration: underline;
 }
 .photo-links-rows .tabulator-row.is-picked .tabulator-cell {
-  background: #d1fae5;
+  background: var(--color-emerald-100);
 }
 .photo-links-rows .tabulator-row {
   cursor: pointer;
@@ -730,7 +730,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
   }
 }
 .photo-links-rows .tabulator-cell.is-flagged {
-  background: #fffbeb;
-  color: #78350f;
+  background: var(--color-amber-50);
+  color: var(--color-amber-900);
 }
 </style>

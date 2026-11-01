@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1f4d3a" />
+    <meta name="color-scheme" content="light dark" />
+    <script src="../theme-boot.js"></script>
     <meta name="robots" content="noindex" />
     <link rel="icon" href="../mark.svg?v=3" />
     <link rel="manifest" href="./manifest.webmanifest" />
@@ -12,36 +14,57 @@
     <meta name="apple-mobile-web-app-title" content="Prueba IA" />
     <title>Prueba: identificador sin conexión</title>
     <style>
-      :root { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1c1917; background: #f5f5f4; }
+      /* Light and dark as the app (src/style.css role tokens): the system's choice, or the one picked in the app's user menu. */
+      :root {
+        --canvas: #f5f5f4; --surface: #fff; --sunken: #fafaf9; --fg: #1c1917; --fg-2: #292524; --fg-3: #44403c; --muted: #57534e;
+        --border: #e7e5e4; --border-strong: #d6d3d1; --control: #8a837d; --brand: #1f4d3a; --brand-text: #1f4d3a; --on-brand: #fff;
+        --warn: #fef3c7; --warn-edge: #b45309; --err: #fee2e2; --err-edge: #c62828; --ok: #166534; --low: #9a3412;
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
+        --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff;
+        --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme]) {
+          --canvas: #0e1210; --surface: #151a18; --sunken: #1b211e; --fg: #e9ece9; --fg-2: #dde1de; --fg-3: #c8cec9; --muted: #b2b9b4;
+          --border: #2c312f; --border-strong: #4b544f; --control: #6e7772; --brand: #2d6a4f; --brand-text: #7cc6a0; --on-brand: #fff;
+          --warn: #3a2c0c; --warn-edge: #f59e0b; --err: #3d1616; --err-edge: #f87171; --ok: #6ee7b7; --low: #fdba74;
+          color-scheme: dark;
+        }
+      }
+      :root { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--fg); background: var(--canvas); }
       body { margin: 0; padding: 12px; max-width: 720px; margin-inline: auto; }
-      h1 { font-size: 1.25rem; margin: 4px 0 2px; color: #1f4d3a; }
+      h1 { font-size: 1.25rem; margin: 4px 0 2px; color: var(--brand-text); }
       h2 { font-size: 1.05rem; margin: 0 0 8px; }
-      section { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; padding: 12px; margin: 12px 0; }
-      .muted { color: #57534e; font-size: 0.9rem; }
-      .warn { background: #fef3c7; border: 1px solid #f59e0b; padding: 8px 10px; border-radius: 8px; margin: 8px 0; }
-      .err { background: #fee2e2; border: 1px solid #ef4444; padding: 8px 10px; border-radius: 8px; margin: 8px 0; white-space: pre-wrap; }
-      .ok { color: #166534; font-weight: 600; }
-      button, .filebtn { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid #1f4d3a; background: #1f4d3a; color: #fff; cursor: pointer; display: inline-block; margin: 4px 4px 4px 0; }
-      button.light, .filebtn.light { background: #fff; color: #1f4d3a; }
+      section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 12px 0; }
+      .muted { color: var(--muted); font-size: 0.9rem; }
+      .warn { background: var(--warn); border: 1px solid var(--warn-edge); padding: 8px 10px; border-radius: 8px; margin: 8px 0; }
+      .err { background: var(--err); border: 1px solid var(--err-edge); padding: 8px 10px; border-radius: 8px; margin: 8px 0; white-space: pre-wrap; }
+      .ok { color: var(--ok); font-weight: 600; }
+      button, .filebtn { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--brand); background: var(--brand); color: var(--on-brand); cursor: pointer; display: inline-block; margin: 4px 4px 4px 0; }
+      button.light, .filebtn.light { background: var(--surface); color: var(--brand-text); border-color: var(--control); }
       button:disabled { opacity: 0.5; cursor: default; }
       input[type='file'] { display: none; }
-      input[type='text'], input[type='password'], select { font: inherit; padding: 8px; border: 1px solid #a8a29e; border-radius: 6px; width: 100%; box-sizing: border-box; margin: 4px 0; }
+      input[type='text'], input[type='password'], select { font: inherit; padding: 8px; border: 1px solid var(--control); border-radius: 6px; width: 100%; background: var(--surface); color: var(--fg); box-sizing: border-box; margin: 4px 0; }
       progress { width: 100%; height: 18px; }
       table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
-      td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e7e5e4; }
+      td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
       td.num { text-align: right; font-variant-numeric: tabular-nums; }
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
-      canvas { border: 1px solid #d6d3d1; border-radius: 6px; width: 160px; height: 160px; }
-      pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: #fafaf9; padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
+      canvas { border: 1px solid var(--border-strong); border-radius: 6px; width: 160px; height: 160px; }
+      pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; background: var(--sunken); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
       [hidden] { display: none !important; }
-      .stock { font-size: 0.95rem; color: #292524; margin-top: 2px; }
-      .stock .low { color: #9a3412; font-weight: 700; text-decoration: underline 2px; text-underline-offset: 3px; }
-      .stock .genus { color: #44403c; font-size: 0.85rem; }
-      #stockNote { border-top: 1px solid #e7e5e4; padding: 6px 4px; }
-      .option { border-top: 1px solid #e7e5e4; padding: 8px 0 4px; }
-      fieldset { border: 1px solid #e7e5e4; border-radius: 8px; margin: 8px 0; padding: 6px 10px; }
+      .stock { font-size: 0.95rem; color: var(--fg-2); margin-top: 2px; }
+      .stock .low { color: var(--low); font-weight: 700; text-decoration: underline 2px; text-underline-offset: 3px; }
+      .stock .genus { color: var(--fg-3); font-size: 0.85rem; }
+      #stockNote { border-top: 1px solid var(--border); padding: 6px 4px; }
+      .option { border-top: 1px solid var(--border); padding: 8px 0 4px; }
+      fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; padding: 6px 10px; }
       fieldset label { display: block; padding: 4px 0; }
-      a.back { display: inline-block; color: #1f4d3a; font-weight: 600; text-decoration: none; padding: 6px 0; }
+      a.back { display: inline-block; color: var(--brand-text); font-weight: 600; text-decoration: none; padding: 6px 0; }
     </style>
   </head>
   <body>

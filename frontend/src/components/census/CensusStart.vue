@@ -48,7 +48,7 @@ const short = (s: string) => s.split(' ').slice(1).join(' ') || s
 const genus = (s: string) => s.split(' ')[0]
 const dayOf = (iso: string) => dayLabel(iso).split(' · ')[0]
 const choice = (on: boolean) =>
-  on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>
@@ -67,7 +67,7 @@ const choice = (on: boolean) =>
       <ul class="grid gap-2 sm:grid-cols-2">
         <li v-for="c in census.overview.value.open" :key="c.id">
           <button
-            class="flex w-full items-center gap-3 rounded-xl border-2 border-brand-600 bg-white px-3 py-3 text-left shadow-sm active:bg-brand-50"
+            class="flex w-full items-center gap-3 rounded-xl border-2 border-brand-600 bg-surface px-3 py-3 text-left shadow-sm active:bg-brand-50"
             @click="census.open(c.id)"
           >
             <span class="min-w-0 flex-1">
@@ -80,14 +80,14 @@ const choice = (on: boolean) =>
                 <template v-if="c.people.length"> · <Users :size="13" class="inline" /> {{ c.people.join(', ') }}</template>
               </span>
             </span>
-            <span class="shrink-0 rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white">{{ $t('Unirme') }}</span>
+            <span class="shrink-0 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white">{{ $t('Unirme') }}</span>
           </button>
         </li>
       </ul>
     </section>
 
     <!-- A new census: the day, then one tap on the species. -->
-    <section v-if="session.canEdit" class="mb-6 rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
+    <section v-if="session.canEdit" class="mb-6 rounded-xl border border-stone-200 bg-surface p-3 shadow-sm">
       <h2 class="mb-2 text-base font-semibold text-stone-800">{{ $t('Nuevo censo') }}</h2>
       <span class="field-label">{{ $t('Fecha del censo') }}</span>
       <div class="grid max-w-md grid-cols-[1fr_1fr_minmax(9rem,1.4fr)] gap-2">
@@ -112,7 +112,7 @@ const choice = (on: boolean) =>
       <ul class="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-2">
         <li v-for="s in shownSpecies" :key="s.species">
           <button
-            class="flex min-h-14 w-full items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-left active:bg-brand-50 disabled:opacity-60"
+            class="flex min-h-14 w-full items-center gap-2 rounded-lg border border-stone-300 bg-surface px-3 py-2 text-left active:bg-brand-50 disabled:opacity-60"
             :disabled="!!busy || !!dayError"
             @click="start(s.species)"
           >
@@ -148,7 +148,7 @@ const choice = (on: boolean) =>
       <p v-if="census.overview.value && !census.overview.value.history.length" class="text-sm text-stone-500">
         {{ $t('Aún no hay censos.') }}
       </p>
-      <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-surface">
         <li v-for="c in census.overview.value?.history ?? []" :key="c.id">
           <button class="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-stone-50" @click="census.open(c.id)">
             <span class="w-24 shrink-0 text-sm font-medium text-stone-700">{{ dayOf(c.day) }}</span>

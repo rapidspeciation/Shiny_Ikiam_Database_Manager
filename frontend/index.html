@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1f4d3a" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The page's colour before the styles load, also without theme-boot.js (offline, first visit). -->
+    <style>
+      html { background: #fafaf9; }
+      html[data-theme='dark'] { background: #0e1210; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme='light']) { background: #0e1210; } }
+    </style>
+    <script src="./theme-boot.js"></script>
     <link rel="icon" href="./mark.svg?v=3" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.c37274247d.png" />

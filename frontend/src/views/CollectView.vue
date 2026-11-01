@@ -175,7 +175,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
     <button
       v-if="touchScreen"
       type="button"
-      class="flex w-full items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 text-left text-sm"
+      class="flex w-full items-center gap-2 border-b border-stone-200 bg-surface px-3 py-2 text-left text-sm"
       :aria-expanded="headerOpen"
       @click="headerOpen = !headerOpen"
     >
@@ -275,12 +275,12 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <button class="btn-ghost" :aria-label="$t('Cerrar')" @click="lastSave = null"><X :size="15" /></button>
     </div>
 
-    <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2" :style="{ '--sticky-bar-height': `${stickyBarHeight}px` }">
+    <div v-if="drafts.length" class="border-b border-stone-200 bg-surface px-3 pb-2" :style="{ '--sticky-bar-height': `${stickyBarHeight}px` }">
       <!-- Always in sight while scrolling the list, and kept to one line: how long it is, how to trim it. -->
       <div
         ref="stickyBar"
         data-sticky-bar
-        class="sticky top-0 z-10 -mx-3 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5 text-sm"
+        class="sticky top-0 z-10 -mx-3 flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-1.5 text-sm"
       >
         <span class="font-semibold whitespace-nowrap">{{ $tn(drafts.length, '{n} fila', '{n} filas') }}</span>
         <span v-if="emptyCount" class="whitespace-nowrap text-amber-800">{{ $t('{n} vacías', { n: emptyCount }) }}</span>

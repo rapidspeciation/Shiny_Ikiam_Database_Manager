@@ -114,7 +114,7 @@ async function copy() {
   }
 }
 const chip = (on: boolean) =>
-  on ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-inverse bg-inverse text-on-inverse' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>

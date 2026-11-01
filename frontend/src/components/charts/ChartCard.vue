@@ -14,7 +14,7 @@ const showTable = ref(false)
 </script>
 
 <template>
-  <section class="min-w-0 rounded-md border border-stone-200 bg-white p-3">
+  <section class="min-w-0 rounded-md border border-stone-200 bg-surface p-3">
     <header class="mb-1 flex items-start gap-3">
       <div class="min-w-0 flex-1">
         <h3 class="text-sm font-semibold text-stone-900">{{ title }}</h3>
@@ -26,7 +26,7 @@ const showTable = ref(false)
     </header>
     <div v-if="showTable && table" class="max-h-72 overflow-auto text-xs">
       <table class="w-full">
-        <thead class="sticky top-0 bg-white text-stone-500">
+        <thead class="sticky top-0 bg-surface text-stone-500">
           <tr>
             <th v-for="(h, i) in table.head" :key="h" class="px-1 py-1" :class="i ? 'text-right' : 'text-left'">{{ h }}</th>
           </tr>

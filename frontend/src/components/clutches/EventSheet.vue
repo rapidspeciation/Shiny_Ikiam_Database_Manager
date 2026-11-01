@@ -124,7 +124,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <section class="mt-2 rounded-xl border-2 border-brand-600 bg-white p-3 shadow-sm" role="region" :aria-label="label">
+  <section class="mt-2 rounded-xl border-2 border-brand-600 bg-surface p-3 shadow-sm" role="region" :aria-label="label">
       <header class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
           <h3 class="text-lg font-semibold tabular-nums" :class="term < 0 ? 'text-red-800' : ''">
@@ -210,9 +210,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </template>
             <template v-else>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="button" class="flex h-10 items-center rounded-full border border-red-300 bg-white px-3 text-sm font-semibold text-red-800" @click="lossKind = null">{{ lossWord(lossKind) }}</button>
+                <button type="button" class="flex h-10 items-center rounded-full border border-red-300 bg-surface px-3 text-sm font-semibold text-red-800" @click="lossKind = null">{{ lossWord(lossKind) }}</button>
                 <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
-                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
+                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
                   <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
                   <input
                     ref="lossBox"
@@ -262,7 +262,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <p v-if="e" class="text-xs text-red-900">{{ $t('Se borra el evento con su término; sus fotos quedan como fotos del día.') }}</p>
           <div class="mt-2 flex gap-2">
             <button type="button" class="btn h-11 flex-1" @click="confirming = false">{{ $t('Cancelar') }}</button>
-            <button type="button" class="h-11 flex-1 rounded-lg bg-red-700 px-3 font-semibold text-white" @click="emit('remove')">
+            <button type="button" class="h-11 flex-1 rounded-lg bg-danger px-3 font-semibold text-white" @click="emit('remove')">
               <Trash2 :size="16" class="-mt-0.5 inline" /> {{ $t('Quitar de la suma') }}
             </button>
           </div>

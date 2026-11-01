@@ -45,8 +45,8 @@ async function submit() {
 </script>
 
 <template>
-  <div class="grid min-h-full place-items-center bg-brand-700 p-4">
-    <form class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" @submit.prevent="submit">
+  <div class="grid min-h-full place-items-center bg-brand p-4">
+    <form class="w-full max-w-sm rounded-lg bg-surface p-6 shadow-xl" @submit.prevent="submit">
       <div class="mb-5 flex items-center gap-2">
         <img src="/mark.svg?v=3" alt="" class="h-12 w-12" />
         <div>

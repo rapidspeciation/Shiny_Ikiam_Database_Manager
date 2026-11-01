@@ -96,7 +96,7 @@ const title = computed(() =>
 
 <template>
   <aside
-    class="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col rounded-t-xl border-t border-stone-300 bg-white shadow-2xl sm:static sm:z-auto sm:max-h-none sm:w-[24rem] sm:flex-none sm:rounded-none sm:border-t-0 sm:border-l sm:shadow-none xl:w-[27rem]"
+    class="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col rounded-t-xl border-t border-stone-300 bg-surface shadow-2xl sm:static sm:z-auto sm:max-h-none sm:w-[24rem] sm:flex-none sm:rounded-none sm:border-t-0 sm:border-l sm:shadow-none xl:w-[27rem]"
     :aria-label="title"
   >
     <header class="flex items-start gap-2 border-b border-stone-200 px-3 py-2">
@@ -111,7 +111,7 @@ const title = computed(() =>
         <button
           type="button"
           class="px-2 py-1.5"
-          :class="!wholeRow ? 'bg-stone-800 text-white' : 'hover:bg-stone-100'"
+          :class="!wholeRow ? 'bg-inverse text-on-inverse' : 'hover:bg-stone-100'"
           :aria-pressed="!wholeRow"
           @click="wholeRow = false"
         >
@@ -120,7 +120,7 @@ const title = computed(() =>
         <button
           type="button"
           class="border-l border-stone-300 px-2 py-1.5"
-          :class="wholeRow ? 'bg-stone-800 text-white' : 'hover:bg-stone-100'"
+          :class="wholeRow ? 'bg-inverse text-on-inverse' : 'hover:bg-stone-100'"
           :aria-pressed="wholeRow"
           @click="wholeRow = true"
         >
@@ -144,7 +144,7 @@ const title = computed(() =>
           <li
             v-for="(edit, i) in history.edits"
             :key="edit.first"
-            class="rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm shadow-xs"
+            class="rounded-md border border-stone-200 bg-surface px-2.5 py-2 text-sm shadow-xs"
           >
             <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span class="text-xs font-medium text-stone-800 tabular-nums">{{ momentRange(edit.start, edit.end) }}</span>

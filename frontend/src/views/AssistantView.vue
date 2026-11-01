@@ -255,7 +255,7 @@ onMounted(async () => {
         v-if="t3Url"
         class="flex items-center gap-1 rounded px-2 py-0.5"
         :class="
-          fresh ? 'animate-pulse bg-emerald-600 text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
+          fresh ? 'animate-pulse bg-fill-emerald text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
         "
         :title="panel ? $t('Ocultar los cambios propuestos') : $t('Mostrar los cambios propuestos')"
         @click="panel = !panel"
@@ -264,7 +264,7 @@ onMounted(async () => {
       </button>
       <button
         v-if="t3Url"
-        class="flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        class="flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:bg-transparent disabled:hover:text-stone-500"
         :disabled="!chatOnScreen"
         :title="chatOnScreen ? $t('Copiar un enlace a este chat para otra persona del equipo') : $t('Abre un chat para copiar su enlace')"
         @click="copyChatLink"

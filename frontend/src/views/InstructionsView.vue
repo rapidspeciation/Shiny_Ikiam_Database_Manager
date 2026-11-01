@@ -127,7 +127,7 @@ watch(
     <div v-else class="flex min-h-0 flex-1">
       <!-- Every file; on phones the list alone until one is chosen. -->
       <nav
-        class="w-full shrink-0 overflow-y-auto border-r border-stone-200 bg-white py-2 md:block md:w-72"
+        class="w-full shrink-0 overflow-y-auto border-r border-stone-200 bg-surface py-2 md:block md:w-72"
         :class="chosenId ? 'hidden' : 'block'"
         :aria-label="$t('Archivos de instrucciones')"
       >
@@ -172,7 +172,7 @@ watch(
               </p>
               <p class="mt-2 text-sm text-stone-600">{{ about }}</p>
               <!-- A skill's or subagent's description: how the model decides to use it. -->
-              <dl v-if="entry.meta" class="mt-2 space-y-1 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm">
+              <dl v-if="entry.meta" class="mt-2 space-y-1 rounded-md border border-stone-200 bg-surface px-3 py-2 text-sm">
                 <div v-if="entry.meta.description">
                   <dt class="mr-1 inline font-medium text-stone-700">{{ $t('Cuándo se usa') }}:</dt>
                   <dd class="inline text-stone-700">{{ entry.meta.description }}</dd>
@@ -184,11 +184,11 @@ watch(
                 </div>
               </dl>
               <div class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                <div class="inline-flex rounded-md border border-stone-300 bg-white p-0.5" role="tablist">
+                <div class="inline-flex rounded-md border border-stone-300 bg-surface p-0.5" role="tablist">
                   <button
                     role="tab"
                     class="rounded px-3 py-1"
-                    :class="tab === 'text' ? 'bg-brand-700 text-white' : 'text-stone-700 hover:bg-stone-100'"
+                    :class="tab === 'text' ? 'bg-brand text-white' : 'text-stone-700 hover:bg-stone-100'"
                     :aria-selected="tab === 'text'"
                     @click="setTab('text')"
                   >
@@ -197,7 +197,7 @@ watch(
                   <button
                     role="tab"
                     class="flex items-center gap-1 rounded px-3 py-1"
-                    :class="tab === 'history' ? 'bg-brand-700 text-white' : 'text-stone-700 hover:bg-stone-100'"
+                    :class="tab === 'history' ? 'bg-brand text-white' : 'text-stone-700 hover:bg-stone-100'"
                     :aria-selected="tab === 'history'"
                     @click="setTab('history')"
                   >
@@ -212,7 +212,7 @@ watch(
 
             <template v-if="tab === 'text'">
               <!-- On narrow screens the contents fold above the text. -->
-              <details v-if="toc.length" class="mt-3 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm xl:hidden">
+              <details v-if="toc.length" class="mt-3 rounded-md border border-stone-200 bg-surface px-3 py-2 text-sm xl:hidden">
                 <summary class="cursor-pointer font-medium text-stone-700">{{ $t('En esta página') }}</summary>
                 <ul class="mt-1 space-y-0.5">
                   <li v-for="h in toc" :key="h.id" :class="{ 'pl-3': h.level === 3 }">
@@ -232,7 +232,7 @@ watch(
               </p>
               <p v-else-if="!entry.history.length" class="text-sm text-stone-600">{{ $t('Sin cambios registrados todavía.') }}</p>
               <ol v-else class="space-y-2">
-                <li v-for="c in entry.history" :key="c.commit" class="rounded-md border border-stone-200 bg-white">
+                <li v-for="c in entry.history" :key="c.commit" class="rounded-md border border-stone-200 bg-surface">
                   <button class="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-stone-50" @click="toggle(c.commit)">
                     <component
                       :is="opened.has(`${entry.id} ${c.commit}`) ? ChevronDown : ChevronRight"

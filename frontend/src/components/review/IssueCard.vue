@@ -106,9 +106,9 @@ async function toggleHistory() {
 </script>
 
 <template>
-  <article class="rounded-lg border border-stone-200 bg-white p-2.5 shadow-sm">
+  <article class="rounded-lg border border-stone-200 bg-surface p-2.5 shadow-sm">
     <header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-      <span class="rounded bg-stone-800 px-1.5 py-0.5 text-xs font-medium text-white">{{ $t(kindLabel) }}</span>
+      <span class="rounded bg-inverse px-1.5 py-0.5 text-xs font-medium text-on-inverse">{{ $t(kindLabel) }}</span>
       <span
         v-if="i.strength"
         class="rounded px-1.5 py-0.5 text-xs font-medium"

@@ -25,7 +25,7 @@ const sexes = computed<{ value: SexFilter; label: string; title: string }[]>(() 
 
 <template>
   <div class="flex flex-wrap items-center gap-2">
-    <div class="flex overflow-hidden rounded-lg border border-stone-300 bg-white" role="group" :aria-label="$t('Sexo visto')">
+    <div class="flex overflow-hidden rounded-lg border border-stone-300 bg-surface" role="group" :aria-label="$t('Sexo visto')">
       <button
         v-for="s in sexes"
         :key="s.value"
@@ -35,10 +35,10 @@ const sexes = computed<{ value: SexFilter; label: string; title: string }[]>(() 
           s.value === 'female' || s.value === 'male' ? 'text-xl leading-none' : 'text-sm',
           sex === s.value
             ? s.value === 'female'
-              ? 'bg-pink-600 text-white'
+              ? 'bg-fill-pink text-white'
               : s.value === 'male'
-                ? 'bg-sky-600 text-white'
-                : 'bg-brand-700 text-white'
+                ? 'bg-fill-sky text-white'
+                : 'bg-brand text-white'
             : 'text-stone-700 active:bg-stone-100',
         ]"
         :aria-pressed="sex === s.value"
@@ -52,7 +52,7 @@ const sexes = computed<{ value: SexFilter; label: string; title: string }[]>(() 
     <select
       v-if="speciesList"
       v-model="species"
-      class="h-10 max-w-60 min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-2 text-sm"
+      class="h-10 max-w-60 min-w-0 flex-1 rounded-lg border border-stone-300 bg-surface px-2 text-sm"
       :aria-label="$t('Especie vista')"
     >
       <option value="">{{ $t('Cualquier especie') }}</option>

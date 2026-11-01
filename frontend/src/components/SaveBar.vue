@@ -90,7 +90,7 @@ function discard() {
   <div
     v-if="pending.changeCount"
     class="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-sm sm:px-4"
-    :class="pending.autoSave && !errorCount ? 'border-stone-200 bg-white' : 'border-amber-300 bg-amber-50'"
+    :class="pending.autoSave && !errorCount ? 'border-stone-200 bg-surface' : 'border-amber-300 bg-amber-50'"
   >
     <span v-if="pending.autoSave && pending.saving" class="flex items-center gap-1.5 font-medium text-stone-700">
       <Loader2 :size="15" class="animate-spin" />
@@ -117,7 +117,7 @@ function discard() {
       <AlertTriangle :size="15" class="shrink-0" /> {{ $tn(errorCount, '{n} celda sin guardar:', '{n} celdas sin guardar:') }}
       <span class="truncate font-normal">{{ issues[0] }}</span>
     </button>
-    <span v-if="!online" class="rounded bg-stone-700 px-2 py-0.5 text-xs text-white">{{ $t('Sin conexión') }}</span>
+    <span v-if="!online" class="rounded bg-inverse px-2 py-0.5 text-xs text-on-inverse">{{ $t('Sin conexión') }}</span>
     <!-- Sent, and kept by the server until Google answers (server/outbox.mjs): written on their own. -->
     <span
       v-if="pending.queuedCount"
@@ -162,7 +162,7 @@ function discard() {
   </div>
   <div
     v-else-if="justSaved"
-    class="flex items-center gap-1.5 border-t border-stone-200 bg-white px-3 py-1.5 text-xs text-brand-700 sm:px-4"
+    class="flex items-center gap-1.5 border-t border-stone-200 bg-surface px-3 py-1.5 text-xs text-brand-700 sm:px-4"
     role="status"
   >
     <CheckCircle2 :size="14" />

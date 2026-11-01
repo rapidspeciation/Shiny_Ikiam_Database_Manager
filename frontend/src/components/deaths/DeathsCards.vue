@@ -1185,7 +1185,7 @@ const line = (f: Facts) =>
     .filter(Boolean)
     .join(' · ')
 const choice = (on: boolean) =>
-  on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+  on ? 'border-brand bg-brand text-white' : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100'
 </script>
 
 <template>
@@ -1204,7 +1204,7 @@ const choice = (on: boolean) =>
   >
     <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto" @click="onEmptyClick">
       <!-- The search stays at the top while the cards scroll. -->
-      <div ref="searchBar" data-search-bar class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
+      <div ref="searchBar" data-search-bar class="sticky top-0 z-20 border-b border-stone-200 bg-surface px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
         <div class="flex items-start gap-2">
           <div class="relative min-w-0 flex-1">
             <div class="relative">
@@ -1212,7 +1212,7 @@ const choice = (on: boolean) =>
               <input
                 ref="searchInput"
                 v-model="query"
-                class="h-13 w-full rounded-xl border border-stone-300 bg-white pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
+                class="h-13 w-full rounded-xl border border-stone-300 bg-surface pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
                 :placeholder="$t('Insectary ID, CAM o tubo (A?B, A[16]B)')"
                 :aria-label="$t('Buscar una mariposa por Insectary ID, CAM o tubo')"
                 type="text"
@@ -1244,7 +1244,7 @@ const choice = (on: boolean) =>
           <EntryModeToggle v-model="mode" :compact="!roomy" class="h-13 shrink-0 short:h-11 *:min-w-11" />
           <!-- Today's saves of Muertes, to see and undo an accident. -->
           <button
-            class="flex h-13 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-white px-2 text-sm text-stone-700 active:bg-stone-100 short:h-11"
+            class="flex h-13 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-surface px-2 text-sm text-stone-700 active:bg-stone-100 short:h-11"
             :aria-label="$t('Historial de Muertes')"
             :title="$t('Historial de Muertes')"
             @click="showHistory = true"
@@ -1265,7 +1265,7 @@ const choice = (on: boolean) =>
              stays for the next ID. Ctrl/Shift-click or a long press adds it beside the others. -->
         <ul
           v-if="focused && suggestions.length"
-          class="absolute inset-x-3 top-full z-30 mt-1 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
+          class="absolute inset-x-3 top-full z-30 mt-1 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-surface shadow-lg"
           :style="{ maxHeight: `${listHeight}px` }"
           role="listbox"
         >
@@ -1304,7 +1304,7 @@ const choice = (on: boolean) =>
             <button
               v-for="id in typedMissing ? typedMissing.alike : missingAlike"
               :key="id"
-              class="h-11 rounded-lg border border-brand-600 bg-white px-4 font-semibold text-brand-800"
+              class="h-11 rounded-lg border border-brand-600 bg-surface px-4 font-semibold text-brand-800"
               @mousedown.prevent
               @click="choose(id)"
             >
@@ -1315,7 +1315,7 @@ const choice = (on: boolean) =>
         <!-- Choosing cards on a touch screen (a long press on one): each tap adds or takes one out; «Listo» shows them in the panel. -->
         <div
           v-if="ready && canEdit && selecting"
-          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
+          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
           role="status"
           data-selecting
         >
@@ -1325,7 +1325,7 @@ const choice = (on: boolean) =>
             <span class="block text-xs opacity-90 short:hidden">{{ $t('Toca las tarjetas para añadirlas o quitarlas') }}</span>
           </p>
           <button
-            class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
+            class="h-10 shrink-0 rounded-lg bg-surface px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
             @click="doneSelecting"
           >
             {{ $t('Listo') }}
@@ -1334,7 +1334,7 @@ const choice = (on: boolean) =>
         <!-- «Seleccionar varias»: always in sight, with what a tap on an ID will do. -->
         <div
           v-else-if="ready && canEdit && several"
-          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
+          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
           role="status"
           data-several
         >
@@ -1344,7 +1344,7 @@ const choice = (on: boolean) =>
             <span class="block text-xs opacity-90 short:hidden">{{ $t('Cada ID que toques se añade o se quita') }}</span>
           </p>
           <button
-            class="flex h-10 shrink-0 items-center gap-1 rounded-lg bg-white px-3 text-sm font-semibold text-brand-800 active:bg-brand-50"
+            class="flex h-10 shrink-0 items-center gap-1 rounded-lg bg-surface px-3 text-sm font-semibold text-brand-800 active:bg-brand-50"
             :aria-label="$t('Salir de la selección: una a una')"
             @click="leaveSeveral"
           >
@@ -1367,7 +1367,7 @@ const choice = (on: boolean) =>
           </p>
           <button
             v-if="canEdit"
-            class="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 active:bg-stone-100"
+            class="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-stone-300 bg-surface px-3 text-sm font-medium text-stone-800 active:bg-stone-100"
             :aria-pressed="false"
             @mousedown.prevent
             @click="enterSeveral"
@@ -1382,7 +1382,7 @@ const choice = (on: boolean) =>
       <Teleport to="#deaths-register" defer :disabled="!wide">
         <section v-if="canEdit && !unfolded" class="px-3 pt-3">
           <button
-            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-left text-sm active:bg-stone-100"
+            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-stone-300 bg-surface px-3 py-2 text-left text-sm active:bg-stone-100"
             :aria-expanded="false"
             data-panel-folded
             @click="panelOpen = true"
@@ -1399,7 +1399,7 @@ const choice = (on: boolean) =>
           <!-- Whose death the choices below are: the next butterflies', one card's, or a recorded one being corrected. -->
           <div
             class="sticky top-0 z-10 -mx-3 flex min-h-12 items-center gap-2 border-y px-3 py-1.5"
-            :class="panelMode === 'defaults' ? 'border-stone-200 bg-stone-100 text-stone-800' : 'border-brand-700 bg-brand-700 text-white'"
+            :class="panelMode === 'defaults' ? 'border-stone-200 bg-stone-100 text-stone-800' : 'border-brand bg-brand text-white'"
             role="status"
             data-applies
           >
@@ -1425,7 +1425,7 @@ const choice = (on: boolean) =>
             </p>
             <button
               v-if="panelMode !== 'defaults'"
-              class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
+              class="h-10 shrink-0 rounded-lg bg-surface px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
               :title="shortcut ? 'Esc' : undefined"
               @click="closePanel"
             >
@@ -1528,7 +1528,7 @@ const choice = (on: boolean) =>
             </h2>
             <!-- A recorded death keeps its preservation here (Tubos changes it, or undo and add it again). -->
             <template v-if="panelMode === 'recorded'">
-              <p class="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-medium">{{ preservationLine(editingRow!) }}</p>
+              <p class="rounded-lg border border-stone-200 bg-surface px-3 py-2 text-sm font-medium">{{ preservationLine(editingRow!) }}</p>
               <p class="mt-1 text-xs text-stone-500">
                 {{ $t('Para cambiarla: Tubos, o «Deshacer muerte» y añadirla otra vez.') }}
               </p>
@@ -1582,7 +1582,7 @@ const choice = (on: boolean) =>
               <div
                 v-if="showPreservation"
                 ref="details"
-                class="mt-2 rounded-xl border bg-white p-3 transition-shadow duration-700"
+                class="mt-2 rounded-xl border bg-surface p-3 transition-shadow duration-700"
                 :class="flash ? 'border-brand-600 shadow-[0_0_0_4px_var(--color-brand-100)]' : 'border-stone-200'"
               >
                 <p class="text-sm text-stone-600 short:hidden">
@@ -1630,7 +1630,7 @@ const choice = (on: boolean) =>
                         :data-sample="`${idOf(row)}:cam`"
                         class="field-input h-11 text-base uppercase"
                         :class="{
-                          'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.cam === 'missing',
+                          'border-amber-500 bg-surface ring-2 ring-amber-200': gapById.get(idOf(row))?.cam === 'missing',
                           'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.cam === 'repeated',
                         }"
                         :placeholder="$t('Falta')"
@@ -1654,7 +1654,7 @@ const choice = (on: boolean) =>
                         :data-sample="`${idOf(row)}:tube`"
                         class="field-input h-11 text-base uppercase"
                         :class="{
-                          'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.tube === 'missing',
+                          'border-amber-500 bg-surface ring-2 ring-amber-200': gapById.get(idOf(row))?.tube === 'missing',
                           'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.tube === 'repeated',
                         }"
                         :placeholder="$t('Falta')"
@@ -1703,7 +1703,7 @@ const choice = (on: boolean) =>
                 v-for="p in DEATH_NOTE_PHRASES"
                 :key="p"
                 type="button"
-                class="min-h-10 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100"
+                class="min-h-10 rounded-full border border-stone-300 bg-surface px-3 text-sm active:bg-stone-100"
                 @click="addPhrase(p)"
               >
                 {{ p }}
@@ -1772,7 +1772,7 @@ const choice = (on: boolean) =>
           <li
             v-for="row in cardRows"
             :key="row.id"
-            class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm"
+            class="relative flex flex-col rounded-xl border-2 bg-surface shadow-sm"
             :class="[
               isSelected(row) ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200',
               pulsing && sameId(pulsing, idOf(row)) ? 'card-pulse' : '',
@@ -1903,7 +1903,7 @@ const choice = (on: boolean) =>
       <footer
         v-if="canEdit && (footer || wide)"
         ref="footerEl"
-        class="relative z-20 shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] short:pt-1.5 short:pb-1.5"
+        class="relative z-20 shrink-0 border-t border-stone-200 bg-surface px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] short:pt-1.5 short:pb-1.5"
         :class="{ hidden: cramped }"
       >
         <p v-if="!footer" class="py-2 text-sm text-stone-500">

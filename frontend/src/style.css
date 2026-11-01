@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import 'tailwindcss' theme(static);
 
 @font-face {
   font-family: 'Fira Sans';
@@ -21,14 +21,377 @@
 
 /* A short screen: a phone held sideways (bars and boxes get more compact). */
 @custom-variant short (@media (max-height: 520px));
+/* dark:… for the rare rule the tokens below cannot carry. The theme is set on <html> (lib/theme.ts). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * Colour roles (.work/ui-overhaul-20261031/PRINCIPLES.md §5), light on :root and dark on [data-theme='dark'].
+ * Every pair a view uses is measured (src/lib/__tests__/themeTokens.test.ts holds the ratios).
+ */
+:root {
+  --canvas: #fafaf9;
+  --surface: #ffffff;
+  --surface-sunken: #f5f5f4;
+  --surface-raised: #ffffff;
+  --fg: #1c1917;
+  --fg-muted: #57534e;
+  --fg-subtle: #6f6964;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --border-control: #8a837d;
+  --brand: #1f4d3a;
+  --brand-hover: #173a2c;
+  --on-brand: #ffffff;
+  --on-brand-muted: #cfe3d7;
+  --brand-text: #1f4d3a;
+  --brand-soft: #e6f1eb;
+  --focus: #2d6a4f;
+  --focus-on-brand: #ffffff;
+  --select: #e3f0e8;
+  --cell-formula: #f1f2ee;
+  --cell-pending: #fdf0c4;
+  --pending-text: #7a3d0b;
+  --pending-edge: #b45309;
+  --cell-error: #fde0e0;
+  --error-text: #991b1b;
+  --error-edge: #c62828;
+  --success-text: #065f46;
+  --danger: #b91c1c;
+  --on-danger: #ffffff;
+  /* Toasts and a picked neutral chip: dark on light, light on dark. */
+  --inverse: #292524;
+  --on-inverse: #ffffff;
+  /* Behind photos in their viewers: dark in both themes, so a photo is never framed in white. */
+  --photo-mat: #1c1917;
+  --on-photo: #f5f5f4;
+  --on-photo-muted: #d6d3d1;
+  --on-photo-warn: #fde68a;
+  /* The assistant's values (green) and the person's (blue) in Cambios propuestos; edited in the sheet (violet). */
+  --cell-ai: #ecfdf5;
+  --cell-ai-edge: #059669;
+  --cell-ai-text: #064e3b;
+  --cell-person: #eff6ff;
+  --cell-person-edge: #3b82f6;
+  --cell-person-text: #1e3a8a;
+  --cell-sheet-edit: #f5f3ff;
+  --cell-sheet-edit-edge: #7c3aed;
+  --cell-sheet-edit-text: #4c1d95;
+  /* The Buscador's cells showing the searched text, and the match in focus. */
+  --cell-match: #c9ebd6;
+  --cell-match-strong: #a9dcbd;
+  --match-edge: #3f8a66;
+  /* Cells picked with the mouse or Shift+arrows (Tabulator's range): its blue, with the edge on the range. */
+  --range: #9abcea;
+  --range-edge: #2975dd;
+  --range-head: #d6d6d6;
+  --range-head-picked: #3876ca;
+  --shadow: rgb(0 0 0 / 0.18);
+}
+[data-theme='dark'] {
+  --canvas: #0e1210;
+  --surface: #151a18;
+  --surface-sunken: #1b211e;
+  --surface-raised: #202723;
+  --fg: #e9ece9;
+  --fg-muted: #b2b9b4;
+  --fg-subtle: #959d98;
+  --border: rgb(255 255 255 / 0.1);
+  --border-strong: rgb(255 255 255 / 0.16);
+  --border-control: #6e7772;
+  --brand: #2d6a4f;
+  --brand-hover: #357a5b;
+  --on-brand: #ffffff;
+  --on-brand-muted: #d5e8dd;
+  --brand-text: #7cc6a0;
+  --brand-soft: #1a2e25;
+  --focus: #7cc6a0;
+  --focus-on-brand: #ffffff;
+  --select: #1d3328;
+  --cell-formula: #1a1f1c;
+  --cell-pending: #3a2c0c;
+  --pending-text: #fcd34d;
+  --pending-edge: #f59e0b;
+  --cell-error: #3d1616;
+  --error-text: #fca5a5;
+  --error-edge: #f87171;
+  --success-text: #6ee7b7;
+  --danger: #c62828;
+  --on-danger: #ffffff;
+  --inverse: #dde1de;
+  --on-inverse: #151a18;
+  --photo-mat: #0b0e0d;
+  --on-photo: #e9ece9;
+  --on-photo-muted: #c4cbc6;
+  --on-photo-warn: #fde68a;
+  --cell-ai: #10291f;
+  --cell-ai-edge: #34d399;
+  --cell-ai-text: #a7f3d0;
+  --cell-person: #13223d;
+  --cell-person-edge: #60a5fa;
+  --cell-person-text: #bfdbfe;
+  --cell-sheet-edit: #241a3d;
+  --cell-sheet-edit-edge: #a78bfa;
+  --cell-sheet-edit-text: #ddd6fe;
+  --cell-match: #1f4a33;
+  --cell-match-strong: #24533a;
+  --match-edge: #6fbb93;
+  --range: #1e3a5f;
+  --range-edge: #60a5fa;
+  --range-head: #2b332e;
+  --range-head-picked: #3876ca;
+  --shadow: rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
 
 @theme {
   --font-sans: 'Fira Sans', system-ui, sans-serif;
   --color-brand-50: #eef5f1;
   --color-brand-100: #d5e8dd;
+  --color-brand-200: #b3d5c2;
+  --color-brand-300: #8cbfa3;
+  --color-brand-500: #3d8a66;
   --color-brand-600: #2d6a4f;
   --color-brand-700: #1f4d3a;
   --color-brand-800: #173a2c;
+  --color-brand-900: #10291f;
+  /* Hint and placeholder greys at 4.5:1 on white, stone-50 and stone-100 (fg-subtle): Tailwind's are 2.6 and 4.4. */
+  --color-stone-400: #6f6964;
+  --color-stone-500: #6f6964;
+  /* Solid fills under a white label: the same in both themes (white on them is ≥ 4.5:1). */
+  --color-fill-emerald: oklch(50.8% 0.118 165.612);
+  --color-fill-emerald-strong: oklch(43.2% 0.095 166.913);
+  --color-fill-pink: oklch(52.5% 0.223 3.958);
+  --color-fill-pink-strong: oklch(45.9% 0.187 3.815);
+  --color-fill-sky: oklch(50% 0.134 242.749);
+  --color-fill-sky-strong: oklch(44.3% 0.11 240.79);
+  --color-fill-violet: oklch(49.1% 0.27 292.581);
+  --color-fill-amber: oklch(55.5% 0.163 48.998);
+  --color-fill-amber-strong: oklch(47.3% 0.137 46.201);
+}
+
+/* The roles as utilities: bg-surface, text-fg-muted, border-control, ring-focus, bg-cell-pending… */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-control: var(--border-control);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-on-brand-muted: var(--on-brand-muted);
+  --color-brand-text: var(--brand-text);
+  --color-brand-soft: var(--brand-soft);
+  --color-focus: var(--focus);
+  --color-focus-on-brand: var(--focus-on-brand);
+  --color-select: var(--select);
+  --color-cell-formula: var(--cell-formula);
+  --color-cell-pending: var(--cell-pending);
+  --color-pending-text: var(--pending-text);
+  --color-pending-edge: var(--pending-edge);
+  --color-cell-error: var(--cell-error);
+  --color-error-text: var(--error-text);
+  --color-error-edge: var(--error-edge);
+  --color-success-text: var(--success-text);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-inverse: var(--inverse);
+  --color-on-inverse: var(--on-inverse);
+  --color-photo-mat: var(--photo-mat);
+  --color-on-photo: var(--on-photo);
+  --color-on-photo-muted: var(--on-photo-muted);
+  --color-on-photo-warn: var(--on-photo-warn);
+}
+
+/*
+ * The palette utilities the components use (text-stone-600, bg-amber-50, border-red-300…) in dark. Each
+ * step keeps its role: the pale steps (50–300) are tinted fills and edges, the deep ones (600–950) are
+ * text and marks. In dark a tint becomes a deep tone of the same hue and an ink a light one, so
+ * `bg-amber-50 text-amber-900` stays a readable amber note; 400 and 500 stay. Stone follows the neutral
+ * roles above (stone-50 = canvas, 100 = sunken, 400–500 = fg-subtle, 600 = fg-muted, 900 = fg).
+ * White surfaces are bg-surface; solid fills under a white label use the fill-* colours, which do not change.
+ */
+[data-theme='dark'] {
+  --color-stone-50: #0e1210;
+  --color-stone-100: #1e2521;
+  --color-stone-200: #2b332e;
+  --color-stone-300: #4b544f;
+  --color-stone-400: #959d98;
+  --color-stone-500: #959d98;
+  --color-stone-600: #b2b9b4;
+  --color-stone-700: #c8cec9;
+  --color-stone-800: #dde1de;
+  --color-stone-900: #e9ece9;
+  --color-stone-950: #f4f6f4;
+  --color-brand-50: #1a2e25;
+  --color-brand-100: #21392d;
+  --color-brand-200: #2c5040;
+  --color-brand-300: #3f7a5e;
+  --color-brand-500: #4f9a76;
+  --color-brand-600: #6fbb93;
+  --color-brand-700: #7cc6a0;
+  --color-brand-800: #9bd5b6;
+  --color-brand-900: #b5e2ca;
+  --color-slate-200: oklch(36% 0.02 257);
+  --color-slate-800: oklch(86% 0.025 257);
+  --color-red-50: oklch(25% 0.035 17.4);
+  --color-red-100: oklch(29% 0.055 17.7);
+  --color-red-200: oklch(36% 0.075 18.3);
+  --color-red-300: oklch(48% 0.1 19.6);
+  --color-red-600: oklch(74% 0.15 27.3);
+  --color-red-700: oklch(80% 0.13 27.5);
+  --color-red-800: oklch(86% 0.1 26.9);
+  --color-red-900: oklch(91% 0.07 25.7);
+  --color-red-950: oklch(95% 0.04 26);
+  --color-orange-50: oklch(25% 0.035 73.7);
+  --color-orange-100: oklch(29% 0.055 75.2);
+  --color-orange-200: oklch(36% 0.075 70.7);
+  --color-orange-300: oklch(48% 0.1 66.3);
+  --color-orange-600: oklch(74% 0.15 41.1);
+  --color-orange-700: oklch(80% 0.13 38.4);
+  --color-orange-800: oklch(86% 0.1 37.3);
+  --color-orange-900: oklch(91% 0.07 38.2);
+  --color-orange-950: oklch(95% 0.04 36.3);
+  --color-amber-50: oklch(25% 0.035 95.3);
+  --color-amber-100: oklch(29% 0.055 95.6);
+  --color-amber-200: oklch(36% 0.075 95.7);
+  --color-amber-300: oklch(48% 0.1 91.6);
+  --color-amber-600: oklch(74% 0.15 58.3);
+  --color-amber-700: oklch(80% 0.13 49);
+  --color-amber-800: oklch(86% 0.1 46.2);
+  --color-amber-900: oklch(91% 0.07 45.9);
+  --color-amber-950: oklch(95% 0.04 45.6);
+  --color-yellow-50: oklch(25% 0.035 102.2);
+  --color-yellow-100: oklch(29% 0.055 103.2);
+  --color-yellow-200: oklch(36% 0.075 101.5);
+  --color-yellow-300: oklch(48% 0.1 98.1);
+  --color-yellow-600: oklch(74% 0.15 75.8);
+  --color-yellow-700: oklch(80% 0.13 66.4);
+  --color-yellow-800: oklch(86% 0.1 61.9);
+  --color-yellow-900: oklch(91% 0.07 57.7);
+  --color-yellow-950: oklch(95% 0.04 53.8);
+  --color-lime-50: oklch(25% 0.035 120.8);
+  --color-lime-100: oklch(29% 0.055 122.3);
+  --color-lime-200: oklch(36% 0.075 124.3);
+  --color-lime-300: oklch(48% 0.1 126.7);
+  --color-lime-600: oklch(74% 0.15 131.7);
+  --color-lime-700: oklch(80% 0.13 131.6);
+  --color-lime-800: oklch(86% 0.1 130.9);
+  --color-lime-900: oklch(91% 0.07 131.1);
+  --color-lime-950: oklch(95% 0.04 132.1);
+  --color-green-50: oklch(25% 0.035 155.8);
+  --color-green-100: oklch(29% 0.055 156.7);
+  --color-green-200: oklch(36% 0.075 156);
+  --color-green-300: oklch(48% 0.1 154.4);
+  --color-green-600: oklch(74% 0.15 149.2);
+  --color-green-700: oklch(80% 0.13 150.1);
+  --color-green-800: oklch(86% 0.1 151.3);
+  --color-green-900: oklch(91% 0.07 152.5);
+  --color-green-950: oklch(95% 0.04 152.9);
+  --color-emerald-50: oklch(25% 0.035 166.1);
+  --color-emerald-100: oklch(29% 0.055 163.1);
+  --color-emerald-200: oklch(36% 0.075 164.2);
+  --color-emerald-300: oklch(48% 0.1 165);
+  --color-emerald-600: oklch(74% 0.145 163.2);
+  --color-emerald-700: oklch(80% 0.118 165.6);
+  --color-emerald-800: oklch(86% 0.095 166.9);
+  --color-emerald-900: oklch(91% 0.07 168.9);
+  --color-emerald-950: oklch(95% 0.04 172.6);
+  --color-teal-50: oklch(25% 0.035 180.7);
+  --color-teal-100: oklch(29% 0.055 180.8);
+  --color-teal-200: oklch(36% 0.075 180.4);
+  --color-teal-300: oklch(48% 0.1 181.1);
+  --color-teal-600: oklch(74% 0.118 184.7);
+  --color-teal-700: oklch(80% 0.096 186.4);
+  --color-teal-800: oklch(86% 0.078 188.2);
+  --color-teal-900: oklch(91% 0.063 188.4);
+  --color-teal-950: oklch(95% 0.04 192.5);
+  --color-sky-50: oklch(25% 0.035 236.6);
+  --color-sky-100: oklch(29% 0.055 236.8);
+  --color-sky-200: oklch(36% 0.075 230.9);
+  --color-sky-300: oklch(48% 0.1 230.3);
+  --color-sky-600: oklch(74% 0.15 242);
+  --color-sky-700: oklch(80% 0.13 242.7);
+  --color-sky-800: oklch(86% 0.1 240.8);
+  --color-sky-900: oklch(91% 0.07 240.9);
+  --color-sky-950: oklch(95% 0.04 243.2);
+  --color-blue-50: oklch(25% 0.035 254.6);
+  --color-blue-100: oklch(29% 0.055 255.6);
+  --color-blue-200: oklch(36% 0.075 254.1);
+  --color-blue-300: oklch(48% 0.1 251.8);
+  --color-blue-600: oklch(74% 0.15 262.9);
+  --color-blue-700: oklch(80% 0.13 264.4);
+  --color-blue-800: oklch(86% 0.1 265.6);
+  --color-blue-900: oklch(91% 0.07 265.5);
+  --color-blue-950: oklch(95% 0.04 267.9);
+  --color-indigo-50: oklch(25% 0.035 272.3);
+  --color-indigo-100: oklch(29% 0.055 272.8);
+  --color-indigo-200: oklch(36% 0.075 274);
+  --color-indigo-300: oklch(48% 0.1 274.7);
+  --color-indigo-600: oklch(74% 0.15 277);
+  --color-indigo-700: oklch(80% 0.13 277);
+  --color-indigo-800: oklch(86% 0.1 277.4);
+  --color-indigo-900: oklch(91% 0.07 278.7);
+  --color-indigo-950: oklch(95% 0.04 281.3);
+  --color-violet-50: oklch(25% 0.035 293.8);
+  --color-violet-100: oklch(29% 0.055 294.6);
+  --color-violet-200: oklch(36% 0.075 293.3);
+  --color-violet-300: oklch(48% 0.1 293.6);
+  --color-violet-600: oklch(74% 0.15 293);
+  --color-violet-700: oklch(80% 0.13 292.6);
+  --color-violet-800: oklch(86% 0.1 292.8);
+  --color-violet-900: oklch(91% 0.07 293.7);
+  --color-violet-950: oklch(95% 0.04 291.1);
+  --color-purple-50: oklch(25% 0.035 308.3);
+  --color-purple-100: oklch(29% 0.055 307.2);
+  --color-purple-200: oklch(36% 0.075 306.7);
+  --color-purple-300: oklch(48% 0.1 306.4);
+  --color-purple-600: oklch(74% 0.15 302.3);
+  --color-purple-700: oklch(80% 0.13 301.9);
+  --color-purple-800: oklch(86% 0.1 303.7);
+  --color-purple-900: oklch(91% 0.07 305);
+  --color-purple-950: oklch(95% 0.04 302.7);
+  --color-fuchsia-50: oklch(25% 0.035 320.1);
+  --color-fuchsia-100: oklch(29% 0.055 318.9);
+  --color-fuchsia-200: oklch(36% 0.075 319.6);
+  --color-fuchsia-300: oklch(48% 0.1 321.4);
+  --color-fuchsia-600: oklch(74% 0.15 322.9);
+  --color-fuchsia-700: oklch(80% 0.13 323.9);
+  --color-fuchsia-800: oklch(86% 0.1 324.6);
+  --color-fuchsia-900: oklch(91% 0.07 325.6);
+  --color-fuchsia-950: oklch(95% 0.04 325.7);
+  --color-pink-50: oklch(25% 0.035 343.2);
+  --color-pink-100: oklch(29% 0.055 342.3);
+  --color-pink-200: oklch(36% 0.075 343.2);
+  --color-pink-300: oklch(48% 0.1 346);
+  --color-pink-600: oklch(74% 0.15 0.6);
+  --color-pink-700: oklch(80% 0.13 4);
+  --color-pink-800: oklch(86% 0.1 3.8);
+  --color-pink-900: oklch(91% 0.07 2.4);
+  --color-pink-950: oklch(95% 0.04 3.9);
+  --color-rose-50: oklch(25% 0.035 12.4);
+  --color-rose-100: oklch(29% 0.055 12.6);
+  --color-rose-200: oklch(36% 0.075 10);
+  --color-rose-300: oklch(48% 0.1 11.6);
+  --color-rose-600: oklch(74% 0.15 17.6);
+  --color-rose-700: oklch(80% 0.13 16.9);
+  --color-rose-800: oklch(86% 0.1 13.7);
+  --color-rose-900: oklch(91% 0.07 10.3);
+  --color-rose-950: oklch(95% 0.04 12.1);
+  --color-slate-50: oklch(25% 0.003 247.9);
+  --color-slate-100: oklch(29% 0.007 247.9);
+  --color-slate-200: oklch(36% 0.013 255.5);
+  --color-slate-300: oklch(48% 0.022 252.9);
+  --color-slate-600: oklch(74% 0.043 257.3);
+  --color-slate-700: oklch(80% 0.044 257.3);
+  --color-slate-800: oklch(86% 0.041 260);
+  --color-slate-900: oklch(91% 0.042 265.8);
+  --color-slate-950: oklch(95% 0.04 264.7);
 }
 
 html,
@@ -37,50 +400,175 @@ body,
   height: 100%;
 }
 body {
-  @apply bg-stone-50 text-stone-900 antialiased;
+  @apply bg-canvas text-fg antialiased;
+}
+:focus-visible {
+  outline-color: var(--focus);
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-surface px-3 py-1.5 text-sm font-medium text-fg hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-50 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-error-text hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-md p-1.5 text-stone-600 hover:bg-stone-100;
+    @apply inline-flex items-center justify-center rounded-md p-1.5 text-fg-muted hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;
   }
   .field-label {
-    @apply mb-1 block text-xs font-medium text-stone-600;
+    @apply mb-1 block text-xs font-medium text-fg-muted;
   }
   .field-input {
-    @apply block w-full rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-sm focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none;
+    @apply block w-full rounded-md border border-control bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-focus focus:ring-2 focus:ring-focus/25 focus:outline-none;
   }
   .field-input.is-dirty {
-    @apply border-amber-400 bg-amber-50;
+    @apply border-pending-edge bg-cell-pending;
   }
   .toolbar {
-    @apply flex flex-wrap items-end gap-3 border-b border-stone-200 bg-white px-3 py-3 sm:px-4;
+    @apply flex flex-wrap items-end gap-3 border-b border-border bg-surface px-3 py-3 sm:px-4;
   }
   .hint {
-    @apply text-xs text-stone-500;
+    @apply text-xs text-fg-subtle;
   }
   /* A headline number (Inicio, reports). */
   .stat {
-    @apply rounded-md border border-stone-200 bg-white px-3 py-2;
+    @apply rounded-md border border-border bg-surface px-3 py-2;
   }
   .stat-label {
-    @apply text-xs text-stone-500;
+    @apply text-xs text-fg-subtle;
   }
   .stat-value {
     @apply text-2xl font-semibold tabular-nums;
   }
   .stat-note {
-    @apply text-xs text-stone-500;
+    @apply text-xs text-fg-subtle;
   }
+}
+
+/*
+ * Tabulator's own stylesheet (tabulator_simple) paints grey on white: every grid reads the roles instead.
+ * `html` lifts these over it, since it loads after this file.
+ */
+html .tabulator,
+html .tabulator .tabulator-tableholder .tabulator-table {
+  background-color: var(--surface);
+  color: var(--fg);
+}
+html .tabulator .tabulator-header,
+html .tabulator .tabulator-header .tabulator-col {
+  background-color: var(--surface);
+  color: var(--fg-muted);
+  border-color: var(--border-strong);
+}
+html .tabulator .tabulator-header .tabulator-col {
+  border-right-color: var(--border);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover {
+  background-color: var(--surface-sunken);
+}
+html .tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-col-sorter .tabulator-arrow {
+  border-bottom-color: var(--fg-subtle);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort='descending'] .tabulator-col-content .tabulator-col-sorter .tabulator-arrow {
+  border-top-color: var(--fg-muted);
+}
+html .tabulator .tabulator-header .tabulator-header-filter input,
+html .tabulator .tabulator-header .tabulator-header-filter select,
+html .tabulator-row .tabulator-cell input,
+html .tabulator-row .tabulator-cell select,
+html .tabulator-row .tabulator-cell textarea {
+  background-color: var(--surface);
+  color: var(--fg);
+}
+html .tabulator-row,
+html .tabulator-row.tabulator-row-even {
+  background-color: var(--surface);
+  border-bottom-color: var(--border);
+}
+html .tabulator-row .tabulator-cell {
+  border-right-color: var(--border);
+}
+html .tabulator-row .tabulator-cell.tabulator-frozen.tabulator-frozen-left {
+  border-right-color: var(--border-strong);
+}
+html .tabulator .tabulator-header .tabulator-frozen.tabulator-frozen-left {
+  border-right-color: var(--border-strong);
+}
+html .tabulator-row.tabulator-selectable:hover {
+  background-color: var(--surface-sunken);
+}
+html .tabulator-row.tabulator-selected,
+html .tabulator-row.tabulator-selected:hover {
+  background-color: var(--select);
+}
+/* The fill alone is 1.2:1 against a plain row: a bar in the focus colour on the row's first cell carries it. */
+html .tabulator-row.tabulator-selected > .tabulator-cell:first-child {
+  box-shadow: inset 3px 0 0 var(--focus);
+}
+html .tabulator .tabulator-tableholder .tabulator-placeholder .tabulator-placeholder-contents,
+html .tabulator .tabulator-tableholder .tabulator-placeholder span {
+  color: var(--fg-subtle);
+}
+html .tabulator .tabulator-footer {
+  background-color: var(--surface);
+  border-top-color: var(--border-strong);
+  color: var(--fg-muted);
+}
+html .tabulator-row .tabulator-cell.tabulator-editing {
+  border-color: var(--focus);
+}
+html .tabulator-popup-container,
+html .tabulator-edit-list {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--fg);
+  box-shadow: 0 4px 14px var(--shadow);
+}
+html .tabulator-edit-list .tabulator-edit-list-item,
+html .tabulator-edit-list .tabulator-edit-list-placeholder,
+html .tabulator-edit-list .tabulator-edit-list-group {
+  color: var(--fg);
+}
+html .tabulator-edit-list .tabulator-edit-list-item.active,
+html .tabulator-edit-list .tabulator-edit-list-item:hover {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+html .tabulator-edit-list .tabulator-edit-list-item.focused {
+  outline-color: var(--focus);
+}
+html .tabulator-menu .tabulator-menu-item:not(.tabulator-menu-item-disabled):hover {
+  background: var(--surface-sunken);
+}
+html .tabulator .tabulator-col-resize-guide,
+html .tabulator .tabulator-row-resize-guide {
+  background-color: var(--fg-subtle);
+}
+/* Range selection (Tabulator's colours hard-coded light): the picked cells, their outline, the headers beside them. */
+html .tabulator-row .tabulator-cell.tabulator-range-selected:not(.tabulator-range-only-cell-selected):not(.tabulator-range-row-header) {
+  background-color: var(--range);
+}
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range,
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range-cell-active {
+  border-color: var(--range-edge);
+}
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range.tabulator-range-active::after {
+  background-color: var(--range-edge);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-range-highlight,
+html .tabulator-row.tabulator-range-highlight .tabulator-cell.tabulator-range-row-header {
+  background-color: var(--range-head);
+  color: var(--fg);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-range-selected,
+html .tabulator-row.tabulator-range-selected .tabulator-cell.tabulator-range-row-header,
+html .tabulator-row.tabulator-range-highlight.tabulator-range-selected .tabulator-cell.tabulator-range-row-header {
+  background-color: var(--range-head-picked);
+  color: #fff;
 }
 
 /* Spreadsheet grid */
@@ -92,8 +580,8 @@ body {
   width: 9px;
   height: 9px;
   margin: -5px 0 0 -5px;
-  background: #1f4d3a;
-  border: 1px solid #fff;
+  background: var(--brand-text);
+  border: 1px solid var(--surface);
   cursor: crosshair;
   touch-action: none;
 }
@@ -101,24 +589,24 @@ body {
   width: 22px;
   height: 22px;
   margin: -11px 0 0 -11px;
-  border: 3px solid #fff;
+  border: 3px solid var(--surface);
   border-radius: 50%;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+  box-shadow: 0 1px 4px var(--shadow);
 }
 .collect-grid .tabulator-cell.is-id {
   font-weight: 600;
-  color: #1f4d3a;
+  color: var(--brand-text);
 }
 /* A column that does not apply to the row's Release_Collect (CAM for the insectary, Insectary_ID for a preserved one). */
 .collect-grid .tabulator-cell.is-off {
-  background: #f5f5f4;
+  background: var(--surface-sunken);
 }
 .collect-grid .tabulator-cell.row-remove {
-  color: #a8a29e;
+  color: var(--fg-subtle);
   cursor: pointer;
 }
 .collect-grid .tabulator-cell.row-remove:hover {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 /* Touch screens: what can be done with the selection, pinned at the bottom of the screen. */
 .touch-actions {
@@ -131,18 +619,18 @@ body {
   transform: translateX(-50%);
   padding: 4px;
   border-radius: 999px;
-  background: #1f2a24;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  background: var(--inverse);
+  box-shadow: 0 4px 16px var(--shadow);
 }
 .touch-actions button {
   padding: 8px 14px;
   border-radius: 999px;
-  color: #fff;
+  color: var(--on-inverse);
   font-size: 14px;
   white-space: nowrap;
 }
 .touch-actions button:active {
-  background: #3d5247;
+  background: color-mix(in srgb, var(--on-inverse) 22%, var(--inverse));
 }
 /* Six buttons (the Buscador's History too) fit a phone's width. */
 @media (max-width: 480px) {
@@ -166,8 +654,8 @@ body.touch-bar-open main {
 /* The suggestion Enter or Tab will take, in the grids' lists and in ChoiceField's. */
 .tabulator-edit-list .tabulator-edit-list-item.is-pick,
 .choice-list .is-pick {
-  background: #e6f1eb;
-  box-shadow: inset 3px 0 0 #1f4d3a;
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand-text);
 }
 /* Cells copied with Ctrl+C: a moving dashed border, as in Google Sheets. */
 .copy-box {
@@ -176,10 +664,10 @@ body.touch-bar-open main {
   display: none;
   pointer-events: none;
   background:
-    linear-gradient(90deg, #1f4d3a 50%, transparent 0) repeat-x top / 8px 2px,
-    linear-gradient(90deg, #1f4d3a 50%, transparent 0) repeat-x bottom / 8px 2px,
-    linear-gradient(0deg, #1f4d3a 50%, transparent 0) repeat-y left / 2px 8px,
-    linear-gradient(0deg, #1f4d3a 50%, transparent 0) repeat-y right / 2px 8px;
+    linear-gradient(90deg, var(--brand-text) 50%, transparent 0) repeat-x top / 8px 2px,
+    linear-gradient(90deg, var(--brand-text) 50%, transparent 0) repeat-x bottom / 8px 2px,
+    linear-gradient(0deg, var(--brand-text) 50%, transparent 0) repeat-y left / 2px 8px,
+    linear-gradient(0deg, var(--brand-text) 50%, transparent 0) repeat-y right / 2px 8px;
   animation: marching-ants 0.6s linear infinite;
 }
 @keyframes marching-ants {
@@ -193,7 +681,8 @@ body.touch-bar-open main {
 }
 /* The Google Sheet's checks: repeated IDs in pale red, values outside the list with a red corner. */
 .sheet-grid .tabulator-cell.is-repeated {
-  background: #f8d7d3 !important;
+  background: var(--cell-error) !important;
+  box-shadow: inset 0 0 0 1px var(--error-edge);
 }
 .sheet-grid .tabulator-cell.is-invalid {
   position: relative;
@@ -205,7 +694,7 @@ body.touch-bar-open main {
   right: 0;
   border-width: 0 7px 7px 0;
   border-style: solid;
-  border-color: transparent #d93025 transparent transparent;
+  border-color: transparent var(--error-edge) transparent transparent;
 }
 /* A column's border in the header, to widen it (lib/gridKit.ts): wider under a finger, green once held. */
 @media (pointer: coarse) {
@@ -216,11 +705,11 @@ body.touch-bar-open main {
   }
 }
 .tabulator .tabulator-col-resize-handle.is-resizing {
-  background: rgb(45 106 79 / 0.35);
+  background: color-mix(in srgb, var(--focus) 35%, transparent);
 }
 .tabulator-cell.fill-target {
-  background: #e6f1eb !important;
-  box-shadow: inset 0 0 0 1px #1f4d3a;
+  background: var(--brand-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--brand-text);
 }
 .sheet-grid {
   position: relative;
@@ -228,14 +717,14 @@ body.touch-bar-open main {
 .sheet-grid .tabulator {
   font-size: 13px;
   border: 0;
-  background: white;
+  background: var(--surface);
 }
 .sheet-grid .tabulator .tabulator-header {
-  background: #f5f5f4;
-  border-bottom: 1px solid #d6d3d1;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-strong);
 }
 .sheet-grid .tabulator .tabulator-header .tabulator-col {
-  background: #f5f5f4;
+  background: var(--surface-sunken);
 }
 .sheet-grid .tabulator .tabulator-col-title {
   font-weight: 600;
@@ -244,86 +733,86 @@ body.touch-bar-open main {
 .sheet-grid .tabulator .tabulator-header-filter input {
   font-size: 12px;
   padding: 2px 4px;
-  border: 1px solid #e7e5e4;
+  border: 1px solid var(--border);
   border-radius: 3px;
 }
 .sheet-grid .tabulator-row .tabulator-cell {
-  border-right: 1px solid #eeeceb;
+  border-right: 1px solid var(--border);
   padding: 4px 6px;
 }
 .sheet-grid .tabulator-row.tabulator-row-even {
-  background: #fcfcfb;
+  background: color-mix(in srgb, var(--surface-sunken) 35%, var(--surface));
 }
 .sheet-grid .tabulator-cell.has-choices { position: relative; padding-right: 22px; cursor: default; }
 .sheet-grid .tabulator-cell.has-choices::after {
   content: '▾'; position: absolute; right: 0; top: 0; bottom: 0; width: 20px;
   display: flex; align-items: center; justify-content: center;
-  color: #44403c; font-size: 15px; cursor: pointer;
+  color: var(--fg-muted); font-size: 15px; cursor: pointer;
 }
-.sheet-grid .tabulator-cell.has-choices:hover::after { color: #1f4d3a; background: #eef5f1; }
+.sheet-grid .tabulator-cell.has-choices:hover::after { color: var(--brand-text); background: var(--brand-soft); }
 .sheet-grid .tabulator-cell.has-choices.tabulator-editing::after { display: none; }
 .sheet-grid .tabulator-cell.has-choices.is-off::after { display: none; }
 .sheet-grid .tabulator-cell.is-formula {
-  color: #57534e;
-  background: #f3f4f1;
+  color: var(--fg-muted);
+  background: var(--cell-formula);
   font-style: italic;
 }
 .sheet-grid .tabulator-cell.is-locked {
-  color: #78716c;
+  color: var(--fg-subtle);
 }
 .sheet-grid .tabulator-cell.is-dirty {
-  background: #fef3c7 !important;
-  box-shadow: inset 0 0 0 1px #f59e0b;
+  background: var(--cell-pending) !important;
+  box-shadow: inset 0 0 0 1px var(--pending-edge);
 }
 .sheet-grid .tabulator-cell.is-error {
-  background: #fee2e2 !important;
-  box-shadow: inset 0 0 0 1px #dc2626;
+  background: var(--cell-error) !important;
+  box-shadow: inset 0 0 0 1px var(--error-edge);
 }
 /* Kept in the app for everyone (Emergidos, Clutches), not in Google Sheets yet: amber, dashed. */
 .sheet-grid .tabulator-cell.is-staged {
-  background: #fffbeb;
-  box-shadow: inset 0 0 0 1px #f59e0b;
-  outline: 1px dashed #d97706;
+  background: var(--color-amber-50);
+  box-shadow: inset 0 0 0 1px var(--pending-edge);
+  outline: 1px dashed var(--pending-edge);
   outline-offset: -3px;
 }
 /* Sent, waiting for Google to answer (the workbook recalculating): written on their own. */
 .sheet-grid .tabulator-cell.is-queued {
-  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(245 158 11 / 0.18) 6px 9px) !important;
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--pending-edge) 22%, transparent) 6px 9px) !important;
 }
 .sheet-grid .tabulator-cell.row-number.is-staged {
-  color: #92400e;
+  color: var(--color-amber-800);
   font-weight: 600;
-  background: #fef3c7;
+  background: var(--color-amber-100);
 }
 .sheet-grid .tabulator-cell.row-number {
-  color: #78716c;
-  background: #f5f5f4;
+  color: var(--fg-subtle);
+  background: var(--surface-sunken);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
 .sheet-grid .tabulator-cell.row-number:hover {
-  color: #1f4d3a;
+  color: var(--brand-text);
   text-decoration: underline;
 }
 .sheet-grid .tabulator-cell.row-number.is-new {
-  color: #1f4d3a;
+  color: var(--brand-text);
   font-weight: 600;
-  background: #d5e8dd;
+  background: var(--select);
 }
-.sheet-grid .tabulator-row.is-highlight .tabulator-cell.row-number { box-shadow: inset 4px 0 0 #2d6a4f; color: #1f4d3a; font-weight: 600; }
+.sheet-grid .tabulator-row.is-highlight .tabulator-cell.row-number { box-shadow: inset 4px 0 0 var(--focus); color: var(--brand-text); font-weight: 600; }
 /* The Buscador: cells showing the searched text, and the match (or linked row) in focus. */
-.sheet-grid .tabulator-row.is-focus .tabulator-cell { background-color: #eef6f1; }
-.sheet-grid .tabulator-row.is-focus .tabulator-cell.row-number { box-shadow: inset 4px 0 0 #1f4d3a; color: #1f4d3a; font-weight: 700; background: #d5e8dd; }
-.sheet-grid .tabulator-cell.is-match { background-color: #c9ebd6; box-shadow: inset 0 0 0 1px #6fb38c; }
-.sheet-grid .tabulator-row.is-focus .tabulator-cell.is-match { background-color: #a9dcbd; box-shadow: inset 0 0 0 2px #2d6a4f; }
+.sheet-grid .tabulator-row.is-focus .tabulator-cell { background-color: color-mix(in srgb, var(--select) 65%, var(--surface)); }
+.sheet-grid .tabulator-row.is-focus .tabulator-cell.row-number { box-shadow: inset 4px 0 0 var(--brand-text); color: var(--brand-text); font-weight: 700; background: var(--select); }
+.sheet-grid .tabulator-cell.is-match { background-color: var(--cell-match); box-shadow: inset 0 0 0 1px var(--match-edge); }
+.sheet-grid .tabulator-row.is-focus .tabulator-cell.is-match { background-color: var(--cell-match-strong); box-shadow: inset 0 0 0 2px var(--focus); }
 .sheet-grid .tabulator-cell.tabulator-editing {
-  box-shadow: inset 0 0 0 2px #2d6a4f;
+  box-shadow: inset 0 0 0 2px var(--focus);
 }
 /* The Buscador's past view: cells that differ from now, those the save changed, rows not created yet. */
-.sheet-grid .tabulator-cell.is-then { background-color: #fdf0b8 !important; }
-.sheet-grid .tabulator-cell.is-touched { box-shadow: inset 0 0 0 2px #b45309; }
+.sheet-grid .tabulator-cell.is-then { background-color: var(--cell-pending) !important; box-shadow: inset 0 0 0 1px var(--pending-edge); }
+.sheet-grid .tabulator-cell.is-touched { box-shadow: inset 0 0 0 2px var(--color-amber-700); }
 .sheet-grid .tabulator-row.is-absent .tabulator-cell:not(.row-number) {
-  background: repeating-linear-gradient(135deg, #f5f5f4 0 6px, #ecebea 6px 12px) !important;
+  background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, color-mix(in srgb, var(--fg) 7%, var(--surface-sunken)) 6px 12px) !important;
 }
 .sheet-grid .tabulator-row.is-absent .tabulator-cell.row-number { text-decoration: line-through; }
 /* The Buscador's tools: in the toolbar on a computer, a ⋯ menu under it on a phone. */
@@ -350,10 +839,10 @@ body.touch-bar-open main {
     max-height: 70vh;
     overflow-y: auto;
     padding: 0.625rem;
-    border: 1px solid #e7e5e4;
+    border: 1px solid var(--border);
     border-radius: 0.625rem;
-    background: white;
-    box-shadow: 0 10px 28px rgb(0 0 0 / 0.18);
+    background: var(--surface);
+    box-shadow: 0 10px 28px var(--shadow);
   }
   .buscador-tools.is-open .btn {
     justify-content: flex-start;
@@ -369,15 +858,15 @@ body.touch-bar-open main {
   height: 26px;
   padding: 0 6px;
   border-radius: 4px;
-  color: #1f4d3a;
+  color: var(--brand-text);
   font-size: 12px;
   font-weight: 500;
 }
 .cell-bar-action:hover:not(:disabled) {
-  background: #eef5f1;
+  background: var(--brand-soft);
 }
 .cell-bar-action:disabled {
-  color: #a8a29e;
+  color: var(--fg-subtle);
 }
 
 /*
@@ -404,13 +893,13 @@ body.touch-bar-open main {
   align-items: flex-start;
   gap: 6px;
   padding: 3px 6px;
-  background: white;
-  border-bottom: 1px solid #d6d3d1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-strong);
 }
 .cell-bar.is-open .cell-bar-body {
   height: auto;
   min-height: 100%;
-  box-shadow: 0 6px 12px -4px rgb(0 0 0 / 0.18);
+  box-shadow: 0 6px 12px -4px var(--shadow);
 }
 .cell-bar-more {
   flex: none;
@@ -419,11 +908,11 @@ body.touch-bar-open main {
   height: 26px;
   padding: 0 2px;
   border-radius: 3px;
-  color: #57534e;
+  color: var(--fg-muted);
 }
 .cell-bar-more:hover {
-  background: #f5f5f4;
-  color: #1c1917;
+  background: var(--surface-sunken);
+  color: var(--fg);
 }
 .cell-bar-where {
   flex: none;
@@ -431,8 +920,8 @@ body.touch-bar-open main {
   max-width: 35%;
   overflow: hidden;
   padding: 4px 6px;
-  border-right: 1px solid #e7e5e4;
-  color: #57534e;
+  border-right: 1px solid var(--border);
+  color: var(--fg-muted);
   font-size: 12px;
   line-height: 18px;
   text-overflow: ellipsis;
@@ -440,7 +929,7 @@ body.touch-bar-open main {
 }
 .cell-bar-where b {
   font-weight: 600;
-  color: #1c1917;
+  color: var(--fg);
 }
 .cell-bar-text {
   display: block;
@@ -458,29 +947,29 @@ body.touch-bar-open main {
   overflow-wrap: anywhere;
 }
 .cell-bar-text:hover:not(:disabled) {
-  border-color: #e7e5e4;
+  border-color: var(--border);
 }
 .cell-bar-text:focus {
   outline: none;
-  border-color: #2d6a4f;
-  box-shadow: 0 0 0 2px #d5e8dd;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--select);
 }
 .cell-bar-text.is-readonly {
-  color: #57534e;
+  color: var(--fg-muted);
 }
 .cell-bar-text.is-readonly:focus {
-  border-color: #d6d3d1;
+  border-color: var(--border-strong);
   box-shadow: none;
 }
 .cell-bar-text::placeholder {
-  color: #a8a29e;
+  color: var(--fg-subtle);
 }
 .cell-bar-notes {
   display: flex;
   flex-wrap: wrap;
   column-gap: 14px;
   padding: 0 7px 2px;
-  color: #57534e;
+  color: var(--fg-muted);
   font-size: 11px;
   line-height: 15px;
   overflow-wrap: anywhere;
@@ -489,10 +978,10 @@ body.touch-bar-open main {
   font-weight: 600;
 }
 .cell-bar-notes .is-sheet b {
-  color: #57534e;
+  color: var(--fg-muted);
 }
 .cell-bar-notes .is-ai b {
-  color: #047857;
+  color: var(--color-emerald-700);
 }
 /* A sum's total, as the proposal table shows it beside the sum. */
 .cell-bar-total {
@@ -500,8 +989,8 @@ body.touch-bar-open main {
   margin-top: 4px;
   padding: 0 5px;
   border-radius: 3px;
-  background: #f5f5f4;
-  color: #92400e;
+  background: var(--surface-sunken);
+  color: var(--color-amber-800);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 18px;
@@ -512,7 +1001,7 @@ body.touch-bar-open main {
   align-items: center;
   height: 26px;
   padding: 0 2px;
-  color: #a8a29e;
+  color: var(--fg-subtle);
 }
 @media (max-width: 640px) {
   .cell-bar-where {
@@ -548,38 +1037,38 @@ body.touch-bar-open main {
 }
 .proposal-sheet .tabulator-cell.is-proposed,
 .legend.is-proposed {
-  background: #ecfdf5;
-  box-shadow: inset 0 0 0 1px #6ee7b7;
-  color: #064e3b;
+  background: var(--cell-ai);
+  box-shadow: inset 0 0 0 1px var(--cell-ai-edge);
+  color: var(--cell-ai-text);
   font-weight: 500;
 }
 .proposal-sheet .tabulator-cell.is-person,
 .legend.is-person {
-  background: #eff6ff;
-  box-shadow: inset 0 0 0 1px #93c5fd;
-  color: #1e3a8a;
+  background: var(--cell-person);
+  box-shadow: inset 0 0 0 1px var(--cell-person-edge);
+  color: var(--cell-person-text);
   font-weight: 500;
 }
 .proposal-sheet .tabulator-cell.is-sheet,
 .legend.is-sheet {
-  color: #78716c;
+  color: var(--fg-subtle);
 }
 /* Set back to the sheet's value: grey like the sheet, a dashed green edge and the assistant's value struck through. */
 .proposal-sheet .tabulator-cell.is-reverted,
 .legend.is-reverted {
-  color: #78716c;
-  background: repeating-linear-gradient(135deg, #fff 0 6px, #f3faf6 6px 12px);
+  color: var(--fg-subtle);
+  background: repeating-linear-gradient(135deg, var(--surface) 0 6px, var(--color-emerald-50) 6px 12px);
   box-shadow: inset 0 0 0 1px transparent;
-  outline: 1px dashed #34d399;
+  outline: 1px dashed var(--color-emerald-400);
   outline-offset: -2px;
 }
 /* A doubtful reading of the assistant nobody reviewed yet: amber, a dashed amber edge and a "?" before it. */
 .proposal-sheet .tabulator-cell.is-doubtful,
 .legend.is-doubtful {
-  background: #fffbeb;
-  color: #78350f;
+  background: var(--color-amber-50);
+  color: var(--color-amber-900);
   box-shadow: none;
-  outline: 2px dashed #f59e0b;
+  outline: 2px dashed var(--color-amber-500);
   outline-offset: -3px;
 }
 .proposal-sheet .tabulator-cell .doubt-mark {
@@ -587,7 +1076,7 @@ body.touch-bar-open main {
   margin-right: 4px;
   padding: 0 4px;
   border-radius: 3px;
-  background: #f59e0b;
+  background: var(--color-fill-amber);
   color: white;
   font-weight: 700;
   font-size: 10px;
@@ -599,25 +1088,25 @@ body.touch-bar-open main {
  */
 .proposal-sheet .tabulator-cell.is-unreadable,
 .legend.is-unreadable {
-  background: repeating-linear-gradient(135deg, #fff5f5 0 5px, #f5e9e9 5px 10px);
-  color: #7f1d1d;
+  background: repeating-linear-gradient(135deg, var(--color-red-50) 0 5px, color-mix(in srgb, var(--color-red-100) 60%, var(--surface)) 5px 10px);
+  color: var(--color-red-900);
   box-shadow: none;
-  outline: 2px dotted #dc2626;
+  outline: 2px dotted var(--color-red-600);
   outline-offset: -3px;
 }
 /* The CAM or tube a preserved butterfly would be left without: amber, a solid amber edge and a "missing" tag. */
 .proposal-sheet .tabulator-cell.is-warned {
-  background: #fffbeb;
-  color: #78350f;
+  background: var(--color-amber-50);
+  color: var(--color-amber-900);
   box-shadow: none;
-  outline: 2px solid #f59e0b;
+  outline: 2px solid var(--color-amber-500);
   outline-offset: -3px;
 }
 .proposal-sheet .tabulator-cell .warn-mark {
   display: inline-block;
   padding: 0 5px;
   border-radius: 3px;
-  background: #d97706;
+  background: var(--color-fill-amber);
   color: white;
   font-weight: 600;
   font-size: 10px;
@@ -628,29 +1117,29 @@ body.touch-bar-open main {
   display: flex;
   align-items: center;
   gap: 4px;
-  border-bottom: 1px solid #fde68a;
-  background: #fffbeb;
+  border-bottom: 1px solid var(--color-amber-200);
+  background: var(--color-amber-50);
   padding: 4px 8px;
   font-size: 11px;
-  color: #92400e;
+  color: var(--color-amber-800);
 }
 .warn-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--color-amber-500);
   border-radius: 4px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 1px 6px;
-  color: #92400e;
+  color: var(--color-amber-800);
   font-weight: 500;
 }
 .proposal-sheet .tabulator-cell .unread-mark {
   display: inline-block;
   padding: 0 5px;
   border-radius: 3px;
-  background: #b91c1c;
-  color: white;
+  background: var(--danger);
+  color: var(--on-danger);
   font-weight: 600;
   font-size: 10px;
   line-height: 14px;
@@ -661,38 +1150,38 @@ body.touch-bar-open main {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px dotted #dc2626;
+  border: 1px dotted var(--color-red-600);
   border-radius: 4px;
-  background: #fef2f2;
+  background: var(--color-red-50);
   padding: 1px 6px;
-  color: #991b1b;
+  color: var(--color-red-800);
   font-weight: 500;
 }
 .unread-count:hover {
-  background: #fee2e2;
+  background: var(--color-red-100);
 }
 .doubt-ask.is-unread {
-  border-color: #fca5a5;
-  background: #fef2f2;
-  color: #7f1d1d;
+  border-color: var(--color-red-300);
+  background: var(--color-red-50);
+  color: var(--color-red-900);
 }
 .doubt-ask .unread-line {
   margin-top: 4px;
-  color: #991b1b;
+  color: var(--color-red-800);
 }
 .cell-bar-notes .is-unreadable b {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 .cell-bar-choices.is-complete b {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 .cell-bar-choices.is-complete .cell-bar-choice {
-  border-color: #fca5a5;
-  background: #fef2f2;
-  color: #7f1d1d;
+  border-color: var(--color-red-300);
+  background: var(--color-red-50);
+  color: var(--color-red-900);
 }
 .cell-bar-choices.is-complete .cell-bar-choice:hover:not(:disabled) {
-  background: #fee2e2;
+  background: var(--color-red-100);
 }
 /*
  * Edited in the sheet after the proposal read it: violet, with a "sheet" tag. Kept from the sheet: the
@@ -700,24 +1189,24 @@ body.touch-bar-open main {
  */
 .proposal-sheet .tabulator-cell.is-sheet-edit,
 .legend.is-sheet-edit {
-  background: #f5f3ff;
-  color: #4c1d95;
+  background: var(--cell-sheet-edit);
+  color: var(--cell-sheet-edit-text);
   box-shadow: none;
-  outline: 2px solid #8b5cf6;
+  outline: 2px solid var(--cell-sheet-edit-edge);
   outline-offset: -3px;
 }
 .proposal-sheet .tabulator-cell.is-sheet-edit.is-again {
   outline-style: dashed;
-  background: #ede9fe;
+  background: var(--color-violet-100);
 }
 .proposal-sheet .tabulator-cell.is-kept .aside {
-  color: #6d28d9;
+  color: var(--color-violet-700);
 }
 .proposal-sheet .tabulator-cell .sheet-mark {
   display: inline-block;
   padding: 0 5px;
   border-radius: 3px;
-  background: #7c3aed;
+  background: var(--color-fill-violet);
   color: white;
   font-weight: 600;
   font-size: 10px;
@@ -725,12 +1214,12 @@ body.touch-bar-open main {
   line-height: 14px;
 }
 .cell-bar-notes .is-edited b {
-  color: #6d28d9;
+  color: var(--color-violet-700);
 }
 /* A new row whose pre-made row someone used meanwhile: violet, not written. */
 .proposal-sheet .tabulator-row.is-taken-row .tabulator-cell {
-  background: repeating-linear-gradient(135deg, #faf5ff 0 6px, #f3e8ff 6px 12px);
-  color: #6b21a8;
+  background: repeating-linear-gradient(135deg, var(--color-purple-50) 0 6px, var(--color-purple-100) 6px 12px);
+  color: var(--color-purple-800);
 }
 /* The banner of a proposal whose cells were edited in the sheet: to the next one, and telling the assistant. */
 .sheet-banner {
@@ -738,11 +1227,11 @@ body.touch-bar-open main {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  border-bottom: 1px solid #ddd6fe;
-  background: #f5f3ff;
+  border-bottom: 1px solid var(--color-violet-200);
+  background: var(--color-violet-50);
   padding: 4px 8px;
   font-size: 11px;
-  color: #5b21b6;
+  color: var(--color-violet-800);
 }
 .sheet-banner-go {
   display: inline-flex;
@@ -760,39 +1249,39 @@ body.touch-bar-open main {
   gap: 4px;
   margin-left: auto;
   min-height: 24px;
-  border: 1px solid #a78bfa;
+  border: 1px solid var(--color-violet-400);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   padding: 0 8px;
-  color: #5b21b6;
+  color: var(--color-violet-800);
   font-weight: 500;
 }
 .sheet-banner-tell:hover:not(:disabled) {
-  background: #ede9fe;
+  background: var(--color-violet-100);
 }
 .sheet-banner-tell:disabled {
   opacity: 0.6;
 }
 /* The choices beside a cell edited in the sheet (the doubtful cell's box, violet). */
 .proposal-sheet .doubt-quick.is-sheet {
-  border-color: #c4b5fd;
-  background: #f5f3ff;
-  color: #4c1d95;
+  border-color: var(--color-violet-300);
+  background: var(--color-violet-50);
+  color: var(--color-violet-900);
 }
 .proposal-sheet .doubt-quick.is-sheet .sheet-quick-what {
   padding: 0 4px;
   font-size: 11px;
-  color: #6d28d9;
+  color: var(--color-violet-700);
 }
 .proposal-sheet .doubt-quick.is-sheet button {
-  border-color: #c4b5fd;
+  border-color: var(--color-violet-300);
 }
 .proposal-sheet .doubt-quick.is-sheet button:hover {
-  background: #ede9fe;
+  background: var(--color-violet-100);
 }
 .proposal-sheet .doubt-quick.is-sheet button.is-chosen {
-  border-color: #7c3aed;
-  background: #7c3aed;
+  border-color: var(--color-fill-violet);
+  background: var(--color-fill-violet);
   color: white;
 }
 @media (pointer: coarse) {
@@ -809,62 +1298,62 @@ body.touch-bar-open main {
   font-weight: 400;
 }
 .legend.is-inferred {
-  color: #065f46;
+  color: var(--color-emerald-800);
 }
 /* The header's count of doubtful cells: a click goes to the next one. */
 .doubt-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px dashed #f59e0b;
+  border: 1px dashed var(--color-amber-500);
   border-radius: 4px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 1px 6px;
-  color: #92400e;
+  color: var(--color-amber-800);
   font-weight: 500;
 }
 .doubt-count:hover {
-  background: #fef3c7;
+  background: var(--color-amber-100);
 }
 /* Cambios propuestos: the columns' order (the sheet's, the notebook's, the person's own). */
 .view-switch {
   display: inline-flex;
   overflow: hidden;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
 }
 .view-switch button {
   padding: 1px 7px;
-  color: #57534e;
+  color: var(--fg-muted);
 }
 .view-switch button + button {
-  border-left: 1px solid #d6d3d1;
+  border-left: 1px solid var(--border-strong);
 }
 .view-switch button:hover {
-  background: #f5f5f4;
-  color: #1c1917;
+  background: var(--surface-sunken);
+  color: var(--fg);
 }
 .view-switch button.is-on {
-  background: #ecfdf5;
-  color: #065f46;
+  background: var(--color-emerald-50);
+  color: var(--color-emerald-800);
   font-weight: 500;
 }
 /* "Aplicar" with doubtful cells not reviewed: what to do with them. */
 .doubt-ask {
   margin: 0 8px 8px;
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 6px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 8px 10px;
   font-size: 12px;
-  color: #78350f;
+  color: var(--color-amber-900);
 }
 .cell-bar-notes .is-doubt b {
-  color: #b45309;
+  color: var(--color-amber-700);
 }
 .cell-bar-notes .is-hint b {
-  color: #57534e;
+  color: var(--fg-muted);
   font-style: italic;
 }
 /* A doubtful cell's other readings, to pick with a click. */
@@ -875,36 +1364,36 @@ body.touch-bar-open main {
   gap: 4px;
 }
 .cell-bar-choices b {
-  color: #b45309;
+  color: var(--color-amber-700);
 }
 .cell-bar-choice {
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 10px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 0 7px;
-  color: #78350f;
+  color: var(--color-amber-900);
   font-variant-numeric: tabular-nums;
 }
 .cell-bar-choice:hover:not(:disabled) {
-  background: #fde68a;
+  background: var(--color-amber-200);
 }
 .cell-bar-choice:disabled {
   opacity: 0.6;
   cursor: default;
 }
 .proposal-sheet .tabulator-cell .aside {
-  color: #047857;
+  color: var(--color-emerald-700);
   opacity: 0.7;
   font-size: 11px;
 }
 .proposal-sheet .tabulator-cell.row-number.is-skipped {
-  color: #a8a29e;
+  color: var(--fg-subtle);
   text-decoration: line-through;
 }
 /* A notebook line that goes another way in the sheet than on the page. */
 .proposal-sheet .tabulator-cell.row-number.is-out-of-order {
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--color-amber-800);
+  background: var(--color-amber-100);
   font-weight: 600;
 }
 /* Valor de la hoja / Valor de la IA, for the selected cells. */
@@ -912,36 +1401,36 @@ body.touch-bar-open main {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   padding: 1px 6px;
-  color: #44403c;
+  color: var(--fg-muted);
 }
 .proposal-use:hover:not(:disabled) {
-  border-color: #6ee7b7;
-  color: #065f46;
-  background: #ecfdf5;
+  border-color: var(--color-emerald-300);
+  color: var(--color-emerald-800);
+  background: var(--color-emerald-50);
 }
 .proposal-use:disabled {
-  color: #c4c0bc;
-  border-color: #eeeceb;
+  color: var(--fg-subtle);
+  border-color: var(--border);
   cursor: default;
 }
 .proposal-sheet .tabulator-cell .was {
   margin-left: 4px;
-  color: #a8a29e;
+  color: var(--fg-subtle);
   font-size: 11px;
   font-weight: 400;
 }
 /* A cell the proposal empties: "vaciar" and the value it removes, in red. */
 .proposal-sheet .tabulator-cell .is-clear,
 .proposal-sheet .tabulator-cell .is-clear .was {
-  color: #b91c1c;
+  color: var(--color-red-700);
   font-weight: 600;
 }
 .proposal-sheet .tabulator-cell .is-clear .was {
-  text-decoration-color: #b91c1c;
+  text-decoration-color: var(--color-red-700);
 }
 .proposal-sheet .tabulator-cell.proposal-label {
   font-weight: 600;
@@ -952,8 +1441,8 @@ body.touch-bar-open main {
   margin-left: 6px;
   padding: 0 4px;
   border-radius: 3px;
-  background: #f5f5f4;
-  color: #92400e;
+  background: var(--surface-sunken);
+  color: var(--color-amber-800);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.35;
@@ -966,14 +1455,14 @@ body.touch-bar-open main {
   font-weight: 400;
 }
 .proposal-sheet .tabulator-cell.proposal-note {
-  color: #57534e;
+  color: var(--fg-muted);
 }
 .proposal-sheet .tabulator-cell.row-remove {
-  color: #a8a29e;
+  color: var(--fg-subtle);
   cursor: pointer;
 }
 .proposal-sheet .tabulator-cell.row-remove:hover {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 /* A cell the assistant just changed. */
 .proposal-sheet .tabulator-cell.is-flash {
@@ -982,8 +1471,8 @@ body.touch-bar-open main {
 @keyframes ai-flash {
   0%,
   35% {
-    background: #fde68a;
-    box-shadow: inset 0 0 0 2px #f59e0b;
+    background: var(--color-amber-200);
+    box-shadow: inset 0 0 0 2px var(--color-amber-500);
   }
 }
 .legend {
@@ -1021,26 +1510,26 @@ body.touch-bar-open main {
 }
 
 /* Digitalizar cuaderno: the review grid and the photo's line bands. */
-.nb-grid .tabulator-cell.nb-fill { background: #dcfce7; }
-.nb-grid .tabulator-cell.nb-conflict { background: #fee2e2; color: #7f1d1d; }
-.nb-grid .tabulator-cell.nb-doubt { background: #fef3c7; box-shadow: inset 0 0 0 1px #f59e0b; }
-.nb-grid .tabulator-cell.nb-error { background: #fee2e2; box-shadow: inset 0 0 0 2px #dc2626; }
-.nb-grid .tabulator-cell.nb-formula { color: #78716c; background: #f3f4f1; font-style: italic; }
-.nb-grid .tabulator-cell.nb-keep { color: #a8a29e; }
-.nb-grid .tabulator-cell.nb-mismatch { color: #991b1b; box-shadow: inset 0 0 0 1px #fca5a5; }
+.nb-grid .tabulator-cell.nb-fill { background: var(--color-green-100); }
+.nb-grid .tabulator-cell.nb-conflict { background: var(--color-red-100); color: var(--color-red-900); }
+.nb-grid .tabulator-cell.nb-doubt { background: var(--color-amber-100); box-shadow: inset 0 0 0 1px var(--color-amber-500); }
+.nb-grid .tabulator-cell.nb-error { background: var(--color-red-100); box-shadow: inset 0 0 0 2px var(--color-red-600); }
+.nb-grid .tabulator-cell.nb-formula { color: var(--fg-subtle); background: var(--cell-formula); font-style: italic; }
+.nb-grid .tabulator-cell.nb-keep { color: var(--fg-subtle); }
+.nb-grid .tabulator-cell.nb-mismatch { color: var(--color-red-800); box-shadow: inset 0 0 0 1px var(--color-red-300); }
 .nb-grid .tabulator-cell.nb-edited { font-weight: 600; }
-.nb-grid .nb-old { color: #991b1b; opacity: 0.65; }
-.nb-grid .tabulator-cell.nb-pick { cursor: pointer; font-size: 16px; line-height: 1; color: #047857; }
+.nb-grid .nb-old { color: var(--color-red-800); opacity: 0.65; }
+.nb-grid .tabulator-cell.nb-pick { cursor: pointer; font-size: 16px; line-height: 1; color: var(--color-emerald-700); }
 .nb-grid .tabulator-cell.nb-raw,
-.nb-grid .tabulator-cell.nb-msg { color: #57534e; }
-.nb-grid .tabulator-row.nb-row-selected .tabulator-cell.row-number { box-shadow: inset 4px 0 0 #d97706; color: #92400e; font-weight: 600; }
-.nb-grid .tabulator-row.nb-row-selected .tabulator-cell { border-top: 1px solid #f59e0b; border-bottom: 1px solid #f59e0b; }
+.nb-grid .tabulator-cell.nb-msg { color: var(--fg-muted); }
+.nb-grid .tabulator-row.nb-row-selected .tabulator-cell.row-number { box-shadow: inset 4px 0 0 var(--color-amber-600); color: var(--color-amber-800); font-weight: 600; }
+.nb-grid .tabulator-row.nb-row-selected .tabulator-cell { border-top: 1px solid var(--color-amber-500); border-bottom: 1px solid var(--color-amber-500); }
 .nb-grid .tabulator-row.nb-row-off .tabulator-cell:not(.nb-pick) { opacity: 0.5; }
 .nb-state { border-radius: 4px; padding: 0 5px; font-size: 11px; }
-.nb-state.is-new { background: #d1fae5; color: #065f46; font-weight: 600; }
-.nb-state.is-bad { background: #fee2e2; color: #991b1b; }
-.nb-state.is-off { color: #a8a29e; }
-.nb-state.is-done { color: #15803d; font-weight: 600; }
+.nb-state.is-new { background: var(--color-emerald-100); color: var(--color-emerald-800); font-weight: 600; }
+.nb-state.is-bad { background: var(--color-red-100); color: var(--color-red-800); }
+.nb-state.is-off { color: var(--fg-subtle); }
+.nb-state.is-done { color: var(--color-green-700); font-weight: 600; }
 .nb-band { position: absolute; left: 0; right: 0; pointer-events: none; border-left: 6px solid rgba(16, 185, 129, 0.45); }
 .nb-band span {
   position: absolute;
@@ -1051,17 +1540,17 @@ body.touch-bar-open main {
   border-radius: 3px;
   line-height: 1.2;
   color: #fff;
-  background: rgba(31, 77, 58, 0.75);
+  background: rgb(23 58 44 / 0.85);
 }
 .nb-band.is-quiet { border-left-color: rgba(168, 162, 158, 0.4); }
 .nb-band.is-quiet span { background: rgba(120, 113, 108, 0.6); }
 .nb-band.is-applied { background: rgba(34, 197, 94, 0.12); }
-.nb-band.is-selected { background: rgba(250, 204, 21, 0.28); box-shadow: inset 0 0 0 2px rgba(217, 119, 6, 0.9); border-left-color: #d97706; }
-.nb-band.is-selected span { background: #b45309; }
+.nb-band.is-selected { background: rgba(250, 204, 21, 0.28); box-shadow: inset 0 0 0 2px rgba(217, 119, 6, 0.9); border-left-color: var(--color-amber-600); }
+.nb-band.is-selected span { background: var(--color-fill-amber); }
 .nb-dot { display: inline-block; width: 8px; height: 8px; border-radius: 9999px; vertical-align: middle; }
 @layer components {
-  .nb-photo-btn { @apply rounded bg-white/90 p-1.5 text-stone-700 shadow hover:bg-white; }
-  .nb-chip { @apply flex max-w-64 shrink-0 items-center gap-2 rounded-md border border-stone-300 bg-white px-2 py-1 text-stone-800; }
+  .nb-photo-btn { @apply rounded bg-surface/90 p-1.5 text-stone-700 shadow hover:bg-surface; }
+  .nb-chip { @apply flex max-w-64 shrink-0 items-center gap-2 rounded-md border border-stone-300 bg-surface px-2 py-1 text-stone-800; }
   .nb-chip.is-current { @apply ring-2 ring-brand-600; }
   .nb-chip.is-busy { @apply text-stone-600; }
   .nb-chip.is-ready { @apply border-emerald-400; }
@@ -1085,11 +1574,11 @@ body.touch-bar-open main {
   .md a { @apply text-brand-700 underline decoration-brand-100 underline-offset-2 hover:decoration-brand-600; }
   .md code { @apply rounded bg-stone-100 px-[3px] py-px font-mono text-[0.85em] text-stone-800; }
   .md pre,
-  .md-code { @apply overflow-x-auto rounded-md border border-stone-200 bg-white p-3 font-mono text-xs leading-5 text-stone-800; }
+  .md-code { @apply overflow-x-auto rounded-md border border-stone-200 bg-surface p-3 font-mono text-xs leading-5 text-stone-800; }
   .md pre code { @apply bg-transparent p-0 text-xs; }
   .md blockquote { @apply border-l-4 border-amber-300 bg-amber-50 px-3 py-2 text-stone-700; }
   .md hr { @apply border-stone-200; }
-  .md-table { @apply overflow-x-auto rounded-md border border-stone-200 bg-white; }
+  .md-table { @apply overflow-x-auto rounded-md border border-stone-200 bg-surface; }
   .md-table table { @apply w-full border-collapse text-sm; }
   .md-table th { @apply border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-left font-semibold text-stone-700; }
   .md-table td { @apply border-t border-stone-100 px-2 py-1.5 align-top; }

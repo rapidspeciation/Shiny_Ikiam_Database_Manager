@@ -27,7 +27,7 @@ const alerts = computed(() => data.value?.alerts ?? [])
 </script>
 
 <template>
-  <section v-if="alerts.length" class="rounded-lg border border-amber-300 bg-white p-4 shadow-sm">
+  <section v-if="alerts.length" class="rounded-lg border border-amber-300 bg-surface p-4 shadow-sm">
     <div class="mb-2 flex flex-wrap items-baseline gap-x-3">
       <h2 class="text-lg font-semibold">{{ $t('Alertas') }}</h2>
       <RouterLink

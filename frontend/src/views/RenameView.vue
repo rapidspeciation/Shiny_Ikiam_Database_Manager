@@ -231,7 +231,7 @@ function resize(event: PointerEvent) {
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="border-b border-stone-200 bg-white text-sm">
+    <div class="border-b border-stone-200 bg-surface text-sm">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-1.5" :class="{ 'pb-1.5': section === 'links' }">
         <!-- The tab's two parts. -->
         <div class="flex shrink-0 rounded-md border border-stone-300 p-0.5 text-xs" role="tablist" data-sections>
@@ -240,7 +240,7 @@ function resize(event: PointerEvent) {
             :key="key"
             role="tab"
             class="rounded px-2 py-0.5"
-            :class="section === key ? 'bg-emerald-700 font-medium text-white' : 'text-stone-600 hover:text-stone-900'"
+            :class="section === key ? 'bg-fill-emerald font-medium text-white' : 'text-stone-600 hover:text-stone-900'"
             :aria-selected="section === key"
             :data-section="key"
             @click="section = key"
@@ -254,7 +254,7 @@ function resize(event: PointerEvent) {
             v-for="(name, i) in RENAME_STEPS"
             :key="name"
             class="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
-            :class="i === stepAt ? 'bg-emerald-700 font-medium text-white' : i < stepAt ? 'text-emerald-800' : 'text-stone-400'"
+            :class="i === stepAt ? 'bg-fill-emerald font-medium text-white' : i < stepAt ? 'text-emerald-800' : 'text-stone-400'"
             :aria-current="i === stepAt ? 'step' : undefined"
           >
             <Check v-if="i < stepAt" :size="12" />
@@ -290,7 +290,7 @@ function resize(event: PointerEvent) {
           </div>
           <button
             v-if="section === 'rename' && step === 'upload'"
-            class="btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800"
+            class="btn-primary bg-fill-emerald px-3 py-1 hover:bg-fill-emerald-strong"
             :title="$t('Lee en Drive las carpetas donde se subieron, para listarlas en Photo_links; después se actualizan los sitios')"
             data-uploaded
             @click="uploadedNow"
@@ -299,7 +299,7 @@ function resize(event: PointerEvent) {
           </button>
           <button
             v-if="section === 'rename'"
-            :class="step === 'review' ? 'btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800' : 'btn px-3 py-1'"
+            :class="step === 'review' ? 'btn-primary bg-fill-emerald px-3 py-1 hover:bg-fill-emerald-strong' : 'btn px-3 py-1'"
             :disabled="!canReview || asking"
             :title="
               !canReview
@@ -387,7 +387,7 @@ function resize(event: PointerEvent) {
         <div class="flex min-h-0 shrink-0 grow-0 basis-(--share) flex-col border-l border-stone-300">
           <div v-if="prompt" class="space-y-1.5 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-prompt>
             <p>{{ $t('No se pudo abrir el chat con el pedido. Pégalo en un chat nuevo:') }}</p>
-            <p class="rounded border border-amber-200 bg-white px-2 py-1 select-all">{{ prompt }}</p>
+            <p class="rounded border border-amber-200 bg-surface px-2 py-1 select-all">{{ prompt }}</p>
             <button class="btn px-2 py-0.5" @click="copyPrompt">
               <Check v-if="copied" :size="13" /><Copy v-else :size="13" /> {{ copied ? $t('Copiado') : $t('Copiar') }}
             </button>

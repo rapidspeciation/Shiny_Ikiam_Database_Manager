@@ -14,7 +14,7 @@ const emit = defineEmits<{ apply: [] }>()
   <div v-if="rows || written" class="flex flex-wrap items-center gap-2 px-2 py-1.5" data-sheet-apply>
     <button
       v-if="rows"
-      class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+      class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
       :disabled="busy"
       :title="$t('Escribe en la hoja solo las filas de {sheet}; las demás siguen pendientes', { sheet })"
       @click="emit('apply')"

@@ -65,7 +65,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-sm" data-drive-photos>
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-sm" data-drive-photos>
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stone-200 px-3 py-2">
       <Images :size="15" class="shrink-0 text-emerald-700" />
       <strong class="font-medium">{{ proposal.reason }}</strong>
@@ -96,7 +96,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             v-for="[key, label] in [['look', $t('Para revisar ({n})', { n: toLook })], ['all', $t('Todas ({n})', { n: rows.length })]] as const"
             :key="key"
             class="rounded px-1.5 py-0.5"
-            :class="which === key ? 'bg-emerald-700 text-white' : 'text-stone-600'"
+            :class="which === key ? 'bg-fill-emerald text-white' : 'text-stone-600'"
             @click="which = key"
           >
             {{ label }}
@@ -107,7 +107,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             v-for="[key, label] in [['photo', $t('Fotos')], ['envelope', $t('Sobres')]] as const"
             :key="key"
             class="rounded px-1.5 py-0.5"
-            :class="picture === key ? 'bg-stone-700 text-white' : 'text-stone-600'"
+            :class="picture === key ? 'bg-inverse text-on-inverse' : 'text-stone-600'"
             @click="picture = key"
           >
             {{ label }}
@@ -171,7 +171,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
         </li>
       </ul>
       <div class="flex flex-wrap items-center gap-2 border-t border-stone-200 px-3 py-2">
-        <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !changes" data-apply @click="apply">
+        <button class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="busy || !changes" data-apply @click="apply">
           <Check :size="15" /> {{ $tn(changes, 'Aplicar en Drive ({n} foto)', 'Aplicar en Drive ({n} fotos)') }}
         </button>
         <span class="text-xs text-stone-500">{{ $t('Renombra cada foto y su RAW, las gira y quita las marcadas. Después, «Leer Drive» las lista en Photo_links.') }}</span>

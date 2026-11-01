@@ -15,7 +15,7 @@ const terms = computed(() => (parsed.value.ok && (!props.counts || parsed.value.
 
 <template>
   <div v-if="terms && terms.length > 1" class="flex flex-wrap items-center gap-1 text-sm tabular-nums" role="status">
-    <span v-for="(n, i) in terms" :key="i" class="rounded px-1.5 py-0.5" :class="n < 0 ? 'bg-red-50 text-red-800' : 'bg-white ring-1 ring-stone-200'">
+    <span v-for="(n, i) in terms" :key="i" class="rounded px-1.5 py-0.5" :class="n < 0 ? 'bg-red-50 text-red-800' : 'bg-surface ring-1 ring-stone-200'">
       {{ n < 0 ? `−${-n}` : i ? `+${n}` : n }}
     </span>
     <span class="font-semibold text-brand-800">= {{ terms.reduce((a, b) => a + b, 0) }}</span>

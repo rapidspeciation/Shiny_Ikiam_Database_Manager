@@ -18,7 +18,7 @@ const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; 
 </script>
 
 <template>
-  <section class="rounded-lg border border-stone-300 bg-white p-4 shadow-sm">
+  <section class="rounded-lg border border-stone-300 bg-surface p-4 shadow-sm">
     <h2 class="mb-3 text-lg font-semibold">{{ $t('Últimos IDs usados') }}</h2>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <div v-for="r in rows(ids)" :key="r.label" class="rounded-md bg-stone-50 px-3 py-2" :title="r.hint">

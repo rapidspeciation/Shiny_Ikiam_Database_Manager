@@ -209,7 +209,7 @@ onBeforeUnmount(dropGrid)
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-sm" data-photo-files>
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-sm" data-photo-files>
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stone-200 px-3 py-2">
       <FolderCog :size="15" class="shrink-0 text-emerald-700" />
       <strong class="font-medium">{{ $t('Cambios en los archivos de fotos de Google Drive') }}</strong>
@@ -363,7 +363,7 @@ onBeforeUnmount(dropGrid)
       </p>
       <div v-if="pending && rows" class="mt-2 flex flex-wrap items-center gap-2" data-file-selection>
         <label class="sr-only" for="file-change-kind">{{ $t('Tipo de cambio') }}</label>
-        <select id="file-change-kind" v-model="selectedKind" class="min-h-9 rounded border border-stone-300 bg-white px-2 text-xs" data-select-kind>
+        <select id="file-change-kind" v-model="selectedKind" class="min-h-9 rounded border border-stone-300 bg-surface px-2 text-xs" data-select-kind>
           <option value="">{{ $t('Tipo de cambio') }}</option>
           <option v-for="kind in FILE_CHANGES.filter(kind => rows?.some(row => row.change === kind))" :key="kind" :value="kind">{{ fileChangeLabel(kind) }}</option>
         </select>
@@ -383,7 +383,7 @@ onBeforeUnmount(dropGrid)
     <template v-if="pending">
       <div class="flex flex-wrap items-center gap-2 px-3 py-2">
         <button
-          class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
           :disabled="busy || !selected.size || !rows"
           :title="$t('Hace estos cambios en Google Drive con la cuenta del proyecto')"
           data-apply

@@ -52,7 +52,7 @@ function open(n: number, e: MouseEvent) {
         <img
           :src="url(p.photo, 'thumb')"
           :alt="$t('Foto {n} del cuaderno', { n: p.photo + 1 })"
-          class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-white object-contain"
+          class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-surface object-contain"
           loading="lazy"
           @error="broken = new Set([...broken, p.photo])"
         />

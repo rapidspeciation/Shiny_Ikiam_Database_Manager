@@ -209,7 +209,7 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
     />
     <p v-if="list && !clutches.length" class="py-6 text-center text-sm text-stone-500">{{ $t('Nada que copiar al cuaderno en este periodo.') }}</p>
     <ul class="mt-2 space-y-2">
-      <li v-for="c in clutches" :key="c.recordId" class="rounded-xl border border-stone-200 bg-white shadow-sm" :data-clutch="c.clutch">
+      <li v-for="c in clutches" :key="c.recordId" class="rounded-xl border border-stone-200 bg-surface shadow-sm" :data-clutch="c.clutch">
         <button class="flex min-h-12 w-full items-baseline gap-2 px-3 py-2 text-left" :aria-label="$t('Abrir el clutch {clutch}', { clutch: c.clutch })" @click="emit('open', c.recordId)">
           <span class="text-lg font-semibold">{{ c.clutch }}</span>
           <span v-if="c.isNew" class="rounded bg-brand-100 px-1.5 text-xs font-medium text-brand-800">{{ $t('nuevo') }}</span>
@@ -232,7 +232,7 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
         </ul>
       </li>
     </ul>
-    <div v-if="session.canEdit && list" class="mt-4 rounded-xl border border-stone-200 bg-white p-3">
+    <div v-if="session.canEdit && list" class="mt-4 rounded-xl border border-stone-200 bg-surface p-3">
       <p class="text-sm text-stone-700">{{ $t('¿Ya lo copiaste al cuaderno? Márcalo para que la próxima lista empiece aquí (para todos).') }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
         <button class="btn-primary h-11 px-4" :disabled="marking" @click="markUpTo(list.to)">

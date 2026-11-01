@@ -1779,22 +1779,22 @@ watch(
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1.4;
-  color: #57534e;
+  color: var(--color-stone-600);
 }
 /* A notebook page's lines that write nothing: grey (as the sheet has them), or as written (no such row). */
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell,
 .legend.is-context {
-  background: #fafaf9;
-  color: #a8a29e;
+  background: var(--color-stone-50);
+  color: var(--color-stone-400);
 }
 .proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell {
-  background: #fafaf9;
-  color: #a8a29e;
+  background: var(--color-stone-50);
+  color: var(--color-stone-400);
   font-style: italic;
 }
 .proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell.proposal-note,
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell.proposal-note {
-  color: #78716c;
+  color: var(--color-stone-500);
 }
 /*
  * Marked by the assistant (highlight): the row yellow, as in show_rows tables. Its cells with a
@@ -1805,37 +1805,37 @@ watch(
 .proposal-sheet .tabulator-row.is-marked-row.is-context-row .tabulator-cell,
 .proposal-sheet .tabulator-row.is-marked-row.is-placeholder-row .tabulator-cell,
 .legend.is-marked {
-  background: #fef9c3;
+  background: var(--color-yellow-100);
 }
 /* A line the save refused: red, with why in its note. */
 .proposal-sheet .tabulator-row.is-error-row .tabulator-cell,
 .legend.is-line-error {
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--color-red-50);
+  color: var(--color-red-800);
 }
 /* A formula cell (grey, as in every grid), and what it will give once applied (tagged): never written. */
 .proposal-sheet .tabulator-cell.is-formula-gives,
 .legend.is-formula-gives {
-  color: #57534e;
-  background: #f3f4f1;
+  color: var(--color-stone-600);
+  background: var(--color-stone-100);
   font-style: italic;
 }
 /* A column the rack decides (Rack_ID, Sort): only to read here (its colour kept, a grey underline); its tooltip and the bar say where it changes. */
 .proposal-sheet .tabulator-cell.is-field-locked {
-  box-shadow: inset 0 -2px 0 #d6d3d1;
+  box-shadow: inset 0 -2px 0 var(--color-stone-300);
   cursor: not-allowed;
 }
 /* A formula the proposal writes: the formula tint with the proposal's green edge, and an "ƒx" tag. */
 .proposal-sheet .tabulator-cell.is-formula-write {
-  box-shadow: inset 3px 0 0 #15803d;
+  box-shadow: inset 3px 0 0 var(--color-green-700);
 }
 .proposal-sheet .tabulator-cell .fx-mark,
 .legend.is-formula-write::before {
   display: inline-block;
   padding: 0 3px;
-  border: 1px solid #15803d;
+  border: 1px solid var(--color-green-700);
   border-radius: 3px;
-  color: #15803d;
+  color: var(--color-green-700);
   font-style: normal;
   font-size: 11px;
   line-height: 14px;
@@ -1846,12 +1846,12 @@ watch(
 }
 /* The formula gives an error with the proposed values (#N/A): red, the only colour for errors. */
 .proposal-sheet .tabulator-cell.is-formula-error {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--color-red-700);
+  background: var(--color-red-50);
 }
 /* A formula that could not be calculated here: the sheet's value, underlined dotted. */
 .proposal-sheet .tabulator-cell.is-formula-stale {
-  text-decoration: underline dotted #a8a29e;
+  text-decoration: underline dotted var(--color-stone-400);
 }
 /* The assistant says something about the cell (hover, or select it to read it in the bar): a corner, as a comment in Google Sheets. */
 .proposal-sheet .tabulator-cell.has-comment {
@@ -1863,7 +1863,7 @@ watch(
   right: 0;
   border-style: solid;
   border-width: 0 7px 7px 0;
-  border-color: transparent #ea8600 transparent transparent;
+  border-color: transparent var(--pending-edge) transparent transparent;
   pointer-events: none;
 }
 /* Beside the red corner of a value outside the list. */
@@ -1880,13 +1880,13 @@ watch(
   gap: 4px;
   width: max-content;
   max-width: calc(100% - 8px);
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 6px;
-  background: #fffbeb;
+  background: var(--color-amber-50);
   padding: 3px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
   font-size: 12px;
-  color: #78350f;
+  color: var(--color-amber-900);
 }
 .proposal-sheet .doubt-quick.is-above {
   transform: translateY(-100%);
@@ -1896,27 +1896,27 @@ watch(
   align-items: center;
   gap: 3px;
   min-height: 24px;
-  border: 1px solid #fcd34d;
+  border: 1px solid var(--color-amber-300);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   padding: 0 8px;
   font-variant-numeric: tabular-nums;
 }
 .proposal-sheet .doubt-quick button:hover {
-  background: #fde68a;
+  background: var(--color-amber-200);
 }
 .proposal-sheet .doubt-quick .doubt-quick-ok {
-  border-color: #6ee7b7;
-  background: #ecfdf5;
-  color: #065f46;
+  border-color: var(--color-emerald-300);
+  background: var(--color-emerald-50);
+  color: var(--color-emerald-800);
   font-weight: 600;
 }
 .proposal-sheet .doubt-quick .doubt-quick-ok:hover {
-  background: #d1fae5;
+  background: var(--color-emerald-100);
 }
 .proposal-sheet .doubt-quick-key {
   padding: 0 4px;
-  color: #a16207;
+  color: var(--color-yellow-700);
   font-family: inherit;
   font-size: 10px;
 }
@@ -1935,7 +1935,7 @@ watch(
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
   min-height: 0;
   border-color: transparent;
-  background: #e7e5e4;
+  background: var(--color-stone-200);
 }
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
   padding-top: 7px;
@@ -1970,24 +1970,24 @@ watch(
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover,
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .tabulator-cell {
-  background: #d6d3d1;
+  background: var(--color-stone-300);
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .marker-text:not(.is-jump-down) {
-  color: #44403c;
+  color: var(--color-stone-700);
 }
 .proposal-sheet .marker-action {
-  color: #57534e;
+  color: var(--color-stone-600);
   font-size: 10px;
   white-space: nowrap;
 }
 .proposal-sheet .marker-action.is-open {
   padding: 0 5px;
-  border: 1px solid #a8a29e;
+  border: 1px solid var(--color-stone-400);
   border-radius: 3px;
-  background: #fafaf9;
+  background: var(--color-stone-50);
 }
 .proposal-sheet .marker-action.is-error {
-  color: #b91c1c;
+  color: var(--color-red-700);
 }
 /* «Sin línea en la foto»: a heading over the rows below it (they are in the table), not a gap: no tear. */
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading::before,
@@ -1996,13 +1996,13 @@ watch(
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading,
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
-  background: #f5f5f4;
+  background: var(--color-stone-100);
   cursor: default;
 }
 .proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
   padding-top: 3px;
   padding-bottom: 3px;
-  border-top: 1px solid #d6d3d1;
+  border-top: 1px solid var(--color-stone-300);
 }
 /* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {
@@ -2011,7 +2011,7 @@ watch(
 }
 .proposal-sheet .marker-text {
   white-space: nowrap;
-  color: #78716c;
+  color: var(--color-stone-500);
   font-style: italic;
 }
 .proposal-sheet .marker-text.is-jump-down,
@@ -2024,17 +2024,17 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 .proposal-sheet .marker-text.is-jump-down {
-  background: #e0f2fe;
-  color: #075985;
+  background: var(--color-sky-100);
+  color: var(--color-sky-800);
 }
 .proposal-sheet .marker-text.is-jump-up {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-amber-100);
+  color: var(--color-amber-800);
 }
 .proposal-sheet .marker-text.is-apart {
   font-style: normal;
   font-weight: 600;
-  color: #57534e;
+  color: var(--color-stone-600);
 }
 /*
  * A butterfly dead in the sheet already: its ID in highlighter yellow, as the person marks the line
@@ -2043,29 +2043,29 @@ watch(
  */
 .proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dead-sheet,
 .legend.is-dead-sheet {
-  background: #fde047;
+  background: var(--color-yellow-300);
 }
 .proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dies-here,
 .legend.is-dies-here {
-  box-shadow: inset 0 -4px 0 #facc15;
+  box-shadow: inset 0 -4px 0 var(--color-yellow-400);
 }
 /* A repeated ID (A0E.1): which ID it repeats and that ID's row. */
 .proposal-sheet .repeat-chip,
 .proposal-sheet .off-photo {
   display: inline-block;
   padding: 0 4px;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--color-stone-300);
   border-radius: 3px;
-  color: #57534e;
-  background: #f5f5f4;
+  color: var(--color-stone-600);
+  background: var(--color-stone-100);
   font-size: 10px;
   line-height: 13px;
   white-space: nowrap;
 }
 .proposal-sheet .repeat-chip {
-  border-color: #99f6e4;
-  background: #f0fdfa;
-  color: #115e59;
+  border-color: var(--color-teal-200);
+  background: var(--color-teal-50);
+  color: var(--color-teal-800);
 }
 .proposal-sheet .repeat-chip.is-link {
   cursor: pointer;
@@ -2074,9 +2074,9 @@ watch(
 .proposal-sheet .tabulator-cell .formula-mark {
   display: inline-block;
   padding: 0 4px;
-  border: 1px solid #d6d3d1;
+  border: 1px solid var(--color-stone-300);
   border-radius: 3px;
-  color: #78716c;
+  color: var(--color-stone-500);
   font-size: 10px;
   font-style: normal;
   line-height: 13px;

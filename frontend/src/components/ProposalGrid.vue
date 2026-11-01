@@ -721,7 +721,7 @@ const statusText = computed(
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-stone-800">
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-stone-800">
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
       <span>
         {{ $t('Cambios propuestos') }} · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
@@ -1005,7 +1005,7 @@ const statusText = computed(
           </button>
           <select
             v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
-            class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
+            class="rounded border border-stone-200 bg-surface px-1 py-0.5 text-[11px]"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
@@ -1147,7 +1147,7 @@ const statusText = computed(
         <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
         <button
           v-else-if="!perSheet.size || sheetsToApply.length > 1"
-          class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
           :disabled="busy || !chosen.length"
           @click="applyRows(null)"
         >

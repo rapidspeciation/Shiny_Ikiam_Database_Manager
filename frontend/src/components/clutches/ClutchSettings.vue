@@ -49,7 +49,7 @@ const OPTIONS = [
 
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" @click.self="emit('close')">
-    <section class="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:max-w-lg sm:rounded-2xl" role="dialog" :aria-label="$t('Ajustes de Clutches')">
+    <section class="max-h-full w-full overflow-y-auto rounded-t-2xl bg-surface p-4 shadow-xl sm:max-w-lg sm:rounded-2xl" role="dialog" :aria-label="$t('Ajustes de Clutches')">
       <header class="flex items-center gap-2">
         <Settings :size="20" class="text-stone-600" />
         <h2 class="flex-1 text-lg font-semibold">{{ $t('Ajustes de Clutches') }}</h2>
@@ -66,7 +66,7 @@ const OPTIONS = [
           type="button"
           role="radio"
           class="block w-full rounded-xl border px-3 py-2 text-left"
-          :class="clutchSettings.subtractPreserved === o.value ? 'border-brand-700 bg-brand-50 ring-2 ring-brand-100' : 'border-stone-300 bg-white'"
+          :class="clutchSettings.subtractPreserved === o.value ? 'border-brand-700 bg-brand-50 ring-2 ring-brand-100' : 'border-stone-300 bg-surface'"
           :aria-checked="clutchSettings.subtractPreserved === o.value"
           :disabled="!session.isAdmin || saving"
           @click="choose(o.value)"

@@ -400,7 +400,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   gap: 0.2rem;
   border: 1px solid var(--color-stone-300);
   border-radius: 0.25rem;
-  background: white;
+  background: var(--surface);
   padding: 0.1rem 0.45rem;
   font-size: 11px;
   color: var(--color-stone-700);
@@ -521,7 +521,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   box-shadow: inset 0 0 0 1px var(--color-amber-400);
 }
 .well.is-same {
-  background: white;
+  background: var(--surface);
 }
 .well.is-check {
   background: var(--color-amber-50);
@@ -605,7 +605,7 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
   border-color: var(--color-amber-400);
 }
 .swatch.is-same {
-  background: white;
+  background: var(--surface);
 }
 .swatch.is-check {
   background: var(--color-amber-50);

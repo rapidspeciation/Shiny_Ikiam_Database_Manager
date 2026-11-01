@@ -85,9 +85,9 @@ watch(
     role="status"
     class="pointer-events-none fixed bottom-20 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 rounded-md px-4 py-2 text-sm shadow-lg"
     :class="{
-      'bg-stone-800 text-white': notice.kind === 'info',
-      'bg-red-700 text-white': notice.kind === 'error',
-      'bg-brand-700 text-white': notice.kind === 'success',
+      'bg-inverse text-on-inverse': notice.kind === 'info',
+      'bg-danger text-white': notice.kind === 'error',
+      'bg-brand text-white': notice.kind === 'success',
     }"
   >
     {{ notice.text }}

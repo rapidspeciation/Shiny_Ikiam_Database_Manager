@@ -86,7 +86,7 @@ function jump(module: string) {
             v-for="s in sheets"
             :key="s.module"
             type="button"
-            class="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 hover:border-emerald-700 hover:text-emerald-900"
+            class="rounded-full border border-stone-300 bg-surface px-2.5 py-0.5 hover:border-emerald-700 hover:text-emerald-900"
             :class="{ 'border-emerald-700 font-semibold': s.idExact || s.exact }"
             @click="jump(s.module)"
           >

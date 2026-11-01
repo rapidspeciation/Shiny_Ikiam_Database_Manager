@@ -39,7 +39,7 @@ const emit = defineEmits<{
 const counting = computed(() => props.count !== undefined)
 const n = computed(() => Math.max(1, Math.min(60, Math.floor(props.count ?? 1))))
 const ids = computed(() => props.ids ?? [])
-const choice = (on: boolean, color = 'border-brand-700 bg-brand-700 text-white') => (on ? color : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100')
+const choice = (on: boolean, color = 'border-brand bg-brand text-white') => (on ? color : 'border-stone-300 bg-surface text-stone-800 active:bg-stone-100')
 </script>
 
 <template>
@@ -48,7 +48,7 @@ const choice = (on: boolean, color = 'border-brand-700 bg-brand-700 text-white')
       <span class="min-w-0 flex-1 text-sm font-medium text-violet-950">
         {{ forAll ? $t('Para todas las de este clutch') : $t('Preservados del clutch') }}
       </span>
-      <span v-if="counting" class="flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
+      <span v-if="counting" class="flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
         <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una menos')" @click="emit('update:count', Math.max(1, n - 1))">−</button>
         <input
           :value="count"
@@ -71,7 +71,7 @@ const choice = (on: boolean, color = 'border-brand-700 bg-brand-700 text-white')
       <button
         type="button"
         class="min-h-11 rounded-lg border text-sm font-medium"
-        :class="choice(foundDead, 'border-amber-700 bg-amber-700 text-white')"
+        :class="choice(foundDead, 'border-fill-amber bg-fill-amber text-white')"
         :aria-pressed="foundDead"
         @click="emit('update:foundDead', true)"
       >

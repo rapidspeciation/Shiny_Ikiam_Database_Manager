@@ -30,7 +30,7 @@ const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.start
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-white text-sm" data-photo-gallery>
+  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-sm" data-photo-gallery>
     <p class="flex items-center gap-2 border-b border-stone-200 px-3 py-2">
       <GalleryHorizontalEnd :size="15" class="shrink-0 text-emerald-700" />
       <strong class="font-medium">{{ proposal.reason }}</strong>

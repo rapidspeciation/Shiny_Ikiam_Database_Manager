@@ -28,7 +28,7 @@ const reading = computed(() => photoReadings.get(props.photos[photo.value]?.id ?
 <template>
   <aside class="flex w-72 shrink-0 flex-col gap-1 border-l border-stone-200 bg-stone-50 p-2 text-xs" data-row-photos>
     <p class="truncate font-medium text-stone-800" :title="label">{{ label }}</p>
-    <div class="h-64 overflow-hidden rounded border border-stone-200 bg-stone-900">
+    <div class="h-64 overflow-hidden rounded border border-stone-200 bg-photo-mat">
       <PhotoViewer
         v-if="photos.length"
         v-model:photo="photo"
@@ -39,9 +39,9 @@ const reading = computed(() => photoReadings.get(props.photos[photo.value]?.id ?
         :alt="n => $t('Foto {n} del punto', { n: n + 1 })"
         class="h-full"
       />
-      <p v-else class="m-auto px-4 py-20 text-center text-stone-300">{{ $t('Sin fotos en Wikiloc') }}</p>
+      <p v-else class="m-auto px-4 py-20 text-center text-on-photo-muted">{{ $t('Sin fotos en Wikiloc') }}</p>
     </div>
-    <p v-if="reading" class="rounded bg-white px-1.5 py-1 text-stone-700" data-reading>
+    <p v-if="reading" class="rounded bg-surface px-1.5 py-1 text-stone-700" data-reading>
       <span class="font-medium">{{ $t('Identificador') }}:</span>
       <template v-if="reading.status === 'done'">
         {{ readingText(reading.species) || $t('sin especie') }}

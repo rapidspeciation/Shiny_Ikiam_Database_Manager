@@ -78,7 +78,7 @@ function change(field: Field, text: string) {
 
 <template>
   <div class="fixed inset-0 z-40 flex justify-end bg-black/30" @click.self="emit('close')">
-    <aside class="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
+    <aside class="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
       <header class="flex items-center gap-2 border-b border-stone-200 px-4 py-3">
         <div class="min-w-0 flex-1">
           <h2 class="truncate text-lg font-semibold">{{ title }}</h2>

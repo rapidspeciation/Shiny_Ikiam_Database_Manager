@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-2 sm:p-4" @click.self="close">
-    <section class="flex max-h-full w-full max-w-3xl flex-col rounded-2xl bg-white p-3 shadow-xl sm:p-4" role="dialog" :aria-label="title || $t('Cámara')" data-camera-capture>
+    <section class="flex max-h-full w-full max-w-3xl flex-col rounded-2xl bg-surface p-3 shadow-xl sm:p-4" role="dialog" :aria-label="title || $t('Cámara')" data-camera-capture>
       <header class="flex items-center gap-2">
         <Camera :size="20" class="text-stone-600" />
         <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ title || $t('Cámara') }}</h2>
@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
         <button type="button" class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Cerrar')" @click="close"><X :size="22" /></button>
       </header>
 
-      <div class="relative mt-2 flex min-h-56 flex-1 items-center justify-center overflow-hidden rounded-xl bg-stone-900">
+      <div class="relative mt-2 flex min-h-56 flex-1 items-center justify-center overflow-hidden rounded-xl bg-photo-mat">
         <video v-show="camera.stream.value && !taken" ref="video" class="max-h-[70vh] w-full object-contain" autoplay muted playsinline />
         <img v-if="taken" :src="taken.url" :alt="$t('Foto tomada')" class="max-h-[70vh] w-full object-contain" />
         <p v-if="camera.starting.value" class="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white">

@@ -204,7 +204,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
 .dep-field input {
   border: 1px solid var(--color-stone-300);
   border-radius: 0.25rem;
-  background: white;
+  background: var(--surface);
   padding: 0.1rem 0.35rem;
   font-size: 12px;
   color: var(--color-stone-900);
@@ -219,7 +219,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   align-items: center;
   border: 1px solid var(--color-stone-300);
   border-radius: 0.25rem;
-  background: white;
+  background: var(--surface);
   padding: 0.15rem 0.3rem;
   color: var(--color-emerald-800);
 }
@@ -229,7 +229,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
 .jump {
   border: 1px solid var(--color-stone-300);
   border-radius: 9999px;
-  background: white;
+  background: var(--surface);
   padding: 0 0.5rem;
   font-size: 11px;
 }

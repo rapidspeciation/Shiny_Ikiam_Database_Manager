@@ -162,7 +162,7 @@ async function recover() {
       <button
         type="button"
         class="btn sm:hidden"
-        :class="{ 'bg-stone-800 text-white': filtered }"
+        :class="{ 'bg-inverse text-on-inverse': filtered }"
         @click="showFilters = !showFilters"
       >
         <SlidersHorizontal :size="15" /> {{ $t('Filtros') }}

@@ -87,7 +87,7 @@ const border = (field: Field) =>
           <RotateCcw :size="12" /> {{ $t('siguiente libre') }}
         </button>
       </div>
-      <div class="flex h-11 items-stretch overflow-hidden rounded-lg border bg-white focus-within:ring-2 focus-within:ring-brand-100" :class="border(field)">
+      <div class="flex h-11 items-stretch overflow-hidden rounded-lg border bg-surface focus-within:ring-2 focus-within:ring-brand-100" :class="border(field)">
         <span v-if="field === 'cam'" class="grid place-items-center bg-stone-100 px-1.5 font-mono text-sm text-stone-600">CAM</span>
         <select
           v-else

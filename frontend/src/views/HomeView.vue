@@ -88,7 +88,7 @@ watch(() => session.user?.username, load)
         <InsectarySummary v-if="data.team" :team="data.team" />
         <NatureSummary :nature="data.nature" />
         <TeamCounts v-if="data.team" :team="data.team" />
-        <p v-else class="flex items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600">
+        <p v-else class="flex items-center gap-2 rounded-md border border-stone-200 bg-surface px-3 py-2 text-sm text-stone-600">
           <Lock :size="14" />
           <span
             >{{ $t('El equipo ve además el estado del insectario, el monitoreo y los registros completos al') }}

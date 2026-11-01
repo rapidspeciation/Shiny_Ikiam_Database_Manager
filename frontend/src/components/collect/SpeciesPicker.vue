@@ -53,7 +53,7 @@ const style = computed(() =>
 <template>
   <div class="fixed inset-0 z-40 flex justify-center bg-black/40 sm:items-start sm:pt-[8vh]" :style="style" @click.self="emit('close')">
     <section
-      class="flex h-full w-full flex-col bg-white sm:h-auto sm:max-h-[80vh] sm:max-w-lg sm:rounded-xl sm:shadow-xl"
+      class="flex h-full w-full flex-col bg-surface sm:h-auto sm:max-h-[80vh] sm:max-w-lg sm:rounded-xl sm:shadow-xl"
       role="dialog"
       :aria-label="$t('Elegir especie')"
     >
@@ -63,7 +63,7 @@ const style = computed(() =>
           <input
             ref="input"
             v-model="query"
-            class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-3 pl-10 text-lg focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+            class="h-12 w-full rounded-xl border border-stone-300 bg-surface pr-3 pl-10 text-lg focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
             :placeholder="$t('Especie o forma (p. ej. mech mess, deceptus)')"
             :aria-label="$t('Buscar especie')"
             type="search"
