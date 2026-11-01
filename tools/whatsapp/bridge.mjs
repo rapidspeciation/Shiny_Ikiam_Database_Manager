@@ -276,6 +276,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     save();
     return id;
   }
+  // The reaction emojis (config `reactions`): while working, when Claude replied, when it woke but stayed silent.
+  const EMOJI = { working: '👀', replied: '✅', silent: '☑️', failed: '⚠️', ...(config.reactions ?? {}) };
   /** How a chat shows it is working: Franz's /ack choice, else the config's (reaction by default). */
   const ackMode = chat => state.ack?.[chat.key] ?? chat.ack ?? 'reaction';
   const reactTo = (chat, msg, emoji) =>
@@ -308,7 +310,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     '- /usage – uso de la cuenta de Claude',
     '- /whoami – quién eres para el asistente',
     '- /stop, /start – solo Franz: apagar o encender todo',
-    '- /ack reaction | edit – solo Franz: 👀/✅ en el mensaje, o un mensaje con los pasos',
+    '- /ack reaction | edit – solo Franz: reacciones en el mensaje (👀 trabajando, ✅ respondí, ☑️ sin respuesta), o un mensaje con los pasos',
   ].join('\n');
 
   async function runCommand(chat, msg, cmd) {
@@ -323,7 +325,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     if (cmd.name === 'ack') {
       if (!admin(msg)) return say(chat, 'Solo Franz puede cambiar /ack.', 'reply', msg);
       const mode = String(cmd.arg ?? '').toLowerCase();
-      if (!ACK_MODES.includes(mode)) return say(chat, `Aviso de trabajo aquí: ${ackMode(chat)}. Opciones: /ack reaction (👀 y luego ✅), /ack edit (un mensaje que muestra los pasos y se vuelve la respuesta).`, 'reply', msg);
+      if (!ACK_MODES.includes(mode)) return say(chat, `Aviso de trabajo aquí: ${ackMode(chat)}. Opciones: /ack reaction (👀 y luego ✅, o ☑️ si no hay respuesta), /ack edit (un mensaje que muestra los pasos y se vuelve la respuesta).`, 'reply', msg);
       (state.ack ??= {})[chat.key] = mode;
       save();
       record({ dir: 'state', ack: mode, chat: chat.key });
@@ -440,7 +442,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     queues.set(chat.key, q);
     out('queued', msg.followUp ? 'follow-up' : null);
     // The 👀 only here, after the gate: a message that never passed it gets no reaction at all.
-    if (ackMode(chat) === 'reaction') msg.seen = reactTo(chat, msg, '👀');
+    if (ackMode(chat) === 'reaction') msg.seen = reactTo(chat, msg, EMOJI.working);
     pump(chat);
     return { decision: 'queued' };
   }
@@ -787,6 +789,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       status.editing = status.editing.then(() => send(chat, { kind: 'status', edit: status.id, text, trigger: msg }).catch(e => log.error?.('edit:', e.message)));
     };
     let ok = false;
+    let spoke = false;
     try {
       // The route's tools (the lab app's MCP endpoint, for Franz's chat) answer before a model turn starts; if not, say so at once.
       if (route.toolsHealth && !(await toolsUp(route.toolsHealth))) {
@@ -850,6 +853,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
       ok = true;
       const reply = parseReply(r.text);
+      spoke = Boolean(reply.text || reply.images.length || reply.files.length);
       if (reply.silent) {
         if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}✅`, trigger: msg }).catch(() => null);
         return;
@@ -879,7 +883,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       rmSync(dir, { recursive: true, force: true });
       if (mode === 'reaction') {
         await msg.seen;
-        await reactTo(chat, msg, ok ? '✅' : '⚠️');
+        await reactTo(chat, msg, ok ? (spoke ? EMOJI.replied : EMOJI.silent) : EMOJI.failed);
       }
     }
   }

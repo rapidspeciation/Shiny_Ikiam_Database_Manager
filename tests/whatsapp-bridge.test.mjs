@@ -120,7 +120,7 @@ test('the group: untagged, loop guard, tagged, limit', async () => {
   assert.equal(sent[1].text, 'Claude: Hay 12.');
   post('G@g.us', '@claude y ahora en silencio');
   await settle();
-  assert.deepEqual(outbox().slice(3).map(s => s.react?.emoji), ['👀', '✅']); // no answer
+  assert.deepEqual(outbox().slice(3).map(s => s.react?.emoji), ['👀', '☑️']); // no answer
   post('G@g.us', '@claude otra');
   await settle();
   assert.equal(post('G@g.us', '@claude y otra más').decision, 'limited');
@@ -315,7 +315,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   post('Claude, entre nosotros: ¿quién lleva las redes mañana?');
   await settle();
   assert.deepEqual(turns(), ['T', 'F', 'F']);
-  assert.deepEqual(outbox().slice(before).map(s => s.react?.emoji ?? s.kind), ['👀', '✅']); // no text
+  assert.deepEqual(outbox().slice(before).map(s => s.react?.emoji ?? s.kind), ['👀', '☑️']); // no text
 
   // The silent exchange did not refresh the window: 15 minutes after Claude's last answer it is over.
   clock += 11 * 60_000;
@@ -578,7 +578,7 @@ test('a quote of Claude aimed at the team: 👀 then ✅ and no text; a question
   let from = outbox().length;
   post('miren esto', { ReplyToID: ours });
   await settle();
-  assert.deepEqual(marks(from), ['👀', '✅']); // no text
+  assert.deepEqual(marks(from), ['👀', '☑️']); // no text
   from = outbox().length;
   post('Claude, ¿y para machos?');
   await settle();
@@ -656,4 +656,27 @@ test('a reply that already starts with «Claude: » is not prefixed twice', asyn
   await new Promise(r => setTimeout(r, 150));
   const sent = readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   assert.equal(sent.find(s => s.kind === 'reply').text, 'Claude: Hay 12.');
+});
+
+test('the reaction emojis come from the config, with 👀 ✅ ☑️ as defaults', async () => {
+  const run = async (reactions, text) => {
+    const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-emoji-'));
+    const script = join(dir, 'turn.mjs');
+    writeFileSync(script, `console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:${JSON.stringify(text)}}));`);
+    const config = {
+      ...(reactions ? { reactions } : {}),
+      chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0 } },
+      routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+      wacli: { bin: '/bin/false', store: dir },
+    };
+    const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+    bridge.handle({ Chat: 'G@g.us', ID: 'EM1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Ana' });
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 150));
+    return readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(s => s.react).map(s => s.react.emoji);
+  };
+  assert.deepEqual(await run(null, 'Hay 12.'), ['👀', '✅']);
+  assert.deepEqual(await run(null, '[silent]'), ['👀', '☑️']);
+  assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, 'Hay 12.'), ['⏳', '👍']);
+  assert.deepEqual(await run({ working: '⏳', replied: '👍', silent: '🤐' }, '[silent]'), ['⏳', '🤐']);
 });

@@ -32,7 +32,7 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
 
 **A turn.**
 - How it shows it is working (`ack`, per chat):
-  - `reaction`: 👀 on the message when it arrives, ✅ when answered (⚠️ on failure).
+  - `reaction`: 👀 on the message while working, ✅ when Claude replied, ☑️ when it woke but stayed silent (⚠️ on failure). The emojis are the config's `reactions`: { working, replied, silent, failed }.
   - `edit`: one «Claude: pensando…» message that lists the chat's tool steps (tool names, never its reasoning) and is edited into the answer.
 - What the chat gets: the group's last 15 messages from wacli's store, the message, and its media:
   - the message's own, the quoted message's, and the sender's media of the last 3 minutes;
