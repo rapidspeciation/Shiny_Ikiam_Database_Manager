@@ -255,11 +255,13 @@ onMounted(async () => {
         v-if="t3Url"
         class="flex items-center gap-1 rounded px-2 py-0.5"
         :class="
-          fresh ? 'animate-pulse bg-fill-emerald text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
+          fresh ? 'bg-fill-emerald text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
         "
         :title="panel ? $t('Ocultar los cambios propuestos') : $t('Mostrar los cambios propuestos')"
         @click="panel = !panel"
       >
+        <!-- A new proposal: the fill and a still dot for a few seconds (no pulsing, PRINCIPLES P10). -->
+        <span v-if="fresh" class="size-1.5 rounded-full bg-current" aria-hidden="true" />
         <ListChecks :size="14" /> {{ $t('Cambios propuestos ({n})', { n: waiting }) }}
       </button>
       <button
