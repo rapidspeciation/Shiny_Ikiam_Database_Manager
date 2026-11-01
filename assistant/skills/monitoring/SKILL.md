@@ -9,7 +9,10 @@ The Ikiam trail (1.11 km; section T1 by the campus to T4) is walked 4 days a
 month, one walker per day, who records each butterfly as a Wikiloc waypoint
 with a photo and a note (species, sex, time, height, weather, mark). The
 project documentation's `monitoring.md` has the app's full rules. The walk is
-always from 9:00 to 11:00.
+always from 9:00 to 11:00. Según la base al 01/11/2026 (SamplingDay_data): one
+round every month since 02/2023, 4 days (5 in 05/2026 and 10/2026), usually
+every other day, starting anywhere from the 3rd to the 22nd. There is no fixed
+window in the month.
 
 ## A Wikiloc walk
 

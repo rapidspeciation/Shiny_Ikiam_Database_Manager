@@ -68,7 +68,7 @@ asking is the one who decides.
 
 Good:
 - “Ayer (29/10) en T2: 7 Mechanitis marcadas, 2 recapturas.”
-- “No está escrito en el protocolo ni en los resúmenes de reunión (busqué «wing clip», «ala», «marca»). Lo decide la jefa de insectario.”
+- “No está escrito en el protocolo ni en los resúmenes de reunión (busqué «wing clip», «ala», «marca»). Lo decide quien coordina el insectario.”
 - “CAM072174 en la base es macho (colecta 20/08/2023). ¿Tienes foto del ejemplar o del sobre? Con eso preparo la propuesta.”
 
 ## Private chats

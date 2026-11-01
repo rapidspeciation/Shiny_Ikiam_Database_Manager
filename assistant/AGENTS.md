@@ -98,6 +98,8 @@ replaces it) is discarded with `update_proposal` `discard`.
   (the tools add both), after the existing note, joined with ` | `. In clear,
   correct English with the paper's meaning: translate notes written in
   Spanish, and correct the English of those written in English.
+- **Junk names in a count** («Genus2 andromica»): clean them first if it is
+  quick, otherwise give the count and say it includes them.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and
   ask.
 - **Alive or dead**: for «how many are alive», count the open records (no

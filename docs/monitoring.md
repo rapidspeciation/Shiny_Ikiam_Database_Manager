@@ -1,6 +1,6 @@
 # Monitoring at Ikiam
 
-The team walks the Ikiam trail once a month (about four days between the 10th and 15th). The 1.11 km trail is split into four sections, T1 (by the campus) to T4 (the far end), stored in `Transect_section`. Captures go into Collection_data with `Purpose` = Monitoring and `Collection_location` = Ikiam; these rows are the only ones the Monitoreo tab counts.
+The team walks the Ikiam trail once a month, about four days, usually every other day (según la base al 01/11/2026: every month since 02/2023, first day anywhere from the 3rd to the 22nd, no fixed window). The 1.11 km trail is split into four sections, T1 (by the campus) to T4 (the far end), stored in `Transect_section`. Captures go into Collection_data with `Purpose` = Monitoring and `Collection_location` = Ikiam; these rows are the only ones the Monitoreo tab counts.
 
 ## Field notes in Wikiloc
 
