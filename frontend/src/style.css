@@ -794,10 +794,11 @@ body.touch-bar-open main {
   font-weight: 600;
   font-size: 12px;
 }
+/* Its edge at 3:1 on the header's grey and on a picked column's darker grey. */
 .sheet-grid .tabulator .tabulator-header-filter input {
   font-size: 12px;
   padding: 2px 4px;
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--fg-subtle);
   border-radius: 3px;
 }
 .sheet-grid .tabulator-row .tabulator-cell {

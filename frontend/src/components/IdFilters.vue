@@ -52,7 +52,7 @@ const sexes = computed<{ value: SexFilter; label: string; title: string }[]>(() 
     <select
       v-if="speciesList"
       v-model="species"
-      class="h-10 max-w-60 min-w-0 flex-1 rounded-lg border border-stone-300 bg-surface px-2 text-sm"
+      class="h-10 max-w-60 min-w-0 flex-1 rounded-lg border border-control bg-surface px-2 text-sm"
       :aria-label="$t('Especie vista')"
     >
       <option value="">{{ $t('Cualquier especie') }}</option>

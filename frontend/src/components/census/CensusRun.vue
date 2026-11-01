@@ -295,7 +295,7 @@ function cancel() {
               <input
                 ref="input"
                 v-model="query"
-                class="h-14 w-full rounded-xl border-2 border-stone-300 bg-surface pr-12 pl-10 text-2xl font-semibold tracking-wider uppercase placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+                class="h-14 w-full rounded-xl border-2 border-control bg-surface pr-12 pl-10 text-2xl font-semibold tracking-wider uppercase placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
                 :placeholder="$t('ID del ala (A?B, A[16]B)')"
                 :aria-label="$t('Insectary ID leído en el ala')"
                 :disabled="!canEdit"

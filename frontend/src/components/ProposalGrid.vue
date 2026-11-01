@@ -1008,7 +1008,7 @@ const statusText = computed(
           </button>
           <select
             v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
-            class="rounded border border-stone-200 bg-surface px-1 py-0.5 text-[11px]"
+            class="rounded border border-control bg-surface px-1 py-0.5 text-[11px]"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >

@@ -551,7 +551,7 @@ const origin = (p: Proposal) =>
       class="flex items-center gap-2 border-b border-stone-200 bg-surface px-3 py-1 text-xs text-stone-600"
     >
       <select
-        class="min-w-0 max-w-full truncate rounded border border-stone-200 bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+        class="min-w-0 max-w-full truncate rounded border border-control bg-surface py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
         :value="chosen"
         :aria-label="$t('Propuestas de qué chat')"
         :title="

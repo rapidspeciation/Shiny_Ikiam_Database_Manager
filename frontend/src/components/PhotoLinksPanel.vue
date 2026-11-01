@@ -336,11 +336,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div v-if="archive" class="grid grid-cols-2 gap-1.5">
-          <select v-model="archiveFolder" class="min-w-0 rounded border border-stone-300 bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Carpeta')">
+          <select v-model="archiveFolder" class="min-w-0 rounded border border-control bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Carpeta')">
             <option value="">{{ $t('Todas las carpetas') }}</option>
             <option v-for="f in archiveFolders" :key="f.name" :value="f.name">{{ f.name.split('/').slice(-2).join('/') }} · {{ f.n }}</option>
           </select>
-          <select v-model="archiveYear" class="min-w-0 rounded border border-stone-300 bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Año')">
+          <select v-model="archiveYear" class="min-w-0 rounded border border-control bg-surface px-1.5 py-1 text-xs" :aria-label="$t('Año')">
             <option value="">{{ $t('Todos los años') }}</option>
             <option v-for="y in archiveYears" :key="y.name" :value="String(y.name)">{{ y.name }} · {{ y.n }}</option>
           </select>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
           <input
             v-model="filter"
             type="search"
-            class="w-full border-0 border-b border-stone-200 px-2 py-1 text-xs"
+            class="w-full border-0 border-b border-control px-2 py-1 text-xs"
             :placeholder="$t('Buscar una carpeta (también las de dentro)')"
           />
           <ul class="max-h-56 overflow-y-auto py-0.5 text-xs" data-folder-list>
@@ -386,7 +386,7 @@ onBeforeUnmount(() => {
         </div>
         <label class="block text-xs text-stone-600">
           {{ $t('Una carpeta nueva para listar (enlace de Drive):') }}
-          <input v-model="added" type="text" class="mt-0.5 w-full rounded border border-stone-300 px-2 py-1 text-xs" placeholder="https://drive.google.com/drive/folders/…" />
+          <input v-model="added" type="text" class="mt-0.5 w-full rounded border border-control px-2 py-1 text-xs" placeholder="https://drive.google.com/drive/folders/…" />
         </label>
         <button class="btn-primary w-full justify-center bg-fill-emerald hover:bg-fill-emerald-strong" :disabled="reading" data-read-drive @click="read">
           <Loader2 v-if="reading" :size="15" class="animate-spin" /><FolderSearch v-else :size="15" />
@@ -405,7 +405,7 @@ onBeforeUnmount(() => {
         <input
           v-model="uploaded"
           type="text"
-          class="w-full rounded border border-stone-300 px-2 py-1 text-xs"
+          class="w-full rounded border border-control px-2 py-1 text-xs"
           :placeholder="$t('Enlace de la carpeta en Drive, o su ruta')"
           @keydown.enter="readIds"
         />

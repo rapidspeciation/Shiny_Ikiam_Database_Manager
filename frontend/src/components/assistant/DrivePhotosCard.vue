@@ -125,7 +125,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
             <div class="flex items-center gap-1">
               <input
                 :value="r.camid ?? ''"
-                class="w-full min-w-0 rounded border border-stone-300 px-1 py-0.5 font-mono text-[11px] uppercase"
+                class="w-full min-w-0 rounded border border-control px-1 py-0.5 font-mono text-[11px] uppercase"
                 :aria-label="$t('ID de {name}', { name: r.name })"
                 :disabled="r.remove"
                 @change="setId(r, ($event.target as HTMLInputElement).value)"
@@ -133,7 +133,7 @@ const src = (row: DrivePhotoRow) => `api/${base.value}/${row.file}/${picture.val
               />
               <select
                 :value="r.view"
-                class="rounded border border-stone-300 py-0.5 pr-4 pl-1 text-[11px]"
+                class="rounded border border-control py-0.5 pr-4 pl-1 text-[11px]"
                 :aria-label="$t('Vista')"
                 :disabled="r.remove || !r.camid"
                 @change="edit(r, { view: ($event.target as HTMLSelectElement).value })"

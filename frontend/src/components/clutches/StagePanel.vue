@@ -643,7 +643,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
         <input
           ref="gainBox"
           v-model="gainText"
-          class="h-12 w-28 rounded-lg border border-stone-300 bg-surface text-center text-xl font-semibold tabular-nums focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+          class="h-12 w-28 rounded-lg border border-control bg-surface text-center text-xl font-semibold tabular-nums focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -710,12 +710,12 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             {{ lossWord(lossKind) }} <PenLine :size="13" class="opacity-60" />
           </button>
           <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
-          <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
+          <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-control bg-surface">
             <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
             <input
               ref="lossBox"
               v-model="lossText"
-              class="h-11 w-14 border-x border-stone-300 text-center text-xl font-semibold tabular-nums outline-none"
+              class="h-11 w-14 border-x border-control text-center text-xl font-semibold tabular-nums outline-none"
               type="text"
               inputmode="numeric"
               maxlength="4"
@@ -803,7 +803,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           <span class="min-w-16 text-sm font-semibold">{{ r.name || $t('Todos') }}</span>
           <input
             v-model="r.text"
-            class="h-11 w-20 rounded-lg border border-stone-300 bg-surface text-center text-lg font-semibold tabular-nums"
+            class="h-11 w-20 rounded-lg border border-control bg-surface text-center text-lg font-semibold tabular-nums"
             type="text"
             inputmode="numeric"
             maxlength="4"
@@ -840,7 +840,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
       <div v-if="regroupCounts.length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
         <span v-for="(n, i) in regroupCounts" :key="i" class="flex items-center gap-1 rounded-lg bg-surface px-1.5 py-1 ring-1 ring-stone-200">
           <span class="font-semibold tabular-nums">{{ n }}</span> ·
-          <input v-model="regroupLabels[i]" class="h-8 w-20 rounded border border-stone-300 px-1 text-sm" maxlength="40" :aria-label="$t('Nombre del grupo {n}', { n: i + 1 })" />
+          <input v-model="regroupLabels[i]" class="h-8 w-20 rounded border border-control px-1 text-sm" maxlength="40" :aria-label="$t('Nombre del grupo {n}', { n: i + 1 })" />
         </span>
         <span class="text-sm tabular-nums" :class="regroupSum === total ? 'text-brand-800' : 'text-red-700'">= {{ regroupSum }} / {{ total }}</span>
       </div>

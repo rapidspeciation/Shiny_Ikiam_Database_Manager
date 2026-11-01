@@ -223,7 +223,7 @@ const when = (at?: string) => (at ? new Date(at).toLocaleTimeString([], { hour: 
   color: var(--color-stone-600);
 }
 .dep-field input {
-  border: 1px solid var(--color-stone-300);
+  border: 1px solid var(--border-control);
   border-radius: 0.25rem;
   background: var(--surface);
   padding: 0.1rem 0.35rem;

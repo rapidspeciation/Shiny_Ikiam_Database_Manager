@@ -217,12 +217,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div class="flex flex-wrap items-center gap-2">
                 <button type="button" class="flex h-10 items-center rounded-full border border-red-300 bg-surface px-3 text-sm font-semibold text-red-800" @click="lossKind = null">{{ lossWord(lossKind) }}</button>
                 <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
-                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
+                <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-control bg-surface">
                   <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
                   <input
                     ref="lossBox"
                     v-model="lossText"
-                    class="h-11 w-14 border-x border-stone-300 text-center text-xl font-semibold tabular-nums outline-none"
+                    class="h-11 w-14 border-x border-control text-center text-xl font-semibold tabular-nums outline-none"
                     type="text"
                     inputmode="numeric"
                     maxlength="4"

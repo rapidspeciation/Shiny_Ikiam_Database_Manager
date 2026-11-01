@@ -470,9 +470,10 @@ const wasText = (c: RackCell) => c.was.map(w => `${w.rack ?? '—'} ${w.well ?? 
 }
 .rack-fields input {
   width: 7.5rem;
-  border: 0;
-  background: transparent;
-  padding: 0.1rem 0;
+  border: 1px solid var(--border-control);
+  border-radius: 0.2rem;
+  background: var(--surface);
+  padding: 0.05rem 0.25rem;
   font-size: 12px;
 }
 .rack-fields input:focus {

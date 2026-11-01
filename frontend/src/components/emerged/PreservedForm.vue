@@ -48,7 +48,7 @@ const choice = (on: boolean, color = 'border-brand bg-brand text-white') => (on 
       <span class="min-w-0 flex-1 text-sm font-medium text-violet-950">
         {{ forAll ? $t('Para todas las de este clutch') : $t('Preservados del clutch') }}
       </span>
-      <span v-if="counting" class="flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-surface">
+      <span v-if="counting" class="flex items-stretch overflow-hidden rounded-lg border border-control bg-surface">
         <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una menos')" @click="emit('update:count', Math.max(1, n - 1))">−</button>
         <input
           :value="count"
@@ -56,7 +56,7 @@ const choice = (on: boolean, color = 'border-brand bg-brand text-white') => (on 
           inputmode="numeric"
           min="1"
           max="60"
-          class="h-11 w-14 border-x border-stone-300 text-center text-lg font-semibold tabular-nums outline-none"
+          class="h-11 w-14 border-x border-control text-center text-lg font-semibold tabular-nums outline-none"
           :aria-label="$t('Cuántas')"
           @input="emit('update:count', ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value))"
         />
