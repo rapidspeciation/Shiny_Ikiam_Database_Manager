@@ -12,6 +12,7 @@
 //   waits until the chat is idle, then for its run to end. → { ok, threadId, status, text, ms }
 // - op 'busy': → { ok, busy, exists }
 // - op 'thread': → { ok, exists, title, projectId }
+// - op 'archive': archives `threadId` (an idle chat keeps a Claude process for 30 min) → { ok, threadId }
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -60,9 +61,15 @@ async function main() {
     const row = req.threadId ? threadRow(db, req.threadId) : null;
     return { ok: true, exists: Boolean(row && !row.deleted_at), title: row?.title ?? null, projectId: row?.project_id ?? null };
   }
-  if (req.op !== 'turn') throw new Error(`Unknown op ${req.op}`);
   const { t3Commands } = await import(req.commandsModule);
   const send = t3Commands({ local: req.local, tokenFile: req.tokenFile, timeout: 20_000 });
+  if (req.op === 'archive') {
+    const row = req.threadId ? threadRow(db, req.threadId) : null;
+    if (!row || row.deleted_at) return { ok: false, threadId: req.threadId ?? null, error: 'no such chat' };
+    if (!row.archived_at) await send({ type: 'thread.archive', threadId: req.threadId });
+    return { ok: true, threadId: req.threadId };
+  }
+  if (req.op !== 'turn') throw new Error(`Unknown op ${req.op}`);
   const started = Date.now();
   const deadline = started + (req.timeoutMs ?? 15 * 60_000);
   let threadId = req.threadId ?? null;
