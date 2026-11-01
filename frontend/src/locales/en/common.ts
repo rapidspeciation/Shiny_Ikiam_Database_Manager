@@ -16,6 +16,10 @@ export default {
   Cancelar: 'Cancel',
   Cerrar: 'Close',
   'Cambiar idioma': 'Change language',
+  Tema: 'Theme',
+  Sistema: 'System',
+  Claro: 'Light',
+  Oscuro: 'Dark',
   Secciones: 'Sections',
   'Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?':
     'There are unsaved changes on this device. They will be kept for when you come back. Sign out?',
