@@ -8,7 +8,8 @@ description: Butterfly monitoring on the Ikiam transects T1–T4 — a Wikiloc w
 The Ikiam trail (1.11 km; section T1 by the campus to T4) is walked 4 days a
 month, one walker per day, who records each butterfly as a Wikiloc waypoint
 with a photo and a note (species, sex, time, height, weather, mark). The
-project documentation's `monitoring.md` has the app's full rules.
+project documentation's `monitoring.md` has the app's full rules. The walk is
+always from 9:00 to 11:00.
 
 ## A Wikiloc walk
 

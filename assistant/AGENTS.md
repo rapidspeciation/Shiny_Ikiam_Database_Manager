@@ -100,6 +100,17 @@ replaces it) is discarded with `update_proposal` `discard`.
   Spanish, and correct the English of those written in English.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and
   ask.
+- **Alive or dead**: adults rarely live past about 3 months. For «how many
+  are alive», count only those that entered in the last 3 months and say so in
+  one line («Asumiendo que no viven más de 3 meses, cuento solo las que
+  entraron desde dd/mm/yyyy»). An older one without a death date is a death
+  nobody recorded, even this year. Lifespans leave out disappearances (their
+  date is when the butterfly was missed, not when it died).
+- **The team works weekends**: pupae, emergences and cages are checked and
+  written down every day, so a pupa formed on Saturday carries Saturday's date.
+  Never explain a pattern by things left for Monday.
+- **Every figure has a source** (the database, a document or the chat). What
+  CAM stands for is not written down (it is not «Cambridge»): say that.
 
 ## The rows a rule may miss
 
