@@ -35,3 +35,17 @@
   Android emulator (real Chrome): a tap on a disabled button with a reason shows the toast.
 - Reviewed with dual-critic-loop: 2 rounds, Sol B → B (one should, fixed after round 2 as both proposed), Opus B+ → A-.
   Ledger: /home/franz/.local/share/ui-overhaul-20261031/review-c2/LEDGER.md.
+
+# Deployed: UI fix wave 3 (1 Nov 2026, 06:49 UTC)
+
+- Release **20261101T064914Z** (branch ui-overhaul-20261031; main pushed to origin and team). Before: 20261101T062244Z.
+  Health ok. Deploy lock taken and released.
+- Rollback:
+  `ssh claudeclaw 'cd /home/ubuntu/ithomiini && ln -sfn releases/20261101T062244Z current && systemctl --user restart ithomiini.service'`
+  then the t3-provision --refresh-all line above.
+- What: phones — the save bar's Revisar/Guardar stay above the touch action bar (they were covered while a cell was
+  selected: a live bug found when the save bar was first shot); «N celdas sin guardar:» on one line with a two-line
+  reason; Monitoreo map shows «no walks yet» over the map when the panel is closed. A one-row proposal opens
+  scrolled to the column the assistant changed. 12 px minimum in the proposal views (rack wells excepted).
+- Tests: deploy.sh server 820/820, frontend 717/717, type check, build. Shots c3-after-*, c3-r2-*.
+- Reviewed with dual-critic-loop: 2 rounds, Sol C → A, Opus C → B+. Ledger: ~/.local/share/ui-overhaul-20261031/review-c3/LEDGER.md.
