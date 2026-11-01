@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Clock, Loader2 } from 'lucide-vue-next'
+import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Clock, Loader2, PencilLine } from 'lucide-vue-next'
 import ReviewDialog from './ReviewDialog.vue'
 import { usePending } from '../stores/pending'
 import { errorText, notify } from '../lib/notice'
 import { t, tn } from '../lib/i18n'
+import { pendingPlaces } from '../lib/pendingPlaces'
 
 /**
  * Pending changes and how they reach Google Sheets. With automatic saving (the
@@ -16,6 +17,17 @@ const reviewing = ref(false)
 /** Pending cells that are not being saved, and why (the save bar shows the first reason). */
 const issues = computed(() => Object.values(pending.issues))
 const errorCount = computed(() => issues.value.length)
+/** Which rows are unsaved, named in the bar (sheet · row · columns), all of them on hover. */
+const placeText = (p: { module: string; label: string; row: number | null; fields: string[] }) =>
+  [p.module, p.label, p.row === null ? t('fila nueva') : t('fila {n}', { n: p.row })].filter(Boolean).join(' · ') +
+  (p.fields.length ? `: ${p.fields.join(', ')}` : '')
+const places = computed(() => {
+  const { shown, more } = pendingPlaces(Object.values(pending.edits), pending.creates)
+  return shown.map(placeText).join('; ') + (more ? ` ${t('y {n} más', { n: more })}` : '')
+})
+const allPlaces = computed(() =>
+  pendingPlaces(Object.values(pending.edits), pending.creates, Infinity).shown.map(placeText).join('\n'),
+)
 /** A walk's captures wait for Guardar (automatic saving leaves them). */
 const waitingRows = computed(() => pending.creates.filter(c => c.manual).length)
 
@@ -87,16 +99,19 @@ function discard() {
 </script>
 
 <template>
+  <!-- In the colour of the unsaved cells, with a strong edge: unlike the workbook's warnings above it (grey). -->
   <div
     v-if="pending.changeCount"
-    class="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-sm sm:px-4"
-    :class="pending.autoSave && !errorCount ? 'border-stone-200 bg-surface' : 'border-amber-300 bg-amber-50'"
+    class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm sm:px-4"
+    :class="pending.autoSave && !errorCount ? 'border-t border-stone-200 bg-surface' : 'border-t-2 border-pending-edge bg-cell-pending'"
+    data-save-bar
   >
     <span v-if="pending.autoSave && pending.saving" class="flex items-center gap-1.5 font-medium text-stone-700">
       <Loader2 :size="15" class="animate-spin" />
       {{ $tn(pending.changeCount, 'Guardando {n} cambio en Google Sheets…', 'Guardando {n} cambios en Google Sheets…') }}
     </span>
-    <span v-else class="font-medium text-amber-950">
+    <span v-else class="flex items-center gap-1.5 font-medium text-pending-text">
+      <PencilLine :size="15" class="shrink-0" aria-hidden="true" />
       {{
         pending.autoSave && !pending.autoBlocked && errorCount < pending.changeCount
           ? $tn(pending.changeCount, '{n} cambio en {rows} por guardar', '{n} cambios en {rows} por guardar', {
@@ -107,6 +122,9 @@ function discard() {
             })
       }}
     </span>
+    <span v-if="!pending.saving" class="min-w-0 max-w-full truncate text-xs text-pending-text" :title="allPlaces" data-pending-places>{{
+      places
+    }}</span>
     <button
       v-if="errorCount"
       type="button"
