@@ -250,8 +250,8 @@ export default {
   'La hoja cambió: {problems}.': 'The sheet changed: {problems}.',
   'Esas columnas se muestran con su último valor y no se pueden editar.':
     'Those columns show their last value and cannot be edited.',
-  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.':
-    'Tap a cell to select it and twice to edit it · drag the circle to extend the selection · below: Copy, Paste, Fill ↓, Clear · tap the row number to see the whole row · grey = formula.',
+  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.':
+    'Tap a cell to select it and twice to edit it · drag the circle to extend the selection · below: Copy, Paste, Fill ↓, Clear · tap the row number to see the whole row · 📋 see one row as a form · grey = formula.',
   'Escribe sobre una celda, o pulsa Enter o doble clic para editarla · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.':
     'Type over a cell, or press Enter or double-click to edit it · paste ranges from Excel or Sheets · Ctrl+D fills down · grey cells are formulas · click the row number to see the whole row.',
   'Cargando {sheet}…': 'Loading {sheet}…',

@@ -109,6 +109,7 @@ async function apply() {
         : t('IDs intercambiados: {from} ↔ {to}', { from: plan.value.from, to: plan.value.to }),
       'success',
     )
+    cancel()
     emit('done')
   } catch (e) {
     problem.value = errorText(e)
