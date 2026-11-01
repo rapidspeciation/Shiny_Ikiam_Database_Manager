@@ -80,6 +80,11 @@
   --cell-match: #c9ebd6;
   --cell-match-strong: #a9dcbd;
   --match-edge: #3f8a66;
+  /* Cells picked with the mouse or Shift+arrows (Tabulator's range): its blue, with the edge on the range. */
+  --range: #9abcea;
+  --range-edge: #2975dd;
+  --range-head: #d6d6d6;
+  --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.18);
 }
 [data-theme='dark'] {
@@ -128,8 +133,12 @@
   --cell-sheet-edit-edge: #a78bfa;
   --cell-sheet-edit-text: #ddd6fe;
   --cell-match: #1f4a33;
-  --cell-match-strong: #2a5f42;
+  --cell-match-strong: #24533a;
   --match-edge: #6fbb93;
+  --range: #1e3a5f;
+  --range-edge: #60a5fa;
+  --range-head: #2b332e;
+  --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.5);
   color-scheme: dark;
 }
@@ -494,6 +503,10 @@ html .tabulator-row.tabulator-selected,
 html .tabulator-row.tabulator-selected:hover {
   background-color: var(--select);
 }
+/* The fill alone is 1.2:1 against a plain row: a bar in the focus colour on the row's first cell carries it. */
+html .tabulator-row.tabulator-selected > .tabulator-cell:first-child {
+  box-shadow: inset 3px 0 0 var(--focus);
+}
 html .tabulator .tabulator-tableholder .tabulator-placeholder .tabulator-placeholder-contents,
 html .tabulator .tabulator-tableholder .tabulator-placeholder span {
   color: var(--fg-subtle);
@@ -532,6 +545,28 @@ html .tabulator-menu .tabulator-menu-item:not(.tabulator-menu-item-disabled):hov
 html .tabulator .tabulator-col-resize-guide,
 html .tabulator .tabulator-row-resize-guide {
   background-color: var(--fg-subtle);
+}
+/* Range selection (Tabulator's colours hard-coded light): the picked cells, their outline, the headers beside them. */
+html .tabulator-row .tabulator-cell.tabulator-range-selected:not(.tabulator-range-only-cell-selected):not(.tabulator-range-row-header) {
+  background-color: var(--range);
+}
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range,
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range-cell-active {
+  border-color: var(--range-edge);
+}
+html .tabulator .tabulator-tableholder .tabulator-range-overlay .tabulator-range.tabulator-range-active::after {
+  background-color: var(--range-edge);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-range-highlight,
+html .tabulator-row.tabulator-range-highlight .tabulator-cell.tabulator-range-row-header {
+  background-color: var(--range-head);
+  color: var(--fg);
+}
+html .tabulator .tabulator-header .tabulator-col.tabulator-range-selected,
+html .tabulator-row.tabulator-range-selected .tabulator-cell.tabulator-range-row-header,
+html .tabulator-row.tabulator-range-highlight.tabulator-range-selected .tabulator-cell.tabulator-range-row-header {
+  background-color: var(--range-head-picked);
+  color: #fff;
 }
 
 /* Spreadsheet grid */
@@ -645,6 +680,7 @@ body.touch-bar-open main {
 /* The Google Sheet's checks: repeated IDs in pale red, values outside the list with a red corner. */
 .sheet-grid .tabulator-cell.is-repeated {
   background: var(--cell-error) !important;
+  box-shadow: inset 0 0 0 1px var(--error-edge);
 }
 .sheet-grid .tabulator-cell.is-invalid {
   position: relative;
@@ -723,18 +759,18 @@ body.touch-bar-open main {
   color: var(--fg-subtle);
 }
 .sheet-grid .tabulator-cell.is-dirty {
-  background: var(--color-amber-100) !important;
-  box-shadow: inset 0 0 0 1px var(--color-amber-500);
+  background: var(--cell-pending) !important;
+  box-shadow: inset 0 0 0 1px var(--pending-edge);
 }
 .sheet-grid .tabulator-cell.is-error {
-  background: var(--color-red-100) !important;
-  box-shadow: inset 0 0 0 1px var(--color-red-600);
+  background: var(--cell-error) !important;
+  box-shadow: inset 0 0 0 1px var(--error-edge);
 }
 /* Kept in the app for everyone (Emergidos, Clutches), not in Google Sheets yet: amber, dashed. */
 .sheet-grid .tabulator-cell.is-staged {
   background: var(--color-amber-50);
-  box-shadow: inset 0 0 0 1px var(--color-amber-500);
-  outline: 1px dashed var(--color-amber-600);
+  box-shadow: inset 0 0 0 1px var(--pending-edge);
+  outline: 1px dashed var(--pending-edge);
   outline-offset: -3px;
 }
 /* Sent, waiting for Google to answer (the workbook recalculating): written on their own. */
@@ -771,7 +807,7 @@ body.touch-bar-open main {
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 /* The Buscador's past view: cells that differ from now, those the save changed, rows not created yet. */
-.sheet-grid .tabulator-cell.is-then { background-color: var(--cell-pending) !important; }
+.sheet-grid .tabulator-cell.is-then { background-color: var(--cell-pending) !important; box-shadow: inset 0 0 0 1px var(--pending-edge); }
 .sheet-grid .tabulator-cell.is-touched { box-shadow: inset 0 0 0 2px var(--color-amber-700); }
 .sheet-grid .tabulator-row.is-absent .tabulator-cell:not(.row-number) {
   background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, color-mix(in srgb, var(--fg) 7%, var(--surface-sunken)) 6px 12px) !important;
