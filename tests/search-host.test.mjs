@@ -65,13 +65,18 @@ test('a search after the worker was closed (the app closing, its store still ope
   assert.deepEqual(took(await host.all({ q: 'onega' })), took(searchAll(store, { q: 'onega' })));
 });
 
-test('two searches at once in two workers (SEARCH_WORKERS), each the answer of the app; one with searchWorkers 1', async t => {
+test('two searches at once in two workers (SEARCH_WORKERS), each the answer of the app; one worker with 1, and with 0', async t => {
   const { store, host } = await fixture(t);
   const [a, b] = await Promise.all([host.all({ q: 'mechanitis' }), host.all({ q: 'onega' })]);
   assert.deepEqual(took(a), took(searchAll(store, { q: 'mechanitis' })));
   assert.deepEqual(took(b), took(searchAll(store, { q: 'onega' })));
   assert.equal(host.status().workers, '2 of 2');
   const one = await fixture(t, { searchWorkers: '1' });
-  await Promise.all([one.host.all({ q: 'mechanitis' }), one.host.all({ q: 'onega' })]);
+  const [c, d] = await Promise.all([one.host.all({ q: 'mechanitis' }), one.host.all({ q: 'onega' })]);
+  assert.deepEqual(took(c), took(searchAll(one.store, { q: 'mechanitis' })));
+  assert.deepEqual(took(d), took(searchAll(one.store, { q: 'onega' })));
   assert.equal(one.host.status().workers, '1 of 1');
+  const zero = await fixture(t, { searchWorkers: '0' });
+  await zero.host.all({ q: 'onega' });
+  assert.equal(zero.host.status().workers, '1 of 1');
 });

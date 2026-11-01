@@ -283,8 +283,8 @@ So:
   idle 5 minutes (titles `WA soul lab`/`WA soul critic`; `--chats` for others), stops dev apps whose chat ended and
   Playwright browsers left without their script.
 - One headless browser per chat, closed after each use.
-- `tools/lab/app.sh` runs one tools worker, and stops idle worker threads after 5 minutes and the identifier after 2
-  (`LAB_TOOL_WORKERS`, `LAB_WORKER_IDLE_MINUTES`, `LAB_IDENTIFIER_IDLE_MINUTES`). The server's own default stops idle
+- `tools/lab/app.sh` runs one tools worker and one search worker, and stops idle worker threads after 5 minutes and
+  the identifier after 2 (`LAB_TOOL_WORKERS`, `LAB_SEARCH_WORKERS`, `LAB_WORKER_IDLE_MINUTES`, `LAB_IDENTIFIER_IDLE_MINUTES`). The server's own default stops idle
   worker threads after 10 minutes (`WORKER_IDLE_MINUTES`; 0: never).
 
 ## Notes
