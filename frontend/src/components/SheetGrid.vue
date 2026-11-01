@@ -70,6 +70,8 @@ const props = withDefaults(
     mark?: string
     /** Row id brought into view and marked, e.g. a search match or a row opened from a link. */
     focusRow?: string | null
+    /** Changes whenever a row is opened, so opening the same row again brings it back into the form. */
+    focusToken?: unknown
     /** The focused row's cell selected (when no searched text marks one), e.g. the cell a past view steps through. */
     focusField?: string | null
     /** Nothing can be edited (a sheet as it was): no editors, no row drawer, only Copiar on touch screens. */
@@ -141,14 +143,22 @@ const touchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer
 const rowForm = computed(() => props.form && !props.readonly)
 const hintOf = (values: Record<string, CellValue>) =>
   [values.SPECIES, values.Sex, values['CLUTCH NUMBER']].filter(v => v !== null && v !== undefined && v !== '').join(' · ')
+// Bumped when the grid's filters or sort change, so the form follows them.
+const orderTick = ref(0)
 const formOrder = computed(() => {
   if (!rowForm.value) return []
+  void orderTick.value
+  const entries = new Map<string, { id: string; row: number; label: string; hint: string }>()
+  for (const c of [...props.creates].reverse()) entries.set(c.clientId, { id: c.clientId, row: 0, label: labelOf(c.values), hint: hintOf(c.values) })
   const rows = [...props.rows]
   if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
-  return [
-    ...[...props.creates].reverse().map(c => ({ id: c.clientId, row: 0, label: labelOf(c.values), hint: hintOf(c.values) })),
-    ...rows.map(r => ({ id: r.id, row: r.row, label: labelOf(r.values), hint: hintOf(r.values) })),
-  ]
+  for (const r of rows) entries.set(r.id, { id: r.id, row: r.row, label: labelOf(r.values), hint: hintOf(r.values) })
+  // The grid's own order and filters (header filters, search, a chosen sort) once it is built.
+  if (table && built) {
+    const active = (table.getData('active') as GridRow[]).map(d => entries.get(d.__id)).filter(e => !!e)
+    if (active.length) return active
+  }
+  return [...entries.values()]
 })
 const formId = ref<string | null>(null)
 const formShown = computed(() =>
@@ -162,8 +172,8 @@ watch(
   },
 )
 watch(
-  () => props.focusRow,
-  id => {
+  [() => props.focusRow, () => props.focusToken],
+  ([id]) => {
     if (id) formId.value = id
   },
   { immediate: true },
@@ -274,6 +284,7 @@ function updateChanged(): boolean {
         if (row) decorateRow(row)
       }
       applySearch()
+      orderTick.value++
     })
   return true
 }
@@ -774,8 +785,11 @@ function build() {
     const problem = list && !list.strict ? listProblem(rules.value, field, cell.getValue()) : null
     if (problem) notice(t('{problem}: se guarda igual; corrígelo si es un error', { problem }))
   })
+  table.on('dataFiltered', () => orderTick.value++)
+  table.on('dataSorted', () => orderTick.value++)
   table.on('tableBuilt', () => {
     built = true
+    orderTick.value++
     focusPending = !!props.focusRow
     if (refreshWhenBuilt) refresh()
     else {
@@ -908,6 +922,7 @@ function refresh() {
       restoreView()
       reselect?.()
       showFocus()
+      orderTick.value++
     })
   else {
     // Nothing was added above (or the rows were only updated): the view stays as it is.

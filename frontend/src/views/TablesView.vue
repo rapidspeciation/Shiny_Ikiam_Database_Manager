@@ -414,7 +414,7 @@ const headerNotice = computed(() => {
             <span class="min-w-0 flex-1">
               <template v-if="touch">{{
                 $t(
-                  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.',
+                  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.',
                 )
               }}</template>
               <template v-else>{{
@@ -447,6 +447,7 @@ const headerNotice = computed(() => {
               :frozen="frozen"
               :create-formulas="createFormulas"
               :focus-row="opened?.id ?? null"
+              :focus-token="row"
               :mark="opened && lastSearch ? lastSearch.text : ''"
               cell-history
               :form="formView"

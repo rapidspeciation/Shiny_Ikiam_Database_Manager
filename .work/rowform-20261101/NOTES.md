@@ -38,3 +38,7 @@ Tests cover all 53 Insectary_data and 77 Collection_data columns, the edge cases
 ## Open
 - Not reviewed by critics yet (Sol + fresh Opus), left to the lead.
 - Chrome offered "Translate page" over the ES page on the emulator. That is the browser, not the app.
+
+## Review round 1 (Sol A, Opus A-)
+Fixed: the grid's touch hint now names the form button («📋 ver una fila como formulario», EN in locales); on a row change the ID-fix preview (keyed by Insectary ID, reset after success), the validation message and the field inputs (sections keyed by row) are reset; «Ir a…» scrolls the form to the top; the form's order and «N de M» follow the grid's filters and sort (`getData('active')`, refreshed on filter/sort/refresh); opening the same search hit again brings it back (`focusToken`); one-field sections join a neighbour folded the same way (Insectary_data: Collection_location now in Identidad, 12 fields; 6 sections).
+Proof: `npm test` 724 pass, build passes. Shots (390 es, light + dark; looked at 3): `/home/franz/.local/share/ui-overhaul-20261031/rowform-shots/20261101-075817-r1-light/` and `...-r1-dark/`. Dev app stopped. Not re-tested: filter-then-form order and same-hit reopen were not driven in a browser (code only).

@@ -26,9 +26,10 @@ describe('form sections', () => {
   const insectary = formSections(headers('Insectary_data'), ['Insectary_ID', 'CAM_ID'])
 
   it('puts every Insectary_data column in one section, most used first', () => {
-    expect(insectary.map(s => s.key)).toEqual(['id', 'field', 'dates', 'tubes', 'notes', 'storage', 'manifest'])
+    expect(insectary.map(s => s.key)).toEqual(['id', 'dates', 'tubes', 'notes', 'storage', 'manifest'])
     expect(insectary.flatMap(s => s.fields).length).toBe(53)
     expect(keysOf(insectary, 'id')?.slice(0, 6)).toEqual(['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'Stock_of_origin', 'SPECIES', 'Sex'])
+    expect(keysOf(insectary, 'id')).toContain('Collection_location')
     expect(keysOf(insectary, 'dates')).toEqual(['Intro2Insectary_date', 'Death_date', 'Death_cause', 'Preservation_date'])
     expect(keysOf(insectary, 'notes')).toEqual(['Photo_dorsal', 'Photo_ventral', 'Notes_Insectary_data'])
     expect(keysOf(insectary, 'storage')).toHaveLength(8)
@@ -52,7 +53,7 @@ describe('form sections', () => {
   it('sorts every Collection_data column', () => {
     const collection = formSections(headers('Collection_data'), ['CAM_ID', 'FieldMark_ID', 'Insectary_ID'])
     expect(collection.flatMap(s => s.fields).length).toBe(77)
-    expect(keysOf(collection, 'other')).toEqual(['Select_TEMP'])
+    expect(keysOf(collection, 'other') ?? keysOf(collection, 'manifest')).toContain('Select_TEMP')
   })
 
   it('shows one plain list when all columns fall in one section', () => {

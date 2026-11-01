@@ -70,6 +70,17 @@ export function formSections(fields: Field[], identity: string[] = []): FormSect
     folded: FOLDED.has(key),
     fields: by.get(key)!,
   }))
+  // A section of one column is not worth a header: it joins the neighbour before it (or after, if first)
+  // that is folded the same way.
+  for (let i = 0; i < sections.length && sections.length > 1; i++) {
+    const s = sections[i]
+    if (s.fields.length !== 1 || s.key === 'id') continue
+    const into = [sections[i - 1], sections[i + 1]].find(n => n && n.folded === s.folded)
+    if (!into) continue
+    into.fields = i > 0 && into === sections[i - 1] ? [...into.fields, ...s.fields] : [...s.fields, ...into.fields]
+    sections.splice(i, 1)
+    i = -1
+  }
   if (sections.length > 1) return sections
   return [{ key: 'all', title: '', folded: false, fields }]
 }

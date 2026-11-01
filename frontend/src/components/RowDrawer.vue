@@ -45,6 +45,7 @@ const jumpText = ref('')
 const jumpInput = ref<HTMLInputElement>()
 const jumpList = ref<HTMLElement>()
 const jumpButton = ref<HTMLButtonElement>()
+const fieldsBox = ref<HTMLElement>()
 const keyboard = useKeyboard()
 const listTop = ref(0)
 const listMax = computed(() => Math.max(132, keyboard.visibleBottom.value - listTop.value - 8))
@@ -73,6 +74,8 @@ function jump(id: string) {
   jumpOpen.value = false
   jumpText.value = ''
   emit('go', id)
+  // A jump is a new record: start at its top.
+  nextTick(() => fieldsBox.value?.scrollTo({ top: 0 }))
 }
 function jumpFirst() {
   const first = jumpMatches.value[0]
@@ -95,6 +98,8 @@ const dirtyIn = (fields: Field[]) => (row.value ? fields.filter(f => pending.isD
 const pending = usePending()
 const session = useSession()
 const message = ref('')
+// A validation message belongs to the row it came from.
+watch(() => props.rowId, () => (message.value = ''))
 
 const row = computed(() => props.rows.find(r => r.id === props.rowId))
 const created = computed(() => props.creates.find(c => c.clientId === props.rowId))
@@ -198,9 +203,9 @@ function change(field: Field, text: string) {
         <button class="btn-ghost" :title="$t('Cerrar')" @click="emit('close')"><X :size="20" /></button>
       </header>
       <p v-if="message" class="bg-red-50 px-4 py-2 text-sm text-red-800">{{ message }}</p>
-      <InsectaryIdFix v-if="insectaryId" :id="insectaryId" @done="emit('close')" />
-      <div class="rowform-fields flex-1 overflow-y-auto" :class="inline ? 'pb-2' : 'px-4 py-2'">
-        <section v-for="section in sections" :key="section.key" :class="{ 'rowform-section': section.title }">
+      <InsectaryIdFix v-if="insectaryId" :key="insectaryId" :id="insectaryId" @done="emit('close')" />
+      <div ref="fieldsBox" class="rowform-fields flex-1 overflow-y-auto" :class="inline ? 'pb-2' : 'px-4 py-2'">
+        <section v-for="section in sections" :key="`${rowId}/${section.key}`" :class="{ 'rowform-section': section.title }">
           <button
             v-if="section.title"
             type="button"
