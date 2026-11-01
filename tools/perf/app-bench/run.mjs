@@ -52,6 +52,7 @@ const PROFILE = has('--profile');
 const NODE_OPTIONS = opt('--node-options', '');
 const MEMORY_MAX = opt('--max', '5G');
 const TTL = opt('--ttl', '30m');
+const CPU_WEIGHT = opt('--cpu-weight', '');
 const EXTRA_ENV = Object.fromEntries(argv.flatMap((a, i) => (a === '--env' ? [argv[i + 1].split(/=(.*)/s).slice(0, 2)] : [])));
 const MIN_AVAILABLE_GB = Number(opt('--min-available-gb', 2.5));
 // Before each start: wait (up to 30 min) until this much is available, so the app and the browser fit together
@@ -374,6 +375,8 @@ async function startApp(run, { profileDir = null } = {}) {
     if (performance.now() - t0 > 30_000) throw new Error('dev-app.sh: no process after 30 s');
     await sleep(50);
   }
+  // On the server (--cpu-weight 20): the live app first when both want the cores.
+  if (CPU_WEIGHT) spawnSync('systemctl', ['--user', 'set-property', '--runtime', `${UNIT}.service`, `CPUWeight=${CPU_WEIGHT}`]);
   const cg = readFileSync(`/proc/${pid}/cgroup`, 'utf8').trim().split('\n').find(l => l.startsWith('0::'))?.slice(3);
   return { pid, t0, launched, launcherOut: out, cgroup: cg ? join('/sys/fs/cgroup', cg) : null };
 }
@@ -760,6 +763,7 @@ const metaOf = arm => ({
   cpus: spawnSync('nproc', { encoding: 'utf8' }).stdout.trim(),
   nodeOptions: NODE_OPTIONS || '(dev-app.sh default)',
   memoryMax: MEMORY_MAX,
+  cpuWeight: CPU_WEIGHT || null,
   env: EXTRA_ENV,
   only: ONLY,
   repeats: REPEATS,
