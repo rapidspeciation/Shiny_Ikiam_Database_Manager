@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ExternalLink, FileSpreadsheet } from 'lucide-vue-next'
+import { ExternalLink, FileSpreadsheet, FlaskConical } from 'lucide-vue-next'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
+import { notify } from '../lib/notice'
 
 /**
  * Which database is open, at every width: the lab's offline copy («Copia de prueba», shortened on phones) or a link
@@ -8,17 +10,27 @@ import { useSession } from '../stores/session'
  */
 withDefaults(defineProps<{ tone?: 'brand' | 'surface' }>(), { tone: 'brand' })
 const session = useSession()
+const localMeaning = () => t('Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo')
 </script>
 
 <template>
-  <span
+  <!--
+    Outlined like the Sheet link, in neutral colours (amber means unsaved work in this app). Its meaning is on hover,
+    and a tap says it at the bottom of the screen, since a phone has no hover.
+  -->
+  <button
     v-if="session.settings?.localMode"
-    class="inline-flex shrink-0 items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-amber-950"
-    :title="$t('Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo')"
+    type="button"
+    class="hit-target inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold whitespace-nowrap ring-1"
+    :class="tone === 'brand' ? 'text-on-brand ring-on-brand-muted hover:bg-brand-hover' : 'text-fg ring-control hover:bg-surface-sunken'"
+    :title="localMeaning()"
+    :aria-label="`${$t('Copia de prueba')}: ${localMeaning()}`"
     data-database="local"
+    @click="notify(localMeaning(), 'info', 6000)"
   >
+    <FlaskConical :size="13" aria-hidden="true" />
     <span class="sm:hidden">{{ $t('Prueba') }}</span><span class="max-sm:hidden">{{ $t('Copia de prueba') }}</span>
-  </span>
+  </button>
   <a
     v-else-if="session.settings?.sheetUrl"
     :href="session.settings.sheetUrl"
