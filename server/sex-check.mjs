@@ -119,7 +119,8 @@ export const CAM_SURE = 0.6;
  *               the wrong CAM. `photos` says which; the other photo may read the file's own CAM (photos shuffled
  *               between butterflies, CAM073711 on 1 Nov 2026: d showed CAM073444's envelope, v its own);
  *   'doubtful': one digit away (a reader's slip as likely as a wrong name), or not sure.
- * split: the d and v photos read different whole CAMs, so the model may have read two butterflies' wings.
+ * split: the d and v photos' sure readings (≥ CAM_SURE) show different whole CAMs, so the model may have read
+ * two butterflies' wings.
  */
 export function compareCams(cam, photos = []) {
   const reads = photos.map(p => ({ name: p.name, cam: camOfReading(p.value), conf: Number.isFinite(p.conf) ? p.conf : 0 })).filter(p => p.cam);
