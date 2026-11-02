@@ -198,7 +198,7 @@ export default {
     '"Earliest Emerge Date" is text, not a date, so it cannot be sorted or compared.',
   'Envolver la fórmula en DATEVALUE o devolver la fecha como número con formato de fecha.':
     'Wrap the formula in DATEVALUE or return the date as a number with a date format.',
-  'La columna "Number of Eggs laid" contiene fechas de postura; hay 64 celdas #VALUE!.':
+  'La columna "Number of Eggs laid" contiene las fechas en que se pusieron los huevos; hay 64 celdas #VALUE!.':
     'The "Number of Eggs laid" column holds laying dates; there are 64 #VALUE! cells.',
   'Renombrar la columna (o mover las fechas) y revisar las fórmulas con #VALUE!.':
     'Rename the column (or move the dates) and check the formulas with #VALUE!.',

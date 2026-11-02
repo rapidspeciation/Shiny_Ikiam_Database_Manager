@@ -1,6 +1,6 @@
 # Clutches (Insectary_stocks): one row per batch of eggs
 
-The Posturas notebook ("INSECTARY STOCK", brown book, two facing pages) holds
+The clutches notebook ("INSECTARY STOCK", brown book, two facing pages) holds
 every clutch laid in the insectary plus eggs and larvae brought from the field.
 A clutch is registered when a plant with eggs leaves a stock cage (about 8–10
 eggs; the plant is taped with date, species and egg count).
@@ -63,7 +63,7 @@ values are typed there.
 - DATE LAID `NA` = eggs found or brought in, or the date unknown.
 - `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`: `NA` by default, else a sum
   (`=2+6`; words like "3 pupas; 1 larva" = 4) of the larvae and pupae
-  preserved or dissected. The Posturas notebook's column for it is headed
+  preserved or dissected. The clutches notebook's column for it is headed
   "dissections" or "# larvae preserved" (`4+3+3` → `=4+3+3`). Each group
   also gets a NOTES entry with its date and Insectary IDs, for when each was
   preserved: "Larvae preserved: 4 on 1/10/26 (D7E–E0E), 3 on 7/10/26 (T9E,

@@ -46,7 +46,7 @@ const detail = (c: Coming) =>
     <p class="hint mb-3">
       {{
         $t(
-          'Fecha esperada: el inicio de la etapa actual de la postura más la mediana de su especie en esa etapa. Se listan de {late} días de atraso a {ahead} días adelante.',
+          'Fecha esperada: el inicio de la etapa actual del clutch más la mediana de su especie en esa etapa. Se listan de {late} días de atraso a {ahead} días adelante.',
           { late: upcoming.lateDays, ahead: upcoming.aheadDays },
         )
       }}

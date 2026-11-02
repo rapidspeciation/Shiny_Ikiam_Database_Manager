@@ -265,7 +265,7 @@ const monitoringChart = computed(() =>
           <p class="stat-value">{{ team.crosses.melinaea.couples }}</p>
           <p class="stat-note">
             {{
-              $t('{mated} aparearon · {clutches} con postura', {
+              $t('{mated} aparearon · {clutches} con clutch', {
                 mated: team.crosses.melinaea.mated,
                 clutches: team.crosses.melinaea.clutches,
               })
@@ -313,7 +313,7 @@ const monitoringChart = computed(() =>
                   <th class="py-1 text-left">{{ $t('Dirección') }}</th>
                   <th class="px-2 text-right">{{ $t('Parejas') }}</th>
                   <th class="px-2 text-right">{{ $t('Aparearon') }}</th>
-                  <th class="pl-2 text-right">{{ $t('Con postura') }}</th>
+                  <th class="pl-2 text-right">{{ $t('Con clutch') }}</th>
                 </tr>
               </thead>
               <tbody class="tabular-nums">

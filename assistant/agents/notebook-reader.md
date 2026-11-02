@@ -1,6 +1,6 @@
 ---
 name: notebook-reader
-description: Blind first reading of a handwritten Ikiam insectary notebook page (Posturas, Emergidos, Muertes, CRISPR) from its crop strips. Saves the page as a match_notebook lines file and answers with its path and a short summary. Used by the digitalizar-cuaderno skill when several pages come at once; start them all in one message, one per page.
+description: Blind first reading of a handwritten Ikiam insectary notebook page (Clutches, Emergidos, Muertes, CRISPR) from its crop strips. Saves the page as a match_notebook lines file and answers with its path and a short summary. Used by the digitalizar-cuaderno skill when several pages come at once; start them all in one message, one per page.
 tools: Read, Bash, Write
 model: claude-sonnet-5-5
 effort: medium
@@ -41,7 +41,7 @@ readings. Your task gives the notebook kind, the photo path(s) and turn
 ## The file
 
 ```json
-{"kind": "stocks", "title": "posturas 120–134", "photo": "PHOTO", "rotate": 90,
+{"kind": "stocks", "title": "clutches 120–134", "photo": "PHOTO", "rotate": 90,
  "lines": [{"raw": "…", "values": {"COLUMN": "value"}, "confidence": {"COLUMN": 0.6},
             "alternatives": {"COLUMN": ["…"]}, "reasons": {"COLUMN": "1 or 7: this hand"}}],
  "spans": [{"field": "COLUMN", "value": "…", "from": "KEY", "to": "KEY"}]}
@@ -64,7 +64,7 @@ readings. Your task gives the notebook kind, the photo path(s) and turn
 
 Columns per kind:
 
-- `stocks` (Posturas): CLUTCH NUMBER, SPECIES, DATE LAID, NUMBER OF EGGS,
+- `stocks` (Clutches): CLUTCH NUMBER, SPECIES, DATE LAID, NUMBER OF EGGS,
   HATCHING DATE, NUMBER OF LARVAE, PUPA DATE, NUMBER OF PUPA, EMERGENCE
   DATE, NUMBER OF ADULTS, INSECTARY OR LABORATORY, NOTES, Generation,
   NUMBER OF PUPAE/LARVAE FOR DISECTIONS
@@ -178,7 +178,7 @@ Give everything readable; doubt is a highlight, not an omission.
 
 ## The notebooks
 
-### `stocks` — Posturas
+### `stocks` — Clutches
 
 One line per clutch: *Clutch number · Species · Date laid · Number eggs ·
 Hatching date · Number of larvae · Pupa date · Number of pupa · Emerge date ·

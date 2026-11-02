@@ -21,6 +21,7 @@ import {
   clutchKey,
   columnsOf,
   isNone,
+  kindByLabel,
   nearIds,
   proposalRows,
   sameErrorRows,
@@ -81,7 +82,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       properties: {
         kind: { type: 'string', enum: KIND_IDS },
         year: { type: 'integer', description: 'Only if written on the page' },
-        title: { type: 'string', description: 'e.g. "posturas 120–134"' },
+        title: { type: 'string', description: 'e.g. "clutches 120–134"' },
         linesFile: {
           type: 'string',
           description: "A notebook-reader's file (work/…/<page>.json; get_proposal saveLines writes one); arguments given here go over it",
@@ -193,7 +194,7 @@ export function withLinesFile(args, workspace) {
   return { args: { ...read, ...own } };
 }
 
-/** A notebook proposal's reason: "Cuaderno Posturas (Insectary_stocks): posturas 838–999". */
+/** A notebook proposal's reason: "Cuaderno Clutches (Insectary_stocks): clutches 838–999". */
 const PAGE_REASON = /^Cuaderno (.+?) \([^)]*\)(?:: (.*))?$/s;
 /** A row's note from match_notebook: "Línea 3: «999 lys (F1) 1/9 12» · …" (a long line is cut). */
 const LINE_NOTE = /^Línea (\d+): «(.*?)(?:»(?= · |$)|$)/s;
@@ -219,7 +220,7 @@ const dayText = serial => {
 export function proposalPage(proposal, getRecord) {
   const page = parse(proposal.page_json ?? 'null', null);
   const reason = PAGE_REASON.exec(String(proposal.reason ?? ''));
-  const kindId = KINDS[page?.kind] ? page.kind : KIND_IDS.find(id => KINDS[id].label === reason?.[1]);
+  const kindId = KINDS[page?.kind] ? page.kind : kindByLabel(reason?.[1]);
   if (!kindId) return { error: 'not a notebook page (match_notebook)' };
   const kind = KINDS[kindId];
   const columns = new Set(columnsOf(kind));

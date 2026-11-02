@@ -32,7 +32,7 @@ export default {
 
   // Próximos días en el insectario
   'Próximos días en el insectario': 'Coming days in the insectary',
-  'Fecha esperada: el inicio de la etapa actual de la postura más la mediana de su especie en esa etapa. Se listan de {late} días de atraso a {ahead} días adelante.':
+  'Fecha esperada: el inicio de la etapa actual del clutch más la mediana de su especie en esa etapa. Se listan de {late} días de atraso a {ahead} días adelante.':
     "Expected date: the start of the clutch's current stage plus its species' median time in that stage. Listed from {late} days late to {ahead} days ahead.",
   'Huevos por eclosionar': 'Eggs about to hatch',
   'Larvas por pupar': 'Larvae about to pupate',
@@ -220,7 +220,7 @@ export default {
   'Individuos en líneas de cruce': 'Individuals in cross lines',
   'Apareamientos registrados': 'Matings recorded',
   'Parejas de Melinaea': 'Melinaea couples',
-  '{mated} aparearon · {clutches} con postura': '{mated} mated · {clutches} with a clutch',
+  '{mated} aparearon · {clutches} con clutch': '{mated} mated · {clutches} with a clutch',
   'Clutches de cruces': 'Cross clutches',
   'Individuos por cruce y generación': 'Individuals by cross and generation',
   Cruce: 'Cross',
@@ -230,7 +230,7 @@ export default {
   Dirección: 'Direction',
   Parejas: 'Couples',
   Aparearon: 'Mated',
-  'Con postura': 'With a clutch',
+  'Con clutch': 'With a clutch',
   'Sin dirección': 'No direction',
   'Apareamientos por especie': 'Matings by species',
   '{couples} parejas en {attempts} intentos, {mated} apareamientos.':

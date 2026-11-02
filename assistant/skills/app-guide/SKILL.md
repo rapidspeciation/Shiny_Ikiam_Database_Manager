@@ -47,7 +47,7 @@ Historial: skill **historial**.
 | Revisión | `#/revision?…` | data problems as cards to judge | verdicts (app); fixes via a proposal |
 | Usuarios | `#/usuarios` | accounts and invitations (admin; user menu) | — |
 
-Old links still work: `#/posturas` → Clutches, `#/cuaderno` → Asistente,
+Old links still work: `#/cuaderno` → Asistente,
 `#/tablas?revision=1` → Revisión.
 
 ## Who sees what

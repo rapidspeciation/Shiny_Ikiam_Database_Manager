@@ -14,7 +14,7 @@ import {
 
 const open = (chat: string, title = 'Cuaderno'): ChatScope => ({ chat, how: 'open', title })
 const chats: ChatEntry[] = [
-  { id: 'b', title: 'Posturas', pending: 2 },
+  { id: 'b', title: 'Clutches', pending: 2 },
   { id: 'a', title: null, pending: 1 },
   { id: 'app', title: null, pending: 3 },
 ]
@@ -49,12 +49,12 @@ describe('proposals by T3 chat', () => {
   it('the selector: the chat T3 shows, each chat with its count, those outside T3, all', () => {
     expect(chatOptions(open('a', 'Emergidos'), chats)).toEqual([
       { value: 'auto', label: 'Este chat: Emergidos' },
-      { value: 'b', label: 'Posturas (2)' },
+      { value: 'b', label: 'Clutches (2)' },
       { value: 'a', label: 'chat sin título (1)' },
       { value: 'app', label: 'Fuera de los chats de T3 (3)' },
       { value: 'all', label: 'Todos los chats (6)' },
     ])
-    expect(chatOptions({ chat: 'b', how: 'recent', title: 'Posturas' }, [])[0].label).toBe('Último chat: Posturas')
+    expect(chatOptions({ chat: 'b', how: 'recent', title: 'Clutches' }, [])[0].label).toBe('Último chat: Clutches')
     expect(chatOptions({ chat: 'draft', how: 'open', title: null }, [])[0].label).toBe('Este chat: chat nuevo')
     expect(chatOptions({ chat: 'all', how: 'all', title: null }, [chats[2]]).map(o => o.value)).toEqual(['app', 'all'])
   })

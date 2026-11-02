@@ -1311,3 +1311,11 @@ test('a line the save refuses shows as its row with the reason, never as a conte
   assert.ok(!summary.lines[0].contextRow);
   assert.equal(summary.counts.rowsInProposal, 1);
 });
+
+test('a notebook proposal is found by its label, also by the clutches notebook\'s earlier name', async () => {
+  const { kindByLabel } = await import('../server/notebook.mjs');
+  assert.equal(kindByLabel('Clutches'), 'stocks');
+  assert.equal(kindByLabel('Posturas'), 'stocks');
+  assert.equal(kindByLabel('Emergidos'), 'emergence');
+  assert.equal(kindByLabel('Otro'), null);
+});

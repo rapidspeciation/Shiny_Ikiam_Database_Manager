@@ -49,7 +49,7 @@ Estas herramientas no cambian la base de datos ni el Drive. Por ahora solo racks
 
 ## 2. Qué puede hacer el Asistente hoy
 
-- **Digitalizar cuadernos y sobres**: fotos de páginas del insectario (posturas, emergidos, muertes, CRISPR), sobres y etiquetas pasan a filas de la hoja.
+- **Digitalizar cuadernos y sobres**: fotos de páginas del insectario (clutches, emergidos, muertes, CRISPR), sobres y etiquetas pasan a filas de la hoja.
 - **Monitoreo**: recorridos de Wikiloc y capturas en los transectos de Ikiam, marcas y recapturas.
 - **Fotos de alas**: nombres de archivos, ordenar las carpetas de Drive, actualizar Photo_links, la Wings Gallery y los mapas, fotos que faltan.
 - **Revisión de datos**: trabajar las inconsistencias y las correcciones acordadas en la pestaña «Revisión».

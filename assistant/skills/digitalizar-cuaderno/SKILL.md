@@ -1,6 +1,6 @@
 ---
 name: digitalizar-cuaderno
-description: Digitize photos of the Ikiam insectary notebooks into the Ithomiini workbook. Use it whenever the person sends or attaches a photo (one or several) of a handwritten notebook page (Posturas/clutches, Emergidos/insectary butterflies, Muertes/daily deaths, CRISPR), of a butterfly envelope or label (CAM, Reared ID, tube), or asks to "digitalizar", "pasar", "transcribir", "revisar" or "comparar con la hoja" a page or photo. It transcribes every line, matches it with the sheet through the match_notebook tool and leaves one proposal per page in Cambios propuestos for the person to apply.
+description: Digitize photos of the Ikiam insectary notebooks into the Ithomiini workbook. Use it whenever the person sends or attaches a photo (one or several) of a handwritten notebook page (clutches, Emergidos/insectary butterflies, Muertes/daily deaths, CRISPR), of a butterfly envelope or label (CAM, Reared ID, tube), or asks to "digitalizar", "pasar", "transcribir", "revisar" or "comparar con la hoja" a page or photo. It transcribes every line, matches it with the sheet through the match_notebook tool and leaves one proposal per page in Cambios propuestos for the person to apply.
 ---
 
 # Digitalizar cuaderno
@@ -16,7 +16,7 @@ team writes values, each notebook's layout) is in
 
 ## Workflow
 
-1. **Identify the notebook** from its headers (`stocks` Posturas, `emergence`
+1. **Identify the notebook** from its headers (`stocks` Clutches, `emergence`
    Emergidos, `deaths` Muertes, `crispr` CRISPR, `labels` envelopes and
    labels). If unsure, say so in one line and use the closest kind; don't
    stop to ask.
@@ -38,7 +38,7 @@ team writes values, each notebook's layout) is in
    cells listed there, it is done in the same turn, before the summary, so the
    person reviews the page once.
 6. **Tell the person in 3–6 short lines**: which notebook and rows
-   ("Posturas, clutches 120–134"), how many cells it fills, the differences
+   ("Clutches 120–134"), how many cells it fills, the differences
    with the sheet (sheet → notebook), what the second reading changed (if one
    was done), and the lines not found in the sheet. A small table only when
    there are several differences.

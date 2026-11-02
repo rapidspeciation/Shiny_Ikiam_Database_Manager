@@ -52,7 +52,7 @@ export const WORKBOOK_WARNINGS: WorkbookWarning[] = [
   },
   {
     sheet: 'Melinaea_crosses',
-    problem: 'La columna "Number of Eggs laid" contiene fechas de postura; hay 64 celdas #VALUE!.',
+    problem: 'La columna "Number of Eggs laid" contiene las fechas en que se pusieron los huevos; hay 64 celdas #VALUE!.',
     fix: 'Renombrar la columna (o mover las fechas) y revisar las fórmulas con #VALUE!.',
     found: '27-Sep-26',
   },

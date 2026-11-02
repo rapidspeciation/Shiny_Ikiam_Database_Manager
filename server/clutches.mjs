@@ -718,7 +718,7 @@ export function setNotebookUpTo(store, body, user) {
 /**
  * Where a save came from, for the notebook: the app (cards, table), the
  * assistant (not from the notebook), the notebook itself (an assistant
- * proposal read from notebook photos: "Cuaderno Posturas …", match_notebook),
+ * proposal read from notebook photos: "Cuaderno Clutches …", match_notebook),
  * Google Sheets (typed in the sheet), or something else (imports). An undo
  * belongs where the save it takes back came from.
  */

@@ -143,7 +143,7 @@ These are measured on history, using only earlier rows. They set what the app ca
    2. The app fills species, stock, generation, purpose and pedigree from the clutch and takes the next free Insectary IDs.
    3. The person types only sex and subspecies/form, ranked by the siblings.
    4. Wing-ID labels print from here.
-4. **Posturas y seguimiento (eggs and clutches).**
+4. **Clutches y seguimiento (eggs and clutches).**
    - New clutch: the next number (with "(n)" for another batch from the same couple, written one way), the mother and father picked by ID (species from the mother), date laid, number of eggs.
    - A follow-up list gives one-tap hatch/pupa updates with the expected dates.
 5. **Cruces (crosses).** Pair start/end from the whiteboard, straight into F1/F2_MutationRate. It links to the clutches that follow.

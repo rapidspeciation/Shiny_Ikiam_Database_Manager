@@ -15,7 +15,7 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { monitoringLib, queueWalk, walkDraft, walkRows } from './walks.mjs';
 import { bestReading, createWalkIds } from './walk-ids.mjs';
-import { KINDS, isNone, noteText, reviewColumns, show as showValue } from './notebook.mjs';
+import { KINDS, isNone, kindByLabel, noteText, reviewColumns, show as showValue } from './notebook.mjs';
 import { HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
 import { createFormulaReader, isFormulaError, sameResult } from './formula-gives.mjs';
 import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
@@ -1896,7 +1896,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const page = parse(p.page_json ?? 'null');
     if (KINDS[page?.kind]) return page.kind;
     const label = /^Cuaderno (.+?) \(/.exec(p.reason ?? '')?.[1];
-    return Object.keys(KINDS).find(id => KINDS[id].label === label) ?? null;
+    return kindByLabel(label);
   }
   /**
    * A pending proposal that overlaps a notebook page just matched (match_notebook's `overlaps`):
@@ -5440,9 +5440,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // A notebook page's proposal (its page, or a reason "Cuaderno Emergidos (Insectary_data): …"): the table
     // shows the notebook's columns first, in the order it writes them.
     const reason = row?.reason ?? proposal.reason ?? '';
-    const kindId = page?.lines?.length
-      ? page.kind
-      : Object.keys(KINDS).find(k => reason.startsWith(`Cuaderno ${KINDS[k].label} (${KINDS[k].sheet})`));
+    const named = /^Cuaderno (.+?) \(([^)]*)\)/.exec(reason);
+    const namedKind = named ? kindByLabel(named[1]) : null;
+    const kindId = page?.lines?.length ? page.kind : namedKind && KINDS[namedKind].sheet === named[2] ? namedKind : undefined;
     // Photos also on a proposal made before pages were kept (given later with update_proposal).
     // A short tag of which photos, in the photos' addresses (other photos at the same place show at once), and their notes.
     const { photos: photoCount, photoKey, photoNotes } = photoPage(page?.photos);

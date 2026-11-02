@@ -9,7 +9,7 @@ marks and shorthand not listed there.
 
 - **Three notebooks for the sheet** (filled daily; they travel between the
   insectary and Aula 11, and the typing lags): Insectary data (Emergidos:
-  one line per butterfly; the daily deaths too), Insectary stock (Posturas,
+  one line per butterfly; the daily deaths too), Insectary stock (clutches,
   brown), Cruces / F1-F2 (blue, crosses diary). Also: CRISPR notebook
   (backup of the CRISPR sheet), pheromone notebook (insectary ID, extraction
   date, CAM, tube), field notebooks and envelopes.
@@ -37,7 +37,7 @@ marks and shorthand not listed there.
   was already typed into the sheet. The tick is not data; the row should
   exist, so compare (expect few changes) and say if it is missing.
 - Highlights: Emergidos, dead butterflies already in the database (the
-  proposal tables mark the rows already dead in the sheet); Posturas, finished or dead
+  proposal tables mark the rows already dead in the sheet); clutches, finished or dead
   clutches (green). Orange highlights have no known meaning: ask. A green
   strike-through in 2022 = dead.
 - Pink or red ink = a later correction; the correction is the value.

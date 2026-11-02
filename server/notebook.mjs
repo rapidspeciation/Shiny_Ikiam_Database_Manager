@@ -63,7 +63,9 @@ const IMPLIED_FIELDS = new Set(['Death_cause', 'CAM_ID', 'Tube_1_id', ...DEATH_E
  */
 export const KINDS = {
   stocks: {
-    label: 'Posturas',
+    label: 'Clutches',
+    // Proposals made before the rename say "Cuaderno Posturas (…)".
+    oldLabel: 'Posturas',
     sheet: 'Insectary_stocks',
     keys: ['CLUTCH NUMBER'],
     // A clutch not yet in the sheet is a new row; an unknown butterfly ID is a misreading.
@@ -165,6 +167,8 @@ export const KINDS = {
   },
 };
 export const KIND_IDS = Object.keys(KINDS);
+/** The notebook kind named in a proposal's reason ("Cuaderno Clutches (…)"), also by an earlier name; null if none. */
+export const kindByLabel = label => KIND_IDS.find(id => KINDS[id].label === label || KINDS[id].oldLabel === label) ?? null;
 /** Every column a notebook fills: the skill's ones, then the extra ones. */
 export const columnsOf = kind => [...kind.fields, ...(kind.extra ?? [])];
 
@@ -559,7 +563,7 @@ export function sameValue(field, sheet, notebook) {
 }
 
 // ---------------------------------------------------------------------------
-// A note said again. The team photographs a Posturas or Emergidos page again as
+// A note said again. The team photographs a Clutches or Emergidos page again as
 // it fills, and the reader writes its notes in English, in its own words
 // ("eggs looks dry / all of them are died (24-9)" comes back as "Eggs look dry;
 // all of them died (24/9)"): what the row's note already says is not added again.
