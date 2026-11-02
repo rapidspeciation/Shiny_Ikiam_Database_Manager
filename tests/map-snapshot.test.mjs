@@ -15,7 +15,7 @@ test('the basemap is OpenTopoMap, credited as its licence asks', () => {
   assert.match(USER_AGENT, /^ithomiini-database\/\S+ \(.*\+https:\/\/github\.com\//);
 });
 
-test('tiles: the app\'s User-Agent, a/b/c subdomains, two at a time, kept a week then fetched again', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+test('tiles: the app\'s User-Agent, a/b/c subdomains, one at a time, kept a week then fetched again', { skip: !pillow && 'no python3 with Pillow' }, async () => {
   let clock = Date.parse('2026-11-01T12:00:00Z');
   const asked = [];
   let inFlight = 0;
@@ -33,7 +33,7 @@ test('tiles: the app\'s User-Agent, a/b/c subdomains, two at a time, kept a week
   const first = await snaps.render({ bbox });
   assert.ok(first.tiles.asked > 4);
   assert.equal(first.tiles.fetched, first.tiles.asked);
-  assert.ok(most <= 2, `at most two at once, saw ${most}`);
+  assert.equal(most, 1, `one at a time, saw ${most}`);
   assert.ok(asked.every(a => a.ua === USER_AGENT));
   assert.ok(asked.every(a => /^https:\/\/[abc]\.tile\.opentopomap\.org\/11\/\d+\/\d+\.png$/.test(a.url)));
   assert.equal(new Set(asked.map(a => a.url[8])).size, 3);

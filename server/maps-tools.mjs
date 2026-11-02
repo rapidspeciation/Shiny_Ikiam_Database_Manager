@@ -333,7 +333,7 @@ export const MAPS_TOOLS = [
     function: {
       name: 'maps_snapshot',
       description: [
-        'A picture of the Ithomiini maps (a JPEG of about 200 KB, small enough for WhatsApp) with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
+        'A picture of the Ithomiini maps (a JPEG of about 450 KB, small enough for WhatsApp) with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
         '- `species`: as maps_localities\' `taxa` (species, subspecies or genus). `sex` (male, female). `area`, `country`, `sources`, `years`, `elevation_min`/`elevation_max`, `site_km` as there.',
         '- `bbox` [west, south, east, north] frames the picture (and limits the sites); left out ("auto"), it frames the best site and the next best within 150 km of it, up to `sites` (default 8); the best ones further away are in `elsewhere`. Give `country` to keep it to one country.',
         '- `lang`: "es" or "en" (default) for the words on the picture.',

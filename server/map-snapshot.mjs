@@ -3,8 +3,8 @@
 // forbids keeping its tiles, CARTO's raster tiles need a key) laid side by side, the records on top as dots coloured by
 // species, the recommended sites numbered, a legend and the credit, made into a JPEG small enough for WhatsApp by
 // Pillow (python3, as server/proposal-photos.mjs; claudeclaw has it, with DejaVu fonts). OpenTopoMap asks for light
-// use (https://opentopomap.org/about#verwendung): the tiles are fetched two at a time with a User-Agent naming the
-// app, kept a week (their max-age) in a cache of at most TILE_CACHE_BYTES; the pictures are kept a week too.
+// use (https://opentopomap.org/about#verwendung): the tiles are fetched one at a time per tools worker (a few at
+// most for the whole server) with a User-Agent naming the app, kept a week (their max-age) in a cache of at most TILE_CACHE_BYTES; the pictures are kept a week too.
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -18,7 +18,7 @@ export const USER_AGENT = 'ithomiini-database/1.0 (map snapshots; +https://githu
 const SUBDOMAINS = ['a', 'b', 'c'];
 const TILE_KEEP_MS = 7 * 86400_000;
 const TILE_CACHE_BYTES = 200 * 1024 * 1024;
-const FETCHES_AT_ONCE = 2;
+const FETCHES_AT_ONCE = 1; // per renderer: each tools worker has its own (server/assistant-host.mjs)
 const TILE = 256;
 const MAX_ZOOM = 13;
 const MIN_ZOOM = 3;
@@ -164,7 +164,7 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
   const tileDir = join(dir, 'topo-tiles');
   const loading = new Map();
   let cleaned = 0;
-  // At most FETCHES_AT_ONCE tile requests in flight (the tile server's light-use rule).
+  // At most FETCHES_AT_ONCE tile requests in flight from this renderer (the tile server's light-use rule).
   let active = 0;
   const waiting = [];
   const slot = () => (active < FETCHES_AT_ONCE ? (active++, Promise.resolve()) : new Promise(r => waiting.push(r)));
@@ -187,12 +187,13 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
         for (let i = 0; i < TILE_TRIES; i++) {
           try {
             const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(8_000) });
+            if (response.status === 429 || response.status >= 500) break; // busy or down: not asked again at once
             if (!response.ok) continue;
             const data = Buffer.from(await response.arrayBuffer());
             if (!writeCacheFile(path, data)) break;
             return { path, fetched: true };
           } catch {
-            // tried again once, then the tile is left blank (or the expired one is used)
+            // tried again once, then the tile is left blank
           }
         }
       } finally {
