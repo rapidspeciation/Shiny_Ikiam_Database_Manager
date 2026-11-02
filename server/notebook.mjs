@@ -168,7 +168,7 @@ export const KINDS = {
 };
 export const KIND_IDS = Object.keys(KINDS);
 /** The notebook kind named in a proposal's reason ("Cuaderno Clutches (…)"), also by an earlier name; null if none. */
-export const kindByLabel = label => KIND_IDS.find(id => KINDS[id].label === label || KINDS[id].oldLabel === label) ?? null;
+export const kindByLabel = label => (label ? (KIND_IDS.find(id => KINDS[id].label === label || KINDS[id].oldLabel === label) ?? null) : null);
 /** Every column a notebook fills: the skill's ones, then the extra ones. */
 export const columnsOf = kind => [...kind.fields, ...(kind.extra ?? [])];
 

@@ -1318,4 +1318,5 @@ test('a notebook proposal is found by its label, also by the clutches notebook\'
   assert.equal(kindByLabel('Posturas'), 'stocks');
   assert.equal(kindByLabel('Emergidos'), 'emergence');
   assert.equal(kindByLabel('Otro'), null);
+  assert.equal(kindByLabel(undefined), null);
 });

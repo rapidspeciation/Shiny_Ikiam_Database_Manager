@@ -48,7 +48,7 @@ async function setup() {
 const STOCKS = {
   kind: 'stocks',
   year: 2025,
-  title: 'posturas 838–1000',
+  title: 'clutches 838–1000',
   photo: `${THREAD}-aaaa.jpg`,
   rotate: 90,
   includeUnchanged: true,
@@ -77,7 +77,7 @@ test("get_proposal saveLines: a page's proposal as a reader's file, matched agai
     assert.deepEqual(saved, { proposalId: out.proposalId, linesFile: 'work/gathered/p1.json', lines: 4 });
     const file = JSON.parse(readFileSync(join(own, 'work', 'gathered', 'p1.json'), 'utf8'));
     assert.equal(file.kind, 'stocks');
-    assert.equal(file.title, 'posturas 838–1000');
+    assert.equal(file.title, 'clutches 838–1000');
     assert.deepEqual([file.photo, file.rotate], [[`${THREAD}-aaaa.jpg`], [90]]);
     assert.deepEqual(file.lines[0], {
       n: 1,
@@ -103,7 +103,7 @@ test("get_proposal saveLines: a page's proposal as a reader's file, matched agai
     assert.equal(again.proposalId, out.proposalId, JSON.stringify(again));
     assert.deepEqual(rows(out.proposalId), before);
     assert.equal(stored(out.proposalId).page_json, page);
-    assert.equal(stored(out.proposalId).reason, 'Cuaderno Posturas (Insectary_stocks): posturas 838–1000');
+    assert.equal(stored(out.proposalId).reason, 'Cuaderno Clutches (Insectary_stocks): clutches 838–1000');
   } finally {
     close();
   }
