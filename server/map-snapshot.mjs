@@ -187,13 +187,12 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
         for (let i = 0; i < TILE_TRIES; i++) {
           try {
             const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(8_000) });
-            if (response.status === 429 || response.status >= 500) break; // busy or down: not asked again at once
-            if (!response.ok) continue;
+            if (!response.ok) break; // busy, down or refused: not asked again at once
             const data = Buffer.from(await response.arrayBuffer());
             if (!writeCacheFile(path, data)) break;
             return { path, fetched: true };
           } catch {
-            // tried again once, then the tile is left blank
+            // a network error: tried again once, then the expired tile if kept, else blank
           }
         }
       } finally {
