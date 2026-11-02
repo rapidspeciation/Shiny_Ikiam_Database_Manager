@@ -170,6 +170,12 @@ describe('the sex check of the Fotos tab', () => {
     )
   })
 
+  it('says why a CAM reading is only doubtful: one digit, or an unsure reading', async () => {
+    const { camText } = await import('../../lib/sexCheck')
+    const unsure = answer('CAM073743', 'agree', { camCheck: { status: 'doubtful', read: 'CAM073451', digits: 3, photos: ['d'], conf: 0.4, database: null } }) as never
+    expect(camText(unsure)).toBe(t('El sobre podría decir {read} ({db}); el lector no está seguro.', { read: 'CAM073451', db: t('no está en la base') }))
+  })
+
   it('lists a one-digit slip only when the CAM it reads is in the database', async () => {
     const { worthShowing } = await import('../../lib/sexCheck')
     const pair = { cam: 'CAM077008', d: 'a', v: 'b' }

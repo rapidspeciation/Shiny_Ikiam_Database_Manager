@@ -34,7 +34,8 @@ The panel lists the red and amber ones first ("ver todas" shows the rest) and co
 
 ## The envelope's CAM (`compareCams`)
 
-Its own warning, beside the sex flag. The CAM reader's answer for each photo is compared with the CAM the photos are
+Its own warning, beside the sex flag. The CAM reader's answer for each photo (`camid` and its confidence; not the
+text lines' CAM, which has no confidence of its own) is compared with the CAM the photos are
 named under, after putting back the letters it takes for digits (O, Q and D for 0, I and L for 1, Z, S, G, B); a
 reading that is not a whole CAM (6 digits) is left out.
 
@@ -45,7 +46,7 @@ reading that is not a whole CAM (6 digits) is left out.
   butterflies, as CAM073711 and CAM073712 on 1 Nov 2026: then the model may have read two butterflies' wings). The
   sex flag beside it compares with the rows of the file's CAM, which may be another butterfly's.
 - **It may show another CAM** (grey): one digit away (a slip of the reader, CAM073603 read as CAM073503, is as
-  likely as a wrong name), or a low confidence. Listed only when the CAM read
+  likely as a wrong name), or a low confidence (the line says which). Listed only when the CAM read
   has rows in the database; the rest under "ver todas".
 
 The line says what the database has under the envelope's CAM (species and sex), or that it has no row.

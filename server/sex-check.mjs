@@ -125,11 +125,14 @@ export function compareCams(cam, photos = []) {
   const reads = photos.map(p => ({ name: p.name, cam: camOfReading(p.value), conf: Number.isFinite(p.conf) ? p.conf : 0 })).filter(p => p.cam);
   const other = reads.filter(p => p.cam !== cam);
   if (!other.length) return null;
-  const best = other.reduce((a, b) => (b.conf > a.conf ? b : a));
-  const digits = [...best.cam].filter((c, i) => c !== cam[i]).length;
-  const status = digits >= 2 && best.conf >= CAM_SURE ? 'mismatch' : 'doubtful';
-  const split = new Set(reads.map(p => p.cam)).size > 1;
-  return { status, read: best.cam, digits, photos: other.filter(p => p.cam === best.cam).map(p => p.name), conf: r3(best.conf), ...(split ? { split: true } : {}) };
+  const apart = (a, b) => [...a].filter((c, i) => c !== b[i]).length;
+  const sure = p => apart(p.cam, cam) >= 2 && p.conf >= CAM_SURE;
+  // A reading that is a mismatch first (a surer one-digit slip on the other photo must not hide it), then the surest.
+  const best = other.reduce((a, b) => (sure(b) !== sure(a) ? (sure(b) ? b : a) : b.conf > a.conf ? b : a));
+  const digits = apart(best.cam, cam);
+  // Two envelopes only when the photos' CAMs are 2 or more digits apart (one digit: the same envelope read twice).
+  const split = reads.some(p => apart(p.cam, best.cam) >= 2);
+  return { status: sure(best) ? 'mismatch' : 'doubtful', read: best.cam, digits, photos: other.filter(p => p.cam === best.cam).map(p => p.name), conf: r3(best.conf), ...(split ? { split: true } : {}) };
 }
 
 /** The CAM's rows with their Sex and its species (for the model's Supported screen). */

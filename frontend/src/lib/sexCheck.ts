@@ -155,7 +155,10 @@ export function camText(a: SexAnswer): string {
   const db = c.database
     ? t('en la base: {species} {sign}', { species: c.database.species ?? '–', sign: sexSign(c.database.sex) })
     : t('no está en la base')
-  if (c.status === 'doubtful') return t('El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.', { read: c.read, db })
+  if (c.status === 'doubtful')
+    return c.digits === 1
+      ? t('El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.', { read: c.read, db })
+      : t('El sobre podría decir {read} ({db}); el lector no está seguro.', { read: c.read, db })
   const said =
     c.photos.length === 1
       ? t('El sobre de la foto {photo} dice {read} ({db}): ¿foto con el CAM equivocado?', { photo: c.photos[0], read: c.read, db })

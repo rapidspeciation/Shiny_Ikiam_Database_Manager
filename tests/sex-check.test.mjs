@@ -118,6 +118,10 @@ test('photos whose envelope shows another CAM: sure when 2 or more digits differ
     conf: 1,
     split: true,
   });
+  // A surer one-digit slip on the other photo does not hide the mismatch; one digit between the photos is not two envelopes.
+  const mixed = compareCams('CAM073711', [{ name: 'd', value: 'CAM073444', conf: 0.98 }, { name: 'v', value: 'CAM073712', conf: 0.99 }]);
+  assert.deepEqual([mixed.status, mixed.read, mixed.split], ['mismatch', 'CAM073444', true]);
+  assert.equal(compareCams('CAM073743', [{ name: 'd', value: 'CAM073451', conf: 0.99 }, { name: 'v', value: 'CAM073457', conf: 0.9 }]).split, undefined);
   // A low confidence: doubtful. One photo with no CAM read: still sure.
   assert.equal(compareCams('CAM073743', both('CAM073451', 0.4)).status, 'doubtful');
   const one = compareCams('CAM073743', [{ name: 'd', value: 'CAM073451', conf: 0.99 }, { name: 'v', value: null, conf: null }]);

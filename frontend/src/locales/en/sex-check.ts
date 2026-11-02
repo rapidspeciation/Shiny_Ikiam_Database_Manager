@@ -43,6 +43,7 @@ export default {
   'no está en la base': 'not in the database',
   'El sobre dice {read} ({db}): ¿fotos con el CAM equivocado?': 'The envelope says {read} ({db}): photos under the wrong CAM?',
   'El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.': 'The envelope may say {read} ({db}); only one digit differs: it may be the reader.',
+  'El sobre podría decir {read} ({db}); el lector no está seguro.': 'The envelope may say {read} ({db}); the reader is not sure.',
   '{n} con otro CAM en el sobre': '{n} with another CAM on the envelope',
   'El sobre de la foto {photo} dice {read} ({db}): ¿foto con el CAM equivocado?': 'The envelope in the {photo} photo says {read} ({db}): photo under the wrong CAM?',
   'Las fotos d y v muestran sobres distintos: el modelo pudo leer alas de dos mariposas.':
