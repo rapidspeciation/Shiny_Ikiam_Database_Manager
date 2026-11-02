@@ -47,3 +47,7 @@ Raw workbook exports, meeting documents, credentials, and local diagnostics stay
 ## Context
 
 See [the discovery notes](docs/discovery.md), [database findings](docs/database-findings.md), [meeting review](docs/meetings.md), and [schema](docs/workbook-schema.json) for the evidence. The [full feature catalog](docs/feature-catalog.md), [architecture](docs/architecture.md), [workflow details](docs/workflows.md), and [implementation plan](docs/implementation-plan.md) describe the intended application. The [history and selected undo proposal](docs/edit-history.md) supports routine editing through both the app and Google Sheets. [Recording language](CONTEXT.md) distinguishes biological observations from corrections. Delivery stages organize the work without limiting the final scope to the initial forms.
+
+## License and citation
+
+This tool is released under the MIT licence (see [LICENSE](LICENSE)). If you use this tool, please cite the repository (see [CITATION.cff](CITATION.cff)); a paper describing the tools is in preparation.
