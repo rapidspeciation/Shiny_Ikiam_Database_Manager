@@ -124,8 +124,8 @@ replaces it) is discarded with `update_proposal` `discard`.
   - Recorded adults/pupae, pooled: 81 % (534 clutches).
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.
-- **Every figure has a source** (the database, a document or the chat). What
-  CAM stands for is not written down: say that.
+- **Every figure has a source** (the database, a document or the chat).
+- CAMID: identificador de cada espécimen de la colección, "CAM" + 6 dígitos (p. ej. CAM042388), escrito a mano en el sobre y usado como nombre de las fotos (CAM072174d.JPG / CAM072174v.JPG). Qué significan las letras no está escrito en ningún documento.
 
 ## The rows a rule may miss
 
