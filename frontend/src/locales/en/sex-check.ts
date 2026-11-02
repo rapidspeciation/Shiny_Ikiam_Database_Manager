@@ -37,7 +37,16 @@ export default {
   'La base no tiene sexo; el modelo (Supported) dice {m} y el sobre {e}.': 'The database has no sex; the model (Supported) says {m} and the envelope {e}.',
   'La base no tiene sexo; el sobre dice {e} (el modelo no está seguro).': 'The database has no sex; the envelope says {e} (the model is not sure).',
   'La base no tiene sexo; el modelo (Supported) dice {m}.': 'The database has no sex; the model (Supported) says {m}.',
-  'El modelo (Supported) y la base coinciden; el lector probablemente leyó mal el sobre.': 'The model (Supported) and the database agree; the reader probably misread the envelope.',
+  'El sobre dice {e}; el modelo (Supported) y la base dicen {db}. Mira el sobre: o está mal escrito, o el lector inventó el signo.':
+    'The envelope says {e}; the model (Supported) and the database say {db}. Look at the envelope: either it was written wrongly, or the reader invented the sign.',
+  'en la base: {species} {sign}': 'in the database: {species} {sign}',
+  'no está en la base': 'not in the database',
+  'El sobre dice {read} ({db}): ¿fotos con el CAM equivocado?': 'The envelope says {read} ({db}): photos under the wrong CAM?',
+  'El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.': 'The envelope may say {read} ({db}); only one digit differs: it may be the reader.',
+  '{n} con otro CAM en el sobre': '{n} with another CAM on the envelope',
+  'El sobre de la foto {photo} dice {read} ({db}): ¿foto con el CAM equivocado?': 'The envelope in the {photo} photo says {read} ({db}): photo under the wrong CAM?',
+  'Las fotos d y v muestran sobres distintos: el modelo pudo leer alas de dos mariposas.':
+    "The d and v photos show different envelopes: the model may have read two butterflies' wings.",
   'El modelo (Supported) y la base coinciden.': 'The model (Supported) and the database agree.',
   'El modelo no está seguro (no es una llamada Supported): no se marca como error.': 'The model is not sure (not a Supported call): not marked as an error.',
   'El modelo no pudo leer las alas de estas fotos.': 'The model could not read the wings in these photos.',

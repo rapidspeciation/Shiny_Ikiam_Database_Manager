@@ -21,7 +21,20 @@ export interface SexAnswer {
   database: { sex: Sex | null; rows: { sheet: string; row: number; value: string }[]; differ?: boolean }
   suggest?: Sex
   species: string | null
+  /** The CAM the envelope shows when it is not the file's (server compareCams): 'mismatch' sure, 'doubtful' one digit away or unsure. */
+  camCheck?: CamCheck
   ms: number
+}
+export interface CamCheck {
+  status: 'mismatch' | 'doubtful'
+  read: string
+  digits: number
+  photos: string[]
+  conf: number
+  /** The d and v photos show different CAMs (photos shuffled between butterflies). */
+  split?: boolean
+  /** What the database has under the envelope's CAM (null: no row). */
+  database: { species: string | null; sex: Sex | null; rows: number } | null
 }
 export interface SexPair {
   cam: string
@@ -62,13 +75,14 @@ export const FLAG_ORDER: SexFlag[] = ['disagree', 'check', 'uncertain', 'agree',
 
 /** Counts by flag of these pairs' answers (errors: a butterfly the check could not read). */
 export function sexCounts(pairs: SexPair[]) {
-  const out = { disagree: 0, check: 0, agree: 0, uncertain: 0, none: 0, errors: 0, checked: 0 }
+  const out = { disagree: 0, check: 0, agree: 0, uncertain: 0, none: 0, errors: 0, checked: 0, cam: 0 }
   for (const p of pairs) {
     const r = sexCheck.results[pairKey(p)]
     if (!r) continue
     out.checked++
     if (r.answer) out[r.answer.flag]++
     else if (r.error) out.errors++
+    if (r.answer?.camCheck?.status === 'mismatch') out.cam++
   }
   return out
 }
@@ -123,6 +137,32 @@ export function databaseText(a: SexAnswer): string {
   return a.database.sex ? sexSign(a.database.sex) : t('vacío')
 }
 
+/**
+ * Shown in the panel's default list: the sex flags to look at, a sure CAM mismatch, and a doubtful one whose CAM
+ * is in the database (a CAM the reader slipped into that has no row is left to «ver todas»).
+ */
+export function worthShowing(r: SexResult): boolean {
+  const a = r.answer
+  if (!a) return true
+  if (a.flag === 'disagree' || a.flag === 'check') return true
+  return a.camCheck?.status === 'mismatch' || (a.camCheck?.status === 'doubtful' && !!a.camCheck.database)
+}
+
+/** The envelope's CAM when it is not the file's: «El sobre dice CAM073451 (en la base: Mechanitis lysimnia ♀)». */
+export function camText(a: SexAnswer): string {
+  const c = a.camCheck
+  if (!c) return ''
+  const db = c.database
+    ? t('en la base: {species} {sign}', { species: c.database.species ?? '–', sign: sexSign(c.database.sex) })
+    : t('no está en la base')
+  if (c.status === 'doubtful') return t('El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.', { read: c.read, db })
+  const said =
+    c.photos.length === 1
+      ? t('El sobre de la foto {photo} dice {read} ({db}): ¿foto con el CAM equivocado?', { photo: c.photos[0], read: c.read, db })
+      : t('El sobre dice {read} ({db}): ¿fotos con el CAM equivocado?', { read: c.read, db })
+  return c.split ? `${said} ${t('Las fotos d y v muestran sobres distintos: el modelo pudo leer alas de dos mariposas.')}` : said
+}
+
 /** What the flag means for this butterfly, in a sentence. */
 export function flagText(a: SexAnswer): string {
   const r = new Set(a.reasons)
@@ -137,13 +177,18 @@ export function flagText(a: SexAnswer): string {
           : t('El modelo (Supported) dice {m}, la base dice {db}: mira las alas o el sobre.', { m, db })
     case 'check':
       if (r.has('database_rows_differ')) return t('Las filas de la base no tienen el mismo sexo.')
+      if (r.has('envelope_vs_model_and_database'))
+        return t('El sobre dice {e}; el modelo (Supported) y la base dicen {db}. Mira el sobre: o está mal escrito, o el lector inventó el signo.', {
+          e: sexSign(a.envelope?.sex),
+          db,
+        })
       if (r.has('envelope_vs_database')) return t('El sobre dice {e}, la base dice {db}; el modelo no está seguro. El lector a veces inventa ♂/♀: mira el sobre.', { e: sexSign(a.envelope?.sex), db })
       if (r.has('model_vs_envelope')) return t('La base no tiene sexo; el modelo (Supported) dice {m} y el sobre {e}.', { m, e: sexSign(a.envelope?.sex) })
       return r.has('only_envelope')
         ? t('La base no tiene sexo; el sobre dice {e} (el modelo no está seguro).', { e: sexSign(a.suggest) })
         : t('La base no tiene sexo; el modelo (Supported) dice {m}.', { m: sexSign(a.suggest) })
     case 'agree':
-      return r.has('envelope_misread_likely') ? t('El modelo (Supported) y la base coinciden; el lector probablemente leyó mal el sobre.') : t('El modelo (Supported) y la base coinciden.')
+      return t('El modelo (Supported) y la base coinciden.')
     case 'uncertain':
       if (r.has('model_unreliable_species')) return t('El modelo no es fiable para esta especie: no se marca como error.')
       return a.model.sex ? t('El modelo no está seguro (no es una llamada Supported): no se marca como error.') : t('El modelo no pudo leer las alas de estas fotos.')

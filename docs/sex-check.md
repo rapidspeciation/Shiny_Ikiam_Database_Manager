@@ -6,7 +6,7 @@ each butterfly that has a `d` and a `v` photo in the batch. Three sexes are comp
 | source | where it comes from | how sure |
 |---|---|---|
 | **model** | the collection sex model of 19 Oct 2026 (a small CNN on the 4 androconial strips, cut with the nano wing chain's boxes; `identifier/sex/`, the same model and fold split as the readings) | a **Supported** call (the released screen: P ≥ 0.85, the species has at least 3 sure out-of-fold butterflies of each sex, and the Wilson lower bound of the model's accuracy on that species is ≥ 0.80) is right about 98.8 % of the time (50 % of butterflies get one). Any other call is only a leaning. |
-| **envelope** | the envelope reader's full text of both photos (`photo-reader --text`), read into fields by `server/envelope-fields.mjs` (♂/♀, male/female, macho/hembra) | the reader sometimes writes a ♂/♀ that is not there (♂/♀ exact on 93.1 % of envelopes). It counts only at confidence ≥ 0.6 and when the envelope does not read both signs; a lone sign with no species line is already counted at half its confidence. |
+| **envelope** | the envelope reader's full text of both photos (`photo-reader --text`), read into fields by `server/envelope-fields.mjs` (♂/♀, male/female, macho/hembra) | the reader sometimes writes a ♂/♀ that is not there (♂/♀ exact on 93.1 % of envelopes), and sometimes misses one: its line finder (`line_det.onnx`) finds no line on a sign written apart, after a long gap (CAM073779: «messenoides ♂», no box over the ♂ even at much lower thresholds). It counts only at confidence ≥ 0.6 and when the envelope does not read both signs; a lone sign with no species line is already counted at half its confidence. |
 | **database** | the `Sex` of the CAM's rows in Collection_data and Insectary_data | `male`/`female` (a trailing `?` is ignored); anything else is empty. |
 
 ## The flags (`decideSex` in `server/sex-check.mjs`)
@@ -17,15 +17,38 @@ In this order:
 2. The database has a sex:
    - a Supported model call against it: **disagree** (red, the likely errors). The line says whether the envelope
      agrees with the model ("the database is probably wrong") or with the database ("look at the wings").
-   - a Supported model call that is the database's: **agree**. If the envelope reads the other sign, the line says
-     the reader probably misread it; it is not flagged.
+   - a Supported model call that is the database's, and the envelope (sure) reads the other sign: **check**
+     (amber). Either the envelope was written wrongly or the reader invented the sign; only the envelope tells
+     which, so it is always shown (CAM075172, 1 Nov 2026: the envelope really says ♀, the model and the database ♂).
+   - a Supported model call that is the database's: **agree**.
    - no Supported call, and the envelope (sure, as above) against the database: **check** (amber). This is weaker
      evidence, because the reader can invent a sign.
    - otherwise: **uncertain** (grey). The model's leaning is shown, never as an error.
 3. The database has no sex: **check** with the sex to fill in when a Supported model call or a sure envelope gives
    one (both, if they disagree, are shown); otherwise **uncertain**, or **none** when nothing reads a sex.
 
+The envelope against a model call that is not Supported is not flagged: the call is only a leaning, and the
+envelope and model columns show both under "ver todas".
+
 The panel lists the red and amber ones first ("ver todas" shows the rest) and counts each kind.
+
+## The envelope's CAM (`compareCams`)
+
+Its own warning, beside the sex flag. The CAM reader's answer for each photo is compared with the CAM the photos are
+named under, after putting back the letters it takes for digits (O, Q and D for 0, I and L for 1, Z, S, G, B); a
+reading that is not a whole CAM (6 digits) is left out.
+
+- **The envelope shows another CAM** (red, listed first and counted on its own: «El sobre dice CAM073451 (en la
+  base: Mechanitis lysimnia ♀): ¿fotos con el CAM equivocado?»): a photo reads another CAM at confidence ≥ 0.6,
+  2 or more digits away from the file's. Very likely a photo under the wrong name; the line names the photo when
+  only one shows it, and says when the d and v photos show different envelopes (photos shuffled between
+  butterflies, as CAM073711 and CAM073712 on 1 Nov 2026: then the model may have read two butterflies' wings). The
+  sex flag beside it compares with the rows of the file's CAM, which may be another butterfly's.
+- **It may show another CAM** (grey): one digit away (a slip of the reader, CAM073603 read as CAM073503, is as
+  likely as a wrong name), or a low confidence. Listed only when the CAM read
+  has rows in the database; the rest under "ver todas".
+
+The line says what the database has under the envelope's CAM (species and sex), or that it has no row.
 
 ### Species the model is not trusted on
 

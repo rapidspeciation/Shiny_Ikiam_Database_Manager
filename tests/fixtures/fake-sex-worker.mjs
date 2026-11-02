@@ -1,5 +1,5 @@
 // Stand-ins for the sex check's two children (tests/sex-check.test.mjs): the readings worker's `only: 'sex'` job
-// and the photo reader with --text. Each "photo" is JSON: { pMale, supported, line: [text, conf] }; the worker
+// and the photo reader with --text. Each "photo" is JSON: { pMale, supported, line: [text, conf], camid, camidConf }; the worker
 // answers the d photo's model call (and echoes the species it was given), the reader the photo's envelope line.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -11,7 +11,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   const job = JSON.parse(line);
   if (reader) {
     const photo = JSON.parse(readFileSync(job.path, 'utf8'));
-    say({ id: job.id, camid: photo.camid ?? null, conf: 0.99, ...(photo.line ? { text: { turn: 0, lines: [{ text: photo.line[0], conf: photo.line[1], turn: 0 }] } } : {}) });
+    say({ id: job.id, camid: photo.camid ?? null, conf: photo.camidConf ?? 0.99, ...(photo.line ? { text: { turn: 0, lines: [{ text: photo.line[0], conf: photo.line[1], turn: 0 }] } } : {}) });
     continue;
   }
   if (job.only !== 'sex' || !job.sex) {

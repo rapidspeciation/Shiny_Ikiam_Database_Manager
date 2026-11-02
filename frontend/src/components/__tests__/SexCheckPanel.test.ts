@@ -29,6 +29,16 @@ vi.mock('../../lib/api', () => ({
         suggest: 'male',
       })
     if (cam === 'CAM077002') return answer(cam, 'agree')
+    // 1 Nov 2026 cases: photos under another CAM (CAM073743), the envelope against the model and the database
+    // (CAM075172), a one-digit slip of the reader with no row (CAM073603).
+    if (cam === 'CAM077006')
+      return answer(cam, 'agree', {
+        camCheck: { status: 'mismatch', read: 'CAM073451', digits: 3, photos: ['d', 'v'], conf: 0.98, database: { species: 'Mechanitis lysimnia', sex: 'female', rows: 1 } },
+      })
+    if (cam === 'CAM077007')
+      return answer(cam, 'check', { reasons: ['envelope_vs_model_and_database'], envelope: { sex: 'female', conf: 0.996, sure: true, line: 'proceriformis ♀' } })
+    if (cam === 'CAM077008')
+      return answer(cam, 'agree', { camCheck: { status: 'doubtful', read: 'CAM077018', digits: 1, photos: ['d', 'v'], conf: 0.94, database: null } })
     return answer(String(cam), 'uncertain', { reasons: ['model_not_supported'], model: { sex: 'female', p: 0.78, supported: false, status: 'below_confidence' } })
   },
 }))
@@ -109,6 +119,65 @@ describe('the sex check of the Fotos tab', () => {
     expect(host.querySelector('[data-sex-count="disagree"]')?.textContent).toBe(t('{n} no coinciden', { n: 1 }))
     expect(host.textContent).toContain(t('{n} coinciden', { n: 1 }))
     expect(host.querySelector('[data-sex-run]')?.textContent).toContain(t('Comprobar de nuevo'))
+  })
+
+  it('lists photos whose envelope shows another CAM first, and the envelope against the model and the database', async () => {
+    const { renameFrame, renameHost } = await import('../../lib/renameHost')
+    renameFrame.ask = async () => ({ ok: true, data: { images: [{ files: [], blob: new Blob([new Uint8Array(200).fill(65)], { type: 'image/jpeg' }) }] } })
+    const s = state()
+    s.rows = ['CAM077007', 'CAM077006', 'CAM077008'].flatMap((cam, i) => [
+      { file: `IMG_${i}d.JPG`, id: cam, view: 'd', review: [] },
+      { file: `IMG_${i}v.JPG`, id: cam, view: 'v', review: [] },
+    ])
+    renameHost.state = s
+    renameHost.ready = true
+    const { default: SexCheckPanel } = await import('../SexCheckPanel.vue')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp({ render: () => h(SexCheckPanel) })
+    app.config.globalProperties.$t = t
+    app.config.globalProperties.$tn = tn
+    app.mount(host)
+    unmount = () => app.unmount()
+    await nextTick()
+    host.querySelector<HTMLButtonElement>('[data-sex-run]')!.click()
+    for (let i = 0; i < 40 && host.querySelectorAll('[data-sex-flag]').length < 2; i++) await new Promise(resolve => setTimeout(resolve, 5))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    // The CAM mismatch first (its sex agrees, it is listed anyway); the one-digit slip with no row only under «ver todas».
+    const rows = [...host.querySelectorAll('[data-sex-flag]')]
+    expect(rows.map(r => r.getAttribute('data-cam'))).toEqual(['CAM077006', 'CAM077007'])
+    expect(rows[0].querySelector('[data-sex-cam="mismatch"]')?.textContent).toBe(
+      t('El sobre dice {read} ({db}): ¿fotos con el CAM equivocado?', { read: 'CAM073451', db: t('en la base: {species} {sign}', { species: 'Mechanitis lysimnia', sign: '♀' }) }),
+    )
+    expect(rows[1].textContent).toContain(
+      t('El sobre dice {e}; el modelo (Supported) y la base dicen {db}. Mira el sobre: o está mal escrito, o el lector inventó el signo.', { e: '♀', db: '♂' }),
+    )
+    expect(host.querySelector('[data-sex-count="cam"]')?.textContent).toBe(t('{n} con otro CAM en el sobre', { n: 1 }))
+    expect(host.querySelector('[data-sex-count="check"]')?.textContent).toBe(t('{n} a revisar', { n: 1 }))
+    const all = host.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    all.click()
+    await nextTick()
+    const slip = host.querySelector('[data-cam="CAM077008"] [data-sex-cam="doubtful"]')
+    expect(slip?.textContent).toBe(t('El sobre podría decir {read} ({db}); un solo dígito distinto: puede ser el lector.', { read: 'CAM077018', db: t('no está en la base') }))
+  })
+
+  it('names the photo when only one shows another CAM, and says when d and v show different envelopes', async () => {
+    const { camText } = await import('../../lib/sexCheck')
+    const db = { species: 'Mechanitis lysimnia', sex: 'female', rows: 1 }
+    const a = answer('CAM073711', 'agree', { camCheck: { status: 'mismatch', read: 'CAM073444', digits: 3, photos: ['d'], conf: 1, split: true, database: db } }) as never
+    expect(camText(a)).toBe(
+      `${t('El sobre de la foto {photo} dice {read} ({db}): ¿foto con el CAM equivocado?', { photo: 'd', read: 'CAM073444', db: t('en la base: {species} {sign}', { species: 'Mechanitis lysimnia', sign: '♀' }) })} ${t('Las fotos d y v muestran sobres distintos: el modelo pudo leer alas de dos mariposas.')}`,
+    )
+  })
+
+  it('lists a one-digit slip only when the CAM it reads is in the database', async () => {
+    const { worthShowing } = await import('../../lib/sexCheck')
+    const pair = { cam: 'CAM077008', d: 'a', v: 'b' }
+    const slip = (database: unknown) => ({ ...pair, answer: answer('CAM077008', 'agree', { camCheck: { status: 'doubtful', read: 'CAM077018', digits: 1, photos: ['d'], conf: 0.9, database } }) as never })
+    expect(worthShowing(slip(null))).toBe(false)
+    expect(worthShowing(slip({ species: 'Oleria baizana', sex: 'male', rows: 1 }))).toBe(true)
+    expect(worthShowing({ ...pair, answer: answer('CAM077008', 'agree') as never })).toBe(false)
+    expect(worthShowing({ ...pair, error: 'x' })).toBe(true)
   })
 
   it('says a call that is not Supported as a leaning, not an error', async () => {

@@ -59,7 +59,8 @@ const r3 = n => Math.round(n * 1000) / 1000;
  *   flag 'disagree': a Supported model call against the database: very likely an error, look before uploading;
  *        'check': weaker evidence against the database, or the sexes of the database's rows differ, or the
  *                 database has no sex where the model (Supported) or the envelope reads one;
- *        'agree': a Supported model call that is the database's;
+ *        'check' also: a sure envelope against a Supported model call and the database that agree;
+ *        'agree': a Supported model call that is the database's (and no sure envelope against them);
  *        'uncertain': no Supported model call, and nothing else against the database;
  *        'none': nothing to compare (no model call, no envelope sex, no database sex).
  */
@@ -85,7 +86,8 @@ export function decideSex({ model = null, envelope = null, database = [], unreli
       else if (envSure === d.sex) why.push('envelope_agrees_with_database');
       return out('disagree', why, { suggest: m.sex });
     }
-    if (modelSure) return out('agree', envSure && envSure !== d.sex ? ['envelope_misread_likely'] : []);
+    // The envelope against both (the reader may have invented the sign, or the envelope was written wrongly): shown.
+    if (modelSure) return envSure && envSure !== d.sex ? out('check', ['envelope_vs_model_and_database']) : out('agree', []);
     if (envSure && envSure !== d.sex) return out('check', ['envelope_vs_database']);
     return out('uncertain', m.sex ? ['model_not_supported'] : ['model_not_scored']);
   }
@@ -95,6 +97,39 @@ export function decideSex({ model = null, envelope = null, database = [], unreli
   if (envSure) return out('check', ['database_empty', 'only_envelope'], { suggest: envSure });
   if (m.sex || e) return out('uncertain', ['database_empty']);
   return out('none', []);
+}
+
+// ------------------------------------------------------------ the envelope's CAM
+// Letters the CAM reader takes for digits now and then ("CAMO73451"): read as the digit they stand for.
+const DIGIT_LIKE = { O: '0', Q: '0', D: '0', I: '1', L: '1', '|': '1', Z: '2', S: '5', G: '6', B: '8' };
+/** A CAM as read on an envelope, normalised ("camO73451" -> "CAM073451"); null when it is not a whole CAM (6 digits). */
+export function camOfReading(value) {
+  const m = /^CAM(.+)$/.exec(text(value).toUpperCase().replace(/[\s._-]/g, ''));
+  if (!m) return null;
+  const digits = [...m[1]].map(c => DIGIT_LIKE[c] ?? c).join('');
+  return /^\d{6}$/.test(digits) ? `CAM${digits}` : null;
+}
+/** A CAM read on the envelope counts as a confident mismatch from this confidence of the CAM reader. */
+export const CAM_SURE = 0.6;
+/**
+ * The CAM the envelope shows against the CAM the photos are named under. photos: [{ name, value, conf }] (the
+ * CAM reader's answer of each photo). -> null when no photo reads a whole CAM other than the file's; else
+ * { status, read, digits, photos, conf, split? }:
+ *   'mismatch': a photo reads another CAM, sure (≥ CAM_SURE) and 2 or more digits away: very likely a photo under
+ *               the wrong CAM. `photos` says which; the other photo may read the file's own CAM (photos shuffled
+ *               between butterflies, CAM073711 on 1 Nov 2026: d showed CAM073444's envelope, v its own);
+ *   'doubtful': one digit away (a reader's slip as likely as a wrong name), or not sure.
+ * split: the d and v photos read different whole CAMs, so the model may have read two butterflies' wings.
+ */
+export function compareCams(cam, photos = []) {
+  const reads = photos.map(p => ({ name: p.name, cam: camOfReading(p.value), conf: Number.isFinite(p.conf) ? p.conf : 0 })).filter(p => p.cam);
+  const other = reads.filter(p => p.cam !== cam);
+  if (!other.length) return null;
+  const best = other.reduce((a, b) => (b.conf > a.conf ? b : a));
+  const digits = [...best.cam].filter((c, i) => c !== cam[i]).length;
+  const status = digits >= 2 && best.conf >= CAM_SURE ? 'mismatch' : 'doubtful';
+  const split = new Set(reads.map(p => p.cam)).size > 1;
+  return { status, read: best.cam, digits, photos: other.filter(p => p.cam === best.cam).map(p => p.name), conf: r3(best.conf), ...(split ? { split: true } : {}) };
 }
 
 /** The CAM's rows with their Sex and its species (for the model's Supported screen). */
@@ -167,7 +202,13 @@ function lineChild(argv, { spawnImpl, nice, ready = o => o.ready === true }) {
           s.proc.stdin.write(`${JSON.stringify({ ...job, id })}\n`);
         });
       } finally {
-        if (state === s && !s.waiting.size) s.timer = setTimeout(() => s.proc.stdin.end(), IDLE_MS);
+        // One idle timer per child: two answers read together (the d and v envelopes) both end here with nothing
+        // waiting, and a second timer must not leave the first running (it ended the child 5 minutes later,
+        // whatever it was doing then, and kept the tests from exiting). Never keeps the app running by itself.
+        if (state === s && !s.waiting.size) {
+          clearTimeout(s.timer);
+          s.timer = setTimeout(() => s.proc.stdin.end(), IDLE_MS).unref();
+        }
       }
     },
     close() {
@@ -239,11 +280,22 @@ export function createSexCheck({ store, readerDir = null, identifierDir = null, 
     // The species for the list of species the model is not trusted on: the database's, else the envelope's.
     const species = db.species ?? envelope?.species?.value ?? null;
     const verdict = decideSex({ model, envelope: envelope?.sex ?? null, database: db.rows, unreliable: unreliableFor(species) });
+    // The envelope's CAM against the file's: its own warning, with what the database has under the envelope's CAM.
+    const camCheck = compareCams(
+      cam,
+      envelopes.map((r, i) => ({ name: i ? 'v' : 'd', value: r.camid, conf: r.conf })),
+    );
+    if (camCheck) {
+      const other = databaseOf(store, camCheck.read);
+      const sexes = [...new Set(other.rows.map(r => r.sex).filter(Boolean))];
+      camCheck.database = other.rows.length ? { species: other.species, sex: sexes.length === 1 ? sexes[0] : null, rows: other.rows.length } : null;
+    }
     return {
       cam,
       ...verdict,
       species,
       envelopeCam: envelope?.camid?.value ?? null,
+      ...(camCheck ? { camCheck } : {}),
       ...(model.kind ? { modelInfo: { pMale: model.pMale, status: model.status, crops: model.crops, fold: model.fold } } : {}),
       ms: Date.now() - started,
     };

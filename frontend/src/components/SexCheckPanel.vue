@@ -13,6 +13,8 @@ import {
   sexCheck,
   sexCounts,
   sexPairs,
+  worthShowing,
+  camText,
   type SexFlag,
   type SexResult,
 } from '../lib/sexCheck'
@@ -28,8 +30,9 @@ const open = ref(true)
 const all = ref(false)
 const shown = computed(() => {
   const rows = pairs.value.map(p => sexCheck.results[pairKey(p)]).filter((r): r is SexResult => !!r)
-  const rank = (r: SexResult) => (r.answer ? FLAG_ORDER.indexOf(r.answer.flag) : 1.5)
-  return rows.filter(r => all.value || !r.answer || r.answer.flag === 'disagree' || r.answer.flag === 'check').sort((a, b) => rank(a) - rank(b))
+  // Photos under the wrong CAM first: before an upload they matter more than the sex.
+  const rank = (r: SexResult) => (r.answer ? (r.answer.camCheck?.status === 'mismatch' ? -1 : FLAG_ORDER.indexOf(r.answer.flag)) : 1.5)
+  return rows.filter(r => all.value || worthShowing(r)).sort((a, b) => rank(a) - rank(b))
 })
 const left = computed(() => pairs.value.length - counts.value.checked)
 const STYLE: Record<SexFlag, string> = {
@@ -58,6 +61,7 @@ const STYLE: Record<SexFlag, string> = {
         <span class="tabular-nums text-stone-600" data-sex-progress>{{ $t('comprobando {done} de {total}…', { done: sexCheck.done, total: sexCheck.total }) }}</span>
         <button class="btn-ghost px-1.5 py-0.5" @click="sexCheck.stop = true">{{ $t('Parar') }}</button>
       </template>
+      <span v-if="counts.cam" class="rounded px-1.5 py-0.5" :class="STYLE.disagree" data-sex-count="cam">{{ $t('{n} con otro CAM en el sobre', { n: counts.cam }) }}</span>
       <span v-if="counts.disagree" class="rounded px-1.5 py-0.5" :class="STYLE.disagree" data-sex-count="disagree">{{ $t('{n} no coinciden', { n: counts.disagree }) }}</span>
       <span v-if="counts.check" class="rounded px-1.5 py-0.5" :class="STYLE.check" data-sex-count="check">{{ $t('{n} a revisar', { n: counts.check }) }}</span>
       <span v-if="counts.agree" class="rounded px-1.5 py-0.5" :class="STYLE.agree">{{ $t('{n} coinciden', { n: counts.agree }) }}</span>
@@ -91,6 +95,13 @@ const STYLE: Record<SexFlag, string> = {
             <td class="pr-3 py-0.5 whitespace-nowrap" :title="r.answer.envelope?.line ?? ''">{{ envelopeText(r.answer) }}</td>
             <td class="pr-3 py-0.5 whitespace-nowrap">{{ databaseText(r.answer) }}</td>
             <td class="py-0.5">
+              <span
+                v-if="r.answer.camCheck"
+                class="mb-0.5 inline-block rounded px-1.5 py-0.5"
+                :class="r.answer.camCheck.status === 'mismatch' ? STYLE.disagree : STYLE.uncertain"
+                :data-sex-cam="r.answer.camCheck.status"
+                >{{ camText(r.answer) }}</span
+              ><br v-if="r.answer.camCheck" />
               <span class="rounded px-1.5 py-0.5" :class="STYLE[r.answer.flag]">{{ flagText(r.answer) }}</span>
               <span class="ml-1 text-xs text-stone-400">{{ r.d }} · {{ r.v }}</span>
             </td>

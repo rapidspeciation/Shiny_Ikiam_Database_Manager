@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { UNRELIABLE, createSexCheck, decideSex, unreliableFor } from '../server/sex-check.mjs';
+import { UNRELIABLE, camOfReading, compareCams, createSexCheck, decideSex, unreliableFor } from '../server/sex-check.mjs';
 
 // ------------------------------------------------------------ the rule (docs/sex-check.md)
 const db = (...sexes) => sexes.map((sex, i) => ({ sheet: i ? 'Insectary_data' : 'Collection_data', row: i + 2, sex, raw: sex ?? '' }));
@@ -29,13 +29,17 @@ test('a call that is not Supported is a leaning, never an error', () => {
   assert.deepEqual(decideSex({ model: { status: 'not_scored:no_wings' }, database: db('female') }).reasons, ['model_not_scored']);
 });
 
-test('the envelope alone against the database is a weaker flag, and none when a Supported call agrees with the database', () => {
+test('the envelope against the database is a weaker flag, shown even when a Supported call agrees with the database', () => {
   assert.equal(decideSex({ model: sure(0.6, false), envelope: env('male'), database: db('female') }).flag, 'check');
   assert.deepEqual(decideSex({ model: null, envelope: env('male'), database: db('female') }).reasons, ['envelope_vs_database']);
-  // The model sure and agreeing with the database: the reader probably invented the sign.
-  const a = decideSex({ model: sure(0.01), envelope: env('male'), database: db('female') });
-  assert.equal(a.flag, 'agree');
-  assert.deepEqual(a.reasons, ['envelope_misread_likely']);
+  // The model sure and agreeing with the database, the envelope (sure) saying the other sex (CAM075172, 1 Nov 2026:
+  // model ♂ 1.0 and database male, the envelope really says ♀): never hidden, whoever is wrong.
+  const a = decideSex({ model: sure(0.9995), envelope: env('female', 0.996), database: db('male') });
+  assert.equal(a.flag, 'check');
+  assert.deepEqual(a.reasons, ['envelope_vs_model_and_database']);
+  assert.equal(a.suggest, undefined, 'nothing to fill in: the model and the database agree');
+  // A weak envelope against them stays an agreement.
+  assert.deepEqual(decideSex({ model: sure(0.9995), envelope: env('female', 0.4), database: db('male') }).flag, 'agree');
   // Weak envelope readings do not count: both signs on one envelope, or a low confidence (a lone sign is halved by the parser).
   assert.equal(decideSex({ model: null, envelope: env('male', 0.9, { both: true }), database: db('female') }).flag, 'uncertain');
   assert.equal(decideSex({ model: null, envelope: env('male', 0.45, { alone: true }), database: db('female') }).flag, 'uncertain');
@@ -83,12 +87,49 @@ test('a species the model is not trusted on (server/sex-model-unreliable.json): 
   assert.deepEqual(decideSex({ model: { status: 'not_scored:no_wings' }, database: db('female'), unreliable: methona }).reasons, ['model_not_scored']);
 });
 
+// ------------------------------------------------------------ the envelope's CAM against the file's
+test('a CAM read on the envelope: normalised, and only a whole CAM', () => {
+  assert.equal(camOfReading('CAM073451'), 'CAM073451');
+  assert.equal(camOfReading('camO73451'), 'CAM073451', 'O read for 0');
+  assert.equal(camOfReading('CAM 07345I'), 'CAM073451', 'I read for 1, a space');
+  assert.equal(camOfReading('CAM07505'), null, 'five digits: not a CAM');
+  assert.equal(camOfReading('ME22-106'), null);
+  assert.equal(camOfReading(null), null);
+});
+
+test('photos whose envelope shows another CAM: sure when 2 or more digits differ, doubtful for one', () => {
+  const both = (value, conf = 0.98) => [{ name: 'd', value, conf }, { name: 'v', value, conf }];
+  // CAM073743 (1 Nov 2026): both photos show CAM073451.
+  assert.deepEqual(compareCams('CAM073743', both('CAM073451')), { status: 'mismatch', read: 'CAM073451', digits: 3, photos: ['d', 'v'], conf: 0.98 });
+  // The file's own CAM, with an O for a 0: nothing to say.
+  assert.equal(compareCams('CAM073451', both('CAMO73451')), null);
+  assert.equal(compareCams('CAM073451', []), null);
+  // Not a whole CAM (CAM075107 read as CAM07505): nothing to say.
+  assert.equal(compareCams('CAM075107', both('CAM07505')), null);
+  // One digit away (CAM073603 read as CAM073503): a reader's slip as likely as a wrong name.
+  assert.deepEqual(compareCams('CAM073603', both('CAM073503')), { status: 'doubtful', read: 'CAM073503', digits: 1, photos: ['d', 'v'], conf: 0.98 });
+  // Photos shuffled between butterflies (CAM073711: d shows CAM073444's envelope, v its own): the d photo is sure,
+  // and the photos read two CAMs.
+  assert.deepEqual(compareCams('CAM073711', [{ name: 'd', value: 'CAM073444', conf: 1 }, { name: 'v', value: 'CAM073711', conf: 0.97 }]), {
+    status: 'mismatch',
+    read: 'CAM073444',
+    digits: 3,
+    photos: ['d'],
+    conf: 1,
+    split: true,
+  });
+  // A low confidence: doubtful. One photo with no CAM read: still sure.
+  assert.equal(compareCams('CAM073743', both('CAM073451', 0.4)).status, 'doubtful');
+  const one = compareCams('CAM073743', [{ name: 'd', value: 'CAM073451', conf: 0.99 }, { name: 'v', value: null, conf: null }]);
+  assert.deepEqual([one.status, one.photos], ['mismatch', ['d']]);
+});
+
 // ------------------------------------------------------------ the check on a small workbook, with stand-in children
 const FAKE = fileURLToPath(new URL('./fixtures/fake-sex-worker.mjs', import.meta.url));
 const row = (row, cam, SPECIES, Sex) => ({ row, values: { Release_Collect: 'Collected_Preserved', CAM_ID: cam, SPECIES, Sex, Collection_location: 'Ikiam' } });
 async function setup() {
   const seed = {
-    Collection_data: [row(2, 'CAM000201', 'Oleria baizana', 'male'), row(3, 'CAM000202', 'Hypothyris euclea', 'female'), row(4, 'CAM000203', 'Oleria baizana', ''), row(5, 'CAM000204', 'Methona confusa', 'female')],
+    Collection_data: [row(2, 'CAM000201', 'Oleria baizana', 'male'), row(3, 'CAM000202', 'Hypothyris euclea', 'female'), row(4, 'CAM000203', 'Oleria baizana', ''), row(5, 'CAM000204', 'Methona confusa', 'female'), row(6, 'CAM000231', 'Oleria baizana', 'male')],
     Taxonomy_v18Jun25: ['Oleria baizana', 'Hypothyris euclea', 'Methona confusa'].map((species, i) => ({ row: i + 2, values: { species } })),
   };
   const store = new Store({ localMode: true }, { sheets: new LocalSheets(seed) });
@@ -119,6 +160,15 @@ test('a butterfly: the model and the envelope read from its photos, the database
     const methona = await check.check({ cam: 'CAM000204', d: photo({ pMale: 0.99, supported: true }), v: photo({}) });
     assert.deepEqual([methona.flag, methona.reasons, methona.model.supported], ['uncertain', ['model_unreliable_species'], false]);
     await assert.rejects(check.check({ cam: 'IMG_0001', d: photo({}), v: photo({}) }), /Not a CAM ID/);
+    // The envelope shows another CAM of the database: its own warning, with that CAM's rows; the sex is still checked.
+    const moved = await check.check({ cam: 'CAM000202', d: photo({ pMale: 0.02, supported: true, camid: 'CAM000231' }), v: photo({ camid: 'CAM000231', camidConf: 0.9 }) });
+    assert.equal(moved.flag, 'agree');
+    assert.deepEqual(moved.camCheck, { status: 'mismatch', read: 'CAM000231', digits: 2, photos: ['d', 'v'], conf: 0.99, database: { species: 'Oleria baizana', sex: 'male', rows: 1 } });
+    // One digit away and not in the database: doubtful, no rows.
+    const slip = await check.check({ cam: 'CAM000202', d: photo({ pMale: 0.02, supported: true, camid: 'CAM000209' }), v: photo({}) });
+    assert.deepEqual(slip.camCheck, { status: 'doubtful', read: 'CAM000209', digits: 1, photos: ['d'], conf: 0.99, database: null });
+    // The file's own CAM: no camCheck.
+    assert.equal((await check.check({ cam: 'CAM000202', d: photo({ pMale: 0.02, supported: true, camid: 'CAMOO0202' }), v: photo({}) })).camCheck, undefined);
   } finally {
     check.close();
   }
