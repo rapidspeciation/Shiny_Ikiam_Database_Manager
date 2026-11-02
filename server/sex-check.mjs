@@ -130,8 +130,9 @@ export function compareCams(cam, photos = []) {
   // A reading that is a mismatch first (a surer one-digit slip on the other photo must not hide it), then the surest.
   const best = other.reduce((a, b) => (sure(b) !== sure(a) ? (sure(b) ? b : a) : b.conf > a.conf ? b : a));
   const digits = apart(best.cam, cam);
-  // Two envelopes only when the photos' CAMs are 2 or more digits apart (one digit: the same envelope read twice).
-  const split = reads.some(p => apart(p.cam, best.cam) >= 2);
+  // Two envelopes: the photos' sure readings (≥ CAM_SURE) show different CAMs, even one digit apart (CAM073712 on
+  // 1 Nov 2026: d showed CAM073444's envelope, v CAM073445's). An unsure reading is not taken for another envelope.
+  const split = new Set(reads.filter(p => p.conf >= CAM_SURE).map(p => p.cam)).size > 1;
   return { status: sure(best) ? 'mismatch' : 'doubtful', read: best.cam, digits, photos: other.filter(p => p.cam === best.cam).map(p => p.name), conf: r3(best.conf), ...(split ? { split: true } : {}) };
 }
 
