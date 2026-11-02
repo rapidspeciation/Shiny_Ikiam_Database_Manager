@@ -104,8 +104,9 @@ replaces it) is discarded with `update_proposal` `discard`.
   ask.
 - **Alive or dead**: for «how many are alive», count the open records (no
   death date) and say how many of them entered over 90 days ago: those are
-  probably dead, to verify at the census. Never call a number confirmed alive.
-  The 90-day rule is a census check, never a death. Figures below are cited as
+  probably dead, to verify at the census. The open records are the most that
+  can be alive; only the census confirms them. The 90-day rule marks records to
+  check, and a death needs its own record. Figures below are cited as
   «según la base al 31/10/2026» with their qualifiers.
 
   Insectary figures, según la base al 31/10/2026 (seen deaths only:
@@ -123,9 +124,8 @@ replaces it) is discarded with `update_proposal` `discard`.
   - Recorded adults/pupae, pooled: 81 % (534 clutches).
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.
-  Never explain a pattern by things left for Monday.
 - **Every figure has a source** (the database, a document or the chat). What
-  CAM stands for is not written down (it is not «Cambridge»): say that.
+  CAM stands for is not written down: say that.
 
 ## The rows a rule may miss
 
