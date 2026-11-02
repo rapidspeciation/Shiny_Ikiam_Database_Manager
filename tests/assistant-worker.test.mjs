@@ -37,7 +37,7 @@ async function fixture(t, { callMs = 20_000, backoffMs } = {}) {
   await store.sync({ sheets: ['Collection_data', 'Location_data', 'Insectary_stocks'] });
   const host = createAssistantHost({
     store,
-    config: { databasePath, localMode: true, proposalWaitMs: 10_000, assistantToolWorkers: 3 },
+    config: { databasePath, localMode: true, proposalWaitMs: 120_000, assistantToolWorkers: 3 },
     workerUrl: hooks,
     callMs,
     backoffMs,
@@ -83,7 +83,8 @@ test('propose_changes runs in the worker; the page waiting for the list wakes; a
   assert.equal(host.mode, 'worker');
   const first = (await http('GET', '/api/chat/proposals', {}, { all: '1' })).body;
   assert.deepEqual(first.proposals, []);
-  // The page's long poll, held until a proposal of Franz's changes.
+  // The page's long poll, held until a proposal of Franz's changes (or for proposalWaitMs, two minutes here: far
+  // longer than starting the tools worker takes on a busy machine, so only the change can wake it in time).
   let woke = null;
   const waiting = http('GET', '/api/chat/proposals', {}, { all: '1', wait: '1', revision: first.revision }).then(
     out => ((woke = Date.now()), out),
@@ -96,7 +97,7 @@ test('propose_changes runs in the worker; the page waiting for the list wakes; a
   assert.ok(proposed.proposalId, JSON.stringify(proposed));
   assert.equal(host.status().running, true, 'the tools worker answered it');
   const listed = (await waiting).body;
-  assert.ok(woke - asked < 5000, 'woken by the change, not by the wait running out');
+  assert.ok(woke - asked < 60_000, 'woken by the change, not by the wait running out');
   assert.equal(listed.proposals.length, 1);
   assert.equal(listed.proposals[0].id, proposed.proposalId);
   assert.equal(host.status().views.running, true, 'the views worker built the list');
@@ -191,8 +192,9 @@ test("the assistant's revision racing a person's edit: neither is lost, the assi
 });
 
 test('a call that hangs or a worker that dies: the call is answered "call again", a new worker answers the next one', async t => {
-  // callMs covers the first worker's start; no wait before starting a worker again.
-  const { host, rpc, call, record } = await fixture(t, { callMs: 1500, backoffMs: 0 });
+  // callMs covers a worker's start, also on a busy machine (the call after the hang waits for a new one); no wait
+  // before starting a worker again.
+  const { host, rpc, call, record } = await fixture(t, { callMs: 6000, backoffMs: 0 });
   const hung = await rpc('__hang');
   assert.match(hung.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);

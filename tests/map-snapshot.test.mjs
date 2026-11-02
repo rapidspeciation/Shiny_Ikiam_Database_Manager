@@ -16,7 +16,8 @@ test('the basemap is OpenTopoMap, credited as its licence asks', () => {
 });
 
 test('tiles: the app\'s User-Agent, a/b/c subdomains, one at a time, kept a week then fetched again', { skip: !pillow && 'no python3 with Pillow' }, async () => {
-  let clock = Date.parse('2026-11-01T12:00:00Z');
+  // From now: the tiles' age is the clock minus their files' real times (a fixed date stops working a week after it).
+  let clock = Date.now();
   const asked = [];
   let inFlight = 0;
   let most = 0;

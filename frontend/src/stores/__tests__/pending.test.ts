@@ -34,6 +34,12 @@ const sent = () => calls.filter(c => c.body).map(c => c.body as { edits: unknown
 
 beforeEach(async () => {
   setActivePinia(createPinia())
+  // The store's check and automatic-save timers are the module's, one of each: the last test's would still fire on
+  // its own store, and a store's action makes its pinia the active one again, so a usePending() after it (late on a
+  // busy machine) got the last test's changes. Scheduling them on the new store replaces them first.
+  const fresh = usePending()
+  fresh.scheduleCheck()
+  fresh.scheduleAutoSave()
   localStorage.clear()
   calls = []
   answers = {}

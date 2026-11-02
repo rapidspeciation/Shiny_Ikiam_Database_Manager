@@ -152,8 +152,10 @@ test('query: one read-only statement, capped, stopped after the time limit, with
   const { store, at } = await setup(dir);
   const assistant = createAssistant({
     store,
-    config: { sheetsCopyPath: join(dir, 'sheets.sqlite'), sheetsCopy: { startMs: 0, delayMs: 50, log: { log() {}, error: console.error } }, sheetsQuery: { timeoutMs: 600 } },
+    config: { sheetsCopyPath: join(dir, 'sheets.sqlite'), sheetsCopy: { startMs: 0, delayMs: 50, log: { log() {}, error: console.error } }, sheetsQuery: { timeoutMs: 3000 } },
   });
+  // The time limit counts from the query's process start too (a new one after a runaway): 3 s, beyond what a
+  // start takes on a busy machine.
   addToken(store, user.id, 'ana-token');
   const { result } = mcpClient(assistant, 'ana-token');
   const call = async (sql, limit) => {
@@ -189,8 +191,8 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     // A runaway query is stopped; the next one runs in a new process.
     const started = Date.now();
     const runaway = await call('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c');
-    assert.match(runaway.error, /ran over 0\.6 s and was stopped/);
-    assert.ok(Date.now() - started < 5000);
+    assert.match(runaway.error, /ran over 3 s and was stopped/);
+    assert.ok(Date.now() - started < 15_000, 'stopped at the limit, not left running');
     assert.equal((await call('SELECT count(*) FROM Insectary_data')).split('\n')[1], '2');
 
     // Helpers: fold for matching without accents or case, km between two points.

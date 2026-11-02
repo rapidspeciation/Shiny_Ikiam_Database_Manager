@@ -83,7 +83,16 @@ function service(store, dir, options = {}) {
   });
   return { readings, calls, jobs: () => (existsSync(logFile) ? readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : []) };
 }
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** The update's timer on a mocked clock (setTimeout and Date): the batches take no time on it, so a busy machine
+ * cannot move the update ahead of or past what is asserted; the workers are real processes all the same. */
+function mockClock(t) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-20T12:00:00Z') });
+}
+/** Moves the mocked clock on by `ms`, then lets the update's call (async) finish. */
+async function advance(t, ms) {
+  t.mock.timers.tick(ms);
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+}
 
 test('the photos to read: each Drive file listed under a butterfly, not read with that name and size', async t => {
   const { store } = await storeOf(t);
@@ -140,7 +149,7 @@ test('the photos to read: each Drive file listed under a butterfly, not read wit
 
 test('a batch: read by the worker, written to the tables butterfly by butterfly, the files made, the gallery updated once', async t => {
   const { store, dir } = await storeOf(t);
-  // The update's wait longer than the batch takes on a busy machine (a process for it, another to see nothing is left).
+  mockClock(t);
   const { readings, calls, jobs } = service(store, dir, { debounceMs: 1500 });
   t.after(() => readings.close());
   assert.deepEqual(readings.run('test'), { started: true, reason: 'test' });
@@ -177,25 +186,27 @@ test('a batch: read by the worker, written to the tables butterfly by butterfly,
   assert.ok(existsSync(join(dir, 'public', 'index.json')));
   assert.deepEqual(calls, []);
   assert.equal(readings.status().state, 'idle');
-  // When the timer fires: still ahead.
-  assert.ok(Date.parse(readings.status().galleryUpdate.due) > Date.now());
-  await sleep(1600);
+  // When the timer fires: at most maxWaitMs (1000 here) after the batch, before debounceMs (1500).
+  assert.equal(Date.parse(readings.status().galleryUpdate.due), Date.now() + 1000);
+  await advance(t, 999);
+  assert.deepEqual(calls, [], 'not before the wait is over');
+  await advance(t, 1);
   assert.deepEqual(calls, ['gallery']);
   assert.equal(readings.status().galleryUpdate.last.state, 'running');
   assert.deepEqual(readings.status().last, { endedAt: readings.status().last.endedAt, photos: 5, readings: 5, errors: 0, state: 'done' });
   // Nothing new: no batch, no update.
   readings.run('again');
   await readings.idle();
-  await sleep(80);
+  await advance(t, 5000);
   assert.deepEqual(calls, ['gallery']);
   assert.equal(jobs().length, 3);
 });
 
 test('batches ending within the wait start one update; one already running is started again later', async t => {
   const { store, dir } = await storeOf(t);
+  mockClock(t);
   const { readings, calls } = service(store, dir, {
     batchPhotos: 1,
-    // Longer than a batch takes here (a process each).
     debounceMs: 600,
     retryMs: 200,
     answer: n => (n === 1 ? { update: { state: 'running', note: 'an update was already running: this one was not started' } } : { update: { state: 'queued' } }),
@@ -205,18 +216,23 @@ test('batches ending within the wait start one update; one already running is st
   await readings.idle();
   assert.equal(store.db.prepare('SELECT count(*) n FROM photo_reading_batches').get().n, 3, 'three batches');
   assert.deepEqual(calls, []);
-  await sleep(650);
+  await advance(t, 599);
+  assert.deepEqual(calls, [], 'not before the wait is over');
+  await advance(t, 1);
   assert.deepEqual(calls, ['gallery'], 'one for the three');
   assert.equal(readings.status().galleryUpdate.last.state, 'waiting');
-  await sleep(250);
+  await advance(t, 199);
+  assert.deepEqual(calls, ['gallery'], 'not before the retry wait is over');
+  await advance(t, 1);
   assert.deepEqual(calls, ['gallery', 'gallery'], 'again after the running one');
   assert.equal(readings.status().galleryUpdate.last.state, 'queued');
-  await sleep(250);
+  await advance(t, 5000);
   assert.equal(calls.length, 2);
 });
 
 test('the wait for the update is at most maxWaitMs while batches keep ending', async t => {
   const { store, dir } = await storeOf(t);
+  mockClock(t);
   const { readings, calls } = service(store, dir, { debounceMs: 2000, maxWaitMs: 500 });
   t.after(() => readings.close());
   // Batches one after another (the same photo listed again, renamed, each time): each pushes the wait, but not
@@ -227,10 +243,11 @@ test('the wait for the update is at most maxWaitMs while batches keep ending', a
     readings.run();
     await readings.idle();
     first ??= Date.now();
-    await sleep(20);
+    await advance(t, 20);
   }
   assert.deepEqual(calls, ['gallery']);
-  assert.ok(Date.now() - first < 1500, `${Date.now() - first} ms`);
+  // The first batch's update is due 500 ms after it ended (the batches take no time on the mocked clock).
+  assert.equal(Date.now() - first, 500);
 });
 
 test('no password for the update server: the readings and files are made, the update is not started', async t => {

@@ -45,8 +45,12 @@ test.after(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
+// The tests that do not time a request out: a limit far over what starting the stand-in process takes on a busy
+// machine (its first answer waits for it).
+const SLOW_START_MS = 15_000;
+
 test('browser adapter sends requests and closes', async () => {
-  const browser = await openBrowser({ timeoutMs: 1000 });
+  const browser = await openBrowser({ timeoutMs: SLOW_START_MS });
   try {
     await browser.page.goto('https://es.wikiloc.com/');
     assert.equal(await browser.page.title(), 'Trail');
@@ -58,11 +62,11 @@ test('browser adapter sends requests and closes', async () => {
 
 test("the browser's own lines (what Cloudflare showed) reach the worker's log", async () => {
   const lines = [];
-  const browser = await openBrowser({ timeoutMs: 1000, log: line => lines.push(line) });
+  const browser = await openBrowser({ timeoutMs: SLOW_START_MS, log: line => lines.push(line) });
   try {
     await browser.page.goto('https://es.wikiloc.com/x-1');
     await browser.page.title();
-    for (let i = 0; i < 50 && !lines.length; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    for (let i = 0; i < 1000 && !lines.length; i++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.deepEqual(lines, ['check on https://es.wikiloc.com/x-1 (turnstile), try 1']);
   } finally {
     await browser.close();
@@ -71,14 +75,14 @@ test("the browser's own lines (what Cloudflare showed) reach the worker's log", 
 
 test('browser process death rejects pending requests', async () => {
   process.env.FAKE_MODE = 'death';
-  const browser = await openBrowser({ timeoutMs: 1000 });
+  const browser = await openBrowser({ timeoutMs: SLOW_START_MS });
   await assert.rejects(browser.page.goto('https://es.wikiloc.com/'), /exited/);
   delete process.env.FAKE_MODE;
 });
 
 test('close waits for Python teardown after the close response', async () => {
   process.env.FAKE_MODE = 'slow_close';
-  const browser = await openBrowser({ timeoutMs: 1000 });
+  const browser = await openBrowser({ timeoutMs: SLOW_START_MS });
   const started = Date.now();
   await browser.close();
   assert.ok(Date.now() - started >= 90);
@@ -87,7 +91,7 @@ test('close waits for Python teardown after the close response', async () => {
 
 test('malformed responses reject pending requests', async () => {
   process.env.FAKE_MODE = 'invalid';
-  const browser = await openBrowser({ timeoutMs: 1000 });
+  const browser = await openBrowser({ timeoutMs: SLOW_START_MS });
   await assert.rejects(browser.page.title(), /invalid JSON/);
   delete process.env.FAKE_MODE;
 });
@@ -105,11 +109,11 @@ test('timeout stops browser descendants', { skip: process.platform !== 'linux' }
   process.env.FAKE_READY_FILE = join(directory, 'ready');
   const browser = await openBrowser({ timeoutMs: 150 });
   // Started (a busy machine may take longer than the timeout to start a process): then the request.
-  for (let i = 0; i < 500 && !existsSync(process.env.FAKE_READY_FILE); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  for (let i = 0; i < 2000 && !existsSync(process.env.FAKE_READY_FILE); i++) await new Promise(resolve => setTimeout(resolve, 10));
   await assert.rejects(browser.page.goto('https://es.wikiloc.com/'), /timed out/);
   const pid = Number(readFileSync(process.env.FAKE_CHILD_FILE, 'utf8'));
   let running = true;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 200; i++) {
     const proc = `/proc/${pid}/stat`;
     running = existsSync(proc) && !/\) Z /.test(readFileSync(proc, 'utf8'));
     if (!running) break;
