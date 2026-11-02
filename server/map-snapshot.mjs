@@ -1,8 +1,10 @@
-// A map picture without a browser (maps_snapshot, server/maps-tools.mjs): the basemap's raster tiles (Esri's
-// World Topo Map: towns, roads, rivers and the relief; CARTO's raster tiles now need a key) laid side by side, the records on top as dots coloured by species, the
-// recommended sites numbered, a legend and the attribution, made into a JPEG small enough for WhatsApp by Pillow
-// (python3, as server/proposal-photos.mjs; claudeclaw has it, with DejaVu fonts). Tiles are kept on disk; the
-// pictures for a week.
+// A map picture without a browser (maps_snapshot, server/maps-tools.mjs): the basemap's raster tiles (OpenTopoMap:
+// towns, roads, rivers, contours and the relief, CC-BY-SA; Esri's World Topo Map needs an ArcGIS subscription and
+// forbids keeping its tiles, CARTO's raster tiles need a key) laid side by side, the records on top as dots coloured by
+// species, the recommended sites numbered, a legend and the credit, made into a JPEG small enough for WhatsApp by
+// Pillow (python3, as server/proposal-photos.mjs; claudeclaw has it, with DejaVu fonts). OpenTopoMap asks for light
+// use (https://opentopomap.org/about#verwendung): the tiles are fetched two at a time with a User-Agent naming the
+// app, kept a week (their max-age) in a cache of at most TILE_CACHE_BYTES; the pictures are kept a week too.
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -10,8 +12,13 @@ import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync
 import { join } from 'node:path';
 import { writeCacheFile } from './cache-write.mjs';
 
-export const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
-export const ATTRIBUTION = 'Tiles © Esri — Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors';
+export const TILE_URL = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+export const ATTRIBUTION = '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)';
+export const USER_AGENT = 'ithomiini-database/1.0 (map snapshots; +https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager)';
+const SUBDOMAINS = ['a', 'b', 'c'];
+const TILE_KEEP_MS = 7 * 86400_000;
+const TILE_CACHE_BYTES = 200 * 1024 * 1024;
+const FETCHES_AT_ONCE = 2;
 const TILE = 256;
 const MAX_ZOOM = 13;
 const MIN_ZOOM = 3;
@@ -113,10 +120,12 @@ for l in lines:
     d.ellipse((34, y + 4, 52, y + 22), fill=colors[l['color']] if l['color'] is not None else (20, 20, 20), outline=(255, 255, 255))
     d.text((62, y), l['text'], font=f_text, fill=(30, 30, 30))
     y += 30
+# The basemap's credit (its licence asks for it on every picture): large and dark enough to read on a phone.
 note = job['attribution']
-tw = d.textlength(note, font=f_small)
-d.rectangle((W - tw - 20, H - 30, W, H), fill=(255, 255, 255))
-d.text((W - tw - 10, H - 27), note, font=f_small, fill=(70, 70, 70))
+f_note = font(22, True)
+tw = d.textlength(note, font=f_note)
+d.rectangle((W - tw - 24, H - 36, W, H), fill=(255, 255, 255))
+d.text((W - tw - 12, H - 32), note, font=f_note, fill=(25, 25, 25))
 img.convert('RGB').save(job['out'], 'JPEG', quality=job['quality'], optimize=True)
 print(json.dumps({'ok': True}))
 `;
@@ -152,28 +161,44 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
   // `scale`: picture pixels to a map pixel (2 for tiles of 512 pixels, the "@2x" ones).
   const SCALE = scale;
   if (!dir) return null;
-  const tileDir = join(dir, 'tiles');
+  const tileDir = join(dir, 'topo-tiles');
   const loading = new Map();
   let cleaned = 0;
+  // At most FETCHES_AT_ONCE tile requests in flight (the tile server's light-use rule).
+  let active = 0;
+  const waiting = [];
+  const slot = () => (active < FETCHES_AT_ONCE ? (active++, Promise.resolve()) : new Promise(r => waiting.push(r)));
+  const release = () => (waiting.length ? waiting.shift()() : active--);
 
   async function tile(z, x, y) {
-    const path = join(tileDir, String(z), String(x), `${y}.tile`);
-    if (existsSync(path)) return { path, fetched: false };
+    const path = join(tileDir, String(z), String(x), `${y}.png`);
+    let kept = null;
+    try {
+      kept = statSync(path);
+    } catch {
+      // not kept
+    }
+    if (kept && now() - kept.mtimeMs < TILE_KEEP_MS) return { path, fetched: false };
     if (loading.has(path)) return loading.get(path);
     const job = (async () => {
-      const url = tileUrl.replace('{z}', z).replace('{x}', x).replace('{y}', y);
-      for (let i = 0; i < TILE_TRIES; i++) {
-        try {
-          const response = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database (map snapshots)' }, signal: AbortSignal.timeout(8_000) });
-          if (!response.ok) continue;
-          const data = Buffer.from(await response.arrayBuffer());
-          if (!writeCacheFile(path, data)) return { path: null, fetched: false, failed: true };
-          return { path, fetched: true };
-        } catch {
-          // tried again once, then the tile is left blank
+      const url = tileUrl.replace('{s}', SUBDOMAINS[(x + y) % SUBDOMAINS.length]).replace('{z}', z).replace('{x}', x).replace('{y}', y);
+      await slot();
+      try {
+        for (let i = 0; i < TILE_TRIES; i++) {
+          try {
+            const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(8_000) });
+            if (!response.ok) continue;
+            const data = Buffer.from(await response.arrayBuffer());
+            if (!writeCacheFile(path, data)) break;
+            return { path, fetched: true };
+          } catch {
+            // tried again once, then the tile is left blank (or the expired one is used)
+          }
         }
+      } finally {
+        release();
       }
-      return { path: null, fetched: false, failed: true };
+      return kept ? { path, fetched: false } : { path: null, fetched: false, failed: true };
     })();
     loading.set(path, job);
     try {
@@ -183,18 +208,44 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
     }
   }
 
-  /** The pictures older than a week, deleted (at most once an hour). */
+  /** The pictures and tiles older than a week deleted, then the oldest tiles until the cache fits (at most once an hour). */
   function clean() {
     if (now() - cleaned < 3600_000) return;
     cleaned = now();
+    const drop = file => {
+      try {
+        unlinkSync(file);
+      } catch {
+        // gone already
+      }
+    };
     for (const name of readdirSync(dir)) {
       if (!/^snap-[\w-]+\.jpg$/.test(name)) continue;
       const file = join(dir, name);
       try {
-        if (now() - statSync(file).mtimeMs > KEEP_MS) unlinkSync(file);
+        if (now() - statSync(file).mtimeMs > KEEP_MS) drop(file);
       } catch {
         // gone already
       }
+    }
+    const kept = [];
+    let bytes = 0;
+    for (const entry of existsSync(tileDir) ? readdirSync(tileDir, { recursive: true, withFileTypes: true }) : []) {
+      if (!entry.isFile() || !entry.name.endsWith('.png')) continue;
+      const file = join(entry.parentPath ?? entry.path, entry.name);
+      try {
+        const { mtimeMs, size } = statSync(file);
+        if (now() - mtimeMs > TILE_KEEP_MS) drop(file);
+        else kept.push({ file, mtimeMs, size }), (bytes += size);
+      } catch {
+        // gone already
+      }
+    }
+    kept.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const t of kept) {
+      if (bytes <= TILE_CACHE_BYTES) break;
+      drop(t.file);
+      bytes -= t.size;
     }
   }
 
