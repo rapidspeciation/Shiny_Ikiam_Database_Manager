@@ -235,9 +235,13 @@ function provision(user, { freshToken, addProject }) {
   }
   settings.enableAllProjectMcpServers = true;
   // T3's service PATH lacks the tools: node/npm (building and testing the app's source in
-  // ~/ithomiini/src), gog (the project Google account), claude and codex. The claude.ai account's
-  // connectors stay out of the chats: they add tools and instructions to every turn, even mid-answer.
-  settings.env = { ...settings.env, PATH: TOOLS_PATH, ENABLE_CLAUDEAI_MCP_SERVERS: 'false' };
+  // ~/ithomiini/src), gog (the project Google account), claude and codex.
+  settings.env = { ...settings.env, PATH: TOOLS_PATH };
+  delete settings.env.ENABLE_CLAUDEAI_MCP_SERVERS;
+  // The claude.ai account's connectors (Drive, Gmail, Calendar…) stay out of the chats: the project's
+  // documents come from the server's Drive copy, and the connectors add tools to every turn. Claude Code
+  // reads the env variable before the folder's `env` applies, so the setting is the switch here.
+  settings.disableClaudeAiConnectors = true;
   settings.permissions ??= {};
   settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []).filter(rule => rule !== `mcp__${OLD_MCP_SERVER}`), `mcp__${MCP_SERVER}`, 'Skill'])];
   // The old guard hook out; other hooks of the folder are kept.
