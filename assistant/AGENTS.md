@@ -125,7 +125,7 @@ replaces it) is discarded with `update_proposal` `discard`.
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.
 - **Every figure has a source** (the database, a document or the chat).
-- CAMID: identificador de cada espécimen de la colección, "CAM" + 6 dígitos (p. ej. CAM042388), escrito a mano en el sobre y usado como nombre de las fotos (CAM072174d.JPG / CAM072174v.JPG). Qué significan las letras no está escrito en ningún documento.
+- CAMID: identificador de cada espécimen, "CAM" + 6 dígitos, escrito a mano en el sobre y usado como nombre de las fotos (CAM072174d.JPG / v.JPG). Es una serie de numeración que lleva el grupo de Heliconius de la Universidad de Cambridge; en enero de 2022 asignó a nuestro grupo el rango CAM070000–CAM079999 (actas de reunión del 6/4/2023). Ningún documento dice qué abrevian las letras.
 
 ## The rows a rule may miss
 
