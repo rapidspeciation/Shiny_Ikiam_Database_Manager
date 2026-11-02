@@ -69,7 +69,7 @@ on_server "set -u; cd /home/ubuntu/ithomiini; node=\$(sed -n 's/^ExecStart=\([^ 
 # or a save's outcome is still unknown (server /health `writing`). The app itself also finishes saves in
 # progress when it is stopped (SIGTERM). DEPLOY_FORCE=1 deploys anyway (e.g. Google down for long).
 on_server "bash /home/ubuntu/ithomiini/releases/$release/scripts/wait-writes.sh ${DEPLOY_WAIT:-600} ${DEPLOY_FORCE:-0}"
-on_server "set -eu; cd /home/ubuntu/ithomiini; if test -L current; then readlink current > shared/previous-release; fi; ln -sfn releases/$release current; cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer /home/ubuntu/.config/systemd/user/; systemctl --user daemon-reload; systemctl --user enable ithomiini.service; systemctl --user enable --now ithomiini-backup.timer ithomiini-gog-keepalive.timer; systemctl --user restart ithomiini.service"
+on_server "set -eu; cd /home/ubuntu/ithomiini; if test -L current; then readlink current > shared/previous-release; fi; ln -sfn releases/$release current; cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer /home/ubuntu/.config/systemd/user/; systemctl --user daemon-reload; systemctl --user enable ithomiini.service; systemctl --user enable --now ithomiini-backup.timer ithomiini-gog-keepalive.timer ithomiini-drive-sync.timer; systemctl --user restart ithomiini.service"
 on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service); export PATH="$(dirname "$node"):$PATH"; bash tools/wikiloc/install-worker.sh'
 # The offline identifier page's model parts, zstd and gzip (server/offline-id.mjs): made again only when a model
 # changed (about 30 s); a failure only means plain downloads.

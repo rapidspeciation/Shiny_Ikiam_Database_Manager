@@ -438,7 +438,7 @@ export function createKnowledge(config = {}) {
   }
 
   /**
-   * Brings the Drive mirror up to date on request (there is no timer): starts
+   * Brings the Drive mirror up to date on request (a timer also runs it nightly at 03:00 EC): starts
    * the systemd unit that runs scripts/drive-sync.mjs, unless it is running,
    * and waits up to `waitMs` for it. Only changed files are exported again.
    */
@@ -486,7 +486,7 @@ export const KNOWLEDGE_TOOLS = [
     function: {
       name: 'sync_documents',
       description:
-        "Bring the project documents' folder up to date with Google Drive now (read-only; only changed files are read again). The copy does not refresh on its own: use this when someone says a document is new or edited, or asks to update the documents. Takes seconds, up to about 2 minutes.",
+        "Bring the project documents' folder up to date with Google Drive now (read-only; only changed files are read again). The copy refreshes every night at 03:00 (Ecuador); use this when someone says a document is new or edited since then, or asks to update the documents. Takes seconds, up to about 2 minutes.",
       parameters: { type: 'object', properties: {} },
     },
   },

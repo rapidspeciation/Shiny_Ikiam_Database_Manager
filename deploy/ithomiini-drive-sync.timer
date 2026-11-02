@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly mirror of the project's Drive documents for the assistant (read-only)
+
+[Timer]
+# 03:00 in Ecuador (UTC-5, no daylight saving) = 08:00 UTC; the server's clock is UTC.
+OnCalendar=*-*-* 03:00:00 America/Guayaquil
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
