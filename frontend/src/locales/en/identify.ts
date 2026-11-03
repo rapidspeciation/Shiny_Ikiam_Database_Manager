@@ -142,6 +142,7 @@ export default {
   'la única subespecie que conoce el modelo': 'the only subspecies the model knows',
   'Subespecies de {name}': 'Subspecies of {name}',
   'subesp.': 'subsp.',
+  '{p} de esa especie': '{p} of that species',
   'otra con menos de 1 %': 'one more under 1 %',
   'otras {n} con menos de 1 %': '{n} more under 1 %',
   'Subespecie más parecida según la IA:': 'Closest subspecies according to the AI:',

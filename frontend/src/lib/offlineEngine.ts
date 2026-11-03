@@ -177,6 +177,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
     if (wanted.length !== MODEL_ROLES[kind].length) throw new Error('missing-on-server')
     const cache = await caches.open(CACHE)
+    headLoaded = null // read again: its JSON may be a new one
     await keepPage(cache)
     if (signedIn()) await refreshStock()
     const total = wanted.reduce((a, f) => a + f.bytes, 0)

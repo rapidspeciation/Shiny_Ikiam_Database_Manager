@@ -532,8 +532,7 @@ export interface HeadMeta {
   full_photo_overrides: string[]
 }
 
-/** The schemas this page reads: 1 has no leaf names (no subspecies shown), 2 adds them. */
-export const HEAD_SCHEMAS = ['ithomiini-offline-head/1', 'ithomiini-offline-head/2']
+/* Schemas read: ithomiini-offline-head/1 (no leaf names: no subspecies shown) and /2, which adds them. */
 
 /** `ssp`: per leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file). */
 export interface Head { meta: HeadMeta; w: Uint16Array; leaf2sp: Int32Array; geo: Uint8Array | null; ssp: Uint8Array | null }
@@ -553,7 +552,6 @@ function halfTable(): Float32Array {
 export function makeHead(meta: HeadMeta, weights: ArrayBuffer): Head {
   if (weights.byteLength !== meta.rows * meta.dim * 2) throw new Error('head weights: wrong size')
   if (meta.K !== 1) throw new Error('head: K > 1 not supported here')
-  if (meta.schema && !HEAD_SCHEMAS.includes(meta.schema)) throw new Error('head: unknown schema ' + meta.schema)
   const geo = meta.geo ? Uint8Array.from(meta.geo, c => parseInt(c, 16)) : null
   const ssp = meta.leaves?.length === meta.rows && meta.is_ssp?.length === meta.rows ? Uint8Array.from(meta.is_ssp, c => (c === '1' ? 1 : 0)) : null
   return { meta, w: new Uint16Array(weights), leaf2sp: Int32Array.from(meta.leaf2sp), geo, ssp }

@@ -13,7 +13,7 @@ import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../lib/publicModels'
-import { MODEL_ROLES } from '../lib/offlineId'
+import { MODEL_ROLES, sameFile } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
@@ -89,7 +89,23 @@ async function refresh() {
   online.value = navigator.onLine
   listing.value = await engine.list()
   ready.value = await engine.ready(files.value)
-  const s = await engine.stored()
+  let s = await engine.stored()
+  // Only the head's JSON is new (schema 2, the subspecies' names, 3 Nov 2026): taken by itself (under 1 MB), so a
+  // phone that has the model does not ask for a download. Once per page; on failure the button stays.
+  if (files.value && !headTried) {
+    const list = files.value
+    for (const k of KINDS) {
+      const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !sameFile(s?.files[f.name], f))
+      if (ready.value[k] || !need.length || need.some(f => f.role !== 'head-meta')) continue
+      headTried = true
+      head.value = null
+      await engine.download(k, list, () => {}).catch(() => null)
+      ready.value = await engine.ready(list)
+      s = await engine.stored()
+    }
+    // A result on screen is ranked again with the new JSON.
+    if (headTried && result.value) head.value = await engine.loadHead().catch(() => null)
+  }
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
@@ -100,6 +116,7 @@ async function refresh() {
     pageOffline.value = await engine.pageOffline()
   }
 }
+let headTried = false
 /** Whether this page opens without signal: null while it is being checked (and kept, online). */
 const pageOffline = ref<boolean | null>(null)
 
@@ -322,6 +339,9 @@ const grouped = computed(() => (ranked.value ? groupByGenus(ranked.value.species
 const top = computed(() => ranked.value?.species[0])
 const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus) : null))
 const sspHint = computed(() => (top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null))
+/** The line's score: of the whole photo when the species is clear; «if it is this species», its share of the species. */
+const sspPercent = (p: number) =>
+  sspHint.value?.kind === 'if' && top.value?.p ? t('{p} de esa especie', { p: percent(p / top.value.p) }) : percent(p)
 const compared = ref<string | null>(null)
 const pick = ref<string | null>(null)
 const showing = computed(() => compared.value ?? top.value?.name ?? '')
@@ -618,9 +638,9 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             </p>
             <p v-if="sspHint" class="mt-1 text-sm" data-testid="ssp-hint">
               <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
-              {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ percent(sspHint.p) }})</span>
+              {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.p) }})</span>
               <template v-if="sspHint.alt">
-                {{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ percent(sspHint.alt.p) }})</span>
+                {{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.alt.p) }})</span>
               </template>
               <span v-if="sspHint.only" class="text-fg-muted"> · {{ $t('la única subespecie que conoce el modelo') }}</span>
             </p>

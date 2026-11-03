@@ -89,7 +89,7 @@ export const shortName = (name: string) => {
 }
 
 /** The subspecies' own word(s), lower case as the inventory writes them (server/frozen-stock.mjs subspeciesOf). */
-export const epithet = (name: string) => name.split(' ').slice(2).join(' ').toLowerCase()
+export const epithet = (name: string) => (name.split(' ')[2] ?? '').toLowerCase()
 
 /** «78 %», «<1 %». */
 export const percent = (p: number) => (p < 0.005 ? '<1 %' : `${Math.round(p * 100)} %`)

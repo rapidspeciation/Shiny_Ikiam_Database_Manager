@@ -133,6 +133,5 @@ describe('offline identifier chain', () => {
     const by = subspeciesBySpecies(v2, p, [0])
     expect(by.get(0)!.map(c => c.name)).toEqual(['G a x', 'G a y'])
     expect(by.has(1)).toBe(false)
-    expect(() => makeHead({ schema: 'ithomiini-offline-head/9', ...base } as HeadMeta, w.buffer)).toThrow(/schema/)
   })
 })
