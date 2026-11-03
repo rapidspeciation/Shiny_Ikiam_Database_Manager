@@ -29,3 +29,22 @@ Grades: Sol B / CHANGES, Opus B / CHANGES.
 | opus | F8 (GPS) | idea | "Usar mi ubicación" | declined for v1 (needs a divide outline); follow-up |
 | opus | F13 | nit | waiting text | fixed ("la primera foto tarda más") |
 | both | F12/F14 | — | isolated page + same-origin proxy are right | kept |
+
+## Round 2 (UI round 1): the implemented tab (UI_REVIEW_R1.md, shots-r1/)
+
+Grades: Sol C / CHANGES, Opus B+ / CHANGES.
+
+| critic | id | sev | finding (short) | outcome |
+|---|---|---|---|---|
+| sol | F1 | blocker | "Listo sin internet" from model metadata only; page not cached when models came from /prueba-offline/ | fixed: `engine.pageOffline()` keeps and checks the page and runtime; the status needs it. Checked: models from the old page, then the tab, airplane reload, identification (shot-reuse) |
+| sol | F2 | should | a failed second photo left the previous result on screen | fixed: a new photo clears the result first; checked with an unreadable file (shots-r2/e-failed-photo-phone.png) |
+| sol | F3 | should | field-photo failures swallowed | fixed: failed count returned and shown with the retry button |
+| sol | F4 | nit | "Todas las posibilidades" overpromises | fixed: "Las más parecidas" |
+| opus | F1 | should | gap line hides which subspecies is short and the unassigned ones | fixed: subspecies named, "+N sin subespecie anotada"; test updated |
+| opus | F2 | should | "no hay fotos guardadas" shown online too | fixed: online says "No encontramos fotos de esta especie." |
+| opus | F3 | nit | log keeps old top after a side change | fixed |
+| opus | F4 | nit | "Cambiar" wraps alone | fixed (nowrap with the model name) |
+| opus | F5 | nit | side choice far from the score | fixed: "Lado de los Andes: No sé · cambiar" under the score |
+| opus | F6 | nit | small option never says space taken | fixed ("ocupa unos N MB"); warning keeps the remaining download (correct after a partial download) |
+| opus | F7 | nit | desktop left column short | declined: fine for v1 |
+| opus | F8 | nit | Ithomiini badge needs the team snapshot | already in NO_ACCOUNT_OPTIONS.md (static genus list) |

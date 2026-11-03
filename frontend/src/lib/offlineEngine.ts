@@ -62,6 +62,8 @@ export interface Engine {
   /** What a model still needs to download: plain bytes (space on the phone) and on the wire (mobile data). */
   toDownload(kind: ModelKind, files: ModelFile[], stored: Stored | null): { plain: number; wire: number; total: number }
   download(kind: ModelKind, files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void): Promise<void>
+  /** Whether this page, its scripts and the runtime are on the phone (it opens without signal); online, keeps them first. */
+  pageOffline(): Promise<boolean>
   remove(): Promise<void>
   /** The models in memory for `kind`; the first time reads them from storage (the slow step). */
   load(kind: ModelKind): Promise<void>
@@ -123,6 +125,20 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
       if (!r.ok) throw new Error(`${u}: HTTP ${r.status}`)
       await cache.put(u, r)
     }
+  }
+
+  async function pageOffline(): Promise<boolean> {
+    const cache = await caches.open(CACHE)
+    const urls = [...pageFiles(), ...ORT_FILES.map(f => at(`ort/${f}`))]
+    const have = async () => (await Promise.all(urls.map(u => cache.match(u)))).every(Boolean)
+    if (await have()) return true
+    if (!navigator.onLine) return false
+    try {
+      await keepPage(cache)
+    } catch {
+      return false
+    }
+    return have()
   }
 
   async function download(kind: ModelKind, files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void) {
@@ -375,6 +391,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
     ready,
     toDownload,
     download,
+    pageOffline,
     remove,
     load,
     loaded: kind => !!encoders[kind] && !!detector && !!headLoaded,

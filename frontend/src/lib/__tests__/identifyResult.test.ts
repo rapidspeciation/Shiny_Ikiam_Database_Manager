@@ -43,7 +43,7 @@ describe('reference-genome gaps (3 ♂ + 3 ♀ per side)', () => {
       ['East', 5, 3, 0, 0],
       ['West', 0, 0, 3, 3],
     ])
-    expect(g.missing).toEqual([{ side: 'West', M: 3, F: 3 }])
+    expect(g.missing).toEqual([{ side: 'West', M: 3, F: 3, short: [{ subspecies: '', M: 3, F: 3 }], unassigned: 0 }])
     expect(g.apart).toEqual([{ label: 'sin-lado', M: 1, F: 0, unknown: 0 }])
   })
   it('per subspecies when the inventory names any; none picked; a recorded side without stock still shows', () => {
@@ -62,8 +62,17 @@ describe('reference-genome gaps (3 ♂ + 3 ♀ per side)', () => {
       ['', 'West', 3, 3],
     ])
     expect(g.missing).toEqual([
-      { side: 'East', M: 3, F: 2 },
-      { side: 'West', M: 3, F: 3 },
+      {
+        side: 'East',
+        M: 3,
+        F: 2,
+        short: [
+          { subspecies: 'eurydice', M: 3, F: 0 },
+          { subspecies: 'proceriformis', M: 0, F: 2 },
+        ],
+        unassigned: 2,
+      },
+      { side: 'West', M: 3, F: 3, short: [{ subspecies: '', M: 3, F: 3 }], unassigned: 0 },
     ])
     expect(g.apart).toEqual([{ label: 'sin-subespecie', side: 'East', M: 2, F: 0, unknown: 0 }])
   })

@@ -30,7 +30,13 @@ const complete = computed(() => {
     <p v-if="!gaps.rows.length && !gaps.apart.length" class="mt-2 text-sm">{{ $t('Ningún congelado de esta especie.') }}</p>
     <ul v-else class="mt-2 space-y-0.5 text-sm">
       <li v-for="m in gaps.missing" :key="m.side" class="font-medium text-amber-900">
-        {{ $t('Faltan en el {side}: {want}', { side: sideName(m.side), want: want(m.M, m.F) }) }}
+        {{ $t('Faltan en el {side}:', { side: sideName(m.side) }) }}
+        <template v-for="(s, i) in m.short" :key="s.subspecies"
+          ><template v-if="i">, </template><template v-if="s.subspecies"><i>{{ s.subspecies }}</i>{{ ' ' }}</template>{{ want(s.M, s.F) }}</template
+        >
+        <span v-if="m.unassigned" class="font-normal text-fg-muted">
+          ({{ $tn(m.unassigned, '+{n} sin subespecie anotada', '+{n} sin subespecie anotada') }})</span
+        >
       </li>
       <li v-for="s in complete" :key="s" class="text-success-text">{{ $t('{side}: completo', { side: sideName(s) }) }} ✓</li>
     </ul>

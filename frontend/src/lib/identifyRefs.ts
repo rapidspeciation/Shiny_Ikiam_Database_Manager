@@ -114,13 +114,14 @@ export function fieldSet(): FieldSet | null {
  * «Fotos para el campo»: one photo per Ithomiini species the server has from iNaturalist, saved on the phone. Returns
  * what was saved and how many species the server is still looking up (ask again later for those).
  */
-export async function saveFieldPhotos(progress: (done: number, total: number) => void): Promise<FieldSet & { pending: number; total: number }> {
+export async function saveFieldPhotos(progress: (done: number, total: number) => void): Promise<FieldSet & { pending: number; failed: number; total: number }> {
   const list = await api<{ species: { name: string; thumb: string; attribution: string; license: string; taxonUrl: string | null }[]; pending: number; total: number }>(
     'identify/field-photos',
   )
   const cache = await caches.open(CACHE)
   let bytes = 0,
-    done = 0
+    done = 0,
+    failed = 0
   const refs: Record<string, Refs> = {}
   for (const s of list.species) {
     const src = refPhotoSrc(s.thumb)
@@ -136,9 +137,9 @@ export async function saveFieldPhotos(progress: (done: number, total: number) =>
       if (r) {
         bytes += (await r.clone().blob()).size
         refs[s.name] = { photos: [{ src, credit: shortCredit(s.attribution), license: s.license, level: 'species' }], taxonUrl: s.taxonUrl }
-      }
+      } else failed++
     } catch {
-      /* this one is skipped; the next try takes it */
+      failed++ // the next «Actualizar fotos» takes it
     }
     progress(++done, list.species.length)
   }
@@ -151,5 +152,5 @@ export async function saveFieldPhotos(progress: (done: number, total: number) =>
   } catch {
     /* shown again as not saved */
   }
-  return { ...set, pending: list.pending, total: list.total }
+  return { ...set, pending: list.pending, failed, total: list.total }
 }

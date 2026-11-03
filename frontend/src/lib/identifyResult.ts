@@ -90,8 +90,11 @@ export interface StockGaps {
   rows: GapRow[]
   /** Specimens without a side (Center, NA, empty) or, with subspecies, without one written: counted, no target. */
   apart: { label: 'sin-lado' | 'sin-subespecie'; side?: AndesSide; M: number; F: number; unknown: number }[]
-  /** The sides still short (summed over the rows of that side). */
-  missing: { side: AndesSide; M: number; F: number }[]
+  /**
+   * The sides still short: the total, each short row (its subspecies, '' for the species) and how many specimens of
+   * that side have no subspecies written (they may belong to a short one).
+   */
+  missing: { side: AndesSide; M: number; F: number; short: { subspecies: string; M: number; F: number }[]; unassigned: number }[]
   bySubspecies: boolean
 }
 
@@ -131,10 +134,16 @@ export function stockGaps(detail: StockDetail | undefined, recorded: { East: boo
   }
   const other = Object.values(d).reduce((a, s) => plus(a, s.other), zero())
   if (other.M + other.F + other.unknown) apart.push({ label: 'sin-lado', ...other })
-  const missing = SIDES.map(side => ({
-    side,
-    M: rows.filter(r => r.side === side).reduce((a, r) => a + r.missingM, 0),
-    F: rows.filter(r => r.side === side).reduce((a, r) => a + r.missingF, 0),
-  })).filter(m => rows.some(r => r.side === m.side) && m.M + m.F > 0)
+  const missing = SIDES.map(side => {
+    const short = rows.filter(r => r.side === side && r.missingM + r.missingF > 0)
+    const u = apart.find(a => a.label === 'sin-subespecie' && a.side === side)
+    return {
+      side,
+      M: short.reduce((a, r) => a + r.missingM, 0),
+      F: short.reduce((a, r) => a + r.missingF, 0),
+      short: short.map(r => ({ subspecies: r.subspecies, M: r.missingM, F: r.missingF })),
+      unassigned: u ? u.M + u.F + u.unknown : 0,
+    }
+  }).filter(m => m.short.length > 0)
   return { rows, apart, missing, bySubspecies }
 }

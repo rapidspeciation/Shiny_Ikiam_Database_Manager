@@ -77,8 +77,13 @@ async function refresh() {
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
   checked.value = true
-  if (ready.value.small || ready.value.full) choosing.value = false
+  if (ready.value.small || ready.value.full) {
+    choosing.value = false
+    // Models from the test page: this page and its runtime are kept now (online) before it says it works offline.
+    pageOffline.value = await engine.pageOffline()
+  }
 }
+const pageOffline = ref(false)
 
 const label = (k: ModelKind) => (k === 'small' ? t('Rápido y liviano') : t('Más preciso'))
 function sizeLine(k: ModelKind) {
@@ -86,7 +91,7 @@ function sizeLine(k: ModelKind) {
   if (!s) return k === 'small' ? t('Descarga unos 55 MB. Un poco menos preciso.') : t('Descarga unos 440 MB, mejor con wifi. Ocupa unos 650 MB en el teléfono.')
   if (!s.plain) return t('Ya está en este teléfono.')
   return k === 'small'
-    ? t('Descarga unos {n} MB. Un poco menos preciso.', { n: roughMb(s.wire) })
+    ? t('Descarga unos {n} MB y ocupa unos {m} MB. Un poco menos preciso.', { n: roughMb(s.wire), m: roughMb(s.total) })
     : t('Descarga unos {n} MB, mejor con wifi. Ocupa unos {m} MB en el teléfono.', { n: roughMb(s.wire), m: roughMb(s.total) })
 }
 const lacksSpace = computed(() => {
@@ -165,6 +170,7 @@ const runError = ref<string | null>(null)
 const firstRun = ref(true)
 const camera = ref<HTMLInputElement | null>(null)
 const picker = ref<HTMLInputElement | null>(null)
+const sideControl = ref<HTMLElement | null>(null)
 
 function cropUrl(rgb: Uint8Array) {
   const c = document.createElement('canvas')
@@ -210,8 +216,22 @@ async function identify(photo: Photo) {
     busy.value = null
   }
 }
-const onPhoto = (e: Event) =>
-  takePhoto(e.target as HTMLInputElement, identify, () => (runError.value = t('No se pudo leer la foto. Si está en la nube (Google Fotos), descárguela primero o use Tomar foto.')))
+function clearResult() {
+  result.value = null
+  compared.value = null
+  pick.value = null
+  try {
+    sessionStorage.removeItem(LAST)
+  } catch {
+    /* nothing kept */
+  }
+}
+// A new photo replaces the last result at once: a failed one must not leave the previous butterfly on screen.
+const onPhoto = (e: Event) => {
+  clearResult()
+  runError.value = null
+  return takePhoto(e.target as HTMLInputElement, identify, () => (runError.value = t('No se pudo leer la foto. Si está en la nube (Google Fotos), descárguela primero o use Tomar foto.')))
+}
 
 // ---------------------------------------------------------------- the result
 
@@ -285,6 +305,11 @@ async function restoreLast() {
   }
 }
 watch(compared, keepLast)
+// The log names what the screen shows first: a change of side rewrites the entry (the same time).
+watch(sideValue, () => {
+  if (result.value && top.value && smallThumb.value)
+    log.value = writeLog({ at: result.value.at, thumb: smallThumb.value, ai: top.value.name, p: top.value.p, pick: pick.value, side: sideValue.value }, log.value)
+})
 
 // ---------------------------------------------------------------- reference photos
 
@@ -317,9 +342,11 @@ async function saveField() {
   try {
     const out = await saveFieldPhotos((done, total) => (fieldProgress.value = { done, total }))
     field.value = out
-    fieldNote.value = out.pending
-      ? t('El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.', { n: out.pending })
-      : null
+    fieldNote.value = out.failed
+      ? t('{n} fotos no se guardaron (se cortó la conexión): toque Actualizar fotos para completarlas.', { n: out.failed })
+      : out.pending
+        ? t('El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.', { n: out.pending })
+        : null
   } catch {
     fieldNote.value = t('Hace falta conexión a internet y la sesión iniciada.')
   } finally {
@@ -370,9 +397,12 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
   <div class="mx-auto w-full max-w-5xl px-4 pt-4 pb-16 sm:px-6">
     <!-- The one status line: whether it works here without signal, and with which model. -->
     <div v-if="anyReady && !choosing" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      <span class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
-      <span class="text-fg-muted">{{ label(active!) }}</span>
-      <button class="text-brand-text underline-offset-2 hover:underline" @click="choosing = true">{{ $t('Cambiar') }}</button>
+      <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
+      <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
+      <span class="whitespace-nowrap">
+        <span class="text-fg-muted">{{ label(active!) }}</span>
+        <button class="ml-2 text-brand-text underline-offset-2 hover:underline" @click="choosing = true">{{ $t('Cambiar') }}</button>
+      </span>
       <span v-if="!online" class="inline-flex items-center gap-1 text-fg-muted"><WifiOff :size="14" />{{ $t('Ahora sin señal') }}</span>
     </div>
 
@@ -450,13 +480,17 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
               {{ said?.kind === 'genus' ? $t('{genus}: {p} en total', { genus: (said as { genus: string }).genus, p: percent(ranked.genus.get((said as { genus: string }).genus) ?? 0) }) : percent(top?.p ?? 0) }}
               · {{ $t('puntuación de la IA, no una garantía') }}
             </p>
+            <p class="mt-1 text-sm text-fg-muted">
+              {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
+              <button class="ml-1 text-brand-text hover:underline" @click="sideControl?.scrollIntoView({ behavior: 'smooth', block: 'center' })">{{ $t('cambiar') }}</button>
+            </p>
 
             <section class="mt-4">
               <div class="mb-2 flex items-baseline justify-between gap-2">
                 <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
                 <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
               </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refs[showing]" :loading="refsLoading && !refs[showing]" />
+              <RefCompare :mine="result.crop" :name="showing" :refs="refs[showing]" :loading="refsLoading && !refs[showing]" :online="online" />
               <div class="mt-3 flex flex-wrap gap-2">
                 <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
                   {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}
@@ -483,7 +517,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
               {{ busy === 'loading' ? $t('Preparando el identificador… la primera foto tarda más.') : $t('Analizando la foto…') }}
             </p>
             <p v-if="runError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ runError }}</p>
-            <div class="mt-4">
+            <div ref="sideControl" class="mt-4">
               <span class="field-label">{{ $t('Lado de los Andes (opcional)') }}</span>
               <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Lado de los Andes (opcional)')">
                 <button
@@ -506,7 +540,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
         <div class="min-w-0 space-y-4">
           <!-- The candidates, one list grouped by genus -->
           <section v-if="grouped">
-            <h2 class="mb-2 font-semibold">{{ $t('Todas las posibilidades') }}</h2>
+            <h2 class="mb-2 font-semibold">{{ $t('Las más parecidas') }}</h2>
             <ul class="divide-y divide-border rounded-lg border border-border bg-surface">
               <li v-for="g in grouped.groups" :key="g.genus">
                 <button
