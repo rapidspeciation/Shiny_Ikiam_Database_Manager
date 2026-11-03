@@ -525,11 +525,18 @@ export interface HeadMeta {
   ln_b: number[]
   species: string[]
   leaf2sp: number[]
+  /** Schema 2 (ithomiini-offline-head/2): each leaf's name, and "1" where the leaf is a subspecies (worker.py is_ssp). */
+  leaves?: string[]
+  is_ssp?: string
   geo: string | null
   full_photo_overrides: string[]
 }
 
-export interface Head { meta: HeadMeta; w: Uint16Array; leaf2sp: Int32Array; geo: Uint8Array | null }
+/** The schemas this page reads: 1 has no leaf names (no subspecies shown), 2 adds them. */
+export const HEAD_SCHEMAS = ['ithomiini-offline-head/1', 'ithomiini-offline-head/2']
+
+/** `ssp`: per leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file). */
+export interface Head { meta: HeadMeta; w: Uint16Array; leaf2sp: Int32Array; geo: Uint8Array | null; ssp: Uint8Array | null }
 
 let half: Float32Array | null = null
 /** float16 bits -> float32, for every 16-bit value */
@@ -546,8 +553,10 @@ function halfTable(): Float32Array {
 export function makeHead(meta: HeadMeta, weights: ArrayBuffer): Head {
   if (weights.byteLength !== meta.rows * meta.dim * 2) throw new Error('head weights: wrong size')
   if (meta.K !== 1) throw new Error('head: K > 1 not supported here')
+  if (meta.schema && !HEAD_SCHEMAS.includes(meta.schema)) throw new Error('head: unknown schema ' + meta.schema)
   const geo = meta.geo ? Uint8Array.from(meta.geo, c => parseInt(c, 16)) : null
-  return { meta, w: new Uint16Array(weights), leaf2sp: Int32Array.from(meta.leaf2sp), geo }
+  const ssp = meta.leaves?.length === meta.rows && meta.is_ssp?.length === meta.rows ? Uint8Array.from(meta.is_ssp, c => (c === '1' ? 1 : 0)) : null
+  return { meta, w: new Uint16Array(weights), leaf2sp: Int32Array.from(meta.leaf2sp), geo, ssp }
 }
 
 export type Side = 'East' | 'West' | null
@@ -564,7 +573,50 @@ export function speciesTop(head: Head, feature: Float32Array, side: Side = null,
 
 /** Every species' probability (the order of head.meta.species), as speciesTop sums them: the genus totals come from it. */
 export function speciesScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
-  const { meta, w, leaf2sp, geo } = head
+  return sumSpecies(head, leafScores(head, feature, side))
+}
+
+/** The leaves' probabilities summed per species. */
+export function sumSpecies(head: Head, p: Float64Array): Float64Array {
+  const agg = new Float64Array(head.meta.species.length)
+  for (let r = 0; r < p.length; r++) agg[head.leaf2sp[r]] += p[r]
+  return agg
+}
+
+/**
+ * worker.py tops (subspecies): the subspecies leaves in probability order (after the prior), the first `top`, as
+ * [name, p]. Empty with a schema 1 head.
+ */
+export function subspeciesTop(head: Head, p: Float64Array, top = 5): [string, number][] {
+  const { ssp, meta } = head
+  if (!ssp || !meta.leaves) return []
+  const order = Array.from(p.keys()).filter(i => ssp[i]).sort((a, b) => p[b] - p[a] || a - b)
+  return order.slice(0, top).map(i => [meta.leaves![i], Math.round(p[i] * 1e4) / 1e4])
+}
+
+/** Per species (its index in head.meta.species): its subspecies leaves, most probable first. Empty with schema 1. */
+export function subspeciesBySpecies(head: Head, p: Float64Array, species: number[]): Map<number, { name: string; p: number }[]> {
+  const out = new Map<number, { name: string; p: number }[]>()
+  const { ssp, meta } = head
+  if (!ssp || !meta.leaves) return out
+  const want = new Set(species)
+  for (let r = 0; r < p.length; r++) {
+    const s = head.leaf2sp[r]
+    if (!ssp[r] || !want.has(s)) continue
+    const list = out.get(s) ?? []
+    list.push({ name: meta.leaves[r], p: p[r] })
+    out.set(s, list)
+  }
+  for (const list of out.values()) list.sort((a, b) => b.p - a.p)
+  return out
+}
+
+/**
+ * Every leaf's probability (worker.py tops): softmax of the cosine head, then the geographic prior when a side of
+ * the Andes is given (names off that side, or not recorded in Ecuador, weigh 2 %), normalised again.
+ */
+export function leafScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
+  const { meta, w, geo } = head
   const d = meta.dim, n = meta.rows
   let norm = 0
   for (let i = 0; i < d; i++) norm += feature[i] * feature[i]
@@ -606,9 +658,7 @@ export function speciesScores(head: Head, feature: Float32Array, side: Side = nu
     }
     if (sum > 0) for (let r = 0; r < n; r++) p[r] /= sum
   }
-  const agg = new Float64Array(meta.species.length)
-  for (let r = 0; r < n; r++) agg[leaf2sp[r]] += p[r]
-  return agg
+  return p
 }
 
 /**

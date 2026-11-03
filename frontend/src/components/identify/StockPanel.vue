@@ -2,8 +2,10 @@
 // The team's flash-frozen specimens of the candidate being compared (views/IdentifyView.vue), against the
 // reference-genome target: 3 males and 3 females per subspecies (per species without subspecies) on each side of
 // the Andes. The gap first; the detail on a tap. The inventory date is the snapshot's (it works offline).
+// `focus`: the subspecies the AI finds closest (its word as the inventory writes it, and its score), marked in the
+// rows; `namesSubspecies` false with an older head that names none.
 import { computed } from 'vue'
-import { stockGaps, TARGET, type AndesSide, type StockDetail } from '../../lib/identifyResult'
+import { percent, stockGaps, TARGET, type AndesSide, type StockDetail } from '../../lib/identifyResult'
 import { stockDate } from '../../lib/frozenStock'
 import { t } from '../../lib/i18n'
 
@@ -12,6 +14,8 @@ const props = defineProps<{
   detail: StockDetail | undefined
   recorded: { East: boolean; West: boolean } | undefined
   asOf: string
+  focus?: { epithet: string; p: number } | null
+  namesSubspecies?: boolean
 }>()
 const gaps = computed(() => stockGaps(props.detail, props.recorded))
 const sideName = (s: AndesSide) => (s === 'East' ? t('Este') : t('Oeste'))
@@ -27,12 +31,15 @@ const complete = computed(() => {
   <section class="rounded-lg border border-border bg-surface p-3">
     <h3 class="text-sm font-semibold">{{ $t('Congelados para genomas de referencia') }}</h3>
     <p class="text-xs text-fg-muted"><i>{{ name }}</i> · {{ stockDate(asOf) }}</p>
+    <p v-if="focus && gaps.bySubspecies" class="mt-1 text-xs">
+      {{ $t('Subespecie más parecida según la IA:') }} <i class="font-medium">{{ focus.epithet }}</i> ({{ percent(focus.p) }})
+    </p>
     <p v-if="!gaps.rows.length && !gaps.apart.length" class="mt-2 text-sm">{{ $t('Ningún congelado de esta especie.') }}</p>
     <ul v-else class="mt-2 space-y-0.5 text-sm">
       <li v-for="m in gaps.missing" :key="m.side" class="font-medium text-amber-900">
         {{ $t('Faltan en el {side}:', { side: sideName(m.side) }) }}
         <template v-for="(s, i) in m.short" :key="s.subspecies"
-          ><template v-if="i">, </template><template v-if="s.subspecies"><i>{{ s.subspecies }}</i>{{ ' ' }}</template>{{ want(s.M, s.F) }}</template
+          ><template v-if="i">, </template><span :class="focus && s.subspecies === focus.epithet ? 'underline decoration-2 underline-offset-2' : ''"><template v-if="s.subspecies"><i>{{ s.subspecies }}</i>{{ ' ' }}</template>{{ want(s.M, s.F) }}</span></template
         >
         <span v-if="m.unassigned" class="font-normal text-fg-muted">
           ({{ $tn(m.unassigned, 'otro sin subespecie anotada; puede contar', 'otros {n} sin subespecie anotada; pueden contar') }})</span
@@ -44,7 +51,8 @@ const complete = computed(() => {
       <summary class="cursor-pointer text-brand-text">{{ $t('Detalle') }}</summary>
       <p class="mt-1 text-xs text-fg-muted">
         {{ gaps.bySubspecies ? $t('Meta: {n} ♂ y {n} ♀ por subespecie y lado de los Andes.', { n: TARGET }) : $t('Meta: {n} ♂ y {n} ♀ por lado de los Andes.', { n: TARGET }) }}
-        {{ $t('La IA no distingue subespecies.') }}
+        <template v-if="!namesSubspecies">{{ $t('La IA no distingue subespecies.') }}</template>
+        <template v-else-if="focus && gaps.bySubspecies">{{ $t('Marcada: la más parecida según la IA, no una garantía.') }}</template>
       </p>
       <table class="mt-1 w-full text-left tabular-nums">
         <thead class="text-xs text-fg-muted">
@@ -57,7 +65,7 @@ const complete = computed(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in gaps.rows" :key="r.subspecies + r.side" class="border-t border-border">
+          <tr v-for="r in gaps.rows" :key="r.subspecies + r.side" class="border-t border-border" :class="focus && r.subspecies === focus.epithet ? 'bg-brand-soft' : ''">
             <td v-if="gaps.bySubspecies" class="py-1"><i>{{ r.subspecies || $t('(ninguna registrada)') }}</i></td>
             <td class="py-1">{{ sideName(r.side) }}</td>
             <td class="py-1 text-right" :class="r.missingM ? 'font-semibold text-amber-900' : ''">{{ r.M }}/{{ TARGET }}</td>

@@ -56,6 +56,41 @@ export function headline(top: Candidate | undefined, genus: Map<string, number>)
   return { kind: 'unsure' }
 }
 
+/**
+ * The subspecies named under the headline (views/IdentifyView.vue): the most probable subspecies leaf of the top
+ * species (worker.py's subspecies scores, after the side's prior), `ssp` most probable first, every subspecies leaf
+ * the head has for that species. None when the head names no subspecies (schema 1), when only the genus is clear
+ * (no species to hang it on), or when the subspecies carries little of the species' score (the species' own leaf,
+ * «subspecies not given», holds the rest: naming one would overclaim). `kind` 'if' when the species itself is not
+ * clear: the line then says «if it is this species». `alt`: the second when it is close (at least half the first).
+ * `only`: the head knows just this one subspecies of the species, so naming it says little.
+ */
+export const SSP_MIN = 0.005
+export const SSP_SHARE = 0.2
+export interface SubspeciesHint {
+  kind: 'species' | 'if'
+  name: string
+  p: number
+  alt?: Candidate
+  only: boolean
+}
+export function subspeciesHint(said: Headline | null, top: Candidate | undefined, ssp: Candidate[] | undefined): SubspeciesHint | null {
+  if (!said || said.kind === 'genus' || !top || !ssp?.length) return null
+  const [first, second] = ssp
+  if (first.p < SSP_MIN || first.p < SSP_SHARE * top.p) return null
+  const alt = second && second.p >= SSP_MIN && second.p >= first.p / 2 ? second : undefined
+  return { kind: said.kind === 'species' ? 'species' : 'if', name: first.name, p: first.p, alt, only: ssp.length === 1 }
+}
+
+/** «Mechanitis messenoides deceptus» -> «M. messenoides deceptus». */
+export const shortName = (name: string) => {
+  const [g, ...rest] = name.split(' ')
+  return rest.length ? `${g[0]}. ${rest.join(' ')}` : name
+}
+
+/** The subspecies' own word(s), lower case as the inventory writes them (server/frozen-stock.mjs subspeciesOf). */
+export const epithet = (name: string) => name.split(' ').slice(2).join(' ').toLowerCase()
+
 /** «78 %», «<1 %». */
 export const percent = (p: number) => (p < 0.005 ? '<1 %' : `${Math.round(p * 100)} %`)
 
@@ -103,8 +138,8 @@ const plus = (a: Cell, b: Cell | undefined): Cell => ({ M: a.M + (b?.M ?? 0), F:
 
 /**
  * The gap of a species: `detail` is its frozen-stock detail (subspecies -> side -> counts), `recorded` the sides
- * where the head records it in Ecuador. A side is shown when it is recorded there or holds stock. The model does
- * not identify subspecies: every subspecies in the inventory gets its own rows, none is picked.
+ * where the head records it in Ecuador. A side is shown when it is recorded there or holds stock. Every subspecies
+ * in the inventory gets its own rows (the panel marks the one the AI finds closest, StockPanel `focus`).
  */
 export function stockGaps(detail: StockDetail | undefined, recorded: { East: boolean; West: boolean } | undefined): StockGaps {
   const d = detail ?? {}

@@ -17,9 +17,9 @@ import { MODEL_ROLES } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
-import { speciesScores, speciesSides, type Head, type ModelKind, type Side } from '../lib/offlineId'
+import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
-import { groupByGenus, headline, isIthomiini, percent, rank, type StockDetail } from '../lib/identifyResult'
+import { epithet, groupByGenus, headline, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, type Candidate, type StockDetail } from '../lib/identifyResult'
 import { fieldSet, referencePhotos, saveFieldPhotos, type FieldSet, type Refs } from '../lib/identifyRefs'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
@@ -301,16 +301,39 @@ const onDragLeave = (e: DragEvent) => {
 
 // ---------------------------------------------------------------- the result
 
-const scores = computed(() => (result.value && head.value ? speciesScores(head.value, result.value.feature, sideValue.value) : null))
+// Every leaf's score (after the side's prior): the species sum them, the subspecies are the subspecies leaves.
+const leafP = computed(() => (result.value && head.value ? leafScores(head.value, result.value.feature, sideValue.value) : null))
+const scores = computed(() => (leafP.value && head.value ? sumSpecies(head.value, leafP.value) : null))
 const ranked = computed(() => (scores.value && head.value ? rank(scores.value, head.value.meta.species, 5) : null))
+/** The candidates' subspecies (most probable first), by species name; empty with an older head (no names). */
+const subspecies = computed(() => {
+  const out = new Map<string, Candidate[]>()
+  const h = head.value
+  if (!h || !leafP.value || !ranked.value) return out
+  const idx = ranked.value.species.map(c => h.meta.species.indexOf(c.name))
+  for (const [i, list] of subspeciesBySpecies(h, leafP.value, idx)) out.set(h.meta.species[i], list)
+  return out
+})
+/** The subspecies shown in a candidate's list: those of at least 1 %, the rest counted. */
+const sspShown = (name: string) => (subspecies.value.get(name) ?? []).filter(c => c.p >= SSP_MIN)
+const sspRest = (name: string) => (subspecies.value.get(name)?.length ?? 0) - sspShown(name).length
+const openSsp = ref<string | null>(null)
 const grouped = computed(() => (ranked.value ? groupByGenus(ranked.value.species, ranked.value.genus) : null))
 const top = computed(() => ranked.value?.species[0])
 const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus) : null))
+const sspHint = computed(() => (top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null))
 const compared = ref<string | null>(null)
 const pick = ref<string | null>(null)
 const showing = computed(() => compared.value ?? top.value?.name ?? '')
 const openGenus = ref<string | null>(null)
 watch(grouped, g => (openGenus.value = g?.groups[0]?.genus ?? null))
+watch(top, c => (openSsp.value = c?.name ?? null))
+/** The frozen panel's subspecies: the closest one of the species compared, when it carries enough of its score. */
+const stockFocus = computed(() => {
+  const c = ranked.value?.species.find(x => x.name === showing.value)
+  const s = c && subspecies.value.get(c.name)?.[0]
+  return s && s.p >= SSP_MIN && s.p >= SSP_SHARE * c.p ? { epithet: epithet(s.name), p: s.p } : null
+})
 const recordedSides = computed(() => (head.value ? speciesSides(head.value) : new Map()))
 const noWings = computed(() => !!result.value && result.value.status !== 'success')
 
@@ -419,6 +442,19 @@ async function saveField() {
     fieldProgress.value = null
   }
 }
+
+// The field set (about 8 MB) saved by itself once a model is on the phone and there is signal: without it a species
+// never looked up online has no photo in the field (3 Nov 2026: Mechanitis on a phone in airplane mode). Once per
+// page; a failure leaves the button to finish it.
+let fieldTried = false
+watch(
+  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value,
+  go => {
+    if (!go || fieldTried || fieldProgress.value) return
+    fieldTried = true
+    saveField()
+  },
+)
 
 // ---------------------------------------------------------------- the team's frozen stock
 
@@ -580,6 +616,14 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               {{ said?.kind === 'genus' ? $t('{genus}: {p} en total', { genus: (said as { genus: string }).genus, p: percent(ranked.genus.get((said as { genus: string }).genus) ?? 0) }) : percent(top?.p ?? 0) }}
               · {{ $t('puntuación de la IA, no una garantía') }}
             </p>
+            <p v-if="sspHint" class="mt-1 text-sm" data-testid="ssp-hint">
+              <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
+              {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ percent(sspHint.p) }})</span>
+              <template v-if="sspHint.alt">
+                {{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ percent(sspHint.alt.p) }})</span>
+              </template>
+              <span v-if="sspHint.only" class="text-fg-muted"> · {{ $t('la única subespecie que conoce el modelo') }}</span>
+            </p>
             <p class="mt-1 text-sm text-fg-muted">
               {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
               <button class="ml-1 text-brand-text hover:underline" @click="focusSide">{{ $t('cambiar') }}</button>
@@ -659,9 +703,10 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 </button>
                 <ul v-if="openGenus === g.genus" class="pb-1">
                   <li v-for="c in g.species" :key="c.name">
+                    <div class="flex items-center" :class="showing === c.name ? 'bg-brand-soft' : ''">
                     <button
-                      class="flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken"
-                      :class="showing === c.name ? 'bg-brand-soft' : ''"
+                      class="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-3 text-left hover:bg-surface-sunken"
+                      :class="sspShown(c.name).length ? 'pr-1' : 'pr-3'"
                       @click="compared = c.name"
                     >
                       <img v-if="thumbOf(c.name)" :src="thumbOf(c.name)" alt="" class="size-11 shrink-0 rounded bg-photo-mat object-cover" />
@@ -673,6 +718,23 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                       </span>
                       <span class="text-sm tabular-nums text-fg-muted">{{ percent(c.p) }}</span>
                     </button>
+                    <button
+                      v-if="sspShown(c.name).length"
+                      class="flex shrink-0 items-center gap-0.5 self-stretch px-2 text-xs text-brand-text hover:bg-surface-sunken"
+                      :aria-expanded="openSsp === c.name"
+                      :aria-label="$t('Subespecies de {name}', { name: c.name })"
+                      @click="openSsp = openSsp === c.name ? null : c.name"
+                    >
+                      {{ $t('subesp.') }}
+                      <ChevronDown :size="14" class="transition-transform" :class="openSsp === c.name ? 'rotate-180' : ''" />
+                    </button>
+                    </div>
+                    <ul v-if="openSsp === c.name && sspShown(c.name).length" class="mb-1 ml-[4.25rem] mr-3 border-l border-border pl-2 text-sm" :aria-label="$t('Subespecies de {name}', { name: c.name })">
+                      <li v-for="s in sspShown(c.name)" :key="s.name" class="flex justify-between gap-2 py-0.5">
+                        <i>{{ s.name.split(' ').slice(2).join(' ') }}</i><span class="tabular-nums text-fg-muted">{{ percent(s.p) }}</span>
+                      </li>
+                      <li v-if="sspRest(c.name)" class="py-0.5 text-xs text-fg-subtle">{{ $tn(sspRest(c.name), 'otra con menos de 1 %', 'otras {n} con menos de 1 %') }}</li>
+                    </ul>
                   </li>
                 </ul>
               </li>
@@ -689,6 +751,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :detail="detailOf(showing)"
             :recorded="recordedSides.get(showing)"
             :as-of="stock.asOf"
+            :focus="stockFocus"
+            :names-subspecies="!!head?.ssp"
           />
 
           <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupByGenus, headline, isIthomiini, percent, rank, stockGaps } from '../identifyResult'
+import { epithet, groupByGenus, headline, isIthomiini, percent, rank, shortName, stockGaps, subspeciesHint } from '../identifyResult'
 
 const species = ['Mechanitis messenoides', 'Mechanitis polymnia', 'Melinaea menophilus', 'Oleria onega', 'Mechanitis lysimnia']
 
@@ -86,5 +86,26 @@ describe('photo credits', async () => {
   it('keeps the author of an iNaturalist attribution', () => {
     expect(shortCredit('(c) alessandradalia, some rights reserved (CC BY-SA), uploaded by alessandradalia')).toBe('© alessandradalia')
     expect(shortCredit('Ana Pérez')).toBe('Ana Pérez')
+  })
+})
+
+describe('subspecies line', () => {
+  const ssp = [{ name: 'Mechanitis messenoides deceptus', p: 0.3 }, { name: 'Mechanitis messenoides messenoides', p: 0.1 }]
+  it('says «if it is this species» when the species is not clear, and nothing when only the genus is', () => {
+    const top = { name: 'Mechanitis messenoides', p: 0.43 }
+    expect(subspeciesHint({ kind: 'unsure' }, top, ssp)).toEqual({ kind: 'if', name: ssp[0].name, p: 0.3, alt: undefined, only: false })
+    expect(subspeciesHint({ kind: 'species', name: top.name }, { ...top, p: 0.9 }, ssp)?.kind).toBe('species')
+    expect(subspeciesHint({ kind: 'genus', genus: 'Mechanitis' }, top, ssp)).toBeNull()
+  })
+  it('names no subspecies that carries little of the species, and gives a close second', () => {
+    const top = { name: 'Mechanitis messenoides', p: 0.9 }
+    expect(subspeciesHint({ kind: 'species', name: top.name }, top, [{ name: ssp[0].name, p: 0.1 }])).toBeNull()
+    expect(subspeciesHint({ kind: 'species', name: top.name }, top, [ssp[0], { name: 'M m x', p: 0.2 }])?.alt?.name).toBe('M m x')
+    expect(subspeciesHint({ kind: 'species', name: top.name }, top, undefined)).toBeNull()
+    expect(subspeciesHint({ kind: 'species', name: top.name }, top, [ssp[0]])?.only).toBe(true)
+  })
+  it('shortens and splits names', () => {
+    expect(shortName('Mechanitis messenoides deceptus')).toBe('M. messenoides deceptus')
+    expect(epithet('Mechanitis messenoides Deceptus')).toBe('deceptus')
   })
 })

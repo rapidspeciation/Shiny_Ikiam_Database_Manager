@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cropBox, detectorInput, encoderInput, exifOrientation, letterboxCrop, makeHead, orientedSize, selectMasks, speciesTop, transformPoint, type HeadMeta, type Mask } from '../offlineId'
+import { cropBox, detectorInput, encoderInput, exifOrientation, leafScores, letterboxCrop, makeHead, orientedSize, selectMasks, speciesScores, speciesTop, subspeciesBySpecies, subspeciesTop, sumSpecies, transformPoint, type HeadMeta, type Mask } from '../offlineId'
 
 /** A minimal JPEG start with an EXIF block holding only the orientation tag. */
 function jpegWithOrientation(o: number, little = true): ArrayBuffer {
@@ -111,5 +111,28 @@ describe('offline identifier chain', () => {
     const plain = speciesTop(head, tie), east = speciesTop(head, tie, 'East')
     expect(plain[0][1]).toBeCloseTo(east[0][0] === 'A' ? plain[0][1] : 0, 6)
     expect(east[0][0]).toBe('A')
+  })
+
+  it('names subspecies with a schema 2 head as worker.py tops does, and none with schema 1', () => {
+    // leaves: 0 "G a" (species leaf), 1 "G a x", 2 "G a y", 3 "G b z"
+    const base = {
+      head_sha256: '', weights: '', rows: 4, dim: 2, K: 1, s: 30, ln_eps: 1e-5, ln_w: [1, 1], ln_b: [0, 0],
+      species: ['G a', 'G b'], leaf2sp: [0, 0, 0, 1], geo: null, full_photo_overrides: [],
+    }
+    // leaf directions: 1 and 2 near (1, 0), 0 at (0, 1), 3 at (-1, 0)
+    const w = new Uint16Array([0, 0x3c00, 0x3c00, 0, 0x3c00, 0x2e66, 0xbc00, 0])
+    const v1 = makeHead({ schema: 'ithomiini-offline-head/1', ...base } as HeadMeta, w.buffer)
+    const v2 = makeHead({ schema: 'ithomiini-offline-head/2', ...base, leaves: ['G a', 'G a x', 'G a y', 'G b z'], is_ssp: '0111' } as HeadMeta, w.buffer)
+    const f = new Float32Array([1, -0.2])
+    const p = leafScores(v2, f)
+    expect(Array.from(sumSpecies(v2, p))).toEqual(Array.from(speciesScores(v1, f)))
+    expect(subspeciesTop(v1, leafScores(v1, f))).toEqual([])
+    const top = subspeciesTop(v2, p)
+    expect(top.map(t => t[0])).toEqual(['G a x', 'G a y', 'G b z'])
+    expect(top[0][1]).toBeCloseTo(p[1], 4)
+    const by = subspeciesBySpecies(v2, p, [0])
+    expect(by.get(0)!.map(c => c.name)).toEqual(['G a x', 'G a y'])
+    expect(by.has(1)).toBe(false)
+    expect(() => makeHead({ schema: 'ithomiini-offline-head/9', ...base } as HeadMeta, w.buffer)).toThrow(/schema/)
   })
 })
