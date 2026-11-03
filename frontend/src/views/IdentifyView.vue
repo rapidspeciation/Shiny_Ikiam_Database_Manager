@@ -451,6 +451,7 @@ onMounted(async () => {
   addEventListener('dragleave', onDragLeave)
   addEventListener('drop', onDrop)
   await sessionKnown()
+  if (unmounted) return // left during the wait
   const known = session.ready
   let signedInAs = session.user?.id ?? null
   stopSessionWatch = watch(
@@ -475,7 +476,9 @@ onMounted(async () => {
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
 let stopSessionWatch: (() => void) | null = null
+let unmounted = false
 onBeforeUnmount(() => {
+  unmounted = true
   stopSessionWatch?.()
   removeEventListener('online', goOnline)
   removeEventListener('offline', goOffline)

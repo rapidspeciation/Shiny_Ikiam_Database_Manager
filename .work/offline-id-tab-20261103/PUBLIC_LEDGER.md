@@ -29,3 +29,20 @@ F6, F8 declines and F9 follow-up accepted; F5 still open through N1.
 | sol | F2 | blocker | no runnable example with build config | fixed: source/example/ (package.json with onnxruntime-web 1.30.0, Vite, COOP/COEP config, copy-ort.mjs, index.html, main.ts, README). Built and run in Chromium from a clean copy: isolated, HF download, crop success, Hypomenitis libethris 91.1 % (as the app). HF commit 2ab9c3be |
 | opus | N1 | should | late session (> 8 s) reloads every time on weak signal; inventory cleared on the timeout path | fixed: reload only when the session was known and changes; a late session is applied without reload; forgetStock only when the server answered. slow-session.mjs: session delayed 10 s, 1 load, panel shown |
 | opus | N2 | nit | watch not stopped on unmount | fixed: stopped in onBeforeUnmount |
+
+## Round 3 (last): Sol A / APPROVE, Opus A- / APPROVE
+
+Sol F2 resolved (example with build config, published manifest matches). Opus F5/N1 and N2 resolved.
+
+| critic | id | sev | finding | outcome |
+|---|---|---|---|---|
+| opus | N3 | nit | watch made after the await can outlive a page left during the wait | fixed: `unmounted` flag |
+| opus | N4 | nit | a late session's refresh can race the first one; the HF list may win | declined: the same files either way (same part hashes), only the list's source differs until the next load |
+
+## Grades over the loop
+
+| round | Sol | Opus |
+|---|---|---|
+| 1 | C, CHANGES | B, CHANGES |
+| 2 | B, CHANGES | B+, CHANGES |
+| 3 | A, APPROVE | A-, APPROVE |
