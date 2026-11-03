@@ -1,6 +1,8 @@
 /**
  * Reference photos for the Identificar tab: what a candidate species looks like, to compare with the person's photo.
- * Online from /api/species-photos (server/species-photos.mjs: iNaturalist's CC-licensed photos with their credit, and
+ * Without an account, and for «Fotos para el campo»: the static field set beside the page (identificar/field/, one
+ * CC-licensed iNaturalist photo per Ithomiini species of the head with its credit, built 3 Nov 2026; index.json).
+ * Signed in, online, also from /api/species-photos (server/species-photos.mjs: iNaturalist's CC-licensed photos with their credit, and
  * the team's own specimens), the iNaturalist ones through the same-origin proxy (/api/identify/ref-photo: the page is
  * cross-origin isolated). Every list seen and the «Fotos para el campo» set are kept on the phone (Cache Storage, with
  * the models), and the service worker keeps each photo shown, so they work again without signal.
@@ -40,6 +42,25 @@ export function shortCredit(attribution: string): string {
 }
 
 const KEY = () => new URL('prueba-offline/refs.json', appRoot()).href
+const FIELD_DIR = () => new URL('identificar/field/', appRoot()).href
+
+interface FieldEntry { name: string; file: string; attribution: string; license: string; taxonUrl: string | null }
+let fieldMemo: Promise<FieldEntry[]> | null = null
+/** The static field set's list (the service worker keeps it for use without signal). */
+function fieldIndex(): Promise<FieldEntry[]> {
+  fieldMemo ??= fetch(new URL('index.json', FIELD_DIR()).href, { credentials: 'same-origin' })
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((v: { species: FieldEntry[] }) => v.species)
+    .catch(err => {
+      fieldMemo = null
+      throw err
+    })
+  return fieldMemo
+}
+const fieldRefs = (e: FieldEntry): Refs => ({
+  photos: [{ src: new URL(e.file, FIELD_DIR()).href, credit: shortCredit(e.attribution), license: e.license, level: 'species' }],
+  taxonUrl: e.taxonUrl,
+})
 const FIELD = 'identify:field-photos'
 export const refPhotoSrc = (thumb: string) => `${appRoot()}api/identify/ref-photo?u=${encodeURIComponent(thumb)}`
 
@@ -72,10 +93,12 @@ function fromApi(entry: ApiEntry): Refs {
 }
 
 /**
- * The photos of `names`: asked online (names the server is still looking up come back `pending`), else what the phone
- * kept. `pending`: names to ask again in a few seconds.
+ * The photos of `names`: signed in and online, asked to the server (names it is still looking up come back
+ * `pending`); else what the phone kept, then the static field set. `pending`: names to ask again in a few seconds.
  */
-export async function referencePhotos(names: string[]): Promise<{ refs: Record<string, Refs>; pending: string[] }> {
+export async function referencePhotos(names: string[], { signedIn = true }: { signedIn?: boolean } = {}): Promise<{ refs: Record<string, Refs>; pending: string[] }> {
+  // Without an account only the static set (lists kept from a team session point at the team's photo proxy).
+  if (!signedIn) return { refs: await withField({}, names), pending: [] }
   const have = await kept()
   if (navigator.onLine) {
     try {
@@ -89,12 +112,25 @@ export async function referencePhotos(names: string[]): Promise<{ refs: Record<s
         refs[name] = e.inat || e.specimens?.length ? fromApi(e) : (have[name] ?? { photos: [], taxonUrl: null })
       }
       await keep(Object.fromEntries(Object.entries(refs).filter(([, r]) => r.photos.length)))
-      return { refs, pending }
+      return { refs: await withField(refs, names), pending }
     } catch {
       /* offline after all: what the phone kept */
     }
   }
-  return { refs: Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]])), pending: [] }
+  return { refs: await withField(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]])), names), pending: [] }
+}
+
+/** The field set's photo for names that have none yet (when the set is reachable or kept). */
+async function withField(refs: Record<string, Refs>, names: string[]): Promise<Record<string, Refs>> {
+  const missing = names.filter(n => !refs[n]?.photos.length)
+  if (!missing.length) return refs
+  const field = await fieldIndex().catch(() => [] as FieldEntry[])
+  const out = { ...refs }
+  for (const n of missing) {
+    const e = field.find(f => f.name === n)
+    if (e) out[n] = fieldRefs(e)
+  }
+  return out
 }
 
 export interface FieldSet {
@@ -111,20 +147,18 @@ export function fieldSet(): FieldSet | null {
 }
 
 /**
- * «Fotos para el campo»: one photo per Ithomiini species the server has from iNaturalist, saved on the phone. Returns
- * what was saved and how many species the server is still looking up (ask again later for those).
+ * «Fotos para el campo»: the static field set (one photo per Ithomiini species with a CC-licensed iNaturalist photo),
+ * saved on the phone. The same for everyone: no account, nothing asked to the team's API.
  */
 export async function saveFieldPhotos(progress: (done: number, total: number) => void): Promise<FieldSet & { pending: number; failed: number; total: number }> {
-  const list = await api<{ species: { name: string; thumb: string; attribution: string; license: string; taxonUrl: string | null }[]; pending: number; total: number }>(
-    'identify/field-photos',
-  )
+  const species = await fieldIndex()
   const cache = await caches.open(CACHE)
   let bytes = 0,
     done = 0,
     failed = 0
   const refs: Record<string, Refs> = {}
-  for (const s of list.species) {
-    const src = refPhotoSrc(s.thumb)
+  for (const s of species) {
+    const src = new URL(s.file, FIELD_DIR()).href
     try {
       let r = await cache.match(src)
       if (!r) {
@@ -136,12 +170,12 @@ export async function saveFieldPhotos(progress: (done: number, total: number) =>
       }
       if (r) {
         bytes += (await r.clone().blob()).size
-        refs[s.name] = { photos: [{ src, credit: shortCredit(s.attribution), license: s.license, level: 'species' }], taxonUrl: s.taxonUrl }
+        refs[s.name] = fieldRefs(s)
       } else failed++
     } catch {
       failed++ // the next «Actualizar fotos» takes it
     }
-    progress(++done, list.species.length)
+    progress(++done, species.length)
   }
   // Lists seen online keep their extra photos; the field photo is added where the phone had none.
   const have = await kept()
@@ -152,5 +186,5 @@ export async function saveFieldPhotos(progress: (done: number, total: number) =>
   } catch {
     /* shown again as not saved */
   }
-  return { ...set, pending: list.pending, failed, total: list.total }
+  return { ...set, pending: 0, failed, total: species.length }
 }

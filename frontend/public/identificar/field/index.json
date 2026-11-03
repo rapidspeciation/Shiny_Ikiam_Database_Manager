@@ -1,0 +1,2294 @@
+{
+ "built": "2026-11-03",
+ "source": "iNaturalist taxon photos under Creative Commons licences",
+ "species": [
+  {
+   "name": "Aeria elara",
+   "file": "106486566.jpg",
+   "attribution": "(c) Douglas, some rights reserved (CC BY), uploaded by Douglas",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/487133",
+   "source": "https://www.inaturalist.org/photos/106486566"
+  },
+  {
+   "name": "Aeria eurimedia",
+   "file": "57933121.jpg",
+   "attribution": "(c) Karl Kroeker, some rights reserved (CC BY-NC), uploaded by Karl Kroeker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148677",
+   "source": "https://www.inaturalist.org/photos/57933121"
+  },
+  {
+   "name": "Aeria olena",
+   "file": "47288378.jpg",
+   "attribution": "(c) Gustavo Fernando Durán, some rights reserved (CC BY-NC-SA), uploaded by Gustavo Fernando Durán",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/703512",
+   "source": "https://www.inaturalist.org/photos/47288378"
+  },
+  {
+   "name": "Athesis acrisione",
+   "file": "110183713.jpg",
+   "attribution": "(c) Jens Bokelaar, some rights reserved (CC BY-NC-ND), uploaded by Jens Bokelaar",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1075005",
+   "source": "https://www.inaturalist.org/photos/110183713"
+  },
+  {
+   "name": "Athesis clearista",
+   "file": "91197936.jpg",
+   "attribution": "(c) Hugo Armando Camacho 🇨🇴, some rights reserved (CC BY-NC-SA), uploaded by Hugo Armando Camacho 🇨🇴",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/602673",
+   "source": "https://www.inaturalist.org/photos/91197936"
+  },
+  {
+   "name": "Athesis vitrala",
+   "file": "250572414.jpg",
+   "attribution": "(c) Thibaud Aronson, some rights reserved (CC BY-SA), uploaded by Thibaud Aronson",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1438536",
+   "source": "https://www.inaturalist.org/photos/250572414"
+  },
+  {
+   "name": "Brevioleria aelia",
+   "file": "31745362.jpg",
+   "attribution": "(c) Ísis Meri Medri, some rights reserved (CC BY-NC), uploaded by Ísis Meri Medri",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1045445",
+   "source": "https://www.inaturalist.org/photos/31745362"
+  },
+  {
+   "name": "Brevioleria arzalia",
+   "file": "618278754.jpg",
+   "attribution": "(c) ethan currens, some rights reserved (CC BY-NC), uploaded by ethan currens",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/790888",
+   "source": "https://www.inaturalist.org/photos/618278754"
+  },
+  {
+   "name": "Brevioleria seba",
+   "file": "59354593.jpg",
+   "attribution": "(c) Ísis Meri Medri, some rights reserved (CC BY-NC), uploaded by Ísis Meri Medri",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/997266",
+   "source": "https://www.inaturalist.org/photos/59354593"
+  },
+  {
+   "name": "Callithomia alexirrhoe",
+   "file": "11920241.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578357",
+   "source": "https://www.inaturalist.org/photos/11920241"
+  },
+  {
+   "name": "Callithomia hezia",
+   "file": "32454579.jpg",
+   "attribution": "(c) Ben Jesup, some rights reserved (CC BY-NC), uploaded by Ben Jesup",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/257975",
+   "source": "https://www.inaturalist.org/photos/32454579"
+  },
+  {
+   "name": "Callithomia lenea",
+   "file": "172118728.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578358",
+   "source": "https://www.inaturalist.org/photos/172118728"
+  },
+  {
+   "name": "Ceratinia cayana",
+   "file": "122861254.jpg",
+   "attribution": "(c) Sidnei Dantas, some rights reserved (CC BY-SA), uploaded by Sidnei Dantas",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1143822",
+   "source": "https://www.inaturalist.org/photos/122861254"
+  },
+  {
+   "name": "Ceratinia iolaia",
+   "file": "100974887.jpg",
+   "attribution": "(c) Oscar Enciso, some rights reserved (CC BY-NC), uploaded by Oscar Enciso",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1143818",
+   "source": "https://www.inaturalist.org/photos/100974887"
+  },
+  {
+   "name": "Ceratinia neso",
+   "file": "60029672.jpg",
+   "attribution": "(c) Rob Westerduijn, some rights reserved (CC BY-NC), uploaded by Rob Westerduijn",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1020130",
+   "source": "https://www.inaturalist.org/photos/60029672"
+  },
+  {
+   "name": "Ceratinia tutia",
+   "file": "225148590.jpg",
+   "attribution": "(c) Oscar Enciso, some rights reserved (CC BY-NC), uploaded by Oscar Enciso",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/257987",
+   "source": "https://www.inaturalist.org/photos/225148590"
+  },
+  {
+   "name": "Dircenna adina",
+   "file": "116652327.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/123990",
+   "source": "https://www.inaturalist.org/photos/116652327"
+  },
+  {
+   "name": "Dircenna dero",
+   "file": "31533973.jpg",
+   "attribution": "(c) Ísis Meri Medri, some rights reserved (CC BY-NC), uploaded by Ísis Meri Medri",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258019",
+   "source": "https://www.inaturalist.org/photos/31533973"
+  },
+  {
+   "name": "Dircenna jemina",
+   "file": "147261840.jpg",
+   "attribution": "(c) Oscar Enciso, some rights reserved (CC BY-NC), uploaded by Oscar Enciso",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258020",
+   "source": "https://www.inaturalist.org/photos/147261840"
+  },
+  {
+   "name": "Dircenna klugii",
+   "file": "2537195.jpg",
+   "attribution": "(c) Rogelio Martínez, some rights reserved (CC BY-NC), uploaded by Rogelio Martínez",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/123992",
+   "source": "https://www.inaturalist.org/photos/2537195"
+  },
+  {
+   "name": "Dircenna loreta",
+   "file": "24405886.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/662554",
+   "source": "https://www.inaturalist.org/photos/24405886"
+  },
+  {
+   "name": "Dircenna olyras",
+   "file": "30221916.jpg",
+   "attribution": "(c) rick-uhlen, some rights reserved (CC BY-NC), uploaded by rick-uhlen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/336151",
+   "source": "https://www.inaturalist.org/photos/30221916"
+  },
+  {
+   "name": "Episcada apuleia",
+   "file": "165655217.jpg",
+   "attribution": "(c) John Christensen, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1073533",
+   "source": "https://www.inaturalist.org/photos/165655217"
+  },
+  {
+   "name": "Episcada carcinia",
+   "file": "170856952.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1046007",
+   "source": "https://www.inaturalist.org/photos/170856952"
+  },
+  {
+   "name": "Episcada clausina",
+   "file": "25971900.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/782648",
+   "source": "https://www.inaturalist.org/photos/25971900"
+  },
+  {
+   "name": "Episcada hymen",
+   "file": "63812765.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1486628",
+   "source": "https://www.inaturalist.org/photos/63812765"
+  },
+  {
+   "name": "Episcada hymenaea",
+   "file": "68946330.jpg",
+   "attribution": "(c) Santiago Murillo Dasso, some rights reserved (CC BY-NC), uploaded by Santiago Murillo Dasso",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/423947",
+   "source": "https://www.inaturalist.org/photos/68946330"
+  },
+  {
+   "name": "Episcada mira",
+   "file": "525166381.jpg",
+   "attribution": "(c) Michael García, some rights reserved (CC BY-NC), uploaded by Michael García",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/664639",
+   "source": "https://www.inaturalist.org/photos/525166381"
+  },
+  {
+   "name": "Episcada philoclea",
+   "file": "175714089.jpg",
+   "attribution": "(c) miguelmagro, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/775362",
+   "source": "https://www.inaturalist.org/photos/175714089"
+  },
+  {
+   "name": "Episcada pichita",
+   "file": "164665944.jpg",
+   "attribution": "(c) John Christensen, some rights reserved (CC BY-NC), uploaded by John Christensen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1289175",
+   "source": "https://www.inaturalist.org/photos/164665944"
+  },
+  {
+   "name": "Episcada polita",
+   "file": "516104765.jpg",
+   "attribution": "(c) portioid, some rights reserved (CC BY), uploaded by portioid",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/923026",
+   "source": "https://www.inaturalist.org/photos/516104765"
+  },
+  {
+   "name": "Episcada salvinia",
+   "file": "166906863.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148695",
+   "source": "https://www.inaturalist.org/photos/166906863"
+  },
+  {
+   "name": "Episcada striposis",
+   "file": "27987230.jpg",
+   "attribution": "(c) alessandradalia, some rights reserved (CC BY-SA), uploaded by alessandradalia",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/885523",
+   "source": "https://www.inaturalist.org/photos/27987230"
+  },
+  {
+   "name": "Episcada sulphurea",
+   "file": "263418480.jpg",
+   "attribution": "(c) John Christensen, some rights reserved (CC BY-NC), uploaded by John Christensen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1486627",
+   "source": "https://www.inaturalist.org/photos/263418480"
+  },
+  {
+   "name": "Episcada sylvo",
+   "file": "170856952.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1046007",
+   "source": "https://www.inaturalist.org/photos/170856952"
+  },
+  {
+   "name": "Episcada ticidella",
+   "file": "248151562.jpg",
+   "attribution": "(c) Emily Hjalmarson, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1074453",
+   "source": "https://www.inaturalist.org/photos/248151562"
+  },
+  {
+   "name": "Episcada trapezula",
+   "file": "111946271.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1486623",
+   "source": "https://www.inaturalist.org/photos/111946271"
+  },
+  {
+   "name": "Episcada vitrea",
+   "file": "410854980.jpg",
+   "attribution": "(c) Augusto Rosa, some rights reserved (CC BY-NC), uploaded by Augusto Rosa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/883382",
+   "source": "https://www.inaturalist.org/photos/410854980"
+  },
+  {
+   "name": "Episcada zajciwi",
+   "file": "82107515.jpg",
+   "attribution": "(c) Augusto Rosa, some rights reserved (CC BY-NC), uploaded by Augusto Rosa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1106005",
+   "source": "https://www.inaturalist.org/photos/82107515"
+  },
+  {
+   "name": "Epityches eupompe",
+   "file": "104343729.jpg",
+   "attribution": "(c) Carlos Schmidtutz, some rights reserved (CC BY-NC), uploaded by Carlos Schmidtutz",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/462014",
+   "source": "https://www.inaturalist.org/photos/104343729"
+  },
+  {
+   "name": "Epityches ferra",
+   "file": "425516743.jpg",
+   "attribution": "(c) dingoqueen, some rights reserved (CC BY-NC), uploaded by dingoqueen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1570828",
+   "source": "https://www.inaturalist.org/photos/425516743"
+  },
+  {
+   "name": "Eutresis dilucida",
+   "file": "334420580.jpg",
+   "attribution": "(c) marcohillenaar, some rights reserved (CC BY-NC), uploaded by marcohillenaar",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1000739",
+   "source": "https://www.inaturalist.org/photos/334420580"
+  },
+  {
+   "name": "Eutresis hypereia",
+   "file": "592896860.jpg",
+   "attribution": "(c) thejsongiffo, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/994290",
+   "source": "https://www.inaturalist.org/photos/592896860"
+  },
+  {
+   "name": "Forbestra equicola",
+   "file": "24407371.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/790901",
+   "source": "https://www.inaturalist.org/photos/24407371"
+  },
+  {
+   "name": "Forbestra olivencia",
+   "file": "2193565.jpg",
+   "attribution": "(c) D. Gordon E. Robertson, some rights reserved (CC BY-SA)",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/470595",
+   "source": "https://www.inaturalist.org/photos/2193565"
+  },
+  {
+   "name": "Forbestra proceris",
+   "file": "465737084.jpg",
+   "attribution": "(c) Arif M, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1318614",
+   "source": "https://www.inaturalist.org/photos/465737084"
+  },
+  {
+   "name": "Godyris crinippa",
+   "file": "156200427.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC), uploaded by David Geale",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1279538",
+   "source": "https://www.inaturalist.org/photos/156200427"
+  },
+  {
+   "name": "Godyris dircenna",
+   "file": "1442166.jpg",
+   "attribution": "(c) Kent Miller, some rights reserved (CC BY-ND), uploaded by Kent Miller",
+   "license": "CC-BY-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1067806",
+   "source": "https://www.inaturalist.org/photos/1442166"
+  },
+  {
+   "name": "Godyris duillia",
+   "file": "70946262.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700570",
+   "source": "https://www.inaturalist.org/photos/70946262"
+  },
+  {
+   "name": "Godyris hewitsoni",
+   "file": "336816556.jpg",
+   "attribution": "(c) chengailim, some rights reserved (CC BY-NC), uploaded by chengailim",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1460286",
+   "source": "https://www.inaturalist.org/photos/336816556"
+  },
+  {
+   "name": "Godyris kedema",
+   "file": "9497291.jpg",
+   "attribution": "(c) Gabriel Camilo Jaramillo Giraldo, some rights reserved (CC BY-NC-SA), uploaded by Gabriel Camilo Jaramillo Giraldo",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/607262",
+   "source": "https://www.inaturalist.org/photos/9497291"
+  },
+  {
+   "name": "Godyris nepos",
+   "file": "246678856.jpg",
+   "attribution": "(c) Adrian Johnson, some rights reserved (CC BY-NC), uploaded by Adrian Johnson",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1431728",
+   "source": "https://www.inaturalist.org/photos/246678856"
+  },
+  {
+   "name": "Godyris nero",
+   "file": "10898657.jpg",
+   "attribution": "(c) Oscar Johnson, some rights reserved (CC BY-NC-ND), uploaded by Oscar Johnson",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/294081",
+   "source": "https://www.inaturalist.org/photos/10898657"
+  },
+  {
+   "name": "Godyris panthyale",
+   "file": "31413481.jpg",
+   "attribution": "(c) Mark Dorriesfield, some rights reserved (CC BY-NC), uploaded by Mark Dorriesfield",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/865448",
+   "source": "https://www.inaturalist.org/photos/31413481"
+  },
+  {
+   "name": "Godyris zavaleta",
+   "file": "57818986.jpg",
+   "attribution": "(c) Tom Horton, some rights reserved (CC BY-NC), uploaded by Tom Horton",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/202298",
+   "source": "https://www.inaturalist.org/photos/57818986"
+  },
+  {
+   "name": "Greta andromica",
+   "file": "135149951.jpg",
+   "attribution": "(c) Kai Squires, some rights reserved (CC BY), uploaded by Kai Squires",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258416",
+   "source": "https://www.inaturalist.org/photos/135149951"
+  },
+  {
+   "name": "Greta annette",
+   "file": "2131845.jpg",
+   "attribution": "(c) Arturo Hernandez, some rights reserved (CC BY-NC), uploaded by Arturo Hernandez",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258417",
+   "source": "https://www.inaturalist.org/photos/2131845"
+  },
+  {
+   "name": "Greta cubana",
+   "file": "427569193.jpg",
+   "attribution": "(c) Alexis Felipe, some rights reserved (CC BY-NC), uploaded by Alexis Felipe",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/963200",
+   "source": "https://www.inaturalist.org/photos/427569193"
+  },
+  {
+   "name": "Greta diaphanus",
+   "file": "13196453.jpg",
+   "attribution": "(c) Juan Taveras, some rights reserved (CC BY-NC), uploaded by Juan Taveras",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/701613",
+   "source": "https://www.inaturalist.org/photos/13196453"
+  },
+  {
+   "name": "Greta morgane",
+   "file": "166539202.png",
+   "attribution": "(c) Eduardo Axel Recillas Bautista, some rights reserved (CC BY-NC), uploaded by Eduardo Axel Recillas Bautista",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148884",
+   "source": "https://www.inaturalist.org/photos/166539202"
+  },
+  {
+   "name": "Heterosais edessa",
+   "file": "144756266.jpg",
+   "attribution": "(c) Luciano Bernardes, some rights reserved (CC BY-NC), uploaded by Luciano Bernardes",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/207889",
+   "source": "https://www.inaturalist.org/photos/144756266"
+  },
+  {
+   "name": "Heterosais giulia",
+   "file": "34177855.jpg",
+   "attribution": "(c) Gabriel Camilo Jaramillo Giraldo, some rights reserved (CC BY-NC-SA), uploaded by Gabriel Camilo Jaramillo Giraldo",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/207890",
+   "source": "https://www.inaturalist.org/photos/34177855"
+  },
+  {
+   "name": "Heterosais nephele",
+   "file": "59662635.jpg",
+   "attribution": "(c) Rob Westerduijn, some rights reserved (CC BY-NC), uploaded by Rob Westerduijn",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1576684",
+   "source": "https://www.inaturalist.org/photos/59662635"
+  },
+  {
+   "name": "Hyalenna paradoxa",
+   "file": "116649680.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1226841",
+   "source": "https://www.inaturalist.org/photos/116649680"
+  },
+  {
+   "name": "Hyalenna sulmona",
+   "file": "109895566.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC), uploaded by Lepidoptera Colombiana 🇨🇴",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1179673",
+   "source": "https://www.inaturalist.org/photos/109895566"
+  },
+  {
+   "name": "Hyalyris antea",
+   "file": "259463936.jpg",
+   "attribution": "(c) mikejordan, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/627110",
+   "source": "https://www.inaturalist.org/photos/259463936"
+  },
+  {
+   "name": "Hyalyris coeno",
+   "file": "13426990.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/699957",
+   "source": "https://www.inaturalist.org/photos/13426990"
+  },
+  {
+   "name": "Hyalyris excelsa",
+   "file": "83265511.jpg",
+   "attribution": "(c) Arthur de Jesús Chavarría Pérez, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/558052",
+   "source": "https://www.inaturalist.org/photos/83265511"
+  },
+  {
+   "name": "Hyalyris latilimbata",
+   "file": "119640975.jpg",
+   "attribution": "(c) David J Barton, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1153298",
+   "source": "https://www.inaturalist.org/photos/119640975"
+  },
+  {
+   "name": "Hyalyris mestra",
+   "file": "158060488.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC), uploaded by David Geale",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/790902",
+   "source": "https://www.inaturalist.org/photos/158060488"
+  },
+  {
+   "name": "Hyalyris ocna",
+   "file": "59381543.jpg",
+   "attribution": "(c) Robert Gilson, some rights reserved (CC BY-NC), uploaded by Robert Gilson",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1000752",
+   "source": "https://www.inaturalist.org/photos/59381543"
+  },
+  {
+   "name": "Hyalyris oulita",
+   "file": "1401575.jpg",
+   "attribution": "(c) Kent Miller, some rights reserved (CC BY-ND), uploaded by Kent Miller",
+   "license": "CC-BY-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/450648",
+   "source": "https://www.inaturalist.org/photos/1401575"
+  },
+  {
+   "name": "Hyalyris praxilla",
+   "file": "250478552.jpg",
+   "attribution": "(c) Demian Hiß, some rights reserved (CC BY), uploaded by Demian Hiß",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1445256",
+   "source": "https://www.inaturalist.org/photos/250478552"
+  },
+  {
+   "name": "Hypoleria adasa",
+   "file": "172336863.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/958927",
+   "source": "https://www.inaturalist.org/photos/172336863"
+  },
+  {
+   "name": "Hypoleria alema",
+   "file": "170858858.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/816328",
+   "source": "https://www.inaturalist.org/photos/170858858"
+  },
+  {
+   "name": "Hypoleria aureliana",
+   "file": "263014861.jpg",
+   "attribution": "(c) Stephen Cresswell, some rights reserved (CC BY-NC-ND), uploaded by Stephen Cresswell",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1460240",
+   "source": "https://www.inaturalist.org/photos/263014861"
+  },
+  {
+   "name": "Hypoleria lavinia",
+   "file": "290179920.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258085",
+   "source": "https://www.inaturalist.org/photos/290179920"
+  },
+  {
+   "name": "Hypoleria ocalea",
+   "file": "426468931.jpg",
+   "attribution": "(c) Hannah Floyd, some rights reserved (CC BY-NC), uploaded by Hannah Floyd",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/741877",
+   "source": "https://www.inaturalist.org/photos/426468931"
+  },
+  {
+   "name": "Hypoleria sarepta",
+   "file": "25657151.jpg",
+   "attribution": "(c) Gonzalo Mucientes Sandoval, some rights reserved (CC BY-NC), uploaded by Gonzalo Mucientes Sandoval",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700590",
+   "source": "https://www.inaturalist.org/photos/25657151"
+  },
+  {
+   "name": "Hypoleria xenophis",
+   "file": "465742459.jpg",
+   "attribution": "(c) Arif M, some rights reserved (CC BY-NC), uploaded by Arif M",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1401362",
+   "source": "https://www.inaturalist.org/photos/465742459"
+  },
+  {
+   "name": "Hypomenitis alphesiboea",
+   "file": "164666255.jpg",
+   "attribution": "(c) John Christensen, some rights reserved (CC BY-NC), uploaded by John Christensen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475395",
+   "source": "https://www.inaturalist.org/photos/164666255"
+  },
+  {
+   "name": "Hypomenitis depauperata",
+   "file": "291826864.jpg",
+   "attribution": "(c) Mike Ostrowski, some rights reserved (CC BY-SA), uploaded by Mike Ostrowski",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1199079",
+   "source": "https://www.inaturalist.org/photos/291826864"
+  },
+  {
+   "name": "Hypomenitis dercetis",
+   "file": "96957908.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC), uploaded by Lepidoptera Colombiana 🇨🇴",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475397",
+   "source": "https://www.inaturalist.org/photos/96957908"
+  },
+  {
+   "name": "Hypomenitis gabiglooris",
+   "file": "179109053.jpg",
+   "attribution": "(c) Heiner Ziegler, some rights reserved (CC BY-NC), uploaded by Heiner Ziegler",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475570",
+   "source": "https://www.inaturalist.org/photos/179109053"
+  },
+  {
+   "name": "Hypomenitis gardneri",
+   "file": "238850954.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475401",
+   "source": "https://www.inaturalist.org/photos/238850954"
+  },
+  {
+   "name": "Hypomenitis hermana",
+   "file": "32164909.jpg",
+   "attribution": "(c) Anneke Jonker, some rights reserved (CC BY-NC), uploaded by Anneke Jonker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475402",
+   "source": "https://www.inaturalist.org/photos/32164909"
+  },
+  {
+   "name": "Hypomenitis libethris",
+   "file": "29105205.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475405",
+   "source": "https://www.inaturalist.org/photos/29105205"
+  },
+  {
+   "name": "Hypomenitis lydia",
+   "file": "24406150.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475558",
+   "source": "https://www.inaturalist.org/photos/24406150"
+  },
+  {
+   "name": "Hypomenitis ochretis",
+   "file": "173137611.jpg",
+   "attribution": "(c) Ronan Spelman, some rights reserved (CC BY-NC), uploaded by Ronan Spelman",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475559",
+   "source": "https://www.inaturalist.org/photos/173137611"
+  },
+  {
+   "name": "Hypomenitis ortygia",
+   "file": "32165213.jpg",
+   "attribution": "(c) Anneke Jonker, some rights reserved (CC BY-NC), uploaded by Anneke Jonker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475563",
+   "source": "https://www.inaturalist.org/photos/32165213"
+  },
+  {
+   "name": "Hypomenitis polissena",
+   "file": "292866111.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475564",
+   "source": "https://www.inaturalist.org/photos/292866111"
+  },
+  {
+   "name": "Hypomenitis theudelinda",
+   "file": "652144782.jpg",
+   "attribution": "(c) Inti, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1475566",
+   "source": "https://www.inaturalist.org/photos/652144782"
+  },
+  {
+   "name": "Hyposcada anchiala",
+   "file": "24406659.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578377",
+   "source": "https://www.inaturalist.org/photos/24406659"
+  },
+  {
+   "name": "Hyposcada dujardini",
+   "file": "483500596.jpg",
+   "attribution": "(c) Sébastien SANT, some rights reserved (CC BY-NC), uploaded by Sébastien SANT",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1507431",
+   "source": "https://www.inaturalist.org/photos/483500596"
+  },
+  {
+   "name": "Hyposcada illinissa",
+   "file": "12865534.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/526072",
+   "source": "https://www.inaturalist.org/photos/12865534"
+  },
+  {
+   "name": "Hyposcada kena",
+   "file": "29099626.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1075001",
+   "source": "https://www.inaturalist.org/photos/29099626"
+  },
+  {
+   "name": "Hyposcada taliata",
+   "file": "539375851.jpg",
+   "attribution": "(c) Monics Paredes, some rights reserved (CC BY), uploaded by Monics Paredes",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1635285",
+   "source": "https://www.inaturalist.org/photos/539375851"
+  },
+  {
+   "name": "Hyposcada virginiana",
+   "file": "425592432.jpg",
+   "attribution": "(c) Tom Nix, some rights reserved (CC BY-NC), uploaded by Tom Nix",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258086",
+   "source": "https://www.inaturalist.org/photos/425592432"
+  },
+  {
+   "name": "Hyposcada zarepha",
+   "file": "507923390.jpg",
+   "attribution": "(c) Maël Dewynter, some rights reserved (CC BY-NC), uploaded by Maël Dewynter",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1374923",
+   "source": "https://www.inaturalist.org/photos/507923390"
+  },
+  {
+   "name": "Hypothyris anastasia",
+   "file": "1662670.jpg",
+   "attribution": "(c) Carmelo López Abad, some rights reserved (CC BY-NC), uploaded by Carmelo López Abad",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700885",
+   "source": "https://www.inaturalist.org/photos/1662670"
+  },
+  {
+   "name": "Hypothyris cantobrica",
+   "file": "57995831.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/774959",
+   "source": "https://www.inaturalist.org/photos/57995831"
+  },
+  {
+   "name": "Hypothyris daphnis",
+   "file": "169887582.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1291725",
+   "source": "https://www.inaturalist.org/photos/169887582"
+  },
+  {
+   "name": "Hypothyris euclea",
+   "file": "59662768.jpg",
+   "attribution": "(c) Rob Westerduijn, some rights reserved (CC BY-NC), uploaded by Rob Westerduijn",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258089",
+   "source": "https://www.inaturalist.org/photos/59662768"
+  },
+  {
+   "name": "Hypothyris fluonia",
+   "file": "61701083.jpg",
+   "attribution": "(c) Andrew Neild, some rights reserved (CC BY-NC-ND)",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/507828",
+   "source": "https://www.inaturalist.org/photos/61701083"
+  },
+  {
+   "name": "Hypothyris leprieuri",
+   "file": "36966521.jpg",
+   "attribution": "(c) Marita A. Paredes Rodríguez, some rights reserved (CC BY-NC), uploaded by Marita A. Paredes Rodríguez",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578378",
+   "source": "https://www.inaturalist.org/photos/36966521"
+  },
+  {
+   "name": "Hypothyris lycaste",
+   "file": "149241413.jpg",
+   "attribution": "(c) Jhoss, some rights reserved (CC BY-NC), uploaded by Jhoss",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/293993",
+   "source": "https://www.inaturalist.org/photos/149241413"
+  },
+  {
+   "name": "Hypothyris mamercus",
+   "file": "57995976.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578379",
+   "source": "https://www.inaturalist.org/photos/57995976"
+  },
+  {
+   "name": "Hypothyris mansuetus",
+   "file": "327215951.jpg",
+   "attribution": "(c) Dixie Sommers, some rights reserved (CC BY-NC-SA)",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1071929",
+   "source": "https://www.inaturalist.org/photos/327215951"
+  },
+  {
+   "name": "Hypothyris ninonia",
+   "file": "27132503.jpg",
+   "attribution": "(c) alessandradalia, some rights reserved (CC BY-SA), uploaded by alessandradalia",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578217",
+   "source": "https://www.inaturalist.org/photos/27132503"
+  },
+  {
+   "name": "Hypothyris noinonia",
+   "file": "27132503.jpg",
+   "attribution": "(c) alessandradalia, some rights reserved (CC BY-SA), uploaded by alessandradalia",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578217",
+   "source": "https://www.inaturalist.org/photos/27132503"
+  },
+  {
+   "name": "Hypothyris semifulva",
+   "file": "572552764.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1329995",
+   "source": "https://www.inaturalist.org/photos/572552764"
+  },
+  {
+   "name": "Hypothyris vallonia",
+   "file": "358539390.jpg",
+   "attribution": "(c) Julien Piolain, some rights reserved (CC BY-NC), uploaded by Julien Piolain",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1584575",
+   "source": "https://www.inaturalist.org/photos/358539390"
+  },
+  {
+   "name": "Hypothyris xanthostola",
+   "file": "562819928.jpg",
+   "attribution": "(c) maurohoffmann, some rights reserved (CC BY-NC), uploaded by maurohoffmann",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1642373",
+   "source": "https://www.inaturalist.org/photos/562819928"
+  },
+  {
+   "name": "Ithomia agnosia",
+   "file": "63812603.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/425390",
+   "source": "https://www.inaturalist.org/photos/63812603"
+  },
+  {
+   "name": "Ithomia amarilla",
+   "file": "734925930.jpg",
+   "attribution": "(c) Kaveer B, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/705649",
+   "source": "https://www.inaturalist.org/photos/734925930"
+  },
+  {
+   "name": "Ithomia arduinna",
+   "file": "339225101.jpg",
+   "attribution": "(c) Edgar Segovia, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/882443",
+   "source": "https://www.inaturalist.org/photos/339225101"
+  },
+  {
+   "name": "Ithomia avella",
+   "file": "356153123.jpg",
+   "attribution": "(c) Stephen Mirick, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/705648",
+   "source": "https://www.inaturalist.org/photos/356153123"
+  },
+  {
+   "name": "Ithomia celemia",
+   "file": "60757189.jpg",
+   "attribution": "(c) rick-uhlen, some rights reserved (CC BY-NC), uploaded by rick-uhlen",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1146403",
+   "source": "https://www.inaturalist.org/photos/60757189"
+  },
+  {
+   "name": "Ithomia cleora",
+   "file": "171899183.jpg",
+   "attribution": "(c) Line Juul Nielsen, some rights reserved (CC BY), uploaded by Line Juul Nielsen",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700555",
+   "source": "https://www.inaturalist.org/photos/171899183"
+  },
+  {
+   "name": "Ithomia diasia",
+   "file": "7362690.jpg",
+   "attribution": "(c) Peter Hollinger, some rights reserved (CC BY-NC), uploaded by Peter Hollinger",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/482732",
+   "source": "https://www.inaturalist.org/photos/7362690"
+  },
+  {
+   "name": "Ithomia drymo",
+   "file": "119713572.jpg",
+   "attribution": "(c) Thiago Gonçalves Coronado Antunes, some rights reserved (CC BY-NC), uploaded by Thiago Gonçalves Coronado Antunes",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/564495",
+   "source": "https://www.inaturalist.org/photos/119713572"
+  },
+  {
+   "name": "Ithomia eleonora",
+   "file": "61048429.jpg",
+   "attribution": "(c) Andrew Neild, some rights reserved (CC BY-NC-ND)",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/424696",
+   "source": "https://www.inaturalist.org/photos/61048429"
+  },
+  {
+   "name": "Ithomia ellara",
+   "file": "172573857.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1028279",
+   "source": "https://www.inaturalist.org/photos/172573857"
+  },
+  {
+   "name": "Ithomia heraldica",
+   "file": "61166014.jpg",
+   "attribution": "(c) Karl Kroeker, some rights reserved (CC BY-NC), uploaded by Karl Kroeker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/519549",
+   "source": "https://www.inaturalist.org/photos/61166014"
+  },
+  {
+   "name": "Ithomia hyala",
+   "file": "32663917.jpg",
+   "attribution": "(c) Eric Carpenter, some rights reserved (CC BY-NC), uploaded by Eric Carpenter",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/873740",
+   "source": "https://www.inaturalist.org/photos/32663917"
+  },
+  {
+   "name": "Ithomia hymettia",
+   "file": "15799191.jpg",
+   "attribution": "(c) djhiker, some rights reserved (CC BY-NC), uploaded by djhiker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1468114",
+   "source": "https://www.inaturalist.org/photos/15799191"
+  },
+  {
+   "name": "Ithomia iphianassa",
+   "file": "6374720.jpg",
+   "attribution": "(c) Bioexploradores Farallones, some rights reserved (CC BY-NC), uploaded by Bioexploradores Farallones",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/505133",
+   "source": "https://www.inaturalist.org/photos/6374720"
+  },
+  {
+   "name": "Ithomia jucunda",
+   "file": "46967497.jpg",
+   "attribution": "(c) Tom Horton, some rights reserved (CC BY-NC), uploaded by Tom Horton",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/915801",
+   "source": "https://www.inaturalist.org/photos/46967497"
+  },
+  {
+   "name": "Ithomia lagusa",
+   "file": "57996067.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/888032",
+   "source": "https://www.inaturalist.org/photos/57996067"
+  },
+  {
+   "name": "Ithomia leila",
+   "file": "26904900.jpg",
+   "attribution": "(c) Daniel Dorantes, some rights reserved (CC BY-NC), uploaded by Daniel Dorantes",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258097",
+   "source": "https://www.inaturalist.org/photos/26904900"
+  },
+  {
+   "name": "Ithomia lichyi",
+   "file": "161314076.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC), uploaded by David Geale",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/781785",
+   "source": "https://www.inaturalist.org/photos/161314076"
+  },
+  {
+   "name": "Ithomia patilla",
+   "file": "66757289.jpg",
+   "attribution": "(c) Karl Kroeker, some rights reserved (CC BY-NC), uploaded by Karl Kroeker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258098",
+   "source": "https://www.inaturalist.org/photos/66757289"
+  },
+  {
+   "name": "Ithomia pseudoagalla",
+   "file": "443958247.jpg",
+   "attribution": "(c) dzido, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/628921",
+   "source": "https://www.inaturalist.org/photos/443958247"
+  },
+  {
+   "name": "Ithomia salapia",
+   "file": "60216935.jpg",
+   "attribution": "no rights reserved, uploaded by Zygy",
+   "license": "CC0",
+   "taxonUrl": "https://www.inaturalist.org/taxa/574605",
+   "source": "https://www.inaturalist.org/photos/60216935"
+  },
+  {
+   "name": "Ithomia terra",
+   "file": "57996192.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/558270",
+   "source": "https://www.inaturalist.org/photos/57996192"
+  },
+  {
+   "name": "Ithomia xenos",
+   "file": "12272940.jpg",
+   "attribution": "(c) Soh Kam Yung, some rights reserved (CC BY-NC), uploaded by Soh Kam Yung",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/704717",
+   "source": "https://www.inaturalist.org/photos/12272940"
+  },
+  {
+   "name": "Mcclungia cymo",
+   "file": "25915433.jpg",
+   "attribution": "(c) alessandradalia, some rights reserved (CC BY-SA), uploaded by alessandradalia",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/780451",
+   "source": "https://www.inaturalist.org/photos/25915433"
+  },
+  {
+   "name": "Mechanitis lysimnia",
+   "file": "8704835.jpg",
+   "attribution": "(c) Tom Benson, some rights reserved (CC BY-NC-ND)",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258114",
+   "source": "https://www.inaturalist.org/photos/8704835"
+  },
+  {
+   "name": "Mechanitis mazaeus",
+   "file": "12954364.jpg",
+   "attribution": "(c) André Nagelhout, some rights reserved (CC BY-NC), uploaded by André Nagelhout",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/741886",
+   "source": "https://www.inaturalist.org/photos/12954364"
+  },
+  {
+   "name": "Mechanitis menapis",
+   "file": "351168584.jpg",
+   "attribution": "(c) Karen Yukich, some rights reserved (CC BY-NC), uploaded by Karen Yukich",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/81742",
+   "source": "https://www.inaturalist.org/photos/351168584"
+  },
+  {
+   "name": "Mechanitis messenoides",
+   "file": "116863915.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/887129",
+   "source": "https://www.inaturalist.org/photos/116863915"
+  },
+  {
+   "name": "Mechanitis polymnia",
+   "file": "59300165.jpg",
+   "attribution": "(c) Norton Santos, some rights reserved (CC BY-NC), uploaded by Norton Santos",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148675",
+   "source": "https://www.inaturalist.org/photos/59300165"
+  },
+  {
+   "name": "Megoleria orestilla",
+   "file": "74328628.jpg",
+   "attribution": "(c) Dave Wendelken, some rights reserved (CC BY-NC), uploaded by Dave Wendelken",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/823981",
+   "source": "https://www.inaturalist.org/photos/74328628"
+  },
+  {
+   "name": "Megoleria susiana",
+   "file": "6374700.jpg",
+   "attribution": "(c) Bioexploradores Farallones, some rights reserved (CC BY-NC), uploaded by Bioexploradores Farallones",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/533851",
+   "source": "https://www.inaturalist.org/photos/6374700"
+  },
+  {
+   "name": "Melinaea ethra",
+   "file": "131641769.jpg",
+   "attribution": "(c) elsielaura, some rights reserved (CC BY-NC), uploaded by elsielaura",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1133431",
+   "source": "https://www.inaturalist.org/photos/131641769"
+  },
+  {
+   "name": "Melinaea idae",
+   "file": "22740360.jpg",
+   "attribution": "(c) John G. Phillips, some rights reserved (CC BY), uploaded by John G. Phillips",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/708232",
+   "source": "https://www.inaturalist.org/photos/22740360"
+  },
+  {
+   "name": "Melinaea isocomma",
+   "file": "41942583.jpg",
+   "attribution": "(c) Tom Horton, some rights reserved (CC BY-NC), uploaded by Tom Horton",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1074226",
+   "source": "https://www.inaturalist.org/photos/41942583"
+  },
+  {
+   "name": "Melinaea lilis",
+   "file": "27095227.jpg",
+   "attribution": "no rights reserved, uploaded by adel-fridus",
+   "license": "CC0",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258117",
+   "source": "https://www.inaturalist.org/photos/27095227"
+  },
+  {
+   "name": "Melinaea ludovica",
+   "file": "9914509.jpg",
+   "attribution": "(c) Instituto Últimos Refúgios, some rights reserved (CC BY-NC), uploaded by Instituto Últimos Refúgios",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/557633",
+   "source": "https://www.inaturalist.org/photos/9914509"
+  },
+  {
+   "name": "Melinaea marsaeus",
+   "file": "335193296.jpg",
+   "attribution": "(c) Jiri Hodecek, some rights reserved (CC BY-NC), uploaded by Jiri Hodecek",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/702004",
+   "source": "https://www.inaturalist.org/photos/335193296"
+  },
+  {
+   "name": "Melinaea menophilus",
+   "file": "1044692.jpg",
+   "attribution": "(c) Pavel Kirillov, some rights reserved (CC BY-NC-SA)",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/364081",
+   "source": "https://www.inaturalist.org/photos/1044692"
+  },
+  {
+   "name": "Melinaea mnasias",
+   "file": "308348247.jpg",
+   "attribution": "(c) David Bishop, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/883388",
+   "source": "https://www.inaturalist.org/photos/308348247"
+  },
+  {
+   "name": "Melinaea mneme",
+   "file": "180303435.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578385",
+   "source": "https://www.inaturalist.org/photos/180303435"
+  },
+  {
+   "name": "Melinaea mothone",
+   "file": "5976616.jpg",
+   "attribution": "(c) Jim Johnson, some rights reserved (CC BY-NC-ND), uploaded by Jim Johnson",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1603446",
+   "source": "https://www.inaturalist.org/photos/5976616"
+  },
+  {
+   "name": "Melinaea satevis",
+   "file": "11847181.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/577668",
+   "source": "https://www.inaturalist.org/photos/11847181"
+  },
+  {
+   "name": "Melinaea scylax",
+   "file": "62766322.jpg",
+   "attribution": "(c) Michelle Martin, some rights reserved (CC BY-NC), uploaded by Michelle Martin",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1132020",
+   "source": "https://www.inaturalist.org/photos/62766322"
+  },
+  {
+   "name": "Methona confusa",
+   "file": "669504.jpg",
+   "attribution": "(c) Geoff Gallice, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/342572",
+   "source": "https://www.inaturalist.org/photos/669504"
+  },
+  {
+   "name": "Methona curvifascia",
+   "file": "12615724.jpg",
+   "attribution": "(c) A Lamberts, some rights reserved (CC BY-NC), uploaded by A Lamberts",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/553687",
+   "source": "https://www.inaturalist.org/photos/12615724"
+  },
+  {
+   "name": "Methona grandior",
+   "file": "1725595.jpg",
+   "attribution": "(c) Geoff Gallice, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/460822",
+   "source": "https://www.inaturalist.org/photos/1725595"
+  },
+  {
+   "name": "Methona maxima",
+   "file": "60742180.jpg",
+   "attribution": "(c) Steven Whitebread, some rights reserved (CC BY), uploaded by Steven Whitebread",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1291496",
+   "source": "https://www.inaturalist.org/photos/60742180"
+  },
+  {
+   "name": "Methona megisto",
+   "file": "335193342.jpg",
+   "attribution": "(c) Jiri Hodecek, some rights reserved (CC BY-NC), uploaded by Jiri Hodecek",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1318554",
+   "source": "https://www.inaturalist.org/photos/335193342"
+  },
+  {
+   "name": "Methona singularis",
+   "file": "34049805.jpg",
+   "attribution": "(c) Víctor de Paiva, some rights reserved (CC BY-NC-ND), uploaded by Víctor de Paiva",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/876500",
+   "source": "https://www.inaturalist.org/photos/34049805"
+  },
+  {
+   "name": "Methona themisto",
+   "file": "181548391.jpg",
+   "attribution": "no rights reserved, uploaded by Frank Thomas Sautter",
+   "license": "CC0",
+   "taxonUrl": "https://www.inaturalist.org/taxa/119084",
+   "source": "https://www.inaturalist.org/photos/181548391"
+  },
+  {
+   "name": "Napeogenes aethra",
+   "file": "332872643.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1453247",
+   "source": "https://www.inaturalist.org/photos/332872643"
+  },
+  {
+   "name": "Napeogenes apulia",
+   "file": "61296749.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1032424",
+   "source": "https://www.inaturalist.org/photos/61296749"
+  },
+  {
+   "name": "Napeogenes duessa",
+   "file": "366491474.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1064750",
+   "source": "https://www.inaturalist.org/photos/366491474"
+  },
+  {
+   "name": "Napeogenes glycera",
+   "file": "238865434.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1422567",
+   "source": "https://www.inaturalist.org/photos/238865434"
+  },
+  {
+   "name": "Napeogenes inachia",
+   "file": "22386142.jpg",
+   "attribution": "(c) upupamartin, some rights reserved (CC BY-NC-ND), uploaded by upupamartin",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700882",
+   "source": "https://www.inaturalist.org/photos/22386142"
+  },
+  {
+   "name": "Napeogenes larilla",
+   "file": "110636653.jpg",
+   "attribution": "(c) PaulS, some rights reserved (CC BY-NC), uploaded by PaulS",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1183793",
+   "source": "https://www.inaturalist.org/photos/110636653"
+  },
+  {
+   "name": "Napeogenes larina",
+   "file": "101308827.jpg",
+   "attribution": "(c) Bernd Dietrich, some rights reserved (CC BY-NC), uploaded by Bernd Dietrich",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/481885",
+   "source": "https://www.inaturalist.org/photos/101308827"
+  },
+  {
+   "name": "Napeogenes lycora",
+   "file": "253160792.jpg",
+   "attribution": "(c) boverser, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1686353",
+   "source": "https://www.inaturalist.org/photos/253160792"
+  },
+  {
+   "name": "Napeogenes peridia",
+   "file": "111210474.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/859950",
+   "source": "https://www.inaturalist.org/photos/111210474"
+  },
+  {
+   "name": "Napeogenes pharo",
+   "file": "63315842.jpg",
+   "attribution": "(c) Rob Westerduijn, some rights reserved (CC BY-NC), uploaded by Rob Westerduijn",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1045530",
+   "source": "https://www.inaturalist.org/photos/63315842"
+  },
+  {
+   "name": "Napeogenes rhezia",
+   "file": "185905686.jpg",
+   "attribution": "(c) accidentalshrike, some rights reserved (CC BY-NC), uploaded by accidentalshrike",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/883391",
+   "source": "https://www.inaturalist.org/photos/185905686"
+  },
+  {
+   "name": "Napeogenes stella",
+   "file": "38938575.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/891061",
+   "source": "https://www.inaturalist.org/photos/38938575"
+  },
+  {
+   "name": "Napeogenes sylphis",
+   "file": "11921903.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578389",
+   "source": "https://www.inaturalist.org/photos/11921903"
+  },
+  {
+   "name": "Napeogenes tolosa",
+   "file": "218272360.jpg",
+   "attribution": "(c) Salman Abdulali, some rights reserved (CC BY-NC), uploaded by Salman Abdulali",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258156",
+   "source": "https://www.inaturalist.org/photos/218272360"
+  },
+  {
+   "name": "Napeogenes zurippa",
+   "file": "173901003.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1317827",
+   "source": "https://www.inaturalist.org/photos/173901003"
+  },
+  {
+   "name": "Oleria aegle",
+   "file": "14657785.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578391",
+   "source": "https://www.inaturalist.org/photos/14657785"
+  },
+  {
+   "name": "Oleria agarista",
+   "file": "424088099.jpg",
+   "attribution": "(c) pierrebonmariage, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1244894",
+   "source": "https://www.inaturalist.org/photos/424088099"
+  },
+  {
+   "name": "Oleria alexina",
+   "file": "39518926.jpg",
+   "attribution": "(c) Dr. Alexey Yakovlev, some rights reserved (CC BY-SA)",
+   "license": "CC-BY-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/424547",
+   "source": "https://www.inaturalist.org/photos/39518926"
+  },
+  {
+   "name": "Oleria amalda",
+   "file": "3075304.jpg",
+   "attribution": "(c) Nick Block, some rights reserved (CC BY), uploaded by Nick Block",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700871",
+   "source": "https://www.inaturalist.org/photos/3075304"
+  },
+  {
+   "name": "Oleria antaxis",
+   "file": "11921936.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/891787",
+   "source": "https://www.inaturalist.org/photos/11921936"
+  },
+  {
+   "name": "Oleria aquata",
+   "file": "172338223.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/780419",
+   "source": "https://www.inaturalist.org/photos/172338223"
+  },
+  {
+   "name": "Oleria assimilis",
+   "file": "2316559.jpg",
+   "attribution": "(c) 104623964081378888743, some rights reserved (CC BY-NC), uploaded by 104623964081378888743",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700581",
+   "source": "https://www.inaturalist.org/photos/2316559"
+  },
+  {
+   "name": "Oleria astrea",
+   "file": "5686813.jpg",
+   "attribution": "(c) Kristof & Yulia, some rights reserved (CC BY), uploaded by Kristof & Yulia",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/517983",
+   "source": "https://www.inaturalist.org/photos/5686813"
+  },
+  {
+   "name": "Oleria athalina",
+   "file": "29154549.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/823987",
+   "source": "https://www.inaturalist.org/photos/29154549"
+  },
+  {
+   "name": "Oleria attalia",
+   "file": "63812301.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/947308",
+   "source": "https://www.inaturalist.org/photos/63812301"
+  },
+  {
+   "name": "Oleria baizana",
+   "file": "24407728.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/602064",
+   "source": "https://www.inaturalist.org/photos/24407728"
+  },
+  {
+   "name": "Oleria bioculata",
+   "file": "97807288.jpg",
+   "attribution": "(c) claudiocrespor, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1199087",
+   "source": "https://www.inaturalist.org/photos/97807288"
+  },
+  {
+   "name": "Oleria cyrene",
+   "file": "24407930.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/429017",
+   "source": "https://www.inaturalist.org/photos/24407930"
+  },
+  {
+   "name": "Oleria deronda",
+   "file": "57584697.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/491378",
+   "source": "https://www.inaturalist.org/photos/57584697"
+  },
+  {
+   "name": "Oleria derondina",
+   "file": "156200818.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC), uploaded by David Geale",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/973900",
+   "source": "https://www.inaturalist.org/photos/156200818"
+  },
+  {
+   "name": "Oleria didymaea",
+   "file": "17461821.jpg",
+   "attribution": "(c) Annika Lindqvist, some rights reserved (CC BY), uploaded by Annika Lindqvist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/709148",
+   "source": "https://www.inaturalist.org/photos/17461821"
+  },
+  {
+   "name": "Oleria estella",
+   "file": "57997874.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700553",
+   "source": "https://www.inaturalist.org/photos/57997874"
+  },
+  {
+   "name": "Oleria fasciata",
+   "file": "76844598.jpg",
+   "attribution": "(c) Karl Kroeker, some rights reserved (CC BY-NC), uploaded by Karl Kroeker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1095836",
+   "source": "https://www.inaturalist.org/photos/76844598"
+  },
+  {
+   "name": "Oleria fumata",
+   "file": "12292544.jpg",
+   "attribution": "(c) Luis G Restrepo, some rights reserved (CC BY), uploaded by Luis G Restrepo",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/604867",
+   "source": "https://www.inaturalist.org/photos/12292544"
+  },
+  {
+   "name": "Oleria gunilla",
+   "file": "168488835.jpg",
+   "attribution": "(c) Kristof Zyskowski, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700586",
+   "source": "https://www.inaturalist.org/photos/168488835"
+  },
+  {
+   "name": "Oleria ilerdina",
+   "file": "162113720.jpg",
+   "attribution": "(c) Jonathan Ramos-Artunduaga, some rights reserved (CC BY), uploaded by Jonathan Ramos-Artunduaga",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/603545",
+   "source": "https://www.inaturalist.org/photos/162113720"
+  },
+  {
+   "name": "Oleria makrena",
+   "file": "24389634.jpg",
+   "attribution": "(c) David W K Foster, some rights reserved (CC BY-NC-ND), uploaded by David W K Foster",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/776149",
+   "source": "https://www.inaturalist.org/photos/24389634"
+  },
+  {
+   "name": "Oleria onega",
+   "file": "27910049.jpg",
+   "attribution": "(c) Mike Tidwell, some rights reserved (CC BY-NC), uploaded by Mike Tidwell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/513876",
+   "source": "https://www.inaturalist.org/photos/27910049"
+  },
+  {
+   "name": "Oleria padilla",
+   "file": "12393367.jpg",
+   "attribution": "(c) Gabriel Camilo Jaramillo Giraldo, some rights reserved (CC BY-NC-SA), uploaded by Gabriel Camilo Jaramillo Giraldo",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/606217",
+   "source": "https://www.inaturalist.org/photos/12393367"
+  },
+  {
+   "name": "Oleria paula",
+   "file": "2410845.jpg",
+   "attribution": "(c) Erick Noe Tapia Banda, some rights reserved (CC BY-NC), uploaded by Erick Noe Tapia Banda",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148757",
+   "source": "https://www.inaturalist.org/photos/2410845"
+  },
+  {
+   "name": "Oleria phenomoe",
+   "file": "5741779.jpg",
+   "attribution": "(c) Hinko Talsma, some rights reserved (CC BY-NC), uploaded by Hinko Talsma",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/518850",
+   "source": "https://www.inaturalist.org/photos/5741779"
+  },
+  {
+   "name": "Oleria quadrata",
+   "file": "16684565.jpg",
+   "attribution": "(c) Scott Ramos, some rights reserved (CC BY-NC), uploaded by Scott Ramos",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1073529",
+   "source": "https://www.inaturalist.org/photos/16684565"
+  },
+  {
+   "name": "Oleria quintina",
+   "file": "57998107.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/978399",
+   "source": "https://www.inaturalist.org/photos/57998107"
+  },
+  {
+   "name": "Oleria rubescens",
+   "file": "10898800.jpg",
+   "attribution": "(c) Oscar Johnson, some rights reserved (CC BY-NC-ND), uploaded by Oscar Johnson",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/564494",
+   "source": "https://www.inaturalist.org/photos/10898800"
+  },
+  {
+   "name": "Oleria santineza",
+   "file": "111235929.jpg",
+   "attribution": "(c) sofianogales, some rights reserved (CC BY-NC), uploaded by sofianogales",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/871636",
+   "source": "https://www.inaturalist.org/photos/111235929"
+  },
+  {
+   "name": "Oleria sexmaculata",
+   "file": "60282557.jpg",
+   "attribution": "(c) Trevor Van Loon, some rights reserved (CC BY-NC), uploaded by Trevor Van Loon",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1021439",
+   "source": "https://www.inaturalist.org/photos/60282557"
+  },
+  {
+   "name": "Oleria thiemei",
+   "file": "513150912.jpg",
+   "attribution": "(c) Peter Payzant, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1226871",
+   "source": "https://www.inaturalist.org/photos/513150912"
+  },
+  {
+   "name": "Oleria tigilla",
+   "file": "15334.jpg",
+   "attribution": "(c) FlaPack, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/887055",
+   "source": "https://www.inaturalist.org/photos/15334"
+  },
+  {
+   "name": "Oleria tremona",
+   "file": "209621780.jpg",
+   "attribution": "(c) Aaron Hulsey, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700575",
+   "source": "https://www.inaturalist.org/photos/209621780"
+  },
+  {
+   "name": "Oleria vicina",
+   "file": "148892721.jpg",
+   "attribution": "(c) Noreen Baker, some rights reserved (CC BY-NC), uploaded by Noreen Baker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/528005",
+   "source": "https://www.inaturalist.org/photos/148892721"
+  },
+  {
+   "name": "Oleria victorine",
+   "file": "371818324.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/596535",
+   "source": "https://www.inaturalist.org/photos/371818324"
+  },
+  {
+   "name": "Oleria zea",
+   "file": "268231831.jpg",
+   "attribution": "(c) Grete Pasch, some rights reserved (CC BY), uploaded by Grete Pasch",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/256379",
+   "source": "https://www.inaturalist.org/photos/268231831"
+  },
+  {
+   "name": "Oleria zelica",
+   "file": "168132592.jpg",
+   "attribution": "(c) Kai Squires, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1023963",
+   "source": "https://www.inaturalist.org/photos/168132592"
+  },
+  {
+   "name": "Olyras crathis",
+   "file": "102543542.jpg",
+   "attribution": "(c) Tom Murray, some rights reserved (CC BY-NC), uploaded by Tom Murray",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/776422",
+   "source": "https://www.inaturalist.org/photos/102543542"
+  },
+  {
+   "name": "Olyras insignis",
+   "file": "60079691.jpg",
+   "attribution": "(c) Hans Holbrook, some rights reserved (CC BY-NC), uploaded by Hans Holbrook",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/983101",
+   "source": "https://www.inaturalist.org/photos/60079691"
+  },
+  {
+   "name": "Olyras theon",
+   "file": "29161297.jpg",
+   "attribution": "(c) Diego Manzano Méndez, some rights reserved (CC BY-NC), uploaded by Diego Manzano Méndez",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/256380",
+   "source": "https://www.inaturalist.org/photos/29161297"
+  },
+  {
+   "name": "Pagyris cymothoe",
+   "file": "1294372.jpg",
+   "attribution": "(c) Omar Santiago Chaparro, some rights reserved (CC BY-NC), uploaded by Omar Santiago Chaparro",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/623609",
+   "source": "https://www.inaturalist.org/photos/1294372"
+  },
+  {
+   "name": "Pagyris euryanassa",
+   "file": "1063706.jpg",
+   "attribution": "(c) Cláudio Dias Timm, some rights reserved (CC BY-NC-SA)",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1571117",
+   "source": "https://www.inaturalist.org/photos/1063706"
+  },
+  {
+   "name": "Pagyris priscilla",
+   "file": "429400050.jpg",
+   "attribution": "(c) danielblanco521, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/623610",
+   "source": "https://www.inaturalist.org/photos/429400050"
+  },
+  {
+   "name": "Pagyris ulla",
+   "file": "37510570.jpg",
+   "attribution": "(c) sternberg_science_camps, some rights reserved (CC BY-NC-ND), uploaded by sternberg_science_camps",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/623612",
+   "source": "https://www.inaturalist.org/photos/37510570"
+  },
+  {
+   "name": "Patricia demylus",
+   "file": "116633167.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1226796",
+   "source": "https://www.inaturalist.org/photos/116633167"
+  },
+  {
+   "name": "Patricia dercyllidas",
+   "file": "14285239.jpg",
+   "attribution": "(c) Andreas Kay, some rights reserved (CC BY-NC-SA)",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/558268",
+   "source": "https://www.inaturalist.org/photos/14285239"
+  },
+  {
+   "name": "Patricia hewitsonii",
+   "file": "248547022.jpg",
+   "attribution": "(c) Martin W, some rights reserved (CC BY-NC), uploaded by Martin W",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1435345",
+   "source": "https://www.inaturalist.org/photos/248547022"
+  },
+  {
+   "name": "Pseudoscada acilla",
+   "file": "172338842.jpg",
+   "attribution": "(c) rick_costa, some rights reserved (CC BY-NC), uploaded by rick_costa",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1009378",
+   "source": "https://www.inaturalist.org/photos/172338842"
+  },
+  {
+   "name": "Pseudoscada erruca",
+   "file": "255130370.jpg",
+   "attribution": "(c) Renato Machado de Sobral, some rights reserved (CC BY-NC), uploaded by Renato Machado de Sobral",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/885526",
+   "source": "https://www.inaturalist.org/photos/255130370"
+  },
+  {
+   "name": "Pseudoscada florula",
+   "file": "29036628.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/818867",
+   "source": "https://www.inaturalist.org/photos/29036628"
+  },
+  {
+   "name": "Pseudoscada pusio",
+   "file": "234412687.jpg",
+   "attribution": "(c) Mario Lietz-Finkel, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1045522",
+   "source": "https://www.inaturalist.org/photos/234412687"
+  },
+  {
+   "name": "Pseudoscada timna",
+   "file": "15799188.jpg",
+   "attribution": "(c) djhiker, some rights reserved (CC BY-NC), uploaded by djhiker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/704687",
+   "source": "https://www.inaturalist.org/photos/15799188"
+  },
+  {
+   "name": "Pseudoscada troetschi",
+   "file": "424973673.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC), uploaded by Lepidoptera Colombiana 🇨🇴",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700577",
+   "source": "https://www.inaturalist.org/photos/424973673"
+  },
+  {
+   "name": "Pteronymia alcmena",
+   "file": "125029234.jpg",
+   "attribution": "(c) Cynthia Tercero, algunos derechos reservados (CC BY-NC-ND), subido por Cynthia Tercero",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/768713",
+   "source": "https://www.inaturalist.org/photos/125029234"
+  },
+  {
+   "name": "Pteronymia aletta",
+   "file": "282561396.jpg",
+   "attribution": "(c) andregeelhoed, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/607260",
+   "source": "https://www.inaturalist.org/photos/282561396"
+  },
+  {
+   "name": "Pteronymia alida",
+   "file": "664789971.jpg",
+   "attribution": "(c) Angel Mario Hualpa Erazo, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/705732",
+   "source": "https://www.inaturalist.org/photos/664789971"
+  },
+  {
+   "name": "Pteronymia alina",
+   "file": "107786593.jpg",
+   "attribution": "(c) Angel Mario Hualpa Erazo, some rights reserved (CC BY-NC), uploaded by Angel Mario Hualpa Erazo",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1199081",
+   "source": "https://www.inaturalist.org/photos/107786593"
+  },
+  {
+   "name": "Pteronymia alissa",
+   "file": "24408561.jpg",
+   "attribution": "(c) Roger Rittmaster, some rights reserved (CC BY), uploaded by Roger Rittmaster",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/518685",
+   "source": "https://www.inaturalist.org/photos/24408561"
+  },
+  {
+   "name": "Pteronymia andreas",
+   "file": "63812593.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1603442",
+   "source": "https://www.inaturalist.org/photos/63812593"
+  },
+  {
+   "name": "Pteronymia artena",
+   "file": "111756699.jpg",
+   "attribution": "(c) Oswaldo Hernández, some rights reserved (CC BY-NC), uploaded by Oswaldo Hernández",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/126390",
+   "source": "https://www.inaturalist.org/photos/111756699"
+  },
+  {
+   "name": "Pteronymia calgiria",
+   "file": "63812592.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1047158",
+   "source": "https://www.inaturalist.org/photos/63812592"
+  },
+  {
+   "name": "Pteronymia carlia",
+   "file": "293697947.jpg",
+   "attribution": "(c) Tarcisio Pavanelli, some rights reserved (CC BY-NC), uploaded by Tarcisio Pavanelli",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/885528",
+   "source": "https://www.inaturalist.org/photos/293697947"
+  },
+  {
+   "name": "Pteronymia cotytto",
+   "file": "52130085.jpg",
+   "attribution": "(c) Victor Mozqueda, some rights reserved (CC BY-NC), uploaded by Victor Mozqueda",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148755",
+   "source": "https://www.inaturalist.org/photos/52130085"
+  },
+  {
+   "name": "Pteronymia donella",
+   "file": "134505900.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC), uploaded by Lepidoptera Colombiana 🇨🇴",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1180348",
+   "source": "https://www.inaturalist.org/photos/134505900"
+  },
+  {
+   "name": "Pteronymia euritea",
+   "file": "298152358.jpg",
+   "attribution": "(c) Josh van der Meulen, some rights reserved (CC BY-NC-ND)",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/578218",
+   "source": "https://www.inaturalist.org/photos/298152358"
+  },
+  {
+   "name": "Pteronymia forsteri",
+   "file": "63812775.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1047173",
+   "source": "https://www.inaturalist.org/photos/63812775"
+  },
+  {
+   "name": "Pteronymia fulvimargo",
+   "file": "293018753.jpg",
+   "attribution": "(c) Selena González Aragón, some rights reserved (CC BY-NC), uploaded by Selena González Aragón",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1332873",
+   "source": "https://www.inaturalist.org/photos/293018753"
+  },
+  {
+   "name": "Pteronymia fumida",
+   "file": "57204947.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1015125",
+   "source": "https://www.inaturalist.org/photos/57204947"
+  },
+  {
+   "name": "Pteronymia glauca",
+   "file": "14534194.jpg",
+   "attribution": "(c) Bitty A. Roy, some rights reserved (CC BY-NC), uploaded by Bitty A. Roy",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/701658",
+   "source": "https://www.inaturalist.org/photos/14534194"
+  },
+  {
+   "name": "Pteronymia granica",
+   "file": "595808407.jpg",
+   "attribution": "(c) Mario Cuervo, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1199085",
+   "source": "https://www.inaturalist.org/photos/595808407"
+  },
+  {
+   "name": "Pteronymia hara",
+   "file": "12676322.jpg",
+   "attribution": "(c) jmtobin6975, some rights reserved (CC BY-NC-ND), uploaded by jmtobin6975",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700573",
+   "source": "https://www.inaturalist.org/photos/12676322"
+  },
+  {
+   "name": "Pteronymia inania",
+   "file": "102098264.jpg",
+   "attribution": "(c) Álvaro Rivas Godin, some rights reserved (CC BY), uploaded by Álvaro Rivas Godin",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1542440",
+   "source": "https://www.inaturalist.org/photos/102098264"
+  },
+  {
+   "name": "Pteronymia latilla",
+   "file": "13294445.jpg",
+   "attribution": "(c) Gustavo Go, some rights reserved (CC BY-NC), uploaded by Gustavo Go",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/701181",
+   "source": "https://www.inaturalist.org/photos/13294445"
+  },
+  {
+   "name": "Pteronymia laura",
+   "file": "49566177.jpg",
+   "attribution": "(c) Gabriel Camilo Jaramillo Giraldo, some rights reserved (CC BY-NC-SA), uploaded by Gabriel Camilo Jaramillo Giraldo",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/929024",
+   "source": "https://www.inaturalist.org/photos/49566177"
+  },
+  {
+   "name": "Pteronymia mariannae",
+   "file": "294600403.png",
+   "attribution": "(c) claypine4130, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1468808",
+   "source": "https://www.inaturalist.org/photos/294600403"
+  },
+  {
+   "name": "Pteronymia medellina",
+   "file": "289913331.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/873738",
+   "source": "https://www.inaturalist.org/photos/289913331"
+  },
+  {
+   "name": "Pteronymia oneida",
+   "file": "32162871.jpg",
+   "attribution": "(c) Anneke Jonker, some rights reserved (CC BY-NC), uploaded by Anneke Jonker",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/793296",
+   "source": "https://www.inaturalist.org/photos/32162871"
+  },
+  {
+   "name": "Pteronymia ozia",
+   "file": "108743369.jpg",
+   "attribution": "(c) Carlos Schmidtutz, some rights reserved (CC BY-NC), uploaded by Carlos Schmidtutz",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/513301",
+   "source": "https://www.inaturalist.org/photos/108743369"
+  },
+  {
+   "name": "Pteronymia parva",
+   "file": "112803582.jpg",
+   "attribution": "(c) franciscomanuel77, some rights reserved (CC BY-NC), uploaded by franciscomanuel77",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1196347",
+   "source": "https://www.inaturalist.org/photos/112803582"
+  },
+  {
+   "name": "Pteronymia picta",
+   "file": "404878980.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/790847",
+   "source": "https://www.inaturalist.org/photos/404878980"
+  },
+  {
+   "name": "Pteronymia primula",
+   "file": "35784397.jpg",
+   "attribution": "(c) Gabriel Leite, some rights reserved (CC BY-NC), uploaded by Gabriel Leite",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700583",
+   "source": "https://www.inaturalist.org/photos/35784397"
+  },
+  {
+   "name": "Pteronymia rufocincta",
+   "file": "105207557.jpg",
+   "attribution": "(c) R.E.Llanos, some rights reserved (CC BY-NC-SA), uploaded by R.E.Llanos",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258204",
+   "source": "https://www.inaturalist.org/photos/105207557"
+  },
+  {
+   "name": "Pteronymia sao",
+   "file": "33827303.jpg",
+   "attribution": "(c) Vincent A. Vos, some rights reserved (CC BY), uploaded by Vincent A. Vos",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/490419",
+   "source": "https://www.inaturalist.org/photos/33827303"
+  },
+  {
+   "name": "Pteronymia serrata",
+   "file": "116638397.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1226805",
+   "source": "https://www.inaturalist.org/photos/116638397"
+  },
+  {
+   "name": "Pteronymia simplex",
+   "file": "2429619.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/294013",
+   "source": "https://www.inaturalist.org/photos/2429619"
+  },
+  {
+   "name": "Pteronymia tamina",
+   "file": "115116382.jpg",
+   "attribution": "(c) Ken Kertell, some rights reserved (CC BY-NC), uploaded by Ken Kertell",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1215632",
+   "source": "https://www.inaturalist.org/photos/115116382"
+  },
+  {
+   "name": "Pteronymia teresita",
+   "file": "40009044.jpg",
+   "attribution": "(c) Holger Beck, some rights reserved (CC BY-NC), uploaded by Holger Beck",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/978401",
+   "source": "https://www.inaturalist.org/photos/40009044"
+  },
+  {
+   "name": "Pteronymia thabena",
+   "file": "57998400.png",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1026729",
+   "source": "https://www.inaturalist.org/photos/57998400"
+  },
+  {
+   "name": "Pteronymia ticida",
+   "file": "465420839.jpg",
+   "attribution": "(c) Ariel R., some rights reserved (CC BY-NC), uploaded by Ariel R.",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1227298",
+   "source": "https://www.inaturalist.org/photos/465420839"
+  },
+  {
+   "name": "Pteronymia tucuna",
+   "file": "390945369.jpg",
+   "attribution": "(c) David Geale, some rights reserved (CC BY-NC), uploaded by David Geale",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/978402",
+   "source": "https://www.inaturalist.org/photos/390945369"
+  },
+  {
+   "name": "Pteronymia veia",
+   "file": "256164093.jpg",
+   "attribution": "(c) Lepidoptera Colombiana 🇨🇴, some rights reserved (CC BY-NC), uploaded by Lepidoptera Colombiana 🇨🇴",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700592",
+   "source": "https://www.inaturalist.org/photos/256164093"
+  },
+  {
+   "name": "Pteronymia vestilla",
+   "file": "199412223.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/700876",
+   "source": "https://www.inaturalist.org/photos/199412223"
+  },
+  {
+   "name": "Pteronymia zerlina",
+   "file": "235943.jpg",
+   "attribution": "(c) Mark Rosenstein, some rights reserved (CC BY-NC), uploaded by Mark Rosenstein",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/702807",
+   "source": "https://www.inaturalist.org/photos/235943"
+  },
+  {
+   "name": "Sais rosalia",
+   "file": "180615039.jpg",
+   "attribution": "(c) desertnaturalist, some rights reserved (CC BY), uploaded by desertnaturalist",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/702100",
+   "source": "https://www.inaturalist.org/photos/180615039"
+  },
+  {
+   "name": "Scada karschina",
+   "file": "9901151.jpg",
+   "attribution": "(c) B. Phalan, some rights reserved (CC BY), uploaded by B. Phalan",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/557613",
+   "source": "https://www.inaturalist.org/photos/9901151"
+  },
+  {
+   "name": "Scada kusa",
+   "file": "59549816.jpg",
+   "attribution": "(c) bluebugs, some rights reserved (CC BY-NC-ND), uploaded by bluebugs",
+   "license": "CC-BY-NC-ND",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1005334",
+   "source": "https://www.inaturalist.org/photos/59549816"
+  },
+  {
+   "name": "Scada reckia",
+   "file": "59122330.jpg",
+   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
+   "license": "CC-BY-NC-SA",
+   "taxonUrl": "https://www.inaturalist.org/taxa/557616",
+   "source": "https://www.inaturalist.org/photos/59122330"
+  },
+  {
+   "name": "Scada zemira",
+   "file": "260568043.jpg",
+   "attribution": "(c) My World of Bird Photography, some rights reserved (CC BY-NC), uploaded by My World of Bird Photography",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1031104",
+   "source": "https://www.inaturalist.org/photos/260568043"
+  },
+  {
+   "name": "Scada zibia",
+   "file": "321217564.jpg",
+   "attribution": "(c) Jen Cross, some rights reserved (CC BY-NC), uploaded by Jen Cross",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/557611",
+   "source": "https://www.inaturalist.org/photos/321217564"
+  },
+  {
+   "name": "Thyridia psidii",
+   "file": "61855945.jpg",
+   "attribution": "(c) Miranda85, some rights reserved (CC BY-NC), uploaded by Miranda85",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/258258",
+   "source": "https://www.inaturalist.org/photos/61855945"
+  },
+  {
+   "name": "Tithorea harmonia",
+   "file": "121566708.jpg",
+   "attribution": "(c) Carlos Otávio Gussoni, some rights reserved (CC BY), uploaded by Carlos Otávio Gussoni",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/294022",
+   "source": "https://www.inaturalist.org/photos/121566708"
+  },
+  {
+   "name": "Tithorea tarricina",
+   "file": "39188132.jpg",
+   "attribution": "(c) amantedarmanin, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/148787",
+   "source": "https://www.inaturalist.org/photos/39188132"
+  },
+  {
+   "name": "Veladyris cytharista",
+   "file": "221701260.jpg",
+   "attribution": "(c) Benoît Segerer, some rights reserved (CC BY-NC), uploaded by Benoît Segerer",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1407525",
+   "source": "https://www.inaturalist.org/photos/221701260"
+  },
+  {
+   "name": "Veladyris pardalis",
+   "file": "1499112.jpg",
+   "attribution": "(c) Nigel Voaden, some rights reserved (CC BY)",
+   "license": "CC-BY",
+   "taxonUrl": "https://www.inaturalist.org/taxa/429032",
+   "source": "https://www.inaturalist.org/photos/1499112"
+  },
+  {
+   "name": "Velamysta cruxifera",
+   "file": "434216137.jpg",
+   "attribution": "(c) alexistr, some rights reserved (CC BY-NC)",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1611571",
+   "source": "https://www.inaturalist.org/photos/434216137"
+  },
+  {
+   "name": "Velamysta peninna",
+   "file": "63898230.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1047756",
+   "source": "https://www.inaturalist.org/photos/63898230"
+  },
+  {
+   "name": "Velamysta pupilla",
+   "file": "63812280.jpg",
+   "attribution": "(c) shirdipam, some rights reserved (CC BY-NC), uploaded by shirdipam",
+   "license": "CC-BY-NC",
+   "taxonUrl": "https://www.inaturalist.org/taxa/1047139",
+   "source": "https://www.inaturalist.org/photos/63812280"
+  }
+ ]
+}

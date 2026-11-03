@@ -5,10 +5,11 @@
 import { appRoot } from './lib/appRoot'
 
 /**
- * The Identificar tab for every signed-in person (the one switch): while false only the offline identifier's tester
- * sees it (session.isOfflineIdTester). Opening it without an account is another decision (models behind the sign-in).
+ * The Identificar tab for every signed-in person (on since 3 Nov 2026); false: only the offline identifier's tester
+ * (session.isOfflineIdTester). It is also open without an account (`open` below): the models then come from
+ * Hugging Face, with no team data (Franz, 3 Nov 2026).
  */
-export const IDENTIFY_FOR_EVERYONE = false
+export const IDENTIFY_FOR_EVERYONE = true
 
 /** `open`: visible without an account (natural-history summaries only); `editors`: only for people who edit. */
 export const tabs = [
@@ -23,8 +24,8 @@ export const tabs = [
   { path: '/censo', name: 'census', label: 'Censo', component: () => import('./views/CensusView.vue') },
   { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
   // The offline butterfly identifier: a page of its own (cross-origin isolated for its models, server/offline-id.mjs);
-  // this route only goes there. `tester`: shown to the tester only until IDENTIFY_FOR_EVERYONE.
-  { path: '/identificar', name: 'identify', label: 'Identificar', tester: true, component: () => import('./views/IdentifyRedirect.vue') },
+  // this route only goes there. `tester`: shown to the tester only until IDENTIFY_FOR_EVERYONE. `open`: also without an account.
+  { path: '/identificar', name: 'identify', label: 'Identificar', open: true, tester: true, component: () => import('./views/IdentifyRedirect.vue') },
   // The wing photos: named after the ID on their envelope on the person's computer, then listed in Photo_links and on the sites.
   { path: '/fotos', name: 'rename', label: 'Fotos', editors: true, component: () => import('./views/RenameView.vue') },
   { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },

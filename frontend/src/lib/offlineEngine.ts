@@ -3,6 +3,8 @@
  * cut), the frozen-stock snapshot, loading the models and running a photo (wing detector -> crop -> encoder -> the
  * feature). Used by the Identificar tab (views/IdentifyView.vue). It keeps the test page's cache and URLs
  * (/prueba-offline/models/…, src/offline/main.ts): a phone that downloaded there does not download again.
+ * Signed in, the models come from the server; without an account (or when the server says to sign in) from
+ * Hugging Face (lib/publicModels.ts), the same files: either counts as the other (offlineId.ts sameFile).
  * The scores come from the feature (lib/offlineId.ts speciesScores), so changing the side of the Andes needs no new run.
  */
 import type * as Ort from 'onnxruntime-web'
@@ -17,6 +19,7 @@ import {
   makeHead,
   MODEL_ROLES,
   modelReady,
+  sameFile,
   readMasks,
   roleOf,
   selectMasks,
@@ -32,9 +35,11 @@ import {
 } from './offlineId'
 import type { Photo } from './offlinePhoto'
 import type { FrozenStock } from './frozenStock'
+import { PUBLIC_FILES } from './publicModels'
 
 type OrtModule = typeof Ort
-export interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null }
+/** `url`: a public copy (Hugging Face) fetched in ranges; else the server's parts. `parts`: each part's SHA-256. */
+export interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null; url?: string; parts?: string[] }
 export interface Stored { files: Record<string, StoredFile>; at: string }
 
 export const CACHE = 'ithomiini-prueba-offline'
@@ -43,8 +48,16 @@ export const KINDS: ModelKind[] = ['small', 'full']
 const ORT_FILES = ['ort.wasm.min.mjs', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']
 const ORT_GPU_FILES = ['ort.webgpu.min.mjs', 'ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm']
 
-/** What the list call found: the files, or why there are none (not signed in, no signal, the server's answer). */
-export type Listing = { files: ModelFile[] } | { error: 'signin' | 'offline' | 'server'; status?: number }
+/** What the list call found: the files and where from, or why there are none (no signal, the server's answer). */
+export type Listing = { files: ModelFile[]; source: 'server' | 'public' } | { error: 'signin' | 'offline' | 'server'; status?: number }
+
+/** The Hugging Face copies as a listing (no request: the list is part of the page). */
+export const publicListing = (): ModelFile[] =>
+  PUBLIC_FILES.map(f => ({ name: f.name, bytes: f.bytes, etag: `"sha256-${f.sha256}"`, role: f.role, wire: f.bytes, encoding: null, url: f.url, parts: f.parts }))
+
+async function sha256Hex(data: BufferSource): Promise<string> {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 /** What a photo gave: the feature for the head, the square the AI looked at (224 px RGB) and how it was cut. */
 export interface RunResult {
@@ -73,14 +86,18 @@ export interface Engine {
   loadHead(): Promise<Head>
   stock(): Promise<{ stock: FrozenStock; asOf: string } | null>
   refreshStock(): Promise<void>
+  /** Removes the team's inventory kept on this phone (someone without an account is using it). */
+  forgetStock(): Promise<void>
   lastMs: Record<string, number>
 }
 
 /**
  * `base`: the test page's folder (absolute, ending in /prueba-offline/), where the models, the runtime and the cache
  * keys live. `pageFiles`: the page's own files to keep for airplane mode (its document, scripts and styles).
+ * `signedIn`: whether a team member is signed in (the server's models and inventory); false: Hugging Face's models,
+ * no request to the team's API.
  */
-export function createEngine(base: string, pageFiles: () => string[] = () => []): Engine {
+export function createEngine(base: string, pageFiles: () => string[] = () => [], { signedIn = () => true }: { signedIn?: () => boolean } = {}): Engine {
   const at = (path: string) => new URL(path, base).href
   const threads = self.crossOriginIsolated ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 4)) : 1
   const lastMs: Record<string, number> = {}
@@ -93,23 +110,38 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
 
   async function list(): Promise<Listing> {
     if (!navigator.onLine) return { error: 'offline' }
+    if (!signedIn()) return { files: publicListing(), source: 'public' }
     const r = await fetch(at('models/list.json'), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null)
     if (!r) return { error: 'offline' }
-    if (r.status === 401) return { error: 'signin' }
+    // The session ended meanwhile: the public copies.
+    if (r.status === 401) return { files: publicListing(), source: 'public' }
     if (!r.ok) return { error: 'server', status: r.status }
     const body = (await r.json()) as { files: ModelFile[]; partBytes?: number }
     if (body.partBytes && body.partBytes !== PART) return { error: 'server', status: 409 }
-    return { files: body.files }
+    return { files: body.files, source: 'server' }
   }
 
   async function ready(files: ModelFile[] | null) {
     const s = await stored()
+    // Files kept before the lists said their part hashes: the hashes of the very version listed are added, so the
+    // model also counts as the public copy later (signed out).
+    if (s && files) {
+      let added = false
+      for (const f of files) {
+        const have = s.files[f.name]
+        if (have && f.parts?.length && !have.parts && have.etag === f.etag && have.bytes === f.bytes) {
+          have.parts = f.parts
+          added = true
+        }
+      }
+      if (added) await (await caches.open(CACHE)).put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+    }
     return { full: modelReady('full', s?.files ?? null, files), small: modelReady('small', s?.files ?? null, files) }
   }
 
   function toDownload(kind: ModelKind, files: ModelFile[], s: Stored | null) {
     const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
-    const need = wanted.filter(f => s?.files[f.name]?.etag !== f.etag)
+    const need = wanted.filter(f => !sameFile(s?.files[f.name], f))
     return {
       plain: need.reduce((a, f) => a + f.bytes, 0),
       wire: need.reduce((a, f) => a + (f.wire ?? f.bytes), 0),
@@ -146,7 +178,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
     if (wanted.length !== MODEL_ROLES[kind].length) throw new Error('missing-on-server')
     const cache = await caches.open(CACHE)
     await keepPage(cache)
-    await refreshStock()
+    if (signedIn()) await refreshStock()
     const total = wanted.reduce((a, f) => a + f.bytes, 0)
     let done = 0
     // The other model's files stay; files the server no longer lists go, with their parts.
@@ -158,6 +190,21 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
     }
     for (const f of wanted) {
       const parts = Math.ceil(f.bytes / PART)
+      // Already kept from the other source (the same bytes): every part there, nothing to download.
+      const old = before?.files[f.name]
+      if (old && old.etag !== f.etag && sameFile(old, f)) {
+        let all = true
+        for (let i = 0; i < parts && all; i++) {
+          const have = await cache.match(at(`models/${f.name}?part=${i}`))
+          all = !!have && have.headers.get('x-etag') === old.etag && Number(have.headers.get('x-bytes')) === Math.min(f.bytes, (i + 1) * PART) - i * PART
+        }
+        if (all) {
+          keep.files[f.name] = { ...old, role: f.role, parts: f.parts ?? old.parts }
+          done += f.bytes
+          progress(done, total)
+          continue
+        }
+      }
       for (let i = 0; i < parts; i++) {
         const key = at(`models/${f.name}?part=${i}`)
         const start = i * PART, end = Math.min(f.bytes, start + PART) - 1
@@ -172,12 +219,25 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
           chunks = []
           let got = 0
           try {
-            const r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
-            if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
-            // The part's ETag is the listed file's: a model changed since the list is not mixed in.
-            if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1) {
-              r.body?.cancel().catch(() => {})
-              throw Object.assign(new Error('changed-on-server'), { final: true })
+            let r: Response
+            if (f.url) {
+              // Hugging Face: a range of the file at a pinned commit (CORS; no cookies), checked by its hash below.
+              r = await fetch(f.url, { headers: { range: `bytes=${start}-${end}` }, credentials: 'omit', cache: 'no-store', mode: 'cors' })
+              const whole = r.status === 200 && start === 0 && end === f.bytes - 1
+              if (r.status !== 206 && !whole) throw new Error(`HTTP ${r.status}`)
+              const range = r.headers.get('content-range')
+              if (r.status === 206 && range && range !== `bytes ${start}-${end}/${f.bytes}`) {
+                r.body?.cancel().catch(() => {})
+                throw Object.assign(new Error('changed-on-server'), { final: true })
+              }
+            } else {
+              r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
+              if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
+              // The part's ETag is the listed file's: a model changed since the list is not mixed in.
+              if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1) {
+                r.body?.cancel().catch(() => {})
+                throw Object.assign(new Error('changed-on-server'), { final: true })
+              }
             }
             const reader = r.body!.getReader()
             for (;;) {
@@ -189,6 +249,11 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
               progress(done, total)
             }
             if (got !== end - start + 1) throw new Error('incomplete')
+            // The part's hash when the list gives it (Hugging Face's always, the server's when its parts are made).
+            if (f.parts?.[i] && crypto.subtle) {
+              const blob = new Blob(chunks as BlobPart[])
+              if ((await sha256Hex(await blob.arrayBuffer())) !== f.parts[i]) throw new Error('corrupt')
+            }
             break
           } catch (err) {
             done -= got
@@ -199,7 +264,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
         }
         await cache.put(key, new Response(new Blob(chunks as BlobPart[]), { headers: { 'x-etag': f.etag, 'x-bytes': String(end - start + 1) } }))
       }
-      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role }
+      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.parts ? { parts: f.parts } : {}) }
     }
     await cache.put(at('models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
   }
@@ -363,7 +428,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
 
   /** Asked again whenever online (cheap: the ETag answers 304 when nothing changed). Never throws. */
   async function refreshStock() {
-    if (!navigator.onLine) return
+    if (!navigator.onLine || !signedIn()) return
     try {
       const cache = await caches.open(CACHE)
       const have = await cache.match(stockKey)
@@ -400,6 +465,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [])
     loadHead,
     stock,
     refreshStock,
+    forgetStock: async () => {
+      await (await caches.open(CACHE)).delete(stockKey).catch(() => false)
+    },
     lastMs,
   }
 }

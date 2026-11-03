@@ -12,8 +12,7 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  * onnxruntime-web may use threads) and may compile WebAssembly; the rest of the app keeps its own headers.
  *
  * Its models come from the identifier's own files (IDENTIFIER_DIR, tools/identifier/setup.sh; the head as
- * tools/identifier/export_offline_head.py writes it), only to a signed-in person (BioCLIP's weights are not for
- * public download), streamed from disk with ranges and an ETag: the page downloads them in parts.
+ * tools/identifier/export_offline_head.py writes it), only to a signed-in person (the public copies are on Hugging Face), streamed from disk with ranges and an ETag: the page downloads them in parts.
  *
  * Parts on the wire: the page asks for each 32 MB part (models/<name>?part=i). Each part is kept compressed
  * beside the models, zstd and gzip (precompressParts, tools/identifier/precompress_offline_parts.mjs, in a stamped
@@ -21,6 +20,9 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  * (Chrome 123+), else gzip (Safari). The browser decompresses while downloading; the page stores the plain bytes.
  * A part's ETag stays the uncompressed file's (weak, the same for every encoding), so parts a phone already has
  * stay valid. Without a matching compressed part (none made, or the model changed since) the plain bytes go.
+ *
+ * Without an account the page takes the same files from Hugging Face (frontend/src/lib/publicModels.ts; the CSP's
+ * connect-src allows huggingface.co and its CDN, *.hf.co); this route stays for the team.
  *
  * Two models to choose from on the page: the full encoder (role encoder) and the small one (role student, STUDENT
  * below); the detector and the head serve both. The page downloads either or both.
@@ -49,6 +51,11 @@ const types = {
   '.wasm': 'application/wasm',
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  // The Identificar page's field photos (identificar/field/).
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
 };
 
 const isolated = {
@@ -178,7 +185,9 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
           const parts = packed[m.name]?.parts;
           // `wire`: the bytes the parts take on the wire for this browser's Accept-Encoding.
           const wire = parts && encoding ? parts.reduce((a, p) => a + wireBytes(p, encoding), 0) : s.size;
-          files.push({ name: m.name, bytes: s.size, etag: etagOf(s), role: m.role, wire, encoding: parts ? encoding : null, ...(m.sha256 ? { sha256: m.sha256 } : {}) });
+          // `parts`: each part's SHA-256 (the parts manifest's): the page then knows the public copy on Hugging Face
+          // (frontend/src/lib/publicModels.ts, the same bytes) for the same model.
+          files.push({ name: m.name, bytes: s.size, etag: etagOf(s), role: m.role, wire, encoding: parts ? encoding : null, ...(m.sha256 ? { sha256: m.sha256 } : {}), ...(parts ? { parts: parts.map(p => p.sha256) } : {}) });
         }
         const body = JSON.stringify({ files, partBytes: PART_BYTES });
         res.writeHead(200, { ...isolated, 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'accept-encoding', 'content-length': Buffer.byteLength(body) });
@@ -198,7 +207,7 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
     const html = file.endsWith('.html');
     return await sendFile(req, res, file, {
       'content-security-policy':
-        "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
+        "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' https://huggingface.co https://*.hf.co; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
       'cache-control': html || file.endsWith('.webmanifest') ? 'no-cache' : 'public, max-age=3600',
     });
   } catch (e) {

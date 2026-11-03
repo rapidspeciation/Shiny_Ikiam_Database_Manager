@@ -46,6 +46,8 @@ test('offline test page: isolated page, models only signed in, ranges and ETags'
     assert.equal(page.headers.get('cross-origin-opener-policy'), 'same-origin');
     assert.equal(page.headers.get('cross-origin-embedder-policy'), 'require-corp');
     assert.match(page.headers.get('content-security-policy'), /'wasm-unsafe-eval'/);
+    // Models without an account come from Hugging Face and its CDN.
+    assert.match(page.headers.get('content-security-policy'), /connect-src 'self' https:\/\/huggingface\.co https:\/\/\*\.hf\.co;/);
     const bare = await fetch(base, { redirect: 'manual' });
     assert.equal(bare.status, 301);
     assert.equal((await fetch(`${base}/..%2Fsecret.txt`)).status, 404);
@@ -137,6 +139,8 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
       }
       list = JSON.parse((await raw(port, `${p}/list.json`, { 'accept-encoding': accept })).body);
       assert.equal(list.files[1].encoding, encoding);
+      // Each part's SHA-256 from the manifest: the page knows the same file on Hugging Face (publicModels.ts).
+      assert.deepEqual(list.files[1].parts, manifest.files[enc].parts.map(x => x.sha256));
       assert.ok(list.files[1].wire < big / 2);
       assert.equal(list.files[1].bytes, big);
     }

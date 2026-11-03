@@ -471,8 +471,20 @@ export function roleOf(name: string, role?: string | null): FileRole {
   return name.endsWith('.json') ? 'head-meta' : 'head'
 }
 
-export interface StoredFile { etag: string; bytes: number; role?: string }
-export interface ListedFile { name: string; etag: string; bytes: number; role: string }
+/** `parts`: the SHA-256 of each 32 MB part, when the source said (Hugging Face's list, the server's parts manifest). */
+export interface StoredFile { etag: string; bytes: number; role?: string; parts?: string[] }
+export interface ListedFile { name: string; etag: string; bytes: number; role: string; parts?: string[] }
+
+/**
+ * Whether the stored file is the listed one: the same ETag (the same source), or the same part hashes (a model
+ * downloaded from the server is the one on Hugging Face, and the other way round).
+ */
+export function sameFile(stored: StoredFile | undefined, listed: ListedFile): boolean {
+  if (!stored) return false
+  if (stored.etag === listed.etag) return true
+  const a = stored.parts, b = listed.parts
+  return !!a?.length && !!b?.length && stored.bytes === listed.bytes && a.length === b.length && a.every((h, i) => h === b[i])
+}
 
 /** The stored file of a role (its name), or null. */
 export function storedName(files: Record<string, StoredFile>, role: FileRole): string | null {
@@ -488,7 +500,7 @@ export function modelReady(kind: ModelKind, stored: Record<string, StoredFile> |
   return MODEL_ROLES[kind].every(role => {
     if (!listed) return storedName(stored, role) != null
     const f = listed.find(l => l.role === role)
-    return !!f && stored[f.name]?.etag === f.etag
+    return !!f && sameFile(stored[f.name], f)
   })
 }
 

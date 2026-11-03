@@ -4,11 +4,16 @@
  * .work/offline-id-tab-20261103/DESIGN.md). The models run in the page (lib/offlineEngine.ts); the wording of a
  * result is lib/identifyResult.ts; reference photos lib/identifyRefs.ts; the person's choices stay on the phone
  * (lib/identifyLog.ts). The team sees the flash-frozen gap of the candidate being compared (StockPanel).
+ * Without an account: the models from Hugging Face, the static field photos, no request to the team's API (no
+ * inventory, no species-photos), and the inventory a team session left on the phone is removed.
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Camera, Check, ChevronDown, ImageUp, RotateCcw, TriangleAlert, WifiOff } from 'lucide-vue-next'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
+import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
+import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../lib/publicModels'
+import { MODEL_ROLES } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
@@ -27,7 +32,19 @@ const pageFiles = () => [
     e => ('src' in e && e.src) || (e as HTMLLinkElement).href,
   ),
 ].filter(Boolean)
-const engine = createEngine(new URL('prueba-offline/', appRoot()).href, pageFiles)
+const signedIn = () => !!session.user
+const engine = createEngine(new URL('prueba-offline/', appRoot()).href, pageFiles, { signedIn })
+/** The session known (the header asks for it; offline the service worker answers, or it gives up). */
+const sessionKnown = () =>
+  session.ready
+    ? Promise.resolve()
+    : new Promise<void>(done => {
+        const stop = watch(
+          () => session.ready,
+          v => v && (stop(), done()),
+        )
+        setTimeout(() => (stop(), done()), 8000)
+      })
 
 const CHOSEN = 'prueba-offline:model' // shared with the test page
 const SIDE = 'identify:side'
@@ -87,14 +104,22 @@ async function refresh() {
 const pageOffline = ref<boolean | null>(null)
 
 const label = (k: ModelKind) => (k === 'small' ? t('Rápido y liviano') : t('Más preciso'))
+/** The public copies' sizes: what the line says before the list is known (offline). */
+const publicSize = (k: ModelKind) => PUBLIC_FILES.filter(f => MODEL_ROLES[k].includes(f.role)).reduce((a, f) => a + f.bytes, 0)
+/** Minutes on a 10 Mbit/s connection (a fair home or campus wifi), at least 1. */
+const minutes = (bytes: number) => Math.max(1, Math.round((bytes * 8) / 10e6 / 60))
 function sizeLine(k: ModelKind) {
-  const s = sizes.value[k]
-  if (!s) return k === 'small' ? t('Descarga unos 55 MB. Un poco menos preciso.') : t('Descarga unos 440 MB, mejor con wifi. Ocupa unos 650 MB en el teléfono.')
+  const s = sizes.value[k] ?? { plain: 1, wire: publicSize(k), total: publicSize(k) }
   if (!s.plain) return t('Ya está en este teléfono.')
   return k === 'small'
     ? t('Descarga unos {n} MB y ocupa unos {m} MB. Un poco menos preciso.', { n: roughMb(s.wire), m: roughMb(s.total) })
-    : t('Descarga unos {n} MB, mejor con wifi. Ocupa unos {m} MB en el teléfono.', { n: roughMb(s.wire), m: roughMb(s.total) })
+    : t('Descarga unos {n} MB (unos {min} minutos con un wifi de 10 Mbit/s; con datos móviles, mucho más). Ocupa unos {m} MB en el teléfono.', {
+        n: roughMb(s.wire),
+        min: minutes(s.wire),
+        m: roughMb(s.total),
+      })
 }
+const fromHf = computed(() => !!listing.value && 'source' in listing.value && listing.value.source === 'public')
 const lacksSpace = computed(() => {
   const s = sizes.value[wanted.value]
   return s && space.value && s.plain > space.value.free ? { need: roughMb(s.plain), free: mb(space.value.free) } : null
@@ -108,8 +133,8 @@ async function startDownload() {
   if (!files.value) await refresh()
   if (!files.value) {
     dlError.value =
-      listing.value && 'error' in listing.value && listing.value.error === 'signin'
-        ? t('Inicie sesión en la app para descargar.')
+      listing.value && 'error' in listing.value && listing.value.error === 'server'
+        ? t('El servidor no respondió. Pruebe de nuevo en un momento.')
         : t('Hace falta conexión a internet para descargar.')
     return
   }
@@ -238,6 +263,42 @@ const onPhoto = (e: Event) => {
   return takePhoto(e.target as HTMLInputElement, identify, () => (runError.value = t('No se pudo leer la foto. Si está en la nube (Google Fotos), descárguela primero o use Tomar foto.')))
 }
 
+// A photo pasted (Ctrl+V / ⌘V) or dropped on the page: the same path as «Elegir foto».
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+const finePointer = matchMedia('(pointer: fine)').matches
+const dragging = ref(false)
+function imageFile(list: DataTransfer | null): File | null {
+  if (!list) return null
+  for (const item of Array.from(list.items ?? [])) if (item.kind === 'file' && item.type.startsWith('image/')) return item.getAsFile()
+  return Array.from(list.files ?? []).find(f => f.type.startsWith('image/')) ?? null
+}
+function photoFile(file: File) {
+  if (!anyReady.value || busy.value || choosing.value) return
+  onPhoto({ target: { files: [file], value: '' } } as unknown as Event)
+}
+function onPaste(e: ClipboardEvent) {
+  const file = imageFile(e.clipboardData)
+  if (!file) return // text pasted into a field stays text
+  e.preventDefault()
+  photoFile(file)
+}
+const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+function onDragOver(e: DragEvent) {
+  if (!hasFiles(e)) return
+  e.preventDefault() // else the browser opens the image instead of the page
+  if (anyReady.value && !choosing.value) dragging.value = true
+}
+function onDrop(e: DragEvent) {
+  if (!hasFiles(e)) return
+  e.preventDefault()
+  dragging.value = false
+  const file = imageFile(e.dataTransfer)
+  if (file) photoFile(file)
+}
+const onDragLeave = (e: DragEvent) => {
+  if (!e.relatedTarget) dragging.value = false
+}
+
 // ---------------------------------------------------------------- the result
 
 const scores = computed(() => (result.value && head.value ? speciesScores(head.value, result.value.feature, sideValue.value) : null))
@@ -324,7 +385,7 @@ let refsTimer: ReturnType<typeof setTimeout> | null = null
 async function loadRefs(names: string[], tries = 0) {
   if (!names.length) return
   refsLoading.value = true
-  const { refs: got, pending } = await referencePhotos(names)
+  const { refs: got, pending } = await referencePhotos(names, { signedIn: signedIn() })
   refs.value = { ...refs.value, ...got }
   refsLoading.value = pending.length > 0 && tries < 8
   if (refsLoading.value) refsTimer = setTimeout(() => loadRefs(pending, tries + 1), 4000)
@@ -353,7 +414,7 @@ async function saveField() {
         ? t('El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.', { n: out.pending })
         : null
   } catch {
-    fieldNote.value = t('Hace falta conexión a internet y la sesión iniciada.')
+    fieldNote.value = t('Hace falta conexión a internet.')
   } finally {
     fieldProgress.value = null
   }
@@ -362,7 +423,8 @@ async function saveField() {
 // ---------------------------------------------------------------- the team's frozen stock
 
 const stock = ref<{ stock: FrozenStock; asOf: string } | null>(null)
-const ithomiiniGenera = computed(() => stock.value?.stock.ithomiiniGenera)
+// The team's list from the workbook when signed in; else the static one shipped with the models.
+const ithomiiniGenera = computed(() => (session.user && stock.value?.stock.ithomiiniGenera) || ITHOMIINI_GENERA)
 const detailOf = (name: string) => stock.value?.stock.detail?.[name] as StockDetail | undefined
 
 // ---------------------------------------------------------------- log, start
@@ -378,24 +440,34 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'nu
 const goOnline = () => {
   online.value = true
   refresh() // keeps the page too when it was opened without signal
-  engine.refreshStock().then(async () => (stock.value = await engine.stock()))
+  if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 }
 const goOffline = () => (online.value = false)
 onMounted(async () => {
   addEventListener('online', goOnline)
   addEventListener('offline', goOffline)
-  stock.value = await engine.stock()
+  addEventListener('paste', onPaste)
+  addEventListener('dragover', onDragOver)
+  addEventListener('dragleave', onDragLeave)
+  addEventListener('drop', onDrop)
+  await sessionKnown()
+  // Signed out (the server said so): the team's inventory a session left on this phone goes.
+  if (!session.user && navigator.onLine) await engine.forgetStock()
+  if (session.user) stock.value = await engine.stock()
   await refresh()
   if (ready.value.small || ready.value.full) await restoreLast()
-  if (session.user || navigator.onLine) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
+  if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
 onBeforeUnmount(() => {
   removeEventListener('online', goOnline)
   removeEventListener('offline', goOffline)
+  removeEventListener('paste', onPaste)
+  removeEventListener('dragover', onDragOver)
+  removeEventListener('dragleave', onDragLeave)
+  removeEventListener('drop', onDrop)
   if (refsTimer) clearTimeout(refsTimer)
 })
 const anyReady = computed(() => ready.value.small || ready.value.full)
-const signedOutNoModel = computed(() => checked.value && !anyReady.value && listing.value && 'error' in listing.value && listing.value.error === 'signin')
 </script>
 
 <template>
@@ -418,10 +490,6 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
       <p class="mt-1 text-fg-muted">
         {{ $t('Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.') }}
       </p>
-      <p v-if="signedOutNoModel" class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
-        {{ $t('Por ahora la descarga es para el equipo:') }}
-        <a :href="`${appRoot()}#/entrar`" class="font-medium underline">{{ $t('inicie sesión') }}</a>.
-      </p>
       <fieldset class="mt-4 space-y-2">
         <legend class="sr-only">{{ $t('Modelo') }}</legend>
         <label
@@ -432,7 +500,10 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
         >
           <input v-model="wanted" type="radio" name="model" :value="k" class="mt-1 size-4 accent-[var(--focus)]" />
           <span>
-            <span class="block font-medium">{{ label(k) }}<span v-if="ready[k]" class="ml-2 text-sm font-normal text-success-text">{{ $t('en el teléfono') }} ✓</span></span>
+            <span class="block font-medium"
+              >{{ label(k) }}<span v-if="k === 'small' && !ready[k]" class="ml-2 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">{{ $t('recomendado') }}</span
+              ><span v-if="ready[k]" class="ml-2 text-sm font-normal text-success-text">{{ $t('en el teléfono') }} ✓</span></span
+            >
             <span class="block text-sm text-fg-muted">{{ sizeLine(k) }}</span>
           </span>
         </label>
@@ -455,6 +526,8 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
         </p>
       </div>
       <p v-if="dlError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ dlError }}</p>
+      <p v-if="fromHf" class="mt-4 text-xs text-fg-subtle">{{ $t('Gratis y sin cuenta: los modelos se descargan de Hugging Face y quedan en este teléfono.') }}</p>
+      <IdentifyAbout class="mt-4" />
     </section>
 
     <!-- B and C: taking a photo, the result -->
@@ -519,6 +592,9 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
               <input ref="picker" type="file" accept="image/*" class="hidden" @change="onPhoto" />
             </div>
             <p v-if="!result" class="mt-2 text-sm text-fg-muted">{{ $t('Alas abiertas, de cerca, que la mariposa llene la foto.') }}</p>
+            <p v-if="finePointer" class="mt-1 text-sm text-fg-subtle">
+              {{ $t('También puede pegar una imagen ({keys}) o arrastrarla a la página.', { keys: isMac ? '⌘V' : 'Ctrl+V' }) }}
+            </p>
             <p v-if="busy" class="mt-3 text-sm" role="status">
               {{ busy === 'loading' ? $t('Preparando el identificador… la primera foto tarda más.') : $t('Analizando la foto…') }}
             </p>
@@ -625,7 +701,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
             <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
             <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
             <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
-            <button class="btn mt-2" :disabled="!!fieldProgress || !online || !session.user" @click="saveField">
+            <button class="btn mt-2" :disabled="!!fieldProgress || !online" @click="saveField">
               {{ field ? $t('Actualizar fotos') : $t('Guardar fotos') }}
             </button>
             <h3 class="mt-3 font-medium">{{ $t('Instalar en el teléfono') }}</h3>
@@ -634,9 +710,17 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
             </p>
             <button class="btn-danger mt-3" @click="removeModels">{{ $t('Borrar los modelos de este teléfono') }}</button>
           </details>
+          <IdentifyAbout />
         </div>
       </div>
     </template>
     <p v-else-if="!checked" class="text-fg-muted">{{ $t('Cargando…') }}</p>
+    <div
+      v-if="dragging"
+      class="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-brand/15 p-6"
+      aria-hidden="true"
+    >
+      <p class="rounded-lg border-2 border-dashed border-brand bg-surface px-6 py-4 text-lg font-medium">{{ $t('Suelte la foto para identificarla') }}</p>
+    </div>
   </div>
 </template>

@@ -1,0 +1,35 @@
+<script setup lang="ts">
+// «Acerca de y licencias» of the Identificar tab (views/IdentifyView.vue): where the models come from, their
+// licences (lib/publicModels.ts MODEL_PAGES, the Hugging Face model cards) and the reference photos' credit.
+import { MODEL_PAGES } from '../../lib/publicModels'
+</script>
+
+<template>
+  <details class="rounded-lg border border-border bg-surface p-3 text-sm">
+    <summary class="cursor-pointer font-medium">{{ $t('Acerca de y licencias') }}</summary>
+    <p class="mt-2 text-fg-muted">
+      {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este teléfono: no se envían a ningún servidor.') }}
+    </p>
+    <ul class="mt-2 list-disc space-y-1.5 pl-5">
+      <li>
+        {{ $t('Detector de alas: YOLO26n-seg de Ultralytics, ajustado por el proyecto.') }}
+        <a :href="MODEL_PAGES.detector" target="_blank" rel="noopener" class="text-brand-text underline">AGPL-3.0</a> ·
+        <a :href="MODEL_PAGES.detectorSource" target="_blank" rel="noopener" class="text-brand-text underline">{{ $t('código fuente') }}</a>
+      </li>
+      <li>
+        {{ $t('Modelo «Más preciso»: BioCLIP 2.5 (Imageomics Institute), convertido a int8 por el proyecto.') }}
+        <a :href="MODEL_PAGES.encoder" target="_blank" rel="noopener" class="text-brand-text underline">MIT</a> ·
+        <a :href="MODEL_PAGES.upstream" target="_blank" rel="noopener" class="text-brand-text underline">{{ $t('original') }}</a>
+      </li>
+      <li>
+        {{ $t('Modelo «Rápido y liviano»: entrenado por el proyecto para imitar a BioCLIP 2.5.') }}
+        <a :href="MODEL_PAGES.small" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
+      </li>
+      <li>
+        {{ $t('Clasificador de especies: entrenado por el proyecto con fotos de GBIF e iNaturalist y nombres de Butterflies of America y otras bases taxonómicas.') }}
+        <a :href="MODEL_PAGES.head" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
+      </li>
+      <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; el autor y la licencia van bajo cada foto.') }}</li>
+    </ul>
+  </details>
+</template>
