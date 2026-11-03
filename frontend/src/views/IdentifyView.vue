@@ -172,6 +172,10 @@ const firstRun = ref(true)
 const camera = ref<HTMLInputElement | null>(null)
 const picker = ref<HTMLInputElement | null>(null)
 const sideControl = ref<HTMLElement | null>(null)
+function focusSide() {
+  sideControl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  sideControl.value?.querySelector<HTMLElement>('[aria-checked=true]')?.focus({ preventScroll: true })
+}
 
 function cropUrl(rgb: Uint8Array) {
   const c = document.createElement('canvas')
@@ -484,7 +488,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
             </p>
             <p class="mt-1 text-sm text-fg-muted">
               {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
-              <button class="ml-1 text-brand-text hover:underline" @click="(sideControl?.scrollIntoView({ behavior: 'smooth', block: 'center' }), sideControl?.querySelector<HTMLElement>('[aria-checked=true]')?.focus({ preventScroll: true }))">{{ $t('cambiar') }}</button>
+              <button class="ml-1 text-brand-text hover:underline" @click="focusSide">{{ $t('cambiar') }}</button>
             </p>
 
             <section class="mt-4">
@@ -618,7 +622,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
             </dl>
             <h3 class="mt-3 font-medium">{{ $t('Fotos para el campo') }}</h3>
             <p class="text-fg-muted">{{ $t('Una foto de cada especie de Ithomiini, para comparar sin internet.') }}</p>
-            <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}.', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
+            <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
             <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
             <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
             <button class="btn mt-2" :disabled="!!fieldProgress || !online || !session.user" @click="saveField">

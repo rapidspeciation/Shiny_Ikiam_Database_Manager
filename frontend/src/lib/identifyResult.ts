@@ -142,7 +142,8 @@ export function stockGaps(detail: StockDetail | undefined, recorded: { East: boo
       M: short.reduce((a, r) => a + r.missingM, 0),
       F: short.reduce((a, r) => a + r.missingF, 0),
       short: short.map(r => ({ subspecies: r.subspecies, M: r.missingM, F: r.missingF })),
-      unassigned: u ? u.M + u.F + u.unknown : 0,
+      // Only males and females can fill a gap.
+      unassigned: u ? u.M + u.F : 0,
     }
   }).filter(m => m.short.length > 0)
   return { rows, apart, missing, bySubspecies }

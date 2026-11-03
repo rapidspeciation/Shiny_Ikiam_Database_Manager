@@ -35,7 +35,7 @@ const complete = computed(() => {
           ><template v-if="i">, </template><template v-if="s.subspecies"><i>{{ s.subspecies }}</i>{{ ' ' }}</template>{{ want(s.M, s.F) }}</template
         >
         <span v-if="m.unassigned" class="font-normal text-fg-muted">
-          ({{ $tn(m.unassigned, 'otro del {side} sin subespecie anotada; puede contar', 'otros {n} del {side} sin subespecie anotada; pueden contar', { side: sideName(m.side) }) }})</span
+          ({{ $tn(m.unassigned, 'otro sin subespecie anotada; puede contar', 'otros {n} sin subespecie anotada; pueden contar') }})</span
         >
       </li>
       <li v-for="s in complete" :key="s" class="text-success-text">{{ $t('{side}: completo', { side: sideName(s) }) }} ✓</li>

@@ -60,3 +60,24 @@ Grades: Sol A / APPROVE (F1-F4 resolved), Opus A- / APPROVE (F1-F6, F8 resolved;
 | opus | N2 | nit | opened offline, then signal: amber line stays | fixed: going online runs refresh(), which keeps the page again |
 | opus | N3 | nit | "+7 sin subespecie anotada" terse | fixed: "otros 7 del Este sin subespecie anotada; pueden contar" |
 | opus | N4 | nit | "cambiar" scrolls but does not move focus | fixed: focuses the selected side |
+
+## Round 4 (UI round 3, last): the fixes after round 2 (UI_REVIEW_R3.md, shots-r3/)
+
+Grades: Sol A / APPROVE (Sol N1, Opus N1-N4 resolved), Opus A / APPROVE (Sol N1, Opus N1-N4 resolved).
+
+| critic | id | sev | finding (short) | outcome |
+|---|---|---|---|---|
+| opus | M1 | nit | "del Este" repeats the side; the unassigned count includes no-sex specimens | fixed: side dropped; only ♂ and ♀ counted |
+| opus | M2 | nit | comma expression in a template handler | fixed: `focusSide()` |
+| self | - | nit | "p. m.." double period after the field-photo date | fixed |
+
+Final: both critics approve; no blocker or should open. Final screenshots: shots-final/.
+
+## Grades over the loop
+
+| round | Sol | Opus |
+|---|---|---|
+| brainstorm (draft design) | B, CHANGES | B, CHANGES |
+| UI 1 (implemented tab) | C, CHANGES | B+, CHANGES |
+| UI 2 (fixes) | A, APPROVE | A-, APPROVE |
+| UI 3 (last fixes) | A, APPROVE | A, APPROVE |

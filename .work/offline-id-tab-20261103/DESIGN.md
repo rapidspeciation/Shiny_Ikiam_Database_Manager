@@ -101,8 +101,11 @@ Desktop (≥ 1024 px): left column = headline + comparison; right column = list,
   isolation iNaturalist images cannot be shown directly, so they come through a same-origin, signed-in proxy limited to
   iNaturalist photo URLs (`/api/identify/ref-photo`). Each photo shown is kept on the phone (Cache Storage).
 - Offline: "Fotos para el campo" in Modelo y almacenamiento downloads one small photo per Ithomiini species of the
-  head (the genera the workbook marks Tribe = Ithomiini). The size is shown after counting what the server has ready,
-  and the measured size after the download, never a guess. Other candidates offline: "No hay fotos guardadas de
+  head (the genera the workbook marks Tribe = Ithomiini; 350 species in head b8127dbf). The size is shown after the
+  download, measured, never a guess. Measured in the lab on 3 Nov 2026: 73 photos = 2.0 MB (about 28 KB each), so
+  all 350 come to about 10 MB. The server looks each species up on iNaturalist once (one request a second, a few per
+  species): the first complete set takes about half an hour after the tab is first used; the tab says how many are
+  still being gathered. Other candidates offline: "No hay fotos guardadas de
   esta especie en el teléfono."
 - Team specimen photos stay signed-in only and are not part of the field set.
 
