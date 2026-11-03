@@ -451,21 +451,32 @@ onMounted(async () => {
   addEventListener('dragleave', onDragLeave)
   addEventListener('drop', onDrop)
   await sessionKnown()
-  // Signed in or out on this page (or the session came late): the page again, so nothing of the other state stays on
-  // screen (the team's reference photos, its inventory) and no answer of the old one lands after.
-  const signedInAs = session.user?.id ?? null
-  watch(
+  const known = session.ready
+  let signedInAs = session.user?.id ?? null
+  stopSessionWatch = watch(
     () => session.user?.id ?? null,
-    id => id !== signedInAs && location.reload(),
+    async id => {
+      if (id === signedInAs) return
+      // Signed in or out on this page: the page again, so nothing of the other state stays on screen (the team's
+      // reference photos, its inventory) and no answer of the old one lands after.
+      if (known || signedInAs) return location.reload()
+      // The session only came after the wait (slow signal): taken as it is, without a reload (no loop).
+      signedInAs = id
+      await refresh()
+      stock.value = await engine.stock()
+      engine.refreshStock().then(async () => (stock.value = await engine.stock()))
+    },
   )
   // Signed out (the server said so): the team's inventory a session left on this phone goes.
-  if (!session.user && navigator.onLine) await engine.forgetStock()
+  if (known && !session.user && navigator.onLine) await engine.forgetStock()
   if (session.user) stock.value = await engine.stock()
   await refresh()
   if (ready.value.small || ready.value.full) await restoreLast()
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
+let stopSessionWatch: (() => void) | null = null
 onBeforeUnmount(() => {
+  stopSessionWatch?.()
   removeEventListener('online', goOnline)
   removeEventListener('offline', goOffline)
   removeEventListener('paste', onPaste)
