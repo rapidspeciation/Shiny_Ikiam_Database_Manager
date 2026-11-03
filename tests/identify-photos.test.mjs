@@ -86,3 +86,34 @@ test('the Identificar page: isolated like the test page, no models of its own', 
     server.close();
   }
 });
+
+test('identifyUpload: a JPEG to the identifier with the side, the file removed after; bad input refused', async () => {
+  const { identifyUpload } = await import('../server/identify-photos.mjs');
+  const { existsSync, readdirSync } = await import('node:fs');
+  const scratch = mkdtempSync(join(tmpdir(), 'identify-upload-'));
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString('base64');
+  const seen = [];
+  const identifier = {
+    identify: async ({ path, side }) => {
+      seen.push({ side, there: existsSync(path) });
+      return { species: [['Mechanitis messenoides', 0.8]], subspecies: [['Mechanitis messenoides deceptus', 0.5]], genus: [['Mechanitis', 0.9]], crop: 'success', wingBox: [0.1, 0.2, 0.8, 0.9], prior: 'East', ms: 900, rssMb: 1 };
+    },
+  };
+  const ok = await identifyUpload({ identifier, body: { photo: jpeg, side: 'East' }, scratch });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body.species, [['Mechanitis messenoides', 0.8]]);
+  assert.deepEqual(ok.body.wingBox, [0.1, 0.2, 0.8, 0.9]);
+  assert.equal(ok.body.rssMb, undefined);
+  assert.deepEqual(seen, [{ side: 'East', there: true }]);
+  assert.deepEqual(readdirSync(scratch), []);
+  // Any other side is no side.
+  await identifyUpload({ identifier, body: { photo: jpeg, side: 'North' }, scratch });
+  assert.equal(seen[1].side, null);
+  assert.equal((await identifyUpload({ identifier, body: { photo: Buffer.from('GIF89a').toString('base64') }, scratch })).status, 400);
+  assert.equal((await identifyUpload({ identifier, body: { photo: '<script>' }, scratch })).status, 400);
+  assert.equal((await identifyUpload({ identifier, body: {}, scratch })).status, 400);
+  assert.equal((await identifyUpload({ identifier: null, body: { photo: jpeg }, scratch })).status, 503);
+  const failing = { identify: async () => ({ error: 'boom' }) };
+  assert.equal((await identifyUpload({ identifier: failing, body: { photo: jpeg }, scratch })).status, 503);
+  assert.deepEqual(readdirSync(scratch), []);
+});

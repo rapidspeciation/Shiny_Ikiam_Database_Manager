@@ -2,12 +2,17 @@
 // «Acerca de y licencias» of the Identificar tab (views/IdentifyView.vue): where the models come from, their
 // licences (lib/publicModels.ts MODEL_PAGES, the Hugging Face model cards) and the reference photos' credit.
 import { MODEL_PAGES } from '../../lib/publicModels'
+/** Signed in: the tab also offers «En línea (servidor)», which sends the photo. */
+defineProps<{ team?: boolean }>()
 </script>
 
 <template>
   <details class="rounded-lg border border-border bg-surface p-3 text-sm">
     <summary class="cursor-pointer font-medium">{{ $t('Acerca de y licencias') }}</summary>
-    <p class="mt-2 text-fg-muted">
+    <p v-if="team" class="mt-2 text-fg-muted">
+      {{ $t('Gratis y sin fines comerciales. «En este teléfono»: la foto se analiza en este dispositivo y no sale de él. «En línea (servidor)», solo para el equipo: la foto va al servidor del proyecto, que la analiza y no la guarda.') }}
+    </p>
+    <p v-else class="mt-2 text-fg-muted">
       {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este dispositivo: no se envían a ningún servidor.') }}
     </p>
     <ul class="mt-2 list-disc space-y-1.5 pl-5">

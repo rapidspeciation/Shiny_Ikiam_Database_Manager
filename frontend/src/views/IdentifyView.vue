@@ -9,6 +9,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Camera, Check, ChevronDown, ImageUp, RotateCcw, TriangleAlert, WifiOff } from 'lucide-vue-next'
+import { effectiveMode, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, type Mode, type ServerAnswer } from '../lib/identifyOnline'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
@@ -48,6 +49,7 @@ const sessionKnown = () =>
 
 const CHOSEN = 'prueba-offline:model' // shared with the test page
 const SIDE = 'identify:side'
+const MODE = 'identify:mode'
 const LAST = 'identify:last'
 const store = {
   get: (k: string) => {
@@ -190,6 +192,19 @@ type SideChoice = 'none' | 'East' | 'West'
 const side = ref<SideChoice>(((s: string | null) => (s === 'East' || s === 'West' ? s : 'none'))(store.get(SIDE)))
 watch(side, v => store.set(SIDE, v))
 const sideValue = computed<Side>(() => (side.value === 'none' ? null : side.value))
+// ---------------------------------------------------------------- where the photo is read: the server or this phone
+
+/** The person's choice on this device (null: none yet; online then when it can be). */
+const modeChoice = ref<Mode | null>(((m: string | null) => (m === 'online' || m === 'phone' ? m : null))(store.get(MODE)))
+const mode = computed<Mode>(() => effectiveMode(modeChoice.value, !!session.user, online.value))
+function chooseMode(m: Mode) {
+  if (m === 'online' && (!session.user || !online.value)) return
+  modeChoice.value = m
+  store.set(MODE, m)
+}
+/** What can read a photo now: the server, or a model on the phone. */
+const canIdentify = computed(() => mode.value === 'online' || anyReady.value)
+
 const SIDE_OPTIONS: { value: SideChoice; label: string }[] = [
   { value: 'none', label: 'No sé' },
   { value: 'East', label: 'Este (Amazonía)' },
@@ -200,15 +215,21 @@ const SIDE_OPTIONS: { value: SideChoice; label: string }[] = [
 
 interface Result {
   at: string
-  feature: Float32Array
+  /** Who read it: this phone's model (`feature`, `kind`) or the server (`server`, `photo`, `side`). */
+  source: Mode
+  feature?: Float32Array
   crop: string
   status: string
-  kind: ModelKind
+  kind?: ModelKind
   ms: number
+  server?: ServerAnswer
+  /** The smaller photo sent (base64 JPEG): sent again when the side changes. */
+  photo?: string
+  side?: Side
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
-const busy = ref<'loading' | 'analysing' | null>(null)
+const busy = ref<'loading' | 'sending' | 'analysing' | null>(null)
 const runError = ref<string | null>(null)
 const firstRun = ref(true)
 const camera = ref<HTMLInputElement | null>(null)
@@ -235,6 +256,7 @@ function cropUrl(rgb: Uint8Array) {
 }
 
 async function identify(photo: Photo) {
+  if (mode.value === 'online') return identifyOnline(photo)
   const kind = active.value
   runError.value = null
   if (!kind) return
@@ -247,7 +269,7 @@ async function identify(photo: Photo) {
     const out = await engine.run(photo, kind)
     head.value = engine.head()
     firstRun.value = false
-    result.value = { at: new Date().toISOString(), feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
+    result.value = { at: new Date().toISOString(), source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
     compared.value = null
     pick.value = null
     keepLast()
@@ -262,6 +284,70 @@ async function identify(photo: Photo) {
   } finally {
     busy.value = null
   }
+}
+async function identifyOnline(photo: Photo) {
+  runError.value = null
+  busy.value = 'sending'
+  try {
+    const canvas = await photoCanvas(photo.blob).catch(() => null)
+    if (!canvas) {
+      runError.value = t('No se pudo leer la foto. Pruebe con otra.')
+      return
+    }
+    const sent = jpegBase64(canvas)
+    const side = sideValue.value
+    const started = performance.now()
+    const out = await identifyOnServer(sent, side)
+    firstRun.value = false
+    result.value = {
+      at: new Date().toISOString(),
+      source: 'online',
+      crop: squareCrop(canvas, out.wingBox),
+      status: out.crop ?? 'success',
+      ms: Math.round(performance.now() - started),
+      server: out,
+      photo: sent,
+      side,
+    }
+    compared.value = null
+    pick.value = null
+    keepLast()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  } catch (err) {
+    runError.value = onlineError(err)
+  } finally {
+    busy.value = null
+    sideChangedMeanwhile()
+  }
+}
+/** A server result read again with the side now chosen (the server applies the side); on failure the side goes back. */
+async function rereadOnline() {
+  const r = result.value
+  if (!r || r.source !== 'online' || !r.photo || r.side === sideValue.value || busy.value) return
+  const side = sideValue.value
+  runError.value = null
+  busy.value = 'analysing'
+  try {
+    const out = await identifyOnServer(r.photo, side)
+    if (result.value !== r) return
+    result.value = { ...r, server: out, status: out.crop ?? r.status, side }
+    keepLast()
+  } catch (err) {
+    runError.value = onlineError(err)
+    sideFromResult(r)
+  } finally {
+    busy.value = null
+    sideChangedMeanwhile()
+  }
+}
+/** The side changed while the server was reading: read again with the side now chosen. */
+function sideChangedMeanwhile() {
+  const r = result.value
+  if (r?.source === 'online' && r.side !== sideValue.value) rereadOnline()
+}
+function sideFromResult(r: Result) {
+  const back: SideChoice = r.side === 'East' || r.side === 'West' ? r.side : 'none'
+  if (side.value !== back) side.value = back
 }
 function clearResult() {
   result.value = null
@@ -290,7 +376,7 @@ function imageFile(list: DataTransfer | null): File | null {
   return Array.from(list.files ?? []).find(f => f.type.startsWith('image/')) ?? null
 }
 function photoFile(file: File) {
-  if (!anyReady.value || busy.value || choosing.value) return
+  if (!canIdentify.value || busy.value || choosing.value) return
   onPhoto({ target: { files: [file], value: '' } } as unknown as Event)
 }
 function onPaste(e: ClipboardEvent) {
@@ -303,7 +389,7 @@ const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).inclu
 function onDragOver(e: DragEvent) {
   if (!hasFiles(e)) return
   e.preventDefault() // else the browser opens the image instead of the page
-  if (anyReady.value && !choosing.value) dragging.value = true
+  if (canIdentify.value && !choosing.value) dragging.value = true
 }
 function onDrop(e: DragEvent) {
   if (!hasFiles(e)) return
@@ -318,12 +404,19 @@ const onDragLeave = (e: DragEvent) => {
 
 // ---------------------------------------------------------------- the result
 
-// Every leaf's score (after the side's prior): the species sum them, the subspecies are the subspecies leaves.
-const leafP = computed(() => (result.value && head.value ? leafScores(head.value, result.value.feature, sideValue.value) : null))
+// On the phone: every leaf's score (after the side's prior): the species sum them, the subspecies are the subspecies
+// leaves. From the server: its lists (it applied the side).
+const fromServer = computed(() => (result.value?.source === 'online' && result.value.server ? serverRanking(result.value.server) : null))
+const leafP = computed(() =>
+  result.value?.source === 'phone' && result.value.feature && head.value ? leafScores(head.value, result.value.feature, sideValue.value) : null,
+)
 const scores = computed(() => (leafP.value && head.value ? sumSpecies(head.value, leafP.value) : null))
-const ranked = computed(() => (scores.value && head.value ? rank(scores.value, head.value.meta.species, 5) : null))
+const ranked = computed(() =>
+  fromServer.value ? { species: fromServer.value.species, genus: fromServer.value.genus } : scores.value && head.value ? rank(scores.value, head.value.meta.species, 5) : null,
+)
 /** The candidates' subspecies (most probable first), by species name; empty with an older head (no names). */
 const subspecies = computed(() => {
+  if (fromServer.value) return fromServer.value.ssp
   const out = new Map<string, Candidate[]>()
   const h = head.value
   if (!h || !leafP.value || !ranked.value) return out
@@ -338,7 +431,11 @@ const openSsp = ref<string | null>(null)
 const grouped = computed(() => (ranked.value ? groupByGenus(ranked.value.species, ranked.value.genus) : null))
 const top = computed(() => ranked.value?.species[0])
 const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus) : null))
-const sspHint = computed(() => (top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null))
+const sspHint = computed(() => {
+  const hint = top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null
+  // The server lists only its 5 most probable subspecies: one listed does not mean the model knows only one.
+  return hint && fromServer.value ? { ...hint, only: false } : hint
+})
 /** The line's score: of the whole photo when the species is clear; «if it is this species», its share of the species. */
 const sspPercent = (p: number) =>
   sspHint.value?.kind === 'if' && top.value?.p ? t('{p} de esa especie', { p: percent(p / top.value.p) }) : percent(p)
@@ -389,10 +486,14 @@ function keepLast() {
   const r = result.value
   if (!r) return
   try {
-    const f = new Uint8Array(r.feature.buffer.slice(0))
-    let bin = ''
-    for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
-    sessionStorage.setItem(LAST, JSON.stringify({ ...r, feature: btoa(bin), compared: compared.value, pick: pick.value }))
+    let feature: string | undefined
+    if (r.feature) {
+      const f = new Uint8Array(r.feature.buffer.slice(0))
+      let bin = ''
+      for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
+      feature = btoa(bin)
+    }
+    sessionStorage.setItem(LAST, JSON.stringify({ ...r, feature, compared: compared.value, pick: pick.value }))
   } catch {
     /* no session storage: not restored */
   }
@@ -402,11 +503,19 @@ async function restoreLast() {
     const raw = sessionStorage.getItem(LAST)
     if (!raw) return
     const v = JSON.parse(raw)
-    const bin = atob(v.feature)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    head.value = await engine.loadHead()
-    result.value = { ...v, feature: new Float32Array(bytes.buffer) }
+    if (v.source === 'online') {
+      // A server result: shown as it was, its side with it (a session that ended leaves nothing of the team's).
+      if (!session.user) return sessionStorage.removeItem(LAST)
+      result.value = v
+      sideFromResult(v)
+    } else {
+      if (!anyReady.value) return
+      const bin = atob(v.feature)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      head.value = await engine.loadHead()
+      result.value = { ...v, source: 'phone', feature: new Float32Array(bytes.buffer) }
+    }
     compared.value = v.compared ?? null
     pick.value = v.pick ?? null
   } catch {
@@ -414,6 +523,8 @@ async function restoreLast() {
   }
 }
 watch(compared, keepLast)
+// A server result is read again with the new side (the phone's is ranked again by itself).
+watch(sideValue, () => rereadOnline())
 // The log names what the screen shows first: a change of side rewrites the entry (the same time).
 watch(sideValue, () => {
   if (result.value && top.value && smallThumb.value)
@@ -528,7 +639,7 @@ onMounted(async () => {
   if (known && !session.user && navigator.onLine) await engine.forgetStock()
   if (session.user) stock.value = await engine.stock()
   await refresh()
-  if (ready.value.small || ready.value.full) await restoreLast()
+  await restoreLast()
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
 let stopSessionWatch: (() => void) | null = null
@@ -549,8 +660,47 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 pt-4 pb-16 sm:px-6">
-    <!-- The one status line: whether it works here without signal, and with which model. -->
-    <div v-if="anyReady && !choosing" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+    <!-- Where the photo is read: the server (signed in, with signal) or this phone. Signed out: this phone only. -->
+    <div v-if="checked && session.user" class="mb-3" data-testid="mode">
+      <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
+        <button
+          role="radio"
+          :aria-checked="mode === 'online'"
+          :disabled="!online"
+          class="rounded-l-md px-3 py-2 text-sm disabled:cursor-not-allowed disabled:text-fg-subtle"
+          :class="mode === 'online' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-stone-100'"
+          @click="chooseMode('online')"
+        >
+          {{ $t('En línea (servidor)') }}<span v-if="!online" class="text-xs"> · {{ $t('sin señal') }}</span>
+        </button>
+        <button
+          role="radio"
+          :aria-checked="mode === 'phone'"
+          class="rounded-r-md px-3 py-2 text-sm"
+          :class="mode === 'phone' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-stone-100'"
+          @click="chooseMode('phone')"
+        >
+          {{ $t('En este teléfono') }}
+        </button>
+      </div>
+      <p class="hint mt-1">
+        {{
+          mode === 'online'
+            ? $t('La foto se envía al servidor del proyecto, que la analiza y no la guarda. No hace falta descargar nada.')
+            : !online
+              ? $t('Sin señal: se usa el modelo de este teléfono.')
+              : anyReady
+                ? $t('Con el modelo descargado; funciona también sin señal.')
+                : $t('Primero hay que descargar el modelo a este teléfono.')
+        }}
+      </p>
+    </div>
+    <p v-else-if="checked" class="mb-3 text-xs text-fg-subtle" data-testid="mode">
+      {{ $t('La foto se analiza en este teléfono. La opción en línea (servidor) es solo para el equipo, con su cuenta.') }}
+    </p>
+
+    <!-- On the phone: whether it works here without signal, and with which model. -->
+    <div v-if="mode === 'phone' && anyReady && !choosing" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
       <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
       <span v-else-if="pageOffline === null" class="text-fg-muted">{{ $t('Preparando para usar sin internet…') }}</span>
       <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
@@ -562,7 +712,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
     </div>
 
     <!-- A. Choosing and downloading a model -->
-    <section v-if="checked && (!anyReady || choosing)" class="max-w-xl">
+    <section v-if="checked && (choosing || (mode === 'phone' && !anyReady))" class="max-w-xl">
       <h1 class="text-xl font-semibold">{{ $t('Identificar una mariposa') }}</h1>
       <p class="mt-1 text-fg-muted">
         {{ $t('Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.') }}
@@ -604,11 +754,11 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       </div>
       <p v-if="dlError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ dlError }}</p>
       <p v-if="fromHf" class="mt-4 text-xs text-fg-subtle">{{ $t('Gratis y sin cuenta: los modelos se descargan de Hugging Face y quedan en este teléfono.') }}</p>
-      <IdentifyAbout class="mt-4" />
+      <IdentifyAbout class="mt-4" :team="!!session.user" />
     </section>
 
     <!-- B and C: taking a photo, the result -->
-    <template v-else-if="anyReady">
+    <template v-else-if="checked && canIdentify">
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div class="min-w-0">
           <template v-if="result && ranked">
@@ -640,13 +790,16 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
               {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.p) }})</span>
               <template v-if="sspHint.alt">
-                {{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.alt.p) }})</span>
+                {{ ' ' }}{{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.alt.p) }})</span>
               </template>
               <span v-if="sspHint.only" class="text-fg-muted"> · {{ $t('la única subespecie que conoce el modelo') }}</span>
             </p>
             <p class="mt-1 text-sm text-fg-muted">
               {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
               <button class="ml-1 text-brand-text hover:underline" @click="focusSide">{{ $t('cambiar') }}</button>
+            </p>
+            <p class="mt-1 text-xs text-fg-subtle" data-testid="result-source">
+              {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
 
             <section class="mt-4">
@@ -681,7 +834,13 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               {{ $t('También puede pegar una imagen ({keys}) o arrastrarla a la página.', { keys: isMac ? '⌘V' : 'Ctrl+V' }) }}
             </p>
             <p v-if="busy" class="mt-3 text-sm" role="status">
-              {{ busy === 'loading' ? $t('Preparando el identificador… la primera foto tarda más.') : $t('Analizando la foto…') }}
+              {{
+                busy === 'loading'
+                  ? $t('Preparando el identificador… la primera foto tarda más.')
+                  : busy === 'sending'
+                    ? $t('Enviando la foto al servidor y analizándola…')
+                    : $t('Analizando la foto…')
+              }}
             </p>
             <p v-if="runError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ runError }}</p>
             <div ref="sideControl" class="mt-4">
@@ -795,7 +954,10 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <summary class="cursor-pointer font-medium">{{ $t('Modelo y almacenamiento') }}</summary>
             <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               <dt class="text-fg-muted">{{ $t('En uso') }}</dt>
-              <dd>{{ label(active!) }} <button class="ml-1 text-brand-text hover:underline" @click="choosing = true">{{ $t('Cambiar') }}</button></dd>
+              <dd>
+                {{ active ? label(active) : $t('ninguno en este teléfono') }}
+                <button class="ml-1 text-brand-text hover:underline" @click="choosing = true">{{ active ? $t('Cambiar') : $t('Descargar') }}</button>
+              </dd>
               <template v-if="engine.lastMs.photo">
                 <dt class="text-fg-muted">{{ $t('Última foto') }}</dt>
                 <dd>{{ $t('{s} s', { s: (engine.lastMs.photo / 1000).toFixed(1) }) }}</dd>
@@ -813,9 +975,9 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p class="text-fg-muted">
               {{ $t('Android: menú ⋮ → «Instalar app». iPhone: Compartir → «Agregar a inicio», y abra la app desde el ícono.') }}
             </p>
-            <button class="btn-danger mt-3" @click="removeModels">{{ $t('Borrar los modelos de este teléfono') }}</button>
+            <button v-if="anyReady" class="btn-danger mt-3" @click="removeModels">{{ $t('Borrar los modelos de este teléfono') }}</button>
           </details>
-          <IdentifyAbout />
+          <IdentifyAbout :team="!!session.user" />
         </div>
       </div>
     </template>

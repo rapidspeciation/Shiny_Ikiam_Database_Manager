@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createReports } from './reports.mjs';
@@ -52,6 +53,7 @@ import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-galler
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
 import { CURATION_TOOLS, CURATION_TOOL_NAMES, createCuration, curationSummary, runPhotoFactsTool } from './photo-curation.mjs';
 import { createIdentifier } from './identifier.mjs';
+import { identifyUpload } from './identify-photos.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -7006,6 +7008,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (path === '/api/chat/proposals/from-walk' && method === 'POST') return walkProposal(body, user);
     // A collector new to the workbook, in Lists (Monitoreo → Importar).
     if (path === '/api/chat/proposals/new-collector' && method === 'POST') return collectorProposal(body, user);
+    // Identificar's «En línea (servidor)»: one photo read by the AI Identifier, nothing kept (server/identify-photos.mjs).
+    if (path === '/api/ai/identify-photo' && method === 'POST')
+      return identifyUpload({ identifier, body, scratch: config.identifyScratch ?? join(tmpdir(), 'ithomiini-identify') });
     // The species in the walk's photos, read in the background: start (POST) and progress (GET).
     const walkIdsMatch = /^\/api\/chat\/walks\/([0-9a-f-]{36})\/identify$/.exec(path);
     if (walkIdsMatch && (method === 'GET' || method === 'POST')) {
