@@ -18,3 +18,14 @@ Brief: PUBLIC_REVIEW_BRIEF.md. Round 1 on 2164cf3..7137043; round 2 on 7137043..
 | opus | F8 | nit | MB units | declined |
 | opus | F9 | nit | Safari untested | follow-up: one real-iPhone run of the small download |
 | self | - | should | detector card said NMS inside the graph | fixed: the file is the end-to-end (TopK) export (metadata end2end True, Ultralytics 8.4.132), matched to the .pt on 12/12 photos (wingseg_v5_field FINDINGS §6 note) |
+
+## Round 2: Sol B / CHANGES, Opus B+ / CHANGES
+
+Sol: F1 resolved, F3 resolved, F4 resolved, F2 still open (no runnable entry or build config). Opus: F1-F4, F7 resolved;
+F6, F8 declines and F9 follow-up accepted; F5 still open through N1.
+
+| critic | id | sev | finding | outcome |
+|---|---|---|---|---|
+| sol | F2 | blocker | no runnable example with build config | fixed: source/example/ (package.json with onnxruntime-web 1.30.0, Vite, COOP/COEP config, copy-ort.mjs, index.html, main.ts, README). Built and run in Chromium from a clean copy: isolated, HF download, crop success, Hypomenitis libethris 91.1 % (as the app). HF commit 2ab9c3be |
+| opus | N1 | should | late session (> 8 s) reloads every time on weak signal; inventory cleared on the timeout path | fixed: reload only when the session was known and changes; a late session is applied without reload; forgetStock only when the server answered. slow-session.mjs: session delayed 10 s, 1 load, panel shown |
+| opus | N2 | nit | watch not stopped on unmount | fixed: stopped in onBeforeUnmount |
