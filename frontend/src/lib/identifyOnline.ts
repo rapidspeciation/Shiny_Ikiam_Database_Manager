@@ -15,6 +15,8 @@ export interface ServerAnswer {
   species: [string, number][]
   subspecies: [string, number][]
   genus: [string, number][]
+  /** Where the head records each listed species in Ecuador (null: not known on this server). */
+  recorded?: Record<string, { East: boolean; West: boolean }> | null
   crop: string | null
   wingBox: [number, number, number, number] | null
   prior: string | null

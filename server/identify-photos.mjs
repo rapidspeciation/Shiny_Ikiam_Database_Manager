@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const HOSTS = /^https:\/\/(inaturalist-open-data\.s3\.amazonaws\.com|static\.inaturalist\.org)\/photos\/\d+\/(square|small|medium)\.(jpe?g|png|gif|webp)$/i;
@@ -91,11 +92,11 @@ export function fieldPhotos(photosOf, names, { batch = 300 } = {}) {
  * the page made smaller (JPEG as base64, at most MAX_UPLOAD bytes) read by the team's AI Identifier
  * (server/identifier.mjs, the same process as identify_species), with the side of the Andes. The photo is written to
  * a file of its own for the identifier and removed after, whatever the answer: nothing is kept.
- * Returns { status, body }: 200 { species, subspecies, genus, crop, wingBox, prior, ms } (the worker's lists),
+ * Returns { status, body }: 200 { species, subspecies, genus, recorded, crop, wingBox, prior, ms } (the worker's lists),
  * 400 a bad photo, 503 no identifier here or it failed.
  */
 export const MAX_UPLOAD = 6 * 1024 * 1024;
-export async function identifyUpload({ identifier, body, scratch }) {
+export async function identifyUpload({ identifier, body, scratch, sides = async () => null }) {
   const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
   if (!identifier) return bad(503, 'unavailable', 'The identifier is not installed on this server.');
   const data = typeof body?.photo === 'string' ? body.photo : '';
@@ -107,13 +108,17 @@ export async function identifyUpload({ identifier, body, scratch }) {
   const path = join(scratch, `${randomUUID()}.jpg`);
   try {
     writeFileSync(path, bytes, { mode: 0o600 });
-    const out = await identifier.identify({ path, side });
+    const out = await identifier.identify({ path, side, first: true });
     if (!out || out.error) return bad(503, 'identifier_failed', String(out?.error ?? 'The identifier did not answer.'));
     const pairs = list => (Array.isArray(list) ? list.filter(x => Array.isArray(x) && typeof x[0] === 'string').map(([n, p]) => [n, Number(p) || 0]) : []);
+    const species = pairs(out.species);
+    const known = await sides().catch(() => null);
     return {
       status: 200,
       body: {
-        species: pairs(out.species),
+        species,
+        // The sides of the Andes where the head records each species in Ecuador (the frozen panel's targets).
+        recorded: known ? Object.fromEntries(species.filter(([n]) => known.has(n)).map(([n]) => [n, known.get(n)])) : null,
         subspecies: pairs(out.subspecies),
         genus: pairs(out.genus),
         crop: typeof out.crop === 'string' ? out.crop : null,
@@ -125,4 +130,28 @@ export async function identifyUpload({ identifier, body, scratch }) {
   } finally {
     rmSync(path, { force: true });
   }
+}
+
+/**
+ * species -> { East, West }: where the offline head's JSON (the same head as the server's) records each species in
+ * Ecuador, as frontend/src/lib/offlineId.ts speciesSides reads it (geo: one hex digit per leaf, bits 1 known,
+ * 2 in Ecuador, 4 East, 8 West). Read once per file.
+ */
+let sidesMemo = { path: null, sides: null };
+export async function headSides(path) {
+  if (sidesMemo.path === path) return sidesMemo.sides;
+  const meta = JSON.parse(await readFile(path, 'utf8'));
+  const out = new Map();
+  if (typeof meta.geo === 'string' && Array.isArray(meta.leaf2sp))
+    for (let r = 0; r < meta.geo.length; r++) {
+      const g = parseInt(meta.geo[r], 16);
+      if (!(g & 1) || !(g & 2)) continue;
+      const name = meta.species[meta.leaf2sp[r]];
+      const e = out.get(name) ?? { East: false, West: false };
+      if (g & 4) e.East = true;
+      if (g & 8) e.West = true;
+      out.set(name, e);
+    }
+  sidesMemo = { path, sides: out };
+  return out;
 }

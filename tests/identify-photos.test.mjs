@@ -117,3 +117,19 @@ test('identifyUpload: a JPEG to the identifier with the side, the file removed a
   assert.equal((await identifyUpload({ identifier: failing, body: { photo: jpeg }, scratch })).status, 503);
   assert.deepEqual(readdirSync(scratch), []);
 });
+
+test('headSides: the sides of the Andes the head records per species; identifyUpload lists them for its species', async () => {
+  const { headSides, identifyUpload } = await import('../server/identify-photos.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'head-sides-'));
+  const path = join(dir, 'head.json');
+  // leaves: A east (1|2|4=7), A west (1|2|8=b), B known but not in Ecuador (1), C east (7)
+  writeFileSync(path, JSON.stringify({ species: ['G a', 'G b', 'G c'], leaf2sp: [0, 0, 1, 2], geo: '7b17' }));
+  const sides = await headSides(path);
+  assert.deepEqual(sides.get('G a'), { East: true, West: true });
+  assert.equal(sides.has('G b'), false);
+  assert.deepEqual(sides.get('G c'), { East: true, West: false });
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
+  const identifier = { identify: async ({ first }) => (assert.equal(first, true), { species: [['G c', 0.6], ['G b', 0.2]], subspecies: [], genus: [['G', 0.8]], crop: 'success' }) };
+  const out = await identifyUpload({ identifier, body: { photo: jpeg }, scratch: join(dir, 's'), sides: () => headSides(path) });
+  assert.deepEqual(out.body.recorded, { 'G c': { East: true, West: false } });
+});

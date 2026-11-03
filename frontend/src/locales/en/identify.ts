@@ -166,4 +166,5 @@ export default {
   'No se pudo leer la foto. Pruebe con otra.': 'The photo could not be read. Try another one.',
   'La foto es demasiado grande. Pruebe con otra.': 'The photo is too large. Try another one.',
   'El identificador del servidor no respondió. Pruebe de nuevo o use «En este teléfono».': 'The server’s identifier did not answer. Try again or use “On this phone”.',
+  'Sin señal y sin modelo en este teléfono: conéctese para usar el servidor o descargar el modelo.': 'No signal and no model on this phone: connect to use the server or download the model.',
 }

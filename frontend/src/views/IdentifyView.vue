@@ -323,7 +323,8 @@ async function identifyOnline(photo: Photo) {
 /** A server result read again with the side now chosen (the server applies the side); on failure the side goes back. */
 async function rereadOnline() {
   const r = result.value
-  if (!r || r.source !== 'online' || !r.photo || r.side === sideValue.value || busy.value) return
+  // Only while online is in use: otherwise the side is kept for the next photo and the old result stays as it is.
+  if (!r || r.source !== 'online' || !r.photo || r.side === sideValue.value || busy.value || mode.value !== 'online') return
   const side = sideValue.value
   runError.value = null
   busy.value = 'analysing'
@@ -451,7 +452,13 @@ const stockFocus = computed(() => {
   const s = c && subspecies.value.get(c.name)?.[0]
   return s && s.p >= SSP_MIN && s.p >= SSP_SHARE * c.p ? { epithet: epithet(s.name), p: s.p } : null
 })
-const recordedSides = computed(() => (head.value ? speciesSides(head.value) : new Map()))
+const recordedSides = computed<Map<string, { East: boolean; West: boolean }>>(() =>
+  result.value?.source === 'online'
+    ? new Map(Object.entries(result.value.server?.recorded ?? {}))
+    : head.value
+      ? speciesSides(head.value)
+      : new Map(),
+)
 const noWings = computed(() => !!result.value && result.value.status !== 'success')
 
 function nextCandidate() {
@@ -688,7 +695,9 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           mode === 'online'
             ? $t('La foto se envía al servidor del proyecto, que la analiza y no la guarda. No hace falta descargar nada.')
             : !online
-              ? $t('Sin señal: se usa el modelo de este teléfono.')
+              ? anyReady
+                ? $t('Sin señal: se usa el modelo de este teléfono.')
+                : $t('Sin señal y sin modelo en este teléfono: conéctese para usar el servidor o descargar el modelo.')
               : anyReady
                 ? $t('Con el modelo descargado; funciona también sin señal.')
                 : $t('Primero hay que descargar el modelo a este teléfono.')
@@ -931,7 +940,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :recorded="recordedSides.get(showing)"
             :as-of="stock.asOf"
             :focus="stockFocus"
-            :names-subspecies="!!head?.ssp"
+            :names-subspecies="result.source === 'online' || !!head?.ssp"
           />
 
           <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">

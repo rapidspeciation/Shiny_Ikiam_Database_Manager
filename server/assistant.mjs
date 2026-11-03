@@ -53,7 +53,8 @@ import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-galler
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES } from './photo-facts.mjs';
 import { CURATION_TOOLS, CURATION_TOOL_NAMES, createCuration, curationSummary, runPhotoFactsTool } from './photo-curation.mjs';
 import { createIdentifier } from './identifier.mjs';
-import { identifyUpload } from './identify-photos.mjs';
+import { headSides, identifyUpload } from './identify-photos.mjs';
+import { MODELS } from './offline-id.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -7010,7 +7011,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (path === '/api/chat/proposals/new-collector' && method === 'POST') return collectorProposal(body, user);
     // Identificar's «En línea (servidor)»: one photo read by the AI Identifier, nothing kept (server/identify-photos.mjs).
     if (path === '/api/ai/identify-photo' && method === 'POST')
-      return identifyUpload({ identifier, body, scratch: config.identifyScratch ?? join(tmpdir(), 'ithomiini-identify') });
+      return identifyUpload({
+        identifier,
+        body,
+        scratch: config.identifyScratch ?? join(tmpdir(), 'ithomiini-identify'),
+        sides: async () => (config.identifierDir ? headSides(join(config.identifierDir, MODELS.find(m => m.role === 'head-meta').path)) : null),
+      });
     // The species in the walk's photos, read in the background: start (POST) and progress (GET).
     const walkIdsMatch = /^\/api\/chat\/walks\/([0-9a-f-]{36})\/identify$/.exec(path);
     if (walkIdsMatch && (method === 'GET' || method === 'POST')) {

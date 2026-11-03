@@ -30,8 +30,21 @@ export function createIdentifier({ dir = null, python = null, script = SCRIPT, a
   let seq = 0;
   let lastMs = null;
   let photos = 0;
-  /** One photo at a time: each call waits for the one before. */
-  let chain = Promise.resolve();
+  /**
+   * One photo at a time: each call waits for those before it. A photo a person waits for (`first`, Identificar's
+   * «En línea») goes ahead of the background ones (a walk's photos), after the other such photos.
+   */
+  const queue = [];
+  let running = false;
+  async function pump() {
+    if (running) return;
+    running = true;
+    while (queue.length) {
+      const { job, resolve } = queue.shift();
+      resolve(await run(job).catch(e => ({ error: String(e?.message || e) })));
+    }
+    running = false;
+  }
 
   const missing = () => {
     if (!dir || !existsSync(dir)) return 'The identifier is not installed on this server (tools/identifier/setup.sh).';
@@ -125,11 +138,13 @@ export function createIdentifier({ dir = null, python = null, script = SCRIPT, a
 
   return {
     /** A photo on this server (`path`): { species, subspecies, genus, top, crop, wingBox, prior, ms } or { error }. */
-    identify({ path, side = null, box = null }) {
+    identify({ path, side = null, box = null, first = false }) {
       const job = { id: String(++seq), path, ...(side ? { side } : {}), ...(box ? { box } : {}) };
-      const next = chain.then(() => run(job));
-      chain = next.catch(() => {});
-      return next;
+      return new Promise(resolve => {
+        const at = first ? queue.findIndex(q => !q.first) : -1;
+        queue.splice(at < 0 ? queue.length : at, 0, { job, resolve, first });
+        pump();
+      });
     },
     status: () => ({ installed: !missing(), running: !!child, loaded, photos, lastMs }),
     close() {

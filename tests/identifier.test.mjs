@@ -77,3 +77,12 @@ test('a photo that takes too long: the process is stopped and the call says to c
   assert.match(out.error, /took more than/);
   assert.deepEqual((await identifier.identify({ path: photo('ok.jpg', 'Oleria cyrene 0.4') })).species[0], ['Oleria cyrene', 0.4]);
 });
+
+test('a photo a person waits for (first) goes ahead of the queued background photos', async t => {
+  const { photo, identifier } = setup(t);
+  const done = [];
+  const ask = (name, first = false) => identifier.identify({ path: photo(`${name}.jpg`, `Oleria ${name} 0.5`), first }).then(() => done.push(name));
+  await Promise.all([ask('w1'), ask('w2'), ask('w3'), ask('p1', true), ask('p2', true)]);
+  // w1 was already running; the people's photos then, in their order; then the rest of the walk.
+  assert.deepEqual(done, ['w1', 'p1', 'p2', 'w2', 'w3']);
+});
