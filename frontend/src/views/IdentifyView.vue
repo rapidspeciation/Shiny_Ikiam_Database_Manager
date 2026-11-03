@@ -451,6 +451,13 @@ onMounted(async () => {
   addEventListener('dragleave', onDragLeave)
   addEventListener('drop', onDrop)
   await sessionKnown()
+  // Signed in or out on this page (or the session came late): the page again, so nothing of the other state stays on
+  // screen (the team's reference photos, its inventory) and no answer of the old one lands after.
+  const signedInAs = session.user?.id ?? null
+  watch(
+    () => session.user?.id ?? null,
+    id => id !== signedInAs && location.reload(),
+  )
   // Signed out (the server said so): the team's inventory a session left on this phone goes.
   if (!session.user && navigator.onLine) await engine.forgetStock()
   if (session.user) stock.value = await engine.stock()

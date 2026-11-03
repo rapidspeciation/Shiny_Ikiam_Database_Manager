@@ -35,3 +35,14 @@ describe('the public (Hugging Face) models', () => {
     expect(sameFile(undefined, f)).toBe(false)
   })
 })
+
+describe('reference photo credits', () => {
+  it('link each licence to its Creative Commons deed and each photo to its iNaturalist page', async () => {
+    const { licenseUrl, inatPhotoPage } = await import('../identifyRefs')
+    expect(licenseUrl('CC-BY-NC-ND')).toBe('https://creativecommons.org/licenses/by-nc-nd/4.0/')
+    expect(licenseUrl('CC-BY')).toBe('https://creativecommons.org/licenses/by/4.0/')
+    expect(licenseUrl('CC0')).toBe('https://creativecommons.org/publicdomain/zero/1.0/')
+    expect(licenseUrl('')).toBeNull()
+    expect(inatPhotoPage('https://inaturalist-open-data.s3.amazonaws.com/photos/27132503/small.jpg')).toBe('https://www.inaturalist.org/photos/27132503')
+  })
+})

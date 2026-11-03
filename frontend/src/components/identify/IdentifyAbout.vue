@@ -8,7 +8,7 @@ import { MODEL_PAGES } from '../../lib/publicModels'
   <details class="rounded-lg border border-border bg-surface p-3 text-sm">
     <summary class="cursor-pointer font-medium">{{ $t('Acerca de y licencias') }}</summary>
     <p class="mt-2 text-fg-muted">
-      {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este teléfono: no se envían a ningún servidor.') }}
+      {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este dispositivo: no se envían a ningún servidor.') }}
     </p>
     <ul class="mt-2 list-disc space-y-1.5 pl-5">
       <li>
@@ -26,10 +26,10 @@ import { MODEL_PAGES } from '../../lib/publicModels'
         <a :href="MODEL_PAGES.small" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
       </li>
       <li>
-        {{ $t('Clasificador de especies: entrenado por el proyecto con fotos de GBIF e iNaturalist y nombres de Butterflies of America y otras bases taxonómicas.') }}
+        {{ $t('Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.') }}
         <a :href="MODEL_PAGES.head" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
       </li>
-      <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; el autor y la licencia van bajo cada foto.') }}</li>
+      <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.') }}</li>
     </ul>
   </details>
 </template>

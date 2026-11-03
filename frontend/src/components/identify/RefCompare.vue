@@ -3,7 +3,7 @@
 // A genus fallback is said to be another species; the team's specimens are named as such.
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
-import type { Refs } from '../../lib/identifyRefs'
+import { licenseUrl, type Refs } from '../../lib/identifyRefs'
 
 const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean }>()
 const at = ref(0)
@@ -51,7 +51,15 @@ const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
       <figcaption v-if="photo" class="mt-1 text-xs text-fg-muted">
         <span v-if="photo.level === 'genus'" class="font-medium text-amber-800">{{ $t('Foto de otra especie del género {genus}', { genus }) }}. </span>
         <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ photo.sex }}</template></span>
-        <span v-else class="break-words">{{ photo.credit }}<template v-if="photo.license"> · {{ photo.license }}</template></span>
+        <span v-else class="break-words"
+          ><a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
+          ><template v-else>{{ photo.credit }}</template
+          ><template v-if="photo.license">
+            ·
+            <a v-if="licenseUrl(photo.license)" :href="licenseUrl(photo.license)!" target="_blank" rel="noopener license" class="underline-offset-2 hover:underline">{{ photo.license }}</a
+            ><template v-else>{{ photo.license }}</template></template
+          ></span
+        >
         <span v-if="photos.length > 1" class="text-fg-subtle"> · {{ Math.min(at, photos.length - 1) + 1 }}/{{ photos.length }}</span>
       </figcaption>
     </figure>

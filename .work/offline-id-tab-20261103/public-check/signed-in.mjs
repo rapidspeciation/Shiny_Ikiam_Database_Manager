@@ -1,0 +1,37 @@
+// The team's view: small model downloaded signed out (Hugging Face), then sign in: the same files count (no new
+// download), the server's list, the frozen panel. node signed-in.mjs <base/> <out> <photo> <credentials.json> [phone|desktop]
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+const { chromium } = await import('/home/franz/.local/share/agent-tools/node_modules/playwright/index.mjs');
+const [base, out, photo, credFile, form = 'phone'] = process.argv.slice(2);
+mkdirSync(out, { recursive: true });
+const cred = JSON.parse(readFileSync(credFile, 'utf8'));
+const browser = await chromium.launch();
+const ctx = await browser.newContext(form === 'phone' ? { locale: 'es-EC', viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { locale: 'es-EC', viewport: { width: 1366, height: 900 } });
+await ctx.addInitScript(() => { try { localStorage.setItem('ui:locale', 'es') } catch {} });
+const page = await ctx.newPage();
+const reqs = [];
+page.on('request', r => reqs.push(r.url()));
+const t0 = Date.now();
+const step = s => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s ${s}`);
+await page.goto(`${base}identificar/`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Descargar' }).click();
+await page.getByRole('button', { name: /Tomar foto/ }).waitFor({ timeout: 300_000 });
+step('signed out: downloaded from Hugging Face');
+const login = await page.request.post(`${base}api/auth/login`, { data: { username: cred.username, password: cred.password } });
+step(`login ${login.status()}`);
+const mark = reqs.length;
+await page.reload({ waitUntil: 'networkidle' });
+const again = await page.getByRole('button', { name: 'Descargar' }).count();
+await page.getByRole('button', { name: /Tomar foto/ }).waitFor({ timeout: 30_000 });
+step(`signed in: ready without a new download: ${again === 0}; header: ${(await page.locator('header').innerText()).replace(/\s+/g, ' ').slice(0, 160)}`);
+await page.locator('input[type=file]:not([capture])').setInputFiles(photo);
+await page.getByText(/Posible|No estamos seguros/).first().waitFor({ timeout: 180_000 });
+await page.waitForTimeout(3000);
+step(`result ${(await page.locator('h1').first().innerText()).replace(/\s+/g, ' ')}; frozen panel: ${await page.getByText('Congelados para genomas de referencia').count()}`);
+await page.screenshot({ path: `${out}/f-signed-in-${form}.png`, fullPage: true });
+const after = reqs.slice(mark);
+const hf = after.filter(u => /hf\.co|huggingface/.test(u)).length;
+const list = after.filter(u => /models\/list\.json/.test(u)).length;
+step(`after sign-in: HF requests ${hf}, server list.json ${list}, api: ${[...new Set(after.filter(u => /\/api\//.test(u)).map(u => new URL(u).pathname))].join(' ')}`);
+writeFileSync(`${out}/requests-signed-in-${form}.json`, JSON.stringify(after, null, 1));
+await browser.close();

@@ -18,6 +18,8 @@ export interface RefPhoto {
   /** 'species' (or subspecies), 'genus' (iNaturalist had none of the species: another species of the genus), 'specimen' (the project's). */
   level: 'species' | 'genus' | 'specimen'
   sex?: string | null
+  /** The photo's own page (iNaturalist), for its credit. */
+  source?: string | null
 }
 export interface Refs {
   photos: RefPhoto[]
@@ -35,6 +37,20 @@ interface ApiEntry {
   specimens?: { cam: string; sex: string | null; dorsal: string }[]
 }
 
+/** An iNaturalist photo's page from its file URL (…/photos/<id>/small.jpg). */
+export const inatPhotoPage = (url: string) => {
+  const m = /\/photos\/(\d+)\//.exec(url)
+  return m ? `https://www.inaturalist.org/photos/${m[1]}` : null
+}
+
+/** The Creative Commons deed of a licence code as iNaturalist gives it (CC-BY-NC, CC0, …), or null. */
+export function licenseUrl(code: string): string | null {
+  const c = code.trim().toUpperCase()
+  if (c === 'CC0') return 'https://creativecommons.org/publicdomain/zero/1.0/'
+  const m = /^CC-(BY(?:-NC)?(?:-SA|-ND)?)$/.exec(c)
+  return m ? `https://creativecommons.org/licenses/${m[1].toLowerCase()}/4.0/` : null
+}
+
 /** «© Ana Pérez» from iNaturalist's «(c) Ana Pérez, some rights reserved (CC BY-SA), uploaded by …» (the licence is shown apart). */
 export function shortCredit(attribution: string): string {
   const m = /^\(c\)\s*([^,]+)/i.exec(attribution.trim())
@@ -44,7 +60,7 @@ export function shortCredit(attribution: string): string {
 const KEY = () => new URL('prueba-offline/refs.json', appRoot()).href
 const FIELD_DIR = () => new URL('identificar/field/', appRoot()).href
 
-interface FieldEntry { name: string; file: string; attribution: string; license: string; taxonUrl: string | null }
+interface FieldEntry { name: string; file: string; attribution: string; license: string; taxonUrl: string | null; source?: string }
 let fieldMemo: Promise<FieldEntry[]> | null = null
 /** The static field set's list (the service worker keeps it for use without signal). */
 function fieldIndex(): Promise<FieldEntry[]> {
@@ -58,7 +74,7 @@ function fieldIndex(): Promise<FieldEntry[]> {
   return fieldMemo
 }
 const fieldRefs = (e: FieldEntry): Refs => ({
-  photos: [{ src: new URL(e.file, FIELD_DIR()).href, credit: shortCredit(e.attribution), license: e.license, level: 'species' }],
+  photos: [{ src: new URL(e.file, FIELD_DIR()).href, credit: shortCredit(e.attribution), license: e.license, level: 'species', source: e.source ?? null }],
   taxonUrl: e.taxonUrl,
 })
 const FIELD = 'identify:field-photos'
@@ -86,7 +102,7 @@ async function keep(add: Record<string, Refs>) {
 function fromApi(entry: ApiEntry): Refs {
   const inat = entry.inat
   const level = inat?.level === 'genus' ? 'genus' : 'species'
-  const photos: RefPhoto[] = (inat?.photos ?? []).map(p => ({ src: refPhotoSrc(p.thumb), credit: shortCredit(p.attribution), license: p.license, level }))
+  const photos: RefPhoto[] = (inat?.photos ?? []).map(p => ({ src: refPhotoSrc(p.thumb), credit: shortCredit(p.attribution), license: p.license, level, source: inatPhotoPage(p.thumb) }))
   for (const s of entry.specimens ?? [])
     photos.push({ src: `${appRoot()}api/photo/${encodeURIComponent(s.dorsal)}?w=400`, credit: s.cam, license: '', level: 'specimen', sex: s.sex })
   return { photos, taxonUrl: inat?.taxon?.url ?? null }
