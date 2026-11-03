@@ -532,6 +532,8 @@ async function restoreLast() {
 watch(compared, keepLast)
 // A server result is read again with the new side (the phone's is ranked again by itself).
 watch(sideValue, () => rereadOnline())
+// Back to online with a side changed meanwhile: the server's result read again with it.
+watch(mode, m => m === 'online' && sideChangedMeanwhile())
 // The log names what the screen shows first: a change of side rewrites the entry (the same time).
 watch(sideValue, () => {
   if (result.value && top.value && smallThumb.value)
