@@ -13,6 +13,7 @@ import emerged from './emerged'
 import entry from './entry'
 import google from './google'
 import history from './history'
+import identify from './identify'
 import home from './home'
 import instructions from './instructions'
 import monitoring from './monitoring'
@@ -30,6 +31,7 @@ import tubes from './tubes'
 export const en: Record<string, string> = Object.assign(
   {},
   common,
+  identify,
   entry,
   deaths,
   census,

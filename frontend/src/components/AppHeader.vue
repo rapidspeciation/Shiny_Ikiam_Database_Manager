@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ExternalLink, FlaskConical, LogIn, LogOut, Users, ChevronDown, MonitorSmartphone, Sun, Moon } from 'lucide-vue-next'
-import { tabs } from '../router'
+import { IDENTIFY_FOR_EVERYONE, tabs } from '../tabs'
+import { appRoot } from '../lib/appRoot'
 import DatabaseBadge from './DatabaseBadge.vue'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
@@ -60,6 +61,7 @@ const shown = computed(() =>
         .filter(t => !('editors' in t && t.editors) || session.canEdit)
         // Censo keeps its disappearances in the app: shown only where those tabs save there.
         .filter(t => !('staged' in t && t.staged) || session.settings?.stagedSaving !== false)
+        .filter(t => !('tester' in t && t.tester) || IDENTIFY_FOR_EVERYONE || session.isOfflineIdTester)
     : tabs.filter(t => 'open' in t && t.open),
 )
 /** A tab of the row (and «Más», and their measured copies). */
@@ -152,7 +154,7 @@ onBeforeUnmount(() => {
 })
 
 /** The offline identifier test page (a page of its own, server/offline-id.mjs), opened in this window: inside the installed app it stays in the app. */
-const offlineIdPage = new URL('prueba-offline/', location.href.split('#')[0]).href
+const offlineIdPage = new URL('prueba-offline/', appRoot()).href
 
 /** Sun/moon button (lib/theme.ts): always the theme in effect; a press picks the other one and remembers it on this device. */
 const themeTitle = computed(() =>

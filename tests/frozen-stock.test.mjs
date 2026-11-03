@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countFrozen, frozenWhyNot, genusOf, sexOf, speciesOf, syncedAt } from '../server/frozen-stock.mjs';
+import { countFrozen, frozenWhyNot, genusOf, locationSides, sexOf, sideOf, speciesOf, subspeciesOf, syncedAt } from '../server/frozen-stock.mjs';
 
 const HEAD = ['Pagyris euryanassa', 'Mechanitis polymnia', 'Mechanitis lysimnia', 'Melinaea menophilus', 'Melinaea mothone', 'Oleria onega'];
 const C = values => ({ sheet: 'Collection_data', values: { Release_Collect: 'Collected_Preserved', Preservation_medium: 'Flash frozen', ...values } });
@@ -76,6 +76,48 @@ test('countFrozen: per species and genus, one per CAM, unmapped names reported',
   assert.equal(out.counted, 7);
   assert.equal(out.gone, 1);
   assert.deepEqual(out.unmapped, { rows: 2, names: { 'Mechanitis sp.': 1, 'Melinaea menophilus zaneka VS Melinaea mothone': 1 } });
+});
+
+test('subspeciesOf, sideOf: the subspecies and side of the Andes a row counts for', () => {
+  assert.equal(subspeciesOf('Collection_data', { SPECIES: 'Mechanitis polymnia', Subspecies_Form: 'Proceriformis' }), 'proceriformis');
+  assert.equal(subspeciesOf('Collection_data', { SPECIES: 'Mechanitis polymnia', Subspecies_Form: '(No subspecies described)' }), '');
+  assert.equal(subspeciesOf('Collection_data', { SPECIES: 'Mechanitis polymnia werneri', Subspecies_Form: '' }), 'werneri');
+  assert.equal(subspeciesOf('Insectary_data', { SPECIES: 'Mechanitis polymnia werneri x proceriformis' }), '');
+  assert.equal(subspeciesOf('Insectary_data', { SPECIES: 'Mechanitis lysimnia' }), '');
+  assert.equal(subspeciesOf('Insectary_data', { SPECIES: 'Mechanitis messenoides deceptus' }), 'deceptus');
+  const rows = [
+    C({ Collection_location: 'Jaimito', Side_Andes: 'East' }),
+    C({ Collection_location: 'jaimito', Side_Andes: 'East' }),
+    C({ Collection_location: 'Jaimito', Side_Andes: 'West' }),
+    C({ Collection_location: 'Mindo', Side_Andes: 'West' }),
+    C({ Collection_location: 'Tie', Side_Andes: 'East' }),
+    C({ Collection_location: 'Tie', Side_Andes: 'West' }),
+  ];
+  const sides = locationSides(rows);
+  assert.deepEqual(Object.fromEntries(sides), { jaimito: 'East', mindo: 'West' });
+  assert.equal(sideOf('Collection_data', { Side_Andes: 'Center' }), 'other');
+  assert.equal(sideOf('Collection_data', { Side_Andes: 'West' }), 'West');
+  assert.equal(sideOf('Insectary_data', { Collection_location: 'Mindo' }, sides), 'West');
+  assert.equal(sideOf('Insectary_data', { Collection_location: 'Tie' }, sides), 'other');
+});
+
+test('countFrozen: detail per subspecies, side and sex; the genera the workbook files under Ithomiini', () => {
+  const rows = [
+    C({ CAM_ID: 'CAM101', SPECIES: 'Mechanitis polymnia', Subspecies_Form: 'proceriformis', Side_Andes: 'East', Sex: 'male', Tribe: 'Ithomiini', Collection_location: 'Jaimito' }),
+    C({ CAM_ID: 'CAM102', SPECIES: 'Mechanitis polymnia', Side_Andes: 'NA', Sex: 'female', Tribe: 'Ithomiini' }),
+    I({ CAM_ID: 'CAM103', SPECIES: 'Mechanitis polymnia proceriformis', Sex: 'female', Collection_location: 'Jaimito' }),
+    // Not frozen, still names the tribe of its genus.
+    C({ CAM_ID: 'CAM104', SPECIES: 'Oleria onega', Tribe: 'Ithomiini', Preservation_medium: 'Ethanol' }),
+    C({ CAM_ID: 'CAM105', SPECIES: 'Heliconius erato', Tribe: 'Heliconiini' }),
+  ];
+  const out = countFrozen(rows, HEAD);
+  assert.deepEqual(out.detail, {
+    'Mechanitis polymnia': {
+      proceriformis: { East: { M: 1, F: 1, unknown: 0 } },
+      '': { other: { M: 0, F: 1, unknown: 0 } },
+    },
+  });
+  assert.deepEqual(out.ithomiiniGenera, ['Mechanitis', 'Oleria']);
 });
 
 test('countFrozen: workbook names the head knows under another name', () => {

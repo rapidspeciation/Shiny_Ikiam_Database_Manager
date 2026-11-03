@@ -5,7 +5,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 const dir = new URL('../assistant/skills/app-guide/', import.meta.url);
 const files = ['SKILL.md', ...readdirSync(new URL('reference/', dir)).map(f => `reference/${f}`)];
 const text = files.map(f => readFileSync(new URL(f, dir), 'utf8')).join('\n');
-const router = readFileSync(new URL('../frontend/src/router.ts', import.meta.url), 'utf8');
+// The routes: the router's own and the tabs' (frontend/src/tabs.ts, which the router maps to routes).
+const router = ['router.ts', 'tabs.ts'].map(f => readFileSync(new URL(`../frontend/src/${f}`, import.meta.url), 'utf8')).join('\n');
 
 test('the app guide has the skill frontmatter and links its reference files', () => {
   const skill = readFileSync(new URL('SKILL.md', dir), 'utf8');

@@ -5,8 +5,10 @@ const CACHE = 'ithomiini-v6'
 // What was shared to the installed app (a GPX file or a Wikiloc link), kept
 // until the Importar screen picks it up.
 const INBOX = 'ithomiini-share'
-// The offline identifier test page (/prueba-offline/): the page, its scripts and runtime, and its models (put there
-// by the page itself, in parts). Kept on sign-out and across app versions: nothing personal, 700 MB to download.
+// The offline identifier test page (/prueba-offline/) and the Identificar tab's page (/identificar/): the pages, their
+// scripts and runtime, and the models (put there by the page itself, in parts), and the reference photos seen or saved
+// for the field (iNaturalist's, /api/identify/ref-photo). Kept on sign-out and across app versions: nothing personal,
+// up to 700 MB to download.
 const OFFLINE_ID = 'ithomiini-prueba-offline'
 const READS = /\/api\/(auth\/session|bootstrap|table|ids|monitoring\/tracks|clutches\/(state|day))(\?|$)/
 
@@ -98,6 +100,15 @@ async function offlineId(request, url) {
   }
 }
 
+async function refPhoto(request) {
+  const cache = await caches.open(OFFLINE_ID)
+  const cached = await cache.match(request)
+  if (cached) return cached
+  const response = await fetch(request)
+  if (response.ok && (response.headers.get('content-type') || '').startsWith('image/')) cache.put(request, response.clone())
+  return response
+}
+
 self.addEventListener('fetch', event => {
   const { request } = event
   const url = new URL(request.url)
@@ -107,8 +118,13 @@ self.addEventListener('fetch', event => {
   }
   if (request.method !== 'GET' || url.origin !== location.origin) return
   // Its models are read by the page from the cache itself; their download (ranges) goes straight to the server.
-  if (url.pathname.includes('/prueba-offline/')) {
+  if (url.pathname.includes('/prueba-offline/') || url.pathname.includes('/identificar/')) {
     if (!url.pathname.includes('/prueba-offline/models/')) event.respondWith(offlineId(request, url))
+    return
+  }
+  // A reference photo never changes once published: from the phone when it has it (the field photos), kept when seen.
+  if (url.pathname.endsWith('/api/identify/ref-photo')) {
+    event.respondWith(refPhoto(request))
     return
   }
   if (READS.test(url.pathname + url.search)) event.respondWith(networkFirst(request))

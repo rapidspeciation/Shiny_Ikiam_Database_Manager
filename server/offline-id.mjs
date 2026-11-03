@@ -149,18 +149,19 @@ class HttpError extends Error {
 }
 
 /**
- * `path`: the request's path after /prueba-offline. `webRoot`: the built page (web/); `identifierDir`: the
+ * `path`: the request's path after /prueba-offline (or after /identificar with `page: 'identificar'`, the app's
+ * Identificar tab: the same headers, no models of its own). `webRoot`: the built page (web/); `identifierDir`: the
  * identifier's files; `user`: the signed-in person or null.
  */
-export async function serveOfflineId(req, res, { path, webRoot, identifierDir, user }) {
+export async function serveOfflineId(req, res, { page = 'prueba-offline', path, webRoot, identifierDir, user }) {
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
     if (path === '') {
       const q = req.url.indexOf('?');
-      res.writeHead(301, { location: `prueba-offline/${q >= 0 ? req.url.slice(q) : ''}` });
+      res.writeHead(301, { location: `${page}/${q >= 0 ? req.url.slice(q) : ''}` });
       return res.end();
     }
-    if (path.startsWith('/models/')) {
+    if (page === 'prueba-offline' && path.startsWith('/models/')) {
       if (!user) throw new HttpError(401, 'Sign in first');
       const name = decodeURIComponent(path.slice('/models/'.length));
       if (!identifierDir) throw new HttpError(404, 'The identifier is not installed on this server');
@@ -191,7 +192,7 @@ export async function serveOfflineId(req, res, { path, webRoot, identifierDir, u
       return await sendFile(req, res, join(identifierDir, model.path), { 'cache-control': 'private, no-store' });
     }
     const clean = decodeURIComponent(path).replace(/^\/+/, '');
-    const root = resolve(webRoot, 'prueba-offline');
+    const root = resolve(webRoot, page);
     const file = resolve(root, clean || 'index.html');
     if (!file.startsWith(root + '/')) throw new HttpError(404, 'File not found');
     const html = file.endsWith('.html');

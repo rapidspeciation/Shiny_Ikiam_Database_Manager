@@ -31,6 +31,9 @@ export const csrfToken = () => csrf
 /** This page load: Cambios propuestos does not fetch again a list its own edits changed (server/assistant.mjs). */
 export const pageId = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`
 
+/** The app's folder relative to this page: '' for the app, '../' for a page in a folder of its own (lib/appRoot.ts). */
+const apiRoot = typeof document === 'undefined' ? '' : (document.querySelector<HTMLMetaElement>('meta[name="app-root"]')?.content ?? '')
+
 /** Requests are relative to the page, so the app works under any base path. */
 export async function api<T>(
   path: string,
@@ -42,7 +45,7 @@ export async function api<T>(
   if (method !== 'GET' && csrf) headers['x-csrf-token'] = csrf
   let response: Response
   try {
-    response = await fetch(`api/${path}`, {
+    response = await fetch(`${apiRoot}api/${path}`, {
       method,
       headers,
       credentials: 'same-origin',

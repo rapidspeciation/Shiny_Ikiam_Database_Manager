@@ -42,7 +42,8 @@ import { idSuggestions, insectaryGaps, insectaryStart, tableChanges, tableRevisi
 import { holdId, releaseHold } from './holds.mjs';
 import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
-import { frozenStock, syncedAt } from './frozen-stock.mjs';
+import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
+import { fieldPhotos, ithomiiniSpecies, sendRefPhoto } from './identify-photos.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -782,6 +783,9 @@ export async function createApp(config = {}, options = {}) {
         return res.end();
       }
       if (path === '/rename-app' || path.startsWith('/rename-app/')) return serveRenameApp(req, res, path.slice('/rename-app'.length), config.renameAppRoot);
+      // The Identificar tab (frontend/identificar/): a page of its own with the test page's headers; models from /prueba-offline/models/.
+      if (path === '/identificar' || path.startsWith('/identificar/'))
+        return serveOfflineId(req, res, { page: 'identificar', path: path.slice('/identificar'.length), webRoot: config.webRoot ?? webRoot, identifierDir: null, user: null });
       // The offline identifier test page: its own headers (cross-origin isolated, WebAssembly) and its models behind the sign-in.
       if (path === '/prueba-offline' || path.startsWith('/prueba-offline/'))
         return serveOfflineId(req, res, {
@@ -1302,6 +1306,14 @@ export async function createApp(config = {}, options = {}) {
       // Photos of species by name: what is cached now, the rest marked pending (asked again by the page).
       if (method === 'POST' && path === '/api/species-photos')
         return json(res, 200, { species: speciesPhotos.photosOf(body.names) });
+      // The Identificar tab's reference photos (server/identify-photos.mjs): iNaturalist's, same origin for its isolated page.
+      if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') return sendRefPhoto(req, res, query.u);
+      if (method === 'GET' && path === '/api/identify/field-photos') {
+        if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
+        const stock = await frozenStock(store, config.identifierDir);
+        const names = ithomiiniSpecies(await headSpecies(config.identifierDir), stock.ithomiiniGenera);
+        return json(res, 200, fieldPhotos(speciesPhotos.photosOf, names), { 'cache-control': 'no-store' });
+      }
       if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
         const id = path.split('/')[3];
         // A photo card's file not listed yet (a new photo of a Photo_links reading): ?card=<its proposal>.

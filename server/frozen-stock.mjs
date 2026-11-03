@@ -95,6 +95,44 @@ export function frozenWhyNot(sheet, values) {
 }
 
 const blank = () => ({ M: 0, F: 0, unknown: 0, total: 0 });
+
+/**
+ * The side of the Andes a row counts for: Collection_data's Side_Andes (East, West; Center, NA or empty are
+ * `other`); an Insectary_data row takes the usual side of its Collection_location in Collection_data (`sides`).
+ */
+export function sideOf(sheet, values, sides = new Map()) {
+  if (sheet === 'Collection_data') {
+    const side = text(values.Side_Andes);
+    return side === 'East' || side === 'West' ? side : 'other';
+  }
+  return sides.get(text(values.Collection_location).toLowerCase()) ?? 'other';
+}
+
+/** Each Collection_location's side: the side most of its Collection_data rows say (East or West). */
+export function locationSides(rows) {
+  const tally = new Map();
+  for (const { sheet, values } of rows) {
+    if (sheet !== 'Collection_data') continue;
+    const side = text(values.Side_Andes);
+    const place = text(values.Collection_location).toLowerCase();
+    if (!place || (side !== 'East' && side !== 'West')) continue;
+    const t = tally.get(place) ?? tally.set(place, { East: 0, West: 0 }).get(place);
+    t[side]++;
+  }
+  return new Map([...tally].filter(([, t]) => t.East !== t.West).map(([place, t]) => [place, t.East > t.West ? 'East' : 'West']));
+}
+
+/**
+ * The subspecies a row counts for, lower case, or '' (none written, a cross, "(No subspecies described)"):
+ * Collection_data's Subspecies_Form, else the SPECIES cell's third word.
+ */
+export function subspeciesOf(sheet, values) {
+  const species = text(values.SPECIES);
+  if (/\s(x|vs\.?)\s|×/i.test(species)) return '';
+  const written = sheet === 'Collection_data' ? text(values.Subspecies_Form) : '';
+  const word = (written || species.split(/\s+/)[2] || '').toLowerCase();
+  return /^[a-z][a-z-]{2,}$/.test(word) && !/^(na|sp|spp|ssp|unknown|form)$/.test(word) ? word : '';
+}
 const add = (map, key, sex) => {
   const e = map[key] ?? (map[key] = blank());
   e[sex]++;
@@ -103,7 +141,11 @@ const add = (map, key, sex) => {
 
 /**
  * The snapshot from rows of Collection_data and Insectary_data ({ sheet, values }) and the head's species list:
- * { species: { name: {M,F,unknown,total} }, genus: {...}, counted, gone, unmapped: { rows, names: {name: n} } }.
+ * { species: { name: {M,F,unknown,total} }, genus: {...}, detail, ithomiiniGenera, counted, gone,
+ *   unmapped: { rows, names: {name: n} } }.
+ * `detail`: per species, per subspecies ('' for none) and side (East, West, other), {M, F, unknown}: what the
+ * identifier tab sets against the reference-genome target (3 males and 3 females per subspecies and side).
+ * `ithomiiniGenera`: the head's genera the workbook files under Tribe Ithomiini (any row, frozen or not).
  */
 export function countFrozen(rows, headSpecies) {
   const known = new Map(headSpecies.map(s => [s.toLowerCase(), s]));
@@ -122,11 +164,18 @@ export function countFrozen(rows, headSpecies) {
   });
   const species = {},
     genus = {},
+    detail = {},
     unmapped = { rows: 0, names: {} };
+  const sides = locationSides(rows);
+  const tribes = new Set();
   const seen = new Set();
   let counted = 0,
     gone = 0;
-  rows.forEach(({ values }, i) => {
+  rows.forEach(({ sheet, values }, i) => {
+    if (/^ithomiini$/i.test(text(values.Tribe))) {
+      const g = genusOf(values.SPECIES);
+      if (g && genera.has(g)) tribes.add(g);
+    }
     const cam = camOf(values);
     if (why[i] === 'gone' || (!why[i] && cam && goneCams.has(cam))) {
       if (!cam || !seen.has(cam)) gone++;
@@ -142,8 +191,12 @@ export function countFrozen(rows, headSpecies) {
     const sex = sexOf(values.Sex);
     const name = speciesOf(values.SPECIES, isSpecies);
     const head = name && known.get((ALIASES[name.toLowerCase()] ?? name).toLowerCase());
-    if (head) add(species, head, sex);
-    else {
+    if (head) {
+      add(species, head, sex);
+      const ssp = (detail[head] ??= {})[subspeciesOf(sheet, values)] ??= {};
+      const cell = (ssp[sideOf(sheet, values, sides)] ??= { M: 0, F: 0, unknown: 0 });
+      cell[sex]++;
+    } else {
       unmapped.rows++;
       const label = text(values.SPECIES) || '(vacío)';
       unmapped.names[label] = (unmapped.names[label] ?? 0) + 1;
@@ -152,12 +205,20 @@ export function countFrozen(rows, headSpecies) {
     if (g && genera.has(g)) add(genus, g, sex);
   });
   const sorted = obj => Object.fromEntries(Object.entries(obj).sort(([a], [b]) => a.localeCompare(b)));
-  return { species: sorted(species), genus: sorted(genus), counted, gone, unmapped: { rows: unmapped.rows, names: sorted(unmapped.names) } };
+  return {
+    species: sorted(species),
+    genus: sorted(genus),
+    detail: sorted(detail),
+    ithomiiniGenera: [...tribes].sort(),
+    counted,
+    gone,
+    unmapped: { rows: unmapped.rows, names: sorted(unmapped.names) },
+  };
 }
 
 /** The head's species list (the identifier's offline head, as list.json serves it), read once per file. */
 let headMemo = { path: '', species: null };
-async function headSpecies(identifierDir) {
+export async function headSpecies(identifierDir) {
   const path = join(identifierDir, MODELS.find(m => m.role === 'head-meta').path);
   if (headMemo.path !== path) headMemo = { path, species: JSON.parse(await readFile(path, 'utf8')).species };
   return headMemo.species;
@@ -191,7 +252,15 @@ export async function frozenStock(store, identifierDir) {
   if (running?.stamp === stamp) return running.promise;
   const promise = (async () => {
     const counts = countFrozen(stockRows(store), await headSpecies(identifierDir));
-    const sent = { species: counts.species, genus: counts.genus, counted: counts.counted, gone: counts.gone, unmapped: { rows: counts.unmapped.rows } };
+    const sent = {
+      species: counts.species,
+      genus: counts.genus,
+      detail: counts.detail,
+      ithomiiniGenera: counts.ithomiiniGenera,
+      counted: counts.counted,
+      gone: counts.gone,
+      unmapped: { rows: counts.unmapped.rows },
+    };
     const version = createHash('sha256').update(JSON.stringify(sent)).digest('hex').slice(0, 16);
     const value = { version, generatedAt: hit?.value.version === version ? hit.value.generatedAt : new Date().toISOString(), ...sent };
     cache.set(store, { stamp, dir: identifierDir, value });

@@ -15,6 +15,10 @@ export interface FrozenStock {
   generatedAt: string
   species: Record<string, StockCount>
   genus: Record<string, StockCount>
+  /** Per species, subspecies ('' none) and side of the Andes (server/frozen-stock.mjs; snapshots before 3 Nov 2026 lack it). */
+  detail?: Record<string, Record<string, Partial<Record<'East' | 'West' | 'other', Omit<StockCount, 'total'>>>>>
+  /** The head's genera the workbook files under Tribe Ithomiini. */
+  ithomiiniGenera?: string[]
 }
 
 /** Fewer males or females than this is marked (a subtle colour): worth keeping one more. */

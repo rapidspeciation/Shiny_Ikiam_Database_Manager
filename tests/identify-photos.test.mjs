@@ -1,0 +1,88 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from '../server/identify-photos.mjs';
+import { serveOfflineId } from '../server/offline-id.mjs';
+
+test('refPhotoUrl: only iNaturalist photo hosts and sizes', () => {
+  assert.equal(refPhotoUrl('https://inaturalist-open-data.s3.amazonaws.com/photos/123/small.jpg'), 'https://inaturalist-open-data.s3.amazonaws.com/photos/123/small.jpg');
+  assert.equal(refPhotoUrl('https://static.inaturalist.org/photos/9/medium.jpeg'), 'https://static.inaturalist.org/photos/9/medium.jpeg');
+  for (const bad of [
+    'http://static.inaturalist.org/photos/9/small.jpg',
+    'https://static.inaturalist.org.evil.com/photos/9/small.jpg',
+    'https://static.inaturalist.org/photos/9/original.jpg',
+    'https://static.inaturalist.org/photos/9/small.jpg?x=1',
+    'https://127.0.0.1/photos/9/small.jpg',
+    '',
+    undefined,
+  ])
+    assert.equal(refPhotoUrl(bad), null, String(bad));
+});
+
+test('sendRefPhoto: streams an allowed image, refuses others and non-images', async () => {
+  const image = Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3]);
+  const fakeFetch = async url => (url.includes('/1/') ? new Response(image, { headers: { 'content-type': 'image/jpeg' } }) : new Response('<html>', { headers: { 'content-type': 'text/html' } }));
+  const server = http.createServer((req, res) => sendRefPhoto(req, res, new URL(req.url, 'http://x').searchParams.get('u'), { fetchImpl: fakeFetch }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}/?u=`;
+  try {
+    const ok = await fetch(base + encodeURIComponent('https://static.inaturalist.org/photos/1/small.jpg'));
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('cross-origin-resource-policy'), 'same-origin');
+    assert.deepEqual(Buffer.from(await ok.arrayBuffer()), image);
+    assert.equal((await fetch(base + encodeURIComponent('https://static.inaturalist.org/photos/2/small.jpg'))).status, 502);
+    assert.equal((await fetch(base + encodeURIComponent('https://example.com/a.jpg'))).status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test('fieldPhotos: one species-level photo per Ithomiini species, genus fallbacks left out, pending counted', () => {
+  const names = ithomiiniSpecies(['Oleria onega', 'Heliconius erato', 'Mechanitis polymnia', 'Mechanitis lysimnia'], ['Mechanitis', 'Oleria']);
+  assert.deepEqual(names, ['Mechanitis lysimnia', 'Mechanitis polymnia', 'Oleria onega']);
+  const photo = id => ({ id, thumb: `https://static.inaturalist.org/photos/${id}/small.jpg`, attribution: '(c) A', license: 'CC-BY' });
+  const photosOf = list =>
+    Object.fromEntries(
+      list.map(n => [
+        n,
+        n === 'Mechanitis polymnia'
+          ? { inat: { level: 'species', taxon: { url: 'https://www.inaturalist.org/taxa/1' }, photos: [photo(1)] }, pending: false }
+          : n === 'Oleria onega'
+            ? { inat: { level: 'genus', photos: [photo(2)] }, pending: false }
+            : { inat: null, pending: true },
+      ]),
+    );
+  const out = fieldPhotos(photosOf, names, { batch: 2 });
+  assert.deepEqual(out, {
+    species: [{ name: 'Mechanitis polymnia', thumb: photo(1).thumb, attribution: '(c) A', license: 'CC-BY', taxonUrl: 'https://www.inaturalist.org/taxa/1' }],
+    pending: 1,
+    total: 3,
+  });
+});
+
+test('the Identificar page: isolated like the test page, no models of its own', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'identify-page-'));
+  const web = join(dir, 'web');
+  mkdirSync(join(web, 'identificar'), { recursive: true });
+  writeFileSync(join(web, 'identificar', 'index.html'), '<!doctype html><title>t</title>');
+  const server = http.createServer((req, res) => {
+    const path = new URL(req.url, 'http://x').pathname.slice('/identificar'.length);
+    serveOfflineId(req, res, { page: 'identificar', path, webRoot: web, identifierDir: dir, user: { username: 'u' } });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}/identificar`;
+  try {
+    const page = await fetch(`${base}/`);
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get('cross-origin-embedder-policy'), 'require-corp');
+    const bare = await fetch(base, { redirect: 'manual' });
+    assert.equal(bare.status, 301);
+    assert.equal(bare.headers.get('location'), 'identificar/');
+    assert.equal((await fetch(`${base}/models/list.json`)).status, 404);
+  } finally {
+    server.close();
+  }
+});

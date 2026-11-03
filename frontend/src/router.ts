@@ -1,29 +1,9 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import LoginView from './views/LoginView.vue'
 
-/** `open`: visible without an account (natural-history summaries only); `editors`: only for people who edit. */
-export const tabs = [
-  { path: '/inicio', name: 'home', label: 'Inicio', open: true, component: () => import('./views/HomeView.vue') },
-  { path: '/tablas', name: 'tables', label: 'Buscador', component: () => import('./views/TablesView.vue') },
-  { path: '/colecta', name: 'collect', label: 'Colecta', component: () => import('./views/CollectView.vue') },
-  { path: '/monitoreo', name: 'monitoring', label: 'Monitoreo', component: () => import('./views/MonitoringView.vue') },
-  { path: '/muertes', name: 'deaths', label: 'Muertes', component: () => import('./views/DeathsView.vue') },
-  { path: '/tubos', name: 'tubes', label: 'Tubos', component: () => import('./views/TubesView.vue') },
-  { path: '/emergidos', name: 'emerged', label: 'Emergidos', component: () => import('./views/EmergedView.vue') },
-  { path: '/clutches', name: 'clutches', label: 'Clutches', component: () => import('./views/ClutchesView.vue') },
-  { path: '/censo', name: 'census', label: 'Censo', component: () => import('./views/CensusView.vue') },
-  { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
-  // The wing photos: named after the ID on their envelope on the person's computer, then listed in Photo_links and on the sites.
-  { path: '/fotos', name: 'rename', label: 'Fotos', editors: true, component: () => import('./views/RenameView.vue') },
-  { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },
-  // Not a daily task: last.
-  { path: '/revision', name: 'review', label: 'Revisión', editors: true, component: () => import('./views/RevisionView.vue') },
-]
+import { accountPaths, openPaths, tabs } from './tabs'
 
-/** Pages a visitor without an account can open. */
-export const openPaths = new Set(tabs.filter(t => 'open' in t && t.open).map(t => t.path))
-/** Account pages shown on their own (no header), with or without a session: invitation and password reset. */
-export const accountPaths = new Set(['/activar', '/recuperar', '/restablecer'])
+export { accountPaths, openPaths, tabs }
 
 export const router = createRouter({
   history: createWebHashHistory(),

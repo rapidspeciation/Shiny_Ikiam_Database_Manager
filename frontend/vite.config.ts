@@ -76,7 +76,7 @@ export default defineConfig(({ command }) => ({
     outDir: '../web',
     emptyOutDir: true,
     chunkSizeWarningLimit: 900,
-    rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), offline: resolve(import.meta.dirname, 'prueba-offline/index.html') } },
+    rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), offline: resolve(import.meta.dirname, 'prueba-offline/index.html'), identify: resolve(import.meta.dirname, 'identificar/index.html') } },
   },
   server: {
     port: 5173,

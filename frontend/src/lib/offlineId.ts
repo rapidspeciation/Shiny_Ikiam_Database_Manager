@@ -545,6 +545,13 @@ export type Side = 'East' | 'West' | null
  * given (names off that side, or not recorded in Ecuador, weigh 2 %), summed per species, the first `top`.
  */
 export function speciesTop(head: Head, feature: Float32Array, side: Side = null, top = 5): [string, number][] {
+  const agg = speciesScores(head, feature, side)
+  const order = Array.from(agg.keys()).sort((a, b) => agg[b] - agg[a] || a - b)
+  return order.slice(0, top).map(j => [head.meta.species[j], Math.round(agg[j] * 1e4) / 1e4])
+}
+
+/** Every species' probability (the order of head.meta.species), as speciesTop sums them: the genus totals come from it. */
+export function speciesScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
   const { meta, w, leaf2sp, geo } = head
   const d = meta.dim, n = meta.rows
   let norm = 0
@@ -589,6 +596,24 @@ export function speciesTop(head: Head, feature: Float32Array, side: Side = null,
   }
   const agg = new Float64Array(meta.species.length)
   for (let r = 0; r < n; r++) agg[leaf2sp[r]] += p[r]
-  const order = Array.from(agg.keys()).sort((a, b) => agg[b] - agg[a] || a - b)
-  return order.slice(0, top).map(j => [meta.species[j], Math.round(agg[j] * 1e4) / 1e4])
+  return agg
+}
+
+/**
+ * The sides of the Andes the head records a species on in Ecuador (its leaves' geo bits: 1 known, 2 in Ecuador,
+ * 4 East, 8 West), by name; species without a record are left out.
+ */
+export function speciesSides(head: Head): Map<string, { East: boolean; West: boolean }> {
+  const out = new Map<string, { East: boolean; West: boolean }>()
+  if (!head.geo) return out
+  for (let r = 0; r < head.geo.length; r++) {
+    const g = head.geo[r]
+    if (!(g & 1) || !(g & 2)) continue
+    const name = head.meta.species[head.leaf2sp[r]]
+    const e = out.get(name) ?? { East: false, West: false }
+    if (g & 4) e.East = true
+    if (g & 8) e.West = true
+    out.set(name, e)
+  }
+  return out
 }
