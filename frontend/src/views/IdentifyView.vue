@@ -83,7 +83,8 @@ async function refresh() {
     pageOffline.value = await engine.pageOffline()
   }
 }
-const pageOffline = ref(false)
+/** Whether this page opens without signal: null while it is being checked (and kept, online). */
+const pageOffline = ref<boolean | null>(null)
 
 const label = (k: ModelKind) => (k === 'small' ? t('Rápido y liviano') : t('Más preciso'))
 function sizeLine(k: ModelKind) {
@@ -343,7 +344,7 @@ async function saveField() {
     const out = await saveFieldPhotos((done, total) => (fieldProgress.value = { done, total }))
     field.value = out
     fieldNote.value = out.failed
-      ? t('{n} fotos no se guardaron (se cortó la conexión): toque Actualizar fotos para completarlas.', { n: out.failed })
+      ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed })
       : out.pending
         ? t('El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.', { n: out.pending })
         : null
@@ -372,7 +373,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'nu
 
 const goOnline = () => {
   online.value = true
-  refresh()
+  refresh() // keeps the page too when it was opened without signal
   engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 }
 const goOffline = () => (online.value = false)
@@ -398,6 +399,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
     <!-- The one status line: whether it works here without signal, and with which model. -->
     <div v-if="anyReady && !choosing" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
       <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
+      <span v-else-if="pageOffline === null" class="text-fg-muted">{{ $t('Preparando para usar sin internet…') }}</span>
       <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
       <span class="whitespace-nowrap">
         <span class="text-fg-muted">{{ label(active!) }}</span>
@@ -482,7 +484,7 @@ const signedOutNoModel = computed(() => checked.value && !anyReady.value && list
             </p>
             <p class="mt-1 text-sm text-fg-muted">
               {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
-              <button class="ml-1 text-brand-text hover:underline" @click="sideControl?.scrollIntoView({ behavior: 'smooth', block: 'center' })">{{ $t('cambiar') }}</button>
+              <button class="ml-1 text-brand-text hover:underline" @click="(sideControl?.scrollIntoView({ behavior: 'smooth', block: 'center' }), sideControl?.querySelector<HTMLElement>('[aria-checked=true]')?.focus({ preventScroll: true }))">{{ $t('cambiar') }}</button>
             </p>
 
             <section class="mt-4">

@@ -48,3 +48,15 @@ Grades: Sol C / CHANGES, Opus B+ / CHANGES.
 | opus | F6 | nit | small option never says space taken | fixed ("ocupa unos N MB"); warning keeps the remaining download (correct after a partial download) |
 | opus | F7 | nit | desktop left column short | declined: fine for v1 |
 | opus | F8 | nit | Ithomiini badge needs the team snapshot | already in NO_ACCOUNT_OPTIONS.md (static genus list) |
+
+## Round 3 (UI round 2): changes since round 1 (UI_REVIEW_R2.md, shots-r2/)
+
+Grades: Sol A / APPROVE (F1-F4 resolved), Opus A- / APPROVE (F1-F6, F8 resolved; F7 declined, agreed).
+
+| critic | id | sev | finding (short) | outcome |
+|---|---|---|---|---|
+| sol | N1 | nit | "(se cortó la conexión)" assumes the cause | fixed: removed |
+| opus | N1 | should | amber "abra esta página…" flashes online while the page is kept | fixed: null while checking, "Preparando para usar sin internet…" muted |
+| opus | N2 | nit | opened offline, then signal: amber line stays | fixed: going online runs refresh(), which keeps the page again |
+| opus | N3 | nit | "+7 sin subespecie anotada" terse | fixed: "otros 7 del Este sin subespecie anotada; pueden contar" |
+| opus | N4 | nit | "cambiar" scrolls but does not move focus | fixed: focuses the selected side |
