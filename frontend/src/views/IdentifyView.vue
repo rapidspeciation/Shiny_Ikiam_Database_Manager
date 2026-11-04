@@ -586,7 +586,12 @@ const scope = ref<FieldScope>(fieldScope())
 watch(scope, setFieldScope, { deep: true })
 /** The field set's list, for the sizes before saving (online, or kept by the service worker). */
 const fieldList = ref<FieldIndex | null>(null)
-const loadFieldList = () => fieldIndex().then(v => (fieldList.value = v), () => null)
+const fieldListFailed = ref(false)
+const loadFieldList = () =>
+  fieldIndex().then(
+    v => ((fieldList.value = v), (fieldListFailed.value = false)),
+    () => (fieldListFailed.value = true),
+  )
 loadFieldList()
 watch(online, on => on && !fieldList.value && loadFieldList())
 const fieldMb = (b: number) => (b / 1048576).toFixed(1)
@@ -611,6 +616,7 @@ async function saveField() {
     const out = await saveFieldPhotos(scope.value, (done, total) => (fieldProgress.value = { done, total }))
     field.value = out
     const names = shownNames()
+    if (refsTimer) clearTimeout(refsTimer)
     if (names) loadRefs(names.split('|'))
     fieldNote.value = out.failed ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed }) : null
   } catch {
@@ -1032,7 +1038,13 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
             <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
             <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
-            <p v-if="!fieldSize && online" class="mt-2 text-fg-muted">{{ $t('Calculando el tamaño…') }}</p>
+            <p v-if="!fieldSize && online" class="mt-2 text-fg-muted">
+              <template v-if="fieldListFailed">
+                {{ $t('No se pudo leer la lista de fotos.') }}
+                <button class="ml-1 text-brand-text hover:underline" @click="loadFieldList">{{ $t('Reintentar') }}</button>
+              </template>
+              <template v-else>{{ $t('Calculando el tamaño…') }}</template>
+            </p>
             <button class="btn mt-2" :disabled="!!fieldProgress || !online || !fieldSize" @click="saveField">
               {{ !field ? $t('Guardar fotos') : fieldCurrent ? $t('Actualizar fotos') : $t('Guardar esta elección') }}
             </button>

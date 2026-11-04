@@ -1,0 +1,5 @@
+Round 2. First read the round 1 brief /home/franz/Documents/CodeProjs/ithomiini_database-fieldphotos/.work/fieldphotos-20261104/REVIEW_BRIEF.md (same rules, same reply format) and the ledger LEDGER.md beside it.
+Check only the open ids and the changed work: `git -C /home/franz/Documents/CodeProjs/ithomiini_database-fieldphotos diff 1caded73 02a6cc30 -- . ':!frontend/public/identificar/field/*.jpg'` (full work: diff 450891a6 02a6cc30, same exclusions).
+Round 1 findings: Sol F1 (offline Compare kept unsaved subspecies photos after the signal changed) and F2 (save allowed before the size was known); Opus F1 (false deletion note for old sets and widening), F2 (one photo under two subspecies), F3-F8 nits. See the ledger for outcomes.
+New lab run after the fixes, phone width, signed out: .work/fieldphotos-20261104/lab-r1/ (log.txt and screenshots). Checks: vitest 772 pass, vue-tsc, build.
+Mark each round 1 id of yours `resolved` or `still open: <reason>`, then any new findings on the changed work.
