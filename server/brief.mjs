@@ -3,8 +3,9 @@
 // ({{person}}, {{username}}), the project documentation's folder ({{docs}}), the
 // folder of the project's Drive documents ({{knowledge}}) and the sheets' copy
 // that `query` reads ({{sheets}}, server/replica.mjs).
-// Then how the assistant sounds: assistant/voice/app.md and the shared assistant/voice/core.md
-// (the WhatsApp bridge sends core.md with its own header). In the local test lab a short note about the lab follows. Written by
+// Then how the assistant sounds: assistant/voice/app.md and the shared assistant/voice/core.md, or, in a
+// WhatsApp chat's workspace, that chat's voice (`voice`: the files the bridge put in the workspace's
+// .claude/voice, scripts/t3-provision.mjs), so a chat has one voice and it is in the system context. In the local test lab a short note about the lab follows. Written by
 // scripts/t3-provision.mjs; shown in the app's "AI instructions" page
 // (server/instructions.mjs) with a generic person.
 
@@ -40,11 +41,12 @@ unless the person explicitly asks.`;
 /**
  * The workspace's brief. `user`: { display_name, username }; `docs`: the
  * project documentation's folder; `knowledge`: the Drive documents' folder; `sheets`: the sheets' copy;
- * `source` and `labUrl`: the local lab's checkout and address (the lab note); `root`: where assistant/AGENTS.md is.
+ * `source` and `labUrl`: the local lab's checkout and address (the lab note); `root`: where assistant/AGENTS.md is;
+ * `voice`: the voice's files in order (absolute paths), else the app's (assistant/voice/app.md, core.md).
  */
 export function composeBrief(
   user,
-  { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release } = SERVER_PATHS,
+  { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release, voice = null } = SERVER_PATHS,
 ) {
   const body = readFileSync(join(root, 'assistant', 'AGENTS.md'), 'utf8')
     .replaceAll('{{person}}', user.display_name)
@@ -53,7 +55,7 @@ export function composeBrief(
     .replaceAll('{{knowledge}}', knowledge)
     .replaceAll('{{sheets}}', sheets)
     .trimEnd();
-  const voice = ['app.md', 'core.md'].map(f => readFileSync(join(root, 'assistant', 'voice', f), 'utf8').trim()).join('\n\n');
-  const brief = `${body}\n\n${voice}`;
+  const files = voice ?? ['app.md', 'core.md'].map(f => join(root, 'assistant', 'voice', f));
+  const brief = `${body}\n\n${files.map(f => readFileSync(f, 'utf8').trim()).join('\n\n')}`;
   return labUrl ? `${brief}\n\n## Local test lab\n\n${labAppDev(labUrl, source)}\n` : `${brief}\n`;
 }

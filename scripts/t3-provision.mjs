@@ -8,6 +8,12 @@
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
 //     every existing workspace gets the new brief, skills and subagents and keeps its token.
+//   node scripts/t3-provision.mjs <username> --workspace <folder> --title <title>
+//     a second workspace of the same person (Franz's WhatsApp chat beside his app chats): its own token
+//     (label t3:<folder>), the person's tools and permissions; .claude/ithomiini-workspace.json names the person.
+//   node scripts/t3-provision.mjs --refresh <folder>  one workspace (the WhatsApp bridge, after a voice change).
+// A WhatsApp chat's workspace has its voice in .claude/voice (voice.json lists the files in order; the bridge's
+// `voice-push` writes them): the brief ends with that voice instead of the app's.
 // The server's paths are the defaults; another install (the local test lab, tools/lab) sets them:
 //   ITHOMIINI_SHARED (shared folder), DATABASE_PATH (and SHEETS_COPY_PATH, else beside it), ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
 //   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
@@ -78,24 +84,55 @@ const knowledge = process.env.ITHOMIINI_KNOWLEDGE || join(shared, 'knowledge');
 const sheets = process.env.SHEETS_COPY_PATH || join(dirname(database), 'sheets.sqlite');
 
 const arg = process.argv[2];
-if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
+if (!arg) throw new Error('Usage: t3-provision.mjs <username> [--workspace <folder> --title <title>] | --refresh <folder> | --refresh-all');
+const flag = name => {
+  const i = process.argv.indexOf(name, 3);
+  return i > 0 ? process.argv[i + 1] : undefined;
+};
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
-/** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs). */
-const brief = user => composeBrief(user, { docs, knowledge, sheets, source, labUrl, root: release });
+/**
+ * The voice a WhatsApp chat's workspace carries (.claude/voice/voice.json: { files: [...] } in order), as
+ * absolute paths; null for the app's voice. A listed file that is missing is an error: the app's voice
+ * would come back in that chat beside its own.
+ */
+function workspaceVoice(workspace) {
+  const folder = join(workspace, '.claude', 'voice');
+  if (!existsSync(join(folder, 'voice.json'))) return null;
+  const { files } = JSON.parse(readFileSync(join(folder, 'voice.json'), 'utf8'));
+  if (!Array.isArray(files) || !files.length) throw new Error(`${folder}/voice.json lists no files`);
+  return files.map(f => {
+    const path = join(folder, String(f).replace(/^.*\//, ''));
+    if (!existsSync(path)) throw new Error(`Voice file missing: ${path}`);
+    return path;
+  });
+}
 
-/** A new personal token for T3 (the previous one stops working). */
-function mintToken(user) {
+/** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs), and the workspace's voice. */
+const brief = (user, workspace) => composeBrief(user, { docs, knowledge, sheets, source, labUrl, root: release, voice: workspaceVoice(workspace) });
+
+/** A workspace's own settings (.claude/ithomiini-workspace.json): the person, when the folder is not named after them. */
+const workspaceSettings = folder => {
+  try {
+    return JSON.parse(readFileSync(join(workspaces, folder, '.claude', 'ithomiini-workspace.json'), 'utf8'));
+  } catch {
+    return {};
+  }
+};
+
+/** A new personal token for T3 (the previous one of the same label stops working; a second workspace has its own label). */
+function mintToken(user, label = 't3') {
   const token = randomBytes(32).toString('base64url');
-  db.prepare("UPDATE ai_tokens SET revoked_at = ? WHERE user_id = ? AND label = 't3' AND revoked_at IS NULL").run(
+  db.prepare('UPDATE ai_tokens SET revoked_at = ? WHERE user_id = ? AND label = ? AND revoked_at IS NULL').run(
     new Date().toISOString(),
     user.id,
+    label,
   );
   db.prepare('INSERT INTO ai_tokens (token_hash,user_id,label,created_at) VALUES (?,?,?,?)').run(
     createHash('sha256').update(token).digest('hex'),
     user.id,
-    't3',
+    label,
     new Date().toISOString(),
   );
   return token;
@@ -176,12 +213,16 @@ set = { PATH = ${q(TOOLS_PATH)} }
  * Writes (or refreshes) a person's workspace. Idempotent: the brief, the skills
  * and the settings are rewritten; the token is kept unless `freshToken`.
  */
-function provision(user, { freshToken, addProject }) {
-  const workspace = join(workspaces, user.username);
+function provision(user, { freshToken, addProject, folder = user.username, title = user.display_name }) {
+  const workspace = join(workspaces, folder);
   mkdirSync(join(workspace, '.claude', 'skills'), { recursive: true });
+  // A second workspace of the person names them (a refresh finds the person here, not in the folder's name).
+  if (folder !== user.username)
+    writeFileSync(join(workspace, '.claude', 'ithomiini-workspace.json'), JSON.stringify({ ...workspaceSettings(folder), user: user.username, title }, null, 2) + '\n');
+  const text = brief(user, workspace);
   // AGENTS.md is the brief (Codex reads it); CLAUDE.md is a link to it, so Claude Code reads the
   // same text whatever its AGENTS.md setting (it follows the link; a copy could drift).
-  writeFileSync(join(workspace, 'AGENTS.md'), brief(user));
+  writeFileSync(join(workspace, 'AGENTS.md'), text);
   rmSync(join(workspace, 'CLAUDE.md'), { force: true });
   symlinkSync('AGENTS.md', join(workspace, 'CLAUDE.md'));
 
@@ -229,7 +270,7 @@ function provision(user, { freshToken, addProject }) {
   // release's guard hook is taken out.
   rmSync(join(workspace, '.claude', 'hooks'), { recursive: true, force: true });
 
-  const token = (!freshToken && keptToken(workspace, user)) || mintToken(user);
+  const token = (!freshToken && keptToken(workspace, user)) || mintToken(user, folder === user.username ? 't3' : `t3:${folder}`);
   const mcp = join(workspace, '.mcp.json');
   writeFileSync(
     mcp,
@@ -307,7 +348,6 @@ function provision(user, { freshToken, addProject }) {
     writeFileSync(config, JSON.stringify(data, null, 2));
   }
 
-  const title = user.display_name;
   const marker = join(workspace, '.claude', 't3-project');
   if (addProject && !existsSync(marker)) {
     execFileSync(t3, ['project', 'add', workspace, '--title', title], { stdio: 'inherit' });
@@ -316,20 +356,37 @@ function provision(user, { freshToken, addProject }) {
   return `${title} → ${workspace}`;
 }
 
+/** Refreshes one existing workspace (its person from .claude/ithomiini-workspace.json, else the folder's name). */
+function refresh(name) {
+  const own = workspaceSettings(name);
+  const user = userOf(own.user ?? name);
+  if (!user) return console.log(`Skipped ${name}: no active user`);
+  console.log(`Refreshed: ${provision(user, { freshToken: false, addProject: false, folder: name, title: own.title ?? user.display_name })}`);
+}
+
 if (arg === '--refresh-all') {
   const names = existsSync(workspaces)
     ? readdirSync(workspaces, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
     : [];
+  let failed = 0;
   for (const name of names) {
-    const user = userOf(name);
-    if (!user) {
-      console.log(`Skipped ${name}: no active user`);
-      continue;
+    try {
+      refresh(name);
+    } catch (e) {
+      // One workspace's broken voice keeps its last brief and does not stop the others.
+      failed++;
+      console.error(`Not refreshed ${name}: ${e.message}`);
     }
-    console.log(`Refreshed: ${provision(user, { freshToken: false, addProject: false })}`);
   }
+  if (failed) process.exitCode = 1;
+} else if (arg === '--refresh') {
+  const name = process.argv[3];
+  if (!name || !existsSync(join(workspaces, name))) throw new Error(`No workspace ${name ?? ''}`);
+  refresh(name);
 } else {
   const user = userOf(arg);
   if (!user) throw new Error(`No active user ${arg}`);
-  console.log(`Ready: ${provision(user, { freshToken: true, addProject: true })}`);
+  const folder = flag('--workspace') ?? user.username;
+  if (!/^[A-Za-z0-9._-]+$/.test(folder)) throw new Error(`Bad workspace folder ${folder}`);
+  console.log(`Ready: ${provision(user, { freshToken: true, addProject: true, folder, title: flag('--title') ?? user.display_name })}`);
 }

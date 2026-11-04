@@ -234,3 +234,53 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('A WhatsApp workspace: a second one of the same person with its own token, and the chat voice instead of the app voice', () => {
+  const home = mkdtempSync(join(tmpdir(), 't3-provision-wa-'));
+  try {
+    const shared = join(home, 'ithomiini', 'shared');
+    mkdirSync(shared, { recursive: true });
+    const db = new DatabaseSync(join(shared, 'database.sqlite'));
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE ai_tokens(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+      INSERT INTO users VALUES ('u1','ana','Ana Pérez','admin',1);`);
+    mkdirSync(join(home, '.config', 'ithomiini'), { recursive: true });
+    writeFileSync(join(home, '.claude.json'), '{}');
+    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), T3CODE_HOME: join(home, '.t3'), ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
+    const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+    const workspaces = join(shared, 't3-workspaces');
+    const appVoice = readFileSync(new URL('../assistant/voice/app.md', import.meta.url), 'utf8').trim();
+    const tokenOf = folder => JSON.parse(readFileSync(join(workspaces, folder, '.mcp.json'), 'utf8')).mcpServers.db.headers.Authorization;
+
+    run('ana');
+    run('ana', '--workspace', 'ana-whatsapp', '--title', 'Ana · WhatsApp');
+    // Two tokens, both live: the second workspace did not revoke the first.
+    assert.notEqual(tokenOf('ana'), tokenOf('ana-whatsapp'));
+    assert.deepEqual(db.prepare('SELECT label FROM ai_tokens WHERE revoked_at IS NULL ORDER BY label').all().map(r => r.label), ['t3', 't3:ana-whatsapp']);
+    assert.deepEqual(JSON.parse(readFileSync(join(workspaces, 'ana-whatsapp', '.claude', 'ithomiini-workspace.json'), 'utf8')), { user: 'ana', title: 'Ana · WhatsApp' });
+
+    // The bridge puts the chat's voice in the workspace; a refresh makes it the brief's voice, in the listed order.
+    const voice = join(workspaces, 'ana-whatsapp', '.claude', 'voice');
+    mkdirSync(voice, { recursive: true });
+    writeFileSync(join(voice, 'whatsapp.md'), '# Soul (WhatsApp)\n\nShort lines.\n');
+    writeFileSync(join(voice, 'core.md'), '## Voice\n\nPlain.\n');
+    writeFileSync(join(voice, 'voice.json'), JSON.stringify({ files: ['whatsapp.md', 'core.md'] }));
+    const before = tokenOf('ana-whatsapp');
+    run('--refresh', 'ana-whatsapp');
+    const brief = readFileSync(join(workspaces, 'ana-whatsapp', 'AGENTS.md'), 'utf8');
+    assert.ok(brief.endsWith('\n\n# Soul (WhatsApp)\n\nShort lines.\n\n## Voice\n\nPlain.\n'));
+    assert.ok(!brief.includes(appVoice));
+    assert.equal(tokenOf('ana-whatsapp'), before);
+    // --refresh-all keeps both: the app workspace has the app voice, the WhatsApp one its own.
+    assert.match(run('--refresh-all'), /Refreshed: Ana · WhatsApp → .*ana-whatsapp/);
+    assert.ok(readFileSync(join(workspaces, 'ana', 'AGENTS.md'), 'utf8').includes(appVoice));
+    assert.equal(readFileSync(join(workspaces, 'ana-whatsapp', 'AGENTS.md'), 'utf8'), brief);
+
+    // A listed voice file that is gone: that workspace keeps its last brief, the others are refreshed, the run fails.
+    rmSync(join(voice, 'core.md'));
+    assert.throws(() => run('--refresh-all'), e => /Voice file missing/.test(e.stderr) && /Refreshed: Ana Pérez/.test(e.stdout));
+    assert.equal(readFileSync(join(workspaces, 'ana-whatsapp', 'AGENTS.md'), 'utf8'), brief);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
