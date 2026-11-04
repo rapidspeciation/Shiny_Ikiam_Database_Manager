@@ -218,6 +218,38 @@ test('a fill that fails keeps the copy: the error and preview name it, and apply
   assert.equal(db.prepare('SELECT count(*) n FROM meeting_doc_proposals').get().n, 1);
 });
 
+test('after a failed fill: the number cannot change; a binned copy is not reused, the next apply makes a new one', async () => {
+  const { docs, backend, dir } = setup();
+  const fill = backend.fill;
+  let fail = true;
+  backend.fill = async (...a) => {
+    if (fail) throw new Error('Docs 500');
+    return fill(...a);
+  };
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  await docs.run('meeting_doc_apply', { id: p.id }, users.admin);
+  assert.match((await docs.run('meeting_doc_propose', { agenda: AGENDA, number: 150 }, users.kim)).error, /number cannot change now/);
+  assert.equal((await docs.run('meeting_doc_propose', { agenda: { ...AGENDA, other: ['Two dry shippers (Joana)'] } }, users.kim)).revision, 2);
+  // Someone bins the copy.
+  const files = JSON.parse(readFileSync(join(dir, 'files.json'), 'utf8'));
+  const first = docs.get(p.id).doc_id;
+  files[first].trashed = true;
+  writeFileSync(join(dir, 'files.json'), JSON.stringify(files));
+  fail = false;
+  const done = await docs.run('meeting_doc_apply', { id: p.id }, users.admin);
+  assert.equal(done.status, 'applied');
+  assert.notEqual(docs.get(p.id).doc_id, first);
+});
+
+test('POST apply answers without the picture\'s server path', async () => {
+  const { docs } = setup();
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  let body = null;
+  await docs.route({ method: 'POST', path: `/api/meeting-docs/${p.id}/apply`, user: users.admin, res: {}, sendHtml: () => {}, json: (_r, _s, v) => (body = v) });
+  assert.equal(body.status, 'applied');
+  assert.equal('picture' in body, false);
+});
+
 test('while a proposal is being applied no other one is made for that date; a restart puts it back to pending', async () => {
   const { docs, db, backend } = setup();
   const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);

@@ -264,6 +264,16 @@ export function googleBackend({ token, fetch: fetchFn = fetch }) {
     async copy(templateId, name, folder) {
       return call(`${files}/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,name,webViewLink,parents`, { method: 'POST', body: { name, parents: [folder] } });
     },
+    /** Whether a file is still there (not binned, not deleted). */
+    async alive(id) {
+      try {
+        const f = await call(`${files}/${encodeURIComponent(id)}?fields=trashed&supportsAllDrives=true`);
+        return !f.trashed;
+      } catch (e) {
+        if (/Google 404/.test(e.message)) return false;
+        throw e;
+      }
+    },
     async exportPdf(docId) {
       const res = await fetchFn(`${files}/${encodeURIComponent(docId)}/export?mimeType=application/pdf`, { headers: { authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(60_000) });
       if (!res.ok) throw new Error(`Google export ${res.status}`);
@@ -311,6 +321,10 @@ export function simBackend({ dir, templateId, folders = [], publicUrl = '' }) {
   return {
     kind: 'sim',
     get: id => load()[id] ?? null,
+    async alive(id) {
+      const f = load()[id];
+      return Boolean(f && !f.trashed);
+    },
     async findByName(name, folder) {
       const f = Object.values(load()).find(x => x.name === name && x.parents?.includes(folder) && !x.trashed);
       return f ? { id: f.id, name: f.name, webViewLink: link(f.id) } : null;
@@ -327,6 +341,7 @@ export function simBackend({ dir, templateId, folders = [], publicUrl = '' }) {
     async fill(docId, proposal) {
       const files = load();
       const f = files[docId];
+      if (!f || f.trashed) throw new Error('File not found (404)');
       const at = f.paragraphs.findIndex(p => p.text === 'Agenda' && p.style);
       const resumen = f.paragraphs.findIndex(p => /^Resumen de la reuni/.test(p.text));
       if (at < 0 || resumen < 0) throw new Error('The copy has no «Agenda» or «Resumen de la reunión» heading');
@@ -611,6 +626,8 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     if (db.prepare("SELECT 1 FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'applying'").get(ctx.meeting.date)) return { error: 'This meeting\'s document is being created right now; check again in a minute.' };
     const applied = db.prepare("SELECT id FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'applied'").get(ctx.meeting.date);
     if (applied) return { error: 'This meeting\'s document was made already from a proposal; edit it in Google Docs.', ...view(get(applied.id)) };
+    if (open?.doc_id && open.title !== title)
+      return { error: `A copy named «${open.title}» was made already (${open.doc_link}); the number cannot change now. Revise the agenda only, or have it binned and discard this proposal first.` };
     if (open) {
       db.prepare('UPDATE meeting_doc_proposals SET updated_at = ?, revision = revision + 1, number = ?, title = ?, agenda = ?, sources = ?, note = ? WHERE id = ?').run(
         now(), number, title, JSON.stringify(agenda), JSON.stringify(sources), note, open.id,
@@ -635,7 +652,7 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     if (!claim.changes) throw Object.assign(new Error('Someone is applying it already'), { status: 409, code: 'NOT_PENDING' });
     try {
       // A copy an earlier attempt made (its fill failed) is finished, not made again.
-      let made = p.doc_id ? { id: p.doc_id, webViewLink: p.doc_link } : null;
+      let made = p.doc_id && (await backend.alive(p.doc_id)) ? { id: p.doc_id, webViewLink: p.doc_link } : null;
       if (!made) {
         const existing = await backend.findByName(p.title, p.folder_id);
         if (existing) throw new Error(`«${p.title}» exists already in the folder: ${existing.webViewLink ?? existing.id}`);
@@ -646,6 +663,11 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
       try {
         await backend.fill(made.id, p);
       } catch (e) {
+        // The kept copy was binned or deleted: forget it, so the next apply makes a new one.
+        if (/\b404\b|not found/i.test(e.message)) {
+          db.prepare('UPDATE meeting_doc_proposals SET doc_id = NULL, doc_link = NULL WHERE id = ?').run(p.id);
+          throw new Error(`The copy ${made.webViewLink} is gone (${e.message}). Applying again makes a new one.`);
+        }
         throw new Error(`The copy ${made.webViewLink} was made but its Agenda could not be filled (${e.message}). Applying again finishes that copy.`);
       }
       db.prepare("UPDATE meeting_doc_proposals SET status = 'applied', applied_at = ?, applied_by = ?, updated_at = ?, error = NULL WHERE id = ?").run(
@@ -744,7 +766,10 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
       const { picture: _path, ...shown } = view(p); // the server's file path stays on the server
       return json(res, 200, shown), true;
     }
-    if (method === 'POST' && what === 'apply') return json(res, 200, await apply(id, user)), true;
+    if (method === 'POST' && what === 'apply') {
+      const { picture: _path, ...shown } = await apply(id, user); // the server's file path stays on the server
+      return json(res, 200, shown), true;
+    }
     if (method === 'POST' && what === 'discard') return json(res, 200, discard(id, user)), true;
     return false;
   }
