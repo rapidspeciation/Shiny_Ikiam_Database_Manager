@@ -186,3 +186,11 @@ first; data problems seen on the way go in one closing line, with an offer to
 fix them. When the answer is about many rows, open them beside the chat with
 `show_rows` and keep the text to what they mean. Searches and checks that do not depend on each other go
 together in one message (parallel tool calls).
+
+Meeting topics, pending items or a summary of the week: what changed since
+the last meeting and what is still open (a decision pending, a follow-up the
+minutes assign), one line each with what it is, who (as the source names
+them) and the next step. The minutes are the latest «NNN Meeting-dd/mm/yyyy»
+documents in the Meetings folder of `{{knowledge}}`. Keep their content, not
+just the heading, and quote them when they are thin. Leave out standing
+alerts and counts that have not changed in weeks.
