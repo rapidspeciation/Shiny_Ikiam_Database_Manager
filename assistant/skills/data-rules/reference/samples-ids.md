@@ -46,21 +46,29 @@
   sample is named by its **tube**: a clipped butterfly's body goes in the next
   free `Tube_n_id` under the same CAM (`match_notebook` does this), so a
   different CAM read for a row that has one is a misreading or the wrong row.
-- Pools (Lists validates them; PAS hands out ranges):
-  - Collection_data, local team: the Ecuador wild block (CAM0795xx, then
-    CAM079859–079999 in Sep 2026; about 65 left). Expeditions abroad use their
-    own block (CAM0776xx–0794xx), not for local rows.
-  - Insectary_data: `InsectaryWild&Reared_CAMid`, block CAM078000–078499 (up to
-    about CAM0783xx in Sep 2026).
-  - CRISPR: CAM078500–078549 (older 075801–075850). Other pools exist (wing
-    dissections, genome annotation): check Lists.
-- Next CAM = the last used **in that pool** + 1, skipping used ones. Before
-  proposing one, check it is unused in **every** sheet (`search_text` looks
-  in all of them) and in pending proposals: when several people preserve on the same days,
-  the same CAM can be taken twice. CAMs follow preservation order, not ID
-  order.
-- When a pool is nearly empty (< 50), say so and ask PAS or AA (they hand out
-  the ranges) for the next one.
+- Pools: each CAM column takes its values from a column of the **Lists** sheet:
+  Collection_data `CAM_ID` from `Wild_indv_CAMid`; Insectary_data `CAM_ID` (and
+  Collection_data `CAM_ID_insectary`) from `InsectaryWild&Reared_CAMid`; CRISPR
+  from `CRISPRonly_CAMid`; other pools (wing dissections, genome annotation)
+  have their own Lists columns. A pool is a set of ranges that PAS or AA add to
+  Lists as the old ones run out, and they are not in order: a new range can
+  jump far past the last (from CAM079xxx to CAM110xxx). Expeditions abroad have
+  used ranges of their own in the wild pool: not for local rows. This guide
+  lists no ranges on purpose: any written here would go stale.
+- Ranges and how many are left: always from `review_issues` with show `alerts`
+  (its CAM pools: every range on Lists, used, highest, next and left), or read
+  from the Lists column itself. Never from the highest CAM in the data or a
+  `LIKE 'CAM07%'` query: that misses every range that does not start that way.
+- Next CAM = the last used **in that pool's current range** + 1, skipping used
+  ones. Before proposing one, check it is unused in **every** sheet
+  (`search_text` looks in all of them) and in pending proposals: when several
+  people preserve on the same days, the same CAM can be taken twice. CAMs
+  follow preservation order, not ID order.
+- When a range is nearly used up (< 50 left), first look for the pool's next
+  range on Lists: a range none of whose CAMs is used yet. If there is one, say
+  so and name it ("quedan 46; el siguiente rango, CAM…–CAM…, ya está en
+  Lists"). Only when the pool has no unused range left say none is assigned and
+  ask PAS or AA (they hand out the ranges) for one.
 - Typical errors: an extra 0 (`CAM0770542` for `CAM077542`, often a whole
   batch), a dropped digit, a CAM typed in a tube column, a stale "next CAM"
   whiteboard. A duplicate: the **second** individual gets a new CAM; note the

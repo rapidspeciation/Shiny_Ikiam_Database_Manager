@@ -36,7 +36,7 @@ const cam = n => `CAM${String(78000 + n).padStart(6, '0')}`;
  * sex; a Collection row without the lookups of the rows above; a CAM range of
  * Lists nearly used up; and a species with 31 preserved at Ikiam.
  */
-async function fixture({ databasePath } = {}) {
+async function fixture({ databasePath, nextRange = false } = {}) {
   const insectary = [];
   const pedigree = [];
   for (let i = 0; i < 60; i++) {
@@ -151,7 +151,11 @@ async function fixture({ databasePath } = {}) {
       { row: 4, values: { Date: serial('2026-09-23'), Location: 'Ikiam' } },
     ],
     // The insectary's CAM range: 100 CAMs, 61 used.
-    Lists: Array.from({ length: 100 }, (_, i) => ({ row: 2 + i, values: { 'InsectaryWild&Reared_CAMid': cam(i) } })),
+    Lists: [
+      ...Array.from({ length: 100 }, (_, i) => ({ row: 2 + i, values: { 'InsectaryWild&Reared_CAMid': cam(i) } })),
+      // With `nextRange`: PAS has already added the pool's next range, CAM110000–CAM110099, none of it used.
+      ...(nextRange ? Array.from({ length: 100 }, (_, i) => ({ row: 102 + i, values: { 'InsectaryWild&Reared_CAMid': `CAM${110000 + i}` } })) : []),
+    ],
   });
   // Row 2 reads Death_date… from Insectary_data; row 3 (typed later) does not.
   const row2 = sheets.rows.get('Collection_data').find(r => r.row === 2);
@@ -304,6 +308,28 @@ test('alerts: a CAM range in use running low, a species at 30 preserved, one clo
   assert.ok(!rule.reached.some(s => /Heliconius/.test(s.species)));
   // Computed once per state of the copy.
   assert.equal(alerts(store), data);
+  store.close();
+});
+
+test('alerts: a CAM range running low whose next range is already on Lists is information that names it, not a warning', async () => {
+  const store = await fixture({ nextRange: true });
+  const data = alerts(store);
+  const pool = data.camPools.find(p => p.pool === 'InsectaryWild&Reared_CAMid');
+  assert.deepEqual(
+    pool.ranges.map(r => [r.first, r.last, r.used, r.left, r.level]),
+    [
+      ['CAM078000', 'CAM078099', 61, 39, 'next'],
+      ['CAM110000', 'CAM110099', 0, 100, 'ok'],
+    ],
+  );
+  assert.deepEqual(pool.ranges[0].nextRange, { first: 'CAM110000', last: 'CAM110099', size: 100 });
+  assert.equal(pool.level, 'ok');
+  assert.equal(pool.left, 139);
+  const cams = data.alerts.filter(a => a.id.startsWith('cam:'));
+  assert.equal(cams.length, 1);
+  assert.equal(cams[0].level, 'info');
+  assert.match(cams[0].text, /quedan 39 CAM en CAM078000–CAM078099 .*el siguiente rango ya está en Lists: CAM110000–CAM110099\./);
+  assert.doesNotMatch(cams[0].text, /Pidan/);
   store.close();
 });
 

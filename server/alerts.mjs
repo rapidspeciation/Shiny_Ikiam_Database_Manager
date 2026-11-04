@@ -8,7 +8,10 @@
 // used (any sheet), the highest used, how many are left above it (gaps below it
 // are counted apart: they are usually skipped for good), and when it was last
 // used. A range in use in the last year with fewer than 50 left, or less than
-// 15 % of it, is an alert: time to ask PAS or AA for a new range.
+// 15 % of it, is an alert: time to ask PAS or AA for a new range. Unless the pool
+// already has its next range: a range on Lists with none of its CAMs used yet
+// (PAS or AA added it). Then the low range is information that names the next
+// one, not an alert.
 //
 // The 30-preserved rule (docs/monitoring.md): once an Ithomiini species has 30
 // preserved individuals from Ikiam, Casa de Lin or Mariposario Ikiam
@@ -128,6 +131,13 @@ function camAlerts(sheets, today) {
         level: !left ? 'done' : low ? 'low' : 'ok',
       };
     });
+    // The pool's next range, already on Lists: a fresh one (nothing used), after the low range when there is one.
+    const fresh = described.filter(r => r.used === 0 && r.size >= CAM_LOW_LEFT);
+    for (const r of described)
+      if (r.level === 'low') {
+        const next = fresh.find(f => f.first > r.last) ?? fresh.find(f => f !== r) ?? null;
+        if (next) Object.assign(r, { level: 'next', nextRange: { first: next.first, last: next.last, size: next.size } });
+      }
     // Shown: ranges with CAMs left, and full ones used in the last year (the run the team just finished).
     const shown = described.filter(r => r.left || r.active);
     const left = described.reduce((n, r) => n + r.left, 0);
@@ -247,7 +257,19 @@ function alertList(cams, rule, samples, today) {
   for (const p of cams) {
     if (p.level === 'out')
       add(`cam:${p.pool}`, 'warn', msg('{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.', { pool: p.pool }), LINK);
-    for (const r of p.ranges)
+    for (const r of p.ranges) {
+      if (r.level === 'next')
+        add(
+          `cam:${p.pool}:${r.first}`,
+          'info',
+          msgn(
+            r.left,
+            '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.',
+            '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.',
+            { pool: p.pool, first: r.first, last: r.last, cam: r.lastUsed.cam, date: day(r.lastUsed.date), nextFirst: r.nextRange.first, nextLast: r.nextRange.last },
+          ),
+          LINK,
+        );
       if (r.level === 'low')
         add(
           `cam:${p.pool}:${r.first}`,
@@ -260,6 +282,7 @@ function alertList(cams, rule, samples, today) {
           ),
           LINK,
         );
+    }
   }
   for (const s of rule.reached.filter(s => s.recent))
     add(

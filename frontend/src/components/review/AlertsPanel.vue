@@ -21,6 +21,7 @@ const rowLink = (link?: string) => (link?.startsWith('#/tablas') ? link : null)
 const percentLeft = (left: number, size: number) => `${Math.round((100 * left) / size)} %`
 const levelTone: Record<string, string> = {
   low: 'bg-amber-50 text-amber-950',
+  next: '',
   done: 'text-stone-400',
   ok: '',
 }

@@ -341,7 +341,9 @@ export interface CamRange {
   gaps: number
   lastUsed: { cam: string; date: string } | null
   active: boolean
-  level: 'ok' | 'low' | 'done'
+  /** next: running low, but the pool's next range is already on Lists (nextRange). */
+  level: 'ok' | 'low' | 'next' | 'done'
+  nextRange?: { first: string; last: string; size: number }
 }
 export interface CamPool {
   pool: string

@@ -354,6 +354,10 @@ export default {
 
   // server/alerts.mjs: Revisión → Alertas and Inicio
   '{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.': '{pool}: no CAMs left in any range. Ask PAS or AA for a new range.',
+  '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.':
+    '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}); the next range is already on Lists: {nextFirst}–{nextLast}.',
+  '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.':
+    '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}); the next range is already on Lists: {nextFirst}–{nextLast}.',
   '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
     '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
   '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':

@@ -80,6 +80,6 @@ which correction they follow.
 
 ## Alerts
 
-- A CAM range running out: PAS or AA hand out the next range; say so.
+- A CAM range running out: when its pool already has the next range on Lists, the alert is information that names it (say so, nobody needs to ask); otherwise PAS or AA hand out the next range; say so.
 - A species at 30 preserved: further captures from those places are marked
   and released (skill `monitoring`).
