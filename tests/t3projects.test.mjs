@@ -116,4 +116,23 @@ test("an empty chat is T3's own thread.create, with the app's T3 token", async (
   assert.equal(chatStarter({ local: 'http://127.0.0.1:9' }), null);
   const refused = chatStarter({ local: 'x', tokenFile: join(dir, 'token'), fetchImpl: async () => ({ ok: false, status: 403 }) });
   await assert.rejects(refused({ id: 'p' }), /T3 answered 403/);
+  // On T3's stock Claude instance unless the config names another account's (ITHOMIINI_T3_CLAUDE_INSTANCE).
+  assert.deepEqual([made.modelSelection.instanceId, turn.modelSelection.instanceId], ['claudeAgent', 'claudeAgent']);
+});
+
+test("the app's chats run on the configured Claude instance, the first turn too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 't3projects-'));
+  writeFileSync(join(dir, 'token'), 'secret\n');
+  const sent = [];
+  const fetchImpl = async (url, init) => (sent.push(JSON.parse(init.body)), { ok: true });
+  const start = chatStarter({ local: 'http://127.0.0.1:9', tokenFile: join(dir, 'token'), claudeInstance: 'claude-ithomiini', fetchImpl });
+  await start({ id: 'p-ana' }, { title: 'Revisión de fotos', text: 'Revisa el lote' });
+  assert.deepEqual(sent.map(c => [c.type, c.modelSelection.instanceId, c.modelSelection.model]), [
+    ['thread.create', 'claude-ithomiini', 'claude-opus-5-5'],
+    ['thread.turn.start', 'claude-ithomiini', 'claude-opus-5-5'],
+  ]);
+  // An empty setting keeps the stock instance.
+  const stock = chatStarter({ local: 'http://127.0.0.1:9', tokenFile: join(dir, 'token'), claudeInstance: '', fetchImpl });
+  await stock({ id: 'p-ana' });
+  assert.equal(sent.at(-1).modelSelection.instanceId, 'claudeAgent');
 });

@@ -407,6 +407,9 @@ export function configFromEnv(env = process.env) {
           // How «Actualizar T3» runs scripts/t3-update.mjs: the unit ithomiini-t3-update@<version> on the
           // server; in the lab a command, given the version (tools/lab/t3.sh --update).
           updateCommand: env.ITHOMIINI_T3_UPDATE_COMMAND || null,
+          // The T3 provider instance (Claude account) of the chats the app makes (server/t3projects.mjs):
+          // claude-ithomiini on the live server since 4 Nov 2026, T3's stock claudeAgent elsewhere.
+          claudeInstance: env.ITHOMIINI_T3_CLAUDE_INSTANCE || 'claudeAgent',
         }
       : null,
     // The people's T3 workspaces (scripts/t3-provision.mjs), where match_notebook reads a reader's linesFile;

@@ -45,26 +45,31 @@ export function provisioner(mode, { systemctl = 'systemctl' } = {}) {
   return null;
 }
 
+/** The T3 provider instance (a Claude account) of the chats the app makes, unless the config names another (ITHOMIINI_T3_CLAUDE_INSTANCE). */
+export const DEFAULT_CLAUDE_INSTANCE = 'claudeAgent';
+
 /** A new chat's model: as T3's own new chat (Opus 5.5, medium effort, no fast mode); the person can change it before writing. */
-const MODEL = {
-  instanceId: 'claudeAgent',
+export const chatModel = (instanceId = DEFAULT_CLAUDE_INSTANCE) => ({
+  instanceId: instanceId || DEFAULT_CLAUDE_INSTANCE,
   model: 'claude-opus-5-5',
   options: [
     { id: 'effort', value: 'medium' },
     { id: 'fastMode', value: false },
     { id: 'contextWindow', value: '1m' },
   ],
-};
+});
 
 /**
  * Makes a chat in a project through T3's own commands (server/t3commands.mjs, with the
  * app's T3 token; server/index.mjs's sign-in links use it too): its id, or an error. Empty
  * and called "New thread", or with `title` and a first message from the person (`text`),
- * which the assistant starts answering at once (the «Fotos» tab's review).
+ * which the assistant starts answering at once (the «Fotos» tab's review). `claudeInstance`: the T3
+ * provider instance the chat runs on (config.t3.claudeInstance; 'claudeAgent' by default).
  */
-export function chatStarter({ local, tokenFile, fetchImpl = fetch, WebSocketImpl } = {}) {
+export function chatStarter({ local, tokenFile, claudeInstance, fetchImpl = fetch, WebSocketImpl } = {}) {
   const send = t3Commands({ local, tokenFile, fetchImpl, WebSocketImpl });
   if (!send) return null;
+  const MODEL = chatModel(claudeInstance);
   return async (project, { title = 'New thread', text = '' } = {}) => {
     const threadId = randomUUID();
     const made = {

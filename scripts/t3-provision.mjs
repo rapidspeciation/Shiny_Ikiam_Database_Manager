@@ -27,6 +27,23 @@ import { applyLabGuard } from './lab-guard.mjs';
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shared = process.env.ITHOMIINI_SHARED || '/home/ubuntu/ithomiini/shared';
 const database = process.env.DATABASE_PATH || join(shared, 'database.sqlite');
+/**
+ * The Claude Code config files that hold a folder's trust: ~/.claude.json, ~/.claude/.claude.json, and
+ * <homePath>/.claude.json of every Claude instance in T3's settings (T3CODE_HOME, ~/.t3 by default).
+ */
+function claudeConfigs({ home = process.env.HOME, t3Home = process.env.T3CODE_HOME || join(home, '.t3') } = {}) {
+  const homes = [];
+  try {
+    const settings = JSON.parse(readFileSync(join(t3Home, 'userdata', 'settings.json'), 'utf8'));
+    for (const instance of Object.values(settings.providerInstances ?? {}))
+      if (instance?.driver === 'claudeAgent' && typeof instance.config?.homePath === 'string' && instance.config.homePath)
+        homes.push(join(instance.config.homePath, '.claude.json'));
+  } catch {
+    /* No T3 settings (a fresh install): the default account only. */
+  }
+  return [...new Set([join(home, '.claude.json'), join(home, '.claude', '.claude.json'), ...homes])];
+}
+
 /** The app's MCP endpoint, from the service's port and base path (APP_BASE_PATH=/ on claudeclaw). */
 function serviceMcpUrl() {
   const env = {};
@@ -278,8 +295,10 @@ function provision(user, { freshToken, addProject }) {
   if (labUrl) applyLabGuard(settings, { home: process.env.HOME, source, cache: join(process.env.HOME, '.cache', 'ithomiini-lab') });
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
 
-  // Claude Code only applies the folder's settings once the folder is trusted.
-  for (const config of [join(process.env.HOME, '.claude.json'), join(process.env.HOME, '.claude', '.claude.json')]) {
+  // Claude Code only applies the folder's settings once the folder is trusted: in the default account's
+  // files and in each Claude instance's own home in T3 (its homePath, e.g. ~/.claude-ithomiini, the
+  // account the app's chats run on since 4 Nov 2026).
+  for (const config of claudeConfigs()) {
     if (!existsSync(config)) continue;
     const data = JSON.parse(readFileSync(config, 'utf8'));
     if (data.projects?.[workspace]?.hasTrustDialogAccepted) continue;

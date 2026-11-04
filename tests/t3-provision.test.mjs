@@ -22,11 +22,20 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     mkdirSync(join(home, '.config', 'ithomiini'), { recursive: true });
     writeFileSync(join(home, '.config', 'ithomiini', 'service.env'), 'APP_PORT=8794\nAPP_BASE_PATH=/\n');
     writeFileSync(join(home, '.claude.json'), '{}');
+    // T3 has a second Claude account (an instance with its own home) the app's chats may run on.
+    const ithomiiniHome = join(home, '.claude-ithomiini');
+    mkdirSync(ithomiiniHome, { recursive: true });
+    writeFileSync(join(ithomiiniHome, '.claude.json'), '{}');
+    mkdirSync(join(home, '.t3', 'userdata'), { recursive: true });
+    writeFileSync(
+      join(home, '.t3', 'userdata', 'settings.json'),
+      JSON.stringify({ providerInstances: { claudeAgent: { driver: 'claudeAgent' }, 'claude-ithomiini': { driver: 'claudeAgent', config: { homePath: ithomiiniHome } }, codex: { driver: 'codex', config: { homePath: join(home, 'nope') } } } }),
+    );
     // Codex is installed and has another user's settings (e.g. another service's trusted folder).
     mkdirSync(join(home, '.codex'), { recursive: true });
     const codexGlobal = '[projects."/home/other/job"]\ntrust_level = "trusted"\n\n[tui]\nscreen_reader_detection_done = true';
     writeFileSync(join(home, '.codex', 'config.toml'), codexGlobal);
-    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
+    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), T3CODE_HOME: join(home, '.t3'), ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
     const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
 
     run('ana');
@@ -75,6 +84,9 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(settings.disableClaudeAiConnectors, true);
     assert.equal(settings.env.ENABLE_CLAUDEAI_MCP_SERVERS, undefined);
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
+    // Trusted by the other Claude account too; a Codex instance's home is not a Claude config.
+    assert.ok(JSON.parse(readFileSync(join(ithomiiniHome, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
+    assert.ok(!existsSync(join(home, 'nope')));
     // Chats may write and run their own scripts, the database included: no guard hook, no deny on it.
     assert.equal(settings.hooks, undefined);
     assert.ok(!existsSync(join(workspace, '.claude', 'hooks')));
