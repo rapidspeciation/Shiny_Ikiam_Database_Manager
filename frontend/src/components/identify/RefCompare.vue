@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The person's photo beside reference photos of one candidate (views/IdentifyView.vue), with each photo's credit.
-// A genus fallback is said to be another species; the team's specimens are named as such.
+// A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such.
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { licenseUrl, type Refs } from '../../lib/identifyRefs'
@@ -50,6 +50,7 @@ const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
       </div>
       <figcaption v-if="photo" class="mt-1 text-xs text-fg-muted">
         <span v-if="photo.level === 'genus'" class="font-medium text-amber-800">{{ $t('Foto de otra especie del género {genus}', { genus }) }}. </span>
+        <span v-if="photo.level === 'subspecies' && photo.taxon" class="font-medium">{{ $t('Subespecie') }} <i>{{ photo.taxon.split(' ').slice(2).join(' ') }}</i>. </span>
         <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ photo.sex }}</template></span>
         <span v-else class="break-words"
           ><a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a

@@ -41,8 +41,6 @@ export default {
   'Ejemplar del proyecto': 'Project specimen',
   'Elegir foto': 'Choose photo',
   'El modelo cambió en el servidor: recargue la página y descargue de nuevo.': 'The model changed on the server: reload the page and download again.',
-  'El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.':
-    'The server is still gathering photos of {n} species: tap Save again later to complete them.',
   'El teléfono se quedó sin memoria. Cierre otras apps y pruebe de nuevo, o use el modelo Rápido y liviano.':
     'The phone ran out of memory. Close other apps and try again, or use the Fast and light model.',
   'en el teléfono': 'on the phone',
@@ -120,7 +118,6 @@ export default {
   'Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.':
     'Take a photo and the app suggests which species it is. It works on this phone, also without internet, after a download.',
   'Última foto': 'Last photo',
-  'Una foto de cada especie de Ithomiini, para comparar sin internet.': 'One photo of each Ithomiini species, to compare without internet.',
   'Usar este': 'Use this one',
   Volver: 'Back',
   'Abra esta página una vez con internet para usarla sin señal.': 'Open this page once with internet to use it without signal.',
@@ -167,4 +164,19 @@ export default {
   'La foto es demasiado grande. Pruebe con otra.': 'The photo is too large. Try another one.',
   'El identificador del servidor no respondió. Pruebe de nuevo o use «En este teléfono».': 'The server’s identifier did not answer. Try again or use “On this phone”.',
   'Sin señal y sin modelo en este teléfono: conéctese para usar el servidor o descargar el modelo.': 'No signal and no model on this phone: connect to use the server or download the model.',
+  'Especies': 'Species',
+  Subespecies: 'Subspecies',
+  'Todas': 'All',
+  'Solo Ecuador': 'Ecuador only',
+  'Ninguna': 'None',
+  '{n} fotos, {mb} MB': '{n} photos, {mb} MB',
+  'No todas tienen una foto libre en iNaturalist: {sp} de {spAll} especies y {ssp} de {sspAll} subespecies (en Ecuador, {spEc} de {spEcAll} y {sspEc} de {sspEcAll}). «Solo Ecuador»: las registradas en Ecuador.': 'Not all have a free photo on iNaturalist: {sp} of {spAll} species and {ssp} of {sspAll} subspecies (in Ecuador, {spEc} of {spEcAll} and {sspEc} of {sspEcAll}). “Ecuador only”: those recorded in Ecuador.',
+  'Guardar también fotos para el campo (unos {mb} MB)': 'Also save photos for the field (about {mb} MB)',
+  'Guardar también fotos para el campo': 'Also save photos for the field',
+  'Una foto por especie (y subespecie) para comparar sin internet.': 'One photo per species (and subspecies) to compare without internet.',
+  'Elegir cuáles': 'Choose which',
+  'Una foto de cada especie y subespecie de Ithomiini que tenga una foto libre, para comparar sin internet.': 'One photo of each Ithomiini species and subspecies that has a free photo, to compare without internet.',
+  'Lo elegido: {n} fotos, unos {mb} MB.': 'Your choice: {n} photos, about {mb} MB.',
+  'Guardar esta elección': 'Save this choice',
+  'Las fotos que ya no entran en la elección se borran del teléfono.': 'Photos no longer in the choice are removed from the phone.',
 }

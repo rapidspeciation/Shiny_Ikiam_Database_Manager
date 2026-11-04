@@ -13,6 +13,7 @@ import { effectiveMode, identifyOnServer, jpegBase64, onlineError, photoCanvas, 
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
+import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
 import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../lib/publicModels'
 import { MODEL_ROLES, sameFile } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
@@ -21,7 +22,7 @@ import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, type Candidate, type StockDetail } from '../lib/identifyResult'
-import { fieldSet, referencePhotos, saveFieldPhotos, type FieldSet, type Refs } from '../lib/identifyRefs'
+import { fieldIndex, fieldScope, fieldSet, inScope, referencePhotos, saveFieldPhotos, setFieldScope, sizeOf, type FieldIndex, type FieldScope, type FieldSet, type Refs } from '../lib/identifyRefs'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -560,22 +561,49 @@ watch(
     if (names) loadRefs(names.split('|'))
   },
 )
+/** The photos of the species compared, its subspecies' photos in the model's order (the closest first). */
+const refsShown = computed<Refs | undefined>(() => {
+  const r = refs.value[showing.value]
+  if (!r) return r
+  const order = (subspecies.value.get(showing.value) ?? []).map(c => c.name)
+  const at = (p: { taxon?: string }) => {
+    const i = p.taxon ? order.indexOf(p.taxon) : -1
+    return i < 0 ? order.length : i
+  }
+  const own = r.photos.filter(p => p.level !== 'subspecies')
+  const ssp = r.photos.filter(p => p.level === 'subspecies').sort((a, b) => at(a) - at(b))
+  return { ...r, photos: [...own, ...ssp] }
+})
 const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !== 'genus')?.src
 
 const field = ref<FieldSet | null>(fieldSet())
 const fieldProgress = ref<{ done: number; total: number } | null>(null)
 const fieldNote = ref<string | null>(null)
+/** What to save (the person's choice on this phone, lib/identifyRefs.ts DEFAULT_SCOPE until then). */
+const scope = ref<FieldScope>(fieldScope())
+watch(scope, setFieldScope, { deep: true })
+/** The field set's list, for the sizes before saving (online, or kept by the service worker). */
+const fieldList = ref<FieldIndex | null>(null)
+fieldIndex().then(v => (fieldList.value = v), () => null)
+const fieldMb = (b: number) => (b / 1048576).toFixed(1)
+/** The chosen photos' size, or null while the list is unknown. */
+const fieldSize = computed(() => {
+  if (!fieldList.value) return null
+  const take = inScope(fieldList.value, scope.value)
+  return sizeOf([...take.species, ...take.subspecies])
+})
+/** The saved set is what is chosen now (a set saved before 4 Nov 2026 was every species, no subspecies). */
+const fieldCurrent = computed(() => {
+  const was = field.value?.scope ?? { species: 'all', ssp: 'none' }
+  return !!field.value && was.species === scope.value.species && was.ssp === scope.value.ssp
+})
 async function saveField() {
   fieldNote.value = null
   fieldProgress.value = { done: 0, total: 1 }
   try {
-    const out = await saveFieldPhotos((done, total) => (fieldProgress.value = { done, total }))
+    const out = await saveFieldPhotos(scope.value, (done, total) => (fieldProgress.value = { done, total }))
     field.value = out
-    fieldNote.value = out.failed
-      ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed })
-      : out.pending
-        ? t('El servidor todavía reúne fotos de {n} especies: vuelva a tocar Guardar más tarde para completarlas.', { n: out.pending })
-        : null
+    fieldNote.value = out.failed ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed }) : null
   } catch {
     fieldNote.value = t('Hace falta conexión a internet.')
   } finally {
@@ -583,12 +611,13 @@ async function saveField() {
   }
 }
 
-// The field set (about 8 MB) saved by itself once a model is on the phone and there is signal: without it a species
-// never looked up online has no photo in the field (3 Nov 2026: Mechanitis on a phone in airplane mode). Once per
-// page; a failure leaves the button to finish it.
+// The chosen photos saved by themselves once a model is on the phone and there is signal, unless the person
+// unticked «Guardar también fotos para el campo» in the download panel: without them a species never looked up
+// online has no photo in the field (3 Nov 2026: Mechanitis on a phone in airplane mode). Once per page; a failure
+// leaves the button to finish it.
 let fieldTried = false
 watch(
-  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value,
+  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value && scope.value.auto,
   go => {
     if (!go || fieldTried || fieldProgress.value) return
     fieldTried = true
@@ -746,6 +775,19 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </span>
         </label>
       </fieldset>
+      <div v-if="!field" class="mt-3 rounded-lg border border-border bg-surface p-3" data-testid="field-in-download">
+        <label class="flex cursor-pointer items-start gap-2">
+          <input v-model="scope.auto" type="checkbox" class="mt-0.5 size-4 accent-[var(--focus)]" />
+          <span class="text-sm">
+            <span class="font-medium">{{ fieldSize ? $t('Guardar también fotos para el campo (unos {mb} MB)', { mb: fieldMb(fieldSize.bytes) }) : $t('Guardar también fotos para el campo') }}</span>
+            <span class="block text-fg-muted">{{ $t('Una foto por especie (y subespecie) para comparar sin internet.') }}</span>
+          </span>
+        </label>
+        <details v-if="scope.auto" class="mt-2 pl-6">
+          <summary class="cursor-pointer text-sm text-brand-text">{{ $t('Elegir cuáles') }}</summary>
+          <FieldPhotosChoice v-model="scope" :index="fieldList" name="field-dl" class="mt-2" />
+        </details>
+      </div>
       <p v-if="isIos && !installed && !ready[wanted]" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
         {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
       </p>
@@ -818,7 +860,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
                 <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
               </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refs[showing]" :loading="refsLoading && !refs[showing]" :online="online" />
+              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" />
               <div class="mt-3 flex flex-wrap gap-2">
                 <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
                   {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}
@@ -975,13 +1017,16 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               </template>
             </dl>
             <h3 class="mt-3 font-medium">{{ $t('Fotos para el campo') }}</h3>
-            <p class="text-fg-muted">{{ $t('Una foto de cada especie de Ithomiini, para comparar sin internet.') }}</p>
+            <p class="text-fg-muted">{{ $t('Una foto de cada especie y subespecie de Ithomiini que tenga una foto libre, para comparar sin internet.') }}</p>
+            <FieldPhotosChoice v-model="scope" :index="fieldList" name="field-box" class="mt-2" />
+            <p v-if="fieldSize" class="mt-2 font-medium" data-testid="field-size">{{ $t('Lo elegido: {n} fotos, unos {mb} MB.', { n: fieldSize.photos, mb: fieldMb(fieldSize.bytes) }) }}</p>
             <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
             <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
             <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
             <button class="btn mt-2" :disabled="!!fieldProgress || !online" @click="saveField">
-              {{ field ? $t('Actualizar fotos') : $t('Guardar fotos') }}
+              {{ !field ? $t('Guardar fotos') : fieldCurrent ? $t('Actualizar fotos') : $t('Guardar esta elección') }}
             </button>
+            <p v-if="field && !fieldCurrent" class="mt-1 text-xs text-fg-subtle">{{ $t('Las fotos que ya no entran en la elección se borran del teléfono.') }}</p>
             <h3 class="mt-3 font-medium">{{ $t('Instalar en el teléfono') }}</h3>
             <p class="text-fg-muted">
               {{ $t('Android: menú ⋮ → «Instalar app». iPhone: Compartir → «Agregar a inicio», y abra la app desde el ícono.') }}
