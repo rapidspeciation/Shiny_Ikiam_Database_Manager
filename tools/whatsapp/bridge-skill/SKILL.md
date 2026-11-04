@@ -102,8 +102,10 @@ https://…/photo.jpg | *Oleria onega* — Archidona, 2023 — iNaturalist, ana_
   if there are any, adults as adults, and host-plant photos only labelled as
   the plants where eggs may be laid, never as egg-laying. A source that did
   not answer (`not_checked`) means the search was incomplete, not "none".
-- `unchecked_images_block` (host-plant photos picked by tags, nobody looked):
-  never send it unless the person asked for them after being told so.
+- Host-plant photos picked by tags (`tags_fallback`, when a contact sheet
+  could not be made): each caption already says «elegida automáticamente por
+  etiqueta, no revisada»; end with its `images_block` and say in the text
+  that nobody looked at them.
 - The caption: species, locality, year and the photo's credit and licence
   when the tool gives them.
 - The text above the block goes first, as its own message.
