@@ -51,6 +51,12 @@ export const MAIN_TOOLS = new Set([
   'show_photos',
   // It makes a card of photo fixes (server/photo-curation.mjs).
   'show_photo_fixes',
+  // The meeting document proposals live in the app's thread (server/meeting-doc.mjs).
+  'meeting_doc_context',
+  'meeting_doc_propose',
+  'meeting_doc_get',
+  'meeting_doc_apply',
+  'meeting_doc_picture',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

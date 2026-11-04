@@ -158,6 +158,7 @@ Insectary ID».
 | `data-review` | working through the data's inconsistencies, the corrections agreed or suggested in Revisión, the alerts |
 | `historial` | who changed what and when; undoing a save |
 | `weather` | the weather forecast at a collecting site: tomorrow, which day this week to go out, rain in the monitoring hours |
+| `meeting-agenda` | the weekly 🇪🇨🇬🇧 meeting: topics to discuss, the proposed Agenda, the proposal that creates the minutes document |
 | `rack-reader` | photos of a tube rack's bottom: the tubes on A1..H12, the LBI freezer deposit Excel (Anexo1), tubes looked up in the workbook |
 | `google-account` | the project's Gmail, Calendar, or a Drive file that is not among the project documents |
 | `invitar` | an administrator invites someone to the app, or asks how the invitations stand |

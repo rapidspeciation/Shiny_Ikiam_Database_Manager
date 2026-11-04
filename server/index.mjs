@@ -2,6 +2,7 @@ import { t3Admin, t3Checks, t3Pairing } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
 import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
 import { REVIEW_PROMPT } from './rename-photos.mjs';
+import { meetingDocsConfig } from './meeting-doc.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -420,6 +421,8 @@ export function configFromEnv(env = process.env) {
     aiBaseUrl: env.AI_BASE_URL,
     geminiApiKey: env.GEMINI_API_KEY,
     knowledgeRoots: env.KNOWLEDGE_DIR ? [env.KNOWLEDGE_DIR] : [],
+    // The weekly meeting's document proposals (server/meeting-doc.mjs).
+    meetingDocs: meetingDocsConfig(env),
     ai: {
       baseUrl: env.ITHOMIINI_AI_BASE_URL || env.AI_BASE_URL,
       model: env.ITHOMIINI_AI_MODEL || env.AI_MODEL,
@@ -1663,6 +1666,11 @@ export async function createApp(config = {}, options = {}) {
       // check the batch open in the tab (server/rename-photos.mjs). Without T3, the request comes back to be pasted.
       // The chat that reviewed a folder is kept with it (rename_reviews, by person and folder): the folder
       // opened again goes back to it; `fresh: true` starts another. GET: the folder's chat, if any.
+      // The weekly meeting's document proposals: preview, apply, discard (server/meeting-doc.mjs).
+      if (path.startsWith('/api/meeting-docs/') && assistant?.meetingDocs) {
+        const sendHtml = (r, html) => send(r, 200, html, { 'content-type': 'text/html; charset=utf-8' });
+        if (await assistant.meetingDocs.route({ method, path, user, res, sendHtml, json })) return;
+      }
       if (path === '/api/rename/review' && (method === 'POST' || method === 'GET')) {
         requireEditor(user);
         store.db.exec(

@@ -356,7 +356,7 @@ export class LocalDrive {
 }
 
 /** An access token from a credentials file (client_id, client_secret, refresh_token), renewed when it runs out. */
-function tokenFrom(file) {
+export function tokenFrom(file) {
   let held = null;
   return async () => {
     if (held && held.expires > Date.now() + 60_000) return held.value;
