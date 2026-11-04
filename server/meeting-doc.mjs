@@ -393,16 +393,22 @@ export function paperPage(proposal) {
 }
 /** The proposal's page in the app: what apply will make, the paper, the sources, Apply / Discard for those allowed. */
 export function previewPage(p, { canApply = false, basePath = '' } = {}) {
+  const pending = p.doc_id
+    ? `Pendiente: la copia <a href="${esc(p.doc_link)}" target="_blank" rel="noopener">${esc(p.title)}</a> ya existe pero su Agenda no se llenó; aplicar de nuevo la termina.`
+    : canApply
+      ? 'Pendiente: nada se ha creado en Drive todavía.'
+      : 'Pendiente: nada se ha creado en Drive. Solo un administrador puede aplicarla (confirmando en su chat o aquí).';
   const status =
     p.status === 'applied'
       ? `Aplicada ${esc(p.applied_at?.slice(0, 16).replace('T', ' '))} por ${esc(p.applied_by)}: <a href="${esc(p.doc_link)}" target="_blank" rel="noopener">${esc(p.title)}</a>`
       : p.status === 'discarded'
         ? `Descartada ${esc(p.closed_at?.slice(0, 16).replace('T', ' '))} por ${esc(p.closed_by)}`
-        : p.status === 'failed'
-          ? `No se pudo aplicar: ${esc(p.error)}`
-          : canApply
-            ? 'Pendiente: nada se ha creado en Drive todavía.'
-            : 'Pendiente: nada se ha creado en Drive. Solo un administrador puede aplicarla (confirmando en su chat o aquí).';
+        : p.status === 'applying'
+          ? 'Creando el documento…'
+          : `${pending}${p.error ? `<br><span class="err">Último intento: ${esc(p.error)}</span>` : ''}`;
+  const picture = p.status === 'applied' && p.picture
+    ? `<p class="sub">La imagen que va al chat (pídela allí si aplicaste con el botón: «manda la imagen de la agenda»):</p><img class="pic" alt="Primera página del documento" src="${esc(basePath.replace(/\/+$/, ''))}/api/meeting-docs/${esc(p.id)}/picture.png">`
+    : '';
   const sources = (p.sources ?? []).map(s => `<li>${esc(s)}</li>`).join('');
   const buttons = p.status === 'pending' && canApply
     ? `<div class="act"><button id="apply">Crear el documento</button><button id="discard" class="ghost">Descartar</button><span id="msg"></span></div>`
@@ -421,7 +427,7 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 16px}
 button{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.ghost{background:transparent;color:var(--accent)}
 .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:#fff}.wrap .paper{max-width:none}
-details{margin-top:16px}#msg{color:var(--muted)}
+details{margin-top:16px}#msg{color:var(--muted)}.err{color:#b3261e;font-weight:400}.pic{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:0 0 16px}
 ${PAPER_CSS}
 </style></head><body><main>
 <h1>Propuesta: crear «${esc(p.title)}»</h1>
@@ -429,7 +435,7 @@ ${PAPER_CSS}
 <div class="box2"><p class="state">${status}</p><dl>
 <dt>Al aplicar</dt><dd>Se copia «${esc(TEMPLATE_TITLE)}» en la carpeta «${esc(p.folder_name || p.folder_id)}», se llama «${esc(p.title)}» y se llena su Agenda con estos puntos. El resto del documento queda como en la plantilla.</dd>
 ${p.note ? `<dt>Nota</dt><dd>${esc(p.note)}</dd>` : ''}</dl>${buttons}</div>
-<div class="wrap">${paperHtml(p)}</div>
+${picture}<div class="wrap">${paperHtml(p)}</div>
 ${sources ? `<details><summary>De dónde salen los puntos</summary><ul>${sources}</ul></details>` : ''}
 </main>
 ${buttons ? `<script>
@@ -473,10 +479,10 @@ export const MEETING_DOC_TOOLS = [
     function: {
       name: 'meeting_doc_propose',
       description: [
-        "Proposes the next meeting's minutes document: a copy of the minutes template named «NNN Meeting-DD/MM/YYYY» with this Agenda. Nothing is created on Drive: an administrator or meeting organiser applies it from its preview (`link`).",
+        "Proposes the next meeting's minutes document: a copy of the minutes template named «NNN Meeting-DD/MM/YYYY» with this Agenda. Nothing is created on Drive: only an administrator applies it, by confirming in their chat (meeting_doc_apply) or with the button on its preview (`link`).",
         'Called again for the same date, it revises the pending proposal (revision + 1). Returns `link` (the preview), `title`, `whatsapp` (the agenda as a WhatsApp message, in the organiser\'s usual words), `status`.',
         '- agenda.items: the points, each «Topic (Owner)» as in the minutes (English), or { text, children } for sub-points (two levels at most). `_Methona_` puts a name in italics.',
-        '- agenda.followUps: points carried over from the last minutes («Next week(s)», open questions). agenda.other: announcements and the rest («Other/various:»).',
+        '- agenda.followUps: what the last minutes left open («Next week(s)», unfinished agenda points). agenda.other («Other/various:»): small points people sent for the meeting, and at most three base alerts. Nothing else (skill `meeting-agenda`).',
         '- sources: one short line per point on where it comes from (a WhatsApp message with date and sender, a minutes line, an alert).',
       ].join('\n'),
       parameters: {
@@ -523,7 +529,7 @@ export const MEETING_DOC_TOOLS = [
     type: 'function',
     function: {
       name: 'meeting_doc_picture',
-      description: 'A PNG of the first page of an applied proposal\'s document, made again (after someone edited it): `picture`, a file path to send with [images].',
+      description: 'A PNG of the first page of an applied proposal\'s document, made again (after someone edited it, or after an administrator applied it with the preview\'s button, so this chat has not sent it yet): `picture`, a file path to send with [images].',
       parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     },
   },
@@ -542,6 +548,8 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     title TEXT NOT NULL, template_id TEXT, folder_id TEXT, agenda TEXT NOT NULL, sources TEXT, note TEXT,
     applied_at TEXT, applied_by TEXT, doc_id TEXT, doc_link TEXT, closed_at TEXT, closed_by TEXT, error TEXT, picture TEXT)`);
   const now = () => new Date().toISOString();
+  // A restart during an apply leaves its row «applying»: back to pending (a copy it made is recorded and finished on the next apply).
+  db.prepare("UPDATE meeting_doc_proposals SET status = 'pending', error = 'Interrupted by a restart; apply again.' WHERE status = 'applying'").run();
   const today = config.today ?? (() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date()));
   const folders = new Set((config.folders?.length ? config.folders : [config.folderId]).filter(Boolean));
   const base = String(config.publicUrl || '').replace(/\/+$/, '');
@@ -600,6 +608,7 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     const sources = (Array.isArray(args.sources) ? args.sources : []).slice(0, 60).map(s => String(s).slice(0, 300));
     const note = args.note ? String(args.note).slice(0, 300) : null;
     const open = db.prepare("SELECT * FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'pending' ORDER BY updated_at DESC LIMIT 1").get(ctx.meeting.date);
+    if (db.prepare("SELECT 1 FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'applying'").get(ctx.meeting.date)) return { error: 'This meeting\'s document is being created right now; check again in a minute.' };
     const applied = db.prepare("SELECT id FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'applied'").get(ctx.meeting.date);
     if (applied) return { error: 'This meeting\'s document was made already from a proposal; edit it in Google Docs.', ...view(get(applied.id)) };
     if (open) {
@@ -625,13 +634,22 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     const claim = db.prepare("UPDATE meeting_doc_proposals SET status = 'applying', updated_at = ? WHERE id = ? AND status = 'pending'").run(now(), p.id);
     if (!claim.changes) throw Object.assign(new Error('Someone is applying it already'), { status: 409, code: 'NOT_PENDING' });
     try {
-      const existing = await backend.findByName(p.title, p.folder_id);
-      if (existing) throw new Error(`«${p.title}» exists already in the folder: ${existing.webViewLink ?? existing.id}`);
-      const made = await backend.copy(p.template_id, p.title, p.folder_id);
-      await backend.fill(made.id, p);
-      const docLink = made.webViewLink ?? `https://docs.google.com/document/d/${made.id}/edit`;
-      db.prepare("UPDATE meeting_doc_proposals SET status = 'applied', applied_at = ?, applied_by = ?, doc_id = ?, doc_link = ?, updated_at = ?, error = NULL WHERE id = ?").run(
-        now(), user.username, made.id, docLink, now(), p.id,
+      // A copy an earlier attempt made (its fill failed) is finished, not made again.
+      let made = p.doc_id ? { id: p.doc_id, webViewLink: p.doc_link } : null;
+      if (!made) {
+        const existing = await backend.findByName(p.title, p.folder_id);
+        if (existing) throw new Error(`«${p.title}» exists already in the folder: ${existing.webViewLink ?? existing.id}`);
+        const copy = await backend.copy(p.template_id, p.title, p.folder_id);
+        made = { id: copy.id, webViewLink: copy.webViewLink ?? `https://docs.google.com/document/d/${copy.id}/edit` };
+        db.prepare('UPDATE meeting_doc_proposals SET doc_id = ?, doc_link = ?, updated_at = ? WHERE id = ?').run(made.id, made.webViewLink, now(), p.id);
+      }
+      try {
+        await backend.fill(made.id, p);
+      } catch (e) {
+        throw new Error(`The copy ${made.webViewLink} was made but its Agenda could not be filled (${e.message}). Applying again finishes that copy.`);
+      }
+      db.prepare("UPDATE meeting_doc_proposals SET status = 'applied', applied_at = ?, applied_by = ?, updated_at = ?, error = NULL WHERE id = ?").run(
+        now(), user.username, now(), p.id,
       );
       const out = get(p.id);
       try {
@@ -642,7 +660,7 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
       }
       return view(get(p.id));
     } catch (e) {
-      // Back to pending, with the reason: a copy made before a failed fill is named in the error (its link), for a person to bin or finish.
+      // Back to pending, with the reason (shown on the preview); a copy already made stays recorded and is finished on the next apply.
       db.prepare("UPDATE meeting_doc_proposals SET status = 'pending', error = ?, updated_at = ? WHERE id = ?").run(String(e.message).slice(0, 400), now(), p.id);
       throw Object.assign(new Error(e.message), { status: 502, code: 'APPLY_FAILED' });
     }
@@ -686,6 +704,7 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
       }
     }
     if (name === 'meeting_doc_picture') {
+      if (!user || !['editor', 'reviewer', 'admin'].includes(user.role)) return { error: 'Only editors can make the picture.' };
       const p = get(String(args.id ?? ''));
       if (!p || p.status !== 'applied') return { error: 'Not an applied proposal' };
       try {
@@ -709,15 +728,21 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
       if (!f) return json(res, 404, { error: { code: 'NOT_FOUND', message: 'No such document' } }), true;
       return sendHtml(res, simDocPage(f)), true;
     }
-    m = /^\/api\/meeting-docs\/([\w-]+)(?:\/(preview|paper|apply|discard))?$/.exec(path);
+    m = /^\/api\/meeting-docs\/([\w-]+)(?:\/(preview|paper|apply|discard|picture\.png))?$/.exec(path);
     if (!m) return false;
     const [, id, what] = m;
-    if (method === 'GET' && (what === 'preview' || what === 'paper' || !what)) {
+    if (method === 'GET' && (what === 'preview' || what === 'paper' || what === 'picture.png' || !what)) {
       const p = get(id);
       if (!p) return json(res, 404, { error: { code: 'NOT_FOUND', message: 'No such proposal' } }), true;
+      if (what === 'picture.png') {
+        if (!p.picture || !existsSync(p.picture)) return json(res, 404, { error: { code: 'NOT_FOUND', message: 'No picture yet' } }), true;
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end(readFileSync(p.picture)), true;
+      }
       if (what === 'preview') return sendHtml(res, previewPage(p, { canApply: canApply(user), basePath: config.basePath ?? '' })), true;
       if (what === 'paper') return sendHtml(res, paperPage(p)), true;
-      return json(res, 200, view(p)), true;
+      const { picture: _path, ...shown } = view(p); // the server's file path stays on the server
+      return json(res, 200, shown), true;
     }
     if (method === 'POST' && what === 'apply') return json(res, 200, await apply(id, user)), true;
     if (method === 'POST' && what === 'discard') return json(res, 200, discard(id, user)), true;

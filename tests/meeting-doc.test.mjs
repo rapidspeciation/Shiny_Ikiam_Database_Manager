@@ -191,6 +191,61 @@ test('preview page: buttons only for those allowed; the paper shows the checklis
   assert.match(paper, /<i>Tithorea<\/i> host plants/);
 });
 
+test('a fill that fails keeps the copy: the error and preview name it, and applying again finishes that same copy', async () => {
+  const { docs, backend, db, dir } = setup();
+  const fill = backend.fill;
+  let fail = true;
+  backend.fill = async (...a) => {
+    if (fail) throw new Error('Docs 500');
+    return fill(...a);
+  };
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  const r1 = await docs.run('meeting_doc_apply', { id: p.id }, users.admin);
+  assert.match(r1.error, /was made but its Agenda could not be filled \(Docs 500\)/);
+  const after = docs.get(p.id);
+  assert.equal(after.status, 'pending');
+  assert.ok(after.doc_id);
+  let html = null;
+  await docs.route({ method: 'GET', path: `/api/meeting-docs/${p.id}/preview`, user: users.admin, res: {}, sendHtml: (_r, h) => (html = h), json: () => {} });
+  assert.match(html, /ya existe pero su Agenda no se llenó/);
+  assert.match(html, /Último intento: .*Docs 500/);
+  fail = false;
+  const r2 = await docs.run('meeting_doc_apply', { id: p.id }, users.admin);
+  assert.equal(r2.status, 'applied');
+  assert.equal(docs.get(p.id).doc_id, after.doc_id);
+  const copies = Object.values(JSON.parse(readFileSync(join(dir, 'files.json'), 'utf8'))).filter(f => f.name === '144 Meeting-05/11/2026');
+  assert.equal(copies.length, 1);
+  assert.equal(db.prepare('SELECT count(*) n FROM meeting_doc_proposals').get().n, 1);
+});
+
+test('while a proposal is being applied no other one is made for that date; a restart puts it back to pending', async () => {
+  const { docs, db, backend } = setup();
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  db.prepare("UPDATE meeting_doc_proposals SET status = 'applying' WHERE id = ?").run(p.id);
+  assert.match((await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim)).error, /being created right now/);
+  const again = createMeetingDocs({ db, backend, config: { templateId: 'tpl', folderId: 'meetings', today: () => '2026-11-04' } });
+  assert.equal(again.get(p.id).status, 'pending');
+  assert.match(again.get(p.id).error, /restart/);
+});
+
+test('picture: editors only; served to the preview; its server path is not in the JSON', async () => {
+  const { docs } = setup();
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  await docs.run('meeting_doc_apply', { id: p.id }, users.admin);
+  assert.match((await docs.run('meeting_doc_picture', { id: p.id }, users.obs)).error, /Only editors/);
+  let body = null;
+  await docs.route({ method: 'GET', path: `/api/meeting-docs/${p.id}`, user: users.obs, res: {}, sendHtml: () => {}, json: (_r, _s, v) => (body = v) });
+  assert.equal(body.status, 'applied');
+  assert.equal('picture' in body, false);
+  const res = { head: null, writeHead(s, h) { this.head = [s, h]; }, end(b) { this.body = b; } };
+  await docs.route({ method: 'GET', path: `/api/meeting-docs/${p.id}/picture.png`, user: users.obs, res, sendHtml: () => {}, json: () => {} });
+  assert.equal(res.head[0], 200);
+  assert.equal(res.head[1]['content-type'], 'image/png');
+  let html = null;
+  await docs.route({ method: 'GET', path: `/api/meeting-docs/${p.id}/preview`, user: users.admin, res: {}, sendHtml: (_r, h) => (html = h), json: () => {} });
+  assert.match(html, /picture\.png/);
+});
+
 // ------------------------------------------------------------ Docs batchUpdate on the template's layout
 // A tiny Docs: the body as text from index 1, paragraphs split at newlines, bullets kept per paragraph.
 function docFrom(paragraphs) {

@@ -1668,7 +1668,7 @@ export async function createApp(config = {}, options = {}) {
       // opened again goes back to it; `fresh: true` starts another. GET: the folder's chat, if any.
       // The weekly meeting's document proposals: preview, apply, discard (server/meeting-doc.mjs).
       if (path.startsWith('/api/meeting-docs/') && assistant?.meetingDocs) {
-        const sendHtml = (r, html) => send(r, 200, html, { 'content-type': 'text/html; charset=utf-8' });
+        const sendHtml = (r, html) => send(r, 200, html, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "frame-ancestors 'none'" });
         if (await assistant.meetingDocs.route({ method, path, user, res, sendHtml, json })) return;
       }
       if (path === '/api/rename/review' && (method === 'POST' || method === 'GET')) {

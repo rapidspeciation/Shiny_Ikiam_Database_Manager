@@ -912,7 +912,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         const backend = md.backend
           ?? (md.simDir ? meetingSim({ dir: md.simDir, templateId: md.templateId, folders: md.folders?.length ? md.folders : [md.folderId], publicUrl: config.publicUrl })
             : md.google && !store.localMode && config.driveCredentialsFile ? meetingGoogle({ token: driveToken(config.driveCredentialsFile) }) : null);
-        return createMeetingDocs({ db, backend, config: { ...md, knowledgeRoots: config.knowledgeRoots ?? [], publicUrl: config.publicUrl, basePath: config.basePath } });
+        // The pictures beside the database by default (meeting-docs/), as the rack reports are.
+        const pictureDir = md.pictureDir ?? (config.databasePath && config.databasePath !== ':memory:' ? join(dirname(config.databasePath), 'meeting-docs') : null);
+        return createMeetingDocs({ db, backend, config: { ...md, pictureDir, knowledgeRoots: config.knowledgeRoots ?? [], publicUrl: config.publicUrl, basePath: config.basePath } });
       })();
   const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
   // Photos uploaded to Drive without being renamed, read here (the app's thread: it reads Drive and runs the reader).
