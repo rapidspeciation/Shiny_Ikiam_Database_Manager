@@ -618,7 +618,9 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
     } catch (e) {
       return { error: e.message };
     }
-    const number = Number.isInteger(args.number) && args.number > 0 ? args.number : ctx.meeting.number;
+    const kept = db.prepare("SELECT number FROM meeting_doc_proposals WHERE meeting_date = ? AND status = 'pending' AND doc_id IS NOT NULL").get(ctx.meeting.date);
+    // Once a copy exists its number stays, unless a number is given (then refused below if it differs).
+    const number = Number.isInteger(args.number) && args.number > 0 ? args.number : kept?.number ?? ctx.meeting.number;
     const title = docTitle(number, ctx.meeting.date);
     const sources = (Array.isArray(args.sources) ? args.sources : []).slice(0, 60).map(s => String(s).slice(0, 300));
     const note = args.note ? String(args.note).slice(0, 300) : null;
@@ -664,7 +666,7 @@ export function createMeetingDocs({ db, config = {}, backend = null, picture: ma
         await backend.fill(made.id, p);
       } catch (e) {
         // The kept copy was binned or deleted: forget it, so the next apply makes a new one.
-        if (/\b404\b|not found/i.test(e.message)) {
+        if (/\b404\b|not found/i.test(e.message) && !(await backend.alive(made.id).catch(() => true))) {
           db.prepare('UPDATE meeting_doc_proposals SET doc_id = NULL, doc_link = NULL WHERE id = ?').run(p.id);
           throw new Error(`The copy ${made.webViewLink} is gone (${e.message}). Applying again makes a new one.`);
         }

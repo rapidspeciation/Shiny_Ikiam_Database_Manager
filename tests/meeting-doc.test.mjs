@@ -241,6 +241,23 @@ test('after a failed fill: the number cannot change; a binned copy is not reused
   assert.notEqual(docs.get(p.id).doc_id, first);
 });
 
+test('a «404» from a fill on a copy that is still there keeps the copy; it is finished on the next apply', async () => {
+  const { docs, backend } = setup();
+  const fill = backend.fill;
+  let fail = true;
+  backend.fill = async (...a) => {
+    if (fail) throw new Error('Google 404: Requested entity was not found.');
+    return fill(...a);
+  };
+  const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
+  assert.match((await docs.run('meeting_doc_apply', { id: p.id }, users.admin)).error, /could not be filled .* finishes that copy/);
+  const kept = docs.get(p.id).doc_id;
+  assert.ok(kept);
+  fail = false;
+  assert.equal((await docs.run('meeting_doc_apply', { id: p.id }, users.admin)).status, 'applied');
+  assert.equal(docs.get(p.id).doc_id, kept);
+});
+
 test('POST apply answers without the picture\'s server path', async () => {
   const { docs } = setup();
   const p = await docs.run('meeting_doc_propose', { agenda: AGENDA }, users.kim);
