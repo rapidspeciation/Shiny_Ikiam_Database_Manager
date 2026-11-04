@@ -178,5 +178,6 @@ export default {
   'Una foto de cada especie y subespecie de Ithomiini que tenga una foto libre, para comparar sin internet.': 'One photo of each Ithomiini species and subspecies that has a free photo, to compare without internet.',
   'Lo elegido: {n} fotos, unos {mb} MB.': 'Your choice: {n} photos, about {mb} MB.',
   'Guardar esta elección': 'Save this choice',
+  'Calculando el tamaño…': 'Working out the size…',
   'Las fotos que ya no entran en la elección se borran del teléfono.': 'Photos no longer in the choice are removed from the phone.',
 }

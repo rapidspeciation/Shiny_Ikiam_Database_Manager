@@ -2872,7 +2872,7 @@
   },
   "subspecies": {
    "head": 1076,
-   "photos": 387,
+   "photos": 384,
    "ecuador": 307,
    "ecuador_photos": 125
   }
@@ -4223,7 +4223,7 @@
   {
    "name": "Hypomenitis theudelinda zalmunna",
    "file": "s31492370.jpg",
-   "attribution": "Adalbert Seitz\n, no known copyright restrictions (public domain)",
+   "attribution": "Adalbert Seitz , no known copyright restrictions (public domain)",
    "license": "PD",
    "taxonUrl": "https://www.inaturalist.org/taxa/1475568",
    "source": "https://www.inaturalist.org/photos/31492370",
@@ -5816,17 +5816,6 @@
    "bytes": 20173
   },
   {
-   "name": "Napeogenes inachia pyrois",
-   "file": "s11921900.jpg",
-   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
-   "license": "CC-BY-NC-SA",
-   "taxonUrl": "https://www.inaturalist.org/taxa/1165077",
-   "source": "https://www.inaturalist.org/photos/11921900",
-   "from": "taxon",
-   "ec": false,
-   "bytes": 16193
-  },
-  {
    "name": "Napeogenes lycora lycora",
    "file": "s253160792.jpg",
    "attribution": "(c) boverser, some rights reserved (CC BY-NC)",
@@ -5847,17 +5836,6 @@
    "from": "observation (needs_id)",
    "ec": true,
    "bytes": 8852
-  },
-  {
-   "name": "Napeogenes pharo pheranthes",
-   "file": "s11921900.jpg",
-   "attribution": "(c) Rich Hoyer, some rights reserved (CC BY-NC-SA), uploaded by Rich Hoyer",
-   "license": "CC-BY-NC-SA",
-   "taxonUrl": "https://www.inaturalist.org/taxa/1045455",
-   "source": "https://www.inaturalist.org/photos/11921900",
-   "from": "taxon",
-   "ec": false,
-   "bytes": 16193
   },
   {
    "name": "Napeogenes rhezia nicolayi",
@@ -6698,7 +6676,7 @@
   {
    "name": "Pteronymia vestilla sparsa",
    "file": "s37575156.jpg",
-   "attribution": "William Chapman Hewitson\n, no known copyright restrictions (public domain)",
+   "attribution": "William Chapman Hewitson , no known copyright restrictions (public domain)",
    "license": "PD",
    "taxonUrl": "https://www.inaturalist.org/taxa/700875",
    "source": "https://www.inaturalist.org/photos/37575156",
@@ -6815,17 +6793,6 @@
    "from": "taxon",
    "ec": false,
    "bytes": 5369
-  },
-  {
-   "name": "Scada reckia theaphia",
-   "file": "s608700811.jpg",
-   "attribution": "(c) Delmar W. Bachert, some rights reserved (CC BY-NC)",
-   "license": "CC-BY-NC",
-   "taxonUrl": null,
-   "source": "https://www.inaturalist.org/observations/335104857",
-   "from": "gbif",
-   "ec": false,
-   "bytes": 8532
   },
   {
    "name": "Scada zibia batesi",

@@ -554,9 +554,11 @@ async function loadRefs(names: string[], tries = 0) {
   refsLoading.value = pending.length > 0 && tries < 8
   if (refsLoading.value) refsTimer = setTimeout(() => loadRefs(pending, tries + 1), 4000)
 }
+const shownNames = () => ranked.value?.species.map(c => c.name).join('|')
 watch(
-  () => ranked.value?.species.map(c => c.name).join('|'),
-  names => {
+  // Again when the signal comes or goes (and after a save, saveField): offline only the saved subspecies photos.
+  () => [shownNames(), online.value] as const,
+  ([names]) => {
     if (refsTimer) clearTimeout(refsTimer)
     if (names) loadRefs(names.split('|'))
   },
@@ -584,7 +586,9 @@ const scope = ref<FieldScope>(fieldScope())
 watch(scope, setFieldScope, { deep: true })
 /** The field set's list, for the sizes before saving (online, or kept by the service worker). */
 const fieldList = ref<FieldIndex | null>(null)
-fieldIndex().then(v => (fieldList.value = v), () => null)
+const loadFieldList = () => fieldIndex().then(v => (fieldList.value = v), () => null)
+loadFieldList()
+watch(online, on => on && !fieldList.value && loadFieldList())
 const fieldMb = (b: number) => (b / 1048576).toFixed(1)
 /** The chosen photos' size, or null while the list is unknown. */
 const fieldSize = computed(() => {
@@ -592,17 +596,22 @@ const fieldSize = computed(() => {
   const take = inScope(fieldList.value, scope.value)
   return sizeOf([...take.species, ...take.subspecies])
 })
-/** The saved set is what is chosen now (a set saved before 4 Nov 2026 was every species, no subspecies). */
-const fieldCurrent = computed(() => {
-  const was = field.value?.scope ?? { species: 'all', ssp: 'none' }
-  return !!field.value && was.species === scope.value.species && was.ssp === scope.value.ssp
-})
+/** The saved set's choice (a set saved before 4 Nov 2026 was every species, no subspecies). */
+const fieldWas = computed<Pick<FieldScope, 'species' | 'ssp'> | null>(() => (field.value ? (field.value.scope ?? { species: 'all', ssp: 'none' }) : null))
+const fieldCurrent = computed(() => !!fieldWas.value && fieldWas.value.species === scope.value.species && fieldWas.value.ssp === scope.value.ssp)
+const SSP_LEVEL = { none: 0, ec: 1, all: 2 } as const
+/** The new choice leaves out photos the phone has. */
+const fieldNarrower = computed(
+  () => !!fieldWas.value && ((fieldWas.value.species === 'all' && scope.value.species === 'ec') || SSP_LEVEL[scope.value.ssp] < SSP_LEVEL[fieldWas.value.ssp]),
+)
 async function saveField() {
   fieldNote.value = null
   fieldProgress.value = { done: 0, total: 1 }
   try {
     const out = await saveFieldPhotos(scope.value, (done, total) => (fieldProgress.value = { done, total }))
     field.value = out
+    const names = shownNames()
+    if (names) loadRefs(names.split('|'))
     fieldNote.value = out.failed ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed }) : null
   } catch {
     fieldNote.value = t('Hace falta conexión a internet.')
@@ -617,7 +626,7 @@ async function saveField() {
 // leaves the button to finish it.
 let fieldTried = false
 watch(
-  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value && scope.value.auto,
+  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value && scope.value.auto && !!fieldList.value,
   go => {
     if (!go || fieldTried || fieldProgress.value) return
     fieldTried = true
@@ -1023,10 +1032,11 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
             <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
             <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
-            <button class="btn mt-2" :disabled="!!fieldProgress || !online" @click="saveField">
+            <p v-if="!fieldSize && online" class="mt-2 text-fg-muted">{{ $t('Calculando el tamaño…') }}</p>
+            <button class="btn mt-2" :disabled="!!fieldProgress || !online || !fieldSize" @click="saveField">
               {{ !field ? $t('Guardar fotos') : fieldCurrent ? $t('Actualizar fotos') : $t('Guardar esta elección') }}
             </button>
-            <p v-if="field && !fieldCurrent" class="mt-1 text-xs text-fg-subtle">{{ $t('Las fotos que ya no entran en la elección se borran del teléfono.') }}</p>
+            <p v-if="fieldNarrower" class="mt-1 text-xs text-fg-subtle">{{ $t('Las fotos que ya no entran en la elección se borran del teléfono.') }}</p>
             <h3 class="mt-3 font-medium">{{ $t('Instalar en el teléfono') }}</h3>
             <p class="text-fg-muted">
               {{ $t('Android: menú ⋮ → «Instalar app». iPhone: Compartir → «Agregar a inicio», y abra la app desde el ícono.') }}

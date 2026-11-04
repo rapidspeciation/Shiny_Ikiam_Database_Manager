@@ -111,9 +111,10 @@ def gbif_inat_photo(cache, name):
     """An iNaturalist photo GBIF files under the subspecies (through its own synonyms), or None."""
     def fetch():
         m = get("https://api.gbif.org/v1/species/match?" + urllib.parse.urlencode({"name": name, "rank": "SUBSPECIES", "strict": "true"}))
-        if m.get("rank") != "SUBSPECIES" or m.get("matchType") == "NONE":
+        # Only a subspecies GBIF accepts: under a synonym's accepted key the photo can be of another subspecies.
+        if m.get("rank") != "SUBSPECIES" or m.get("matchType") == "NONE" or m.get("status") != "ACCEPTED":
             return None
-        k = m.get("acceptedUsageKey") or m["usageKey"]
+        k = m["usageKey"]
         q = {"taxonKey": k, "mediaType": "StillImage", "datasetKey": "50c9509d-22c7-4a22-a47d-8c48425ef4a7", "limit": 20}
         o = get("https://api.gbif.org/v1/occurrence/search?" + urllib.parse.urlencode(q))
         for r in o["results"]:
@@ -191,13 +192,13 @@ def main():
         how = None
         if t and t["photo"] and t["photo"].get("license_code"):
             p = t["photo"]
-            photo, attribution, license_, how = p.get("medium_url") or p["url"], p["attribution"], lic(p["license_code"]), "taxon"
+            photo, attribution, license_, how = p.get("medium_url") or p["url"], " ".join(p["attribution"].split()), lic(p["license_code"]), "taxon"
             source = f"https://www.inaturalist.org/photos/{p['id']}"
         elif t and t["obs"] > 0:
             got = inat_obs_photo(a.cache, t["id"])
             if got:
                 p = got["photo"]
-                photo, attribution, license_, how = p["url"], p["attribution"], lic(p["license_code"]), f"observation ({got['grade']})"
+                photo, attribution, license_, how = p["url"], " ".join(p["attribution"].split()), lic(p["license_code"]), f"observation ({got['grade']})"
                 source = f"https://www.inaturalist.org/observations/{got['obs']}"
         if not photo:
             g = gbif_inat_photo(a.cache, n)
@@ -216,6 +217,12 @@ def main():
             "from": how, "ec": n in ec_ssp, "bytes": os.path.getsize(os.path.join(a.out, file)),
         })
     head_species = {head["species"][head["leaf2sp"][i]] for i, lf in enumerate(leaves) if lf.split()[0] in GENERA}
+    # A photo iNaturalist gives two subspecies (4 Nov 2026: Napeogenes inachia pyrois and N. pharo pheranthes) names
+    # one of them wrongly: left out for both.
+    shared = {f for f in (e["file"] for e in subspecies) if sum(x["file"] == f for x in subspecies) > 1}
+    subspecies = [e for e in subspecies if e["file"] not in shared]
+    for f in shared:
+        os.remove(os.path.join(a.out, f))
     index["built"] = time.strftime("%Y-%m-%d")
     index["source"] = "iNaturalist photos under Creative Commons licences (species: taxon photos; subspecies: taxon or observation photos, some through GBIF)"
     index["counts"] = {

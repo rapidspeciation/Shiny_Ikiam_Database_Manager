@@ -116,8 +116,8 @@ export interface FieldScope {
   auto: boolean
 }
 /**
- * Default: every species (the model also suggests species of other countries, and all of them take only about 3 MB
- * more than Ecuador's), the subspecies of Ecuador (the team's country; all of them would double the size).
+ * Default: every species (the model also suggests species of other countries, and all of them take only about 2 MB
+ * more than Ecuador's), the subspecies of Ecuador (the team's country; all of them would add about 6 MB, 18 MB in all).
  */
 export const DEFAULT_SCOPE: FieldScope = { species: 'all', ssp: 'ec', auto: true }
 export function fieldScope(): FieldScope {
@@ -209,10 +209,6 @@ export async function referencePhotos(names: string[], { signedIn = true }: { si
   return { refs: await withField(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]])), names), pending: [] }
 }
 
-/**
- * The field set's photo for names that have none yet, and after a species' photos those of its subspecies (when the
- * set is reachable or kept; a subspecies photo the phone did not save and cannot fetch is left out by RefCompare).
- */
 /** The field set's files on the phone. */
 async function savedFieldFiles(): Promise<Set<string>> {
   try {
@@ -221,6 +217,10 @@ async function savedFieldFiles(): Promise<Set<string>> {
     return new Set()
   }
 }
+/**
+ * The field set's photo for names that have none yet, and after a species' photos those of its subspecies (when the
+ * set is reachable or kept; without signal only the subspecies photos the phone saved).
+ */
 async function withField(refs: Record<string, Refs>, names: string[]): Promise<Record<string, Refs>> {
   const field = await fieldIndex().catch(() => null)
   if (!field) return refs
