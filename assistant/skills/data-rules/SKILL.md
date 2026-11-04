@@ -21,7 +21,9 @@ the team's practice up to Sep 2026.
 ## Which file
 
 Read the file of the case before drafting; for a notebook photo the skill
-**digitalizar-cuaderno** comes first.
+**digitalizar-cuaderno** comes first. Open it whole with the Read tool (each
+file is short); don't grep or sed it with Bash. A death or preservation:
+insectary-individuals.md; a CAM, tube or ID: samples-ids.md as well.
 
 | Case | File |
 |---|---|

@@ -39,7 +39,7 @@ test('signature', () => {
 });
 
 test('wacli payloads', () => {
-  const m = parsePayload({ Chat: '1@g.us', ID: 'X', SenderJID: '2@s.whatsapp.net', Timestamp: '2026-10-31T10:00:00Z', FromMe: false, Text: '', Media: { Type: 'image', Caption: '@claude ¿qué es?' }, PushName: 'Ana' });
+  const m = parsePayload({ Chat: '1@g.us', ID: 'X', SenderJID: '2@s.whatsapp.net', Timestamp: '2026-10-31T10:00:00Z', FromMe: false, Text: '', Media: { Type: 'image', Caption: '@claude ¿qué es?' }, PushName: 'Persona Tres' });
   assert.equal(m.text, '@claude ¿qué es?');
   assert.equal(m.media.type, 'image');
   assert.equal(m.at, Date.parse('2026-10-31T10:00:00Z'));
@@ -92,7 +92,7 @@ function setup() {
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const log = () => readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8');
   let n = 0;
-  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
   const settle = async () => {
     for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 100));
@@ -193,7 +193,7 @@ test('the self-chat answers at once when the tools are down, without a model tur
   await settle();
   const sent = outbox().slice(before).filter(s => s.kind !== 'react');
   assert.deepEqual(sent.map(s => s.text), ['Claude: herramientas no disponibles ahora (la app de prueba está apagada); intenta en unos minutos.']);
-  assert.equal(outbox().slice(before).filter(s => s.react).at(-1).react.emoji, '⚠️');
+  assert.ok(outbox().some(s => s.kind === 'status' && s.text === 'Claude: pensando…')); // personal chats default to edit mode
 });
 
 test('group sends: never without a @claude or reply-to-bot trigger', async () => {
@@ -217,7 +217,7 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
     await new Promise(r => setTimeout(r, 100));
   };
   let n = 0;
-  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `Q${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `Q${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
   // Image and voice need ffmpeg and a speech engine, so they are checked in the source: every send( call names its trigger.
   const src = readFileSync(new URL('../tools/whatsapp/bridge.mjs', import.meta.url), 'utf8');
   const calls = [...src.matchAll(/\bsend\(chat, \{[^\n]*/g)].map(m => m[0]);
@@ -288,7 +288,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
     await new Promise(r => setTimeout(r, 100));
   };
   let n = 0;
-  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `C${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `C${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
 
   // No conversation: nothing is sent, no turn starts.
   assert.equal(post('¿y para machos?').reason, 'no @claude');
@@ -360,7 +360,7 @@ console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:ans}))
     await bridge.flushHistory();
   };
   let n = 0;
-  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `H${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `H${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
   const rows = () => (existsSync(join(hist, 'grupo.jsonl')) ? readFileSync(join(hist, 'grupo.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const envelopes = () => (existsSync(join(dir, 'envelopes')) ? readFileSync(join(dir, 'envelopes'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   return { dir, hist, bridge, settle, post, rows, envelopes, tick: ms => (clock += ms) };
@@ -369,7 +369,7 @@ console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:ans}))
 test('the enabled group is mirrored to its history file (all its messages, nothing from other chats), once each', async () => {
   const { post, settle, rows, hist, dir } = historySetup();
   post('G@g.us', 'hola a todos');
-  post('G@g.us', '', { Media: { Type: 'image', Caption: '' }, PushName: 'Luis' });
+  post('G@g.us', '', { Media: { Type: 'image', Caption: '' }, PushName: 'Persona Cuatro' });
   post('G@g.us', 'sí, en T2', { ReplyToID: 'H1' });
   post('O@g.us', 'secreto de otro chat');
   post('G@g.us', 'hola a todos', { ID: 'H1' }); // a duplicate delivery
@@ -377,7 +377,7 @@ test('the enabled group is mirrored to its history file (all its messages, nothi
   const got = rows();
   assert.deepEqual(got.map(r => r.text), ['hola a todos', null, 'sí, en T2']);
   assert.equal(got[1].media, 'foto');
-  assert.equal(got[1].name, 'Luis');
+  assert.equal(got[1].name, 'Persona Cuatro');
   assert.equal(got[2].replyTo, 'H1');
   assert.equal(got[2].replyText, 'hola a todos');
   assert.ok(!readFileSync(join(hist, 'grupo.jsonl'), 'utf8').includes('secreto'));
@@ -402,7 +402,7 @@ test('context: last 15 messages or last 2 hours, whichever is more (cap 40), wit
   }
   for (let i = 0; i < 25; i++) post('G@g.us', `reciente ${i}`, { Timestamp: new Date(Date.now() - 3_000_000 + i * 1000).toISOString() });
   post('G@g.us', '', { Media: { Type: 'image', Caption: 'una Mechanitis' } });
-  post('G@g.us', 'respuesta', { ReplyToID: 'H19', PushName: 'Luis' });
+  post('G@g.us', 'respuesta', { ReplyToID: 'H19', PushName: 'Persona Cuatro' });
   tick(1000);
   post('G@g.us', '@claude ¿qué dijimos?');
   await settle();
@@ -411,7 +411,7 @@ test('context: last 15 messages or last 2 hours, whichever is more (cap 40), wit
   assert.equal(ctx.length, 27); // 25 recent + the photo + the reply: all inside 2 hours, more than 15
   assert.ok(!env.includes('viejo'));
   assert.ok(env.includes('[foto] una Mechanitis'));
-  assert.match(env, /Luis \(en respuesta a Ana: «reciente 0»\): respuesta/);
+  assert.match(env, /Persona Cuatro \(en respuesta a Persona Tres: «reciente 0»\): respuesta/);
   assert.ok(env.includes('wa-history/grupo.jsonl'));
 });
 
@@ -428,7 +428,7 @@ test('a question that needs a 3-day-old message: the chat is pointed to the hist
   const { post, settle, hist, rows, envelopes } = historySetup();
   // The history already holds an old message (a backfill), not in the 15-message context.
   mkdirSync(hist, { recursive: true });
-  writeFileSync(join(hist, 'grupo.jsonl'), JSON.stringify({ id: 'OLD1', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), name: 'Luis', text: 'la planta de la semana: Solanum', media: null }) + '\n');
+  writeFileSync(join(hist, 'grupo.jsonl'), JSON.stringify({ id: 'OLD1', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), name: 'Persona Cuatro', text: 'la planta de la semana: Solanum', media: null }) + '\n');
   for (let i = 0; i < 20; i++) post('G@g.us', `charla ${i}`);
   post('G@g.us', '@claude ¿cuál era la planta de la semana pasada?');
   await settle();
@@ -525,7 +525,7 @@ test('untagged messages inside a conversation: only a quote of Claude or its nam
     await new Promise(r => setTimeout(r, 100));
   };
   let n = 0;
-  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `W${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `W${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
 
   post('@claude cuántas hay?'); // opens the window
   await settle();
@@ -569,7 +569,7 @@ test('a quote of Claude aimed at the team: 👀 then ✅ and no text; a question
     await new Promise(r => setTimeout(r, 100));
   };
   let n = 0;
-  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `QQ${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana', ...extra });
+  const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `QQ${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
   const marks = from => outbox().slice(from).map(s => s.react?.emoji ?? s.kind);
 
   post('@claude cuántas hay?');
@@ -651,7 +651,7 @@ test('a reply that already starts with «Claude: » is not prefixed twice', asyn
     wacli: { bin: '/bin/false', store: dir },
   };
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
-  bridge.handle({ Chat: 'G@g.us', ID: 'PP1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Ana' });
+  bridge.handle({ Chat: 'G@g.us', ID: 'PP1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Persona Tres' });
   for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
   await new Promise(r => setTimeout(r, 150));
   const sent = readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
@@ -670,7 +670,7 @@ test('the reaction emojis come from the config, with 👀 ✅ ☑️ as defaults
       wacli: { bin: '/bin/false', store: dir },
     };
     const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
-    bridge.handle({ Chat: 'G@g.us', ID: 'EM1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Ana' });
+    bridge.handle({ Chat: 'G@g.us', ID: 'EM1', SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: '@claude hola', PushName: 'Persona Tres' });
     for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 150));
     return readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(s => s.react).map(s => s.react.emoji);
@@ -703,7 +703,7 @@ test('/tono: per chat, without a model, and named in every envelope', async () =
   const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   const envelopes = () => readFileSync(seen, 'utf8').trim().split('\n').map(l => JSON.parse(l));
   let n = 0;
-  const post = (chat, text) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana' });
+  const post = (chat, text) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
   const settle = async () => {
     for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 100));
@@ -788,25 +788,103 @@ test('only the two live routes make real sends; any other chat or route goes to 
   }
 });
 
+test('a reply whose quoted message wacli has not stored yet: retried once, then sent without the quote, never lost', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-quote-retry-'));
+  const stub = join(dir, 'wacli');
+  // The stub fails «quoted message … not found» while the file `missing` holds a number of failures left to give.
+  writeFileSync(
+    stub,
+    `#!/bin/sh
+echo "$@" >> ${join(dir, 'calls')}
+n=$(cat ${join(dir, 'missing')} 2>/dev/null || echo 0)
+case "$*" in *--reply-to*) if [ "$n" -gt 0 ]; then echo $((n-1)) > ${join(dir, 'missing')}; echo 'quoted message ABC not found in local store' >&2; exit 1; fi;; esac
+echo '{"data":{"id":"WAID"}}'
+`,
+    { mode: 0o755 },
+  );
+  const config = {
+    quoteRetryMs: 10,
+    chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'claudeclaw', enabled: true, repliesHour: 50, contextLines: 0 } },
+    routes: { claudeclaw: { ssh: 'claudeclaw' } },
+    wacli: { bin: stub, store: dir },
+  };
+  const trigger = { id: 'Q1', text: '@claude hola', sender: 'P@s.whatsapp.net' };
+  const group = { key: 'group', ...config.chats.group };
+  const calls = () => (existsSync(join(dir, 'calls')) ? readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n') : []);
+  const run = async failures => {
+    writeFileSync(join(dir, 'calls'), '');
+    writeFileSync(join(dir, 'missing'), String(failures));
+    const stateDir = mkdtempSync(join(tmpdir(), 'wa-bridge-quote-retry-s-'));
+    const bridge = createBridge({ config, stateDir, log: { error() {}, info() {} } });
+    const id = await bridge.send(group, { kind: 'reply', text: 'Claude: a', quote: trigger, trigger });
+    const last = readFileSync(join(stateDir, 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).at(-1);
+    return { id, last, sent: calls() };
+  };
+  // Found at once: one call, no mark.
+  let r = await run(0);
+  assert.equal(r.sent.length, 1);
+  assert.equal(r.last.quote, undefined);
+  // Missing once: the retry with the quote works.
+  r = await run(1);
+  assert.equal(r.sent.length, 2);
+  assert.ok(r.sent.every(c => c.includes('--reply-to Q1')));
+  assert.equal(r.last.quote, 'quote-after-retry');
+  assert.equal(r.id, 'WAID');
+  // Missing twice: sent without the quote.
+  r = await run(2);
+  assert.equal(r.sent.length, 3);
+  assert.ok(!r.sent[2].includes('--reply-to'));
+  assert.equal(r.last.quote, 'sent-without-quote');
+  assert.equal(r.last.ok, true);
+  assert.equal(r.id, 'WAID');
+  // Another error is not retried; the group guard still applies to the unquoted send.
+  writeFileSync(stub, `#!/bin/sh\necho "$@" >> ${join(dir, 'calls')}\necho 'boom' >&2\nexit 1\n`, { mode: 0o755 });
+  writeFileSync(join(dir, 'calls'), '');
+  const bridge = createBridge({ config, stateDir: mkdtempSync(join(tmpdir(), 'wa-bridge-quote-retry-s-')), log: { error() {}, info() {} } });
+  await assert.rejects(bridge.send(group, { kind: 'reply', text: 'Claude: a', quote: trigger, trigger }), /boom/);
+  assert.equal(calls().length, 1);
+  await assert.rejects(bridge.send(group, { kind: 'reply', text: 'Claude: a', quote: trigger, trigger: { id: 'x', text: 'hola' } }), /no trigger/);
+  assert.equal(calls().length, 1);
+});
+
 test('a note to the operator before the reply is taken off; real text never', async () => {
   const { stripPreamble } = await import('../tools/whatsapp/bridge-lib.mjs');
-  const s05 = 'Daniela asked how many *Mechanitis messenoides* females are alive in the insectary. Here is the reply for WhatsApp:\n\nEn la base hay *63 hembras* de _Mechanitis messenoides_ sin fecha de muerte.\n- 52 entraron entre agosto y octubre de 2026';
+  const s05 = 'Persona Dos asked how many *Mechanitis messenoides* females are alive in the insectary. Here is the reply for WhatsApp:\n\nEn la base hay *63 hembras* de _Mechanitis messenoides_ sin fecha de muerte.\n- 52 entraron entre agosto y octubre de 2026';
   assert.deepEqual(stripPreamble(s05), { text: 'En la base hay *63 hembras* de _Mechanitis messenoides_ sin fecha de muerte.\n- 52 entraron entre agosto y octubre de 2026', stripped: 1, unsure: false });
   assert.equal(stripPreamble('Respuesta:\nCon gusto.').text, 'Con gusto.');
   for (const real of ['Tom asked for the list last week; it is in the database.', 'La base tiene 63 hembras.', 'Here is the map you asked for.', 'Con gusto.'])
     assert.deepEqual(stripPreamble(real), { text: real, stripped: 0, unsure: false });
   assert.equal(stripPreamble('Here is the reply for WhatsApp:\n\n').unsure, true); // nothing left
+  // Spanish: a note about the requester that hands the reply over with a colon (the B03 lab reply).
+  const b03 = 'Persona Uno preguntó si ya pasaron las 100 marcadas en octubre. La copia de la base del 31/10/2026 no tiene ninguna mariposa marcada en octubre, así que va la respuesta:\n\nEn la base todavía no aparece ninguna marcada en octubre. Si tienes las hojas de campo, pásamelas y las paso.';
+  assert.deepEqual(stripPreamble(b03), { text: 'En la base todavía no aparece ninguna marcada en octubre. Si tienes las hojas de campo, pásamelas y las paso.', stripped: 1, unsure: false });
+  assert.equal(stripPreamble('Persona Uno pregunta cuántas hay.\n\nHay 12 en la base.').text, 'Hay 12 en la base.');
+  assert.equal(stripPreamble('Aquí va:\nCon gusto.').text, 'Con gusto.');
+  // Real replies that start with a name, or have a line ending in a colon, stay whole.
+  for (const real of ['Persona Uno, en la base hay 63 hembras de Mechanitis sin fecha de muerte.', 'Aquí va el resumen del clutch 1023:\n- 1023(1): 26 huevos\n- 1023(2): 37 huevos', 'Para el rack 5:\n\nFaltan A1 y C11.'])
+    assert.deepEqual(stripPreamble(real), { text: real, stripped: 0, unsure: false });
+  assert.equal(stripPreamble('Persona Uno preguntó por el rack, así que va la respuesta:').unsure, true); // nothing after it: ⚠️, nothing sent
+  const notes = "I haven't drafted the change yet. The row disagrees with the request.\n\nThe record is in Collection_data, row 2303.\n\nThe message to send:\n\nEn la base CAM072174 está como macho.\n¿Me pasas la foto del sobre?";
+  assert.deepEqual(stripPreamble(notes), { text: 'En la base CAM072174 está como macho.\n¿Me pasas la foto del sobre?', stripped: 3, unsure: false });
+  // Working lines before the reply (the batch 5r lab leak) go; a reply that is only working lines gets ⚠️.
+  const leak = 'Sigo buscando en los documentos del proyecto por qué el sendero tiene ese recorrido.\n\nClaude: En lo que tengo escrito no dice por qué se eligió ese recorrido.';
+  assert.deepEqual(stripPreamble(leak), { text: 'Claude: En lo que tengo escrito no dice por qué se eligió ese recorrido.', stripped: 1, unsure: false });
+  assert.equal(stripPreamble('Voy a revisar la base…\nLet me check the sheet.\n\nHay 12 en la base.').text, 'Hay 12 en la base.');
+  assert.equal(stripPreamble('Sigo buscando…').unsure, true);
+  // Real content that opens with such a verb, or has no paragraph of its own, stays whole.
+  for (const real of ['Revisé la base: hay 12.', 'Busqué en la base y hay 12 hembras.', 'Voy a revisar la base. Hay 12 hembras sin fecha de muerte.\n\nTe paso la lista.', 'Reviso la fila 12 y está bien.\nFalta la fecha de muerte.', 'Checking the sheet, there are 12 females.\n\nThey all entered in October.'])
+    assert.deepEqual(stripPreamble(real), { text: real, stripped: 0, unsure: false });
 });
 
 test('a reply that is only a note to the operator is not sent; the message gets ⚠️', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-pre-'));
   const script = join(dir, 'turn.mjs');
-  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('vacío') ? 'Here is the reply for WhatsApp:' : 'Ana asked how many there are. Here is the reply for WhatsApp:\\n\\nHay 12.'}));`);
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('vacío') ? 'Here is the reply for WhatsApp:' : 'Persona Tres asked how many there are. Here is the reply for WhatsApp:\\n\\nHay 12.'}));`);
   const config = { chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 0 } }, routes: { r: { script, attachmentsDir: join(dir, 'att') } }, wacli: { bin: '/bin/false', store: dir } };
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
   const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   let n = 0;
-  const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Ana' });
+  const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
   const settle = async () => {
     for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 100));
@@ -820,4 +898,58 @@ test('a reply that is only a note to the operator is not sent; the message gets 
   const log = readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(l => l.preamble);
   assert.deepEqual(log.map(l => [l.preamble, l.unsure]), [[1, false], [1, true]]);
   assert.ok(!JSON.stringify(log).includes('asked')); // the log keeps counts, not text
+});
+
+test('harness blocks (<system-reminder>, <thinking>, tool calls) are taken off anywhere in a reply; ordinary «<» stays', async () => {
+  const { stripHarnessBlocks } = await import('../tools/whatsapp/bridge-lib.mjs');
+  // The arm-B lab reply that ended with a harness reminder.
+  const armB = '¿Puede ser otro número? Confírmame el clutch y cuántas larvas murieron, y lo anoto en una propuesta.\n\n<system-reminder>\nYour final message is what the user sees. The user sees only your messages, not tool calls or results.\n</system-reminder>';
+  assert.deepEqual(stripHarnessBlocks(armB), { text: '¿Puede ser otro número? Confírmame el clutch y cuántas larvas murieron, y lo anoto en una propuesta.', stripped: 1 });
+  assert.equal(stripHarnessBlocks('<thinking>buscar en la base</thinking>Hay 12.').text, 'Hay 12.');
+  assert.equal(stripHarnessBlocks('Hay 12.\n<function_calls>\n<invoke name="query">').text, 'Hay 12.');
+  for (const real of ['Las hembras con < 3 días no cuentan; usa <b> para negrita.', 'La etiqueta <thinking> no existe en la app, y system-reminder es solo una palabra.'])
+    assert.deepEqual(stripHarnessBlocks(real), { text: real, stripped: 0 });
+});
+
+test('a reply with only a harness block is not sent; the message gets ⚠️ and the strip is logged', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-harness-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); const m=r.text.split('Message to answer:')[1]; console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text: m.includes('vacío') ? '<system-reminder>\\nYour final message is what the user sees.\\n</system-reminder>' : 'Hay 12.\\n\\n<system-reminder>\\nnota\\n</system-reminder>'}));`);
+  const config = { chats: { group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 0 } }, routes: { r: { script, attachmentsDir: join(dir, 'att') } }, wacli: { bin: '/bin/false', store: dir } };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  let n = 0;
+  const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  post('@claude cuántos hay?');
+  await settle();
+  assert.deepEqual(outbox().filter(o => o.kind === 'reply').map(o => o.text), ['Claude: Hay 12.']);
+  post('@claude vacío');
+  await settle();
+  assert.deepEqual(outbox().slice(3).map(o => o.kind + (o.react?.emoji ?? '')), ['react👀', 'react⚠️']);
+  const log = readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(l => l.harnessBlocks);
+  assert.deepEqual(log.map(l => l.harnessBlocks), [1, 1]);
+  assert.ok(!JSON.stringify(log).includes('Your final message')); // counts, not text
+});
+
+test('personal chat streams public assistant output into its status then replaces it with the answer', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-personal-progress-'));
+  const script = join(dir, 'turn.mjs');
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s);
+    console.log(JSON.stringify({progress:{kind:'assistant',text:r.personalProgress ? 'Checking the records' : 'WRONG MODE'}}));
+    console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const config = {
+    chats: { self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60 } },
+    routes: { r: { script } }, wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {} } });
+  bridge.handle({ Chat: 'ME@s.whatsapp.net', ID: 'P1', SenderJID: 'ME@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: '@claude hola' });
+  for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+  assert.ok(bridge.idle());
+  const sent = readFileSync(join(dir, 'state/outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(sent.some(s => s.kind === 'status' && s.edit && s.text.includes('Checking the records')));
+  assert.ok(sent.some(s => s.kind === 'reply' && s.edit && s.text === 'Claude: Hay 12.'));
 });

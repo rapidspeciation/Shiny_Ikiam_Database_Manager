@@ -110,28 +110,73 @@ export function parseReply(raw, { max = 5 } = {}) {
 }
 
 /**
- * A note to the operator before the reply («Daniela asked how many…. Here is the reply for WhatsApp:», «Respuesta:»):
- * only whole leading lines that are clearly about the request or announce the reply are taken off, never later text.
- * → { text, stripped: number of lines taken off, unsure: nothing left, or the next line still reads like such a note }. Pure.
+ * A note to the operator before the reply, in Spanish or English, is taken off; real content never is. Two shapes:
+ * - a line among the first few that hands the reply over with a colon («…así que va la respuesta:», «Respuesta:», «Aquí va:»,
+ *   «Here's the reply:», «The message to send:»): only what follows it is the reply;
+ * - a first paragraph about the requester in the third person («Lucía preguntó si…», «Daniela asked how many…»), when the
+ *   reply follows in its own paragraph;
+ * - a first paragraph of working lines, one short sentence each about searching or checking («Sigo buscando en los
+ *   documentos…», «Voy a revisar la base.», «Let me check the sheet…»), when the reply follows in its own paragraph.
+ * → { text, stripped: number of lines taken off, unsure: nothing left, or what is left still opens like such a note }. Pure.
  */
-const PREAMBLE = [
-  /^[\p{L} .'-]{1,40}\b(asked|asks|is asking|wants to know|wanted to know)\b.*:\s*$/iu, // an English note about who asked what, leading into the reply
-  /\b(here is|here's|this is|below is)\b.{0,40}\b(reply|answer|response|message)\b.{0,40}:\s*$/i,
-  /^(draft |final )?(reply|answer|response|respuesta)( for whatsapp| para whatsapp| final)?\s*:\s*$/i,
-];
-const preamble = line => PREAMBLE.some(re => re.test(line));
+const HANDOVER = new RegExp(
+  [
+    String.raw`\b(va|aquí va|ahí va|te va|esta es|esto es|here is|here's|this is|below is)\b[^:]{0,40}\b(la respuesta|el mensaje|the reply|the answer|the response|the message)\b[^:]{0,25}`,
+    String.raw`\b(va la respuesta|aquí va|ahí va|here it is|here goes)`,
+    String.raw`\b(the )?(message|reply|answer|text) (to send|for whatsapp)`,
+    String.raw`\b(mensaje|respuesta) (a|para) enviar`,
+    String.raw`^(draft |final )?(reply|answer|response|respuesta|mensaje)( for whatsapp| para whatsapp| final)?`,
+  ].map(p => `(?:${p})`).join('|').replace(/^/, '(?:') + String.raw`)\s*:\s*$`,
+  'iu',
+);
+// «Lucía preguntó…», «Daniela asked…»: a name (one or two words, no comma: «Lucía, …» is someone being spoken to) and a verb of asking.
+const ABOUT_ASKER = /^\s*\p{Lu}\p{L}+(?:\s\p{Lu}\p{L}+)?\s+(?:preguntó|pregunta|preguntaba|quiere saber|quería saber|pidió|pide|asked|asks|is asking|wants to know|wanted to know)\b/u;
+// «Sigo buscando…», «Voy a revisar…», «Let me check…»: one clause about looking something up, nothing found in it yet
+// (a comma or a second sentence may carry a finding, so such a line stays).
+const WORKING = /^\s*(?:claude\s*:\s*)?(?:(?:sigo|estoy|ahora|primero|todavía|aún)\s+(?:buscando|revisando|consultando|mirando|verificando|leyendo|chequeando)|(?:voy a|déjame|dejame|permíteme|ahora|primero)\s+(?:buscar|revisar|consultar|mirar|verificar|leer|chequear)|(?:busco|reviso|consulto|verifico)\b|(?:let me|i'll|i will|i'm going to|now i'll|first i'll)\s+(?:check|look|search|query|read|verify|go through)|(?:still |now |first )?(?:checking|looking|searching|querying|reading|verifying))\b[^.!?\n…,;]{0,140}(?:,\s*(?:un momento|un segundo|ya vuelvo|one moment|one sec))?(?:…|\.{1,3}|:)?\s*$/iu;
+const HANDOVER_WITHIN = 6; // lines: a hand-over colon further down belongs to the reply itself
 export function stripPreamble(raw) {
-  const lines = String(raw ?? '').split('\n');
-  let i = 0;
-  let stripped = 0;
-  while (i < lines.length && (lines[i].trim() === '' || preamble(lines[i].trim()))) {
-    if (lines[i].trim()) stripped++;
-    i++;
+  const original = String(raw ?? '');
+  const lines = original.split('\n');
+  const done = (rest, cut) => {
+    const text = rest.join('\n').trim();
+    const next = text.split('\n').find(l => l.trim()) ?? '';
+    return { text, stripped: cut.filter(l => l.trim()).length, unsure: !text || HANDOVER.test(next.trim()) || ABOUT_ASKER.test(next) };
+  };
+  const handover = lines.findIndex((l, i) => i < HANDOVER_WITHIN && HANDOVER.test(l.trim()));
+  if (handover >= 0) return done(lines.slice(handover + 1), lines.slice(0, handover + 1));
+  const firstText = lines.findIndex(l => l.trim());
+  if (firstText >= 0 && ABOUT_ASKER.test(lines[firstText])) {
+    const blank = lines.findIndex((l, i) => i > firstText && !l.trim());
+    const rest = blank > 0 ? lines.slice(blank) : [];
+    if (rest.some(l => l.trim())) return done(rest, lines.slice(0, blank));
   }
-  if (!stripped) return { text: String(raw ?? ''), stripped: 0, unsure: false };
-  const text = lines.slice(i).join('\n').trim();
-  const next = text.split('\n')[0] ?? '';
-  return { text, stripped, unsure: !text || /\b(here is|here's|the reply|the answer)\b/i.test(next) };
+  if (firstText >= 0 && WORKING.test(lines[firstText])) {
+    const blank = lines.findIndex((l, i) => i > firstText && !l.trim());
+    const head = blank > 0 ? lines.slice(0, blank) : lines;
+    if (head.every(l => !l.trim() || WORKING.test(l))) return done(blank > 0 ? lines.slice(blank) : [], head);
+  }
+  return { text: original, stripped: 0, unsure: false };
+}
+
+/**
+ * Blocks from the model's harness that can end up in a chat's last message (`<system-reminder>…</system-reminder>`,
+ * `<thinking>`, `<function_calls>`, tool results), anywhere in the text: each is taken off whole, and an opening tag
+ * that starts a line with no closing one is taken off to the end. Ordinary «<» and tag-like words in a sentence stay.
+ * → { text, stripped: number of blocks taken off }. Pure.
+ */
+const HARNESS_TAGS = ['system-reminder', 'thinking', 'antml:thinking', 'function_calls', 'antml:function_calls', 'function_results', 'invoke', 'antml:invoke', 'tool_use', 'tool_result', 'search_quality_reflection', 'search_quality_score', 'reflection'];
+const tagRe = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const TAGS = HARNESS_TAGS.map(tagRe).join('|');
+// A closed block anywhere; an unclosed one only when its tag opens a line (a tag named inside a sentence stays).
+const HARNESS_BLOCK = new RegExp(`<(${TAGS})(?:\\s[^>]*)?>[\\s\\S]*?</\\1\\s*>|^[ \\t]*<(?:${TAGS})(?:\\s[^>]*)?>[\\s\\S]*$`, 'gm');
+export function stripHarnessBlocks(raw) {
+  let stripped = 0;
+  const text = String(raw ?? '')
+    .replace(HARNESS_BLOCK, () => (stripped++, ''))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { text: stripped ? text : String(raw ?? ''), stripped };
 }
 
 /** Markdown the chat may write, in WhatsApp's own formatting. Pure. */

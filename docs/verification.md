@@ -62,3 +62,12 @@ All catalog areas have an interface through source-table forms, dedicated field/
 The app does not calculate scientific conclusions from unapproved definitions. Eligibility criteria, genotype evidence, and protocol-specific rate methods must be recorded by researchers. Direct Sheet snapshots cannot reveal every intermediate edit or its author. Simultaneous direct edits in the brief interval between a fresh read and a write remain a Google Sheets limitation. See [operations](operations.md) for deployment, recovery, and other limits.
 
 Raw snapshots, screenshots, credential files, provider diagnostics, and verification account details stay in ignored `.local/` files or protected server directories. The temporary verification account is disabled before handoff. The user creates their own administrator account through a private setup link.
+
+### Reusable test account
+
+Use the existing `verify-claude` editor account for authorised live feature
+tests instead of a personal login or the administrator verification account.
+Enable it only for the test window, then disable it and revoke its sessions,
+including when the test fails. Keep its credential in the protected, ignored
+verification file. A preview test does not authorise applying its proposal to
+Sheets or changing files on Drive.

@@ -23,3 +23,12 @@ photo-reader/
 server/instructions-history.json
 # Clutch photos taken in the app (server/clutch-photos.mjs), when the database sits in the checkout.
 clutch-photos/
+
+# Lab-only material kept off the public repo (4 Nov 2026): eval tasks from team chats, lab reports.
+reports/assistant_maps_photos_20261102/
+
+# Lab-only material kept off the public repo (4 Nov 2026): eval tasks from team chats, lab reports.
+reports/personal_progress_20261102/
+
+# Lab-only material kept off the public repo (4 Nov 2026): eval tasks from team chats, lab reports.
+tools/assistant-eval/tasks/

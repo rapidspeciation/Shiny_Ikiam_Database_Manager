@@ -167,8 +167,8 @@ const parse = value => {
 const VALUES_DOC =
   'Column → value, also in newRows and bulk set: dates YYYY-MM-DD, times H:MM; null or leaving the column out = no change; {"clear": true} empties the cell (in a new row both leave it empty).';
 const VALUES_RULES = [
-  '- null = no change, never an empty cell; {"clear": true} only when the person wants it emptied.',
-  '- Notes (NOTES, Notes_…): only the new text; it goes after the existing note as "d/m/yy INI: text". {"replace": "…"} rewrites it, only when asked.',
+  '- {"clear": true} only when the person wants a cell emptied.',
+  '- Notes (NOTES, Notes_…): only the new text; it goes after the note as "d/m/yy INI: text". {"replace": "…"} rewrites it, only when asked.',
 ].join('\n');
 /**
  * A value the assistant dropped (null in update_proposal), or a cell the person
@@ -343,15 +343,14 @@ const TOOLS = [
       name: 'propose_changes',
       description:
         [
-          'Draft edits to existing rows (`changes`) and/or new rows (`newRows`), shown at once as a table beside the chat; nothing is written until the person confirms.',
-          '- One proposal per task (a walk, a kind of fix), with a short note per row on where its values come from.',
-          '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
+          'Draft edits to rows (`changes`) and/or new rows (`newRows`) as a table; nothing is written until the person confirms.',
+          '- One proposal per task (a walk, a kind of fix), a short note per row on where its values come from.',
+          '- A row: `recordId`, or `sheet` + `id` (W2B, CAM079891, a clutch number).',
           '- A value typed in a formula cell is left to the formula when it gives the same, else written over it, doubtful; Insectary_ID takes only a suffix (W2B → W2B.1).',
-          `- {"formula": "=..."} writes a formula ({row}: the row's number), with English function names and commas. Down a column: bulk \`rows\`; up to ${FORMULA_ROWS} rows when it only writes formulas.`,
-          "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
-          `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
-          '- `photo`, `rotate`: the photos the values come from, shown beside the table (as in match_notebook).',
-          '- lookAt: rows of the proposal worth a look (checks, notes); tell the person what matters before they apply.',
+          `- {"formula": "=..."}: English names, commas, {row} = the row's number. Down a column: bulk \`rows\`, up to ${FORMULA_ROWS} rows if only formulas.`,
+          "- A new Insectary_data row names its Insectary_ID and fills that ID's pre-made row; a second butterfly of a used ID takes a suffix (W2B.2), inserted below.",
+          `- Up to ${PROPOSAL_ROWS} rows; \`bulk\`: the same values to many rows. \`photo\`, \`rotate\`: as in match_notebook.`,
+          '- lookAt (returned): rows worth a look; tell the person what matters before they apply.',
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -383,7 +382,7 @@ const TOOLS = [
           bulk: {
             type: 'array',
             description:
-              'Rows of one sheet by `filters` (as in find_records), `recordIds` or `rows`, each given `set`, e.g. {"sheet": "Insectary_data", "filters": {"Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows already holding the values are left out.',
+              'Rows of one sheet by `filters` (as in find_records), `recordIds` or `rows`, given `set`, e.g. {"sheet": "Insectary_data", "filters": {"Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows already holding it are left out.',
             items: {
               type: 'object',
               properties: {
@@ -402,7 +401,7 @@ const TOOLS = [
           missingFormulas: {
             type: 'array',
             description:
-              "«Fórmulas que faltan» groups (review_suggestions `group`: sheet · column · kind) whose cells get the column's formula: certain and likely ones, or `certainty`.",
+              "review_suggestions «Fórmulas que faltan» groups (sheet · column · kind) to fill with the column's formula: certain and likely, or `certainty`.",
             items: {
               type: 'object',
               properties: { sheet: { type: 'string' }, column: { type: 'string' }, kind: { type: 'string' }, certainty: { type: 'string' } },
@@ -413,7 +412,7 @@ const TOOLS = [
           issueIds: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Of the review_issues agreed fixes in it (marked applied in Revisión with it)',
+            description: 'review_issues it fixes (marked applied with it)',
           },
           photo: { description: 'As in match_notebook' },
           rotate: { description: 'As in match_notebook' },
@@ -484,10 +483,9 @@ const TOOLS = [
       name: 'show_rows',
       description:
         [
-          "Show the person rows of one sheet as a read-only table beside the chat (current values). When an answer is about many rows, show them there and keep the text to what they mean.",
-          `- Rows: \`recordIds\` (or IDs) and/or \`filters\` or \`field\` + \`values\` as in find_records; up to ${TABLE_ROWS}.`,
-          '- `columns`: in order (default: ID columns, then filled ones). `notes`: on a row or a cell (`field`); `highlight` marks it.',
-          "- `photo`, `rotate`: the rows' notebook photos, as in match_notebook; a note's `photo` (0 = first) and `line` place its row.",
+          "Show rows of one sheet as a read-only table; for an answer about many rows, keep the text to what they mean.",
+          `- Rows: \`recordIds\` (or IDs), \`filters\` or \`field\` + \`values\` as in find_records; up to ${TABLE_ROWS}. \`columns\`: in order (default: IDs, then filled).`,
+          "- `notes` on a row or cell (`field`), `highlight` marks it; `photo`, `rotate` as in match_notebook, a note's `photo` (0 = first) and `line` place its row.",
           '- `tableId`: change a shown table in place (what you leave out stays).',
         ].join('\n'),
       parameters: {
@@ -578,15 +576,13 @@ const TOOLS = [
       name: 'update_proposal',
       description:
         [
-          'Revise a pending proposal in place (the person sees it change), as the person corrects it.',
-          '- rows: cells of its rows, by `index` or `id` (its ID). A value replaces yours; null drops your proposed change to that cell, never empties it; {"clear": true} empties it. `checked`: doubtful cells the person confirmed.',
+          'Revise a pending proposal (or a show_rows table) in place as the person corrects it.',
+          '- rows: by `index` or `id`. A value replaces yours; null drops your change to that cell (never empties it); {"clear": true} empties it. `checked`: doubtful cells the person confirmed. `highlight`: false unmarks.',
           '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
-          '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
-          "- photo / rotate: as in match_notebook; a show_rows table's too.",
-          '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
-          '- `discard: true` alone: takes it out of review (a table: closes it); nothing more is written. One applied one sheet at a time keeps the rows written (`written`, `notWritten`).',
+          '- Cells the person edited are theirs: kept, returned as conflicts; `overridePersonEdits` only when they ask.',
+          '- `discard: true` alone: out of review (a table: closed); nothing is written. One applied one sheet at a time keeps the written rows.',
           'On a proposal no longer pending: what became of it (applied or discarded, when, by whom) and where further changes go.',
-          'Returns `changed`: for each row, the cells this revision set (`set`; a new row, or one changed in another way, as get_proposal full shows it; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
+          'Returns `changed` (per row the cells set, `lookAt`), `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -627,14 +623,12 @@ const TOOLS = [
       name: 'get_proposal',
       description:
         [
-          "A proposal as the person sees it now: status (applied or closed: when, by whom), revision, its photos, each row's label by index (`labels`), `lookAt` and `attention`, the rows that need a look:",
-          "- personEdits: cells the person corrected, or set back to the sheet's value (not written), with what you had proposed;",
-          '- doubtful: doubtful cells not checked yet (value, alternatives, reason); unreadable: cells still empty (never written empty);',
-          "- sheetChanged: cells edited in the sheet after you read them: by, at, `asProposed` (how many hold your value now) and the other `cells` (read, now, proposed). Applying keeps the sheet's value unless the person chose yours (`applying`); re-check them, then update_proposal: your value goes over the sheet's, null keeps it. `inSheet`: the same for the whole proposal in one line. rowTaken: a new row's pre-made row is in use now.",
-          "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks, rows given the same as one `sameChange`, context rows counted (`offset` continues a long one).",
-          'A Photo_links reading (sync_photo_links): its counts and a few examples; `full: true`: every example.',
-          'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
-          "A teammate's proposal reads the same, with `by` and readOnly.",
+          "A proposal as the person sees it now: status (applied or closed: when, by whom), revision, photos, row `labels` by index, `lookAt` and `attention`:",
+          "- personEdits: cells the person corrected or set back to the sheet's value (not written), with what you proposed;",
+          '- doubtful: unchecked doubtful cells (value, alternatives, reason); unreadable: cells still empty (never written empty);',
+          "- sheetChanged: cells edited in the sheet since you read them (by, at, `asProposed`, `cells`: read, now, proposed). Applying keeps the sheet's value unless the person chose yours; re-check, then update_proposal: your value goes over the sheet's, null keeps it. `inSheet`: the same in one line. rowTaken: a new row's pre-made row is in use now.",
+          "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row (index, values, note, marks; `offset` continues a long one). A Photo_links reading: counts and examples.",
+          'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it. A teammate\'s: the same, with `by`, readOnly.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -4723,8 +4717,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const about = { proposalId: proposal.id, status: proposal.status, ...closedOf(proposal) };
     if (proposal.status === 'applied') {
       const parts = writtenParts(parse(proposal.changes_json) ?? []);
+      // Not an error (4 Nov eval, D14: chats asked to correct an applied draft hit this as a failed call): what became of
+      // it and where the change goes now.
       return {
-        error: parts.written
+        next: 'propose_changes',
+        note: parts.written
           ? `Applied in part: its ${parts.written.sheets.join(', ')} rows are in the sheet, its ${parts.notWritten.sheets.join(', ')} rows were left out. More changes go in a new proposal (propose_changes, or match_notebook for a page).`
           : 'Applied: its rows are in the sheet. More changes to them go in a new proposal (propose_changes, or match_notebook for a page); notes beside its photo without changes, in a table (show_rows).',
         ...about,
@@ -6224,8 +6221,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const { name, args } = currentTool(called, given);
     if (name === 'query') return queryCopy(args);
     if (name === 'search_text') {
-      const query = clip(args.query, 100).trim();
-      if (!query) return { error: 'Search query required' };
+      // `text` and `q` are names chats guess for the query (failed calls in the 4 Nov eval): accept them.
+      const query = clip(args.query ?? args.text ?? args.q, 100).trim();
+      if (!query) return { error: 'search_text needs `query`: the text to find' };
       const page = await store.searchRecords({
         module: clip(args.module, 100) || undefined,
         q: query,

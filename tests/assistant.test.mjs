@@ -155,7 +155,10 @@ test('search_text reads exact rows through the tools', async () => {
   const { db, call } = fixture();
   const found = await call(alice, 'search_text', { query: 'A0A' });
   assert.deepEqual(found.records.map(r => r.id), ['r-1']);
-  assert.match((await call(alice, 'search_text', { query: ' ' })).error, /required/);
+  assert.match((await call(alice, 'search_text', { query: ' ' })).error, /needs `query`/);
+  // `text` and `q`, the names chats guess, read as the query.
+  assert.deepEqual((await call(alice, 'search_text', { text: 'A0A' })).records.map(r => r.id), ['r-1']);
+  assert.deepEqual((await call(alice, 'search_text', { q: 'A0A' })).records.map(r => r.id), ['r-1']);
   db.close();
 });
 

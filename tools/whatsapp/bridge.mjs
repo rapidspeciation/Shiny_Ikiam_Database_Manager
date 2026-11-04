@@ -36,7 +36,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { appendNew, mediaTag, named, slug, stripPreamble, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
+import { appendNew, mediaTag, named, slug, stripHarnessBlocks, stripPreamble, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, imageKind, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -252,8 +252,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         record({ ...entry, refused: 'not an allowed chat' });
         throw new Error('Refused: not an allowed chat');
       }
-      const q = quote ? ['--reply-to', quote.id, ...(chat.jid.endsWith('@g.us') && quote.sender ? ['--reply-to-sender', quote.sender] : [])] : [];
-      const args = react
+      const quoteArgs = quote ? ['--reply-to', quote.id, ...(chat.jid.endsWith('@g.us') && quote.sender ? ['--reply-to-sender', quote.sender] : [])] : [];
+      const argsFor = q => react
         ? ['send', 'react', '--to', chat.jid, '--id', react.id, '--reaction', react.emoji, ...(chat.jid.endsWith('@g.us') && react.sender ? ['--sender', react.sender] : [])]
         : edit
           ? ['messages', 'edit', '--chat', chat.jid, '--id', edit, '--message', text]
@@ -262,14 +262,32 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
             : file
               ? ['send', 'file', '--to', chat.jid, '--file', file, ...(document ? ['--as', 'document', '--filename', document] : []), ...(text ? ['--caption', text] : []), ...(postWait ? ['--post-send-wait', postWait] : []), ...q]
               : ['send', 'text', '--to', chat.jid, '--message', text, ...(chat.key === 'self' ? ['--allow-self'] : []), ...q];
+      // A reply to a message wacli has not stored yet («quoted message … not found in local store») must not be lost:
+      // retry once with the quote after a short wait, then send it without the quote (same chat, same guards).
+      const QUOTE_MISSING = /quoted message.*not found in local store/i;
+      let quoted = quoteArgs.length ? 'quote' : null;
       try {
-        const out = await wacli(['--json', ...args], { timeout: 90_000 });
+        let out;
+        try {
+          out = await wacli(['--json', ...argsFor(quoteArgs)], { timeout: 90_000 });
+        } catch (e) {
+          if (!quoteArgs.length || !QUOTE_MISSING.test(e.message)) throw e;
+          await sleep(config.quoteRetryMs ?? 1500);
+          try {
+            out = await wacli(['--json', ...argsFor(quoteArgs)], { timeout: 90_000 });
+            quoted = 'quote-after-retry';
+          } catch (e2) {
+            if (!QUOTE_MISSING.test(e2.message)) throw e2;
+            out = await wacli(['--json', ...argsFor([])], { timeout: 90_000 });
+            quoted = 'sent-without-quote';
+          }
+        }
         try {
           id = JSON.parse(out)?.data?.id ?? null;
         } catch {
           /* no id */
         }
-        record({ ...entry, via: 'wacli', ok: true });
+        record({ ...entry, via: 'wacli', ok: true, ...(quoted && quoted !== 'quote' ? { quote: quoted } : {}) });
       } catch (e) {
         record({ ...entry, via: 'wacli', ok: false, error: clip(e.message, 200) });
         throw e;
@@ -285,7 +303,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   // The reaction emojis (config `reactions`): while working, when Claude replied, when it woke but stayed silent.
   const EMOJI = { working: '👀', replied: '✅', silent: '☑️', failed: '⚠️', ...(config.reactions ?? {}) };
   /** How a chat shows it is working: Franz's /ack choice, else the config's (reaction by default). */
-  const ackMode = chat => state.ack?.[chat.key] ?? chat.ack ?? 'reaction';
+  const ackMode = chat => state.ack?.[chat.key] ?? chat.ack ?? (chat.key === 'self' ? 'edit' : 'reaction');
   /** The chat's humour level: its /tono choice, else the config's, else normal. */
   const toneOf = chat => state.tono?.[chat.key] ?? chat.tono ?? TONES[0];
   const reactTo = (chat, msg, emoji) =>
@@ -621,7 +639,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       threadId: state.threads[threadKey] ?? null,
       text,
       progress: Boolean(onStep),
+      personalProgress: Boolean(onStep) && threadKey === 'self',
       timeoutMs: route.timeoutMs ?? 12 * 60_000,
+      // The chats' own Claude instance (config `instanceId`, e.g. claude-whatsapp): T3 settings made for it reach only them.
+      ...(route.instanceId ? { instanceId: route.instanceId } : {}),
       create: { projectId: route.projectId, title: route.title, model: route.model, effort: route.effort },
     };
     const [bin, args] = route.ssh
@@ -798,9 +819,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     // An untagged message that may end in silence never gets the edit mode's «pensando…» message: it uses the reaction (👀, then ✅ also on [silent]).
     const mode = msg.followUp ? 'reaction' : ackMode(chat);
     // The edit mode: one message that lists the chat's steps (tool names, never its reasoning) and becomes the answer.
-    const status = { id: null, steps: [], shown: '', editing: Promise.resolve(), last: 0 };
+    const status = { id: null, steps: [], assistant: '', shown: '', editing: Promise.resolve(), last: 0 };
     const showSteps = () => {
-      const text = statusMessage(status.steps);
+      const text = statusMessage([...status.steps, status.assistant]);
       if (!status.id || text === status.shown || now() - status.last < 3000) return;
       status.shown = text;
       status.last = now();
@@ -867,7 +888,14 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       lines.push('Message to answer:', `  ${msg.fromMe ? 'Franz' : msg.pushName ?? 'alguien'}: ${msg.text}`);
       if (attachments.length) lines.push('Attachments:', ...attachments.map(a => `  ${a}`));
       lines.push('(Answer per the whatsapp-bridge skill: your last message is sent as it is.)');
-      const onStep = mode === 'edit' ? step => (status.steps.push(stepLabel(step)), showSteps()) : null;
+      const onStep = mode === 'edit' ? step => {
+        const label = step.kind === 'assistant'
+          ? (chat.key === 'self' ? stripHarnessBlocks(String(step.text ?? '')).text.slice(0, 600) : null)
+          : stepLabel(step);
+        if (step.kind === 'assistant') status.assistant = label || '';
+        else if (label) status.steps.push(label);
+        showSteps();
+      } : null;
       const r = await t3Turn(route, threadKey, (state.threads[threadKey] ? '' : 'Read the whatsapp-bridge skill first.\n') + lines.join('\n'), onStep);
       await status.editing;
       state.lastTurn[chat.key] = { at: started, ms: now() - started, ok: Boolean(r.ok) };
@@ -882,6 +910,17 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       }
       ok = true;
       const reply = parseReply(r.text);
+      // Harness blocks (<system-reminder>, <thinking>, tool calls) anywhere in the reply are taken off (logged); nothing sensible left → ⚠️.
+      const blocks = stripHarnessBlocks(reply.text);
+      if (blocks.stripped) {
+        record({ dir: 'turn', chat: chat.key, id: msg.id, harnessBlocks: blocks.stripped, chars: reply.text.length - blocks.text.length });
+        reply.text = blocks.text;
+        if (!/[\p{L}\p{N}]/u.test(reply.text) && !reply.images.length && !reply.files.length) {
+          ok = false;
+          if (status.id) await send(chat, { kind: 'status', edit: status.id, text: `${PREFIX}${EMOJI.failed}`, trigger: msg }).catch(() => null);
+          return;
+        }
+      }
       // A note to the operator before the reply is taken off (logged); when that leaves nothing sure to send, nothing goes and the message gets ⚠️.
       const cut = stripPreamble(reply.text);
       if (cut.stripped) {
@@ -980,7 +1019,7 @@ function serve() {
 /** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
 function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
-  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
+  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
     copyFileSync(join(ROOT, f), join(target, f));
   }

@@ -42,6 +42,7 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
 - Where it goes:
   - the group: the chat «Ithomiini 🦋 (underground) · WhatsApp» in the claudeclaw T3 project of the same name, over ssh;
   - the self-chat: «Orchestrator wpp» in this PC's T3, project «Ithomiini lab · WhatsApp» (the lab workspace, the lab app's tools).
+  - both run on their own Claude provider instance (route `instanceId`, `claude-whatsapp`; same account and Claude home as `claudeAgent`). That instance alone has T3's «Compact idle threads» set to «Before the cache expires»: a chat over 200,000 context tokens compacts about 2 minutes before its 1-hour prompt cache ends, and no other chat changes. A chat still on another instance moves with its next message, keeping its model and options; T3 resumes the same Claude session (checked in the lab T3, 3 Nov 2026). To undo: drop `instanceId` from the route (new chats then start on `claudeAgent`) or set the instance's own setting back to «Default».
 - **Reply path.** The bridge waits for the turn and sends the chat's last message, starting with «Claude: ».
   - `[files]` … `[/files]` lines (`<path or app rack-report link> | caption`, up to 3) become documents (`wacli send file --as document`), one after another, through send()'s group guard. Only files under the route's `rackReportsDir` (and `fileDirs`), by real path (symlinks and `..` resolved; over ssh with `realpath` on the route's host), of type xlsx/csv/pdf/docx/txt/png/jpg/gpx/kml, at most 25 MB, written in the last 3 hours; anything else is refused and logged (`refused`).
   - `[images]` … `[/images]` lines (`<path or https URL> | caption`) become up to 5 pictures, each at most 2048 px on its long side as JPEG. wacli 0.22 has no HD flag; it uploads the file as given. Every picture's first bytes are checked to be an image.
@@ -227,3 +228,9 @@ node tools/whatsapp/simulate.mjs tools/whatsapp/examples/cases.jsonl /tmp/wa-sim
 - **None of these yet:** the weekly chat rotation, the media retention clean-up and the bridge
   disconnect alerts. `/status` reports the last message's age, not wacli's own connection state.
 - **Group `/commands`** still wake the chat; the relay answers commands in DMs only.
+
+Personal chats default to `/ack edit`: one status message shows tool activity
+and a bounded preview of public assistant text before becoming the final answer.
+Explicit `/ack reaction` choices still take precedence. Groups keep their prior
+behavior. Reasoning events are not forwarded. `t3-turn.mjs` imports
+`t3-progress.mjs`; copy both together when updating a remote turn helper.

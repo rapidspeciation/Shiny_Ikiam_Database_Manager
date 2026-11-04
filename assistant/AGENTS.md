@@ -193,5 +193,9 @@ the last meeting and what is still open (a decision pending, a follow-up the
 minutes assign), one line each with what it is, who (as the source names
 them) and the next step. The minutes are the latest «NNN Meeting-dd/mm/yyyy»
 documents in the Meetings folder of `{{knowledge}}`. Keep their content, not
-just the heading, and quote them when they are thin. Leave out standing
-alerts and counts that have not changed in weeks.
+just the heading, and quote them when they are thin, translated into the
+language of the question. Leave out standing alerts and counts that have not
+changed in weeks, but bring the alerts that ask to finish something left
+open (a census open with no marks, census proposals still pending). An
+F1/F2 families item gives its pairs' F1 clutches since the last meeting;
+other clutch counts are not meeting topics.

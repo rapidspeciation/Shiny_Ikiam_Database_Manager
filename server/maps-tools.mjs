@@ -13,13 +13,14 @@
 // when their ETag changed), and kept in memory as compact lists. The workbook is read with SELECT only. Nothing is
 // written anywhere.
 
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeCacheFile } from './cache-write.mjs';
 import { driveIdOf, specimenName } from './photo-links.mjs';
 import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-outlines.mjs';
 import { unreliableFor } from './sex-check.mjs';
 import { PALETTE, createSnapshots } from './map-snapshot.mjs';
+import { COLOR_BY, EXPORT as RENDER_EXPORT, OFFICIAL_MAPS_URL, PILLOW_NOT_KEPT, STYLES, appPictureName, checkExport, createMapRenderer, unsupportedFilter } from './maps-render.mjs';
 import { cantonOf, createAdminAreas } from './admin-areas.mjs';
 import { createPlantPhotos, creditOf, licenceName, proxyUrl } from './plant-photos.mjs';
 import { PER_SHEET, TILE, createPhotoSheets } from './photo-sheets.mjs';
@@ -74,6 +75,9 @@ const GBIF_SEARCH = 'https://api.gbif.org/v1/occurrence/search';
 const LIFE_STAGES = { egg: { inat: 7, gbif: 'Egg' }, larva: { inat: 6, gbif: 'Larva' }, pupa: { inat: 4, gbif: 'Pupa' }, adult: { inat: 2, gbif: 'Adult' } };
 const INAT_DATASET = '50c9509d-22c7-4a22-a47d-8c48425ef4a7';
 const IKIAM = { lat: -0.95, lng: -77.86 };
+// taxon_photos' Wings Atlas source: the maps' files with record photos, and at most this many records on offer.
+const ATLAS_SOURCES = ['sanger', 'gbif_other', 'inaturalist'];
+const ATLAS_MAX = 60;
 const STAGE_WORDS = { en: { egg: 'eggs', larva: 'larva', pupa: 'pupa', adult: 'adult', unnoted: 'stage not noted' }, es: { egg: 'huevos', larva: 'larva', pupa: 'pupa', adult: 'adulto', unnoted: 'etapa no anotada' } };
 /** "Jane Smith" from iNaturalist's "(c) Jane Smith, some rights reserved (CC BY-NC)". */
 const inatAuthor = v =>
@@ -202,6 +206,7 @@ export const MAPS_TOOLS = [
         "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
         '- `photo_sheet: true` (with an area): `photo_sheets`, 1 or 2 contact sheets (JPEG, 3 by 3 numbered tiles of 512 px with the plant and its place) of the plants\' candidate photos (living plants first, those in the area or nearest). Look at them and pick the tiles that show the leaves or the whole plant, and a flower, then send_sheet_photos. This is how photos to send are chosen.',
         '- `send_photos` (a number): the same as `photo_sheet: true` (photos to send are always chosen by looking at a contact sheet first).',
+        '- `tags_fallback: true` with `send_photos` (only when the contact sheet failed, `photo_sheet_error`, or you cannot look at images): the photos picked by the photo tags without anyone looking (leaves or whole plant first, then a flower), downloaded and credited, each caption saying it was picked automatically and not checked, with `images_block`: send them, and say so in the answer.',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
       parameters: {
@@ -215,6 +220,7 @@ export const MAPS_TOOLS = [
           nearby_km: { type: 'number' },
           send_photos: { type: 'integer' },
           photo_sheet: { type: 'boolean' },
+          tags_fallback: { type: 'boolean' },
           lang: { type: 'string', enum: ['en', 'es'] },
           country: region.country,
           bbox: region.bbox,
@@ -234,7 +240,9 @@ export const MAPS_TOOLS = [
       description: [
         'Photos of a butterfly (or any taxon) at a life stage, to show or send: eggs, larvae, pupae or adults. For "photos of the eggs and larvae of X". Without an area, the photos nearest Ikiam come first.',
         '- `taxon`: species or genus. `life_stage`: egg, larva, pupa, adult (a list, or one). Optional `area` ({province}/{canton} of Ecuador) or `near` {lat, lng, km}: photos there first, then the nearest.',
-        "- Sources: the project's own clutch photos (Clutches tab; their stage is what their note says), iNaturalist observations annotated with that life stage (nearest first, research grade among equals), and GBIF records of other datasets whose lifeStage says it. Unannotated iNaturalist photos are not found: say so when few come back. `none_for`: stages with no photo in any source (say so plainly); `not_checked`: a source failed.",
+        "- Sources: the project's own clutch photos (Clutches tab; their stage is what their note says), iNaturalist observations annotated with that life stage (nearest first, research grade among equals), and GBIF records of other datasets whose lifeStage says it (tried twice when it fails). For adults also the Wings Atlas records' photos (the maps' own data: the project's specimens, GBIF and iNaturalist records; still there when those APIs are down), the same record once only; they carry no life stage or behaviour. Unannotated iNaturalist photos are not found: say so when few come back. `none_for`: stages with no photo in any source (say so plainly); `not_checked` and `sources_not_checked`: a source failed, so the search was incomplete (never say there are none).",
+        '- `sex` (male, female): adults recorded so only (iNaturalist\'s Sex annotation, GBIF\'s sex, the Wings Atlas record).',
+        '- Egg-laying or "on its host plant": no source records the behaviour. Ask egg (and adult), and host_plants with the area named, else country: "Ecuador", and `photo_sheet` for the host plants, given as context (where eggs may be laid), never as proof of oviposition.',
         'Gives `counts` per source and stage, and `photo_sheets` (1–2 contact sheets of numbered tiles with the stage, place and year): look at them, pick the tiles that show the stage asked clearly (at most 5), then send_sheet_photos.',
       ].join('\n'),
       parameters: {
@@ -244,6 +252,7 @@ export const MAPS_TOOLS = [
           life_stage: { anyOf: [{ type: 'string', enum: ['egg', 'larva', 'pupa', 'adult'] }, { type: 'array', items: { type: 'string', enum: ['egg', 'larva', 'pupa', 'adult'] } }] },
           area: AREA,
           near: region.near,
+          sex: { type: 'string', enum: ['male', 'female'] },
           lang: { type: 'string', enum: ['en', 'es'] },
         },
         required: ['taxon'],
@@ -333,11 +342,13 @@ export const MAPS_TOOLS = [
     function: {
       name: 'maps_snapshot',
       description: [
-        'A picture of the Ithomiini maps (a JPEG of about 450 KB, small enough for WhatsApp) with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
+        'A picture of the Ithomiini maps with some taxa, one sex if asked, framed on the best sites to find them; with the ranked sites (as maps_localities gives them) and `map_url`, the maps app on the same view and filters. For "where should we collect males of X and Y?" when a map helps.',
+        '- `renderer`: "app" (the maps app\'s own export, a 1600x1200 PNG with its basemap, title, legend and site labels) when it can show exactly these records; else "pillow" (a simpler JPEG: OpenTopoMap, dots by species, numbered sites) and `degraded` {reason, detail, not_kept} says why and what the picture does not have. `area`, `elevation_*`, `years`, `near` and `site_km` other than 3 always give "pillow".',
         '- `species`: as maps_localities\' `taxa` (species, subspecies or genus). `sex` (male, female). `area`, `country`, `sources`, `years`, `elevation_min`/`elevation_max`, `site_km` as there.',
-        '- `bbox` [west, south, east, north] frames the picture (and limits the sites); left out ("auto"), it frames the best site and the next best within 150 km of it, up to `sites` (default 8); the best ones further away are in `elsewhere`. Give `country` to keep it to one country.',
+        '- `bbox` [west, south, east, north] frames the picture (and limits the sites); left out ("auto"), it frames the best site and the next best within 150 km of it, up to `sites` (default 8); the best ones further away are in `elsewhere`. `frame: "all"` (only when the whole range is asked for) frames every record. Give `country` to keep it to one country.',
+        '- `style` (basemap: light (default), terrain, streets, satellite, dark) and `color_by` (subspecies, species, genus; default subspecies for one species, else species): the app picture only.',
         '- `lang`: "es" or "en" (default) for the words on the picture.',
-        'Send `image` (a file on this server) as the picture and give `map_url` to open it live; the sites are numbered on the picture as their `on_map` (their `rank` is among all sites). `best_by_taxon`: each taxon\'s own best sites (of the sex asked), for a taxon the shared ranking puts low.',
+        '`images_block`: `image` (a file on this server) with `caption`; on WhatsApp end the answer with it as it is, and give `map_url` to open the map live. `picture_labels` [{rank, site, label_on_picture, merged_sites}]: how each site appears on the picture (the app\'s marker label, maybe merged with nearby sites as "X +2 sites"; on a Pillow picture the number drawn, also the site\'s `on_map`). `rank` is the site\'s place among all. `records.on_picture`: records visible in the picture (inside the frame, not under its title, legend, scale or credits; with a `bbox`, `records.asked_on_picture` counts those of the area asked). On the app picture `picture_labels` lists only sites visible on it; `hidden_sites` [{rank, site, occluded_by}] names others in the frame that an overlay covers. `best_by_taxon`: each taxon\'s own best sites (of the sex asked), for a taxon the shared ranking puts low.',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -353,6 +364,9 @@ export const MAPS_TOOLS = [
           elevation_max: { type: 'number' },
           site_km: { type: 'number' },
           sites: { type: 'integer' },
+          frame: { type: 'string', enum: ['best_sites', 'all'] },
+          style: { type: 'string', enum: STYLES },
+          color_by: { type: 'string', enum: COLOR_BY },
           lang: { type: 'string', enum: ['en', 'es'] },
         },
         required: ['species'],
@@ -421,9 +435,11 @@ const countriesIn = (asked, records) => {
 /**
  * The maps app with these filters: `sp`/`ssp`/`genus`, `source` (always: left out it shows only the project's),
  * `country`, `sex`, `map_view`; `hostPlants` {butterflies, taxa (slugs), levels, evidence}: the host-plant layer on
- * (`hp_bf`, `hp_taxa`, `hp_level`, `hp_evidence`; ithomiini_maps docs/host-plant-links.md).
+ * (`hp_bf`, `hp_taxa`, `hp_level`, `hp_evidence`; ithomiini_maps docs/host-plant-links.md). maps_snapshot's app picture
+ * (server/maps-render.mjs): `sites` (the sites layer on, labelled with records, every site), `style` (basemap),
+ * `colorBy`, `bbox` [w, s, e, n] (the app fits it; a frame, never a filter; in place of `view`), `exportMode` (export=1).
  */
-export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], sex = null, view = null, hostPlants = null } = {}, base = MAPS_URL) {
+export function mapsUrl({ species = [], subspecies = [], genus = [], sources = SOURCE_KEYS, country = [], sex = null, view = null, hostPlants = null, sites = false, style = null, colorBy = null, bbox = null, exportMode = false } = {}, base = MAPS_URL) {
   const params = new URLSearchParams();
   if (genus.length) params.set('genus', genus.join(','));
   if (species.length) params.set('sp', species.join(','));
@@ -435,7 +451,16 @@ export function mapsUrl({ species = [], subspecies = [], genus = [], sources = S
   if (hostPlants?.taxa?.length) params.set('hp_taxa', hostPlants.taxa.join(','));
   if (hostPlants?.levels?.length) params.set('hp_level', hostPlants.levels.join(','));
   if (hostPlants?.evidence?.length) params.set('hp_evidence', hostPlants.evidence.join(','));
-  if (view) params.set('map_view', [view.lng.toFixed(5), view.lat.toFixed(5), view.zoom.toFixed(2)].join(','));
+  if (sites) {
+    params.set('sites', '1');
+    params.set('site_labels', 'records');
+    params.set('site_min', '1');
+  }
+  if (style) params.set('style', style);
+  if (colorBy) params.set('color_by', colorBy);
+  if (bbox) params.set('bbox', bbox.map(v => Number(v).toFixed(5)).join(','));
+  else if (view) params.set('map_view', [view.lng.toFixed(5), view.lat.toFixed(5), view.zoom.toFixed(2)].join(','));
+  if (exportMode) params.set('export', '1');
   return `${base}?${params.toString().replace(/\+/g, '%20')}`;
 }
 
@@ -721,6 +746,8 @@ export function sexOf(value) {
   return null;
 }
 
+let tagsWarned = false;
+
 /** One record of the maps, kept small: strings shared (`intern`). */
 function compactPoint(p, intern) {
   const lat = Number(p.lat);
@@ -738,7 +765,27 @@ function compactPoint(p, intern) {
     year: yearOf(p.observation_date),
     source: KEY_OF[p.source] ?? intern(text(p.source)),
     sex: sexOf(p.sex),
+    // The record's photo (taxon_photos' Wings Atlas source) and its page: only on records with a photo.
+    ...atlasPhotoOf(p),
   };
+}
+
+/**
+ * A maps record's photo, kept small: `img` an http(s) photo URL (the project's photos unwrapped from the maps' 400 px
+ * wsrv.nl thumbnail to their Drive file), `obs` its record page when http(s). {} without a usable photo.
+ */
+export function atlasPhotoOf(p) {
+  let img = text(p.image_url);
+  if (!/^https?:\/\//i.test(img)) return {};
+  try {
+    const u = new URL(img);
+    if (u.host === 'wsrv.nl') img = text(u.searchParams.get('url'));
+  } catch {
+    return {};
+  }
+  if (!/^https?:\/\/[^\s]+$/i.test(img)) return {};
+  const obs = text(p.observation_url);
+  return { img, ...(/^https?:\/\/[^\s]+$/i.test(obs) ? { obs } : {}) };
 }
 
 /**
@@ -754,11 +801,13 @@ export function createMapsTools({
   elevationApi = ELEVATION_API,
   snapshotDir = null,
   snapshotOptions = {},
+  renderOptions = {},
   cacheDir = null,
   sheetOptions = null,
   clutchPhotoDir = null,
   inatApi = INAT_API,
   gbifApi = GBIF_SEARCH,
+  retryDelayMs = 1500,
 } = {}) {
   const files = new Map();
   const dem = new Map();
@@ -774,6 +823,12 @@ export function createMapsTools({
   const photoTags = () => {
     if (!cacheDir) return null;
     const file = join(cacheDir, TAGS_FILE);
+    if (!existsSync(file)) {
+      // Said once per process: without it, photos are ordered by place only (no leaves-first).
+      if (!tagsWarned) console.warn(`maps-tools: no photo tags file (${file}): host-plant photos are not told apart by view`);
+      tagsWarned = true;
+      return null;
+    }
     try {
       const mtime = statSync(file).mtimeMs;
       if (tagsKept?.mtime !== mtime) {
@@ -1055,9 +1110,11 @@ export function createMapsTools({
       const key = `${row}:${Math.floor(r.lng / (deg / Math.max(0.2, Math.cos(((row + 0.5) * deg * Math.PI) / 180))))}`;
       const s =
         sites.get(key) ??
-        sites.set(key, { n: 0, lat: 0, lng: 0, names: new Map(), countries: new Map(), sources: new Map(), years: new Set(), elev: [], elevFrom: new Set(), taxa: new Map(), sex: { male: 0, female: 0, unknown: 0 }, own: { male: 0, female: 0, unknown: 0 } }).get(key);
+        sites.set(key, { n: 0, lat: 0, lng: 0, names: new Map(), countries: new Map(), sources: new Map(), years: new Set(), elev: [], elevFrom: new Set(), taxa: new Map(), sex: { male: 0, female: 0, unknown: 0 }, own: { male: 0, female: 0, unknown: 0 }, ids: [] }).get(key);
       s.n++;
       const rs = sexOfKept.get(r) ?? 'unknown';
+      // The records the maps show at this site (of the sex asked), as the app names them: maps_snapshot's site check.
+      if (!sex || rs === sex) s.ids.push(`${SOURCES[r.source] ?? r.source}|${r.id}`);
       s.sex[rs]++;
       if (r.source === 'sanger') s.own[rs]++;
       s.lat += r.lat;
@@ -1089,7 +1146,10 @@ export function createMapsTools({
       sources,
       sex,
     };
-    if (inner) Object.assign(inner, { records: sex ? kept.filter(r => sexOfKept.get(r) === sex) : kept, urlTaxa, taxa, countries: countriesIn(admin ? [...list(args.country), 'Ecuador'] : args.country, records), ranked });
+    // With a sex asked: the records drawn whose sex the maps lack and the workbook fills in (the app's filter has only
+    // the maps' sex; where the maps have one it wins, here as in the app).
+    const workbookSex = sex ? kept.filter(r => !r.sex && sexOfKept.get(r) === sex).length : 0;
+    if (inner) Object.assign(inner, { records: sex ? kept.filter(r => sexOfKept.get(r) === sex) : kept, workbookSex, urlTaxa, taxa, countries: countriesIn(admin ? [...list(args.country), 'Ecuador'] : args.country, records), ranked });
     const shown = ranked.slice(0, limit).map((s, i) => {
       const years = [...s.years].sort();
       return {
@@ -1175,16 +1235,64 @@ export function createMapsTools({
   }
 
   const snapshots = snapshotDir ? createSnapshots({ dir: snapshotDir, fetchImpl, ...snapshotOptions }) : null;
+  // The maps app's own picture (server/maps-render.mjs), else the Pillow one; `renderOptions: false` for none.
+  const renderer = snapshots && renderOptions !== false ? createMapRenderer({ dir: snapshotDir, ...(renderOptions ?? {}) }) : null;
   const WORDS = {
     en: { male: 'Males', female: 'Females', null: 'Records', title: 'best sites', sites: n => (n > 1 ? `1–${n}: best sites here, in order` : '1: the best site'), count: (n, sex) => `${n.toLocaleString('en')} ${sex ?? 'record'}${n === 1 ? '' : 's'}`, other: 'other taxa' },
     es: { male: 'Machos', female: 'Hembras', null: 'Registros', title: 'mejores sitios', sites: n => (n > 1 ? `1–${n}: mejores sitios aquí, en orden` : '1: el mejor sitio'), count: (n, sex) => `${n.toLocaleString('es')} ${sex === 'male' ? 'macho' : sex === 'female' ? 'hembra' : 'registro'}${n === 1 ? '' : 's'}`, other: 'otros taxones' },
   };
+  const recordsEn = n => `${n.toLocaleString('en')} ${n === 1 ? 'record' : 'records'}`;
+  const sitesEn = n => `${n} ${n === 1 ? 'site' : 'sites'}`;
+  const recordsEs = n => `${n.toLocaleString('es')} ${n === 1 ? 'registro' : 'registros'}`;
+  const sitesEs = n => `${n} ${n === 1 ? 'sitio' : 'sitios'}`;
+  const CAPTION = {
+    en: {
+      sex: { male: 'males', female: 'females', null: 'all records' },
+      line: (n, m, k) => `${recordsEn(n)} at ${sitesEn(m)}, ${k.toLocaleString('en')} on the map`,
+      // A bbox asked: the counts are the area's; the picture's 4:3 frame can show more around it.
+      area: (n, m, k) => `${recordsEn(n)} at ${sitesEn(m)} in the area asked, ${k.toLocaleString('en')} visible in the picture`,
+      around: a => `the picture also shows ${recordsEn(a)} just outside the area`,
+      unknown: u => `${u} without a subspecies`,
+      years: (a, b) => (a === b ? `${a}` : `${a}–${b}`),
+    },
+    es: {
+      sex: { male: 'machos', female: 'hembras', null: 'todos los registros' },
+      line: (n, m, k) => `${recordsEs(n)} en ${sitesEs(m)}, ${k.toLocaleString('es')} en el mapa`,
+      area: (n, m, k) => `${recordsEs(n)} en ${sitesEs(m)} en la zona pedida, ${k.toLocaleString('es')} ${k === 1 ? 'visible' : 'visibles'} en la imagen`,
+      around: a => `la imagen muestra además ${recordsEs(a)} justo fuera de la zona`,
+      unknown: u => `${u} sin subespecie`,
+      years: (a, b) => (a === b ? `${a}` : `${a}–${b}`),
+    },
+  };
+  /**
+   * The words under the picture, from the tool's own counts: taxon, sex, area, N records at M sites, K visible. With a
+   * bbox asked (`explicit`), N and M are the area's, K the area's records visible, and `around` the other visible ones.
+   */
+  function captionOf({ lang, found, inner, args, shown, unknown, explicit = false, around = 0 }) {
+    const c = CAPTION[lang];
+    const taxon = [...found.taxa.genus, ...found.taxa.species].join(', ') || found.taxa.asked.join(', ');
+    const area = list(args.country).join(', ') || (args.area ? Object.values(args.area).filter(Boolean).join(', ') : '') || null;
+    const years = inner.records.map(r => r.year).filter(Boolean);
+    return [
+      [taxon, c.sex[inner.urlTaxa.sex ?? null], area].filter(Boolean).join(' · '),
+      (explicit ? c.area : c.line)(inner.records.length, found.sites_total, shown),
+      ...(explicit && around > 0 ? [c.around(around)] : []),
+      ...(unknown ? [c.unknown(unknown)] : []),
+      ...(years.length ? [c.years(Math.min(...years), Math.max(...years))] : []),
+    ].join('; ');
+  }
 
-  /** A picture of the maps with the taxa asked (one sex too), framed on the best sites, and the link to the same view. */
+  /**
+   * A picture of the maps with the taxa asked (one sex too), framed on the best sites (or all records, or the bbox
+   * asked), and the link to the same view: the maps app's own export when it can show exactly these records
+   * (`renderer: 'app'`), else the Pillow picture (`renderer: 'pillow'`, `degraded` says why).
+   */
   async function snapshot(args) {
     if (!snapshots) return { error: 'Map pictures are off on this server (no folder for them is set).' };
     const started = Date.now();
-    const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox : null;
+    // Rounded as the app is sent it (bbox=), so the tool and the app compare records in the same box.
+    const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox.map(v => round(v, 5)) : null;
+    const all = !bbox && args.frame === 'all';
     const wanted = clamp(args.sites, 1, 15, 8);
     const inner = {};
     const found = await localities({ ...args, taxa: args.species ?? args.taxa, bbox, limit: 50 }, inner);
@@ -1193,53 +1301,28 @@ export function createMapsTools({
     // Auto: the best site and the next best near it, so the picture is a place to go to, not a continent.
     const near = s => km(found.sites[0], s) <= CLUSTER_KM;
     // Numbered on the picture in this order (`on_map`); `rank` stays the site's place among all.
-    const best = (bbox ? found.sites : found.sites.filter(near)).slice(0, wanted).map((s, i) => ({ on_map: i + 1, ...s }));
-    const elsewhere = bbox ? [] : found.sites.filter(s => !near(s)).slice(0, 5);
+    const best = (bbox || all ? found.sites : found.sites.filter(near)).slice(0, wanted).map((s, i) => ({ on_map: i + 1, ...s }));
+    const elsewhere = bbox || all ? [] : found.sites.filter(s => !near(s)).slice(0, 5);
     let frame = bbox;
     if (!frame) {
-      const at = best.length ? best : inner.records;
+      const at = all ? inner.records : best.length ? best : inner.records;
       if (!at.length) return { ...found, error: 'None of these records can go on a map.' };
       const lats = at.map(p => p.lat);
       const lngs = at.map(p => p.lng);
       const [w, s, e, n] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
       const padX = Math.max(0.04, (e - w) * 0.12);
       const padY = Math.max(0.03, (n - s) * 0.12);
-      frame = [w - padX, s - padY, e + padX, n + padY];
+      frame = [w - padX, s - padY, e + padX, n + padY].map(v => round(v, 5));
     }
-    // Colours by taxon, the commonest in the frame first; past the palette, grey.
-    const shownIn = r => r.lng >= frame[0] && r.lng <= frame[2] && r.lat >= frame[1] && r.lat <= frame[3];
-    const counts = new Map();
-    for (const r of inner.records) if (shownIn(r)) count(counts, r.name);
-    const order = [...counts].sort((a, b) => b[1] - a[1]);
-    const colour = new Map(order.slice(0, PALETTE.length - 1).map(([name], i) => [name, i]));
-    const grey = PALETTE.length - 1;
+    const framedBy = bbox ? 'bbox asked' : all ? 'all records' : `the first ${best.length || 'records'} sites`;
     const lang = WORDS[args.lang] ? args.lang : 'en';
-    const words = WORDS[lang];
     const sex = inner.urlTaxa.sex;
-    const legend = order.slice(0, PALETTE.length - 1).map(([name, n]) => ({ text: `${name} · ${words.count(n, sex)}`, color: colour.get(name) }));
-    if (order.length > PALETTE.length - 1)
-      legend.push({ text: `${words.other} · ${words.count(order.slice(PALETTE.length - 1).reduce((t, [, n]) => t + n, 0), sex)}`, color: grey });
-    if (best.length) legend.push({ text: words.sites(best.length), color: null });
-    const picture = await snapshots.render({
-      bbox: frame,
-      // Grey first, then the commonest taxon to the rarest, so the rarer ones are on top.
-      points: inner.records
-        .map(r => ({ lat: r.lat, lng: r.lng, color: colour.get(r.name) ?? grey }))
-        .sort((a, b) => (a.color === grey ? -1 : a.color) - (b.color === grey ? -1 : b.color)),
-      sites: best.map(s => ({ lat: s.lat, lng: s.lng, rank: s.on_map })),
-      legend,
-      title: `${words[sex]} · ${words.title}`,
-    });
-    return {
-      image: picture.path,
-      image_bytes: picture.bytes,
-      image_size: `${picture.width}x${picture.height}`,
-      map_url: mapsUrl({ ...inner.urlTaxa, country: inner.countries, view: picture.view }, mapsBase),
-      framed: { bbox: picture.bbox, by: bbox ? 'bbox asked' : `the first ${best.length || 'records'} sites` },
+    const style = STYLES.includes(args.style) ? args.style : 'light';
+    const colorBy = COLOR_BY.includes(args.color_by) ? args.color_by : inner.urlTaxa.genus.length || inner.urlTaxa.species.length > 1 ? 'species' : 'subspecies';
+    const linkArgs = { ...inner.urlTaxa, country: inner.countries, sites: true, style, colorBy, bbox: frame };
+    const common = {
       taxa: found.taxa,
-      records: { ...found.records, on_picture: picture.points_drawn },
       sites_total: found.sites_total,
-      sites: best,
       ...(elsewhere.length ? { elsewhere: elsewhere.map(({ rank, site, country, lat, lng, records, by_sex, map }) => ({ rank, site, country, lat, lng, records, by_sex, map })) } : {}),
       best_by_taxon: Object.fromEntries(
         found.taxa.species.map(name => [
@@ -1252,7 +1335,109 @@ export function createMapsTools({
         ]),
       ),
       freshness: found.freshness,
-      timing_ms: { data: dataMs, tiles: picture.ms.tiles, picture: picture.ms.total - picture.ms.tiles, total: Date.now() - started, tiles_fetched: picture.tiles.fetched, tiles_failed: picture.tiles.failed },
+    };
+
+    // The app's picture: only for what it can show exactly (DESIGN 3.1), and only once its answer checks out (3.4).
+    let degraded = null;
+    let renderTiming = null;
+    const unsupported = unsupportedFilter(args);
+    if (!renderer) degraded = { reason: 'renderer_unavailable', detail: 'no app renderer in this process' };
+    else if (unsupported) degraded = { reason: `unsupported_filter:${unsupported}`, detail: null };
+    else if (inner.workbookSex) degraded = { reason: 'sex_from_workbook', detail: { records_affected: inner.workbookSex } };
+    else {
+      const url = mapsUrl({ ...linkArgs, exportMode: true }, OFFICIAL_MAPS_URL);
+      const run = await renderer.render(url);
+      renderTiming = run.timing ?? null;
+      if (!run.ok) degraded = { reason: run.reason, detail: run.detail ?? null };
+      else {
+        const checked = checkExport(run.result, {
+          records: inner.records.map(r => ({ source: SOURCES[r.source] ?? r.source, id: r.id, sex: r.sex, country: r.country, year: r.year, lng: r.lng, lat: r.lat })),
+          bbox: frame,
+          explicit: !!bbox,
+          style,
+          colorBy,
+          sites: found.sites.map(s => ({ rank: s.rank, site: s.site, lat: s.lat, lng: s.lng, ids: inner.ranked[s.rank - 1]?.ids ?? [] })),
+          // The sites this answer names must be visible; others hidden by an overlay are only left out.
+          required: best.map(s => s.rank),
+        });
+        if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail };
+        else {
+          const file = join(snapshotDir, appPictureName(url));
+          if (!writeCacheFile(file, checked.png)) degraded = { reason: 'write_failed', detail: null };
+          else {
+            const shownSites = new Set(checked.picture_labels.map(l => l.rank));
+            return {
+              image: file,
+              image_bytes: checked.png.length,
+              image_size: `${RENDER_EXPORT.png.width}x${RENDER_EXPORT.png.height}`,
+              image_type: 'png',
+              renderer: 'app',
+              degraded: null,
+              map_url: mapsUrl(linkArgs, mapsBase),
+              framed: { bbox: checked.view.bbox.map(v => round(v, 5)), asked: frame, by: framedBy },
+              // Visible: in the frame and not under the picture's title, legend, scale or credits.
+              records: { ...found.records, on_picture: checked.visible.records, app_total: checked.app_records, ...(bbox ? { asked_on_picture: checked.visible.asked_records } : {}) },
+              // No numbers on the app's picture: its markers carry the site names (picture_labels).
+              sites: best.filter(s => shownSites.has(s.rank)).map(({ on_map, ...s }) => s),
+              picture_labels: checked.picture_labels.slice(0, 15),
+              ...(checked.hidden_sites.length ? { hidden_sites: checked.hidden_sites.slice(0, 15) } : {}),
+              legend_unknown: checked.legend_unknown,
+              // A title cut short on the picture is not quoted.
+              ...(checked.title && !checked.title_truncated ? { picture_title: checked.title } : {}),
+              ...(checked.title_truncated ? { picture_title_truncated: true } : {}),
+              caption: bbox
+                ? captionOf({ lang, found, inner, args, explicit: true, shown: checked.visible.asked_records, around: checked.visible.records - checked.visible.asked_records, unknown: checked.legend_unknown })
+                : captionOf({ lang, found, inner, args, shown: checked.visible.records, unknown: checked.legend_unknown }),
+              ...common,
+              timing_ms: { data: dataMs, ...renderTiming, total: Date.now() - started },
+            };
+          }
+        }
+      }
+    }
+
+    // Pillow: the same records, frame and ranking, drawn without the app (its basemap, colours and labels are not kept).
+    const words = WORDS[lang];
+    const shownIn = r => r.lng >= frame[0] && r.lng <= frame[2] && r.lat >= frame[1] && r.lat <= frame[3];
+    // Colours by taxon, the commonest in the frame first; past the palette, grey.
+    const counts = new Map();
+    for (const r of inner.records) if (shownIn(r)) count(counts, r.name);
+    const order = [...counts].sort((a, b) => b[1] - a[1]);
+    const colour = new Map(order.slice(0, PALETTE.length - 1).map(([name], i) => [name, i]));
+    const grey = PALETTE.length - 1;
+    const legend = order.slice(0, PALETTE.length - 1).map(([name, n]) => ({ text: `${name} · ${words.count(n, sex)}`, color: colour.get(name) }));
+    if (order.length > PALETTE.length - 1)
+      legend.push({ text: `${words.other} · ${words.count(order.slice(PALETTE.length - 1).reduce((t, [, n]) => t + n, 0), sex)}`, color: grey });
+    if (best.length) legend.push({ text: words.sites(best.length), color: null });
+    const pillowStarted = Date.now();
+    const picture = await snapshots.render({
+      bbox: frame,
+      // Grey first, then the commonest taxon to the rarest, so the rarer ones are on top.
+      points: inner.records
+        .map(r => ({ lat: r.lat, lng: r.lng, color: colour.get(r.name) ?? grey }))
+        .sort((a, b) => (a.color === grey ? -1 : a.color) - (b.color === grey ? -1 : b.color)),
+      sites: best.map(s => ({ lat: s.lat, lng: s.lng, rank: s.on_map })),
+      legend,
+      title: `${words[sex]} · ${words.title}`,
+    });
+    const [pw, ps, pe, pn] = picture.bbox;
+    const onPicture = inner.records.filter(r => r.lng >= pw && r.lng <= pe && r.lat >= ps && r.lat <= pn).length;
+    return {
+      image: picture.path,
+      image_bytes: picture.bytes,
+      image_size: `${picture.width}x${picture.height}`,
+      image_type: 'jpeg',
+      renderer: 'pillow',
+      degraded: { ...degraded, not_kept: PILLOW_NOT_KEPT },
+      map_url: mapsUrl({ ...inner.urlTaxa, country: inner.countries, view: picture.view }, mapsBase),
+      framed: { bbox: picture.bbox, by: framedBy },
+      records: { ...found.records, on_picture: picture.points_drawn },
+      sites: best,
+      // The Pillow picture numbers the sites: `label_on_picture` is the number drawn.
+      picture_labels: best.map(s => ({ rank: s.rank, site: s.site, label_on_picture: String(s.on_map), merged_sites: 0 })),
+      caption: captionOf({ lang, found, inner, args, shown: onPicture, unknown: 0, explicit: !!bbox }),
+      ...common,
+      timing_ms: { data: dataMs, ...(renderTiming ? { app_attempt: renderTiming } : {}), tiles: picture.ms.tiles, picture: picture.ms.total - picture.ms.tiles, pillow: Date.now() - pillowStarted, total: Date.now() - started, tiles_fetched: picture.tiles.fetched, tiles_failed: picture.tiles.failed },
     };
   }
 
@@ -1627,9 +1812,11 @@ export function createMapsTools({
     // Photos to send are chosen by looking: `send_photos` gives the contact sheets (as `photo_sheet`), so a chat
     // that asks for photos the older way still sees them before any is sent. `auto_pick` (tests, scripts) picks
     // without looking. The WhatsApp bridge sends at most 5 pictures with an answer.
-    const wantsPhotos = clamp(args.send_photos, 0, 5, 0);
-    const sendPhotos = args.auto_pick === true ? wantsPhotos : 0;
-    const asSheet = args.photo_sheet === true || (wantsPhotos > 0 && args.auto_pick !== true);
+    // `tags_fallback` (the chat cannot use a sheet): the same pick, given apart as unchecked (never an images_block).
+    const fallback = args.tags_fallback === true;
+    const wantsPhotos = clamp(args.send_photos, 0, 5, fallback ? 3 : 0);
+    const sendPhotos = args.auto_pick === true || fallback ? wantsPhotos : 0;
+    const asSheet = args.photo_sheet === true || (wantsPhotos > 0 && args.auto_pick !== true && !fallback);
     const photosStarted = Date.now();
     const sheetLoading = asSheet ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
     const filesLoading = sendPhotos
@@ -1744,7 +1931,23 @@ export function createMapsTools({
           }
         : {}),
       ...(sheet ?? {}),
-      ...(files
+      ...(sheet?.photo_sheet_error ? { photo_sheet_fallback: 'The contact sheet could not be made: host_plants again with `send_photos` and `tags_fallback: true` gives photos picked by the photo tags, not looked at, each caption saying so: send them, and say in the answer they were chosen automatically and not checked.' } : {}),
+      ...(files && fallback
+        ? (() => {
+            // Picked by the tags, nobody looked: each caption says so, and the block is ready to send (Franz, 4 Nov: a
+            // useful photo with an honest caption beats nothing; the person asked for photos).
+            const label = args.lang === 'es' ? 'elegida automáticamente por etiqueta, no revisada' : 'picked automatically by tag, not checked';
+            const images = files.images.map(im => ({ ...im, caption: `${im.caption} — ${label}`, picked_by: 'photo tags', looked_at: false }));
+            return {
+              images,
+              images_block: imagesBlock(images),
+              unchecked: true,
+              unchecked_note: `${images.length} photo(s) picked by the photo tags (${photoTags() ? 'leaves or whole plant first, then a flower' : 'the tags file is missing on this server: by living plant and place only'}), not looked at by anyone; each caption says so. Send them with images_block, and say in the answer that they were chosen automatically and not checked.`,
+              ...(photoTags() ? {} : { photo_tags_missing: true }),
+              ...(files.note ? { images_note: files.note } : {}),
+            };
+          })()
+        : files
         ? {
             images: files.images,
             // The WhatsApp bridge's picture block (tools/whatsapp/bridge-skill): one line per photo, `path | caption`.
@@ -1991,6 +2194,40 @@ export function createMapsTools({
     };
   }
 
+  /**
+   * A Wings Atlas tile, downloaded and credited: the project's own (a CAM ID) as the collection's; any other only with
+   * its own photographer and licence from its GBIF record's media entry of that photo (else not sent).
+   */
+  async function atlasImage(t, lang) {
+    const es = lang === 'es';
+    const sexWord = t.sex ? (es ? { female: 'hembra', male: 'macho' } : { female: 'female', male: 'male' })[t.sex] : null;
+    const head = `_${t.name}_ — ${[STAGE_WORDS[lang].adult, sexWord].filter(Boolean).join(', ')}`;
+    const where = [t.place, t.year].filter(Boolean).join(', ');
+    const source = es ? 'Registro del Wings Atlas, sin etapa anotada' : 'Wings Atlas record, no life stage recorded';
+    if (t.cam_id) {
+      const file = await photoFiles.photo(t.img);
+      return { path: file.path, caption: [head, where, `${t.cam_id}, Ithomiini Ikiam (project collection)`, source].filter(Boolean).join('\n'), stage: 'adult', stage_recorded: false, source: 'atlas', cam_id: t.cam_id, width: file.width, height: file.height, bytes: file.bytes, url: file.url, source_url: t.img };
+    }
+    if (!t.gbif_id) throw new Error('no credit');
+    const [credit, file] = await Promise.all([photoFiles.credit(t.gbif_id, t.img), photoFiles.photo(t.img)]);
+    if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
+    if (!credit.licence) throw new Error('no licence');
+    const link = credit.link ?? t.record;
+    return {
+      path: file.path,
+      caption: [head, credit.place ?? where, `${es ? 'Foto' : 'Photo'}: ${credit.photographer ?? credit.rights_holder} (${credit.licence})`, link, source].filter(Boolean).join('\n'),
+      stage: 'adult',
+      stage_recorded: false,
+      source: 'atlas',
+      width: file.width,
+      height: file.height,
+      bytes: file.bytes,
+      url: file.url,
+      source_url: t.img,
+      credit: { photographer: credit.photographer ?? credit.rights_holder, licence: credit.licence, licence_url: credit.licence_url, place: credit.place, year: credit.year ?? t.year ?? null, link },
+    };
+  }
+
   /** send_sheet_photos: the tiles chosen on contact sheets, downloaded (about 2048 px) and credited, ready to send. */
   async function sendSheetPhotos(args) {
     if (!sheets) return { error: 'Contact sheets are off on this server.' };
@@ -2029,6 +2266,7 @@ export function createMapsTools({
               credit: c,
             };
           }
+          if (t.kind === 'atlas') return await atlasImage(t, lang);
           if (t.kind === 'specimen') {
             const file = await photoFiles.photo(t.full);
             return { path: file.path, caption: t.caption, cam_id: t.cam_id, width: file.width, height: file.height, bytes: file.bytes, url: file.url };
@@ -2038,7 +2276,7 @@ export function createMapsTools({
           if (!credit.matched || !(credit.photographer || credit.rights_holder)) throw new Error('no credit');
           return plantImage(t, credit, file, lang, secondOf.has(t));
         } catch (e) {
-          return { tile: t.n, error: e.message === 'no credit' ? 'its credit (GBIF record of the photo) could not be had' : e.message };
+          return { tile: t.n, error: e.message === 'no credit' ? 'its credit (GBIF record of the photo) could not be had' : e.message === 'no licence' ? 'its photo has no licence on its GBIF record: not sent' : e.message };
         }
       }),
     );
@@ -2058,12 +2296,27 @@ export function createMapsTools({
     const kept = apiKept.get(url);
     if (kept && now() - kept.at < REFRESH_MS) return kept.value;
     const r = await fetchImpl(url, { headers: { 'user-agent': 'ithomiini-database' }, signal: AbortSignal.timeout(20_000) });
-    if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
+    if (!r.ok) throw Object.assign(new Error(`${new URL(url).host} answered ${r.status}`), { status: r.status });
     const value = await r.json();
     // Old answers go; at most 40 are kept (an iNaturalist page can be a few MB).
     for (const [key, k] of apiKept) if (now() - k.at >= REFRESH_MS || apiKept.size >= 40) apiKept.delete(key);
     apiKept.set(url, { at: now(), value });
     return value;
+  }
+
+  /**
+   * getJson, tried once more after `retryDelayMs` when the failure looks passing (no answer, a timeout, 429 or 5xx);
+   * `retried` gets the URL's host when it was. A 4xx other than 429 is not tried again.
+   */
+  async function getJsonRetry(url, retried) {
+    try {
+      return await getJson(url);
+    } catch (e) {
+      if (e.status && e.status !== 429 && e.status < 500) throw e;
+      retried?.push(new URL(url).host);
+      if (retryDelayMs > 0) await new Promise(r => setTimeout(r, retryDelayMs));
+      return getJson(url);
+    }
   }
 
   /**
@@ -2076,6 +2329,9 @@ export function createMapsTools({
     const stages = [...new Set(list(args.life_stage).map(fold).filter(s => LIFE_STAGES[s]))];
     if (!stages.length) return { error: 'Give `life_stage`: egg, larva, pupa or adult (one or a list).' };
     const lang = args.lang === 'es' ? 'es' : 'en';
+    // A sex asked: adults only (eggs, larvae and pupae have none in any source).
+    const sex = sexAsked(args);
+    if (text(args.sex) && !sex) return { error: 'Give `sex` as male or female.' };
     const admin = await areaOf(args);
     if (admin?.error) return admin;
     const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Number(args.near.km) || 25 } : null;
@@ -2126,13 +2382,18 @@ export function createMapsTools({
         candidates.push({ kind: 'local', source: 'project', stage: noted ?? 'unnoted', path, thumb: resolve(dir, `${r.file}.thumb.jpg`), year: Number(String(r.day).slice(0, 4)) || null, place: 'Insectario Ikiam', inside: false, away: -1, caption: [`_${text(v.SPECIES)}_ — ${lang === 'es' ? 'puesta del insectario Ikiam' : 'clutch of the Ikiam insectary'} ${text(v['CLUTCH NUMBER'] ?? '')}`.trim(), [r.note, r.day].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${text(r.name) || 'Ithomiini Ikiam'} (Ithomiini Ikiam)`].join('\n') });
       }
     }
+    const retried = [];
     // iNaturalist: research-grade observations annotated with the stage, with photos.
     await Promise.all(stages.map(async stage => {
+      // Adults of the sex asked: iNaturalist's Sex annotation (term 9: 10 female, 11 male), GBIF's sex.
+      const sexed = stage === 'adult' && sex;
       try {
         const url = `${inatApi}?taxon_name=${encodeURIComponent(taxon)}&term_id=1&term_value_id=${LIFE_STAGES[stage].inat}&photos=true&quality_grade=research,needs_id&per_page=200&order=desc&order_by=votes`;
         const got = await getJson(url);
-        counts[`inaturalist_${stage}`] = got.total_results ?? (got.results ?? []).length;
-        for (const o of got.results ?? []) {
+        const sexValue = sex === 'female' ? 10 : 11;
+        const results = (got.results ?? []).filter(o => !sexed || (o.annotations ?? []).some(a => a.controlled_attribute_id === 9 && a.controlled_value_id === sexValue));
+        counts[`inaturalist_${stage}`] = sexed ? results.length : got.total_results ?? results.length;
+        for (const o of results) {
           const [lng, lat] = o.geojson?.coordinates ?? [];
           const at = placeOf(lat, lng);
           for (const [i, ph] of (o.photos ?? []).slice(0, 3).entries()) {
@@ -2151,6 +2412,7 @@ export function createMapsTools({
               place: text(o.place_guess) || null,
               research: o.quality_grade === 'research',
               ...at,
+              ...(sexed ? { sex } : {}),
               credit: { photographer: inatAuthor(ph.attribution), licence: inatLicence(ph.license_code), link: `https://www.inaturalist.org/observations/${o.id}`, attribution: text(ph.attribution) || null },
             });
           }
@@ -2159,22 +2421,98 @@ export function createMapsTools({
         errors.push(`iNaturalist (${stage}): ${e.message}`);
         failed.add(`inat:${stage}`);
       }
-      // GBIF: other datasets whose records say the stage (iNaturalist's are above already).
+      // GBIF: other datasets whose records say the stage (iNaturalist's are above already); a passing failure is
+      // tried once more before the stage is said not checked.
+      const stageRetries = [];
       try {
-        const got = await getJson(`${gbifApi}?scientificName=${encodeURIComponent(taxon)}&lifeStage=${LIFE_STAGES[stage].gbif}&mediaType=StillImage&limit=100`);
+        const got = await getJsonRetry(`${gbifApi}?scientificName=${encodeURIComponent(taxon)}&lifeStage=${LIFE_STAGES[stage].gbif}${sexed ? `&sex=${sex.toUpperCase()}` : ''}&mediaType=StillImage&limit=100`, stageRetries);
         const other = (got.results ?? []).filter(r => r.datasetKey !== INAT_DATASET);
         counts[`gbif_other_${stage}`] = other.length;
         for (const r of other) {
           const at = placeOf(r.decimalLatitude, r.decimalLongitude);
           for (const [i, m] of (r.media ?? []).filter(m => m.type === 'StillImage' && /^https?:\/\//.test(m.identifier ?? '')).slice(0, 2).entries()) {
-            candidates.push({ kind: 'remote', source: 'gbif', stage, second: i > 0, record: `https://www.gbif.org/occurrence/${r.key}`, img: m.identifier, thumb: proxyUrl(m.identifier).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`), year: r.year ?? null, place: [r.locality, r.stateProvince, r.country].filter(Boolean).join(', ') || null, research: true, ...at, credit: creditOf(r, m.identifier) });
+            candidates.push({ kind: 'remote', source: 'gbif', stage, second: i > 0, record: `https://www.gbif.org/occurrence/${r.key}`, img: m.identifier, thumb: proxyUrl(m.identifier).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`), year: r.year ?? null, place: [r.locality, r.stateProvince, r.country].filter(Boolean).join(', ') || null, research: true, ...at, ...(sexed ? { sex } : {}), credit: creditOf(r, m.identifier) });
           }
         }
       } catch (e) {
-        errors.push(`GBIF (${stage}): ${e.message}`);
+        errors.push(`GBIF (${stage}): ${e.message}${stageRetries.length ? ' (tried twice)' : ''}`);
         failed.add(`gbif:${stage}`);
+      } finally {
+        retried.push(...stageRetries);
       }
     }));
+    // The Wings Atlas (the maps' own data files, read already for the other tools): its records' photos are adults
+    // (no life stage or behaviour on them), so only for adults; of the sex asked when one is. Records the APIs above
+    // gave already (same iNaturalist observation, GBIF record or photo) are not shown twice; the nearest ATLAS_MAX.
+    if (stages.includes('adult')) {
+      try {
+        const records = [];
+        for (const source of ATLAS_SOURCES) {
+          try {
+            records.push(...(await points([source])).records);
+          } catch (e) {
+            errors.push(`Wings Atlas (${source}): ${e.message}`);
+            failed.add(`atlas:${source}`);
+          }
+        }
+        const syn = await synonyms();
+        const wanted = new Set([fold(taxon), fold(syn.get(fold(taxon)) ?? '')].filter(Boolean));
+        const { sexes } = collection();
+        const seen = new Set();
+        for (const c of candidates) {
+          seen.add(c.img);
+          if (c.record) seen.add(c.record.replace(/^https:\/\/www\.inaturalist\.org\/observations\//, 'inat:'));
+          const inat = /inaturalist[^/]*\/photos\/(\d+)\//.exec(c.img ?? '')?.[1];
+          if (inat) seen.add(`inat-photo:${inat}`);
+        }
+        const keysOf = r => {
+          const inat = /inaturalist[^/]*\/photos\/(\d+)\//.exec(r.img)?.[1];
+          const obs = /inaturalist\.org\/observations\/(\d+)/.exec(r.obs ?? '')?.[1];
+          return [r.img, inat && `inat-photo:${inat}`, obs && `inat:${obs}`, r.source !== 'sanger' && /^\d+$/.test(r.id) && `https://www.gbif.org/occurrence/${r.id}`].filter(Boolean);
+        };
+        const ofTaxon = records.filter(r => r.img && (wanted.has(fold(r.name)) || (!taxon.includes(' ') && wanted.has(fold(r.genus)))));
+        const ofSex = sex ? ofTaxon.filter(r => sexOfRecord(r, sexes) === sex) : ofTaxon;
+        const atlas = [];
+        let dup = 0;
+        for (const r of ofSex) {
+          const keys = keysOf(r);
+          if (keys.some(k => seen.has(k))) {
+            dup++;
+            continue;
+          }
+          for (const k of keys) seen.add(k);
+          atlas.push({ r, ...placeOf(r.lat, r.lng) });
+        }
+        counts.atlas_adult = atlas.length;
+        if (dup) counts.atlas_adult_already_shown = dup;
+        atlas.sort((a, b) => b.inside - a.inside || a.away - b.away || (b.r.year ?? 0) - (a.r.year ?? 0));
+        for (const { r, inside, away } of atlas.slice(0, ATLAS_MAX)) {
+          const own = r.source === 'sanger';
+          const recSex = sexOfRecord(r, sexes);
+          candidates.push({
+            kind: 'atlas',
+            source: 'atlas',
+            atlas_source: r.source,
+            name: r.name,
+            stage: 'adult',
+            stage_recorded: false,
+            img: r.img,
+            thumb: /inaturalist[^/]*\/photos\/\d+\//.test(r.img) ? r.img.replace(/\/(original|large)\./, '/medium.') : proxyUrl(r.img).replace(/w=\d+&h=\d+/, `w=${TILE}&h=${TILE}`),
+            ...(own ? { cam_id: r.id } : { gbif_id: /^\d+$/.test(r.id) ? r.id : null }),
+            record: r.obs ?? (!own && /^\d+$/.test(r.id) ? `https://www.gbif.org/occurrence/${r.id}` : null),
+            year: r.year,
+            place: [r.place, r.country].filter(Boolean).join(', ') || null,
+            sex: recSex,
+            research: true,
+            inside,
+            away,
+          });
+        }
+      } catch (e) {
+        errors.push(`Wings Atlas: ${e.message}`);
+        failed.add('atlas');
+      }
+    }
     // The project's first, then in the area, nearer, research grade, newer; one photo per observation before a second.
     candidates.sort((a, b) => (a.source === 'project' ? -1 : 0) - (b.source === 'project' ? -1 : 0) || b.inside - a.inside || a.away - b.away || (b.research ?? 0) - (a.research ?? 0) || (b.year ?? 0) - (a.year ?? 0));
     const ordered = [...candidates.filter(c => !c.second), ...candidates.filter(c => c.second)];
@@ -2189,10 +2527,10 @@ export function createMapsTools({
     // A stage asked with no photo anywhere is said plainly (the chat must not imply there are some).
     // Only stages every source answered for: a source that failed says nothing about absence.
     // (Clutch photos are never adults: their failure leaves adults answered.)
-    const answered = stage => (stage === 'adult' || !failed.has('project')) && !failed.has(`inat:${stage}`) && !failed.has(`gbif:${stage}`);
+    const answered = stage => (stage === 'adult' || !failed.has('project')) && !failed.has(`inat:${stage}`) && !failed.has(`gbif:${stage}`) && (stage !== 'adult' || ![...failed].some(source => source === 'atlas' || source.startsWith('atlas:')));
     const unnoted = candidates.filter(c => c.stage === 'unnoted').length;
     // Records of the stage exist but none has a photo that may be sent (no licence): not "none".
-    const recorded = stage => (counts[`inaturalist_${stage}`] ?? 0) + (counts[`gbif_other_${stage}`] ?? 0) > 0;
+    const recorded = stage => (counts[`inaturalist_${stage}`] ?? 0) + (counts[`gbif_other_${stage}`] ?? 0) + (stage === 'adult' ? counts.atlas_adult ?? 0 : 0) > 0;
     const missing = stages.filter(stage => !candidates.some(c => c.stage === stage));
     const noneFor = missing.filter(stage => answered(stage) && !recorded(stage) && !(unnoted && (stage === 'egg' || stage === 'larva')));
     const unchecked = missing.filter(stage => !answered(stage));
@@ -2201,28 +2539,34 @@ export function createMapsTools({
       taxon,
       life_stage: stages,
       counts,
-      ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon, stages by their notes), none annotated so on iNaturalist, none in GBIF's lifeStage. Say so plainly.` } : {}),
+      ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}${sex ? ` (${sex} adults)` : ''}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon, stages by their notes), none annotated so on iNaturalist, none in GBIF's lifeStage${noneFor.includes('adult') ? ', none in the Wings Atlas records' : ''}. Say so plainly.` } : {}),
       ...(unnoted && missing.some(st => st === 'egg' || st === 'larva') ? { unnoted_note: `${unnoted} clutch photo(s) of ${taxon} have no stage in their note (tiles "stage not noted"): look at them before saying there are no ${missing.filter(st => st === 'egg' || st === 'larva').join(' or ')} photos.` } : {}),
       ...(unusable.length ? { no_usable_photo: unusable, no_usable_note: `Records of ${unusable.join(', ')} exist (counts) but none has a photo with a licence that allows sending it: say so, with the counts.` } : {}),
       ...(unchecked.length ? { not_checked: unchecked, not_checked_note: `No photo of ${unchecked.join(', ')} found, but a source did not answer (see errors): say the search was incomplete, not that there are none.` } : {}),
+      // Which sources answered and which did not: a source that failed is "not checked", never "none".
+      sources_not_checked: [...failed],
+      ...(retried.length ? { retried: [...new Set(retried)] } : {}),
+      ...(sex ? { sex, sex_note: stages.some(s => s !== 'adult') ? `Sex is only known for adults: ${stages.filter(s => s !== 'adult').join(', ')} photos are of either sex.` : `Only adults recorded as ${sex}: iNaturalist's Sex annotation, GBIF's sex, the Wings Atlas record's sex (most iNaturalist photos have none; this filters only the first 200 results, so absence is not exhaustive).` } : {}),
+      ...(stages.includes('egg') ? { oviposition_note: `No source here records egg-laying behaviour: egg photos show eggs, adult photos (the Wings Atlas ones included) show adults. For "laying eggs" or "on its host plant", also give host_plants (butterfly: "${taxon}", with the area named, else country: "Ecuador", and photo_sheet: true): its photos show the host plants where eggs may be laid, as context, never as photos of oviposition. Say plainly when no photo shows egg-laying.` } : {}),
       ...(errors.length ? { errors } : {}),
     };
     if (!tiles.length)
-      return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} found in the ${failed.size ? 'sources that answered' : "project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage"}. Unannotated photos may exist on iNaturalist: say so.` };
+      return { ...answer, photo_sheets: [], note: `No photo of ${taxon} at ${stages.map(s => words[s]).join(' / ')} found in the ${failed.size ? 'sources that answered' : `project's clutch photos, iNaturalist's Life Stage annotations or GBIF's lifeStage${stages.includes('adult') ? ' or the Wings Atlas records' : ''}`}. Unannotated photos may exist on iNaturalist: say so.` };
     if (!sheets) return { ...answer, photo_sheet_error: 'Contact sheets are off on this server.' };
     const made = [];
+    const sexMark = { female: '♀', male: '♂' };
     const shaped = tiles.map(c => ({
       ...c,
-      name: taxon,
-      line1: `${taxon} · ${words[c.stage]}`,
-      line2: [(c.source === 'project' ? 'Insectario Ikiam' : c.inside ? admin?.name ?? (lang === 'es' ? 'en el área' : 'in the area') : c.place)?.slice(0, 38), c.year].filter(Boolean).join(' · '),
+      name: c.name ?? taxon,
+      line1: `${c.name ?? taxon} · ${words[c.stage]}${c.sex ? ` ${sexMark[c.sex]}` : ''}`,
+      line2: [(c.source === 'project' ? 'Insectario Ikiam' : c.inside ? admin?.name ?? (lang === 'es' ? 'en el área' : 'in the area') : c.place)?.slice(0, c.source === 'atlas' ? 30 : 38), c.year, c.source === 'atlas' ? 'Atlas' : null].filter(Boolean).join(' · '),
     }));
     for (let i = 0; i < shaped.length && made.length < 2; i += PER_SHEET) made.push(sheets.make(shaped.slice(i, i + PER_SHEET), { first: i + 1 }));
     const out = await Promise.all(made);
     return {
       ...answer,
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
-      photo_sheet_note: 'Look at each sheet (read its path), pick the tiles that clearly show the stage asked (an annotation can be wrong: a tile showing an adult or a plant is not a larva), at most 5, then send_sheet_photos with `sheets` and `tiles`.',
+      photo_sheet_note: `Look at each sheet (read its path), pick the tiles that clearly show the stage asked (an annotation can be wrong: a tile showing an adult or a plant is not a larva), at most 5, then send_sheet_photos with \`sheets\` and \`tiles\`.${shaped.some(t => t.source === 'atlas') ? ' Tiles marked "Atlas" are Wings Atlas records: no life stage is recorded on them (they are taken as adults; check the tile shows one) and egg-laying is not recorded; do not describe a photo as oviposition without visual confirmation.' : ''}`,
     };
   }
 
@@ -2674,7 +3018,11 @@ export function createMapsTools({
         if (name === 'send_sheet_photos') return await sendSheetPhotos(args);
         if (name === 'taxon_photos') return await taxonPhotos(args);
         if (name === 'gallery_specimens') return await specimens(args);
-        if (name === 'maps_snapshot') return await snapshot(args);
+        if (name === 'maps_snapshot') {
+          // The picture as the WhatsApp bridge sends it (map chats gave only the link: 4 Nov eval, M01/N01).
+          const r = await snapshot(args);
+          return r?.image && !r.error ? { ...r, images_block: imagesBlock([{ path: r.image, caption: String(r.caption ?? '') }]) } : r;
+        }
       } catch (e) {
         return { error: e.message };
       }

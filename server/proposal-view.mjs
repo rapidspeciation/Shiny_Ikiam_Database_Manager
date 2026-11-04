@@ -12,7 +12,7 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
 export const VIEW_PARAM = {
   type: 'object',
   description:
-    "How the table shows it. columns: shown first (changed ones always show); onlyColumns: only those and the changed; between: the sheet's untouched rows between its rows, greyed (default: when few; not on a notebook page). E.g. a long run of one fix: between false; related columns to check: name them.",
+    "columns: shown first (changed ones always show); onlyColumns: only those and the changed; between: the sheet's untouched rows between its rows, greyed (default: when few; not on a notebook page; false for a long run of one fix).",
   properties: {
     columns: { type: 'array', items: { type: 'string' } },
     onlyColumns: { type: 'boolean' },

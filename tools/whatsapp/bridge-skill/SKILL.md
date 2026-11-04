@@ -90,6 +90,20 @@ https://…/photo.jpg | *Oleria onega* — Archidona, 2023 — iNaturalist, ana_
 
 - A path on this computer or an `https://` address, from any tool that
   returns one (maps_snapshot's `image`, gallery or host-plant photos).
+- Photos to send: look before choosing. `host_plants` (with `area`) or
+  `gallery_specimens` with `photo_sheet: true`, or `taxon_photos` (eggs,
+  larvae, pupae, adults) gives numbered contact sheets;
+  read each sheet, pick the tiles that show the leaves or the whole plant and
+  a flower (at most 5), then `send_sheet_photos`: its `images_block` is
+  already in this form, end the answer with it as it is.
+- Photos of a butterfly laying eggs: no source records the behaviour. Call
+  `host_plants` with the named area, else `country: "Ecuador"`, and
+  `photo_sheet: true`. Send egg photos
+  if there are any, adults as adults, and host-plant photos only labelled as
+  the plants where eggs may be laid, never as egg-laying. A source that did
+  not answer (`not_checked`) means the search was incomplete, not "none".
+- `unchecked_images_block` (host-plant photos picked by tags, nobody looked):
+  never send it unless the person asked for them after being told so.
 - The caption: species, locality, year and the photo's credit and licence
   when the tool gives them.
 - The text above the block goes first, as its own message.

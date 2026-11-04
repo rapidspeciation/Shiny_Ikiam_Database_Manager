@@ -239,7 +239,9 @@ test('the person edits cells in the table: checked, marked, kept from the assist
     // Once applied, neither side can change it.
     assert.equal((await edit([{ key: created.key, field: 'Sex', value: 'male' }])).status, 409);
     const late = await call('update_proposal', { proposalId, rows: [{ index: 0, values: { Sex: 'male' } }] });
-    assert.match(late.error, /^Applied: its rows are in the sheet/);
+    assert.match(late.note, /^Applied: its rows are in the sheet/);
+    assert.equal(late.error, undefined);
+    assert.equal(late.next, 'propose_changes');
     assert.equal(late.status, 'applied');
     assert.ok(late.appliedAt, JSON.stringify(late));
   } finally {

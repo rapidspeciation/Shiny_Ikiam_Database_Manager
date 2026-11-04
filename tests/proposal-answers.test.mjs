@@ -160,7 +160,7 @@ test('discarding a proposal applied one sheet at a time says what was written an
     assert.deepEqual(out.notWritten, { rows: 1, sheets: ['Collection_data'], labels: ['A1T'] });
     // Asked again, the same.
     const again = await call('update_proposal', { proposalId, rows: [{ index: 0, values: { Sex: 'male' } }] });
-    assert.match(again.error, /^Applied in part: its Insectary_data rows are in the sheet, its Collection_data rows were left out/);
+    assert.match(again.note, /^Applied in part: its Insectary_data rows are in the sheet, its Collection_data rows were left out/);
     assert.deepEqual(again.notWritten.sheets, ['Collection_data']);
     assert.deepEqual((await call('get_proposal', { proposalId })).written.rows, 2);
   } finally {

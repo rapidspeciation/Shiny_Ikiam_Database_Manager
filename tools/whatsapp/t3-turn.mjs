@@ -7,12 +7,17 @@
 // t3commands.mjs (path in the request), so it runs beside any release.
 //
 // Request: { op: 'turn' | 'busy' | 'thread', home, local, tokenFile, commandsModule,
-//   threadId?, text?, timeoutMs?, create?: { projectId, title, model, effort } }
+//   threadId?, text?, timeoutMs?, instanceId?, create?: { projectId, title, model, effort } }
+// - instanceId: the T3 provider instance the chat runs on (default 'claudeAgent'). WhatsApp chats use
+//   their own Claude instance so T3's per-instance settings (compacting an idle chat just before its
+//   prompt cache expires) reach them and no other chat. A chat on another instance is moved to it with
+//   its next message, keeping its model and options; T3 resumes the same Claude session.
 // - op 'turn': the message to `threadId` (made first with `create` when it is missing or gone);
 //   waits until the chat is idle, then for its run to end. → { ok, threadId, status, text, ms }
 // - op 'busy': → { ok, busy, exists }
 // - op 'thread': → { ok, exists, title, projectId }
 // - op 'archive': archives `threadId` (an idle chat keeps a Claude process for 30 min) → { ok, threadId }
+import { progressUpdates } from './t3-progress.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -34,20 +39,30 @@ function openDb(home) {
 }
 
 const threadRow = (db, id) =>
-  db.prepare('SELECT thread_id, project_id, title, deleted_at, archived_at FROM orchestration_v2_projection_threads WHERE thread_id = ?').get(id);
+  db.prepare('SELECT thread_id, project_id, title, deleted_at, archived_at, provider_instance_id, payload_json FROM orchestration_v2_projection_threads WHERE thread_id = ?').get(id);
 const busy = (db, id) =>
   Boolean(db.prepare(`SELECT 1 FROM orchestration_v2_projection_runs WHERE thread_id = ? AND status IN (${UNDER_WAY.map(() => '?').join(',')}) LIMIT 1`).get(id, ...UNDER_WAY));
 const lastOrdinal = (db, id) => db.prepare('SELECT max(ordinal) n FROM orchestration_v2_projection_runs WHERE thread_id = ?').get(id)?.n ?? 0;
 
-function modelSelection({ model = 'claude-opus-5-5', effort = 'medium' } = {}) {
+function modelSelection({ model = 'claude-opus-5-5', effort = 'medium' } = {}, instanceId = 'claudeAgent') {
   return {
-    instanceId: 'claudeAgent',
+    instanceId,
     model,
     options: [
       { id: 'effort', value: effort },
       { id: 'fastMode', value: false },
     ],
   };
+}
+
+/** The chat's own model selection on `instanceId`, or null when it is there already (or none is asked). */
+function moveTo(row, instanceId) {
+  if (!instanceId || !row || row.provider_instance_id === instanceId) return null;
+  let current = null;
+  try {
+    current = JSON.parse(row.payload_json ?? '{}').modelSelection ?? null;
+  } catch {}
+  return current?.model ? { ...current, instanceId } : modelSelection({}, instanceId);
 }
 
 async function main() {
@@ -79,7 +94,7 @@ async function main() {
   if (!row || row.deleted_at) {
     if (!req.create?.projectId) throw new Error('The chat is missing and no project to make it in');
     threadId = randomUUID();
-    const selection = modelSelection(req.create);
+    const selection = modelSelection(req.create, req.instanceId ?? 'claudeAgent');
     await send(
       { type: 'thread.create', threadId, projectId: req.create.projectId, title: req.create.title ?? 'WhatsApp', modelSelection: selection, runtimeMode: 'full-access', interactionMode: 'default', branch: null, worktreePath: null },
       { type: 'thread.turn.start', threadId, message, modelSelection: selection, runtimeMode: 'full-access', interactionMode: 'default' },
@@ -91,14 +106,15 @@ async function main() {
       await sleep(2000);
     }
     before = lastOrdinal(db, threadId);
-    await send({ type: 'thread.turn.start', threadId, message, runtimeMode: 'full-access', interactionMode: 'default' });
+    const move = moveTo(row, req.instanceId);
+    await send({ type: 'thread.turn.start', threadId, message, ...(move ? { modelSelection: move } : {}), runtimeMode: 'full-access', interactionMode: 'default' });
   }
   // The run this message started: the first with a higher ordinal; then its end. With `progress`,
   // each tool the chat starts is printed as a line { progress: { tool, title } } meanwhile.
   let run = null;
-  let seen = 0;
+  const seen = new Map();
   const steps = db.prepare(
-    "SELECT ordinal, payload_json FROM orchestration_v2_projection_turn_items WHERE run_id = ? AND ordinal > ? AND type IN ('dynamic_tool', 'command_execution', 'subagent') ORDER BY ordinal",
+    "SELECT ordinal, type, payload_json FROM orchestration_v2_projection_turn_items WHERE run_id = ? AND type IN ('dynamic_tool', 'command_execution', 'subagent', 'assistant_message') ORDER BY ordinal",
   );
   while (Date.now() < deadline) {
     await sleep(1500);
@@ -106,11 +122,8 @@ async function main() {
       .prepare('SELECT run_id, status FROM orchestration_v2_projection_runs WHERE thread_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 1')
       .get(threadId, before);
     if (run && req.progress)
-      for (const item of steps.all(run.run_id, seen)) {
-        seen = item.ordinal;
-        const p = JSON.parse(item.payload_json);
-        process.stdout.write(JSON.stringify({ progress: { tool: p.toolName ?? p.type ?? null, title: String(p.title ?? '').slice(0, 60) } }) + '\n');
-      }
+      for (const progress of progressUpdates(steps.all(run.run_id), seen, { personal: req.personalProgress === true }))
+        process.stdout.write(JSON.stringify({ progress }) + '\n');
     if (run && !UNDER_WAY.includes(run.status)) break;
   }
   if (!run) return { ok: false, threadId, error: 'no run started' };
