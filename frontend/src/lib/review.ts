@@ -341,8 +341,8 @@ export interface CamRange {
   gaps: number
   lastUsed: { cam: string; date: string } | null
   active: boolean
-  /** next: running low, but the pool's next range is already on Lists (nextRange). */
-  level: 'ok' | 'low' | 'next' | 'done'
+  /** next: running low, but the pool's next range is already on Lists (nextRange). idle: running low, but last used over ~6 months ago. */
+  level: 'ok' | 'low' | 'next' | 'idle' | 'done'
   nextRange?: { first: string; last: string; size: number }
 }
 export interface CamPool {
@@ -403,4 +403,17 @@ export interface AlertsData {
     close: { species: string; preserved: number; left: number; lastPreserved: string | null }[]
   }
   missingSamples?: MissingSample[]
+  /** Censuses open in the Censo tab with no marks for more than a week (an alert each). */
+  openCensuses?: { id: string; species: string; day: string; expected: number; days: number; by: string }[]
+  /** Proposals with census disappearances pending for more than two weeks, by chat (an alert each). */
+  censusProposals?: {
+    chat: string
+    title: string
+    by: string
+    proposals: string[]
+    disappearances: number
+    since: string
+    days: number
+    link: string
+  }[]
 }

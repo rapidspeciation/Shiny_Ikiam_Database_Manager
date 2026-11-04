@@ -83,7 +83,13 @@ which correction they follow.
 - A CAM range running out: when its pool already has the next range on Lists, the alert is information that names it (say so, nobody needs to ask); otherwise PAS or AA hand out the next range; say so.
 - A species at 30 preserved: further captures from those places are marked
   and released (skill `monitoring`).
+- A CAM range not used for about six months is information («sin uso
+  desde…»): nobody needs to ask for a new range.
+- A census left open with no marks, or census proposals still pending: the
+  alert says what to do (mark or cancel it in Censo; apply or discard the
+  proposals); until then those butterflies count as alive. `openCensuses` and
+  `censusProposals` of `review_issues` show "alerts" give the details.
 - An alert unchanged for months is standing, and the team knows it: a pool
-  whose last CAM is old (the date is in the alert, such as the CRISPR pool),
-  an old preserved row without a tube. Give it when asked about alerts, CAMs
-  or that row, not in a list of pending items or meeting topics.
+  whose last CAM is old, an old preserved row without a tube. Give it when
+  asked about alerts, CAMs or that row, not in a list of pending items or
+  meeting topics.

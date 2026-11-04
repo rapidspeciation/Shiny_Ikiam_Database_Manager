@@ -16,12 +16,21 @@ import { tx } from '../../lib/i18n'
 const props = defineProps<{ data: AlertsData | null }>()
 const rule = computed(() => props.data?.preserveRule)
 const samples = computed(() => props.data?.missingSamples ?? [])
-/** An alert about one row opens it in the Buscador (the others point to this view). */
-const rowLink = (link?: string) => (link?.startsWith('#/tablas') ? link : null)
+/**
+ * Where an alert's button goes: an alert about one row opens it in the Buscador, a census the
+ * Censo tab, pending census proposals their chat's Cambios propuestos (the others point to this view).
+ */
+function alertLink(link?: string): { href: string; label: string } | null {
+  if (link?.startsWith('#/tablas')) return { href: link, label: 'Abrir fila' }
+  if (link?.startsWith('#/censo')) return { href: link, label: 'Abrir Censo' }
+  if (link?.startsWith('#/propuestas')) return { href: link, label: 'Ver propuestas' }
+  return null
+}
 const percentLeft = (left: number, size: number) => `${Math.round((100 * left) / size)} %`
 const levelTone: Record<string, string> = {
   low: 'bg-amber-50 text-amber-950',
   next: '',
+  idle: 'text-stone-500',
   done: 'text-stone-400',
   ok: '',
 }
@@ -46,10 +55,10 @@ const levelTone: Record<string, string> = {
               <Info v-else :size="15" class="mt-0.5 shrink-0 text-stone-500" />
               <span>{{ tx(a.text, a.textMsg) }}</span>
               <a
-                v-if="rowLink(a.link)"
-                :href="rowLink(a.link)!"
+                v-if="alertLink(a.link)"
+                :href="alertLink(a.link)!.href"
                 class="ml-auto flex shrink-0 items-center gap-0.5 text-brand-700 hover:underline"
-                ><ExternalLink :size="13" /> {{ $t('Abrir fila') }}</a
+                ><ExternalLink :size="13" /> {{ $t(alertLink(a.link)!.label) }}</a
               >
             </li>
           </ul>

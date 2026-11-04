@@ -190,6 +190,8 @@ export default {
   'Ninguna especie.': 'No species.',
   'faltan {n}': '{n} to go',
   'Abrir fila': 'Open row',
+  'Abrir Censo': 'Open Census',
+  'Ver propuestas': 'See proposals',
   'Preguntar al equipo': 'Ask the team',
   'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Pregunta al equipo por ellas. Desaparecen al rellenar las celdas.':
     'Insectary butterflies preserved (by Death_cause, Preserved_Dead_Alive, a WHOLE_ORGANISM tube or Preservation_medium) without CAM_ID or Tube_1_id, or with Killed_Preserved and NA in them. Ask the team about them. Each goes once its cells are filled.',

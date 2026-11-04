@@ -11,7 +11,9 @@
 // 15 % of it, is an alert: time to ask PAS or AA for a new range. Unless the pool
 // already has its next range: a range on Lists with none of its CAMs used yet
 // (PAS or AA added it). Then the low range is information that names the next
-// one, not an alert.
+// one, not an alert. A range whose last CAM is older than about six months
+// (IDLE_DAYS) is not being used: what is left in it is information with the date
+// («sin uso desde…»), not a call to ask for a new range.
 //
 // The 30-preserved rule (docs/monitoring.md): once an Ithomiini species has 30
 // preserved individuals from Ikiam, Casa de Lin or Mariposario Ikiam
@@ -25,12 +27,21 @@
 // whose cells say it was preserved, without its CAM_ID or Tube_1_id (or with
 // Killed_Preserved but NA in them). The ones that died in the last 180 days
 // are alerts, to ask the team; the notice goes once the cells are filled.
+//
+// Censuses (server/census.mjs). A census opened in the Censo tab that has no
+// marks a week later (CENSUS_IDLE_DAYS) was most likely done on paper or not
+// at all: an alert, to mark it from the notebook or cancel it. A proposal of
+// the assistant's chats with census disappearances (Death_cause Disappearance)
+// still pending two weeks after it was drafted (CENSUS_PROPOSAL_DAYS): an
+// alert per chat, to apply or discard them; until then those butterflies
+// still count as alive.
 
 import { msg, msgn } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
 import { sampleGap } from './preserved.mjs';
+import { DISAPPEARED, serialOf } from './census.mjs';
 
 export const CAM_LOW_LEFT = 50;
 export const CAM_LOW_SHARE = 0.15;
@@ -40,6 +51,12 @@ export const RULE_LOCATIONS = ['Ikiam', 'Casa de Lin', 'Mariposario Ikiam'];
 /** How long a species that reached 30 (or a range in use) stays news. */
 const RECENT_DAYS = 60;
 const ACTIVE_DAYS = 365;
+/** A range whose last CAM is older than this is not in use: what is left is information, not an alert. */
+export const IDLE_DAYS = 183;
+/** A census open with no marks after this many days is an alert. */
+export const CENSUS_IDLE_DAYS = 7;
+/** A proposal with census disappearances pending after this many days is an alert. */
+export const CENSUS_PROPOSAL_DAYS = 14;
 /** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
 export const SAMPLE_DAYS = 180;
 
@@ -115,6 +132,7 @@ function camAlerts(sheets, today) {
       const size = r.end - r.start + 1;
       const left = highest === null ? size : r.end - highest;
       const active = !!lastDay && today - lastDay <= ACTIVE_DAYS;
+      const idle = active && today - lastDay > IDLE_DAYS;
       // A finished range is history; a range still in use running low is the alert.
       const low = active && left > 0 && (left < CAM_LOW_LEFT || left < size * CAM_LOW_SHARE);
       return {
@@ -129,6 +147,7 @@ function camAlerts(sheets, today) {
         lastUsed: lastDay ? { cam: lastCam, date: iso(lastDay) } : null,
         active,
         level: !left ? 'done' : low ? 'low' : 'ok',
+        idle,
       };
     });
     // The pool's next range, already on Lists: a fresh one (nothing used), after the low range when there is one.
@@ -137,7 +156,10 @@ function camAlerts(sheets, today) {
       if (r.level === 'low') {
         const next = fresh.find(f => f.first > r.last) ?? fresh.find(f => f !== r) ?? null;
         if (next) Object.assign(r, { level: 'next', nextRange: { first: next.first, last: next.last, size: next.size } });
+        // Not used for months (CRISPRonly_CAMid, last CAM 19/11/2025): nobody needs a new range yet.
+        else if (r.idle) r.level = 'idle';
       }
+    for (const r of described) delete r.idle;
     // Shown: ranges with CAMs left, and full ones used in the last year (the run the team just finished).
     const shown = described.filter(r => r.left || r.active);
     const left = described.reduce((n, r) => n + r.left, 0);
@@ -246,11 +268,92 @@ export function missingSamples(store, sheets) {
   return out.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.row - a.row).map(({ day, ...s }) => s);
 }
 
+/** The app's tables that exist in this database (a test's may lack the assistant's or the census's). */
+const tablesIn = db =>
+  new Set(
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('censuses', 'census_marks', 'ai_proposals', 'users')")
+      .all()
+      .map(t => t.name),
+  );
+const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' });
+/** An instant (ISO) as the sheet's serial of its day in Ecuador. */
+const serialAt = at => serialOf(ECUADOR_DAY.format(new Date(at)));
+
+/**
+ * Censuses open in the Censo tab with no marks more than CENSUS_IDLE_DAYS after their day, oldest
+ * first: { id, species, day (YYYY-MM-DD), expected, days, by }.
+ */
+export function idleCensuses(store, today = todaySerial()) {
+  const tables = tablesIn(store.db);
+  if (!tables.has('censuses') || !tables.has('census_marks')) return [];
+  const who = tables.has('users') ? '(SELECT display_name FROM users u WHERE u.id = c.created_by)' : 'NULL';
+  return store.db
+    .prepare(
+      `SELECT c.id, c.species, c.day, c.expected, coalesce(${who}, c.created_by) AS by FROM censuses c
+       WHERE c.status = 'open' AND NOT EXISTS (SELECT 1 FROM census_marks m WHERE m.census_id = c.id) ORDER BY c.day, c.created_at`,
+    )
+    .all()
+    .map(c => ({ id: c.id, species: c.species, day: c.day, expected: c.expected, days: today - serialOf(c.day), by: c.by }))
+    .filter(c => c.days > CENSUS_IDLE_DAYS);
+}
+
+/**
+ * The assistant's proposals with census disappearances (Death_cause Disappearance) still pending
+ * (or to review) more than CENSUS_PROPOSAL_DAYS after they were drafted, by chat, oldest first:
+ * { chat (T3 thread, else the app's thread), title, by, proposals (ids), disappearances, since
+ * (YYYY-MM-DD), days, link }.
+ */
+export function staleCensusProposals(store, today = todaySerial()) {
+  const tables = tablesIn(store.db);
+  if (!tables.has('ai_proposals')) return [];
+  const who = tables.has('users') ? '(SELECT display_name FROM users u WHERE u.id = p.owner_id)' : 'NULL';
+  const rows = store.db
+    .prepare(
+      `SELECT p.id, p.thread_id, p.t3_thread, p.t3_title, p.created_at, p.changes_json, coalesce(${who}, p.owner_id) AS by FROM ai_proposals p
+       WHERE p.status IN ('pending', 'needs_review') AND instr(p.changes_json, ?) > 0 ORDER BY p.created_at, p.rowid`,
+    )
+    .all(DISAPPEARED);
+  const chats = new Map();
+  for (const p of rows) {
+    const days = today - serialAt(p.created_at);
+    if (!(days > CENSUS_PROPOSAL_DAYS)) continue;
+    let changes = [];
+    try {
+      changes = JSON.parse(p.changes_json) ?? [];
+    } catch {
+      continue;
+    }
+    const gone = changes.filter(c => !c?.context && text(c?.values?.Death_cause) === DISAPPEARED).length;
+    if (!gone) continue;
+    const key = p.t3_thread || `app:${p.thread_id}`;
+    let chat = chats.get(key);
+    if (!chat)
+      chats.set(
+        key,
+        (chat = {
+          chat: key,
+          title: text(p.t3_title) || 'T3 Code',
+          by: p.by,
+          proposals: [],
+          disappearances: 0,
+          since: iso(serialAt(p.created_at)),
+          days,
+          link: p.t3_thread ? `#/propuestas?${new URLSearchParams({ chat: p.t3_thread })}` : `#/propuestas/${encodeURIComponent(p.id)}`,
+        }),
+      );
+    chat.proposals.push(p.id);
+    chat.disappearances += gone;
+  }
+  return [...chats.values()];
+}
+
 const LINK = '#/revision?vista=alertas';
+const CENSUS_LINK = '#/censo';
 /** A row opened in the Buscador. */
 const rowLink = (sheet, search) => `#/tablas?${new URLSearchParams({ hoja: sheet, buscar: search })}`;
 /** The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link }. */
-function alertList(cams, rule, samples, today) {
+function alertList(cams, rule, samples, today, censuses = [], censusProposals = []) {
   const out = [];
   const add = (id, level, m, link) => out.push({ id, level, text: m.text, textMsg: m.msg, link });
   const day = date => (date ? date.split('-').reverse().join('/') : '—');
@@ -270,6 +373,18 @@ function alertList(cams, rule, samples, today) {
           ),
           LINK,
         );
+      if (r.level === 'idle')
+        add(
+          `cam:${p.pool}:${r.first}`,
+          'info',
+          msgn(
+            r.left,
+            '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).',
+            '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).',
+            { pool: p.pool, first: r.first, last: r.last, cam: r.lastUsed.cam, date: day(r.lastUsed.date) },
+          ),
+          LINK,
+        );
       if (r.level === 'low')
         add(
           `cam:${p.pool}:${r.first}`,
@@ -284,6 +399,28 @@ function alertList(cams, rule, samples, today) {
         );
     }
   }
+  for (const c of censuses)
+    add(
+      `census-open:${c.id}`,
+      'warn',
+      msg(
+        'Censo de {species} del {date}: sigue abierto en la pestaña Censo y sin marcas ({expected} mariposas esperadas). Si se contó en papel, pasen las marcas y termínenlo; si no se hizo, cancélenlo.',
+        { species: c.species, date: day(c.day), expected: c.expected },
+      ),
+      CENSUS_LINK,
+    );
+  for (const c of censusProposals)
+    add(
+      `census-proposals:${c.chat}`,
+      'warn',
+      msgn(
+        c.proposals.length,
+        'Censo: {n} propuesta con {gone} desaparecidas espera desde el {date} sin aplicar (chat «{title}» de {by}). Revísenla y aplíquenla o descártenla; mientras tanto esas mariposas cuentan como vivas.',
+        'Censo: {n} propuestas con {gone} desaparecidas esperan desde el {date} sin aplicar (chat «{title}» de {by}). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.',
+        { gone: c.disappearances, date: day(c.since), title: c.title, by: c.by },
+      ),
+      c.link,
+    );
   for (const s of rule.reached.filter(s => s.recent))
     add(
       `thirty:${s.species}`,
@@ -331,7 +468,18 @@ function alertList(cams, rule, samples, today) {
 }
 
 const cache = new WeakMap();
-export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}`;
+/** What the census alerts read besides the copy: the open censuses, their marks, the pending proposals. */
+function appStamp(store) {
+  const tables = tablesIn(store.db);
+  const census = tables.has('censuses') && tables.has('census_marks')
+    ? store.db.prepare("SELECT (SELECT count(*) FROM censuses WHERE status = 'open') || '.' || (SELECT count(*) FROM census_marks) s").get().s
+    : '-';
+  const proposals = tables.has('ai_proposals')
+    ? store.db.prepare("SELECT count(*) || '.' || total(revision) s FROM ai_proposals WHERE status IN ('pending', 'needs_review')").get().s
+    : '-';
+  return `${census}:${proposals}`;
+}
+export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}:${appStamp(store)}`;
 /**
  * Everything the alerts know, computed again only when the local copy or the day changed, here
  * in this thread. The app's requests ask freshAlerts instead (in the Revisión worker thread,
@@ -351,14 +499,18 @@ export function alertsEntry(store) {
   const cams = camAlerts(sheets, today);
   const rule = preserveRule(sheets, today);
   const samples = missingSamples(store, sheets);
+  const censuses = idleCensuses(store, today);
+  const censusProposals = staleCensusProposals(store, today);
   const value = {
     computedAt: new Date().toISOString(),
     ms: Date.now() - started,
     thresholds: { camLeft: CAM_LOW_LEFT, camShare: CAM_LOW_SHARE },
-    alerts: alertList(cams, rule, samples, today),
+    alerts: alertList(cams, rule, samples, today, censuses, censusProposals),
     camPools: cams,
     preserveRule: rule,
     missingSamples: samples,
+    openCensuses: censuses,
+    censusProposals,
   };
   return keepAlerts(store, { stamp, value });
 }

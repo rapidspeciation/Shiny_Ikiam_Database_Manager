@@ -362,6 +362,14 @@ export default {
     '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
   '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
     '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
+  '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAM left in {first}–{last}, unused since {date} (last {cam}).',
+  '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAMs left in {first}–{last}, unused since {date} (last {cam}).',
+  'Censo de {species} del {date}: sigue abierto en la pestaña Censo y sin marcas ({expected} mariposas esperadas). Si se contó en papel, pasen las marcas y termínenlo; si no se hizo, cancélenlo.':
+    'Census of {species} of {date}: still open in the Census tab with no marks ({expected} butterflies expected). If it was counted on paper, enter the marks and finish it; if it was not done, cancel it.',
+  'Censo: {n} propuesta con {gone} desaparecidas espera desde el {date} sin aplicar (chat «{title}» de {by}). Revísenla y aplíquenla o descártenla; mientras tanto esas mariposas cuentan como vivas.':
+    'Census: {n} proposal with {gone} disappearances has waited since {date} without being applied (chat «{title}» by {by}). Review it and apply or discard it; meanwhile those butterflies count as alive.',
+  'Censo: {n} propuestas con {gone} desaparecidas esperan desde el {date} sin aplicar (chat «{title}» de {by}). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.':
+    'Census: {n} proposals with {gone} disappearances have waited since {date} without being applied (chat «{title}» by {by}). Review them and apply or discard them; meanwhile those butterflies count as alive.',
   '{species} llegó a {limit} preservadas el {date}: desde ahora se marca y libera, no se preserva.':
     '{species} reached {limit} preserved on {date}: from now on it is marked and released, not preserved.',
   '{species}: {n} preservada en los últimos 60 días después de llegar a {limit} ({total} en total).':
