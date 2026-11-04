@@ -29,19 +29,26 @@
 // are alerts, to ask the team; the notice goes once the cells are filled.
 //
 // Censuses (server/census.mjs). A census opened in the Censo tab that has no
-// marks a week later (CENSUS_IDLE_DAYS) was most likely done on paper or not
-// at all: an alert, to mark it from the notebook or cancel it. A proposal of
-// the assistant's chats with census disappearances (Death_cause Disappearance)
+// marks a week later (CENSUS_IDLE_DAYS): when its species already has census
+// disappearances (Death_cause Disappearance) dated within a week of its day,
+// entered by any route (Muertes, proposals, Sheets), the census was entered
+// another way and the alert is information (the session can be cancelled);
+// otherwise it is «abierto sin usar», a warn, to mark it from the notebook or
+// cancel it. A proposal of the assistant's chats with census disappearances
 // still pending two weeks after it was drafted (CENSUS_PROPOSAL_DAYS): an
-// alert per chat, to apply or discard them; until then those butterflies
-// still count as alive.
+// alert per chat, counting each butterfly once and only those still without
+// a death date. When rows of those proposals changed since they were drafted
+// (a record's version is not the one the proposal expected) applying them
+// would overwrite newer data: the alert says to redo those disappearances from
+// the notebook, not to apply them. Each alert leads with the outcome in the
+// base and keeps who opened the census or the chat.
 
 import { msg, msgn } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
 import { sampleGap } from './preserved.mjs';
-import { DISAPPEARED, serialOf } from './census.mjs';
+import { DISAPPEARED, inTaxon, serialOf } from './census.mjs';
 
 export const CAM_LOW_LEFT = 50;
 export const CAM_LOW_SHARE = 0.15;
@@ -55,6 +62,8 @@ const ACTIVE_DAYS = 365;
 export const IDLE_DAYS = 183;
 /** A census open with no marks after this many days is an alert. */
 export const CENSUS_IDLE_DAYS = 7;
+/** Disappearances of a census's species dated this many days around its day cover it. */
+export const CENSUS_COVER_DAYS = 7;
 /** A proposal with census disappearances pending after this many days is an alert. */
 export const CENSUS_PROPOSAL_DAYS = 14;
 /** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
@@ -280,11 +289,33 @@ const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaq
 /** An instant (ISO) as the sheet's serial of its day in Ecuador. */
 const serialAt = at => serialOf(ECUADOR_DAY.format(new Date(at)));
 
+const blankCell = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+
+/**
+ * The census disappearances (Death_cause Disappearance) of Insectary_data dated within
+ * CENSUS_COVER_DAYS of `day` for the census's species (a species takes its subspecies, as the
+ * census does): { count, dates (YYYY-MM-DD, oldest first) }, or null when there are none.
+ */
+function coveredBy(sheets, species, day) {
+  const at = serialOf(day);
+  const dates = new Map();
+  let count = 0;
+  for (const r of sheets.get('Insectary_data') ?? []) {
+    const v = r.values;
+    if (text(v.Death_cause) !== DISAPPEARED || !isDate(v.Death_date) || Math.abs(v.Death_date - at) > CENSUS_COVER_DAYS) continue;
+    if (!inTaxon(species, v.SPECIES)) continue;
+    count++;
+    dates.set(v.Death_date, (dates.get(v.Death_date) ?? 0) + 1);
+  }
+  return count ? { count, dates: [...dates.keys()].sort((a, b) => a - b).map(iso) } : null;
+}
+
 /**
  * Censuses open in the Censo tab with no marks more than CENSUS_IDLE_DAYS after their day, oldest
- * first: { id, species, day (YYYY-MM-DD), expected, days, by }.
+ * first: { id, species, day (YYYY-MM-DD), expected, days, by, covered }. `covered` (with `sheets`):
+ * the disappearances of its species already entered by another route ({ count, dates }), else null.
  */
-export function idleCensuses(store, today = todaySerial()) {
+export function idleCensuses(store, today = todaySerial(), sheets = null) {
   const tables = tablesIn(store.db);
   if (!tables.has('censuses') || !tables.has('census_marks')) return [];
   const who = tables.has('users') ? '(SELECT display_name FROM users u WHERE u.id = c.created_by)' : 'NULL';
@@ -295,14 +326,18 @@ export function idleCensuses(store, today = todaySerial()) {
     )
     .all()
     .map(c => ({ id: c.id, species: c.species, day: c.day, expected: c.expected, days: today - serialOf(c.day), by: c.by }))
-    .filter(c => c.days > CENSUS_IDLE_DAYS);
+    .filter(c => c.days > CENSUS_IDLE_DAYS)
+    .map(c => ({ ...c, covered: sheets ? coveredBy(sheets, c.species, c.day) : null }));
 }
 
 /**
  * The assistant's proposals with census disappearances (Death_cause Disappearance) still pending
  * (or to review) more than CENSUS_PROPOSAL_DAYS after they were drafted, by chat, oldest first:
- * { chat (T3 thread, else the app's thread), title, by, proposals (ids), disappearances, since
- * (YYYY-MM-DD), days, link }.
+ * { chat (T3 thread, else the app's thread), title, by, proposals (ids), censusDays (the Death_date
+ * days of their disappearances, YYYY-MM-DD), disappearances (butterflies,
+ * each once), open (of those, still without a Death_date), rows (rows the proposals write, each
+ * once), changed (of those, changed since: their version is not the one expected, or gone), stale
+ * (changed > 0), since (YYYY-MM-DD), days, link }.
  */
 export function staleCensusProposals(store, today = todaySerial()) {
   const tables = tablesIn(store.db);
@@ -324,8 +359,9 @@ export function staleCensusProposals(store, today = todaySerial()) {
     } catch {
       continue;
     }
-    const gone = changes.filter(c => !c?.context && text(c?.values?.Death_cause) === DISAPPEARED).length;
-    if (!gone) continue;
+    const writes = changes.filter(c => c && !c.context && c.recordId);
+    const gone = writes.filter(c => text(c.values?.Death_cause) === DISAPPEARED);
+    if (!gone.length) continue;
     const key = p.t3_thread || `app:${p.thread_id}`;
     let chat = chats.get(key);
     if (!chat)
@@ -336,26 +372,49 @@ export function staleCensusProposals(store, today = todaySerial()) {
           title: text(p.t3_title) || 'T3 Code',
           by: p.by,
           proposals: [],
-          disappearances: 0,
+          gone: new Set(),
+          censusDays: new Set(),
+          rows: new Map(),
           since: iso(serialAt(p.created_at)),
           days,
           link: p.t3_thread ? `#/propuestas?${new URLSearchParams({ chat: p.t3_thread })}` : `#/propuestas/${encodeURIComponent(p.id)}`,
         }),
       );
     chat.proposals.push(p.id);
-    chat.disappearances += gone;
+    for (const c of gone) {
+      chat.gone.add(c.recordId);
+      if (isDate(c.values?.Death_date)) chat.censusDays.add(c.values.Death_date);
+    }
+    for (const c of writes) (chat.rows.get(c.recordId) ?? chat.rows.set(c.recordId, []).get(c.recordId)).push(c.expectedVersion);
   }
-  return [...chats.values()];
+  const record = store.db.prepare('SELECT version, values_json FROM records WHERE id = ? AND missing = 0');
+  return [...chats.values()].map(({ gone, rows, censusDays, ...chat }) => {
+    const now = new Map([...rows.keys()].map(id => [id, record.get(id)]));
+    // A row in two proposals changed if either expected another version.
+    const changed = [...rows].filter(([id, expected]) => {
+      const r = now.get(id);
+      return !r || expected.some(v => v !== undefined && v !== null && v !== r.version);
+    }).length;
+    const open = [...gone].filter(id => {
+      const r = now.get(id);
+      return r && blankCell(JSON.parse(r.values_json).Death_date);
+    }).length;
+    const days = [...censusDays].sort((a, b) => a - b).map(iso);
+    return { ...chat, censusDays: days, disappearances: gone.size, open, rows: rows.size, changed, stale: changed > 0 };
+  });
 }
 
 const LINK = '#/revision?vista=alertas';
 const CENSUS_LINK = '#/censo';
 /** A row opened in the Buscador. */
 const rowLink = (sheet, search) => `#/tablas?${new URLSearchParams({ hoja: sheet, buscar: search })}`;
-/** The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link }. */
+/**
+ * The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link, action? }.
+ * `action` { kind: 'cancel-census', census }: the app offers to cancel that census session.
+ */
 function alertList(cams, rule, samples, today, censuses = [], censusProposals = []) {
   const out = [];
-  const add = (id, level, m, link) => out.push({ id, level, text: m.text, textMsg: m.msg, link });
+  const add = (id, level, m, link, action) => out.push({ id, level, text: m.text, textMsg: m.msg, link, ...(action ? { action } : {}) });
   const day = date => (date ? date.split('-').reverse().join('/') : '—');
   for (const p of cams) {
     if (p.level === 'out')
@@ -399,28 +458,73 @@ function alertList(cams, rule, samples, today, censuses = [], censusProposals = 
         );
     }
   }
-  for (const c of censuses)
-    add(
-      `census-open:${c.id}`,
-      'warn',
-      msg(
-        'Censo de {species} del {date}: sigue abierto en la pestaña Censo y sin marcas ({expected} mariposas esperadas). Si se contó en papel, pasen las marcas y termínenlo; si no se hizo, cancélenlo.',
-        { species: c.species, date: day(c.day), expected: c.expected },
-      ),
-      CENSUS_LINK,
-    );
-  for (const c of censusProposals)
-    add(
-      `census-proposals:${c.chat}`,
-      'warn',
-      msgn(
-        c.proposals.length,
-        'Censo: {n} propuesta con {gone} desaparecidas espera desde el {date} sin aplicar (chat «{title}» de {by}). Revísenla y aplíquenla o descártenla; mientras tanto esas mariposas cuentan como vivas.',
-        'Censo: {n} propuestas con {gone} desaparecidas esperan desde el {date} sin aplicar (chat «{title}» de {by}). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.',
-        { gone: c.disappearances, date: day(c.since), title: c.title, by: c.by },
-      ),
-      c.link,
-    );
+  const days = dates => dates.map(day).join(', ');
+  for (const c of censuses) {
+    const action = { kind: 'cancel-census', census: c.id };
+    if (c.covered)
+      add(
+        `census-open:${c.id}`,
+        'info',
+        msgn(
+          c.covered.count,
+          'Censo de {species} del {date}: ya está en la base por otra vía ({n} desaparición de {species} del {dates}). La sesión de la pestaña Censo que abrió {by} quedó sin marcas; se puede cancelar.',
+          'Censo de {species} del {date}: ya está en la base por otra vía ({n} desapariciones de {species} del {dates}). La sesión de la pestaña Censo que abrió {by} quedó sin marcas; se puede cancelar.',
+          { species: c.species, date: day(c.day), dates: days(c.covered.dates), by: c.by },
+        ),
+        CENSUS_LINK,
+        action,
+      );
+    else
+      add(
+        `census-open:${c.id}`,
+        'warn',
+        msg(
+          'Censo de {species} del {date}: abierto sin usar. La sesión que abrió {by} en la pestaña Censo no tiene marcas ({expected} mariposas esperadas) y la base no tiene desapariciones de {species} de esa semana. Si se contó en papel, pasen las marcas; si no se hizo, cancélenlo.',
+          { species: c.species, date: day(c.day), expected: c.expected, by: c.by },
+        ),
+        CENSUS_LINK,
+        action,
+      );
+  }
+  for (const c of censusProposals) {
+    const vars = { gone: c.disappearances, open: c.open, date: day(c.since), census: days(c.censusDays) || '—', title: c.title, by: c.by, changed: c.changed, rows: c.rows };
+    if (c.stale && c.open)
+      add(
+        `census-proposals:${c.chat}`,
+        'warn',
+        msgn(
+          c.open,
+          'Censo del {census} (propuestas del {date}, chat «{title}» de {by}): {n} de las {gone} mariposas que sus propuestas dan por desaparecidas sigue sin fecha de muerte y cuenta como viva. Las propuestas quedaron viejas ({changed} de sus {rows} filas cambiaron desde entonces): no las apliquen; rehagan esas desapariciones desde el cuaderno.',
+          'Censo del {census} (propuestas del {date}, chat «{title}» de {by}): {n} de las {gone} mariposas que sus propuestas dan por desaparecidas siguen sin fecha de muerte y cuentan como vivas. Las propuestas quedaron viejas ({changed} de sus {rows} filas cambiaron desde entonces): no las apliquen; rehagan esas desapariciones desde el cuaderno.',
+          vars,
+        ),
+        c.link,
+      );
+    else if (c.stale)
+      add(
+        `census-proposals:${c.chat}`,
+        'info',
+        msgn(
+          c.proposals.length,
+          'Censo del {census} (propuesta del {date}, chat «{title}» de {by}): las {gone} mariposas de su propuesta ya tienen fecha de muerte. La propuesta quedó vieja ({changed} de sus {rows} filas cambiaron desde entonces): descártenla.',
+          'Censo del {census} (propuestas del {date}, chat «{title}» de {by}): las {gone} mariposas de sus {n} propuestas ya tienen fecha de muerte. Las propuestas quedaron viejas ({changed} de sus {rows} filas cambiaron desde entonces): descártenlas.',
+          vars,
+        ),
+        c.link,
+      );
+    else
+      add(
+        `census-proposals:${c.chat}`,
+        'warn',
+        msgn(
+          c.proposals.length,
+          'Censo: {n} propuesta con {gone} desaparecidas espera desde el {date} sin aplicar (chat «{title}» de {by}). Revísenla y aplíquenla o descártenla; mientras tanto esas mariposas cuentan como vivas.',
+          'Censo: {n} propuestas con {gone} desaparecidas esperan desde el {date} sin aplicar (chat «{title}» de {by}). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.',
+          vars,
+        ),
+        c.link,
+      );
+  }
   for (const s of rule.reached.filter(s => s.recent))
     add(
       `thirty:${s.species}`,
@@ -499,7 +603,7 @@ export function alertsEntry(store) {
   const cams = camAlerts(sheets, today);
   const rule = preserveRule(sheets, today);
   const samples = missingSamples(store, sheets);
-  const censuses = idleCensuses(store, today);
+  const censuses = idleCensuses(store, today, sheets);
   const censusProposals = staleCensusProposals(store, today);
   const value = {
     computedAt: new Date().toISOString(),

@@ -174,9 +174,12 @@ function openView(key: string) {
 }
 // The alerts are counted on the tab (and shown in their view).
 const alertsData = ref<AlertsData | null>(null)
-api<AlertsData>('alerts')
-  .then(data => (alertsData.value = data))
-  .catch(e => notify(errorText(e), 'error'))
+function loadAlerts() {
+  api<AlertsData>('alerts')
+    .then(data => (alertsData.value = data))
+    .catch(e => notify(errorText(e), 'error'))
+}
+loadAlerts()
 const warnings = computed(() => alertsData.value?.alerts.filter(a => a.level === 'warn').length ?? 0)
 // On a phone, picking a kind or status goes back to the cards.
 watch([kind, status], () => (showFilters.value = false))
@@ -295,7 +298,7 @@ const filtered = computed(
     </ScrollRow>
     <SuggestionsPanel v-if="session.canEdit && view === 'sugerencias'" />
     <SolvedPanel v-else-if="session.canEdit && view === 'resueltos'" />
-    <AlertsPanel v-else-if="session.canEdit && view === 'alertas'" :data="alertsData" />
+    <AlertsPanel v-else-if="session.canEdit && view === 'alertas'" :data="alertsData" @changed="loadAlerts" />
     <div v-else-if="session.canEdit" class="flex min-h-0 flex-1">
       <!-- Sidebar: status, kinds and filters in the height the screen has to spare (on phones, behind «Filtros»). -->
       <aside

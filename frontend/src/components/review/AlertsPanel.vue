@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { AlertTriangle, ExternalLink, Info } from 'lucide-vue-next'
-import { dayFirst, tablesLink, type AlertsData } from '../../lib/review'
-import { tx } from '../../lib/i18n'
+import { computed, ref } from 'vue'
+import { AlertTriangle, ExternalLink, Info, XCircle } from 'lucide-vue-next'
+import { dayFirst, tablesLink, type Alert, type AlertsData } from '../../lib/review'
+import { t, tx } from '../../lib/i18n'
+import { api } from '../../lib/api'
+import { errorText, notify } from '../../lib/notice'
+import { useSession } from '../../stores/session'
 
 /**
  * Revisión → Alertas: what the team must act on in time (server/alerts.mjs).
@@ -14,6 +17,24 @@ import { tx } from '../../lib/i18n'
  * button to open the row; each goes once its cells are filled.
  */
 const props = defineProps<{ data: AlertsData | null }>()
+const emit = defineEmits<{ changed: [] }>()
+const session = useSession()
+/** An admin cancels a census session left unused (its marks, if any, stay in the history). */
+const cancelling = ref<string | null>(null)
+async function cancelCensus(a: Alert) {
+  if (a.action?.kind !== 'cancel-census' || cancelling.value) return
+  if (!confirm(t('¿Cancelar esta sesión de censo? No se registra ninguna desaparición.'))) return
+  cancelling.value = a.id
+  try {
+    await api(`census/${encodeURIComponent(a.action.census)}/cancel`, { method: 'POST', body: {} })
+    notify(t('Sesión de censo cancelada'), 'success')
+    emit('changed')
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    cancelling.value = null
+  }
+}
 const rule = computed(() => props.data?.preserveRule)
 const samples = computed(() => props.data?.missingSamples ?? [])
 /**
@@ -60,6 +81,15 @@ const levelTone: Record<string, string> = {
                 class="ml-auto flex shrink-0 items-center gap-0.5 text-brand-700 hover:underline"
                 ><ExternalLink :size="13" /> {{ $t(alertLink(a.link)!.label) }}</a
               >
+              <button
+                v-if="session.isAdmin && a.action?.kind === 'cancel-census'"
+                class="flex shrink-0 items-center gap-0.5 text-brand-700 hover:underline disabled:opacity-50"
+                :class="{ 'ml-auto': !alertLink(a.link) }"
+                :disabled="cancelling === a.id"
+                @click="cancelCensus(a)"
+              >
+                <XCircle :size="13" /> {{ $t('Cancelar sesión') }}
+              </button>
             </li>
           </ul>
         </section>

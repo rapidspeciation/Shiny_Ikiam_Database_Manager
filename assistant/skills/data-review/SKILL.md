@@ -85,10 +85,19 @@ which correction they follow.
   and released (skill `monitoring`).
 - A CAM range not used for about six months is information («sin uso
   desde…»): nobody needs to ask for a new range.
-- A census left open with no marks, or census proposals still pending: the
-  alert says what to do (mark or cancel it in Censo; apply or discard the
-  proposals); until then those butterflies count as alive. `openCensuses` and
-  `censusProposals` of `review_issues` show "alerts" give the details.
+- A census session left open in Censo with no marks: when its species
+  already has disappearances dated within a week of its day (`covered`), the
+  census was entered another way (Muertes, proposals, Sheets): say it was
+  entered, not that it is unfinished; the empty session can be cancelled.
+  Otherwise it is «abierto sin usar»: nothing was entered for it; mark it from
+  the notebook or cancel it. Name who opened it after the outcome.
+- Census proposals still pending: when their rows changed since (`stale`),
+  never suggest applying them (they would overwrite newer data); give
+  `open`, the butterflies still without a death date (each counted once), and
+  say those disappearances must be redone from the notebook. Not stale: apply
+  or discard them; until then those butterflies count as alive.
+  `openCensuses` and `censusProposals` of `review_issues` show "alerts" give
+  the details.
 - An alert unchanged for months is standing, and the team knows it: a pool
   whose last CAM is old, an old preserved row without a tube. Give it when
   asked about alerts, CAMs or that row, not in a list of pending items or

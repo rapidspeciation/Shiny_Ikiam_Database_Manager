@@ -367,6 +367,8 @@ export interface Alert {
   text: string
   textMsg?: Msg
   link?: string
+  /** What the app offers on the alert: cancel a census session left unused (admins). */
+  action?: { kind: 'cancel-census'; census: string }
 }
 /** An insectary butterfly preserved without its CAM or tube (server/preserved.mjs), and whom to ask. */
 export interface MissingSample {
@@ -404,14 +406,31 @@ export interface AlertsData {
   }
   missingSamples?: MissingSample[]
   /** Censuses open in the Censo tab with no marks for more than a week (an alert each). */
-  openCensuses?: { id: string; species: string; day: string; expected: number; days: number; by: string }[]
+  openCensuses?: {
+    id: string
+    species: string
+    day: string
+    expected: number
+    days: number
+    by: string
+    /** Disappearances of its species already entered another way, within a week of its day. */
+    covered: { count: number; dates: string[] } | null
+  }[]
   /** Proposals with census disappearances pending for more than two weeks, by chat (an alert each). */
   censusProposals?: {
     chat: string
     title: string
     by: string
     proposals: string[]
+    /** The days of their disappearances (the census's day). */
+    censusDays: string[]
+    /** Butterflies marked disappeared (each once), and of those still without a death date. */
     disappearances: number
+    open: number
+    /** Rows the proposals write, and of those changed since they were drafted. */
+    rows: number
+    changed: number
+    stale: boolean
     since: string
     days: number
     link: string
