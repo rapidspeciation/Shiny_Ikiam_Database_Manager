@@ -26,7 +26,7 @@ import { trainingCams } from './oof.mjs';
 const WORKER = new URL('./readings-worker.mjs', import.meta.url).pathname;
 const BUILDER = new URL('./gallery-public.mjs', import.meta.url).pathname;
 export const SOURCE = 'app_readings';
-const ID_MODEL = 'bioclip-2.5-h int8 + head_hier 6fa6ab78 (alias_w075, V5N crops + label fixes) + wing_seg_v5n d74f9c13 (tools/identifier)';
+const ID_MODEL = 'bioclip-2.5-h int8 + head_hier 6fa6ab78 (alias_w075, V5N crops + label fixes) + wing_seg_s2 65704837 (tools/identifier)';
 // The sex model's name: the arm the worker says it ran (the 19 Oct 2026 CNN on the androconial strips; its name
 // before the colon) and how many of the 4 strips the butterfly had.
 export const sexModelName = sex =>

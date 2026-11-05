@@ -3,7 +3,7 @@
  * the same steps as the server's worker (tools/identifier/worker.py, v6_feature.py and its oriented_tight_crop /
  * biological_object_dedup), without the models themselves (the page runs them with onnxruntime-web).
  *
- * 1. The wing detector (wing_seg_v5n.onnx, end-to-end head) on the photo as stored, not turned by its EXIF tag
+ * 1. The wing detector (wing_seg_s2.onnx since 5 Nov 2026, end-to-end head) on the photo as stored, not turned by its EXIF tag
  *    (the server gives it the raw pixels): a 640 px square letterbox as Ultralytics makes it (bilinear like
  *    cv2.INTER_LINEAR, grey 114).
  * 2. Its masks (prototypes upsampled to 640, > 0, cut to the box), each mask's outline measures, the masks under

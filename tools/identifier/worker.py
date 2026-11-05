@@ -1,7 +1,7 @@
 """The team's AI Identifier on the app server: which species a butterfly photo shows.
 
 The same pipeline as the identifier's Space (WingsClassificator/hf-space, crop of 18 Oct 2026):
-the photo upright by its EXIF tag, the nano V5N wing detector at 640 px (as ONNX with its one-to-one
+the photo upright by its EXIF tag, the nano wing detector (V5N retrained, wing_seg_s2, since 5 Nov 2026) at 640 px (as ONNX with its one-to-one
 head, the head the Space's PyTorch model runs), the wings cropped (the central 90 % when nothing is
 found) and padded to a 224 px square, BioCLIP 2.5-H's image encoder (ONNX, dynamic int8), then the
 trained hierarchical head (15,347 names). Optionally the Space's geographic prior: names not recorded
@@ -37,7 +37,7 @@ The «Fotos» tab's sex check (server/sex-check.mjs) asks for the sex model alon
 
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
-  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier_6fa6ab78.pt
+  app/assets/wing_seg_s2.pt, wing_seg_s2.onnx, field_wingtip_override_v1.json, head_hier_6fa6ab78.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
 """
@@ -59,7 +59,7 @@ HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
 # Its own file name (5 Nov 2026: alias recipe retrained on V5N serving crops with label fixes, WingsClassificator
 # reports/wingseg_next_20261103); head_hier_b8127dbf.pt and head_hier.pt (749fbffd, hard-linked) stay for earlier releases.
 HEAD_FILE = "head_hier_6fa6ab78.pt"
-DETECTOR = "wing_seg_v5n"
+DETECTOR = "wing_seg_s2"  # 5 Nov 2026: V5N retrained on mined photos (WingsClassificator wingseg_next_20261103 step 2/2c); v6_feature.py knows its SHA
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
 TOP = 5

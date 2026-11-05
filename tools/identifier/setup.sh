@@ -3,8 +3,9 @@
 # shared/identifier beside the database), once, on the app server. They are taken from the
 # benchmark folder made on 17 Oct 2026 (~/bioclip-bench: the venv, the crop code, the head, the
 # detector and the int8 encoder) as hard links: nothing is downloaded and no space is used twice.
-# Since 18 Oct 2026 the detector is the nano V5N at 640 px: the folder needs the Space's v6_feature.py
-# of that day, wing_seg_v5n.pt and its ONNX copy in app/assets, and Ultralytics 8.4.132 in the venv.
+# Since 5 Nov 2026 the detector is the retrained nano (wing_seg_s2) at 640 px: the folder needs a v6_feature.py
+# whose DETECTORS table knows its SHA-256 (added 5 Nov), wing_seg_s2.pt and its ONNX copy in app/assets, and
+# Ultralytics 8.4.132 in the venv.
 # The worker itself (tools/identifier/worker.py) comes with each release.
 #
 #   bash tools/identifier/setup.sh [dest] [source]
@@ -23,13 +24,13 @@ dest=${1:-/home/ubuntu/ithomiini/shared/identifier}
 src=${2:-/home/ubuntu/bioclip-bench}
 encoder=onnx/bioclip25h_visual_int8.onnx
 
-for f in venv/bin/python app/v6_feature.py app/scripts/wings_v6 app/assets/head_hier_6fa6ab78.pt app/assets/wing_seg_v5n.pt app/assets/wing_seg_v5n.onnx app/assets/field_wingtip_override_v1.json "$encoder"; do
+for f in venv/bin/python app/v6_feature.py app/scripts/wings_v6 app/assets/head_hier_6fa6ab78.pt app/assets/wing_seg_s2.pt app/assets/wing_seg_s2.onnx app/assets/field_wingtip_override_v1.json "$encoder"; do
   test -e "$src/$f" || { echo "Missing $src/$f" >&2; exit 1; }
 done
 check() { [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ] || { echo "$1: not the expected file (SHA-256)" >&2; exit 1; }; }
 check "$src/app/assets/head_hier_6fa6ab78.pt" 6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552
-check "$src/app/assets/wing_seg_v5n.pt" d74f9c1323d210aedbb15b1a446bf762b598446dae32449e972b3cba06b9b3ac
-check "$src/app/assets/wing_seg_v5n.onnx" a48730107024e3557b0de6626314a398d745151966a7727a67788c49601c8f4b
+check "$src/app/assets/wing_seg_s2.pt" 65704837040293197371b4e45c7504e9e014407c32fb8c650caa0245deb71ac0
+check "$src/app/assets/wing_seg_s2.onnx" 32763314aa910988a50c80569b5803075aeae5544a4cdc7e20a6524f5ea9e836
 check "$src/$encoder" bf27f8e52aa74c295fb725b98fb6bd2fd467f7d4a9e1e2e7f04c610f1245cca1
 grep -q V5N_WEIGHT_SHA256 "$src/app/v6_feature.py" || { echo "$src/app/v6_feature.py: not the Space's crop code of 18 Oct 2026 (no V5N)" >&2; exit 1; }
 version=$("$src/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("ultralytics"))')

@@ -37,7 +37,7 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
 export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb' };
 
 export const MODELS = [
-  { name: 'wing_seg_v5n.onnx', path: 'app/assets/wing_seg_v5n.onnx', role: 'detector' },
+  { name: 'wing_seg_s2.onnx', path: 'app/assets/wing_seg_s2.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
   { name: 'head_6fa6ab78.json', path: 'offline/head_6fa6ab78.json', role: 'head-meta' },
   { name: 'head_6fa6ab78_fp16.bin', path: 'offline/head_6fa6ab78_fp16.bin', role: 'head' },
