@@ -6417,6 +6417,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           ? photoLinks.organize({ plan: proposal.id }, context.user, context)
           : photoLinks.run({ confirmed: true, scan: proposal.id }, context.user, context);
       }
+      // Applied already (in the app, by the person, or earlier in this chat): what became of it, as an answer, not a
+      // failed call ("Sí, aplica" after it was applied: production, 4 Nov eval critic round). Nothing is written.
+      if (proposal.status === 'applied') return { ...closedAnswer(proposal), alreadyApplied: true };
       try {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,

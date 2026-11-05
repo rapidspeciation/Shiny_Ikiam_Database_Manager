@@ -740,6 +740,32 @@ test('host_plants tags_fallback: photos picked by the tags sent with captions sa
   assert.equal(sheetless.images_block, undefined);
 });
 
+test('taxon_photos living: no preserved specimens, and research-grade iNaturalist observations without a stage annotation, said so', async () => {
+  const unannotated = { id: 9900, quality_grade: 'research', observed_on: '2023-03-03', place_guess: 'Tena', geojson: { coordinates: [TENA.lng, TENA.lat] }, photos: [{ url: 'https://inaturalist-open-data.s3.amazonaws.com/photos/990/square.jpg', license_code: 'cc-by', attribution: '(c) Persona Uno, some rights reserved (CC BY)' }] };
+  const inat = url => (new URL(url).searchParams.get('without_term_id') === '1' ? Response.json({ total_results: 1, results: [unannotated] }) : inatAdults());
+  const gbif = () => Response.json({ results: [
+    { key: 7101, datasetKey: 'museum', basisOfRecord: 'PRESERVED_SPECIMEN', year: 2001, decimalLatitude: PUYO.lat, decimalLongitude: PUYO.lng, media: [{ type: 'StillImage', identifier: 'https://museum.test/a.jpg' }] },
+    { key: 7102, datasetKey: 'other', basisOfRecord: 'HUMAN_OBSERVATION', year: 2019, decimalLatitude: PUYO.lat, decimalLongitude: PUYO.lng, media: [{ type: 'StillImage', identifier: 'https://museum.test/b.jpg' }] },
+  ] });
+  const web = atlasWeb({ inat, gbif });
+  const out = await atlasTools(web).run('taxon_photos', { taxon: 'Tithorea harmonia', life_stage: 'adult', living: true });
+  assert.equal(out.living, true);
+  assert.equal(out.counts.inaturalist_adult_unannotated, 1);
+  assert.equal(out.counts.gbif_other_adult, 1); // the preserved specimen left out
+  assert.ok(!web.calls.some(u => u.includes('map_points_sanger') || u.includes('map_points_gbif_other'))); // only the Atlas's iNaturalist records
+  // Without `living`: no search for unannotated observations, the collection's records as before.
+  const plain = atlasWeb({ inat, gbif });
+  const before = await atlasTools(plain).run('taxon_photos', { taxon: 'Tithorea harmonia', life_stage: 'adult' });
+  assert.equal(before.counts.inaturalist_adult_unannotated, undefined);
+  assert.equal(before.counts.gbif_other_adult, 2);
+  assert.ok(!plain.calls.some(u => u.includes('without_term_id')));
+  // A sex asked: unannotated observations have no sex, so none are added.
+  const sexed = atlasWeb({ inat, gbif });
+  const male = await atlasTools(sexed).run('taxon_photos', { taxon: 'Tithorea harmonia', life_stage: 'adult', sex: 'male', living: true });
+  assert.ok(!sexed.calls.some(u => u.includes('without_term_id')));
+  assert.equal(male.counts.inaturalist_adult_unannotated, undefined);
+});
+
 test('taxon_photos retains successful Atlas files when another source fails', async () => {
   const web = atlasWeb();
   const partial = { fetchImpl: url => url.endsWith('map_points_gbif_other.json') ? Promise.resolve(new Response('down', { status: 503 })) : web.fetchImpl(url) };

@@ -244,6 +244,16 @@ test('the person edits cells in the table: checked, marked, kept from the assist
     assert.equal(late.next, 'propose_changes');
     assert.equal(late.status, 'applied');
     assert.ok(late.appliedAt, JSON.stringify(late));
+    // apply_proposal again ("Sí, aplica" after the person applied it): the same answer, not an error; nothing written.
+    const speciesBefore = record(4).values.SPECIES;
+    const again = await call('apply_proposal', { proposalId });
+    assert.equal(again.error, undefined, JSON.stringify(again));
+    assert.equal(again.alreadyApplied, true);
+    assert.equal(again.status, 'applied');
+    assert.equal(again.next, 'propose_changes');
+    assert.equal(record(4).values.SPECIES, speciesBefore);
+    // The app's own apply route still refuses a second apply.
+    assert.equal((await http('POST', `/api/chat/proposals/${proposalId}/apply`, { requestId: randomUUID(), revision: shown.revision })).status, 409);
   } finally {
     store.close();
   }

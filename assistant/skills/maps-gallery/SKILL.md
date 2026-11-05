@@ -19,6 +19,7 @@ Nine read-only tools; none changes the workbook. Use them before any outside API
 | Our collection's specimens: CAM IDs, a locality, "nuestros especímenes", the Wings Gallery | `gallery_specimens` |
 | Photos of the eggs, larvae or pupae of X | `taxon_photos` with `life_stage` (the project's clutch photos, iNaturalist's Life Stage annotation, GBIF's lifeStage); look at the sheets, then `send_sheet_photos` |
 | Photos of X, of its adults, females or males (in an area) | `taxon_photos` with `life_stage: "adult"`, `sex`, `area` (also the Wings Atlas records' photos); look at the sheets, then `send_sheet_photos` |
+| Photos of X alive, in the field («viva», «en el campo») | `taxon_photos` with `life_stage: "adult"` and `living: true`: no preserved specimens; iNaturalist photos without a stage annotation are captioned so |
 | Photos of X laying eggs, or on its host plant | `taxon_photos` with `life_stage: ["egg", "adult"]` **and** `host_plants` with the named `area`, else `country: "Ecuador"`, and `photo_sheet: true`; see "Egg-laying" below |
 
 ## Answering

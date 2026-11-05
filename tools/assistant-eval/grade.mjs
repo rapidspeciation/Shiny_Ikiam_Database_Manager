@@ -9,6 +9,7 @@
 //   tool: name            the chat called that tool (MCP name without prefix) at least once
 //   toolAny: [names]      one of them
 //   noTool: name | [names]   none of them was called
+//   anyOf: [checks]       at least one of these checks passes
 //   maxTools: n           at most n tool calls (Bash counted)
 //   noToolErrors: true    no failed tool call
 //   toolArgs: { tool | [tools], match: {arg: regex} }   a call of that tool (one of them) whose arguments match
@@ -142,6 +143,7 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
     else if (c.noRegex) pass = !new RegExp(c.noRegex, 'i').test(textFor(c));
     else if (c.tool) pass = tools.some(t => t.name === c.tool);
     else if (c.toolAny) pass = tools.some(t => c.toolAny.includes(t.name));
+    else if (c.anyOf) pass = c.anyOf.some(sub => grade({ checks: [sub] }, run, { today, checkFiles }).score === 1);
     else if (c.noTool) pass = !tools.some(t => [c.noTool].flat().includes(t.name));
     else if (c.maxTools != null) pass = tools.length <= c.maxTools;
     else if (c.noToolErrors) {

@@ -242,6 +242,7 @@ export const MAPS_TOOLS = [
         '- `taxon`: species or genus. `life_stage`: egg, larva, pupa, adult (a list, or one). Optional `area` ({province}/{canton} of Ecuador) or `near` {lat, lng, km}: photos there first, then the nearest.',
         "- Sources: the project's own clutch photos (Clutches tab; their stage is what their note says), iNaturalist observations annotated with that life stage (nearest first, research grade among equals), and GBIF records of other datasets whose lifeStage says it (tried twice when it fails). For adults also the Wings Atlas records' photos (the maps' own data: the project's specimens, GBIF and iNaturalist records; still there when those APIs are down), the same record once only; they carry no life stage or behaviour. Unannotated iNaturalist photos are not found: say so when few come back. `none_for`: stages with no photo in any source (say so plainly); `not_checked` and `sources_not_checked`: a source failed, so the search was incomplete (never say there are none).",
         '- `sex` (male, female): adults recorded so only (iNaturalist\'s Sex annotation, GBIF\'s sex, the Wings Atlas record).',
+        '- `living: true` (adults; for "vivas", "en el campo", "en la naturaleza"): photos of live butterflies only. No preserved specimens (the project\'s collection, museum records), and research-grade iNaturalist observations without a stage annotation as well (captioned so: check the tile shows an adult).',
         '- Egg-laying or "on its host plant": no source records the behaviour. Ask egg (and adult), and host_plants with the area named, else country: "Ecuador", and `photo_sheet` for the host plants, given as context (where eggs may be laid), never as proof of oviposition.',
         'Gives `counts` per source and stage, and `photo_sheets` (1–2 contact sheets of numbered tiles with the stage, place and year): look at them, pick the tiles that show the stage asked clearly (at most 5), then send_sheet_photos.',
       ].join('\n'),
@@ -253,6 +254,7 @@ export const MAPS_TOOLS = [
           area: AREA,
           near: region.near,
           sex: { type: 'string', enum: ['male', 'female'] },
+          living: { type: 'boolean' },
           lang: { type: 'string', enum: ['en', 'es'] },
         },
         required: ['taxon'],
@@ -2255,7 +2257,7 @@ export function createMapsTools({
             const stageWord = STAGE_WORDS[lang][t.stage];
             return {
               path: file.path,
-              caption: [`_${t.name}_ — ${stageWord}`, [t.place, t.year].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${c.photographer ?? c.rights_holder}${c.licence ? ` (${c.licence})` : ''}`, c.link ?? t.record].filter(Boolean).join('\n'),
+              caption: [`_${t.name}_ — ${stageWord}`, [t.place, t.year].filter(Boolean).join(', '), `${lang === 'es' ? 'Foto' : 'Photo'}: ${c.photographer ?? c.rights_holder}${c.licence ? ` (${c.licence})` : ''}`, c.link ?? t.record, t.stage_recorded === false ? (lang === 'es' ? 'iNaturalist, sin etapa anotada' : 'iNaturalist, no life stage recorded') : null].filter(Boolean).join('\n'),
               stage: t.stage,
               source: t.source,
               width: file.width,
@@ -2332,6 +2334,8 @@ export function createMapsTools({
     // A sex asked: adults only (eggs, larvae and pupae have none in any source).
     const sex = sexAsked(args);
     if (text(args.sex) && !sex) return { error: 'Give `sex` as male or female.' };
+    // Live butterflies only (G01, 4 Nov eval: "viva, en el campo" got the collection's specimens first).
+    const living = args.living === true && stages.includes('adult');
     const admin = await areaOf(args);
     if (admin?.error) return admin;
     const near = args.near && Number.isFinite(args.near.lat) && Number.isFinite(args.near.lng) ? { lat: args.near.lat, lng: args.near.lng, km: Number(args.near.km) || 25 } : null;
@@ -2421,12 +2425,47 @@ export function createMapsTools({
         errors.push(`iNaturalist (${stage}): ${e.message}`);
         failed.add(`inat:${stage}`);
       }
+      // Live adults: research-grade observations nobody annotated with a stage (nearly all adults, but say so). No sex
+      // filter is possible on them, so not when a sex is asked.
+      if (living && stage === 'adult' && !sexed) {
+        try {
+          const got = await getJson(`${inatApi}?taxon_name=${encodeURIComponent(taxon)}&without_term_id=1&photos=true&quality_grade=research&per_page=100&order=desc&order_by=votes`);
+          const seenObs = new Set(candidates.filter(c => c.source === 'inaturalist').map(c => c.record));
+          const results = (got.results ?? []).filter(o => !seenObs.has(`inat:${o.id}`));
+          counts.inaturalist_adult_unannotated = results.length;
+          for (const o of results) {
+            const [lng, lat] = o.geojson?.coordinates ?? [];
+            const at = placeOf(lat, lng);
+            for (const [i, ph] of (o.photos ?? []).slice(0, 2).entries()) {
+              const square = text(ph.url);
+              if (!/^https:\/\//.test(square) || !ph.license_code) continue;
+              candidates.push({
+                kind: 'remote',
+                source: 'inaturalist',
+                stage: 'adult',
+                stage_recorded: false,
+                record: `inat:${o.id}`,
+                second: i > 0,
+                img: square.replace(/\/square\./, '/original.'),
+                thumb: square.replace(/\/square\./, '/medium.'),
+                year: Number(String(o.observed_on ?? '').slice(0, 4)) || null,
+                place: text(o.place_guess) || null,
+                research: true,
+                ...at,
+                credit: { photographer: inatAuthor(ph.attribution), licence: inatLicence(ph.license_code), link: `https://www.inaturalist.org/observations/${o.id}`, attribution: text(ph.attribution) || null },
+              });
+            }
+          }
+        } catch (e) {
+          errors.push(`iNaturalist (adults without a stage): ${e.message}`);
+        }
+      }
       // GBIF: other datasets whose records say the stage (iNaturalist's are above already); a passing failure is
       // tried once more before the stage is said not checked.
       const stageRetries = [];
       try {
         const got = await getJsonRetry(`${gbifApi}?scientificName=${encodeURIComponent(taxon)}&lifeStage=${LIFE_STAGES[stage].gbif}${sexed ? `&sex=${sex.toUpperCase()}` : ''}&mediaType=StillImage&limit=100`, stageRetries);
-        const other = (got.results ?? []).filter(r => r.datasetKey !== INAT_DATASET);
+        const other = (got.results ?? []).filter(r => r.datasetKey !== INAT_DATASET && !(living && /PRESERVED|FOSSIL|MATERIAL/i.test(text(r.basisOfRecord))));
         counts[`gbif_other_${stage}`] = other.length;
         for (const r of other) {
           const at = placeOf(r.decimalLatitude, r.decimalLongitude);
@@ -2447,7 +2486,7 @@ export function createMapsTools({
     if (stages.includes('adult')) {
       try {
         const records = [];
-        for (const source of ATLAS_SOURCES) {
+        for (const source of living ? ['inaturalist'] : ATLAS_SOURCES) {
           try {
             records.push(...(await points([source])).records);
           } catch (e) {
@@ -2538,6 +2577,7 @@ export function createMapsTools({
     const answer = {
       taxon,
       life_stage: stages,
+      ...(living ? { living: true, living_note: 'Live butterflies only: no preserved specimens; iNaturalist observations without a stage annotation are captioned so (check each tile shows an adult).' } : {}),
       counts,
       ...(noneFor.length ? { none_for: noneFor, none_note: `No photo of ${noneFor.join(', ')} of ${taxon}${sex ? ` (${sex} adults)` : ''}: none in the project's clutch photos (${counts.project_clutch_photos ?? 0} of this taxon, stages by their notes), none annotated so on iNaturalist, none in GBIF's lifeStage${noneFor.includes('adult') ? ', none in the Wings Atlas records' : ''}. Say so plainly.` } : {}),
       ...(unnoted && missing.some(st => st === 'egg' || st === 'larva') ? { unnoted_note: `${unnoted} clutch photo(s) of ${taxon} have no stage in their note (tiles "stage not noted"): look at them before saying there are no ${missing.filter(st => st === 'egg' || st === 'larva').join(' or ')} photos.` } : {}),
