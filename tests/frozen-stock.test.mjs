@@ -136,7 +136,7 @@ test('GET /api/frozen-stock: signed in only, ETag, 304, a new version after a ch
   setPasswordHashCost(16);
   const dir = mkdtempSync(join(tmpdir(), 'frozen-stock-'));
   mkdirSync(join(dir, 'identifier', 'offline'), { recursive: true });
-  writeFileSync(join(dir, 'identifier', 'offline', 'head_b8127dbf.json'), JSON.stringify({ species: HEAD }));
+  writeFileSync(join(dir, 'identifier', 'offline', 'head_6fa6ab78.json'), JSON.stringify({ species: HEAD }));
   const row = (n, values) => ({ row: n, values: { Release_Collect: 'Collected_Preserved', Preservation_medium: 'Flash frozen', ...values } });
   const app = await createApp(
     { databasePath: join(dir, 'app.sqlite'), identifierDir: join(dir, 'identifier'), localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'setup-token-123' },

@@ -39,8 +39,8 @@ export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6f
 export const MODELS = [
   { name: 'wing_seg_v5n.onnx', path: 'app/assets/wing_seg_v5n.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
-  { name: 'head_b8127dbf.json', path: 'offline/head_b8127dbf.json', role: 'head-meta' },
-  { name: 'head_b8127dbf_fp16.bin', path: 'offline/head_b8127dbf_fp16.bin', role: 'head' },
+  { name: 'head_6fa6ab78.json', path: 'offline/head_6fa6ab78.json', role: 'head-meta' },
+  { name: 'head_6fa6ab78_fp16.bin', path: 'offline/head_6fa6ab78_fp16.bin', role: 'head' },
   { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true },
 ];
 

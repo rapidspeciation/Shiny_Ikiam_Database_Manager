@@ -169,7 +169,7 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
 test('model parts: a folder still being made is read again once its manifest appears; failed and older folders go', async () => {
   const { port, ident, server, signIn } = await setup();
   const p = '/prueba-offline/models';
-  const name = 'head_b8127dbf_fp16.bin';
+  const name = 'head_6fa6ab78_fp16.bin';
   try {
     signIn();
     await precompressParts(ident, { stamp: '20261031T000000Z' });

@@ -24,8 +24,8 @@ import sys
 import numpy as np
 import torch
 
-HEAD_FILE = "head_hier_b8127dbf.pt"
-HEAD_SHA256 = "b8127dbf0591630c99a9e4af1c00eb8d50f217acfb795fe9e23093702e816d42"
+HEAD_FILE = "head_hier_6fa6ab78.pt"
+HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
 
 
 def main(root, out=None):

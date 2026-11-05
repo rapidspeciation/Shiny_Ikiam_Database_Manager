@@ -85,7 +85,7 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'identify_species',
       description: [
-        "The species a butterfly photo shows, by the team's AI Identifier (BioCLIP 2.5-H and the head trained on 15,347 names; since 29 Oct 2026 the alias head head_hier_b8127dbf.pt, same names), run on this server: about 3 s a photo, 10 s for the first after a quiet while (it loads).",
+        "The species a butterfly photo shows, by the team's AI Identifier (BioCLIP 2.5-H and the head trained on 15,347 names; since 5 Nov 2026 head_hier_6fa6ab78.pt, the alias head retrained on the detector's crops with label fixes, same names), run on this server: about 3 s a photo, 10 s for the first after a quiet while (it loads).",
         "- `files` (up to 6): a Drive file ID, link, or name or path as photo_files_look takes them (read from Drive's 1600 px copy); a chat attachment's file name; a WhatsApp photo's path from the relay's envelope; with `batch`, rows of a drive_photos batch (the whole photo).",
         '- `side`: "East" or "West", the side of the Andes in Ecuador where it was photographed (Ikiam: East): names not recorded there weigh 2 %.',
         '- `box` [x0, y0, x1, y1], fractions of the photo as shown: that butterfly only, for a photo of several; otherwise the wings are found on their own (`crop` says when none were and the centre of the photo was used).',

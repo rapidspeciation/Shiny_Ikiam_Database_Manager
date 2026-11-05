@@ -2,7 +2,7 @@
  * Identificar's «En línea (servidor)» (views/IdentifyView.vue): the photo made smaller here, read by the team's AI
  * Identifier on the server (POST api/ai/identify-photo, server/identify-photos.mjs; signed in only), and its answer
  * in the shape the tab's result already shows. The server runs the same head as the phone's models
- * (head_b8127dbf), so the names and the subspecies leaves are the same.
+ * (head_6fa6ab78), so the names and the subspecies leaves are the same.
  */
 import { api, ApiError } from './api'
 import { t } from './i18n'

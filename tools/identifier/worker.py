@@ -37,7 +37,7 @@ The «Fotos» tab's sex check (server/sex-check.mjs) asks for the sex model alon
 
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
-  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier_b8127dbf.pt
+  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier_6fa6ab78.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
 """
@@ -55,9 +55,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the worker's own folder out
 import sex_crops  # noqa: E402
 
-HEAD_SHA256 = "b8127dbf0591630c99a9e4af1c00eb8d50f217acfb795fe9e23093702e816d42"
-# Its own file name: head_hier.pt (749fbffd) is hard-linked with ~/bioclip-bench and stays for the previous release.
-HEAD_FILE = "head_hier_b8127dbf.pt"
+HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
+# Its own file name (5 Nov 2026: alias recipe retrained on V5N serving crops with label fixes, WingsClassificator
+# reports/wingseg_next_20261103); head_hier_b8127dbf.pt and head_hier.pt (749fbffd, hard-linked) stay for earlier releases.
+HEAD_FILE = "head_hier_6fa6ab78.pt"
 DETECTOR = "wing_seg_v5n"
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)

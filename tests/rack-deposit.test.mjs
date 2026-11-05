@@ -580,11 +580,11 @@ test('changes .xlsx of several racks: one file, each tube once; the cells to wri
   assert.match(xlsx['xl/styles.xml'], /<cellXfs count="9">/);
 });
 
-test('identify_species names the live head (alias, b8127dbf), not the release of 14 Oct', () => {
+test('identify_species names the live head (6fa6ab78), not the release of 14 Oct', () => {
   const tool = DRIVE_PHOTO_TOOLS.find(t => t.function.name === 'identify_species');
   const text = tool.function.description;
   assert.ok(!/release of 14 Oct/.test(text));
-  assert.match(text, /head_hier_b8127dbf\.pt/);
+  assert.match(text, /head_hier_6fa6ab78\.pt/);
   assert.match(text, /measured with the earlier head/);
 });
 
