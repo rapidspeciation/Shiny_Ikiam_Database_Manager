@@ -18,6 +18,8 @@ export function mcpFrom(workspace = '/home/franz/.t3-ithomiini-lab/workspaces/la
   return {
     url: cfg.url,
     tools: async () => (await rpc('tools/list')).tools,
+    /** The server's `initialize` answer (its instructions go into the chat's fixed context). */
+    init: async () => rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'assistant-eval', version: '1' } }),
     /** → { ms, chars, isError, text } */
     call: async (name, args = {}) => {
       const t0 = performance.now();

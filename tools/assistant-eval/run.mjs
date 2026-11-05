@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mcpFrom } from './mcp.mjs';
 import { grade } from './grade.mjs';
+import { fixedContext } from './fixed.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -324,7 +325,8 @@ if (argv.includes('--regrade')) {
   for (const r of fresh) console.log(r.id, r.score?.toFixed?.(2), (r.checks ?? []).filter(c => !c.pass).map(c => JSON.stringify(c.check) + ' ' + (c.detail ?? '')).join(' | '));
   process.exit(0);
 }
-writeFileSync(join(outDir, 'run.json'), JSON.stringify({ ...RUN, tasksFile, tasks: tasks.map(t => t.id), startedAt: new Date().toISOString() }, null, 1));
+const fixed = TARGET === 'eval' ? await fixedContext(LAB.workspace).catch(() => null) : null;
+writeFileSync(join(outDir, 'run.json'), JSON.stringify({ ...RUN, tasksFile, tasks: tasks.map(t => t.id), startedAt: new Date().toISOString(), fixed }, null, 1));
 // Tasks that change the app's sheets (betweenTurns apply) run last and alone; the next run restarts the app.
 /** The eval app answers (an OOM kill on 4 Nov made later tasks fall back to Bash: such results are invalid). */
 async function appUp() {

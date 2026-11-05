@@ -1347,14 +1347,21 @@ export function createMapsTools({
     else if (unsupported) degraded = { reason: `unsupported_filter:${unsupported}`, detail: null };
     else if (inner.workbookSex) degraded = { reason: 'sex_from_workbook', detail: { records_affected: inner.workbookSex } };
     else {
-      const url = mapsUrl({ ...linkArgs, exportMode: true }, OFFICIAL_MAPS_URL);
-      const run = await renderer.render(url);
-      renderTiming = run.timing ?? null;
-      if (!run.ok) degraded = { reason: run.reason, detail: run.detail ?? null };
-      else {
-        const checked = checkExport(run.result, {
+      // A framed-by-us picture whose legend covers a named site is drawn once more with the frame padded, so the sites
+      // near its edge move inward (4 Nov: Melinaea menophilus, «3 Km Sur Dayuma» under the legend). A box asked is kept.
+      let tryFrame = frame;
+      let url;
+      let run;
+      let checked = null;
+      let reframed = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        url = mapsUrl({ ...linkArgs, bbox: tryFrame, exportMode: true }, OFFICIAL_MAPS_URL);
+        run = await renderer.render(url);
+        renderTiming = run.timing ?? null;
+        if (!run.ok) break;
+        checked = checkExport(run.result, {
           records: inner.records.map(r => ({ source: SOURCES[r.source] ?? r.source, id: r.id, sex: r.sex, country: r.country, year: r.year, lng: r.lng, lat: r.lat })),
-          bbox: frame,
+          bbox: tryFrame,
           explicit: !!bbox,
           style,
           colorBy,
@@ -1362,7 +1369,16 @@ export function createMapsTools({
           // The sites this answer names must be visible; others hidden by an overlay are only left out.
           required: best.map(s => s.rank),
         });
-        if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail };
+        if (checked.ok || bbox || !tryFrame || checked.reason !== 'ranked_site_hidden' || attempt) break;
+        const [w, so, e, n] = tryFrame;
+        const dx = (e - w) * 0.15;
+        const dy = (n - so) * 0.15;
+        tryFrame = [w - dx, so - dy, e + dx, n + dy];
+        reframed = true;
+      }
+      if (!run.ok) degraded = { reason: run.reason, detail: run.detail ?? null };
+      else {
+        if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail, ...(reframed ? { reframed_once: true } : {}) };
         else {
           const file = join(snapshotDir, appPictureName(url));
           if (!writeCacheFile(file, checked.png)) degraded = { reason: 'write_failed', detail: null };
@@ -1376,7 +1392,7 @@ export function createMapsTools({
               renderer: 'app',
               degraded: null,
               map_url: mapsUrl(linkArgs, mapsBase),
-              framed: { bbox: checked.view.bbox.map(v => round(v, 5)), asked: frame, by: framedBy },
+              framed: { bbox: checked.view.bbox.map(v => round(v, 5)), asked: frame, by: framedBy, ...(reframed ? { padded: 'drawn again with a wider frame: the legend covered a named site' } : {}) },
               // Visible: in the frame and not under the picture's title, legend, scale or credits.
               records: { ...found.records, on_picture: checked.visible.records, app_total: checked.app_records, ...(bbox ? { asked_on_picture: checked.visible.asked_records } : {}) },
               // No numbers on the app's picture: its markers carry the site names (picture_labels).
@@ -3043,7 +3059,9 @@ export function createMapsTools({
       models,
       gallery: url,
       ...(url && !byFilters && found.length > URL_CAMS ? { gallery_note: `The link holds the first ${URL_CAMS} of ${found.length} CAM IDs.` } : {}),
-      markdown: specimensMarkdown(shown, thumbs),
+      // With contact sheets made, the photos are picked there (send_sheet_photos): the thumbnail markdown would repeat
+      // them at about 7k characters (4 Nov eval: 43 % of the answer). Kept when no sheet could be made.
+      ...(sheet?.photo_sheets?.length ? { markdown_note: 'Thumbnails left out: pick from photo_sheets, then send_sheet_photos.' } : { markdown: specimensMarkdown(shown, thumbs) }),
       note: 'From the workbook and Photo_links as this app has them now; the gallery site shows a new specimen after its next update. `model` and `envelope` are model output, not checked: the database is the record.',
     };
   }

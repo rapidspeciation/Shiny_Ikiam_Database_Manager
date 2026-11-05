@@ -6,6 +6,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { existsSync as fixedExists, readFileSync as fixedRead } from 'node:fs';
+import { fixedDiff } from './fixed.mjs';
 export const neutral = u => (u ? 0.1 * u.input + 5 * u.output : null);
 export const weighted = u => (u ? u.input - u.cachedInput - u.cacheCreation + 0.1 * u.cachedInput + 2 * u.cacheCreation + 5 * u.output : null);
 const load = dir =>
@@ -70,6 +72,13 @@ export function compare(baseDirs, variantDir) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [baseArg, variantDir] = process.argv.slice(2);
+  // Did baseline and variant see the same fixed context (fixed.mjs)? A difference that is not the change tested makes a cost comparison suspect.
+  const manifest = d => (fixedExists(`${d}/run.json`) ? JSON.parse(fixedRead(`${d}/run.json`, 'utf8')).fixed ?? null : null);
+  const vFixed = manifest(variantDir);
+  for (const b of baseArg.split(',')) {
+    const diff = fixedDiff(manifest(b), vFixed);
+    console.log(diff === null ? `Fixed context: no manifest for ${b.split('/').pop()} or the variant.` : diff.length ? `Fixed context differs from ${b.split('/').pop()}: ${diff.join(', ')}.` : `Fixed context: same as ${b.split('/').pop()}.`);
+  }
   const { rows, set } = compare(baseArg.split(','), variantDir);
   const k = n => `${Math.round(n / 1000)}k`;
   console.log('| task | quality base → variant | neutral | weighted tokens base → variant | ratio | base spread | time s | tool calls | tool errors | Bash |');

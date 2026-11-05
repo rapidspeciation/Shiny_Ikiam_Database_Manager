@@ -67,6 +67,13 @@ function workspace() {
     rmSync(join(WS, '.claude', sub), { recursive: true, force: true });
     cpSync(join(CHECKOUT, 'assistant', sub), join(WS, '.claude', sub), { recursive: true });
   }
+  // As in production's WhatsApp workspaces: the bridge's skill (the chats' guide to the WhatsApp answer), which the
+  // tasks' WhatsApp envelope names. Without it the chat loaded the older `whatsapp` relay skill instead (4 Nov eval).
+  const bridgeSkill = join(CHECKOUT, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md');
+  if (existsSync(bridgeSkill)) {
+    mkdirSync(join(WS, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true });
+    cpSync(bridgeSkill, join(WS, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'));
+  }
   // The lab's settings, plus the eval's denies (Google CLIs: this PC's gog holds the project account's token).
   const settings = JSON.parse(readFileSync(join(LAB_WS, '.claude', 'settings.json'), 'utf8'));
   const extra = ['Bash(gog*)', 'Bash(*gog *)', 'Bash(*/gog*)', 'Bash(gcloud*)', 'Bash(*gcloud*)', 'Bash(*gsutil*)', 'Read(//home/franz/.config/gogcli/**)', 'Read(//home/franz/.config/gcloud/**)'];

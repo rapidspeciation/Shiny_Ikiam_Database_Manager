@@ -788,6 +788,8 @@ test('maps_snapshot, app picture: best site + 150 km, parity checked, labels and
   assert.ok(existsSync(out.image) && readFileSync(out.image).length === out.image_bytes);
   // The app was asked the tool's frame (Tena and Loreto, not Loja) by bbox=, with export=1, the sites layer and settings.
   const asked = new URL(fake.get('url')[0]);
+  assert.equal(fake.get('url').length, 1, 'a picture that checks out is drawn once (no padded retry)');
+  assert.equal(out.framed.padded, undefined);
   assert.equal(`${asked.origin}${asked.pathname}`, OFFICIAL_MAPS_URL);
   assert.equal(asked.searchParams.get('export'), '1');
   assert.deepEqual([asked.searchParams.get('style'), asked.searchParams.get('color_by'), asked.searchParams.get('sex')], ['light', 'subspecies', 'female']);
@@ -823,14 +825,14 @@ test('maps_snapshot, app picture: a bbox asked frames the app\'s whole filtered 
   assert.equal(all.framed.by, 'all records');
 });
 
-test('maps_snapshot, app picture: a named site under the legend falls back with ranked_site_hidden; an app without geometry too', async () => {
-  // The legend left in its default bottom-left corner, over Tena (rank 1).
-  const covered = await (await snapshotTools({ geometry: { overlays: [OVERLAYS[0], LEGEND_BOTTOM_LEFT, OVERLAYS[2], OVERLAYS[3]] } })).tools
-    .run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });
-  assert.equal(covered.renderer, 'pillow');
-  assert.equal(covered.degraded.reason, 'ranked_site_hidden');
-  assert.deepEqual(covered.degraded.detail.sites, [{ rank: 1, site: 'Tena', occluded_by: ['legend'] }]);
-  // The Pillow picture still numbers every site it frames.
+test('maps_snapshot, app picture: a named site under the legend is drawn once more with a padded frame; an app without geometry falls back', async () => {
+  // The legend left in its default bottom-left corner, over Tena (rank 1) in the first frame; the padded frame moves Tena inward.
+  const { tools, fake } = await snapshotTools({ geometry: { overlays: [OVERLAYS[0], LEGEND_BOTTOM_LEFT, OVERLAYS[2], OVERLAYS[3]] } });
+  const covered = await tools.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });
+  assert.equal(covered.renderer, 'app', JSON.stringify(covered.degraded));
+  assert.ok(covered.framed.padded);
+  const [first, second] = fake.get('url').map(u => new URL(u).searchParams.get('bbox').split(',').map(Number));
+  assert.ok(second[0] < first[0] && second[1] < first[1] && second[2] > first[2] && second[3] > first[3], 'the second frame holds the first');
   assert.deepEqual(covered.picture_labels.map(l => l.site), ['Tena', 'Loreto']);
   // The app interface of 16bd1f2 (no picture geometry): not trusted.
   const legacy = await (await snapshotTools({ geometry: false })).tools.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });
