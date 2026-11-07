@@ -19,7 +19,7 @@ concurrent only), `claw-final` (base, final). `compare.mjs <folder>` prints each
 | E2 | sync (lab): LocalSheets.readSheet copies and hashes a sheet 500 rows at a time with a turn for others in between (same rows, same digest) | sync event-loop max | **kept**: sync event loop max 2981 → 179 ms (server), 1632 → 114 ms (PC) |
 | E3 | big answers compressed with the async zlib calls instead of `brotliCompressSync`/`gzipSync` | event loop max in `pages` and `concurrent` | **dropped**: search-phase loop p95 −23 % but concurrent p95 +21 % on the server (the 4 libuv threads queue the big answers); pages unchanged |
 | E4 | the rack reader's `enlarge`: made once per size for both binarizers, its column weights once per size (the same pixels) | `tools.rack_read_photos.*_ms` | **kept**: 13.2 → 8.4 s a rack photo (server), 6.4 → 4.5 s (PC); the same 94 tubes |
-| E5 | LOCAL_MODE: the in-memory workbook (LocalSheets rows) kept in SQLite instead | anon memory idle/peak, start time | deferred (budget), see below |
+| E5 | LOCAL_MODE: the in-memory workbook (LocalSheets rows) kept in SQLite instead | anon memory idle/peak, start time | deferred on 1 Nov (budget); run on 7 Nov, see "E5, 7 Nov" below |
 
 ## E5, deferred: the lab's workbook in SQLite
 
@@ -36,6 +36,29 @@ insert/delete dimension), the in-memory store kept for the tests' seeds (144 `ne
 
 Not run in this round: it changes the lab's data path end to end, and the week's budget for this work (5 %) did not
 leave room for it and its review after E1–E4. Worth doing next if lab apps on this PC still matter.
+
+## E5, 7 Nov: the plan, written before it is measured
+
+From 7048d726 (the release on claudeclaw). Pass bar, set before the run: server RSS of one lab app down by at
+least 400 MB on the bench, no endpoint more than 10 % slower at p50, the same answers on the bench's checks
+(compare.mjs), `npm test` and the frontend tests passing.
+
+- **Can the query copy serve it?** No: `server/replica.mjs`'s `sheets.sqlite` is made from the store's records
+  (values only), while LocalSheets answers in Google's cell format (formulas, effective values, number formats,
+  validation) and the app writes to it. A sibling file of its own is needed.
+- **E5a, the change.** With `SEED_FILE` (the lab, the bench), `FileSheets` (a LocalSheets whose rows live in a
+  SQLite file) replaces the in-memory rows. The snapshot is parsed once, in a child process, into
+  `<snapshot>.rows.sqlite` (one row per sheet row: its row number, its cells as `v8.serialize`, which gives back
+  exactly what `structuredClone` gives, holes included), rebuilt when the snapshot's size or time changes; each
+  start copies it (copy-on-write where the disk can) beside `DATABASE_PATH`, so a restart still undoes
+  everything. A write loads the rows it touches, changes them as today's code does and writes them back before it
+  returns (no await in between, as now); an inserted or deleted row shifts the row numbers in SQL and rewrites the
+  formulas that move. Reads in pieces of 500 rows as E2. Tests keep the in-memory rows (they reach into
+  `sheets.rows`); a new test runs the same operations on both and compares every answer.
+- **Expected:** −600 to −700 MB live heap (1 Nov heap profile: `normalizeSeedRow` 593 MB + 121 MB), no 356 MB
+  `JSON.parse` at each start (faster start, lower start peak); sync about as fast (deserialising instead of
+  cloning). Risk: an inserted row in Insectary_data rewrites every row with a formula (SQL instead of memory).
+- **Way back:** `LOCAL_SHEETS=memory` keeps today's in-memory rows without a code change.
 
 ## Review (dual-critic-loop, 2 rounds, GPT-6.1 Sol + fresh Opus, on the combined diff a6ad89e..perf-combo)
 

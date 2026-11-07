@@ -332,12 +332,37 @@ export class LocalSheets {
     // As GoogleSheets: whether "the workbook" answers. simulateBusy makes it not answer (the lab, tests).
     this.health = new WorkbookHealth({ probe: () => this.probe(), ...health });
     this.busy = null;
-    for (const [sheet, rows] of Object.entries(seed)) {
-      const normalized = rows.map((r, i) => normalizeSeedRow(r, i + 1, sheet));
-      const mod = moduleMap.get(sheet);
-      if (mod && !normalized.some(r => r.row === mod.headerRow)) normalized.unshift(headerRow(mod));
-      this.rows.set(sheet, normalized);
-    }
+    for (const [sheet, rows] of Object.entries(seed)) this.rows.set(sheet, seedRows(sheet, rows));
+  }
+  // The rows, as the methods below reach them: here in memory (`this.rows`, which tests also reach into); a
+  // FileSheets (server/file-sheets.mjs) keeps them in a SQLite file behind the same few methods.
+  /** The sheets in the order they came. */
+  sheetNames() {
+    return [...this.rows.keys()];
+  }
+  /** Row `number` of `sheet`, to read (undefined when it has no cells yet). */
+  findRow(sheet, number) {
+    return (this.rows.get(sheet) || []).find(r => r.row === number);
+  }
+  /** Row `number` of `sheet`, to change in place: the change is kept by `commitRows`. */
+  liveRow(sheet, number) {
+    return this.findRow(sheet, number);
+  }
+  /** A new row object of `sheet` (`{ row, cells }`), kept in row order when `sorted`. */
+  addRow(sheet, target, sorted) {
+    const rows = this.rows.get(sheet) || [];
+    rows.push(target);
+    if (sorted) rows.sort((a, b) => a.row - b.row);
+    this.rows.set(sheet, rows);
+    return target;
+  }
+  /** Keeps what liveRow and addRow gave out (nothing to do in memory). */
+  commitRows() {}
+  maxRow(sheet) {
+    return Math.max(...(this.rows.get(sheet) || []).map(r => r.row), 0);
+  }
+  maxColumns(sheet) {
+    return Math.max(0, ...(this.rows.get(sheet) || []).map(r => r.cells.length));
   }
   /**
    * Makes the requests of the next `minutes` behave as Google's while the team's workbook
@@ -400,7 +425,7 @@ export class LocalSheets {
     return withDigest(rows, digest.digest('base64'));
   }
   async readRow(sheet, row) {
-    return structuredClone((this.rows.get(sheet) || []).find(r => r.row === row) || { row, cells: [] });
+    return structuredClone(this.findRow(sheet, row) || { row, cells: [] });
   }
   async readRows(targets) {
     await this.gate();
@@ -416,7 +441,7 @@ export class LocalSheets {
     return out;
   }
   rowCount(sheet) {
-    return Math.max(this.gridRows.get(sheet) || 0, ...(this.rows.get(sheet) || []).map(r => r.row), 0);
+    return Math.max(this.gridRows.get(sheet) || 0, this.maxRow(sheet), 0);
   }
   async sheetInfo(sheet) {
     await this.gate();
@@ -425,7 +450,7 @@ export class LocalSheets {
     return {
       sheetId,
       rowCount: this.rowCount(sheet),
-      columnCount: Math.max(0, ...(this.rows.get(sheet) || []).map(r => r.cells.length)),
+      columnCount: this.maxColumns(sheet),
       protectedRanges: (this.protectedRanges[sheet] || []).map(({ requestingUserCanEdit = false, ...range }) => ({
         range: { sheetId, ...range },
         requestingUserCanEdit,
@@ -466,14 +491,16 @@ export class LocalSheets {
   async writeCells(sheet, row, changes, columns) {
     // No await below: the whole write happens at once (readSheet).
     this.writeCount++;
-    const rows = this.rows.get(sheet) || [];
-    let target = rows.find(r => r.row === row);
-    if (!target) {
-      target = { row, cells: [] };
-      rows.push(target);
-      this.rows.set(sheet, rows);
+    try {
+      this.writeRowCells(sheet, row, changes, columns);
+    } finally {
+      this.commitRows();
     }
-    const layout = columns ? null : headerLayout(sheet, rows.find(r => r.row === moduleMap.get(sheet).headerRow));
+    return { replies: Object.keys(changes).map(() => ({})) };
+  }
+  writeRowCells(sheet, row, changes, columns) {
+    const target = this.liveRow(sheet, row) || this.addRow(sheet, { row, cells: [] }, false);
+    const layout = columns ? null : headerLayout(sheet, this.findRow(sheet, moduleMap.get(sheet).headerRow));
     for (const [key, value] of Object.entries(changes)) {
       const column = columns ? columns[key] : layout.columns.get(key);
       if (column === undefined) throw new Error(`Unknown field ${key}`);
@@ -487,7 +514,6 @@ export class LocalSheets {
       }
       target.cells[column] = cell;
     }
-    return { replies: Object.keys(changes).map(() => ({})) };
   }
   async externalEdit(sheet, row, changes) {
     return this.writeCells(sheet, row, changes);
@@ -508,6 +534,14 @@ export class LocalSheets {
     }
     // No await below: the whole batch happens at once (readSheet).
     this.writeCount++;
+    try {
+      this.applyRequests(requests);
+    } finally {
+      this.commitRows();
+    }
+    return { replies: requests.map(() => ({})) };
+  }
+  applyRequests(requests) {
     const pasted = new Map();
     for (const request of requests) {
       if (request.appendDimension) {
@@ -523,7 +557,7 @@ export class LocalSheets {
     for (const [sheet, cells] of pasted) {
       const sorted = [...cells].map(k => k.split(':').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
       for (const [row, column] of sorted) {
-        const cell = this.cell(sheet, row, column);
+        const cell = this.liveRow(sheet, row)?.cells[column];
         const formula = cell?.userEnteredValue?.formulaValue;
         if (!formula) continue;
         const value = this.evaluate(formula, {
@@ -536,10 +570,9 @@ export class LocalSheets {
         else cell.effectiveValue = typeof value === 'number' ? { numberValue: value } : { stringValue: String(value) };
       }
     }
-    return { replies: requests.map(() => ({})) };
   }
   sheetById(sheetId) {
-    for (const sheet of this.rows.keys()) if ((moduleMap.get(sheet)?.sheetId ?? 0) === sheetId) return sheet;
+    for (const sheet of this.sheetNames()) if ((moduleMap.get(sheet)?.sheetId ?? 0) === sheetId) return sheet;
     throw new Error(`No sheet with ID ${sheetId}`);
   }
   touched(request) {
@@ -585,18 +618,10 @@ export class LocalSheets {
     );
   }
   row(sheet, number) {
-    const rows = this.rows.get(sheet) || [];
-    let target = rows.find(r => r.row === number);
-    if (!target) {
-      target = { row: number, cells: [] };
-      rows.push(target);
-      rows.sort((a, b) => a.row - b.row);
-      this.rows.set(sheet, rows);
-    }
-    return target;
+    return this.liveRow(sheet, number) || this.addRow(sheet, { row: number, cells: [] }, true);
   }
   cell(sheet, row, column) {
-    return (this.rows.get(sheet) || []).find(r => r.row === row)?.cells[column];
+    return this.findRow(sheet, row)?.cells[column];
   }
   copyPaste({ source, destination, pasteType = 'PASTE_NORMAL' }, pasted) {
     const sheet = this.sheetById(destination.sheetId);
@@ -866,6 +891,13 @@ function columnIndex(letters) {
   return n - 1;
 }
 
+/** A seed's rows of `sheet` as LocalSheets keeps them: Google's cells, the header row added when missing. */
+export function seedRows(sheet, rows) {
+  const normalized = rows.map((r, i) => normalizeSeedRow(r, i + 1, sheet));
+  const mod = moduleMap.get(sheet);
+  if (mod && !normalized.some(r => r.row === mod.headerRow)) normalized.unshift(headerRow(mod));
+  return normalized;
+}
 function normalizeSeedRow(row, index, sheet) {
   if (row.cells) return { row: row.row || index, cells: structuredClone(row.cells) };
   const mod = moduleMap.get(sheet);

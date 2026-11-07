@@ -13,6 +13,7 @@ import { brotliCompress, brotliCompressSync, constants as zlib, gzip, gzipSync }
 import { promisify } from 'node:util';
 import { Store } from './store.mjs';
 import { copyBeside } from './replica.mjs';
+import { openFileSheets } from './file-sheets.mjs';
 import { applyBatch } from './batch.mjs';
 import { cellHistory, historyGroup, historyGroups, previewEdits, sheetAsOf, undoEdits } from './history.mjs';
 import {
@@ -346,6 +347,8 @@ export function configFromEnv(env = process.env) {
     // as do a census's disappearances; STAGED_SAVING=0 saves those tabs and the census straight to the sheet.
     stagedSaving: env.STAGED_SAVING !== '0',
     seedFile: env.SEED_FILE,
+    // LOCAL_MODE with SEED_FILE: the snapshot's rows in a SQLite file beside DATABASE_PATH ("file"), or in memory ("memory").
+    localSheets: env.LOCAL_SHEETS || 'file',
     secureCookies: env.SECURE_COOKIES !== '0',
     // The Google Sheets workbook (WORKBOOK_ID, the team's workbook by default).
     spreadsheetId: workbook.id,
@@ -671,11 +674,18 @@ export async function createApp(config = {}, options = {}) {
   config.basePath = normalizeBase(config.basePath || '/ithomiini');
   config.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
   let seed = options.seed;
-  if (!seed && config.localMode && config.seedFile) {
-    seed = JSON.parse(readFileSync(config.seedFile, 'utf8'));
-    seed = seed.sheets || seed;
+  let sheets = options.sheets;
+  if (!seed && !sheets && !options.store && config.localMode && config.seedFile) {
+    // The lab: the snapshot's rows in a SQLite file of their own (server/file-sheets.mjs) rather than some 700 MB
+    // of memory; LOCAL_SHEETS=memory keeps them in memory, as before.
+    if (config.localSheets !== 'memory')
+      sheets = await openFileSheets({ seedFile: config.seedFile, databasePath: config.databasePath, health: config.health });
+    if (!sheets) {
+      seed = JSON.parse(readFileSync(config.seedFile, 'utf8'));
+      seed = seed.sheets || seed;
+    }
   }
-  const store = options.store || new Store(config, { sheets: options.sheets, seed });
+  const store = options.store || new Store(config, { sheets, seed });
   if (config.localBusy && store.localMode && store.sheets.simulateBusy) {
     const [mode, minutes] = String(config.localBusy).split(':');
     store.sheets.simulateBusy({ mode: mode || 'unavailable', minutes: Number(minutes) || 5 });
