@@ -16,6 +16,8 @@ import { RESULT_BUDGET } from './tool-budget.mjs';
 export const QUERY_LIMIT = 200;
 export const QUERY_MAX = 500;
 export const QUERY_TIMEOUT_MS = 5000;
+// How long a new query process may take to start (its own limit: a slow start under load is not the query's time).
+export const QUERY_START_TIMEOUT_MS = 30_000;
 
 export const QUERY_TOOL = {
   type: 'function',
@@ -90,10 +92,12 @@ const here = fileURLToPath(import.meta.url);
 
 /**
  * Runs queries on the copy at `path` in a child process, one at a time; a
- * query still running after `timeoutMs` has its process killed.
+ * query still running after `timeoutMs` has its process killed. The limit
+ * counts from when the process is ready: a new process gets `startTimeoutMs`
+ * to start first. `execArgv` is for the process's Node options (tests).
  * run(sql, limit) → { columns, rows, total | more, builtAt } or { error, near?, missing?, timeout? }.
  */
-export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS }) {
+export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS, startTimeoutMs = QUERY_START_TIMEOUT_MS, execArgv = [] }) {
   let child = null;
   let current = null;
   const queue = [];
@@ -102,12 +106,22 @@ export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS }) {
 
   function spawn() {
     const worker = fork(here, ['--sheets-query-worker', path], {
-      execArgv: [],
+      execArgv,
       serialization: 'advanced',
       stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     });
+    worker.ready = false;
     worker.on('message', message => {
-      if (worker !== child || !current || message.id !== current.id) return;
+      if (worker !== child) return;
+      if (message.ready) {
+        worker.ready = true;
+        if (current) {
+          clearTimeout(current.timer);
+          limit(current, worker);
+        }
+        return;
+      }
+      if (!current || message.id !== current.id) return;
       finish(message);
     });
     worker.on('exit', () => {
@@ -128,17 +142,32 @@ export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS }) {
     next();
   }
 
+  // The statement cannot be interrupted: its process goes, the next query gets a new one.
+  function stop(worker, result) {
+    child = null;
+    worker.kill('SIGKILL');
+    finish(result);
+  }
+
+  function limit(job, worker) {
+    job.timer = setTimeout(
+      () => stop(worker, { error: `The query ran over ${timeoutMs / 1000} s and was stopped.`, timeout: true }),
+      timeoutMs,
+    );
+  }
+
   function next() {
     if (current || !queue.length || closed) return;
     current = queue.shift();
     child ??= spawn();
     const worker = child;
-    current.timer = setTimeout(() => {
-      // The statement cannot be interrupted: its process goes, the next query gets a new one.
-      child = null;
-      worker.kill('SIGKILL');
-      finish({ error: `The query ran over ${timeoutMs / 1000} s and was stopped.`, timeout: true });
-    }, timeoutMs);
+    // A process still starting: the query's limit begins when it says it is ready.
+    if (worker.ready) limit(current, worker);
+    else
+      current.timer = setTimeout(
+        () => stop(worker, { error: `The query process did not start within ${startTimeoutMs / 1000} s.` }),
+        startTimeoutMs,
+      );
     worker.send({ id: current.id, sql: current.sql, limit: current.limit });
   }
 
@@ -482,4 +511,5 @@ if (process.argv[1] === here && process.argv[2] === '--sheets-query-worker') {
     process.send({ id, ...runQuery(db, sql, limit), builtAt });
   });
   process.on('disconnect', () => process.exit(0));
+  process.send({ ready: true });
 }

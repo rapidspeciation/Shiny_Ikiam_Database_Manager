@@ -263,8 +263,8 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     store,
     config: { sheetsCopyPath: join(dir, 'sheets.sqlite'), sheetsCopy: { startMs: 0, delayMs: 50, log: { log() {}, error: console.error } }, sheetsQuery: { timeoutMs: 3000 } },
   });
-  // The time limit counts from the query's process start too (a new one after a runaway): 3 s, beyond what a
-  // start takes on a busy machine.
+  // The time limit counts from when the query's process is ready (tests/query-runner.test.mjs); 3 s keeps the
+  // runaway check short.
   addToken(store, user.id, 'ana-token');
   const { result } = mcpClient(assistant, 'ana-token');
   const call = async (sql, limit) => {
