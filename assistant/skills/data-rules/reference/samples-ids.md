@@ -91,6 +91,12 @@
   current run's next tube. No size rule: large butterflies (Methona, Tithorea,
   Thyridia, Lycorea) often go in bigger tubes, but not always; take the tube
   on the label.
+- "The last tube" is the last one entered in that rack's run, not the highest
+  barcode: wing clips have no date column (living clipped butterflies keep
+  Preservation_date blank, dead ones `NA`), racks of other series run at the
+  same time, and a typo with an extra digit outnumbers every real tube. The
+  query copy's `tubes` table gives each tube's number, `well_formed` and when
+  it was entered; the next tube is the run's next number held by no sheet.
 - A 7-digit or 9-digit tube is a dropped or doubled digit (Sep 2026: `FS3886683`
   for `FS63886683`, `FS5848961` for `FS50848961`): suggest the form that
   continues a known run, flagged as a suggestion.

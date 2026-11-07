@@ -10,10 +10,18 @@
 //   in use, records.observed = 0: made ahead with its ID formula, or holding only
 //   NA or a dropdown's default). `<sheet>`: a view of its rows in use (_premade = 0).
 // - Values as the sheet shows them (formula cells computed; formula texts left
-//   out). Date columns as YYYY-MM-DD text, time columns as H:MM; numeric columns
-//   with NUMERIC affinity, so "CLUTCH NUMBER" = 997 matches and "NA" stays text.
-//   ID columns are text compared without case. Columns whose names differ only
-//   in case (COLLECTION_LOCATION, Collection_location) get _2.
+//   out). Date columns hold only dates, as YYYY-MM-DD text, so a comparison,
+//   MAX or ORDER BY on one sees dates only ("NA" as text sorted after every
+//   date and passed any `>= '2026-10-29'`); what a date cell holds that is not a
+//   date (NA, NOT_COLLECTED, 9/30) is in `<column>_text` beside it. Time columns
+//   as H:MM; numeric columns with NUMERIC affinity, so "CLUTCH NUMBER" = 997
+//   matches and "NA" stays text. ID columns are text compared without case.
+//   Columns whose names differ only in case (COLLECTION_LOCATION,
+//   Collection_location) get _2.
+// - `tubes`: every tube barcode cell of every sheet, with its number as an
+//   integer (barcodes as text sort FS904215346, a typo with an extra digit,
+//   above FS90415684), well_formed, the tube's tissue and medium, and when the
+//   app first saw it saved (entered).
 // - `_tables` (name, rows, premade), `_columns` (sheet, column, header, type,
 //   list, strict: the dropdown's values, JSON; `name` repeats column, as in
 //   _tables), `_meta` (built_at, state).
@@ -42,7 +50,7 @@ import { listOptions } from './verify.mjs';
 import { PURPOSES } from './history.mjs';
 
 /** Changes when the copy's layout does: a new version rebuilds it. */
-const LAYOUT = 3;
+const LAYOUT = 4;
 export const COPY_FILE = 'sheets.sqlite';
 /** The copy beside a database file (none for an in-memory database). */
 export const copyBeside = databasePath => (!databasePath || databasePath === ':memory:' ? null : join(dirname(databasePath), COPY_FILE));
@@ -122,7 +130,15 @@ function kindOf(field, values) {
   return 'text';
 }
 
-const DECLARED = { date: 'TEXT', time: 'TEXT', number: 'NUMERIC', id: 'TEXT COLLATE NOCASE', text: 'TEXT' };
+const DECLARED = { date: 'TEXT', date_text: 'TEXT', time: 'TEXT', number: 'NUMERIC', id: 'TEXT COLLATE NOCASE', text: 'TEXT' };
+
+/** A date cell's date as YYYY-MM-DD, or null: empty, NA, or anything else that is not a date. */
+const dateOf = v => (typeof v === 'number' ? (SERIAL(v) ? isoOfSerial(v) : null) : typeof v === 'string' ? isoOfText(v) : null);
+/** What a date cell holds when it is not a date (NA, NOT_COLLECTED, 9/30, <27-Nov-2023), as typed; else null. */
+function notDate(v) {
+  if (v === null || v === undefined || v === '' || dateOf(v)) return null;
+  return String(cell('text', v)).trim() || null;
+}
 
 /** A cell as the copy keeps it. */
 function cell(kind, v) {
@@ -142,18 +158,83 @@ function cell(kind, v) {
 /**
  * The columns of a sheet in the copy: [{ key, name, kind }], the sheet's order,
  * a repeated header once, names that differ only in case from an earlier one
- * with _2 (_3…).
+ * with _2 (_3…). Each date column is followed by its `<name>_text` (kind
+ * date_text: the cells that are not dates).
  */
 function columnsOf(mod, rows) {
   const taken = new Set(['_id', '_row', '_premade']);
+  // A header of the sheet keeps its own name: a date's companion never takes one.
+  const headers = new Set(mod.fields.map(f => f.key.toLowerCase()));
   const out = [];
   for (const field of mod.fields) {
     if (field.readonly || out.some(c => c.key === field.key)) continue;
     let name = field.key;
     for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${field.key}_${n}`;
     taken.add(name.toLowerCase());
-    out.push({ key: field.key, name, kind: kindOf(field, rows.map(r => r.values[field.key])) });
+    const kind = kindOf(field, rows.map(r => r.values[field.key]));
+    out.push({ key: field.key, name, kind });
+    if (kind !== 'date') continue;
+    let text = `${name}_text`;
+    for (let n = 2; headers.has(text.toLowerCase()) || taken.has(text.toLowerCase()); n++) text = `${name}_text${n}`;
+    taken.add(text.toLowerCase());
+    out.push({ key: field.key, name: text, kind: 'date_text' });
   }
+  return out;
+}
+
+/** Columns that hold tube barcodes in any sheet (not their tissue, rack or manifest), as server/grid.mjs reads them. */
+const TUBE_COLUMN = /tube/i;
+const NOT_TUBE_COLUMN = /tissue|rack|manifest|location|split|size|filter/i;
+const TUBE_PARTS = /^([A-Z]+)(\d+)$/;
+/** A FluidX barcode: 2 letters + 8 digits (data-rules samples-ids.md). */
+const WELL_FORMED = /^[A-Z]{2}\d{8}$/;
+
+/**
+ * The `tubes` rows of one sheet: a row per tube cell holding something other
+ * than NA, with the tube's tissue (Tube_2_id → Tube_2_tissue) and medium
+ * (T1_/T2_Preservation_medium, else Preservation_medium), the row's label,
+ * CAM and Preservation_date.
+ */
+function tubesOf(mod, rows) {
+  const keys = new Set(mod.fields.map(f => f.key));
+  const tubeKeys = [...new Set(mod.fields.map(f => f.key).filter(k => TUBE_COLUMN.test(k) && !NOT_TUBE_COLUMN.test(k)))];
+  if (!tubeKeys.length) return [];
+  const tissueOf = key => {
+    const tissue = key.replace(/(?:_id(?:_LEGS)?|_ID)?$/i, '_tissue');
+    return keys.has(tissue) ? tissue : null;
+  };
+  const mediumOf = key => {
+    const slot = Number(/(\d)/.exec(key)?.[1]);
+    const own = slot ? `T${Math.min(slot, 2)}_Preservation_medium` : null;
+    return own && keys.has(own) ? own : keys.has('Preservation_medium') ? 'Preservation_medium' : null;
+  };
+  const value = v => (v === null || v === undefined || v === '' ? null : String(cell('text', v)).trim() || null);
+  const out = [];
+  for (const r of rows)
+    for (const key of tubeKeys) {
+      const tube = value(r.values[key])?.toUpperCase();
+      if (!tube || isNone(tube)) continue;
+      const parts = TUBE_PARTS.exec(tube);
+      const tissue = tissueOf(key);
+      const medium = mediumOf(key);
+      out.push([
+        tube,
+        parts ? parts[1] : null,
+        parts ? Number(parts[2]) : null,
+        parts ? parts[2].length : null,
+        WELL_FORMED.test(tube) ? 1 : 0,
+        mod.id,
+        key,
+        r.row,
+        r.id,
+        r.premade,
+        value(r.values.Insectary_ID) ?? value(r.values.CAM_ID) ?? value(r.values.FieldMark_ID),
+        value(r.values.CAM_ID),
+        tissue ? value(r.values[tissue]) : null,
+        medium ? value(r.values[medium]) : null,
+        keys.has('Preservation_date') ? dateOf(r.values.Preservation_date) : null,
+      ]);
+    }
   return out;
 }
 
@@ -195,7 +276,11 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
       state = sourceState(source);
       copy.exec(`CREATE TABLE _meta(key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE _tables(name TEXT PRIMARY KEY, rows INTEGER, premade INTEGER);
-        CREATE TABLE _columns(sheet TEXT, column TEXT, header TEXT, type TEXT, list TEXT, strict INTEGER, name TEXT GENERATED ALWAYS AS (column) VIRTUAL);`);
+        CREATE TABLE _columns(sheet TEXT, column TEXT, header TEXT, type TEXT, list TEXT, strict INTEGER, name TEXT GENERATED ALWAYS AS (column) VIRTUAL);
+        CREATE TABLE tubes(tube TEXT COLLATE NOCASE, prefix TEXT COLLATE NOCASE, number INTEGER, digits INTEGER, well_formed INTEGER,
+          sheet TEXT, column TEXT, _row INTEGER, _id TEXT, _premade INTEGER, label TEXT COLLATE NOCASE, cam TEXT COLLATE NOCASE,
+          tissue TEXT, medium TEXT, preserved TEXT, entered TEXT);`);
+      const addTube = copy.prepare(`INSERT INTO tubes VALUES (${Array(16).fill('?').join(',')})`);
       const kinds = new Map();
       const lists = { db: source };
       const select = source.prepare(
@@ -209,7 +294,9 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
           `CREATE TABLE ${quote(all)} (_row INTEGER, ${columns.map(c => `${quote(c.name)} ${DECLARED[c.kind]}`).join(', ')}, _id TEXT PRIMARY KEY, _premade INTEGER)`,
         );
         const insert = copy.prepare(`INSERT INTO ${quote(all)} VALUES (${Array(columns.length + 3).fill('?').join(',')})`);
-        for (const r of rows) insert.run(r.row, ...columns.map(c => cell(c.kind, r.values[c.key])), r.id, r.premade);
+        const kept = (c, v) => (c.kind === 'date' ? dateOf(v) : c.kind === 'date_text' ? notDate(v) : cell(c.kind, v));
+        for (const r of rows) insert.run(r.row, ...columns.map(c => kept(c, r.values[c.key])), r.id, r.premade);
+        for (const t of tubesOf(mod, rows)) addTube.run(...t, null);
         copy.exec(`CREATE VIEW ${quote(mod.id)} AS SELECT * FROM ${quote(all)} WHERE _premade = 0`);
         copy.exec(`CREATE INDEX ${quote(`${all}:_row`)} ON ${quote(all)}(_row)`);
         for (const c of columns.filter(c => mod.identityFields.includes(c.key) || INDEXED.test(c.key)))
@@ -219,15 +306,25 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
         const options = listOptions(lists, mod.id);
         const addColumn = copy.prepare('INSERT INTO _columns VALUES (?,?,?,?,?,?)');
         for (const c of columns) {
+          // A date's companion is no header of the sheet: no header, no list.
+          if (c.kind === 'date_text') {
+            addColumn.run(mod.id, c.name, null, 'text', null, null);
+            continue;
+          }
           const list = options[c.key];
           addColumn.run(mod.id, c.name, c.key, c.kind === 'id' ? 'text' : c.kind, list ? JSON.stringify([...list.values]) : null, list ? (list.strict ? 1 : 0) : null);
         }
-        kinds.set(mod.id, new Map(columns.map(c => [c.key, c.kind])));
+        kinds.set(mod.id, new Map(columns.filter(c => c.kind !== 'date_text').map(c => [c.key, c.kind])));
         rowCount += rows.length;
       }
       copy.exec('CREATE INDEX _columns_sheet ON _columns(sheet)');
       changeCount = copyHistory(source, copy, kinds);
       copyStaged(source, copy, kinds);
+      // When each tube was first saved into its cell (by the app or read by a sync); none before the app's history.
+      copy.exec(`UPDATE tubes SET entered = (SELECT min(h.at) FROM history h
+          WHERE h.record_id = tubes._id AND h.field = tubes.column AND upper(trim(h.after)) = tubes.tube);
+        CREATE INDEX tubes_tube ON tubes(tube);
+        CREATE INDEX tubes_number ON tubes(prefix, number);`);
     } finally {
       if (!inSource) source.exec('COMMIT');
     }

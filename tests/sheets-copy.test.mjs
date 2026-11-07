@@ -52,9 +52,9 @@ const SEED = {
   Insectary_stocks: [{ row: 2, values: { 'CLUTCH NUMBER': 997, SPECIES: 'Mechanitis lysimnia', Species: 'lysimnia', 'DATE LAID': d('2026-09-01') } }],
 };
 
-async function setup(dir) {
-  const sheets = new LocalSheets(structuredClone(SEED));
-  formula(sheets, 'Insectary_data', 4, 'Insectary_ID', '=CONCATENATE("A",3,"A")', 'A3A');
+async function setup(dir, seed = SEED) {
+  const sheets = new LocalSheets(structuredClone(seed));
+  if (seed === SEED) formula(sheets, 'Insectary_data', 4, 'Insectary_ID', '=CONCATENATE("A",3,"A")', 'A3A');
   const store = new Store({ localMode: true, databasePath: join(dir, 'app.sqlite') }, { sheets });
   await store.sync();
   addUser(store, user);
@@ -145,6 +145,112 @@ test('dates typed as text, day first', () => {
   assert.equal(isoOfText('2026-09-30'), '2026-09-30');
   assert.equal(isoOfText('31/4'), null);
   assert.equal(isoOfText('NA'), null);
+});
+
+test('date columns hold dates only: NA and other text are in <column>_text, so a "since" count or a sort sees dates', async () => {
+  // Lab, 4 Nov 2026: "27 deaths without cause and 43 clutches without species since 29 Oct" were rows with NA as date
+  // ('NA' > '2026-10-29' as text).
+  const dir = mkdtempSync(join(tmpdir(), 'sheets-copy-dates-'));
+  try {
+    const { store } = await setup(dir, {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: 'A1A', Death_date: d('2026-10-30'), Death_cause: 'Unknown' } },
+        { row: 3, values: { Insectary_ID: 'A2A', SPECIES: 'Melinaea mothone', Death_date: 'NA', Death_cause: 'Disappearance' } },
+        { row: 4, values: { Insectary_ID: 'A3A', Death_date: '9/30', Death_cause: 'NA' } },
+        { row: 5, values: { Insectary_ID: 'A4A', Sex: 'male' } },
+      ],
+      Insectary_stocks: [
+        { row: 2, values: { 'CLUTCH NUMBER': 997, SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-10-30') } },
+        { row: 3, values: { 'CLUTCH NUMBER': 998, 'DATE LAID': 'NA' } },
+      ],
+    });
+    const out = join(dir, 'sheets.sqlite');
+    buildCopy(store.db, out);
+    const copy = new DatabaseSync(out, { readOnly: true });
+    const one = sql => copy.prepare(sql).get();
+    const all = sql => copy.prepare(sql).all().map(r => ({ ...r }));
+    try {
+      assert.equal(one("SELECT count(*) n FROM Insectary_data WHERE Death_date >= '2026-10-29'").n, 1);
+      assert.equal(one("SELECT count(*) n FROM Insectary_stocks WHERE \"DATE LAID\" >= '2026-10-29'").n, 1);
+      assert.equal(one('SELECT Insectary_ID FROM Insectary_data ORDER BY Death_date DESC LIMIT 1').Insectary_ID, 'A1A');
+      assert.equal(one('SELECT max(Death_date) m FROM Insectary_data').m, '2026-10-30');
+      // What was typed instead of a date stays readable beside it; an empty cell is NULL in both.
+      assert.deepEqual(all('SELECT Insectary_ID, Death_date, Death_date_text FROM Insectary_data ORDER BY _row'), [
+        { Insectary_ID: 'A1A', Death_date: '2026-10-30', Death_date_text: null },
+        { Insectary_ID: 'A2A', Death_date: null, Death_date_text: 'NA' },
+        { Insectary_ID: 'A3A', Death_date: null, Death_date_text: '9/30' },
+        { Insectary_ID: 'A4A', Death_date: null, Death_date_text: null },
+      ]);
+      assert.equal(one('SELECT "DATE LAID_text" t FROM Insectary_stocks WHERE "CLUTCH NUMBER" = 998').t, 'NA');
+      // _columns lists the companion right after its date column, without a header of its own.
+      const cols = all("SELECT column, header, type FROM _columns WHERE sheet = 'Insectary_data'");
+      const at = cols.findIndex(c => c.column === 'Death_date');
+      assert.deepEqual(cols[at + 1], { column: 'Death_date_text', header: null, type: 'text' });
+    } finally {
+      copy.close();
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('tubes: every tube cell with its number, so the last or highest tube is not the text sort (typos, NA dates)', async () => {
+  // Lab, 3 Nov 2026: three answers to "the last wing tube": MAX(Tube_1_id) gave FS904215346 (a typo with an extra digit),
+  // and ORDER BY Preservation_date DESC put the dead clipped butterflies (Preservation_date NA) above the living ones.
+  const dir = mkdtempSync(join(tmpdir(), 'sheets-copy-tubes-'));
+  const clip = '**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP';
+  const tube = (id, tissue, extra = {}) => ({ SPECIES: 'Mechanitis lysimnia', Tube_1_id: id, Tube_1_tissue: tissue, T1_Preservation_medium: 'Flash frozen', Tube_2_id: 'NA', Tube_2_tissue: 'NOT_COLLECTED', ...extra });
+  try {
+    const { store } = await setup(dir, {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: '7VP', CAM_ID: 'CAM076001', ...tube('FS90415684', 'WHOLE_ORGANISM', { Preservation_date: d('2025-09-30') }) } },
+        { row: 3, values: { Insectary_ID: 'H4B', CAM_ID: 'CAM078465', ...tube('FS90415345', clip) } },
+        { row: 4, values: { Insectary_ID: 'J7A', CAM_ID: 'CAM078151', ...tube('FS63886669', clip, { Death_date: d('2026-09-22'), Preservation_date: 'NA' }) } },
+        { row: 5, values: { Insectary_ID: 'P4D', CAM_ID: 'CAM078466', ...tube('FS904215346', clip) } },
+        { row: 6, values: { Insectary_ID: 'F1B', CAM_ID: 'CAM078277', ...tube('FS6388765', 'THORAX | LEG') } },
+        { row: 7, values: { Insectary_ID: 'A7E.1', CAM_ID: 'CAM078468', ...tube('FS90415348', clip) } },
+        { row: 8, values: { Insectary_ID: 'B1E', SPECIES: 'Mechanitis lysimnia' } },
+      ],
+      Collection_data: [{ row: 2, values: { CAM_ID: 'CAM077538', Tube_1_id: 'FS90415349', Tube_1_tissue: 'WHOLE_ORGANISM', Preservation_medium: 'Flash frozen' } }],
+    });
+    // A clip saved in the app: the tubes table knows when.
+    const b1e = store.getRecordBySheetRow('Insectary_data', 8);
+    await store.updateRecord(b1e.id, { values: { CAM_ID: 'CAM078470', Tube_1_id: 'FS90415350', Tube_1_tissue: clip }, requestId: randomUUID() }, user);
+    await store.sync({ force: true });
+    const out = join(dir, 'sheets.sqlite');
+    buildCopy(store.db, out);
+    const copy = new DatabaseSync(out, { readOnly: true });
+    const one = sql => ({ ...copy.prepare(sql).get() });
+    try {
+      // The control arm's query: the newest row of a living clipped butterfly, not a dead one with NA.
+      assert.equal(one("SELECT Insectary_ID FROM Insectary_data WHERE Tube_1_tissue LIKE '%WING%' AND _row < 8 ORDER BY Preservation_date DESC, _row DESC LIMIT 1").Insectary_ID, 'A7E.1');
+      // A row per tube cell (NA left out), with its tissue, medium, label and CAM.
+      assert.equal(one('SELECT count(*) n FROM tubes').n, 8);
+      assert.deepEqual(one("SELECT tube, prefix, number, digits, well_formed, sheet, column, _row, label, cam, tissue, medium FROM tubes WHERE tube = 'fs90415345'"), {
+        tube: 'FS90415345', prefix: 'FS', number: 90415345, digits: 8, well_formed: 1, sheet: 'Insectary_data', column: 'Tube_1_id', _row: 3,
+        label: 'H4B', cam: 'CAM078465', tissue: clip, medium: 'Flash frozen',
+      });
+      assert.equal(one("SELECT preserved FROM tubes WHERE tube = 'FS90415684'").preserved, '2025-09-30');
+      // Typos are not well formed; by number the highest real FS tube is FS90415684, not FS904215346 or FS6388765.
+      assert.equal(one('SELECT group_concat(tube) t FROM (SELECT tube FROM tubes WHERE well_formed = 0 ORDER BY tube)').t, 'FS6388765,FS904215346');
+      assert.equal(one("SELECT tube FROM tubes WHERE prefix = 'FS' AND well_formed = 1 ORDER BY number DESC LIMIT 1").tube, 'FS90415684');
+      // The last wing tube entered: the one saved in the app, then the sheet's later rows.
+      assert.match(one("SELECT entered FROM tubes WHERE tube = 'FS90415350'").entered, /^\d{4}-\d\d-\d\dT/);
+      assert.equal(one("SELECT entered FROM tubes WHERE tube = 'FS90415348'").entered, null);
+      assert.equal(one("SELECT tube FROM tubes WHERE tissue LIKE '%WING CLIP%' ORDER BY entered DESC, _row DESC LIMIT 1").tube, 'FS90415350');
+      // The next number after the clip run, checked against every sheet: 349 and 350 are held.
+      assert.deepEqual(
+        copy.prepare("SELECT number FROM tubes WHERE prefix = 'FS' AND number BETWEEN 90415348 AND 90415351 ORDER BY number").all().map(r => r.number),
+        [90415348, 90415349, 90415350],
+      );
+    } finally {
+      copy.close();
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('query: one read-only statement, capped, stopped after the time limit, with fold and km', async () => {
