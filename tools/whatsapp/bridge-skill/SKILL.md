@@ -93,7 +93,7 @@ https://…/photo.jpg | *Oleria onega* — Archidona, 2023 — iNaturalist, ana_
 - A map (where to find or collect X, sites of X, a map asked for): the
   picture from `maps_snapshot`, ending the answer with its `images_block`;
   its `map_url` may go in the text before it. Never a maps link alone.
-- Photos to send: look before choosing. `host_plants` (with `area`) or
+- Photos to send: load the `maps-gallery` skill first (which source for which photos), and look before choosing. `host_plants` (with `area`) or
   `gallery_specimens` with `photo_sheet: true`, or `taxon_photos` (eggs,
   larvae, pupae, adults) gives numbered contact sheets;
   read each sheet, pick the tiles that show the leaves or the whole plant and
