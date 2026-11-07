@@ -194,7 +194,7 @@ test('fitBounds as MapLibre: centre in Mercator, zoom from the frame less the pa
 });
 
 test('only the official app, closed parameters and values; unsupported filters named', () => {
-  const ok = `${OFFICIAL_MAPS_URL}?sp=Tithorea%20harmonia&source=Sanger%20Institute&sex=female&sites=1&style=light&color_by=subspecies&bbox=-78,-1.3,-76.9,-0.5&export=1`;
+  const ok = `${OFFICIAL_MAPS_URL}?sp=Tithorea+harmonia&source=sanger&sex=female&sites=1&style=light&color_by=subspecies&bbox=-78,-1.3,-76.9,-0.5&export=1`;
   assert.equal(renderUrlProblem(ok), null);
   assert.equal(renderUrlProblem(ok.replace('rapidspeciation.github.io', 'evil.test')), 'not the official maps app');
   assert.equal(renderUrlProblem(`${ok}&onload=alert(1)`), 'parameter onload');

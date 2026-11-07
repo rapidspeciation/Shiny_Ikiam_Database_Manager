@@ -38,6 +38,15 @@ export const SOURCES = {
   inaturalist: 'iNaturalist',
 };
 const SOURCE_KEYS = Object.keys(SOURCES);
+
+/**
+ * A link's query with no escapes a chat app could cut it at: `+` for spaces, bare commas, and the maps app's short source
+ * keys (ithomiini_maps 2ef6be1) in place of names with spaces and parentheses. WhatsApp ended a link at its first `%20`
+ * (6 Nov 2026: `sp=Tithorea%20harmonia` opened as `sp=Tithorea`, no records). Letters outside ASCII stay escaped.
+ */
+export const linkQuery = params => [...params]
+  .map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/%20/g, '+').replace(/%2C/gi, ',')}`)
+  .join('&');
 const KEY_OF = Object.fromEntries(Object.entries(SOURCES).map(([k, v]) => [v, k]));
 
 const REFRESH_MS = 6 * 3600_000;
@@ -446,7 +455,7 @@ export function mapsUrl({ species = [], subspecies = [], genus = [], sources = S
   if (genus.length) params.set('genus', genus.join(','));
   if (species.length) params.set('sp', species.join(','));
   if (subspecies.length) params.set('ssp', subspecies.join(','));
-  params.set('source', sources.map(k => SOURCES[k]).join(','));
+  params.set('source', sources.filter(k => SOURCES[k]).join(','));
   if (country.length) params.set('country', country.join(','));
   if (sex) params.set('sex', sex);
   if (hostPlants?.butterflies?.length) params.set('hp_bf', hostPlants.butterflies.join(','));
@@ -463,7 +472,7 @@ export function mapsUrl({ species = [], subspecies = [], genus = [], sources = S
   if (bbox) params.set('bbox', bbox.map(v => Number(v).toFixed(5)).join(','));
   else if (view) params.set('map_view', [view.lng.toFixed(5), view.lat.toFixed(5), view.zoom.toFixed(2)].join(','));
   if (exportMode) params.set('export', '1');
-  return `${base}?${params.toString().replace(/\+/g, '%20')}`;
+  return `${base}?${linkQuery(params)}`;
 }
 
 /** A map view holding these points (centre and a zoom that fits their span). */
@@ -511,12 +520,12 @@ export function galleryUrl({ species = [], subspecies = [], sex = null, camids =
   const params = new URLSearchParams({ view: '1' });
   if (camids) {
     params.set('camids', camids.slice(0, URL_CAMS).join(' '));
-    return `${base}search?${params.toString().replace(/\+/g, '%20')}`;
+    return `${base}search?${linkQuery(params)}`;
   }
   for (const s of species) params.append('species', s);
   for (const s of subspecies) params.append('subspecies', s);
   if (sex) params.set('sex', sex);
-  return `${base}?${params.toString().replace(/\+/g, '%20')}`;
+  return `${base}?${linkQuery(params)}`;
 }
 
 const lh3 = (file, width = 1600) => `https://lh3.googleusercontent.com/d/${file}=w${width}`;

@@ -183,10 +183,15 @@ test('years of the maps\' dates', () => {
 test('URLs: the maps keep their sources and view; the gallery its filters or CAM IDs', () => {
   assert.equal(
     mapsUrl({ species: ['Oleria onega'], sources: ['sanger', 'inaturalist'], view: { lng: -77.81, lat: -0.99, zoom: 12 } }, MAPS),
-    `${MAPS}?sp=Oleria%20onega&source=Sanger%20Institute%2CiNaturalist&map_view=-77.81000%2C-0.99000%2C12.00`,
+    `${MAPS}?sp=Oleria+onega&source=sanger,inaturalist&map_view=-77.81000,-0.99000,12.00`,
   );
-  assert.equal(galleryUrl({ species: ['Oleria onega'], sex: 'male' }, GALLERY), `${GALLERY}?view=1&species=Oleria%20onega&sex=male`);
-  assert.equal(galleryUrl({ camids: ['CAM1', 'CAM2'] }, GALLERY), `${GALLERY}search?view=1&camids=CAM1%20CAM2`);
+  assert.equal(galleryUrl({ species: ['Oleria onega'], sex: 'male' }, GALLERY), `${GALLERY}?view=1&species=Oleria+onega&sex=male`);
+  assert.equal(galleryUrl({ camids: ['CAM1', 'CAM2'] }, GALLERY), `${GALLERY}search?view=1&camids=CAM1+CAM2`);
+  // Links a chat sends whole: no %20 (WhatsApp ends a link there), no encoded commas or parentheses.
+  const all = mapsUrl({ species: ['Tithorea harmonia', 'Mechanitis messenoides', 'Oleria onega'], country: ['Ecuador'], sex: 'female', view: { lng: -77.69, lat: -0.95, zoom: 9 } }, MAPS);
+  assert.equal(all, `${MAPS}?sp=Tithorea+harmonia,Mechanitis+messenoides,Oleria+onega&source=sanger,gbif_unam,gbif_other,dore,inaturalist&country=Ecuador&sex=female&map_view=-77.69000,-0.95000,9.00`);
+  assert.doesNotMatch(all, /[%()\s]/);
+  assert.equal(mapsUrl({ species: ['Tithorea harmonia'], country: ['Perú'] }, MAPS).split('country=')[1], 'Per%C3%BA');
 });
 
 test('maps_localities: sites ranked by records, Dore cells apart, synonyms, links', async () => {
@@ -202,8 +207,8 @@ test('maps_localities: sites ranked by records, Dore cells apart, synonyms, link
   assert.deepEqual(out.sites[0].years, { first: 2022, last: 2023, distinct: 2 });
   assert.deepEqual(out.sites[1].by_source, { 'Sanger Institute': 1, iNaturalist: 1 });
   assert.equal(out.grid_cells.cells, 1);
-  assert.match(out.sites[0].map, /sp=Oleria%20onega&source=Sanger%20Institute%2CGBIF%20%28UNAM%29%2C/);
-  assert.match(out.sites[0].map, /map_view=-77\.81\d+%2C-0\.99\d+%2C12\.00/);
+  assert.match(out.sites[0].map, /sp=Oleria\+onega&source=sanger,gbif_unam,/);
+  assert.match(out.sites[0].map, /map_view=-77\.81\d+,-0\.99\d+,12\.00/);
   assert.equal(out.freshness.generated_at, '2026-09-26T04:34:23Z');
   assert.equal(out.freshness.files['Sanger Institute'], 'Wed, 14 Oct 2026 15:15:59 GMT');
 
@@ -215,7 +220,7 @@ test('maps_localities: sites ranked by records, Dore cells apart, synonyms, link
   // A genus with a species: the app ANDs those filters, so the genus goes as its species.
   const mixed = await tools.run('maps_localities', { taxa: ['Oleria', 'Mechanitis menapis'] });
   assert.doesNotMatch(mixed.map, /genus=/);
-  assert.match(mixed.map, /sp=Mechanitis%20menapis%2COleria%20onega&/);
+  assert.match(mixed.map, /sp=Mechanitis\+menapis,Oleria\+onega&/);
   const withSubspecies = await tools.run('maps_localities', { taxa: ['Oleria', 'Oleria onega janarilla'] });
   assert.doesNotMatch(withSubspecies.map, /ssp=/);
   // A country with no records of them keeps its filter.
@@ -256,8 +261,8 @@ test('maps_species: a region is needed; taxa by records', async () => {
   assert.deepEqual(out.taxa.map(t => [t.name, t.records]), [['Oleria onega', 2], ['Mechanitis menapis', 1]]);
   assert.equal(out.unidentified_records, 1);
   assert.equal(out.taxa[0].last_year, 2024);
-  assert.match(out.map, /sp=Oleria%20onega%2CMechanitis%20menapis/);
-  assert.match(out.taxa[1].map, /sp=Mechanitis%20menapis&source=/);
+  assert.match(out.map, /sp=Oleria\+onega,Mechanitis\+menapis/);
+  assert.match(out.taxa[1].map, /sp=Mechanitis\+menapis&source=/);
 });
 
 test('host_plants: a species with its subspecies\' rows, confidence, sources; a plant\'s butterflies', async () => {
@@ -449,7 +454,7 @@ test('country outlines: inside, on the coast, nowhere', () => {
 
 test('maps URL with the host-plant layer', () => {
   const url = mapsUrl({ species: ['Tithorea harmonia'], sources: ['sanger'], country: ['Ecuador'], hostPlants: { butterflies: ['Tithorea harmonia'], taxa: ['species_mesechites_trifida'], evidence: ['direct'] }, view: { lng: -78.4, lat: -1.5, zoom: 6.5 } }, MAPS);
-  assert.equal(url, `${MAPS}?sp=Tithorea%20harmonia&source=Sanger%20Institute&country=Ecuador&hp_bf=Tithorea%20harmonia&hp_taxa=species_mesechites_trifida&hp_evidence=direct&map_view=-78.40000%2C-1.50000%2C6.50`);
+  assert.equal(url, `${MAPS}?sp=Tithorea+harmonia&source=sanger&country=Ecuador&hp_bf=Tithorea+harmonia&hp_taxa=species_mesechites_trifida&hp_evidence=direct&map_view=-78.40000,-1.50000,6.50`);
 });
 
 test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; nothing written', async () => {
@@ -459,7 +464,7 @@ test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; noth
   const males = (await tools.run('gallery_specimens', { species: ['oleria onega'], sex: 'male' }));
   // CAM000003 has no photo.
   assert.deepEqual(males.specimens.map(s => s.cam_id), ['CAM000002']);
-  assert.equal(males.gallery, `${GALLERY}?view=1&species=Oleria%20onega&sex=male`);
+  assert.equal(males.gallery, `${GALLERY}?view=1&species=Oleria+onega&sex=male`);
   assert.equal(males.specimens[0].photos.dorsal.file, '1CAM000002d'.padEnd(31, 'x'));
   assert.equal(males.specimens[0].photos.dorsal.full, `https://lh3.googleusercontent.com/d/${'1CAM000002d'.padEnd(31, 'x')}=w1600`);
   // Without the photo tables (an app that has not imported them): the photo and no model output.
@@ -471,7 +476,7 @@ test('gallery_specimens: filters, gallery links, photo URLs and thumbnails; noth
 
   const mindo = (await tools.run('gallery_specimens', { locality: 'mindo', elevation_min: 1400 }));
   assert.deepEqual(mindo.specimens.map(s => s.cam_id), ['CAM000005', 'CAM000004']);
-  assert.equal(mindo.gallery, `${GALLERY}search?view=1&camids=CAM000005%20CAM000004`);
+  assert.equal(mindo.gallery, `${GALLERY}search?view=1&camids=CAM000005+CAM000004`);
   // The plain photo, not its extra view.
   assert.equal(mindo.specimens[0].photos.dorsal.name, 'CAM000005d.JPG');
   assert.equal(mindo.specimens[1].photos.dorsal, null);
@@ -657,7 +662,7 @@ test('maps_snapshot: a JPEG framed on the best sites near the first, the link on
   assert.deepEqual(out.sites.map(s => [s.on_map, s.rank, s.site]), [[1, 1, 'Tena, Hollín'], [2, 2, 'Mindo']]);
   assert.deepEqual(out.elsewhere.map(s => s.site), ['Bogotá']);
   assert.ok(out.framed.bbox[0] < -78.77 && out.framed.bbox[2] > -77.81);
-  assert.match(out.map_url, /sp=Oleria%20onega%2CMechanitis%20menapis&source=.*&map_view=-78\.\d+%2C-0\.\d+%2C\d+\.00$/);
+  assert.match(out.map_url, /sp=Oleria\+onega,Mechanitis\+menapis&source=.*&map_view=-78\.\d+,-0\.\d+,\d+\.00$/);
   assert.deepEqual(out.best_by_taxon['Mechanitis menapis'], [{ rank: 2, site: 'Mindo', country: 'Ecuador', records: 1 }]);
   assert.ok(tiles.length > 0);
   // Again: the tiles from the disk.

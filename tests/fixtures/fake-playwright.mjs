@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXPORT, fitBoundsView } from '../../server/maps-render.mjs';
+import { SOURCES } from '../../server/maps-tools.mjs';
 import { withGeometry } from './export-geometry.mjs';
 
 const scenario = JSON.parse(readFileSync(new URL(import.meta.url).searchParams.get('s'), 'utf8'));
@@ -19,7 +20,8 @@ const forever = () => new Promise(() => setInterval(() => {}, 1000));
 function appAnswer(url) {
   const p = new URL(url).searchParams;
   const sp = new Set((p.get('sp') ?? '').split(',').filter(Boolean));
-  const sources = new Set((p.get('source') ?? '').split(','));
+  // The app takes its short source keys (ithomiini_maps 2ef6be1) or the full names.
+  const sources = new Set((p.get('source') ?? '').split(',').map(k => SOURCES[k] ?? k));
   const countries = new Set((p.get('country') ?? '').split(',').filter(Boolean));
   const sex = p.get('sex');
   const records = scenario.app.records.filter(r => (!sp.size || sp.has(r.name)) && sources.has(r.source) && (!countries.size || countries.has(r.country)) && (!sex || r.sex === sex));

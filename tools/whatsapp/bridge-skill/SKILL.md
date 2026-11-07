@@ -90,6 +90,9 @@ https://…/photo.jpg | *Oleria onega* — Archidona, 2023 — iNaturalist, ana_
 
 - A path on this computer or an `https://` address, from any tool that
   returns one (maps_snapshot's `image`, gallery or host-plant photos).
+- A map (where to find or collect X, sites of X, a map asked for): the
+  picture from `maps_snapshot`, ending the answer with its `images_block`;
+  its `map_url` may go in the text before it. Never a maps link alone.
 - Photos to send: look before choosing. `host_plants` (with `area`) or
   `gallery_specimens` with `photo_sheet: true`, or `taxon_photos` (eggs,
   larvae, pupae, adults) gives numbered contact sheets;
