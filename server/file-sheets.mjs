@@ -21,7 +21,7 @@ import { deserialize, serialize } from 'node:v8';
 import { LocalSheets, moveRowRefs, rowKey, seedRows } from './sheets.mjs';
 
 /** Changes when the file's layout does: a new version makes the file again. */
-const LAYOUT = 1;
+const LAYOUT = 2;
 /** Rows readSheet reads between two turns of the others (as LocalSheets). */
 const READ_ROWS = 500;
 
@@ -179,11 +179,13 @@ function createLayout(db) {
   db.exec(`
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;
     CREATE TABLE sheets (name TEXT PRIMARY KEY, ord INTEGER NOT NULL) WITHOUT ROWID;
+    -- A rowid table: rows of some kB each fill a WITHOUT ROWID table's pages badly (597 MB instead of 438 MB for
+    -- the lab's 360 MB of cells).
     CREATE TABLE rows (
       sheet TEXT NOT NULL, row INTEGER NOT NULL, cells BLOB NOT NULL,
-      columns INTEGER NOT NULL, formulas INTEGER NOT NULL,
-      PRIMARY KEY (sheet, row)
-    ) WITHOUT ROWID;
+      columns INTEGER NOT NULL, formulas INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX rows_at ON rows (sheet, row);
     CREATE INDEX rows_formulas ON rows (sheet, formulas);
   `);
 }
