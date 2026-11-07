@@ -9,7 +9,6 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXPORT, fitBoundsView } from '../../server/maps-render.mjs';
-import { SOURCES } from '../../server/maps-tools.mjs';
 import { withGeometry } from './export-geometry.mjs';
 
 const scenario = JSON.parse(readFileSync(new URL(import.meta.url).searchParams.get('s'), 'utf8'));
@@ -20,7 +19,9 @@ const forever = () => new Promise(() => setInterval(() => {}, 1000));
 function appAnswer(url) {
   const p = new URL(url).searchParams;
   const sp = new Set((p.get('sp') ?? '').split(',').filter(Boolean));
-  // The app takes its short source keys (ithomiini_maps 2ef6be1) or the full names.
+  // The app takes its short source keys (ithomiini_maps 2ef6be1) or the full names. Written out here: importing
+  // server/maps-tools.mjs slows this module's start past the deadline test's wait.
+  const SOURCES = { sanger: 'Sanger Institute', gbif_unam: 'GBIF (UNAM)', gbif_other: 'GBIF (Other Institutions)', dore: 'Dore et al. (2022)', inaturalist: 'iNaturalist' };
   const sources = new Set((p.get('source') ?? '').split(',').map(k => SOURCES[k] ?? k));
   const countries = new Set((p.get('country') ?? '').split(',').filter(Boolean));
   const sex = p.get('sex');
