@@ -166,6 +166,59 @@ function geometryProblem(result, view, records, markers) {
   return null;
 }
 
+/** How far each side of a frame may grow when moving sites out from under the overlays (shares of its span). */
+const GROW_STEPS = [0, 0.08, 0.16, 0.25, 0.35, 0.5, 0.7, 1, 1.4];
+const CLEAR_PX = 4;
+
+/**
+ * A wider frame that keeps the given sites clear of the overlays, or null. `bbox` the frame asked; `frame` the app's
+ * frame (CSS px); `overlays` the app's boxes; `footprints` [{ lng, lat, boxes: [{ dx, dy, width, height }] }] (each
+ * marker's disc and label boxes, relative to its centre: their size in px does not change with the zoom).
+ * The legend is counted in both bottom corners: the app keeps it bottom-left (its default) unless that covers a marker,
+ * then tries bottom-right, and its size depends on the filtered set, not the view. Each side grows by GROW_STEPS
+ * independently; of the frames that clear every footprint (CLEAR_PX apart) with its centre in the picture, the one
+ * with the highest zoom, then the least growth. The bbox asked stays inside, so no record of it leaves the picture.
+ */
+export function clearingFrame({ bbox, frame, overlays, footprints }) {
+  if (!footprints.length) return null;
+  const pad = b => ({ x: b.x - CLEAR_PX, y: b.y - CLEAR_PX, width: b.width + 2 * CLEAR_PX, height: b.height + 2 * CLEAR_PX });
+  const blocks = [];
+  for (const o of overlays) {
+    blocks.push(pad(o));
+    if (o.kind === 'legend') blocks.push(pad({ ...o, x: frame.width - o.x - o.width }));
+  }
+  const [w, s, e, n] = bbox;
+  const [sx, sy] = [e - w, n - s];
+  let best = null;
+  for (const gw of GROW_STEPS)
+    for (const gs of GROW_STEPS)
+      for (const ge of GROW_STEPS)
+        for (const gn of GROW_STEPS) {
+          const grown = gw + gs + ge + gn;
+          const b = [Math.max(-180, w - gw * sx), Math.max(-85, s - gs * sy), Math.min(180, e + ge * sx), Math.min(85, n + gn * sy)];
+          const v = fitBoundsView(b, frame);
+          if (best && (v.zoom < best.zoom - 1e-9 || (Math.abs(v.zoom - best.zoom) <= 1e-9 && grown >= best.grown))) continue;
+          const view = { center: v.center, zoom: v.zoom, frame };
+          const clear = footprints.every(f => {
+            const at = projectPoint([f.lng, f.lat], view);
+            if (at.x < 0 || at.y < 0 || at.x > frame.width || at.y > frame.height) return false;
+            return f.boxes.every(box => {
+              const placed = { x: at.x + box.dx, y: at.y + box.dy, width: box.width, height: box.height };
+              return !blocks.some(o => boxesOverlap(placed, o));
+            });
+          });
+          if (clear) best = { bbox: b.map(x => Math.round(x * 1e5) / 1e5), zoom: v.zoom, grown };
+        }
+  return best && best.grown > 0 ? best.bbox : null;
+}
+
+/** A marker's disc and label boxes relative to its centre (clearingFrame's footprint). */
+const footprintOf = m => ({
+  lng: m.lng,
+  lat: m.lat,
+  boxes: [{ dx: -m.radius, dy: -m.radius, width: 2 * m.radius, height: 2 * m.radius }, ...m.label_boxes.map(b => ({ dx: b.x - m.x, dy: b.y - m.y, width: b.width, height: b.height }))],
+});
+
 const inBox = (b, lng, lat) => lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3];
 const r5 = v => Math.round(Number(v) * 1e5) / 1e5;
 const normSex = v => {
@@ -312,8 +365,9 @@ export function renderUrlProblem(url) {
  * the tool's set is the app's records inside it), style, colorBy, sites [{ rank, site, lat, lng, ids }], required (ranks
  * the answer names; default all) }.
  * Visible means in the picture: inside the frame and not under the title strip, legend, scale or credits (the app's
- * picture geometry, checked by geometryProblem). A required site that is hidden fails (`ranked_site_hidden`); another
- * hidden site is left out of picture_labels and listed in hidden_sites.
+ * picture geometry, checked by geometryProblem). A required site that is hidden fails (`ranked_site_hidden`, with
+ * `reframe`: a wider frame that clears the required sites, from clearingFrame, or null); another hidden site is left
+ * out of picture_labels and listed in hidden_sites.
  * → { ok: true, png, view, visible: { records, asked_records, sites }, picture_labels, hidden_sites, legend_unknown,
  *   app_records, title, title_truncated } or { ok: false, reason, detail }.
  */
@@ -392,6 +446,7 @@ export function checkExport(result, expect) {
   const labels = [];
   const hidden = [];
   const missing = [];
+  const requiredMarkers = new Set();
   for (const s of sitesIn) {
     const ids = s.ids.filter(id => {
       const r = coords.get(id);
@@ -407,6 +462,7 @@ export function checkExport(result, expect) {
       missing.push(s.rank);
       continue;
     }
+    if (required.has(s.rank)) for (const m of hits.keys()) requiredMarkers.add(m);
     // Any of its markers under an overlay: not shown as a visible site.
     const under = [...hits.keys()].filter(m => m.occluded);
     if (under.length) {
@@ -418,7 +474,11 @@ export function checkExport(result, expect) {
   }
   if (missing.length) return fail('sites_not_drawn', { ranks: missing.slice(0, 10) });
   const hiddenRequired = hidden.filter(h => required.has(h.rank));
-  if (hiddenRequired.length) return fail('ranked_site_hidden', { sites: hiddenRequired.slice(0, 10), legend_placement: v.legend_placement ?? null });
+  if (hiddenRequired.length) {
+    // The frame to ask next (the tool's own frames only): the named sites, visible ones too, clear of the overlays.
+    const reframe = clearingFrame({ bbox: expect.bbox, frame, overlays: v.overlays, footprints: [...requiredMarkers].map(footprintOf) });
+    return fail('ranked_site_hidden', { sites: hiddenRequired.slice(0, 10), legend_placement: v.legend_placement ?? null, reframe });
+  }
 
   const { sd, stripe } = pixelChecks(img);
   if (sd <= 8) return fail('blank', { luminance_sd: sd });

@@ -14,7 +14,7 @@ import { deflateSync } from 'node:zlib';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createMapsTools, mapsUrl, sexOf, yearOf } from '../server/maps-tools.mjs';
-import { EXPORT, OFFICIAL_MAPS_URL, checkExport, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
+import { EXPORT, OFFICIAL_MAPS_URL, checkExport, clearingFrame, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
 import { LEGEND_BOTTOM_LEFT, OVERLAYS, withGeometry } from './fixtures/export-geometry.mjs';
 
 const FAKE_PW = new URL('./fixtures/fake-playwright.mjs', import.meta.url).href;
@@ -385,6 +385,29 @@ test('geometry: a ranked site behind the legend fails with ranked_site_hidden; a
   assert.deepEqual(ok.visible, { records: 1, asked_records: 1, sites: 1 });
   // With the legend moved off it, all three records and both sites are visible.
   assert.deepEqual(checkExport(answer(), EXPECT).visible, { records: 3, asked_records: 3, sites: 2 });
+});
+
+test('geometry: a hidden named site comes with a wider frame that clears it from the legend in either bottom corner', () => {
+  const covered = [OVERLAYS[0], LEGEND_BOTTOM_LEFT, OVERLAYS[2], OVERLAYS[3]];
+  const hidden = checkExport(answer({ overlays: covered }), EXPECT);
+  assert.equal(hidden.reason, 'ranked_site_hidden');
+  const next = hidden.detail.reframe;
+  assert.ok(Array.isArray(next) && next.length === 4, JSON.stringify(hidden.detail));
+  assert.ok(next[0] <= BBOX[0] && next[1] <= BBOX[1] && next[2] >= BBOX[2] && next[3] >= BBOX[3], 'the frame asked stays inside');
+  // Drawn in that frame, Tena and Loreto are clear with the legend bottom-left (where it was) or bottom-right.
+  for (const legend of [LEGEND_BOTTOM_LEFT, OVERLAYS[1]]) {
+    const out = checkExport(answer({ bbox: next, overlays: [OVERLAYS[0], legend, OVERLAYS[2], OVERLAYS[3]] }), { ...EXPECT, bbox: next });
+    assert.equal(out.ok, true, JSON.stringify({ legend, reason: out.reason, detail: out.detail }));
+    assert.deepEqual(out.picture_labels.map(l => l.site), ['Tena', 'Loreto']);
+  }
+  // Not wider than needed: it zooms out less than the old 15 % padding did, or the same.
+  const [w, s, e, n] = BBOX;
+  const padded = fitBoundsView([w - (e - w) * 0.15, s - (n - s) * 0.15, e + (e - w) * 0.15, n + (n - s) * 0.15], EXPORT.frame);
+  assert.ok(fitBoundsView(next, EXPORT.frame).zoom >= padded.zoom - 1e-9);
+  // A site with nothing to move: no frame. A site that cannot clear (under the title whatever the frame): none either.
+  assert.equal(clearingFrame({ bbox: BBOX, frame: EXPORT.frame, overlays: OVERLAYS, footprints: [] }), null);
+  const wall = [{ kind: 'title', x: 0, y: 0, width: 760, height: 570 }];
+  assert.equal(clearingFrame({ bbox: BBOX, frame: EXPORT.frame, overlays: wall, footprints: [{ lng: -77.5, lat: -0.8, boxes: [{ dx: -10, dy: -10, width: 20, height: 20 }] }] }), null);
 });
 
 test('geometry: a marker 12 px from the top is under the title strip, also when only its disc reaches the strip', () => {
@@ -825,14 +848,17 @@ test('maps_snapshot, app picture: a bbox asked frames the app\'s whole filtered 
   assert.equal(all.framed.by, 'all records');
 });
 
-test('maps_snapshot, app picture: a named site under the legend is drawn once more with a padded frame; an app without geometry falls back', async () => {
+test('maps_snapshot, app picture: a named site under the legend is drawn once more with a frame that clears it; an app without geometry falls back', async () => {
   // The legend left in its default bottom-left corner, over Tena (rank 1) in the first frame; the padded frame moves Tena inward.
   const { tools, fake } = await snapshotTools({ geometry: { overlays: [OVERLAYS[0], LEGEND_BOTTOM_LEFT, OVERLAYS[2], OVERLAYS[3]] } });
   const covered = await tools.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });
   assert.equal(covered.renderer, 'app', JSON.stringify(covered.degraded));
   assert.ok(covered.framed.padded);
+  assert.equal(covered.framed.redrawn, 1, 'the frame worked out from the geometry clears it at the first redraw');
+  assert.equal(fake.get('url').length, 2);
   const [first, second] = fake.get('url').map(u => new URL(u).searchParams.get('bbox').split(',').map(Number));
-  assert.ok(second[0] < first[0] && second[1] < first[1] && second[2] > first[2] && second[3] > first[3], 'the second frame holds the first');
+  assert.ok(second[0] <= first[0] && second[1] <= first[1] && second[2] >= first[2] && second[3] >= first[3], 'the second frame holds the first');
+  assert.ok(second.some((x, i) => x !== first[i]), 'and is wider');
   assert.deepEqual(covered.picture_labels.map(l => l.site), ['Tena', 'Loreto']);
   // The app interface of 16bd1f2 (no picture geometry): not trusted.
   const legacy = await (await snapshotTools({ geometry: false })).tools.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });

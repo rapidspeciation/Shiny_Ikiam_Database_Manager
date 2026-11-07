@@ -1356,14 +1356,16 @@ export function createMapsTools({
     else if (unsupported) degraded = { reason: `unsupported_filter:${unsupported}`, detail: null };
     else if (inner.workbookSex) degraded = { reason: 'sex_from_workbook', detail: { records_affected: inner.workbookSex } };
     else {
-      // A framed-by-us picture whose legend covers a named site is drawn once more with the frame padded, so the sites
-      // near its edge move inward (4 Nov: Melinaea menophilus, «3 Km Sur Dayuma» under the legend). A box asked is kept.
+      // A framed-by-us picture whose legend covers a named site is drawn again with a wider frame: the one the check
+      // worked out from the picture's geometry (the named sites clear of the legend in either bottom corner and of the
+      // other overlays), else padded 15 % (4 Nov: Melinaea menophilus, «3 Km Sur Dayuma» under the legend). At most
+      // three drawings; a box asked is kept.
       let tryFrame = frame;
       let url;
       let run;
       let checked = null;
-      let reframed = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      let reframed = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
         url = mapsUrl({ ...linkArgs, bbox: tryFrame, exportMode: true }, OFFICIAL_MAPS_URL);
         run = await renderer.render(url);
         renderTiming = run.timing ?? null;
@@ -1378,16 +1380,18 @@ export function createMapsTools({
           // The sites this answer names must be visible; others hidden by an overlay are only left out.
           required: best.map(s => s.rank),
         });
-        if (checked.ok || bbox || !tryFrame || checked.reason !== 'ranked_site_hidden' || attempt) break;
+        if (checked.ok || bbox || !tryFrame || checked.reason !== 'ranked_site_hidden') break;
         const [w, so, e, n] = tryFrame;
         const dx = (e - w) * 0.15;
         const dy = (n - so) * 0.15;
-        tryFrame = [w - dx, so - dy, e + dx, n + dy];
-        reframed = true;
+        const next = checked.detail?.reframe ?? (reframed ? null : [w - dx, so - dy, e + dx, n + dy]);
+        if (!next || next.every((x, i) => Math.abs(x - tryFrame[i]) < 1e-5)) break;
+        tryFrame = next;
+        reframed++;
       }
       if (!run.ok) degraded = { reason: run.reason, detail: run.detail ?? null };
       else {
-        if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail, ...(reframed ? { reframed_once: true } : {}) };
+        if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail, ...(reframed ? { reframed } : {}) };
         else {
           const file = join(snapshotDir, appPictureName(url));
           if (!writeCacheFile(file, checked.png)) degraded = { reason: 'write_failed', detail: null };
@@ -1401,7 +1405,7 @@ export function createMapsTools({
               renderer: 'app',
               degraded: null,
               map_url: mapsUrl(linkArgs, mapsBase),
-              framed: { bbox: checked.view.bbox.map(v => round(v, 5)), asked: frame, by: framedBy, ...(reframed ? { padded: 'drawn again with a wider frame: the legend covered a named site' } : {}) },
+              framed: { bbox: checked.view.bbox.map(v => round(v, 5)), asked: frame, by: framedBy, ...(reframed ? { padded: 'drawn again with a wider frame: the legend covered a named site', redrawn: reframed } : {}) },
               // Visible: in the frame and not under the picture's title, legend, scale or credits.
               records: { ...found.records, on_picture: checked.visible.records, app_total: checked.app_records, ...(bbox ? { asked_on_picture: checked.visible.asked_records } : {}) },
               // No numbers on the app's picture: its markers carry the site names (picture_labels).
