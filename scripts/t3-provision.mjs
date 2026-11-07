@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
 import { applyLabGuard } from './lab-guard.mjs';
-import { leanClaude } from './claude-lean.mjs';
+import { leanClaude, unleanClaude } from './claude-lean.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shared = process.env.ITHOMIINI_SHARED || '/home/ubuntu/ithomiini/shared';
@@ -334,7 +334,9 @@ function provision(user, { freshToken, addProject, folder = user.username, title
     ]),
   ];
   // Claude Code features these chats never use, each sent with every model call (scripts/claude-lean.mjs).
-  leanClaude(settings);
+  // ITHOMIINI_CLAUDE_LEAN=0 takes them out again (the rollback: then --refresh-all).
+  if (process.env.ITHOMIINI_CLAUDE_LEAN === '0') unleanClaude(settings);
+  else leanClaude(settings);
   // The lab's chats can neither send WhatsApp nor make timers (scripts/lab-guard.mjs).
   if (labUrl) applyLabGuard(settings, { home: process.env.HOME, source, cache: join(process.env.HOME, '.cache', 'ithomiini-lab') });
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));

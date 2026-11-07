@@ -21,3 +21,12 @@ export function leanClaude(settings) {
   settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)])];
   return settings;
 }
+
+/** The rollback: takes out exactly what leanClaude adds (none of these keys or deny rules was set before R15). */
+export function unleanClaude(settings) {
+  delete settings.enableArtifact;
+  delete settings.disableBundledSkills;
+  const ours = new Set([...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)]);
+  if (settings.permissions?.deny) settings.permissions.deny = settings.permissions.deny.filter(rule => !ours.has(rule));
+  return settings;
+}
