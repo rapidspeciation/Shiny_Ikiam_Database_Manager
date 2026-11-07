@@ -7,14 +7,16 @@
 // None of them was called in the 279 production chat transcripts on claudeclaw (checked 6 Nov 2026); Agent was
 // called only with notebook-reader and notebook-reviewer. Applied by scripts/t3-provision.mjs and by the eval's
 // workspace (tools/assistant-eval/eval-app.mjs).
-// Not here: disableBundledSkills (the bundled skills' listing, 2.3k tokens, also never used). With it the photo
-// tasks stopped loading the maps-gallery skill and took gallery_specimens instead of taxon_photos: 0 of 6 runs
-// (G01, M02, N02 twice) against 3 of 3 without it, everything else equal (R15, 6 Nov 2026).
+//   bundled skills listing (dataviz, code-review, claude-api, loop, schedule...)   2.3k   disableBundledSkills: true
+// With these trims the photo tasks (G01, M02, N02) often skipped the maps-gallery skill and took gallery_specimens
+// instead of taxon_photos (3 of 12 runs right, against 3 of 3 on the full workspace). The maps-gallery row in the
+// brief's skills table and the bridge skill's "load maps-gallery first" brought it to 12 of 12 (R15, 6-7 Nov 2026).
 export const UNUSED_TOOLS = ['Workflow', 'ScheduleWakeup', 'ReportFindings', 'ListAgents'];
 export const UNUSED_AGENTS = ['Explore', 'Plan', 'general-purpose', 'claude-code-guide', 'web-fetch', 'statusline-setup', 'claude'];
 
 export function leanClaude(settings) {
   settings.enableArtifact = false;
+  settings.disableBundledSkills = true;
   settings.permissions ??= {};
   settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)])];
   return settings;
