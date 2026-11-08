@@ -5,6 +5,7 @@ import SexBadge from '../SexBadge.vue'
 import { isBlank } from '../../lib/cells'
 import { clutchState, countCell, hasClutch, parentsOf, readCount, stageDurations, totalOf, undatedTail, type ClutchState, type CountField } from '../../lib/clutches'
 import { formatSerial } from '../../lib/dates'
+import { emergenceState } from '../../lib/emerged'
 import type { CellValue, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
 import { t } from '../../lib/i18n'
@@ -182,7 +183,13 @@ const dueText = (i: Item) => {
             <span class="mt-1 block truncate text-xs text-stone-500">
               <template v-if="due(item) !== null">
                 {{ $t('Pupas desde {date}', { date: formatSerial(item.pupaDate!) }) }} ·
-                <span :class="due(item)! <= today ? 'font-medium text-brand-800' : ''">{{ $t('emergen hacia {date}', { date: dueText(item) }) }}</span>
+                <!-- More than 3 days past the date (Inicio's rule): amber, they were due; from the day on: green. -->
+                <span v-if="emergenceState(due(item), today) === 'late'" class="font-medium text-amber-800">{{
+                  $t('debían emerger hacia {date}', { date: dueText(item) })
+                }}</span>
+                <span v-else :class="emergenceState(due(item), today) === 'due' ? 'font-medium text-brand-800' : ''">{{
+                  $t('emergen hacia {date}', { date: dueText(item) })
+                }}</span>
               </template>
               <template v-else-if="registered.get(item.number)?.last">
                 {{ $t('Último emergido {date}', { date: formatSerial(registered.get(item.number)!.last!) }) }}

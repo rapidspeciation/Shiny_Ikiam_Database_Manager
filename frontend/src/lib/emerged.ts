@@ -618,3 +618,16 @@ export function dayDoubt(day: number, today: number, laid: CellValue, pupa: Cell
   if (typeof pupa === 'number' && day < pupa) return 'before-pupa'
   return ''
 }
+
+/** Days past its expected date before a group counts as late: Inicio's rule (LATE_DAYS in server/summary.mjs). */
+export const LATE_DAYS = 3
+
+/**
+ * A pupa group's expected emergence against today: `late` more than LATE_DAYS past it (amber, «debían emerger
+ * hacia…»), `due` from that day on (green), `ahead` before it; null without a date.
+ */
+export function emergenceState(due: number | null, today: number): 'late' | 'due' | 'ahead' | null {
+  if (due === null) return null
+  if (today - due > LATE_DAYS) return 'late'
+  return due <= today ? 'due' : 'ahead'
+}
