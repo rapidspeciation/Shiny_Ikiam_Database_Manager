@@ -42,7 +42,8 @@ describe('SexEstimate', () => {
     expect(text(el.querySelector('[data-testid=sex-p]'))).toBe('63 %')
     // The cutoff and the band edges are on the scale, calibrated.
     expect(text(el)).toMatch(/39[.,]7 %/)
-    expect(text(el)).toMatch(/(corte|cutoff) 53[.,]7 %/)
+    expect(text(el)).toMatch(/(corte|cutoff) ♀ 53[.,]7 %/)
+    expect(text(el)).toMatch(/♀ 39[.,]7 %/)
     expect(text(el)).toMatch(/71[.,]8 %/)
   })
 

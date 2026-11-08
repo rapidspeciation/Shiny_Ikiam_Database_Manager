@@ -26,8 +26,8 @@ const at = (z: number) => `${(100 * (Math.min(HI, Math.max(LO, z)) - LO)) / (HI 
 const fmt = (v: number, digits: number) => new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)
 /** The calibrated % (lib/sexModel.ts SEX_DISPLAY): whole numbers, never a sure-looking 100 %. */
 const pct = (p: number) => (p >= 0.995 ? `> ${fmt(99, 0)} %` : `${fmt(p * 100, 0)} %`)
-/** The scale's marks in calibrated P(hembra), one decimal (the band edges are 39.7 and 71.8 %). */
-const tick = (z: number) => `${fmt(100 * sexShownFemale(z), 1)} %`
+/** The scale's marks in calibrated P(hembra), one decimal (the band edges are 39.7 and 71.8 %), marked ♀. */
+const tick = (z: number) => `♀ ${fmt(100 * sexShownFemale(z), 1)} %`
 const z = computed(() => (props.state.kind === 'ready' ? props.state.z : null))
 const shown = computed(() => (z.value == null ? null : sexShown(z.value)))
 const call = computed(() => shown.value?.call ?? null)
