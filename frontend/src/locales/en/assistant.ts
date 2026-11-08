@@ -367,9 +367,12 @@ export default {
   '{n} igual': '{n} same',
   '{n} iguales': '{n} same',
   '{n} sin escribir': '{n} not written',
-  'Oculta las líneas de la página que no escriben nada (iguales a la hoja o tachadas)':
-    'Hides the lines of the page that write nothing (the same as the sheet, or crossed out)',
+  'Oculta las filas y las columnas que no cambian nada (iguales a la hoja o tachadas): quedan juntas las celdas que cambian':
+    'Hides the rows and columns that change nothing (the same as the sheet, or crossed out), so the changed cells sit together',
   'Solo cambios': 'Changes only',
+  // ProposalGrid: the keyboard's way past the tables to «Aplicar».
+  'Ir a Aplicar': 'Go to Apply',
+  'Saltar la tabla': 'Skip the table',
   'Columnas que solo llevan NA o NOT_COLLECTED de la plantilla: se escriben igual, aunque estén plegadas':
     "Columns holding only the template's NA or NOT_COLLECTED: they are written even when folded",
   'Plegar la plantilla': 'Fold the template',

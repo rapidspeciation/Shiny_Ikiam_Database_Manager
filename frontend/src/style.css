@@ -461,6 +461,13 @@ body {
   .hint {
     @apply text-xs text-fg-subtle;
   }
+  /*
+   * A keyboard way past a grid (whose Tab moves cell to cell, as in Google Sheets): out of sight until Tab reaches
+   * it, then a button over the top of its box.
+   */
+  .skip-link {
+    @apply absolute top-1 left-1 z-30 -translate-y-[200%] rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand shadow-lg focus-visible:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;
+  }
   /* A small control with a finger-sized target on touch screens (44 px), without growing what is drawn. */
   .hit-target {
     position: relative;

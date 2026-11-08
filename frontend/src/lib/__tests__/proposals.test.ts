@@ -7,6 +7,7 @@ import {
   cellOf,
   cellOrder,
   changedCells,
+  changedColumns,
   changedText,
   expandProposal,
   isFormulaError,
@@ -119,6 +120,27 @@ describe('the tables of a proposal', () => {
       ['Collection_data', ['Sex', 'SPECIES', 'Collector'], 1],
       ['Insectary_data', ['Death_date'], 1],
     ])
+  })
+})
+
+describe('«Solo cambios»: the columns that change', () => {
+  it('keeps only the columns where a shown row changes something, in their order', () => {
+    const rows = [
+      // Sex changes; SPECIES is written as the sheet already has it; Tribe is only shown.
+      edited('r1', { Sex: 'female', SPECIES: 'Oleria gunilla' }),
+      // A line that writes nothing does not count.
+      edited('r2', { Death_date: 46000 }, { context: true }),
+      // A cell the person typed, and a doubtful one.
+      edited('r3', { Notes: 'x' }, { current: { Notes: 'x' }, rowValues: { Notes: 'x' }, personEdits: { Notes: {} } }),
+      edited('r4', { Collector: 'FC' }, { current: { Collector: 'FC' }, rowValues: { Collector: 'FC' }, doubts: { Collector: { choices: [] } as never } }),
+    ]
+    const fields = ['SPECIES', 'Sex', 'Tribe', 'Death_date', 'Notes', 'Collector']
+    expect(changedColumns(rows, fields)).toEqual(['Sex', 'Notes', 'Collector'])
+  })
+  it("counts a new row's filled cells, and a line the sheet refuses", () => {
+    expect(changedColumns([created('c1', { Sex: 'male', SPECIES: '' })], ['SPECIES', 'Sex'])).toEqual(['Sex'])
+    const refused = edited('r1', { Sex: 'female' }, { context: true, page: { error: 'no' } as never })
+    expect(changedColumns([refused], ['SPECIES', 'Sex'])).toEqual(['Sex'])
   })
 })
 

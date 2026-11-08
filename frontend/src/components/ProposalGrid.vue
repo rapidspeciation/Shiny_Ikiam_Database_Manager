@@ -27,6 +27,7 @@ import RackChanges from './assistant/RackChanges.vue'
 import RackSection from './assistant/RackSection.vue'
 import { RACK_LOCKED, rackOfChange, type DepositRack } from '../lib/rackDeposit'
 import { api, learnItems } from '../lib/api'
+import { escapeLeavesGrid } from '../lib/gridKit'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
@@ -34,6 +35,7 @@ import {
   cellId,
   cellOrder,
   changedCells,
+  changedColumns,
   changedText,
   expandProposal,
   nextCell,
@@ -398,8 +400,12 @@ const fieldsOf = (sheet: string) => session.module(sheet)?.fields
 const groups = computed(() => sheetGroups(shown.value, extra.value, sheet => fieldsOf(sheet)?.map(f => f.key)))
 
 // ------------------------------------------------------------ a notebook page
-/** "Solo cambios": the page's lines that write nothing hidden (a line to look at, not found or refused, stays). */
-const changesOnly = persistentRef('proposal-changes-only', false)
+/**
+ * "Solo cambios": the page's lines that write nothing hidden (a line to look at, not found or refused, stays), and
+ * the columns where no shown row changes anything, so the changed cells sit together beside the ID. On by default on
+ * a phone, where a sheet's forty columns are some thirteen screens wide.
+ */
+const changesOnly = persistentRef('proposal-changes-only', !wide.value)
 const lookAt = (c: ProposalChange) => !!c.page?.error || (!!c.placeholder && c.page?.status !== 'crossed')
 const rowsOf = (changes: ProposalChange[]) => (changesOnly.value ? changes.filter(c => !c.context || lookAt(c)) : changes)
 const quietRows = (changes: ProposalChange[]) => changes.filter(c => c.context && !lookAt(c)).length
@@ -407,6 +413,11 @@ const quietRows = (changes: ProposalChange[]) => changes.filter(c => c.context &
 const templatesOpen = ref(false)
 const columnsOf = (g: { template: string[] }, fields: string[]) =>
   templatesOpen.value ? fields : fields.filter(f => !g.template.includes(f))
+/** «Solo cambios» on: of those, the columns its rows change (all of them when none would be left). */
+function changedOf(g: { sheet: string }, fields: string[], rows: ProposalChange[]) {
+  const changed = changedColumns(rows, fields, props.proposal.newRowFormulas?.[g.sheet] ?? [])
+  return changed.length ? changed : fields
+}
 const page = computed(() => props.proposal.page)
 
 // ------------------------------------------------------------ the columns' order: the sheet's, the notebook's, the person's
@@ -508,6 +519,8 @@ const tables = computed(() =>
     // The rows in the order chosen, with the slim rows that say where the sheet is not continuous.
     const paged = pagedTable(own)
     const laid = shownRows(layRows(own, paged ? rowOrder.value : 'sheet', paged), new Set(rowsOf(own).map(rowKey)), rowKey)
+    const all = columnsOf(g, viewColumns(g))
+    const changed = changedOf(g, all, rowsOf(own))
     const table = {
       ...g,
       id: g.sheet,
@@ -515,8 +528,10 @@ const tables = computed(() =>
       paged,
       laid,
       rows: laid.flatMap(item => (item.change ? [item.change] : [])),
-      columns: columnsOf(g, viewColumns(g)),
+      columns: changesOnly.value ? changed : all,
       quiet: quietRows(own),
+      /** Columns «Solo cambios» hides (or would hide). */
+      still: all.length - changed.length,
       photos: page.value?.sheet === g.sheet ? photosOf(own) : [],
     }
     return near.length
@@ -622,6 +637,21 @@ async function apply(how?: 'confirm' | 'skip', leave = false, waiting = false) {
   )
   emit('apply', rows, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how, sheet ? [sheet] : undefined)
 }
+/**
+ * The keyboard's way out of the tables (Tab moves cell to cell there, as in Google Sheets): the «Ir a Aplicar» link
+ * before them, and Escape in a table when no cell is being edited. Both bring the focus to «Aplicar» (or the first
+ * button of the bar that can be pressed; the bar itself once the proposal is closed).
+ */
+const applyBar = ref<HTMLElement>()
+function focusApply() {
+  const bar = applyBar.value
+  if (!bar) return
+  const button = bar.querySelector<HTMLElement>('button:not(:disabled), a[href]')
+  ;(button ?? bar).focus()
+  bar.scrollIntoView?.({ block: 'nearest' })
+}
+// Seen before the table's own keys (capture): an edit still open is still marked as such.
+const escapeGrid = (event: KeyboardEvent) => escapeLeavesGrid(event) && focusApply()
 /** A sheet's own «Aplicar» (null: «Aplicar todo»): the dialogs it opens keep to those rows. */
 function applyRows(sheet: string | null) {
   applySheet.value = sheet
@@ -725,7 +755,11 @@ const statusText = computed(
 </script>
 
 <template>
-  <div class="mt-2 rounded-md border border-stone-300 bg-surface text-stone-800">
+  <div class="relative mt-2 rounded-md border border-stone-300 bg-surface text-stone-800" @keydown.capture="escapeGrid">
+    <!-- Tab goes cell to cell inside the tables: this link (and Escape in a table) leads past them to «Aplicar». -->
+    <button type="button" class="skip-link" data-skip-apply @click="focusApply">
+      {{ pending ? $t('Ir a Aplicar') : $t('Saltar la tabla') }}
+    </button>
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
       <span>
         {{ $t('Cambios propuestos') }} · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
@@ -979,9 +1013,9 @@ const statusText = computed(
             <Settings2 :size="12" /> {{ $t('Columnas…') }}
           </button>
           <label
-            v-if="g.quiet"
+            v-if="g.quiet || g.still"
             class="flex cursor-pointer items-center gap-1"
-            :title="$t('Oculta las líneas de la página que no escriben nada (iguales a la hoja o tachadas)')"
+            :title="$t('Oculta las filas y las columnas que no cambian nada (iguales a la hoja o tachadas): quedan juntas las celdas que cambian')"
           >
             <input v-model="changesOnly" type="checkbox" class="h-3 w-3" />
             <ListFilter :size="12" /> {{ $t('Solo cambios') }}
@@ -1142,6 +1176,8 @@ const statusText = computed(
       class="flex flex-wrap items-center gap-2 px-2 py-1.5"
       :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending, 'max-sm:py-1': pending && reviewing }"
       data-apply-bar
+      ref="applyBar"
+      tabindex="-1"
     >
       <template v-if="pending">
         <!-- A rack deposit the app cannot write: the changes downloaded and pasted by hand, then «Aplicado a mano». -->
