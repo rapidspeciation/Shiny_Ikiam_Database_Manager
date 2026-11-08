@@ -466,7 +466,10 @@ body {
    * it, then a button over the top of its box.
    */
   .skip-link {
-    @apply absolute top-1 left-1 z-30 -translate-y-[200%] rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand shadow-lg focus-visible:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;
+    @apply sr-only;
+  }
+  .skip-link:focus-visible {
+    @apply not-sr-only absolute top-1 left-1 z-30 rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand shadow-lg outline-2 outline-offset-2 outline-focus;
   }
   /* A small control with a finger-sized target on touch screens (44 px), without growing what is drawn. */
   .hit-target {
@@ -1588,6 +1591,8 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
 .legend {
   border-radius: 3px;
   padding: 0 5px;
+  /* A chip never breaks inside: the legend wraps between chips. */
+  white-space: nowrap;
 }
 
 /* Tube labels: hidden on screen, the only thing printed while present. */

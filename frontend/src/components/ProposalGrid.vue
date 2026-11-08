@@ -761,10 +761,11 @@ const statusText = computed(
       {{ pending ? $t('Ir a Aplicar') : $t('Saltar la tabla') }}
     </button>
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
+      <!-- The page's title already says «Cambios propuestos»: the card says which sheet and why. -->
       <span>
-        {{ $t('Cambios propuestos') }} · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
+        {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
         <template v-if="created"> · {{ $tn(created, '{n} fila nueva', '{n} filas nuevas') }}</template>
-        <span class="font-normal text-stone-500">— {{ proposal.reason }}</span>
+        <span v-if="proposal.reason" class="font-normal text-stone-500"> · {{ proposal.reason }}</span>
       </span>
       <span
         v-if="flashText"
@@ -1014,7 +1015,7 @@ const statusText = computed(
           </button>
           <label
             v-if="g.quiet || g.still"
-            class="flex cursor-pointer items-center gap-1"
+            class="flex cursor-pointer items-center gap-1 pointer-coarse:min-h-11 pointer-coarse:px-1"
             :title="$t('Oculta las filas y las columnas que no cambian nada (iguales a la hoja o tachadas): quedan juntas las celdas que cambian')"
           >
             <input v-model="changesOnly" type="checkbox" class="h-3 w-3" />
@@ -1063,7 +1064,7 @@ const statusText = computed(
           />
         </template>
         <template v-if="editable && !g.near" #end>
-          <span class="ml-auto flex items-center gap-2">
+          <span class="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
             <span class="legend is-proposed" :title="$t('Valor de la IA: se escribe al aplicar')">{{ $t('IA') }}</span>
             <span class="legend is-person" :title="$t('Escrito por ti: se escribe al aplicar')">{{ $t('tú') }}</span>
             <span class="legend is-sheet" :title="$t('Valor actual de la hoja: no cambia')">{{ $t('hoja') }}</span>
@@ -1194,7 +1195,7 @@ const statusText = computed(
         <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
         <button
           v-else-if="!perSheet.size || sheetsToApply.length > 1"
-          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong"
+          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong max-sm:min-h-11"
           :disabled="busy || !chosen.length"
           @click="applyRows(null)"
         >
@@ -1202,7 +1203,7 @@ const statusText = computed(
           {{ perSheet.size ? $tn(chosen.length, 'Aplicar todo ({n} fila)', 'Aplicar todo ({n} filas)') : $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
         </button>
         <button
-          class="btn"
+          class="btn max-sm:min-h-11"
           :disabled="busy"
           :title="someWritten ? $t('Lo ya escrito se queda en la hoja; las filas que faltan no se aplican') : undefined"
           @click="emit('discard')"
