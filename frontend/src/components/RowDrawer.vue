@@ -275,8 +275,11 @@ function change(field: Field, text: string) {
                 :placeholder="field.type === 'date' ? $t('d-mmm-aa') : ''"
                 @change="change(field, ($event.target as HTMLInputElement).value)"
               />
-              <!-- Locked values in the text colour, darker than an empty field's placeholder: they are the row's data. -->
-              <p v-else class="mt-1 min-h-6 text-sm text-fg">{{ displayValue(current(field), field) }}</p>
+              <!-- Locked values in the text colour, darker than an empty field's placeholder: they are the row's data; empty: a light «vacío». -->
+              <p v-else class="mt-1 min-h-6 text-sm text-fg">
+                {{ displayValue(current(field), field)
+                }}<span v-if="!displayValue(current(field), field)" class="text-fg-subtle italic">{{ $t('vacío') }}</span>
+              </p>
               <p v-if="editable(field) && issue(field)" class="mt-1 text-sm text-red-800" role="alert">{{ issue(field) }}</p>
             </label>
           </div>

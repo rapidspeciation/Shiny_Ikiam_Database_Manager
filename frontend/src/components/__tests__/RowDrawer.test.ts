@@ -92,3 +92,17 @@ describe('RowDrawer: field order and empty fields', () => {
     }
   })
 })
+
+describe('RowDrawer: a locked empty field', () => {
+  it('says «vacío» in the light placeholder style, not a blank line', async () => {
+    row.values.Insectary_ID = ''
+    try {
+      const host = await mount()
+      const locked = host.querySelector('label p')!
+      expect(locked.textContent?.trim()).toBe(t('vacío'))
+      expect(locked.querySelector('span')?.className).toContain('text-fg-subtle')
+    } finally {
+      row.values.Insectary_ID = 'P7E'
+    }
+  })
+})
