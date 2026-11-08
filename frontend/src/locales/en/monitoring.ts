@@ -335,7 +335,6 @@ export default {
   'Más de 10 min entre dos de estas horas': 'More than 10 min between two of these times',
   nota: 'note',
   fila: 'row',
-  'misma hora': 'same time',
 
   // Import
   'El archivo no es un GPX': 'The file is not a GPX',

@@ -504,6 +504,18 @@ test("a doubt carries its point's GPS time and the identifier's reading of its p
     editor,
     { fetchImage: async () => ({ type: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) }) },
   );
+  // Another visit to the same place, another day: its time is not this point's.
+  await saveWalk(
+    s,
+    {
+      ...walkBody(),
+      url: 'https://es.wikiloc.com/rutas-senderismo/otra-visita-291000777',
+      date: '2025-09-11',
+      collector: 'AA - Alex Arias',
+      waypoints: [{ lat: -0.95, lon: -77.87, text: 'Planta', photos: [], time: '2025-09-11T15:00:00Z' }],
+    },
+    editor,
+  );
   const read = createWalkIds({
     store: s,
     identifier: { status: () => ({ installed: true }), identify: async () => ({ species: [['Oleria onega', 0.61], ['Oleria ilerdina', 0.11]], subspecies: [], crop: 'success', wingBox: [0.1, 0.2, 0.8, 0.9] }) },
@@ -513,7 +525,7 @@ test("a doubt carries its point's GPS time and the identifier's reading of its p
   const [marip, planta] = rematchTracks(s).doubts.filter(d => d.walkId === walk.id);
   assert.equal(marip.gps, 587);
   assert.deepEqual(marip.readings, [{ photo: '555', species: [['Oleria onega', 0.61], ['Oleria ilerdina', 0.11]], box: [0.1, 0.2, 0.8, 0.9] }]);
-  // No time, no photo: nothing made up.
+  // No time of its own (the same place on another day does not count), no photo: nothing made up.
   assert.equal(planta.gps, null);
   assert.deepEqual(planta.readings, []);
   s.close();

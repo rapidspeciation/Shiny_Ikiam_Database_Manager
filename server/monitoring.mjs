@@ -330,41 +330,44 @@ function nearby(day, point, match) {
 }
 
 /**
- * The identifier's reading of each photo already read (server/walk-ids.mjs): its first three species and the wing
- * detector's box, for Dudas (the species beside the note and the row; the photo shown on its wings).
+ * The identifier's reading of each photo already read (server/walk-ids.mjs): its species as kept (at most five, from
+ * 1 %) and the wing detector's box, for Dudas (the first three beside the note and the row, and the note's or the
+ * row's species when lower; the photo shown on its wings).
  */
 function photoReadings(store, ids) {
   if (!ids?.length || !store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='walk_photo_ids'").get()) return [];
   const get = store.db.prepare("SELECT * FROM walk_photo_ids WHERE photo_id=? AND status='done'");
   return ids.flatMap(id => {
     const r = get.get(String(id));
-    const species = r?.species_json ? JSON.parse(r.species_json).slice(0, 3) : [];
+    const species = r?.species_json ? JSON.parse(r.species_json) : [];
     return species.length ? [{ photo: String(id), species, box: r.wing_box ? JSON.parse(r.wing_box) : null }] : [];
   });
 }
 
 /**
- * When each Wikiloc point was saved (the waypoint's GPS time; Wikiloc's photos keep no EXIF time), by photo and by
- * place, from every walk read: a stored track's point may come from another copy of its walk.
+ * When each Wikiloc point was saved (the waypoint's GPS time; Wikiloc's photos keep no EXIF time), by photo and, for
+ * points without one, by day and place, from every walk read: a stored track's point may come from another copy of
+ * its walk. A place with two different times that day is left out (two points there: which one is not known).
  */
 function savedTimes(store) {
   const byPhoto = new Map();
   const byPlace = new Map();
   const rows = store.db
     .prepare(
-      "SELECT wp.value AS point FROM wikiloc_walks, json_each(wikiloc_walks.data_json, '$.waypoints') wp WHERE json_extract(wp.value, '$.time') IS NOT NULL",
+      "SELECT wikiloc_walks.date AS date, wp.value AS point FROM wikiloc_walks, json_each(wikiloc_walks.data_json, '$.waypoints') wp WHERE json_extract(wp.value, '$.time') IS NOT NULL",
     )
     .all();
-  for (const { point } of rows) {
+  for (const { date, point } of rows) {
     const w = JSON.parse(point);
     for (const id of w.photos || []) byPhoto.set(String(id), w.time);
-    byPlace.set(`${w.lat},${w.lon}`, w.time);
+    const key = `${date}|${w.lat},${w.lon}`;
+    byPlace.set(key, byPlace.has(key) && byPlace.get(key) !== w.time ? null : w.time);
   }
   return { byPhoto, byPlace };
 }
 /** A point's GPS time in minutes of the day in Ecuador, or null. */
-function gpsMinutes(saved, c) {
-  const time = (c.photos || []).map(id => saved.byPhoto.get(String(id))).find(Boolean) || saved.byPlace.get(`${c.lat},${c.lon}`);
+function gpsMinutes(saved, c, date) {
+  const time = (c.photos || []).map(id => saved.byPhoto.get(String(id))).find(Boolean) || saved.byPlace.get(`${date}|${c.lat},${c.lon}`);
   return time ? (lib.localTime(time)?.minutes ?? null) : null;
 }
 
@@ -448,7 +451,7 @@ function trackDoubts(store, index, t, saved = savedTimes(store)) {
       lon: c.lon,
       minutes: points[p].timeFromTrack ? null : points[p].minutes,
       note: noteInfo(points[p]),
-      gps: gpsMinutes(saved, c),
+      gps: gpsMinutes(saved, c, t.date),
       photos: c.photos || [],
       photoLinks: photoLinks(store, c.photos),
       readings: photoReadings(store, c.photos),
@@ -521,7 +524,7 @@ export function rematchTracks(store, user = null) {
         lon: captures[i].lon,
         minutes: captures[i].minutes,
         note: noteInfo(captures[i]),
-        gps: gpsMinutes(saved, captures[i]),
+        gps: gpsMinutes(saved, captures[i], w.date),
         photos: captures[i].photos,
         photoLinks: photoLinks(store, captures[i].photos),
         readings: photoReadings(store, captures[i].photos),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** The identifier's first species for a point's photo, with bars; the note's and the row's species marked. */
 defineProps<{ lines: { name: string; p: number; note: boolean; row: boolean }[] }>()
-const pct = (p: number) => `${Math.round(p * 100)} %`
+const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
 </script>
 
 <template>

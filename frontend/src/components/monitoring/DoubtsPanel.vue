@@ -15,7 +15,7 @@ import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
 import { createEngine, type ModelFile } from '../../lib/offlineEngine'
-import { SEX_FILE, SEX_GENERA, sexCall, sigmoid } from '../../lib/sexModel'
+import { SEX_CUT, SEX_FILE, SEX_GENERA, sexCall, sigmoid } from '../../lib/sexModel'
 import { estimatedSection, sectionDiffers } from '../../lib/transects'
 import { CONFLICT } from '../../lib/walkBoard'
 import { useSession } from '../../stores/session'
@@ -185,7 +185,7 @@ function settledRow(d: Doubt): RowInfo | null {
   return d.current[0] ?? null
 }
 const lower = (v: string | null | undefined) => (v || '').trim().toLowerCase()
-/** Species, sex, mark and time of the note and of its row; `differ` where both say something and it is not the same. */
+/** Species, sex and mark of the note and of its row; `differ` where both say something and it is not the same. */
 function compare(d: Doubt, r: RowInfo) {
   const n = d.note
   const species = (s: string | null, sub: string | null) => [s, sub].filter(Boolean).join(' ') || null
@@ -211,7 +211,7 @@ function compare(d: Doubt, r: RowInfo) {
       differ: !!n?.markId && !!r.markId && lower(n.markId) !== lower(r.markId),
     },
   ]
-  return lines.filter(l => l.note || l.row)
+  return lines.filter(l => l.note || l.row || (l.label === 'Sexo' && sexOf(d, r)))
 }
 /** The table already shows why the note and its row disagree (a field differs): no sentence needed. */
 const tableShowsIt = (d: Doubt, r: RowInfo) => compare(d, r).some(l => l.differ)
@@ -257,7 +257,7 @@ function agreement(d: Doubt, r: RowInfo) {
   const at = n?.minutes ?? d.gps ?? null
   if (at != null && r.minutes != null) {
     const diff = r.minutes - at
-    out.push({ ok: Math.abs(diff) <= 10, label: diff === 0 ? t('misma hora') : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} min` })
+    out.push({ ok: Math.abs(diff) <= 10, label: diff === 0 ? t('hora') : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} min` })
   }
   return out
 }
@@ -444,9 +444,11 @@ function sexOf(d: Doubt, r: RowInfo | null) {
   const z = d.photos[0] ? sexZ.value[d.photos[0]] : undefined
   if (z == null || !sexGenus(d, r)) return null
   const call = sexCall(z)
-  const female = sigmoid(z)
-  // The probability of the sex called (of the likelier one when not sure), never P(hembra) beside a male call.
-  const leans = call === 'hembra' || (call === 'no seguro' && female >= 0.5)
+  // The model scores in-hand males high too (its cutoff t sits at P 0.95), so its raw P(hembra) would read
+  // «♂ 18 %» beside a male call. Shown instead: the score measured from the cutoff, sigmoid(z − t), for the side
+  // called (the side of t when not sure). Not a calibrated probability: the chip says experimental.
+  const female = sigmoid(z - SEX_CUT.t)
+  const leans = call === 'hembra' || (call === 'no seguro' && z >= SEX_CUT.t)
   return { call, sign: leans ? '♀' : '♂', p: leans ? female : 1 - female }
 }
 async function checkSexModel() {
@@ -485,7 +487,7 @@ async function estimateAll() {
   try {
     for (const d of flat.value) {
       const id = d.photos[0]
-      if (!id || id in sexZ.value || !sexGenus(d, rowOf(d))) continue
+      if (!id || id in sexZ.value || !settledRow(d) || !sexGenus(d, settledRow(d))) continue
       try {
         const bytes = await (await fetch(photoUrl(id), { credentials: 'same-origin' })).arrayBuffer()
         const blob = new Blob([bytes], { type: 'image/jpeg' })
@@ -510,10 +512,17 @@ function focusCard(d: Doubt) {
   const i = flat.value.findIndex(x => doubtKey(x) === doubtKey(d))
   if (i >= 0) focusAt.value = i
 }
+const focusedEl = () => document.querySelector<HTMLElement>('[data-doubt-focused]')
 async function move(by: number) {
   focusAt.value = Math.max(0, Math.min(flat.value.length - 1, focusAt.value + by))
   await nextTick()
-  document.querySelector('[data-doubt-focused]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  focusedEl()?.focus({ preventScroll: true })
+  focusedEl()?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+/** Whether the focused card is on screen: a key never decides a card the person cannot see. */
+function inView() {
+  const box = focusedEl()?.getBoundingClientRect()
+  return !!box && box.bottom > 60 && box.top < innerHeight - 40
 }
 /** The rows a key number picks on the focused card: the other rows when open, or the card's rows. */
 function keyRows(d: Doubt): RowInfo[] {
@@ -528,6 +537,12 @@ function onKey(event: KeyboardEvent) {
   const d = focused.value
   if (!d) return
   const key = event.key.toLowerCase()
+  if (/^[son1-9]$/.test(key) && !inView()) {
+    // Scrolled away from it: show the card first, decide on the next press.
+    focusedEl()?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    event.preventDefault()
+    return
+  }
   const can = session.canEdit && !busy.value
   if (key === 'j' || key === 'k') move(key === 'j' ? 1 : -1)
   else if (key === 's' && can && settledRow(d)) choose(d, settledRow(d))
@@ -682,7 +697,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             class="doubt flex flex-col gap-3 p-3 md:flex-row"
             :class="{ 'doubt-focused': isFocused(d) }"
             :data-doubt-focused="isFocused(d) ? '' : undefined"
+            tabindex="-1"
             @pointerdown="focusCard(d)"
+            @focusin="focusCard(d)"
           >
             <figure class="w-full shrink-0 md:w-56">
               <div class="flex gap-1">
@@ -749,12 +766,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       {{ l.row || '—' }}
                       <span
                         v-if="l.label === 'Sexo' && sexOf(d, settledRow(d))"
-                        class="estimate ml-1 inline-block rounded border border-stone-300 px-1 text-xs font-normal whitespace-nowrap"
+                        class="estimate ml-1 inline-block rounded border border-stone-300 px-1 text-xs font-normal"
                         :class="
                           sexOf(d, settledRow(d))!.call === 'hembra'
-                            ? 'text-fill-pink'
+                            ? 'sex-f'
                             : sexOf(d, settledRow(d))!.call === 'macho'
-                              ? 'text-fill-sky'
+                              ? 'sex-m'
                               : 'text-stone-600'
                         "
                         :title="$t('Modelo experimental de sexo en fotos en mano, calculado en este navegador sobre las alas')"
@@ -845,7 +862,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   >{{ $t('guardado sin fila') }}</span
                 >
               </p>
-              <p v-if="d.source === 'track'" class="mb-1 text-xs text-stone-500">
+              <p
+                v-if="d.source === 'track' && d.current.some(c => !c || !d.candidates.some(r => r.recordId === c.recordId))"
+                class="mb-1 text-xs text-stone-500"
+              >
                 {{ $t('Ahora:') }}
                 {{
                   d.current
@@ -900,6 +920,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <style scoped>
 /* The card the keys act on (S, O, N, 1 to 9; j and k move it): marked on screens with a mouse only. */
+.sex-f {
+  color: var(--color-fill-pink);
+}
+.sex-m {
+  color: var(--color-fill-sky);
+}
+[data-theme='dark'] .sex-f {
+  color: oklch(80% 0.11 4);
+}
+[data-theme='dark'] .sex-m {
+  color: oklch(80% 0.09 242);
+}
+.doubt:focus {
+  outline: none;
+}
 @media (hover: hover) {
   .doubt-focused {
     box-shadow: inset 3px 0 0 var(--color-brand, #2f6b4f);
