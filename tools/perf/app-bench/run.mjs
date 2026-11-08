@@ -362,9 +362,17 @@ async function startApp(run, { profileDir = null } = {}) {
   const busy = spawnSync('ss', ['-ltn', `sport = :${PORT}`], { encoding: 'utf8' }).stdout.split('\n').length > 2;
   if (busy) throw new Error(`port ${PORT} is in use`);
   const args = ['--port', String(PORT), '--dir', run.app, '--ttl', TTL, '--max', MEMORY_MAX];
-  // The workbook's rows file (server/file-sheets.mjs, where the arm has it) made before the clock starts.
+  // The workbook's rows file (server/file-sheets.mjs, where the arm has it) made before the clock starts, as
+  // dev-app.sh makes it: one start at a time (its start lock), under a memory ceiling.
   const fileSheets = join(APP, 'server/file-sheets.mjs');
-  if (existsSync(fileSheets)) spawnSync(process.execPath, [fileSheets, 'ensure', join(LAB, 'snapshot.json')], { stdio: 'ignore' });
+  if (existsSync(fileSheets)) {
+    const made = spawnSync(
+      'flock',
+      ['-w', '600', join(LAB, '.start.lock'), 'systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=3G', process.execPath, fileSheets, 'ensure', join(LAB, 'snapshot.json')],
+      { encoding: 'utf8' },
+    );
+    if (made.status !== 0) log(`  rows file not made before the start (${(made.stderr || '').trim().slice(0, 200)}): the app makes it, inside the measured start`);
+  }
   for (const [k, v] of Object.entries(extraEnv(run, profileDir))) args.push('--env', `${k}=${v}`);
   const t0 = performance.now();
   const launcher = spawn(devApp(), args, { cwd: APP, stdio: ['ignore', 'pipe', 'pipe'] });

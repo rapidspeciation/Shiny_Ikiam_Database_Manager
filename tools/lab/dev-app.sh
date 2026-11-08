@@ -47,7 +47,7 @@ if [ "$ACTION" = start ]; then
   # same port, pass the limit together, or both pass the memory check before either has grown.
   mkdir -p "$LAB"
   exec 9>"$LAB/.start.lock"
-  flock 9
+  flock -n 9 || { echo "Waiting for another dev-app start to finish…" >&2; flock -w 600 9 || { echo "Gave up after 10 min waiting for another start ($LAB/.start.lock)." >&2; exit 1; }; }
 fi
 if [ -z "$PORT" ] && [ "$ACTION" = start ]; then
   # The first port from 8821 that no app listens on and no dev app's unit holds.
@@ -104,7 +104,8 @@ URL="http://127.0.0.1:$PORT"
 # Ready once it answers and its first sync of the snapshot is done (the sync starts before it listens, so an answer
 # that is not "syncing" comes after it).
 state=""
-for _ in $(seq 150); do
+deadline=$((SECONDS + 300))
+while [ "$SECONDS" -lt "$deadline" ]; do
   health="$(curl -fs -m 5 "$URL/health" || true)"
   if [ -n "$health" ] && ! grep -q '"sync":"syncing"' <<<"$health"; then
     state="$(grep -o '"sync":"[^"]*"' <<<"$health" | head -n 1 | cut -d'"' -f4)"
@@ -114,6 +115,7 @@ for _ in $(seq 150); do
   sleep 2
 done
 [ -n "$state" ] || { echo "$UNIT did not finish its first sync within 5 min (it still runs; $DIR/app.log; --stop it)" >&2; exit 1; }
+[ "$state" != error ] || { echo "$UNIT: its first sync failed (it still runs; --stop it): $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
 if [ ! -s "$DIR/credentials.json" ]; then
   PASS="$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 14)"
   node -e '
