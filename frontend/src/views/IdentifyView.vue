@@ -896,7 +896,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
         {{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', lacksSpace) }}
       </p>
       <div class="mt-4 flex flex-wrap items-center gap-3">
-        <button v-if="!ready[wanted]" class="btn-primary px-5 py-2.5 text-base" :disabled="!!download" @click="startDownload">{{ $t('Descargar') }}</button>
+        <button v-if="!ready[wanted]" class="btn-primary px-5 py-2.5 text-base" :disabled="!!download || !!sexDownload" @click="startDownload">{{ $t('Descargar') }}</button>
         <button v-else class="btn-primary px-5 py-2.5 text-base" @click="(store.set(CHOSEN, wanted), (choosing = false))">{{ $t('Usar este') }}</button>
         <button v-if="choosing" class="btn" @click="choosing = false">{{ $t('Volver') }}</button>
       </div>
