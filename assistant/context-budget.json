@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15577,
-      "reason": "baseline after R15 (6-7 Nov 2026)"
+      "bytes": 15623,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
     },
     "skill:app-dev": {
       "bytes": 423,
@@ -106,8 +106,8 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp:query": {
-      "bytes": 2440,
-      "reason": "baseline after R15 (6-7 Nov 2026)"
+      "bytes": 3764,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
     },
     "mcp:get_record": {
       "bytes": 451,
@@ -146,8 +146,8 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp always-loaded (total)": {
-      "bytes": 20394,
-      "reason": "baseline after R15 (6-7 Nov 2026)"
+      "bytes": 21718,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
     },
     "mcp deferred names": {
       "bytes": 1189,
@@ -174,9 +174,6 @@
       "ScheduleWakeup",
       "Workflow"
     ],
-    "claudeMdExcludes": [
-      "/home/franz/.claude/CLAUDE.md",
-      "/home/franz/CLAUDE.md"
-    ]
+    "claudeMdExcludes": []
   }
 }
