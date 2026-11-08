@@ -333,6 +333,8 @@ export async function openFileSheets({ seedFile, databasePath, health, log = con
     for (const leftover of [copy, `${copy}-journal`]) rmSync(leftover, { force: true });
     // Copy-on-write where the disk can (btrfs, xfs): a start costs no copy of the rows.
     copyFileSync(source, copy, constants.COPYFILE_FICLONE);
+    // Another checkout's start may have made the file again meanwhile, from its own code.
+    if (!rowsFileFresh(copy, seedFile)) throw new Error(`${source} was made again by another checkout while it was copied`);
     return new FileSheets(copy, { health });
   } catch (error) {
     log?.(`Workbook rows kept in memory (${error.message})`);
@@ -341,16 +343,19 @@ export async function openFileSheets({ seedFile, databasePath, health, log = con
 }
 
 // node server/file-sheets.mjs build <snapshot.json> <out.rows.sqlite>
+// node server/file-sheets.mjs ensure <snapshot.json>   the rows file beside the snapshot, made only when out of date
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [command, seedFile, out] = process.argv.slice(2);
-  if (command !== 'build' || !seedFile || !out) {
-    console.error('Usage: node server/file-sheets.mjs build <snapshot.json> <out.rows.sqlite>');
+  const [command, seedFile, given] = process.argv.slice(2);
+  const out = command === 'ensure' ? `${seedFile}.rows.sqlite` : given;
+  if (!['build', 'ensure'].includes(command) || !seedFile || !out) {
+    console.error('Usage: node server/file-sheets.mjs build <snapshot.json> <out.rows.sqlite> | ensure <snapshot.json>');
     process.exit(2);
   }
+  if (command === 'ensure' && rowsFileFresh(out, seedFile)) process.exit(0);
   const started = Date.now();
   try {
     const done = buildRowsFile(seedFile, out);
-    console.error(`${done.rows} rows of ${done.sheets} sheets in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.error(`${done.rows} rows of ${done.sheets} sheets in ${((Date.now() - started) / 1000).toFixed(1)} s: ${out}`);
   } catch (error) {
     console.error(error.message);
     process.exit(1);
