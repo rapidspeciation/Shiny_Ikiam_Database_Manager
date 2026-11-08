@@ -35,9 +35,11 @@ function seed() {
   }
   return {
     [SHEET]: rows,
+    // Out of row order, with a gap at 4, and no header (LocalSheets puts one first).
     [OTHER]: [
-      { row: 2, values: { CAM_ID: 'CAM000001', Sex: 'male' } },
       { row: 3, values: { CAM_ID: 'CAM000002', Sex: 'female' } },
+      { row: 2, values: { CAM_ID: 'CAM000001', Sex: 'male' } },
+      { row: 5, values: { CAM_ID: 'CAM000005', Sex: 'male' } },
     ],
     Unlisted_sheet: [{ row: 1, cells: [{ userEnteredValue: { stringValue: 'x' } }] }],
   };
@@ -99,9 +101,15 @@ test('the rows file reads as the seed in memory, the gaps of the cells and the d
   assert.equal(a[OTHER].rows[0].row, moduleMap.get(OTHER).headerRow);
 });
 
-test('cell writes, new rows past the end and in gaps, a new sheet, formulas worked out', async () => {
+test('cell writes, new rows past the end and in gaps (kept last, as LocalSheets does), a new sheet, formulas worked out', async () => {
   const both = pair();
   await same(both, s => s.externalEdit(SHEET, 1310, { SPECIES: 'Hypothyris anastasia' }));
+  // In the gap left by 1310: LocalSheets lists it after 1310.
+  await same(both, s => s.externalEdit(SHEET, 1305, { SPECIES: 'Oleria onega' }));
+  await same(both, s => s.externalEdit(SHEET, 1311, { SPECIES: 'Oleria onega' }));
+  await same(both, s => s.externalEdit(OTHER, 4, { Sex: 'female' }));
+  const order = (await both.file.readSheet(SHEET)).map(r => r.row).slice(-4);
+  assert.deepStrictEqual(order, [1300, 1310, 1305, 1311]);
   await same(both, s => s.externalEdit(SHEET, 700, { SPECIES: 'Oleria onega', Insectary_ID: LET(699) }));
   await same(both, s => s.writeCells(OTHER, 2, { Sex: 'female' }, { Sex: 40 }));
   await same(both, s => s.writeCells('Photo_links', 4, { Name: 'IMG_1.JPG' }));
@@ -135,6 +143,18 @@ test('copyPaste (tiled), updateCells and appendDimension, as one batch', async (
     { updateCells: { range: rect(70, 71, 2, 3), fields: 'userEnteredValue,userEnteredFormat.numberFormat' } },
   ]));
   await same(both, s => s.batchUpdate([{ copyPaste: { source: rect(2, 3, 0, 1), destination: rect(5, 6, 0, 1), pasteType: 'PASTE_VALUES' } }]));
+});
+
+test('rows out of order: a write keeps them so, a pasted new row or a moved row sorts the sheet, as LocalSheets does', async () => {
+  const both = pair();
+  const other = (r0, r1, c0, c1) => ({ sheetId: sheetId(OTHER), startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 });
+  await same(both, s => s.externalEdit(OTHER, 4, { Sex: 'female' }));
+  assert.deepStrictEqual((await both.file.readSheet(OTHER)).map(r => r.row), [1, 3, 2, 5, 4]);
+  await same(both, s => s.batchUpdate([{ updateCells: { range: other(7, 8, 0, 1), rows: [{ values: [{ userEnteredValue: { stringValue: 'CAM000008' } }] }], fields: 'userEnteredValue' } }]));
+  assert.deepStrictEqual((await both.file.readSheet(OTHER)).map(r => r.row), [1, 2, 3, 4, 5, 8]);
+  await same(both, s => s.externalEdit(OTHER, 6, { Sex: 'male' }));
+  await same(both, s => s.batchUpdate([{ insertDimension: { range: { sheetId: sheetId(OTHER), dimension: 'ROWS', startIndex: 2, endIndex: 3 } } }]));
+  await same(both, s => s.externalEdit(OTHER, 3, { Sex: 'male' }));
 });
 
 test('a protected range fails the whole batch before anything is written, as Google does', async () => {

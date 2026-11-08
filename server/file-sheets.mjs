@@ -6,14 +6,14 @@
 // snapshot changes), and each start works on its own copy of that file, so a restart still undoes everything.
 //
 // Each row is kept as `v8.serialize(cells)`: what v8.deserialize gives back is what structuredClone gives
-// (empty cells stay empty, not null), so the rows read here are those LocalSheets would give. A write loads the
+// (empty cells stay empty, not null), and in the order LocalSheets' array has (a row written past the others
+// goes last until the sheet is sorted again), so the rows read here are those LocalSheets would give. A write loads the
 // rows it touches (liveRow), changes them with LocalSheets' own code and writes them back before it returns
 // (commitRows), with no await in between, as LocalSheets does.
 
 import { spawn } from 'node:child_process';
-import { constants, copyFileSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, accessSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, accessSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -21,7 +21,7 @@ import { deserialize, serialize } from 'node:v8';
 import { LocalSheets, moveRowRefs, rowKey, seedRows } from './sheets.mjs';
 
 /** Changes when the file's layout does: a new version makes the file again. */
-const LAYOUT = 2;
+const LAYOUT = 3;
 /** Rows readSheet reads between two turns of the others (as LocalSheets). */
 const READ_ROWS = 500;
 
@@ -40,9 +40,14 @@ export class FileSheets extends LocalSheets {
     const q = sql => this.db.prepare(sql);
     this.q = {
       get: q('SELECT cells FROM rows WHERE sheet = ? AND row = ?'),
-      put: q('INSERT OR REPLACE INTO rows (sheet, row, cells, columns, formulas) VALUES (?, ?, ?, ?, ?)'),
-      piece: q('SELECT row, cells FROM rows WHERE sheet = ? AND row > ? ORDER BY row LIMIT ?'),
-      all: q('SELECT row, cells FROM rows WHERE sheet = ? ORDER BY row'),
+      put: q('UPDATE rows SET cells = ?, columns = ?, formulas = ? WHERE sheet = ? AND row = ?'),
+      add: q('INSERT INTO rows (sheet, row, seq, cells, columns, formulas) VALUES (?, ?, ?, ?, 0, 0)'),
+      maxSeq: q('SELECT MAX(seq) AS n FROM rows WHERE sheet = ?'),
+      // Rows in row order again (as LocalSheets sorts its array), in two steps so no place is taken twice.
+      sortOut: q('UPDATE rows SET seq = -row WHERE sheet = ? AND seq != row'),
+      sortBack: q('UPDATE rows SET seq = -seq WHERE sheet = ? AND seq < 0'),
+      piece: q('SELECT row, seq, cells FROM rows WHERE sheet = ? AND seq > ? ORDER BY seq LIMIT ?'),
+      all: q('SELECT row, cells FROM rows WHERE sheet = ? ORDER BY seq'),
       maxRow: q('SELECT MAX(row) AS n FROM rows WHERE sheet = ?'),
       maxColumns: q('SELECT MAX(columns) AS n FROM rows WHERE sheet = ?'),
       remove: q('DELETE FROM rows WHERE sheet = ? AND row = ?'),
@@ -78,20 +83,32 @@ export class FileSheets extends LocalSheets {
     if (target) this.work.set(key, { sheet, target });
     return target;
   }
-  addRow(sheet, target) {
+  /**
+   * As LocalSheets: the new row goes last (`seq`, a row's place in the sheet's order), and with `sorted` the
+   * sheet is put in row order. Written at once, its cells by commitRows.
+   */
+  addRow(sheet, target, sorted) {
     if (!this.names.includes(sheet)) {
       this.names.push(sheet);
       this.q.addSheet.run(sheet);
     }
+    const last = this.q.maxSeq.get(sheet)?.n ?? 0;
+    // A sheet in row order keeps seq = row, so its rows need no new places when it is sorted again.
+    this.q.add.run(sheet, target.row, target.row > last ? target.row : last + 1, serialize([]));
+    if (sorted) this.sortRows(sheet);
     this.work.set(rowKey(sheet, target.row), { sheet, target });
     return target;
+  }
+  sortRows(sheet) {
+    this.q.sortOut.run(sheet);
+    this.q.sortBack.run(sheet);
   }
   commitRows() {
     if (!this.work.size) return;
     this.db.exec('BEGIN');
     try {
       for (const { sheet, target } of this.work.values())
-        this.q.put.run(sheet, target.row, serialize(target.cells), target.cells.length, hasFormula(target.cells) ? 1 : 0);
+        this.q.put.run(serialize(target.cells), target.cells.length, hasFormula(target.cells) ? 1 : 0, sheet, target.row);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
@@ -128,7 +145,7 @@ export class FileSheets extends LocalSheets {
           rows.push(r);
         }
         if (piece.length < READ_ROWS) break;
-        last = piece.at(-1).row;
+        last = piece.at(-1).seq;
       }
       if (this.writeCount === count) return withDigest(rows, digest.digest('base64'));
     }
@@ -148,6 +165,7 @@ export class FileSheets extends LocalSheets {
       // In two steps, so no row number is taken twice on the way.
       this.q.shiftOut.run(delta, sheet, at);
       this.q.shiftBack.run(sheet);
+      this.sortRows(sheet);
       const changed = [];
       for (const found of this.q.formulaRows.all(sheet)) {
         const cells = deserialize(found.cells);
@@ -181,19 +199,24 @@ function createLayout(db) {
     CREATE TABLE sheets (name TEXT PRIMARY KEY, ord INTEGER NOT NULL) WITHOUT ROWID;
     -- A rowid table: rows of some kB each fill a WITHOUT ROWID table's pages badly (597 MB instead of 438 MB for
     -- the lab's 360 MB of cells).
+    -- seq: the row's place in the sheet's order, as LocalSheets' array has it (seq = row while it is in row order).
     CREATE TABLE rows (
-      sheet TEXT NOT NULL, row INTEGER NOT NULL, cells BLOB NOT NULL,
+      sheet TEXT NOT NULL, row INTEGER NOT NULL, seq INTEGER NOT NULL, cells BLOB NOT NULL,
       columns INTEGER NOT NULL, formulas INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX rows_at ON rows (sheet, row);
+    CREATE UNIQUE INDEX rows_order ON rows (sheet, seq);
     CREATE INDEX rows_formulas ON rows (sheet, formulas);
   `);
 }
 
-/** What the rows file was made from: the seed's size and time, and the file's layout. */
+/** The code that shapes the rows (seedRows and the sheets' fields): a change to it makes the file again. */
+const CODE = ['./sheets.mjs', './schema.mjs', './file-sheets.mjs'].map(f => readFileSync(new URL(f, import.meta.url)));
+const codeHash = createHash('sha256').update(Buffer.concat(CODE)).digest('hex').slice(0, 16);
+/** What the rows file was made from: the seed's size and time, the file's layout and the code. */
 function seedStamp(seedFile) {
   const { size, mtimeMs } = statSync(seedFile);
-  return JSON.stringify({ layout: LAYOUT, size, mtimeMs });
+  return JSON.stringify({ layout: LAYOUT, code: codeHash, size, mtimeMs });
 }
 
 /**
@@ -211,7 +234,7 @@ export function buildRowsFile(seedFile, out) {
     db.exec('PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF');
     createLayout(db);
     const addSheet = db.prepare('INSERT INTO sheets (name, ord) VALUES (?, ?)');
-    const put = db.prepare('INSERT INTO rows (sheet, row, cells, columns, formulas) VALUES (?, ?, ?, ?, ?)');
+    const put = db.prepare('INSERT INTO rows (sheet, row, seq, cells, columns, formulas) VALUES (?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     let ord = 0;
     let count = 0;
@@ -219,9 +242,10 @@ export function buildRowsFile(seedFile, out) {
       addSheet.run(sheet, ord++);
       const rows = seedRows(sheet, given);
       seed[sheet] = null;
-      for (const r of rows) {
+      const inOrder = rows.every((r, i) => !i || rows[i - 1].row < r.row);
+      for (const [i, r] of rows.entries()) {
         try {
-          put.run(sheet, r.row, serialize(r.cells), r.cells.length, hasFormula(r.cells) ? 1 : 0);
+          put.run(sheet, r.row, inOrder ? r.row : i, serialize(r.cells), r.cells.length, hasFormula(r.cells) ? 1 : 0);
         } catch (error) {
           if (/UNIQUE/.test(error.message)) throw new Error(`${sheet} has row ${r.row} twice in ${seedFile}`);
           throw error;
@@ -285,20 +309,25 @@ async function rowsFileOf(seedFile, workDir, log) {
     const err = [];
     child.stderr.on('data', d => err.push(d));
     child.on('error', reject);
-    child.on('exit', code => (code === 0 ? resolve(Buffer.concat(err).toString().trim()) : reject(new Error(Buffer.concat(err).toString().trim() || `exit ${code}`))));
+    child.on('exit', (code, signal) => {
+      if (code === 0) return resolve();
+      // Killed (out of memory): its half-made file is left over.
+      rmSync(`${file}.${child.pid}.tmp`, { force: true });
+      reject(new Error(Buffer.concat(err).toString().trim() || `exit ${code ?? signal}`));
+    });
   });
   log?.(`Workbook rows file made from ${seedFile} in ${((Date.now() - started) / 1000).toFixed(1)} s: ${file}`);
   return file;
 }
 
 /**
- * A FileSheets on a fresh copy of the rows of `seedFile`, beside `databasePath` (a temporary folder for an
- * in-memory database). Null when the rows cannot be kept in a file (the caller keeps them in memory).
+ * A FileSheets on a fresh copy of the rows of `seedFile`, beside `databasePath`. Null when the rows cannot be
+ * kept in a file (no database file, or it failed): the caller keeps them in memory.
  */
 export async function openFileSheets({ seedFile, databasePath, health, log = console.log } = {}) {
+  if (!databasePath || databasePath === ':memory:') return null;
   try {
-    const workDir =
-      databasePath && databasePath !== ':memory:' ? dirname(databasePath) : mkdtempSync(join(tmpdir(), 'ithomiini-rows-'));
+    const workDir = dirname(databasePath);
     const source = await rowsFileOf(seedFile, workDir, log);
     const copy = join(workDir, 'workbook-rows.sqlite');
     for (const leftover of [copy, `${copy}-journal`]) rmSync(leftover, { force: true });
