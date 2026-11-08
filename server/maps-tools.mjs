@@ -489,23 +489,30 @@ export function viewOf(points, minZoom = 3, maxZoom = 12) {
   return { lng: (w + e) / 2, lat: (s + n) / 2, zoom };
 }
 
-// A record within this many degrees (about 100 m) of an earlier one, at the same minute, repeats it.
-const REPEAT_DEG = 0.001;
+// A record within this many degrees (about 1 m) of an earlier one, at the same time, repeats it.
+const REPEAT_DEG = 0.00001;
 
 /**
  * A gallery's photos without those of a record that repeats an earlier record: the same observation posted twice
- * (iNaturalist; the same minute, within about 100 m) shows the same pictures again under another record and photo
- * ids. A date without a time, or a photo shown for a record that has none of its own, is never taken for a repeat.
+ * (iNaturalist) shows the same pictures again under another record and photo ids. A repeat: within about 1 m and the
+ * same minute, with seconds on at least one of the two dates and the same seconds where both have them (Prestonia
+ * acutifolia, GBIF 4973975677 and 5088133258: 07:21:28 and 07:21, 0.2 m apart; Passiflora miersii and P. foetida
+ * likewise, the same pictures). Two dates without seconds are never a repeat: on 8 Nov 2026, 7 of 8 such pairs
+ * checked by eye were different pictures (one person's separate observations of a plant). Nor are seconds that
+ * differ, more than 1 m, a date without a time, or a photo shown for a record that has none of its own. A repost
+ * can hold a picture the first record lacks (5088133258's first photo): it goes with the rest (1 picture lost against
+ * 5 repeated ones on 8 Nov 2026, over the 288 galleries).
  */
 export function withoutRepeatedRecords(photos) {
   const byMinute = new Map();
   const known = new Set();
   const repeats = new Set();
+  const sameTime = (a, b) => (a.second !== null || b.second !== null) && (a.second === null || b.second === null || a.second === b.second);
   for (const ph of photos) {
     if (!ph.record || !ph.minute || ph.fallback || known.has(ph.record) || !Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
     known.add(ph.record);
     const earlier = byMinute.get(ph.minute) ?? [];
-    if (earlier.some(o => Math.abs(o.lat - ph.lat) < REPEAT_DEG && Math.abs(o.lng - ph.lng) < REPEAT_DEG)) repeats.add(ph.record);
+    if (earlier.some(o => sameTime(o, ph) && Math.abs(o.lat - ph.lat) < REPEAT_DEG && Math.abs(o.lng - ph.lng) < REPEAT_DEG)) repeats.add(ph.record);
     else byMinute.set(ph.minute, [...earlier, ph]);
   }
   return repeats.size ? photos.filter(ph => !repeats.has(ph.record)) : photos;
@@ -1556,8 +1563,9 @@ export function createMapsTools({
           lat: Number(p.lat),
           lng: Number(p.lng),
           year: yearOf(p.observation_date),
-          // To the minute, when the record has a time (withoutRepeatedRecords).
+          // The record's time, when it has one: to the minute, and its seconds if given (withoutRepeatedRecords).
           minute: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.exec(text(p.observation_date))?.[0] ?? null,
+          second: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:(\d{2})/.exec(text(p.observation_date))?.[1] ?? null,
           field: p.photo_context === 'field',
           // A pressed museum specimen: its record says so, or the gallery's context.
           herbarium: /preserved|fossil|material/i.test(text(p.basisOfRecord)) || p.photo_context === 'preserved',
@@ -2247,7 +2255,7 @@ export function createMapsTools({
           shown: Math.max(0, Math.min(k, pool.length - more.skip)),
           more_after: Math.max(0, pool.length - more.skip - k),
           // A gallery longer than SEND_PAGES pages: the counts are of its first pages only.
-          ...(cut ? { counted_in: `the first ${SEND_PAGES} of ${cut.pages} gallery pages (${cut.total} photos in all): there are more than these counts` } : {}),
+          ...(cut ? { counted_in: `the first ${SEND_PAGES} of ${cut.pages} gallery pages (${cut.total} photos of all kinds): more such photos may be on the pages not read` } : {}),
         });
       }
       const best = pool ? pool.slice(more.skip, more.skip + k) : sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
@@ -2278,6 +2286,7 @@ export function createMapsTools({
     const hasPhotos = i => (more ? moreCounts[i].photos > more.skip : ranked[i].length);
     const leftOut = ordered.filter((p, i) => (i >= picked.length || hasPhotos(i)) && !onSheets.has(p.e.taxon.name)).map(p => p.e.taxon.name);
     const moreLeft = more ? moreCounts.some(c => c.more_after > 0) : false;
+    const cutShort = more && moreCounts.some(c => c.counted_in);
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
       ...(more
@@ -2287,7 +2296,7 @@ export function createMapsTools({
               photo_skip: more.skip,
               plants: moreCounts,
               ...(moreLeft ? { next_photo_skip: more.skip + k } : {}),
-              note: `Living-plant photos${more.later ? ' that are not the first of their record' : ''}, from number ${more.skip + 1}. ${moreLeft ? `More: the same call with photo_skip ${more.skip + k}.` : 'No more such photos.'} Say how many you looked at.`,
+              note: `Living-plant photos${more.later ? ' that are not the first of their record' : ''}, from number ${more.skip + 1}. ${moreLeft ? `More: the same call with photo_skip ${more.skip + k}.` : cutShort ? `No more such photos in the gallery pages read (the first ${SEND_PAGES}).` : 'No more such photos.'} Say how many you looked at.`,
             },
           }
         : {}),

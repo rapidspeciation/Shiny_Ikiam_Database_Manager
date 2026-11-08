@@ -510,26 +510,32 @@ test('host_plants later_photos and photo_skip: the records\' later photos on 2 s
   }
 });
 
-test('withoutRepeatedRecords: a record posted twice (same minute, within about 100 m) is left out; nothing else is', () => {
-  const ph = (record, minute, lat, lng, extra = {}) => ({ img: `${record}-${Math.random()}`, record, minute, lat, lng, ...extra });
+test('withoutRepeatedRecords: a record posted twice (same time, within about 1 m) is left out; nothing else is', () => {
+  const ph = (record, when, lat, lng, extra = {}) => ({ img: `${record}-${Math.random()}`, record, minute: when?.slice(0, 16) ?? null, second: when?.slice(17, 19) || null, lat, lng, ...extra });
   const photos = [
-    ph('shown-for-another', '2024-10-05T07:21', -3.3903, -60.3095, { fallback: true }),
-    ph('a', '2024-10-05T07:21', -3.390285, -60.309525),
-    ph('a', '2024-10-05T07:21', -3.390285, -60.309525),
+    ph('shown-for-another', '2024-10-05T07:21', -3.39028, -60.309525, { fallback: true }),
+    ph('a', '2024-10-05T07:21:28', -3.390285, -60.309525),
+    ph('a', '2024-10-05T07:21:28', -3.390285, -60.309525),
+    // The Prestonia acutifolia repost: no seconds, 0.2 m away.
     ph('b', '2024-10-05T07:21', -3.390287, -60.309525),
     ph('b', '2024-10-05T07:21', -3.390287, -60.309525),
-    ph('far', '2024-10-05T07:21', -3.43, -60.3095),
+    ph('same-seconds', '2024-10-05T07:21:28', -3.390281, -60.309525),
+    ph('other-seconds', '2024-10-05T07:21:40', -3.390285, -60.309525),
+    ph('120-m', '2024-10-05T07:21', -3.391385, -60.309525),
     ph('later', '2024-10-05T07:22', -3.390285, -60.309525),
+    // Two dates without seconds: one person's separate observations of a plant, as a rule.
+    ph('no-seconds', '2024-10-05T07:30', -3.390285, -60.309525),
+    ph('no-seconds-2', '2024-10-05T07:30', -3.390285, -60.309525),
     ph('no-time', null, -3.390285, -60.309525),
     ph('no-time-2', null, -3.390285, -60.309525),
     ph(null, '2024-10-05T07:21', -3.390285, -60.309525),
   ];
   assert.deepEqual(
     withoutRepeatedRecords(photos).map(p => p.record),
-    ['shown-for-another', 'a', 'a', 'far', 'later', 'no-time', 'no-time-2', null],
+    ['shown-for-another', 'a', 'a', 'other-seconds', '120-m', 'later', 'no-seconds', 'no-seconds-2', 'no-time', 'no-time-2', null],
   );
   // None repeated: the same list back.
-  const plain = photos.filter(p => p.record !== 'b');
+  const plain = photos.filter(p => p.record !== 'b' && p.record !== 'same-seconds');
   assert.equal(withoutRepeatedRecords(plain), plain);
 });
 
@@ -555,7 +561,9 @@ test('host_plants: the photos of a record posted twice are on the sheets once; a
     for (let i = 2; i <= 13; i++) FILES[`host_plants/gallery/mite/p${i}.json`] = { items: [] };
     const long = await tools().run('host_plants', { plant: 'Solanum mite', area: 'Napo', later_photos: true });
     assert.equal(long.photo_sheet_more.plants[0].photos, 3);
-    assert.match(long.photo_sheet_more.plants[0].counted_in, /first 12 of 13 gallery pages \(1203 photos in all\)/);
+    assert.match(long.photo_sheet_more.plants[0].counted_in, /first 12 of 13 gallery pages \(1203 photos of all kinds\): more such photos may be/);
+    assert.match(long.photo_sheet_more.note, /No more such photos in the gallery pages read \(the first 12\)/);
+    assert.match(later.photo_sheet_more.note, /No more such photos\. /);
   } finally {
     FILES[page] = savedPage;
     FILES[index] = savedIndex;

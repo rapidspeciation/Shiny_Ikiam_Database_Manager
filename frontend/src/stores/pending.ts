@@ -116,6 +116,7 @@ export const usePending = defineStore('pending', {
   state: () => {
     // state() runs in the store's own scope when the store is made (its pinia has no 'pending' state yet; a later
     // $reset() call has one and may run in a component's scope): disposing the store (or its pinia) stops the timers.
+    // A store made again in the same pinia after $dispose() reuses its state and is not covered (the app has one pinia).
     if (getCurrentScope() && !getActivePinia()?.state.value.pending) onScopeDispose(stopTimers)
     return {
       edits: {} as Record<string, PendingEdit>,

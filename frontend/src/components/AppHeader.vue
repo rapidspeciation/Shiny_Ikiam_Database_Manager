@@ -181,6 +181,7 @@ async function logout() {
   try {
     await session.logout()
   } catch (e) {
+    pending.scheduleCheck()
     pending.scheduleAutoSave()
     throw e
   }
