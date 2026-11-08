@@ -692,6 +692,13 @@ export const mcpTools = () =>
     ...(ALWAYS_LOADED.has(t.function.name) ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
   }));
 
+/** MCP's `initialize` answer. It has no `instructions`: they would go into every chat's fixed context (assistant/context-budget.json). */
+export const mcpInitialize = protocolVersion => ({
+  protocolVersion: protocolVersion ?? '2025-06-18',
+  capabilities: { tools: { listChanged: false } },
+  serverInfo: { name: 'ithomiini', version: '1.0.0' },
+});
+
 function init(db) {
   // New tables are made in one transaction (one write to disk, not one per column: server/store.mjs).
   const fresh = !db.isTransaction && !db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'ai_proposals'").get();
@@ -6587,12 +6594,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const result = value => ({ status: 200, body: { jsonrpc: '2.0', id, result: value } });
     const method = String(body?.method ?? '');
     if (method.startsWith('notifications/')) return { status: 202, body: null };
-    if (method === 'initialize')
-      return result({
-        protocolVersion: body.params?.protocolVersion ?? '2025-06-18',
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'ithomiini', version: '1.0.0' },
-      });
+    if (method === 'initialize') return result(mcpInitialize(body.params?.protocolVersion));
     if (method === 'ping') return result({});
     if (method === 'tools/list') return result({ tools: mcpTools() });
     if (method === 'tools/call') {

@@ -63,6 +63,18 @@ Cambios propuestos (Asistente tab) follows the chat open in the T3 Code frame be
 
 The chats the app makes in T3 (a person's first empty chat, the «Fotos» review, «Preguntar a Claude»; `server/t3projects.mjs`) run on the T3 provider instance `ITHOMIINI_T3_CLAUDE_INSTANCE` names, T3's stock `claudeAgent` when unset (the lab and other installs). On claudeclaw it is `claude-ithomiini` since 4 Nov 2026 (the Ithomiini account, its own home `/home/ubuntu/.claude-ithomiini`); `claudeAgent` there is Franz's account. Chats made before keep their instance; a person can still pick another in T3 before writing. `scripts/t3-provision.mjs` trusts each workspace in `~/.claude.json` and in every Claude instance's `homePath` from T3's settings, so the workspace settings apply on either account. The WhatsApp bridge has its own instance (`claude-whatsapp`, `server/whatsapp.mjs`). Going back: remove the line from `service.env` and restart `ithomiini.service`.
 
+### Size of the chats' fixed context
+
+Every model call of a chat carries the brief, the listed skills, the always-loaded MCP tools and the deferred tool names. `assistant/context-budget.json` records their bytes, measured from source, and the Claude Code settings that keep out what the chats never use (`scripts/claude-lean.mjs`); `tests/context-budget.test.mjs` fails when a part grows or shrinks without the file, or a lean setting is lost.
+
+```sh
+node scripts/context-budget.mjs                                # recorded and measured, part by part
+node scripts/context-budget.mjs --write --reason "why it is worth it"   # record a growth (a shrink needs no reason)
+node scripts/context-budget.mjs --against origin/main          # before a deploy: refuses a part larger than on main without a new reason, or a lost lean setting
+```
+
+Run the `--against origin/main` line on the deploy branch before `scripts/deploy.sh` (as a step of a DEPLOY_BUNDLE's commands); it exits 1 on a refusal. After a Claude Code update, one bare turn in an app workspace (`claude -p "hola" --output-format stream-json --verbose > probe.jsonl`) and `node scripts/context-probe-check.mjs probe.jsonl` check that no Artifact or denied tool is listed and the first call reads at most 37,000 input tokens (R15's band, 34 to 37k).
+
 ### Updating T3 Code
 
 Admins update T3 from the Asistente tab: the bar shows T3's version (amber when a newer stable release exists), and its dialog says what the update does before it starts: the version jump, the release notes and their "Before you update", a warning for a major version (0.0.x → 0.1.0 moved T3 to Orchestrator V2), and the Claude sessions it will cut. The update is `scripts/t3-update.mjs`, run by the user unit `ithomiini-t3-update@<version>.service` (`deploy/`; the dialog passes the version the admin saw):
