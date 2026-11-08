@@ -180,7 +180,7 @@ const dueText = (i: Item) => {
                 <span class="block text-lg leading-tight font-semibold tabular-nums">{{ registered.get(item.number)?.n ?? 0 }}</span>
               </span>
             </span>
-            <span class="mt-1 block truncate text-xs text-stone-500">
+            <span class="mt-1 line-clamp-2 text-xs text-stone-500">
               <template v-if="due(item) !== null">
                 {{ $t('Pupas desde {date}', { date: formatSerial(item.pupaDate!) }) }} ·
                 <!-- More than 3 days past the date (Inicio's rule): amber, they were due; from the day on: green. -->

@@ -74,7 +74,7 @@ const tabsMore = ref<MoreSide>('none')
       type="button"
       tabindex="-1"
       aria-hidden="true"
-      class="absolute top-0 right-0 bottom-px flex w-9 items-center justify-end bg-linear-to-l from-surface from-50% to-transparent pr-1.5 text-fg-muted"
+      class="absolute top-0 right-0 bottom-px flex w-11 items-center justify-end bg-linear-to-l from-surface from-50% to-transparent pr-1.5 text-fg-muted"
       data-more-tabs
       @click="tabRow?.scrollOn()"
     >

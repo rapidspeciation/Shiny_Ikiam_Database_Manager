@@ -53,7 +53,7 @@ const alerts = computed(() => data.value?.alerts ?? [])
           <span v-else>{{ tx(a.text, a.textMsg) }}</span>
           <!-- The range and its last CAM: on request. -->
           <details v-if="a.detail">
-            <summary class="cursor-pointer text-xs text-fg-muted hover:underline">{{ $t('Ver el rango') }}</summary>
+            <summary class="hit-target cursor-pointer text-xs text-fg-muted hover:underline">{{ $t('Ver el rango') }}</summary>
             <span class="text-xs">{{ tx(a.detail, a.detailMsg) }}</span>
           </details>
         </span>
