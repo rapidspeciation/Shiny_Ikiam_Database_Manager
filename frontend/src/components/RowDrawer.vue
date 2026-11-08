@@ -125,6 +125,18 @@ function current(field: Field): CellValue {
   if (created.value) return created.value.values[field.key] ?? null
   return row.value ? pending.value(row.value, field.key) : null
 }
+/**
+ * Why this cell will not be saved (a value the sheet refuses, or a save it answered no to), as the save bar says it.
+ * Shown under the field: on a phone the form covers the grid and the bar, so it would otherwise look like a normal edit.
+ */
+function issue(field: Field): string {
+  const id = created.value?.clientId ?? row.value?.id
+  if (!id) return ''
+  const key = `${id}:${field.key}`
+  const text = pending.problems[key] || pending.errors[key] || ''
+  // The field's name is just above: not said twice.
+  return text.startsWith(`${field.key}: `) ? text.slice(field.key.length + 2) : text
+}
 function editable(field: Field) {
   return (
     session.canEdit &&
@@ -255,6 +267,7 @@ function change(field: Field, text: string) {
                 @change="change(field, ($event.target as HTMLInputElement).value)"
               />
               <p v-else class="mt-1 min-h-6 text-sm text-stone-500">{{ displayValue(current(field), field) || '—' }}</p>
+              <p v-if="editable(field) && issue(field)" class="mt-1 text-sm text-red-800" role="alert">{{ issue(field) }}</p>
             </label>
           </div>
         </section>
