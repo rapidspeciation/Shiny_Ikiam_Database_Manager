@@ -568,8 +568,8 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
     const vars = { id: s.id, species: s.species || '—', date: day(s.date) };
     const m =
       s.kind === 'preserved_na'
-        ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta al equipo', vars)
-        : msg('{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo', vars);
+        ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA: pregunta al equipo', vars)
+        : msg('{id} ({species}) preservada el {date} sin CAM/tubo: pregunta al equipo', vars);
     add(`sample:${s.recordId}`, 'warn', m, rowLink(s.sheet, s.id));
   }
   for (const s of rule.reached.filter(s => s.recentAfter))

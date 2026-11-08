@@ -327,7 +327,7 @@ async function toggleHistory() {
         <p v-if="i.verdict" class="text-xs text-stone-600">
           {{ $t(VERDICT_WORD[i.verdict.verdict]) }}{{ i.verdict.verdict === 'other' ? ` (${i.verdict.value})` : '' }}
           {{ $t('por') }} <strong>{{ i.verdict.user }}</strong> · {{ when(i.verdict.at)
-          }}{{ i.verdict.comment ? ` — ${i.verdict.comment}` : '' }}
+          }}{{ i.verdict.comment ? `: ${i.verdict.comment}` : '' }}
           <button class="ml-1 inline-flex items-center gap-0.5 text-brand-700 hover:underline" @click="toggleHistory">
             <History :size="12" /> {{ $t('historial') }}
           </button>
@@ -335,7 +335,7 @@ async function toggleHistory() {
         <ul v-if="history" class="space-y-0.5 border-l-2 border-stone-200 pl-2 text-xs text-stone-600">
           <li v-for="(h, n) in history" :key="n">
             {{ when(h.at) }} · {{ h.user }}: {{ $t(VERDICT_WORD[h.verdict]) }}{{ h.value ? ` (${h.value})` : ''
-            }}{{ h.comment ? ` — ${h.comment}` : '' }}
+            }}{{ h.comment ? `: ${h.comment}` : '' }}
           </li>
         </ul>
 

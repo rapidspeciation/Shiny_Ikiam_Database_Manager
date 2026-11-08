@@ -396,10 +396,10 @@ export default {
     '{species}: {n} preserved in the last 60 days after reaching {limit} ({total} in all).',
   '{species}: {preserved} preservadas, falta {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
   '{species}: {preserved} preservadas, faltan {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
-  '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo': '{id} ({species}) preserved on {date} without CAM/tube — ask the team',
+  '{id} ({species}) preservada el {date} sin CAM/tubo: pregunta al equipo': '{id} ({species}) preserved on {date} without CAM/tube: ask the team',
   '{id} ({species}) preservada el {date} sin CAM/tubo': '{id} ({species}) preserved on {date} without CAM/tube',
-  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta al equipo':
-    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA — ask the team',
+  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA: pregunta al equipo':
+    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA: ask the team',
   '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA':
     '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA',
   // server/suggestions/wikiloc-transects.mjs: corrections from the Wikiloc points

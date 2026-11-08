@@ -171,8 +171,8 @@ export default {
   'Creando…': 'Creating…',
   'Crear filas preasignadas': 'Create pre-made rows',
   'Avisa a un administrador para que cree más.': 'Ask an administrator to create more.',
-  'Avisos del libro de Google Sheets ({n}) — fórmulas por corregir en la hoja':
-    'Google Sheets workbook warnings ({n}) — formulas to fix in the sheet',
+  'Avisos del libro de Google Sheets ({n}): fórmulas por corregir en la hoja':
+    'Google Sheets workbook warnings ({n}): formulas to fix in the sheet',
   '· incluye {sheet}': '· includes {sheet}',
   '(visto {date})': '(seen {date})',
   'Tube_n_rack busca el tubo en la columna A ("Sort") de Ithomiini_tube_locations en vez de la B: las 438 filas dicen "Not in TOL704", aunque 1.925 de sus tubos sí están en racks.':
