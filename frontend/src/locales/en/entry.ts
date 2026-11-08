@@ -508,4 +508,6 @@ export default {
   // EntryModeToggle: a data-entry tab as cards (touch) or as the table.
   Vista: 'View',
   Tarjetas: 'Cards',
+  // RowDrawer: an empty date field's placeholder (the note's label «Nota» is in assistant.ts).
+  'd-mmm-aa': 'd-mmm-yy',
 } as Record<string, string>

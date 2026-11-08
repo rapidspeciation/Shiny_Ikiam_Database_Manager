@@ -66,6 +66,29 @@ describe('RowDrawer: a value that will not be saved', () => {
     usePending().problems['r1:Wild_Reared'] = 'Wild_Reared: «prueba» no está en la lista de la hoja (lista fija de la hoja)'
     usePending().errors['r1:Notes_Insectary_data'] = 'La hoja cambió: vuelve a escribirlo'
     await nextTick()
-    expect(alerts(host)).toEqual(['«prueba» no está en la lista de la hoja (lista fija de la hoja)', 'La hoja cambió: vuelve a escribirlo'])
+    // The note comes first in the form (right under the ID).
+    expect(alerts(host)).toEqual(['La hoja cambió: vuelve a escribirlo', '«prueba» no está en la lista de la hoja (lista fija de la hoja)'])
+  })
+})
+
+describe('RowDrawer: field order and empty fields', () => {
+  it('shows the note right under the ID, labelled «Nota», once', async () => {
+    const host = await mount()
+    const labels = [...host.querySelectorAll('label > span:first-child')].map(e => e.textContent?.replace(/\s+/g, '').trim())
+    expect(labels).toEqual(['Insectary_ID', `${t('Nota')}Notes_Insectary_data`, 'Wild_Reared'])
+    expect(host.querySelectorAll('label').length).toBe(3)
+  })
+
+  it('gives an empty date field a format hint, not a date that looks real', async () => {
+    const date = { key: 'Death_date', type: 'date' } as unknown as Field
+    columns.push(date)
+    try {
+      const host = await mount()
+      const input = [...host.querySelectorAll('input')].find(i => i.placeholder)
+      expect(input?.placeholder).toBe(t('d-mmm-aa'))
+      expect(input?.placeholder).not.toMatch(/\d/)
+    } finally {
+      columns.pop()
+    }
   })
 })

@@ -68,7 +68,8 @@ export function formSections(fields: Field[], identity: string[] = []): FormSect
     key,
     title: TITLES[key],
     folded: FOLDED.has(key),
-    fields: by.get(key)!,
+    // Within «Notas y fotos», the notes before the photo links.
+    fields: key === 'notes' ? noteFirst(by.get(key)!) : by.get(key)!,
   }))
   // A section of one column is not worth a header: it joins the neighbour before it (or after, if first)
   // that is folded the same way.
@@ -82,6 +83,30 @@ export function formSections(fields: Field[], identity: string[] = []): FormSect
     sections.splice(i, 1)
     i = -1
   }
+  // The notes right after the identity: a note is what people most often open a row to write (hands-on, 7 Nov 2026).
+  const notes = sections.findIndex(s => s.key === 'notes')
+  if (notes > 1) sections.splice(1, 0, ...sections.splice(notes, 1))
   if (sections.length > 1) return sections
   return [{ key: 'all', title: '', folded: false, fields }]
+}
+
+/** A sheet's note column (Notes_Insectary_data, Notes_Collection_data…): shown as «Nota», its column name beside it. */
+export const isNoteField = (key: string) => /^notes?(_|$)/i.test(key)
+
+/** The note columns first, the others after them, each in the sheet's order. */
+const noteFirst = (fields: Field[]) => [...fields.filter(f => isNoteField(f.key)), ...fields.filter(f => !isNoteField(f.key))]
+
+/**
+ * The side form's two groups (a laptop's, or a phone's grid view): first the row's ID columns and its notes, then
+ * every other column in the sheet's order. Without a note column it stays one list.
+ */
+export function noteGroups(fields: Field[], identity: string[] = []): FormSection[] {
+  const first = fields.filter(f => identity.includes(f.key) || isNoteField(f.key))
+  if (!first.some(f => isNoteField(f.key))) return [{ key: 'all', title: '', folded: false, fields }]
+  const ids = first.filter(f => !isNoteField(f.key))
+  const head = [...ids, ...first.filter(f => isNoteField(f.key))]
+  return [
+    { key: 'first', title: '', folded: false, fields: head },
+    { key: 'all', title: '', folded: false, fields: fields.filter(f => !head.includes(f)) },
+  ]
 }
