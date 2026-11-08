@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue'
 import { locale, t } from '../../lib/i18n'
-import { SEX_CUT, sexCall, sigmoid } from '../../lib/sexModel'
+import { SEX_CUT, sexShown, sexShownFemale } from '../../lib/sexModel'
 
 export type SexState =
   | { kind: 'download'; mb: number }
@@ -24,11 +24,13 @@ defineEmits<{ download: [] }>()
 const LO = -1, HI = 7
 const at = (z: number) => `${(100 * (Math.min(HI, Math.max(LO, z)) - LO)) / (HI - LO)}%`
 const fmt = (v: number, digits: number) => new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)
-/** The model's P: one decimal from 90 % (the cutoff and the band are there). */
-const pct = (p: number) => (p >= 0.9995 ? `> ${fmt(99.9, 1)} %` : `${fmt(p * 100, p >= 0.9 ? 1 : 0)} %`)
-const tick = (z: number) => `${fmt(100 * sigmoid(z), 1)} %`
+/** The calibrated % (lib/sexModel.ts SEX_DISPLAY): whole numbers, never a sure-looking 100 %. */
+const pct = (p: number) => (p >= 0.995 ? `> ${fmt(99, 0)} %` : `${fmt(p * 100, 0)} %`)
+/** The scale's marks in calibrated P(hembra), one decimal (the band edges are 39.7 and 71.8 %). */
+const tick = (z: number) => `${fmt(100 * sexShownFemale(z), 1)} %`
 const z = computed(() => (props.state.kind === 'ready' ? props.state.z : null))
-const call = computed(() => (z.value == null ? null : sexCall(z.value)))
+const shown = computed(() => (z.value == null ? null : sexShown(z.value)))
+const call = computed(() => shown.value?.call ?? null)
 const ticks = computed(() => [
   { z: SEX_CUT.lo, label: tick(SEX_CUT.lo) },
   { z: SEX_CUT.t, label: `${t('corte')} ${tick(SEX_CUT.t)}` },
@@ -49,13 +51,12 @@ const ticks = computed(() => [
     </div>
 
     <template v-if="state.kind === 'ready' && z != null">
-      <div class="mt-2 flex items-baseline justify-between gap-3">
+      <div class="mt-2">
         <p class="text-xl font-semibold" :class="call === 'hembra' ? 'text-fill-pink' : call === 'macho' ? 'text-fill-sky' : 'text-fg-muted'" data-testid="sex-call">
-          <template v-if="call === 'hembra'">♀ {{ $t('Hembra') }}</template>
-          <template v-else-if="call === 'macho'">♂ {{ $t('Macho') }}</template>
-          <template v-else>{{ $t('No seguro') }}</template>
+          <template v-if="call === 'hembra'">♀ {{ $t('Hembra') }} <span class="tabular-nums" data-testid="sex-p">{{ pct(shown!.p) }}</span></template>
+          <template v-else-if="call === 'macho'">♂ {{ $t('Macho') }} <span class="tabular-nums" data-testid="sex-p">{{ pct(shown!.p) }}</span></template>
+          <template v-else>{{ $t('No seguro') }} <span class="tabular-nums" data-testid="sex-p">({{ shown!.sign }} {{ pct(shown!.p) }})</span></template>
         </p>
-        <p class="text-sm whitespace-nowrap tabular-nums" data-testid="sex-p">P({{ $t('hembra') }}) {{ pct(sigmoid(z)) }}</p>
       </div>
       <div class="mt-2" aria-hidden="true">
         <div class="relative h-3 overflow-hidden rounded-sm">

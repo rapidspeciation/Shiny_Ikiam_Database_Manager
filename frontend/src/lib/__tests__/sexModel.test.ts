@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { letterboxCrop, roleOf, rolesReady } from '../offlineId'
-import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sigmoid } from '../sexModel'
+import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sexShown, sexShownFemale, sigmoid } from '../sexModel'
 import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 
 // The sex estimate's preprocessing and decision (lib/sexModel.ts; PLAN.md Amendment 8 in WingsClassificator).
@@ -68,6 +68,26 @@ describe('sex call: cutoff and «no seguro» band', () => {
     expect(sexCall(0)).toBe('macho')
   })
 
+})
+
+describe('the % shown: display calibration (CALIBRATION_DISPLAY.md)', () => {
+  it('puts the cutoff at 53.7 % and the band at 39.7 to 71.8 % female', () => {
+    expect(100 * sexShownFemale(SEX_CUT.t)).toBeCloseTo(53.7, 1)
+    expect(100 * sexShownFemale(SEX_CUT.lo)).toBeCloseTo(39.7, 1)
+    expect(100 * sexShownFemale(SEX_CUT.hi)).toBeCloseTo(71.8, 1)
+  })
+  it('shows the % of the sex called: a male call always above 60 % male; not sure leans to the likelier side', () => {
+    for (const z of [-3, 0, 1, SEX_CUT.lo - 1e-6]) {
+      const s = sexShown(z)
+      expect(s.call).toBe('macho')
+      expect(s.sign).toBe('♂')
+      expect(s.p).toBeGreaterThan(0.6)
+    }
+    expect(sexShown(SEX_CUT.hi)).toMatchObject({ call: 'hembra', sign: '♀' })
+    expect(sexShown(SEX_CUT.t)).toMatchObject({ call: 'no seguro', sign: '♀' })
+    expect(sexShown(SEX_CUT.lo)).toMatchObject({ call: 'no seguro', sign: '♂' })
+    expect(sexShown(SEX_CUT.lo).p).toBeCloseTo(0.603, 2)
+  })
 })
 
 describe('where the estimate applies', () => {

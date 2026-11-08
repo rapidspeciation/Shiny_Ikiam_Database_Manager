@@ -52,6 +52,26 @@ export function sexCall(z: number, cut = SEX_CUT): SexCall {
 }
 
 /**
+ * The % shown, for display only (the calls stay on SEX_CUT): Platt scaling of the logit, P(hembra) = sigmoid(a·z + b),
+ * fitted on the same 103 team in-hand photos as the cutoff (WingsClassificator
+ * reports/sex_display_calibration_20261108/CALIBRATION_DISPLAY.md, 8 Nov 2026). The raw sigmoid(z) is far too high
+ * for males (a male call could read «P(hembra) 83 %»); calibrated, the cutoff shows 53.7 % and the band 39.7 to 71.8 %
+ * female, so a male call always shows more than 60 % male.
+ */
+export const SEX_DISPLAY = { a: 0.415, b: -1.0887 }
+
+/** The calibrated P(hembra) shown for a score. */
+export const sexShownFemale = (z: number) => sigmoid(SEX_DISPLAY.a * z + SEX_DISPLAY.b)
+
+/** The call and the calibrated % of the sex called; «no seguro»: the side it leans to (the likelier one). */
+export function sexShown(z: number, cut = SEX_CUT): { call: SexCall; sign: '♀' | '♂'; p: number } {
+  const call = sexCall(z, cut)
+  const female = sexShownFemale(z)
+  const leansFemale = call === 'hembra' || (call === 'no seguro' && female >= 0.5)
+  return { call, sign: leansFemale ? '♀' : '♂', p: leansFemale ? female : 1 - female }
+}
+
+/**
  * Whether the estimate applies to the identifier's top species: 'yes' (a trained genus), 'genus' (an Ithomiini
  * outside them: «no aplica»), 'no' (not an Ithomiini, or unknown: nothing shown).
  */

@@ -22,25 +22,28 @@ afterEach(() => {
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
 
 describe('SexEstimate', () => {
-  it('a score above the band: female, with the model’s P and the label', () => {
-    const el = show({ kind: 'ready', z: 6 })
+  it('a score above the band: female, with the calibrated % of the call and the label', () => {
+    const el = show({ kind: 'ready', z: 6 }) // raw P 0.998, calibrated 0.802
     expect(text(el.querySelector('[data-testid=sex-call]'))).toContain('♀')
-    expect(text(el.querySelector('[data-testid=sex-p]'))).toMatch(/P\(.+\) 99[.,]8 %/)
+    expect(text(el.querySelector('[data-testid=sex-p]'))).toBe('80 %')
+    expect(text(el)).not.toMatch(/99[.,]8/)
     expect(text(el)).toMatch(/experimental/)
     expect(text(el)).toMatch(/in-hand|en mano/)
   })
 
   it('a high model P inside the band is not sure; below the band male', async () => {
-    let el = show({ kind: 'ready', z: 3 }) // P 0.953
+    let el = show({ kind: 'ready', z: 3 }) // raw P 0.953, calibrated 0.539
     expect(text(el.querySelector('[data-testid=sex-call]'))).toMatch(/Not sure|No seguro/)
+    expect(text(el.querySelector('[data-testid=sex-p]'))).toBe('(♀ 54 %)')
     host!.remove()
-    el = show({ kind: 'ready', z: Math.log(0.8 / 0.2) })
+    el = show({ kind: 'ready', z: Math.log(0.8 / 0.2) }) // raw P(hembra) 0.8: a male call, shown as the % male
     await nextTick()
     expect(text(el.querySelector('[data-testid=sex-call]'))).toContain('♂')
-    // The cutoff and the band edges are on the scale.
-    expect(text(el)).toMatch(/83[.,]4 %/)
-    expect(text(el)).toMatch(/(corte|cutoff) 95[.,]2 %/)
-    expect(text(el)).toMatch(/99[.,]2 %/)
+    expect(text(el.querySelector('[data-testid=sex-p]'))).toBe('63 %')
+    // The cutoff and the band edges are on the scale, calibrated.
+    expect(text(el)).toMatch(/39[.,]7 %/)
+    expect(text(el)).toMatch(/(corte|cutoff) 53[.,]7 %/)
+    expect(text(el)).toMatch(/71[.,]8 %/)
   })
 
   it('outside the trained genera: «no aplica», no score', () => {
