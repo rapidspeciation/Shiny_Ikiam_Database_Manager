@@ -45,6 +45,7 @@ import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './r
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
 import { tokenFrom as driveToken } from './drive.mjs';
+import { DOC_TOOLS, DOC_TOOL_NAMES } from './doc-review.mjs';
 import { MEETING_DOC_TOOLS, MEETING_DOC_TOOL_NAMES, createMeetingDocs, googleBackend as meetingGoogle, simBackend as meetingSim } from './meeting-doc.mjs';
 import { RACK_FIELDS, RACK_ROW_FIELDS, changesProblems, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
@@ -473,6 +474,8 @@ const TOOLS = [
   ...RACK_TOOLS,
   // The weekly meeting's minutes document proposed with its agenda, made when a person applies it (server/meeting-doc.mjs).
   ...MEETING_DOC_TOOLS,
+  // Comments on the instructions (#/instrucciones) and the changes proposed for them (server/doc-review.mjs).
+  ...DOC_TOOLS,
   // Read-only: the maps' occurrence records and host plants, and the Wings Gallery's specimens with links and thumbnails (server/maps-tools.mjs).
   ...MAPS_TOOLS,
   // Read-only: the weather forecast for a collecting site, from Open-Meteo (server/weather-tool.mjs).
@@ -882,7 +885,7 @@ function recordSource(record) {
  * proposals as Cambios propuestos shows them (listedViews). The workers leave the database's
  * set-up, the watchers of syncs and saves, and the sheets' copy to the app.
  */
-export function createAssistant({ store, config = {}, role = 'main', onChanged = null, invitations = null }) {
+export function createAssistant({ store, config = {}, role = 'main', onChanged = null, invitations = null, docReview = null }) {
   if (!store?.db) throw new Error('Assistant requires store.db');
   const db = store.db;
   const inWorker = role !== 'main';
@@ -6360,6 +6363,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
+    // The instructions' comments and changes live in the app's thread (server/doc-review.mjs).
+    if (DOC_TOOL_NAMES.has(name)) return docReview && !inWorker ? docReview.runTool(name, args, { user: context.user, chat: context.t3 ? (chatOfCall(context)?.id ?? null) : null }) : { error: 'Call it again in a moment.' };
     if (MEETING_DOC_TOOL_NAMES.has(name)) return meetingDocs ? meetingDocs.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     // A rack read goes at once into this chat's deposit (its proposal): the grid, the fields, the tube-locations rows.

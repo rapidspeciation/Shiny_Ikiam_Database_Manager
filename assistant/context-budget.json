@@ -150,8 +150,8 @@
       "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
     },
     "mcp deferred names": {
-      "bytes": 1189,
-      "reason": "baseline after R15 (6-7 Nov 2026)"
+      "bytes": 1291,
+      "reason": "doc_threads, reply_doc_thread, propose_doc_change, revise_doc_change: comments on the instructions (#/instrucciones), deferred"
     },
     "mcp server instructions": {
       "bytes": 0,
