@@ -18,6 +18,11 @@ only imports `server/file-sheets.mjs`. Tests keep the in-memory rows.
 - `server/index.mjs`: `LOCAL_SHEETS` (`file` by default, `memory` = the old in-memory rows). `server/store.mjs`:
   `close()` closes the sheets too.
 - Disk: about 440 MB beside the snapshot (once) and, on ext4, about 440 MB in each lab app's folder.
+- Lab instances (8 Nov, lab tooling only, nothing on the server's live app): `tools/lab/dev-app.sh` picks a free port
+  from 8821, runs up to `DEV_APP_LIMIT` (4) side by side, starts them one at a time (`<lab>/.start.lock`) and returns
+  once the first sync is done; `tools/lab/INSTANCES.md` is the agents' guide. The rows file is now one per code
+  version (`snapshot.json.<code>.rows.sqlite`, 442 MB each); old ones can be deleted. The perf bench follows the
+  same limit and lock.
 
 Deploy (orchestrator, with the lock `claudeclaw:/home/ubuntu/ithomiini/deploy.lock`):
 - First rebase onto the newer of origin/main and team/main (the scout fixes release `release/scout-fixes-20261107`
