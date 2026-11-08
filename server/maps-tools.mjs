@@ -215,6 +215,7 @@ export const MAPS_TOOLS = [
         "- With `area`, `bbox` or `near`: each plant's `status` (in_area, nearby, far) and `nearby` (records outside but within `nearby_km`, default 50 km: count, years, by province or country, and the nearest record's km, year and place); `in_area`, `nearby_only` and `not_near` list them. Plants only nearby are candidates, not records from the area: say so.",
         '- `photo_sheet: true` (with an area): `photo_sheets`, 1 or 2 contact sheets (JPEG, 3 by 3 numbered tiles of 512 px with the plant and its place) of the plants\' candidate photos (living plants first, those in the area or nearest). Look at them and pick the tiles that show the leaves or the whole plant, and a flower, then send_sheet_photos. This is how photos to send are chosen.',
         '- `send_photos` (a number): the same as `photo_sheet: true` (photos to send are always chosen by looking at a contact sheet first).',
+        '- `later_photos: true` (gives contact sheets as `photo_sheet` does; best with one `plant`): the sheets show the photos that are not the first photo of their record, up to 18 for one plant: the extra photos observers add (the underside of the leaves, close-ups of a flower, fruit, stem or latex). Use it when the first sheet does not show the part asked, e.g. the leaf underside. `photo_skip` (a number): leave out that many of them, for the next ones (`photo_sheet_more` says how many there are).',
         '- `tags_fallback: true` with `send_photos` (only when the contact sheet failed, `photo_sheet_error`, or you cannot look at images): the photos picked by the photo tags without anyone looking (leaves or whole plant first, then a flower), downloaded and credited, each caption saying it was picked automatically and not checked, with `images_block`: send them, and say so in the answer.',
         'Give the citation and link of each claim. A catalogue row is a published record, not observed use at a given place; a family-level host says little. Plant records show where the plant grows, never that the butterfly uses it there: say so.',
       ].join('\n'),
@@ -230,6 +231,8 @@ export const MAPS_TOOLS = [
           send_photos: { type: 'integer' },
           photo_sheet: { type: 'boolean' },
           tags_fallback: { type: 'boolean' },
+          later_photos: { type: 'boolean' },
+          photo_skip: { type: 'integer' },
           lang: { type: 'string', enum: ['en', 'es'] },
           country: region.country,
           bbox: region.bbox,
@@ -1847,9 +1850,12 @@ export function createMapsTools({
     const fallback = args.tags_fallback === true;
     const wantsPhotos = clamp(args.send_photos, 0, 5, fallback ? 3 : 0);
     const sendPhotos = args.auto_pick === true || fallback ? wantsPhotos : 0;
-    const asSheet = args.photo_sheet === true || (wantsPhotos > 0 && args.auto_pick !== true && !fallback);
+    // `later_photos`, `photo_skip`: more of a plant's photos on the sheets (only ever on a sheet, to be looked at).
+    const photoSkip = clamp(args.photo_skip, 0, 1000, 0);
+    const morePhotos = args.later_photos === true || photoSkip > 0 ? { later: args.later_photos === true, skip: photoSkip } : null;
+    const asSheet = args.photo_sheet === true || morePhotos !== null || (wantsPhotos > 0 && args.auto_pick !== true && !fallback);
     const photosStarted = Date.now();
-    const sheetLoading = asSheet ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
+    const sheetLoading = asSheet ? plantSheets(plants.filter(p => mapped.includes(p.e) && !p.sameAs), area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en', morePhotos).catch(e => ({ photo_sheet_error: e.message })) : Promise.resolve(null);
     const filesLoading = sendPhotos
       ? photosToSend(plants.filter(p => mapped.includes(p.e) && !p.sameAs), sendPhotos, area, nearbyKm, m, args.lang === 'es' ? 'es' : 'en').then(f => ({ ...f, ms: Date.now() - photosStarted }))
       : Promise.resolve(null);
@@ -2008,7 +2014,16 @@ export function createMapsTools({
         if (!path) return [];
         const index = (await galleryIndex(path)).value;
         const pages = await Promise.all(index.pages.slice(0, SEND_PAGES).map(page => galleryPage(page).then(r => r.value)));
-        return pages.flat().filter(ph => !ph.fallback && Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
+        // nth: the photo's place among its record's photos in the gallery (0 = the record's first photo).
+        const perRecord = new Map();
+        return pages
+          .flat()
+          .map(ph => {
+            const nth = ph.record ? perRecord.get(ph.record) ?? 0 : 0;
+            if (ph.record) perRecord.set(ph.record, nth + 1);
+            return { ...ph, nth };
+          })
+          .filter(ph => !ph.fallback && Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
       }).map(x => x.catch(() => [])),
     );
     const viewOf = ph => {
@@ -2176,7 +2191,7 @@ export function createMapsTools({
    * the plants recorded in the area, then those only nearby; per plant its photos ranked as photosToSend ranks them
    * (living plant, view tags when there are, place), one flower among them when it has one. At most 2 sheets of 9.
    */
-  async function plantSheets(plants, area, nearbyKm, m, lang) {
+  async function plantSheets(plants, area, nearbyKm, m, lang, more = null) {
     if (!sheets) return { photo_sheet_error: 'Contact sheets are off on this server (no folder for them).' };
     const words = SEND_WORDS[lang];
     const short = area?.admin?.name ?? (area?.countries.length ? area.countries.join(', ') : words.area);
@@ -2186,13 +2201,18 @@ export function createMapsTools({
     const ranked = await rankedFor(picked, area, nearbyKm, m);
     const adminData = area?.admin ? await adminAreas.data() : null;
     // Up to 2 sheets of 9: one plant fills a sheet, two get a sheet each, more share them.
-    const k = Math.min(PER_SHEET, Math.max(2, Math.floor((2 * PER_SHEET) / picked.length)));
+    const k = more && picked.length === 1 ? 2 * PER_SHEET : Math.min(PER_SHEET, Math.max(2, Math.floor((2 * PER_SHEET) / picked.length)));
+    const moreCounts = [];
     const seen = new Set();
     const tiles = [];
     // By place, as the chat will judge them: the living plant first, then in the area, nearer, newer.
     const byPlace = (a, b) => a.live - b.live || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0);
     for (const [i, p] of picked.entries()) {
-      const best = sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
+      // `more` (later_photos, photo_skip): the plant's photos in place order, the records' later photos only when asked
+      // (where observers put the leaf underside and close-ups), from `skip` on; no leaves or flower tile swapped in.
+      const pool = more ? ranked[i].filter(ph => !seen.has(ph.img) && ph.live === 0 && (!more.later || ph.nth > 0)).sort(byPlace) : null;
+      if (pool) moreCounts.push({ plant: p.e.taxon.name, photos: pool.length, shown: Math.max(0, Math.min(k, pool.length - more.skip)), more_after: Math.max(0, pool.length - more.skip - k) });
+      const best = pool ? pool.slice(more.skip, more.skip + k) : sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
       for (const ph of best) {
         seen.add(ph.img);
         const t = plantTile(p, ph, short, nearbyKm, adminData);
@@ -2216,11 +2236,25 @@ export function createMapsTools({
     const out = await Promise.all(made);
     const onSheets = new Set(tiles.slice(0, 2 * PER_SHEET).map(t => t.name));
     // Plants with photos that did not fit (those with none in the gallery are not said to have been left out).
-    const leftOut = ordered.filter((p, i) => (i >= picked.length || ranked[i].length) && !onSheets.has(p.e.taxon.name)).map(p => p.e.taxon.name);
+    // With `more`, a plant whose photos past `skip` are all shown (or none are left) is not left out.
+    const hasPhotos = i => (more ? moreCounts[i].photos > more.skip : ranked[i].length);
+    const leftOut = ordered.filter((p, i) => (i >= picked.length || hasPhotos(i)) && !onSheets.has(p.e.taxon.name)).map(p => p.e.taxon.name);
+    const moreLeft = more ? moreCounts.some(c => c.more_after > 0) : false;
     return {
       photo_sheets: out.map(sh => ({ id: sh.id, path: sh.path, tiles: sh.tiles.map(t => `${t.n}: ${t.line1} — ${t.line2}`) })),
+      ...(more
+        ? {
+            photo_sheet_more: {
+              later_photos: more.later,
+              photo_skip: more.skip,
+              plants: moreCounts,
+              ...(moreLeft ? { next_photo_skip: more.skip + k } : {}),
+              note: `Living-plant photos${more.later ? ' that are not the first of their record' : ''}, from number ${more.skip + 1}. ${moreLeft ? `More: the same call with photo_skip ${more.skip + k}.` : 'No more such photos.'} Say how many you looked at.`,
+            },
+          }
+        : {}),
       ...(leftOut.length ? { photo_sheet_left_out: leftOut, photo_sheet_left_out_note: 'Not on the sheets (2 sheets at most): ask again with `plant` for these.' } : {}),
-      photo_sheet_note: 'No photo is sent yet. Look at each sheet (read its path) and choose for every plant a tile that shows its leaves or the whole plant (how it is found in the field), then a flower where there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5). A plant with no such tile: say that none of its photos on the sheet shows its leaves (host_plants with `plant` and `photo_sheet` shows more of its photos).',
+      photo_sheet_note: 'No photo is sent yet. Look at each sheet (read its path) and choose for every plant a tile that shows its leaves or the whole plant (how it is found in the field), then a flower where there is one; then send_sheet_photos with `sheets` (their ids) and `tiles` (the numbers, at most 5). A plant with no such tile: say that none of its photos on the sheet shows its leaves (host_plants with `plant` and `photo_sheet` shows more of its photos). A part the sheet does not show (the underside of the leaves, a fruit, the stem): that plant again with `later_photos: true`.',
       photo_sheet_ms: Date.now() - started,
     };
   }

@@ -416,6 +416,100 @@ test('contact sheets, review fixes: another reach is another sheet; a tile numbe
   assert.match((await fresh.run('send_sheet_photos', { sheets: [a.photo_sheets[0].id, b.photo_sheets[0].id], tiles: [1] })).error, /more than one of these sheets/);
 });
 
+/**
+ * Solanum mite's gallery with later photos: each record's first photo (Sucumbíos 2022, Tena 2019), then 20 more of
+ * the Tena record (years 1990 to 2009, so tiles can be told apart), a pressed one, and a second Sucumbíos photo
+ * (2021), credited on its GBIF record.
+ */
+function withLaterPhotos() {
+  const page = 'host_plants/gallery/mite/p1.json';
+  const saved = FILES[page];
+  const [sucumbios, tena] = saved.items;
+  const gbif = GBIF[2];
+  GBIF[2] = { ...gbif, media: [...gbif.media, { ...gbif.media[0], identifier: 'https://inaturalist-open-data.s3.amazonaws.com/photos/201/original.jpg' }] };
+  const photo = (base, id, year, extra = {}) => ({ ...base, image_url: `https://inaturalist-open-data.s3.amazonaws.com/photos/${id}/original.jpg`, observation_date: `${year}-01-01`, ...extra });
+  FILES[page] = {
+    items: [
+      sucumbios,
+      tena,
+      ...Array.from({ length: 20 }, (_, i) => photo(tena, 100 + i, 1990 + i)),
+      photo(tena, 200, 2015, { photo_context: 'preserved' }),
+      photo(sucumbios, 201, 2021),
+    ],
+  };
+  return () => {
+    FILES[page] = saved;
+    GBIF[2] = gbif;
+  };
+}
+
+test('host_plants later_photos and photo_skip: the default sheet unchanged, bad values ignored or clamped', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const restore = withLaterPhotos();
+  try {
+    const tools = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: mkdtempSync(join(tmpdir(), 'maps-cache-')) });
+    const ask = extra => tools.run('host_plants', { plant: 'Solanum mite', area: 'Napo', photo_sheet: true, ...extra });
+    const plain = await ask({});
+    // One photo per record first (the two records' first photos), then the Tena record's next ones, newest first.
+    assert.deepEqual(plain.photo_sheets.map(sh => sh.tiles.length), [9]);
+    assert.deepEqual(plain.photo_sheets[0].tiles.slice(0, 4), ['1: Solanum mite — Tena · 2019', '2: Solanum mite — 2 km, Sucumbíos · 2022', '3: Solanum mite — Tena · 2009', '4: Solanum mite — Tena · 2008']);
+    assert.equal(plain.photo_sheet_more, undefined);
+    assert.match(plain.photo_sheet_note, /later_photos: true/);
+    // All but timings and where the records were read from (memory after the first call).
+    const strip = out => ({ ...out, photo_sheet_ms: 0, timing_ms: 0, plant_data: { ...out.plant_data, records_from: 0 } });
+    // Off, zero, negative, not a number, a string for the flag: the same answer as without them.
+    for (const extra of [{ later_photos: false }, { photo_skip: 0 }, { photo_skip: -5 }, { photo_skip: 'abc' }, { photo_skip: null }, { later_photos: 'yes' }]) {
+      assert.deepEqual(strip(await ask(extra)), strip(plain), JSON.stringify(extra));
+    }
+  } finally {
+    restore();
+  }
+});
+
+test('host_plants later_photos and photo_skip: the records\' later photos on 2 sheets, paged, past the end, clamped', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const restore = withLaterPhotos();
+  try {
+    const tools = createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: mkdtempSync(join(tmpdir(), 'maps-cache-')) });
+    // No photo_sheet asked: later_photos alone still gives sheets (photos are never sent unseen).
+    const later = await tools.run('host_plants', { plant: 'Solanum mite', area: 'Napo', later_photos: true });
+    const tiles = later.photo_sheets.flatMap(sh => sh.tiles);
+    assert.equal(later.images, undefined);
+    assert.deepEqual(later.photo_sheets.map(sh => sh.tiles.length), [9, 9]);
+    // Later photos only: no record's first photo (Tena 2019, Sucumbíos 2022), no pressed one (2015); in the area first.
+    assert.equal(tiles[0], '1: Solanum mite — Tena · 2009');
+    assert.equal(tiles[17], '18: Solanum mite — Tena · 1992');
+    assert.ok(!tiles.some(t => /2019|2022|2015/.test(t)), tiles.join('\n'));
+    assert.deepEqual(later.photo_sheet_more.plants, [{ plant: 'Solanum mite', photos: 21, shown: 18, more_after: 3 }]);
+    assert.equal(later.photo_sheet_more.next_photo_skip, 18);
+    assert.match(later.photo_sheet_more.note, /photo_skip 18/);
+    // The next ones: the last two Tena photos, then the Sucumbíos record's second; nothing more after.
+    const next = await tools.run('host_plants', { plant: 'Solanum mite', area: 'Napo', photo_sheet: true, later_photos: true, photo_skip: 18 });
+    assert.deepEqual(next.photo_sheets.flatMap(sh => sh.tiles), ['1: Solanum mite — Tena · 1991', '2: Solanum mite — Tena · 1990', '3: Solanum mite — 2 km, Sucumbíos · 2021']);
+    assert.deepEqual(next.photo_sheet_more.plants, [{ plant: 'Solanum mite', photos: 21, shown: 3, more_after: 0 }]);
+    assert.equal(next.photo_sheet_more.next_photo_skip, undefined);
+    assert.match(next.photo_sheet_more.note, /No more such photos/);
+    assert.notEqual(next.photo_sheets[0].id, later.photo_sheets[0].id);
+    // photo_skip alone pages through all the living-plant photos (first ones too), in place order.
+    const skipOnly = await tools.run('host_plants', { plant: 'Solanum mite', area: 'Napo', photo_sheet: true, photo_skip: 2.4 });
+    assert.equal(skipOnly.photo_sheet_more.photo_skip, 2);
+    assert.equal(skipOnly.photo_sheet_more.later_photos, false);
+    assert.equal(skipOnly.photo_sheet_more.plants[0].photos, 23);
+    assert.equal(skipOnly.photo_sheets[0].tiles[0], '1: Solanum mite — Tena · 2008');
+    // Past the end (and clamped to 1000): no sheet, nothing said to be left out, no next page.
+    const past = await tools.run('host_plants', { plant: 'Solanum mite', area: 'Napo', photo_sheet: true, later_photos: true, photo_skip: 1e9 });
+    assert.deepEqual(past.photo_sheets, []);
+    assert.equal(past.photo_sheet_more.photo_skip, 1000);
+    assert.deepEqual(past.photo_sheet_more.plants, [{ plant: 'Solanum mite', photos: 21, shown: 0, more_after: 0 }]);
+    assert.equal(past.photo_sheet_left_out, undefined);
+    // A chosen later tile is sent with its own record's credit.
+    const sent = await tools.run('send_sheet_photos', { sheets: [next.photo_sheets[0].id], tiles: [3] });
+    assert.equal(sent.error, undefined, sent.error);
+    assert.equal(sent.images?.length, 1, JSON.stringify(sent));
+    assert.equal(sent.images[0].url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/201/original.jpg');
+  } finally {
+    restore();
+  }
+});
+
 test('send_photos never sends unseen, Pillow or not', async () => {
   const out = await createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS }).run('host_plants', { butterfly: 'Oleria onega', area: 'Napo', send_photos: 5 });
   assert.equal(out.images, undefined);
