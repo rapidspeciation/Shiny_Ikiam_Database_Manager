@@ -19,6 +19,7 @@ import {
   makeHead,
   MODEL_ROLES,
   modelReady,
+  rolesReady,
   sameFile,
   readMasks,
   roleOf,
@@ -36,6 +37,7 @@ import {
 import type { Photo } from './offlinePhoto'
 import type { FrozenStock } from './frozenStock'
 import { PUBLIC_FILES } from './publicModels'
+import { SEX_FILE, SEX_ROLES, sexInput } from './sexModel'
 
 type OrtModule = typeof Ort
 /** `url`: a public copy (Hugging Face) fetched in ranges; else the server's parts. `parts`: each part's SHA-256. */
@@ -75,6 +77,16 @@ export interface Engine {
   /** What a model still needs to download: plain bytes (space on the phone) and on the wire (mobile data). */
   toDownload(kind: ModelKind, files: ModelFile[], stored: Stored | null): { plain: number; wire: number; total: number }
   download(kind: ModelKind, files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void): Promise<void>
+  /** The team's sex estimate (lib/sexModel.ts): whether its files are on the phone, their size, the download. */
+  sexReady(files: ModelFile[] | null): Promise<boolean>
+  sexToDownload(files: ModelFile[], stored: Stored | null): { plain: number; wire: number; total: number }
+  downloadSex(files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void): Promise<void>
+  /** The wing detector's 224 px square of a photo (no encoder needed). */
+  square(photo: Photo): Promise<{ square: Uint8Array; status: string }>
+  /** The sex model's logit for a 224 px square. */
+  sexLogit(square: Uint8Array): Promise<number>
+  /** Removes the sex model from this phone (signed out: it is the team's). */
+  forgetSex(): Promise<void>
   /** Whether this page, its scripts and the runtime are on the phone (it opens without signal); online, keeps them first. */
   pageOffline(): Promise<boolean>
   remove(): Promise<void>
@@ -140,7 +152,11 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   }
 
   function toDownload(kind: ModelKind, files: ModelFile[], s: Stored | null) {
-    const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
+    return roleSizes(MODEL_ROLES[kind], files, s)
+  }
+
+  function roleSizes(roles: FileRole[], files: ModelFile[], s: Stored | null) {
+    const wanted = files.filter(f => roles.includes(f.role))
     const need = wanted.filter(f => !sameFile(s?.files[f.name], f))
     return {
       plain: need.reduce((a, f) => a + f.bytes, 0),
@@ -174,10 +190,22 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   }
 
   async function download(kind: ModelKind, files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void) {
-    const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
-    if (wanted.length !== MODEL_ROLES[kind].length) throw new Error('missing-on-server')
+    return downloadRoles(MODEL_ROLES[kind], files, progress)
+  }
+
+  /**
+   * The sex model with the detector. Only the pinned file (lib/sexModel.ts SEX_FILE): a listed file with other bytes
+   * is not taken, and each part is checked against the pinned hashes.
+   */
+  function sexFiles(files: ModelFile[]): ModelFile[] {
+    return files.flatMap(f => (f.role !== 'sex' ? [f] : f.name === SEX_FILE.name && f.bytes === SEX_FILE.bytes ? [{ ...f, parts: SEX_FILE.parts }] : []))
+  }
+
+  async function downloadRoles(roles: FileRole[], files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void) {
+    const wanted = files.filter(f => roles.includes(f.role))
+    if (wanted.length !== roles.length) throw new Error('missing-on-server')
     const cache = await caches.open(CACHE)
-    headLoaded = null // read again: its JSON may be a new one
+    if (roles.includes('head')) headLoaded = null // read again: its JSON may be a new one
     await keepPage(cache)
     if (signedIn()) await refreshStock()
     const total = wanted.reduce((a, f) => a + f.bytes, 0)
@@ -310,33 +338,39 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       if (!n) throw new Error('not-downloaded')
       return n
     }
-    ort ??= await importOrt(ORT_FILES[0])
-    ort.env.wasm.numThreads = threads
-    if (!detector) {
-      const t = performance.now()
-      const bytes = await readModel(name('detector'))
-      // The wing detector on the phone's GPU when it has one (faster), else WebAssembly like the encoder.
-      if ('gpu' in navigator) {
-        try {
-          gpuOrt = await importOrt(ORT_GPU_FILES[0])
-          gpuOrt.env.wasm.numThreads = 1
-          detector = await gpuOrt.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' })
-          detectorOnGpu = true
-        } catch {
-          detector = null
-        }
-      }
-      detector ??= await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
-      lastMs.detector_load = Math.round(performance.now() - t)
-    }
+    await loadDetector(s)
     if (!encoders[kind]) {
       const t = performance.now()
       let bytes: Uint8Array | null = await readModel(name(ENCODER_ROLE[kind]))
-      encoders[kind] = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      encoders[kind] = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
       bytes = null
       lastMs[`${kind}_load`] = Math.round(performance.now() - t)
     }
     await loadHead()
+  }
+
+  /** The runtime and the wing detector in memory (the first time from storage). */
+  async function loadDetector(s: Stored) {
+    ort ??= await importOrt(ORT_FILES[0])
+    ort.env.wasm.numThreads = threads
+    if (detector) return
+    const n = storedName(s.files, 'detector')
+    if (!n) throw new Error('not-downloaded')
+    const t = performance.now()
+    const bytes = await readModel(n)
+    // The wing detector on the phone's GPU when it has one (faster), else WebAssembly like the encoder.
+    if ('gpu' in navigator) {
+      try {
+        gpuOrt = await importOrt(ORT_GPU_FILES[0])
+        gpuOrt.env.wasm.numThreads = 1
+        detector = await gpuOrt.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' })
+        detectorOnGpu = true
+      } catch {
+        detector = null
+      }
+    }
+    detector ??= await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+    lastMs.detector_load = Math.round(performance.now() - t)
   }
 
   /** The head alone (about 30 MB): enough to rank a feature again, e.g. a result restored after another tab. */
@@ -379,13 +413,11 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map(b => b.toString(16).padStart(2, '0')).join('')
   }
 
-  async function run(photo: Photo, kind: ModelKind): Promise<RunResult> {
-    await load(kind)
-    const t0 = performance.now()
-    const encoder = encoders[kind]!
+  /** The detector's box and the 224 px square (the head's reviewed full-photo list applies when the head is loaded). */
+  async function cut(photo: Photo): Promise<{ square: Uint8Array; status: string }> {
     const raw = photo.bytes
     const orientation = exifOrientation(raw)
-    const override = headLoaded!.meta.full_photo_overrides.includes(await sha256(raw))
+    const override = !!headLoaded && headLoaded.meta.full_photo_overrides.includes(await sha256(raw))
     const img = await decode(photo.blob)
     const inp = detectorInput(img, orientation)
     const ortD = detectorOnGpu && gpuOrt ? gpuOrt : ort!
@@ -393,7 +425,14 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const det = res[detector!.outputNames[0]], proto = res[detector!.outputNames[1]]
     const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
     const { box, status } = cropBox(selectMasks(masks), orientation, img.width, img.height, override)
-    const square = letterboxCrop(img, box)
+    return { square: letterboxCrop(img, box), status }
+  }
+
+  async function run(photo: Photo, kind: ModelKind): Promise<RunResult> {
+    await load(kind)
+    const t0 = performance.now()
+    const encoder = encoders[kind]!
+    const { square, status } = await cut(photo)
     const x =
       kind === 'small'
         ? new ort!.Tensor('float32', studentInput(square), [1, 3, STUDENT_SIZE, STUDENT_SIZE])
@@ -405,8 +444,60 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     return { feature, square, status, ms }
   }
 
+  // ---------------------------------------------------------------- the sex estimate (team only, lib/sexModel.ts)
+
+  let sexSession: Ort.InferenceSession | null = null
+
+  async function sexReady(files: ModelFile[] | null) {
+    const s = await stored()
+    // Offline (no list): the pinned file by its name.
+    if (!files) return !!s && storedName(s.files, 'sex') === SEX_FILE.name && storedName(s.files, 'detector') != null
+    return rolesReady(SEX_ROLES, s?.files ?? null, sexFiles(files))
+  }
+
+  async function square(photo: Photo) {
+    const s = await stored()
+    if (!s) throw new Error('not-downloaded')
+    await loadDetector(s)
+    return cut(photo)
+  }
+
+  async function sexLogit(sq: Uint8Array): Promise<number> {
+    if (!sexSession) {
+      const s = await stored()
+      if (!s || storedName(s.files, 'sex') !== SEX_FILE.name) throw new Error('not-downloaded')
+      ort ??= await importOrt(ORT_FILES[0])
+      ort.env.wasm.numThreads = threads
+      const t = performance.now()
+      sexSession = await ort.InferenceSession.create(await readModel(SEX_FILE.name), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      lastMs.sex_load = Math.round(performance.now() - t)
+    }
+    const t = performance.now()
+    const out = await sexSession.run({ [sexSession.inputNames[0]]: new ort!.Tensor('float32', sexInput(sq), [1, 3, 224, 224]) })
+    lastMs.sex = Math.round(performance.now() - t)
+    return (out[sexSession.outputNames[0]].data as Float32Array)[0]
+  }
+
+  async function forgetSex() {
+    sexSession?.release().catch(() => {})
+    sexSession = null
+    const cache = await caches.open(CACHE)
+    const s = await stored()
+    if (!s) return
+    let changed = false
+    for (const [name, f] of Object.entries(s.files)) {
+      if (roleOf(name, f.role) !== 'sex') continue
+      for (let i = 0; i * PART < f.bytes; i++) await cache.delete(at(`models/${name}?part=${i}`))
+      delete s.files[name]
+      changed = true
+    }
+    if (changed) await cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+  }
+
   async function remove() {
     detector?.release().catch(() => {})
+    sexSession?.release().catch(() => {})
+    sexSession = null
     for (const e of Object.values(encoders)) e?.release().catch(() => {})
     detector = null
     for (const k of KINDS) delete encoders[k]
@@ -457,6 +548,12 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     ready,
     toDownload,
     download,
+    sexReady,
+    sexToDownload: (files, s) => roleSizes(SEX_ROLES, sexFiles(files), s),
+    downloadSex: (files, progress) => downloadRoles(SEX_ROLES, sexFiles(files), progress),
+    square,
+    sexLogit,
+    forgetSex,
     pageOffline,
     remove,
     load,

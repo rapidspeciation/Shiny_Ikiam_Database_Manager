@@ -36,13 +36,24 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  */
 export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb' };
 
+/**
+ * The team's experimental sex model (Identificar, signed in only: frontend/src/lib/sexModel.ts pins the same bytes).
+ * Never public: it is sent only on this signed-in route. Kept in offline/ beside the head; a file whose sha256 is not
+ * this one is not offered. Sent plain (`packed: false`): fp16 weights barely compress, and adding it must not make
+ * every deploy compress the other models' parts again.
+ */
+export const SEX = { name: 'sex_v2s_ft_full_fp16.onnx', sha256: 'd6d5fb9d92af9a5b4d85a7fac3ead016e2764c5b1964a064fdaf0e98df7c412d' };
+
 export const MODELS = [
   { name: 'wing_seg_s2.onnx', path: 'app/assets/wing_seg_s2.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
   { name: 'head_6fa6ab78.json', path: 'offline/head_6fa6ab78.json', role: 'head-meta' },
   { name: 'head_6fa6ab78_fp16.bin', path: 'offline/head_6fa6ab78_fp16.bin', role: 'head' },
   { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true },
+  { name: SEX.name, path: `offline/${SEX.name}`, role: 'sex', sha256: SEX.sha256, optional: true, packed: false },
 ];
+/** The models whose parts are precompressed. */
+const PACKED = MODELS.filter(m => m.packed !== false);
 
 const types = {
   '.html': 'text/html; charset=utf-8',
@@ -119,7 +130,7 @@ let partsMemo = { key: '', value: {} };
 async function compressedParts(identifierDir) {
   const root = join(identifierDir, 'offline');
   const dirs = (await readdir(root).catch(() => [])).filter(d => PARTS_DIR.test(d)).sort().reverse();
-  const stats = await Promise.all(MODELS.map(m => stat(join(identifierDir, m.path)).catch(() => null)));
+  const stats = await Promise.all(PACKED.map(m => stat(join(identifierDir, m.path)).catch(() => null)));
   // Each folder's manifest too: a folder being made gets its manifest last, and must be read again then.
   const manifests = await Promise.all(dirs.map(d => stat(join(root, d, 'manifest.json')).catch(() => null)));
   const key = [root, ...dirs.map((d, i) => `${d}:${manifests[i] ? etagOf(manifests[i]) : '-'}`), ...stats.map(s => (s ? etagOf(s) : '-'))].join('|');
@@ -128,7 +139,7 @@ async function compressedParts(identifierDir) {
   for (const d of dirs) {
     const manifest = await readFile(join(root, d, 'manifest.json'), 'utf8').then(JSON.parse).catch(() => null);
     if (!manifest || manifest.partBytes !== PART_BYTES) continue;
-    MODELS.forEach((m, i) => {
+    PACKED.forEach((m, i) => {
       const entry = manifest.files?.[m.name];
       if (!value[m.name] && stats[i] && entry?.etag === etagOf(stats[i])) value[m.name] = { dir: join(root, d, m.name), etag: entry.etag, parts: entry.parts };
     });
@@ -141,8 +152,8 @@ async function compressedParts(identifierDir) {
 export async function modelsWithoutParts(identifierDir) {
   const packed = await compressedParts(identifierDir);
   // An optional model (the small one) that is not on this server needs no parts.
-  const present = await Promise.all(MODELS.map(m => stat(join(identifierDir, m.path)).then(() => true, () => !m.optional)));
-  return MODELS.filter((m, i) => present[i] && !packed[m.name]).map(m => m.name);
+  const present = await Promise.all(PACKED.map(m => stat(join(identifierDir, m.path)).then(() => true, () => !m.optional)));
+  return PACKED.filter((m, i) => present[i] && !packed[m.name]).map(m => m.name);
 }
 
 /** What one part costs on the wire with `encoding` (null: plain). */
@@ -179,7 +190,7 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
         for (const m of MODELS) {
           const s = await stat(join(identifierDir, m.path)).catch(() => null);
           if (!(await usable(identifierDir, m, s))) {
-            if (m.optional) continue; // the small model: its option is not offered
+            if (m.optional) continue; // the small model or the sex model: not offered
             throw new HttpError(404, `${m.name} is missing on the server`);
           }
           const parts = packed[m.name]?.parts;
@@ -302,7 +313,7 @@ export async function precompressParts(identifierDir, { stamp = new Date().toISO
 async function compressInto(identifierDir, out, log) {
   const manifest = { created: new Date().toISOString(), partBytes: PART_BYTES, levels: { zst: 3, gz: 6 }, files: {} };
   const sha = () => createHash('sha256');
-  for (const m of MODELS) {
+  for (const m of PACKED) {
     const file = join(identifierDir, m.path);
     const s = await stat(file).catch(err => (m.optional && err.code === 'ENOENT' ? null : Promise.reject(err)));
     if (!s) continue; // the small model, not on this server

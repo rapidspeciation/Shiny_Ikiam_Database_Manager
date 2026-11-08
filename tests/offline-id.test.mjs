@@ -7,10 +7,12 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { serveOfflineId, MODELS, PART_BYTES, STUDENT, modelsWithoutParts, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { serveOfflineId, MODELS, PART_BYTES, SEX, STUDENT, modelsWithoutParts, pickEncoding, precompressParts } from '../server/offline-id.mjs';
 
 const student = MODELS.find(m => m.role === 'student');
+const sex = MODELS.find(m => m.role === 'sex');
 const REAL_STUDENT_SHA = STUDENT.sha256;
+const REAL_SEX_SHA = SEX.sha256;
 
 function setup(sizes = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'offline-id-'));
@@ -26,7 +28,7 @@ function setup(sizes = {}) {
     for (let i = 0; i < n; i++) b[i] = (i % 256) & (i % 7 ? 0xff : 0x0f);
     writeFileSync(join(ident, m.path), b);
     // The test's small model is these bytes: its expected hash is theirs.
-    if (m === student) m.sha256 = createHash('sha256').update(b).digest('hex');
+    if (m === student || m === sex) m.sha256 = createHash('sha256').update(b).digest('hex');
   }
   let user = null;
   const server = http.createServer((req, res) => {
@@ -117,7 +119,8 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
     assert.equal(list.files[1].wire, big);
     assert.equal(list.files[1].encoding, null);
 
-    assert.equal((await modelsWithoutParts(ident)).length, MODELS.length);
+    // The sex model is sent plain: no parts are made for it.
+    assert.equal((await modelsWithoutParts(ident)).length, MODELS.length - 1);
     const { manifest } = await precompressParts(ident, { stamp: '20261031T000000Z' });
     assert.deepEqual(await modelsWithoutParts(ident), []);
     assert.equal(manifest.files[enc].parts.length, 2);
@@ -216,7 +219,7 @@ test('the small model: one constant, listed with its role and hash, hidden when 
     const good = student.sha256;
     student.sha256 = '0'.repeat(64);
     list = await (await fetch(`${base}/models/list.json`)).json();
-    assert.deepEqual(list.files.map(f => f.role), ['detector', 'encoder', 'head-meta', 'head']);
+    assert.deepEqual(list.files.map(f => f.role), ['detector', 'encoder', 'head-meta', 'head', 'sex']);
     assert.equal((await raw(port, `${p}/${student.name}?part=0`)).status, 404);
     assert.equal((await raw(port, `${p}/${student.name}`)).status, 404);
     student.sha256 = good;
@@ -236,6 +239,45 @@ test('the small model: one constant, listed with its role and hash, hidden when 
     const r = await raw(port, `${p}/${student.name}?part=0`, { 'accept-encoding': 'zstd' });
     assert.equal(r.headers['content-encoding'], 'zstd');
     assert.deepEqual(zstdDecompressSync(r.body), readFileSync(file));
+  } finally {
+    server.close();
+  }
+});
+
+test('the sex model: signed in only, pinned bytes, sent plain, never in the parts', async () => {
+  assert.equal(sex.name, SEX.name);
+  assert.equal(sex.path, `offline/${SEX.name}`);
+  assert.match(REAL_SEX_SHA, /^[0-9a-f]{64}$/);
+  assert.equal(sex.optional, true);
+  const { base, port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  try {
+    // Signed out: neither the list nor the file nor a part.
+    assert.equal((await fetch(`${base}/models/list.json`)).status, 401);
+    assert.equal((await raw(port, `${p}/${sex.name}`)).status, 401);
+    assert.equal((await raw(port, `${p}/${sex.name}?part=0`)).status, 401);
+    assert.equal((await raw(port, `${p}/${sex.name}`, { range: 'bytes=0-9' })).status, 401);
+    signIn();
+    let list = await (await fetch(`${base}/models/list.json`)).json();
+    const entry = list.files.find(f => f.name === sex.name);
+    assert.equal(entry.role, 'sex');
+    assert.equal(entry.sha256, sex.sha256);
+    await precompressParts(ident, { stamp: '20261108T000000Z' });
+    assert.equal(JSON.parse(readFileSync(join(ident, 'offline', 'parts-20261108T000000Z', 'manifest.json'), 'utf8')).files[sex.name], undefined);
+    assert.deepEqual(await modelsWithoutParts(ident), []);
+    const r = await raw(port, `${p}/${sex.name}?part=0`, { 'accept-encoding': 'zstd, gzip' });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['content-encoding'], undefined);
+    assert.deepEqual(r.body, readFileSync(join(ident, sex.path)));
+    list = await (await fetch(`${base}/models/list.json`, { headers: { 'accept-encoding': 'zstd' } })).json();
+    assert.equal(list.files.find(f => f.name === sex.name).parts, undefined);
+    // Other bytes than the constant: not offered, not served.
+    const good = sex.sha256;
+    sex.sha256 = '0'.repeat(64);
+    list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(list.files.some(f => f.role === 'sex'), false);
+    assert.equal((await raw(port, `${p}/${sex.name}?part=0`)).status, 404);
+    sex.sha256 = good;
   } finally {
     server.close();
   }

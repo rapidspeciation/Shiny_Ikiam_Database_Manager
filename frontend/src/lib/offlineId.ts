@@ -452,7 +452,8 @@ export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): F
 
 /** «modelo completo» (BioCLIP 2.5-H int8) or «modelo pequeño» (the distilled ViT-S, server/offline-id.mjs STUDENT). */
 export type ModelKind = 'full' | 'small'
-export type FileRole = 'detector' | 'encoder' | 'student' | 'head' | 'head-meta'
+/** `sex`: the team's experimental sex model (lib/sexModel.ts), not part of either identifier model. */
+export type FileRole = 'detector' | 'encoder' | 'student' | 'head' | 'head-meta' | 'sex'
 
 /** The files each model needs: the detector and the head serve both, each has its own encoder. */
 export const MODEL_ROLES: Record<ModelKind, FileRole[]> = {
@@ -467,6 +468,7 @@ export function roleOf(name: string, role?: string | null): FileRole {
   if (role) return role as FileRole
   if (name.startsWith('wing_seg')) return 'detector'
   if (name.startsWith('student')) return 'student'
+  if (name.startsWith('sex_')) return 'sex'
   if (name.startsWith('bioclip')) return 'encoder'
   return name.endsWith('.json') ? 'head-meta' : 'head'
 }
@@ -496,8 +498,13 @@ export function storedName(files: Record<string, StoredFile>, role: FileRole): s
  * the very versions listed (a model missing from the list is not ready). Offline: the files stored.
  */
 export function modelReady(kind: ModelKind, stored: Record<string, StoredFile> | null, listed: ListedFile[] | null): boolean {
+  return rolesReady(MODEL_ROLES[kind], stored, listed)
+}
+
+/** modelReady for any set of roles (the sex estimate: the detector and the sex model). */
+export function rolesReady(roles: FileRole[], stored: Record<string, StoredFile> | null, listed: ListedFile[] | null): boolean {
   if (!stored) return false
-  return MODEL_ROLES[kind].every(role => {
+  return roles.every(role => {
     if (!listed) return storedName(stored, role) != null
     const f = listed.find(l => l.role === role)
     return !!f && sameFile(stored[f.name], f)

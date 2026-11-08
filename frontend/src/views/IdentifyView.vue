@@ -6,6 +6,8 @@
  * (lib/identifyLog.ts). The team sees the flash-frozen gap of the candidate being compared (StockPanel).
  * Without an account: the models from Hugging Face, the static field photos, no request to the team's API (no
  * inventory, no species-photos), and the inventory a team session left on the phone is removed.
+ * The team also sees an experimental sex estimate for in-hand photos (SexEstimate, lib/sexModel.ts); its model is
+ * the team's (signed in only) and is removed from the phone when signed out.
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Camera, Check, ChevronDown, ImageUp, RotateCcw, TriangleAlert, WifiOff } from 'lucide-vue-next'
@@ -14,6 +16,8 @@ import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
+import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
+import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../lib/publicModels'
 import { MODEL_ROLES, sameFile } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
@@ -110,6 +114,8 @@ async function refresh() {
     if (headTried && result.value) head.value = await engine.loadHead().catch(() => null)
   }
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
+  sexReady.value = !!session.user && (await engine.sexReady(files.value))
+  sexSize.value = session.user && files.value ? engine.sexToDownload(files.value, s).plain : null
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
   checked.value = true
@@ -227,6 +233,8 @@ interface Result {
   /** The smaller photo sent (base64 JPEG): sent again when the side changes. */
   photo?: string
   side?: Side
+  /** The sex estimate (team only): the model's logit, or why it does not apply. */
+  sex?: { z: number } | { na: 'nowings' }
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
@@ -270,11 +278,14 @@ async function identify(photo: Photo) {
     const out = await engine.run(photo, kind)
     head.value = engine.head()
     firstRun.value = false
-    result.value = { at: new Date().toISOString(), source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
+    const at = new Date().toISOString()
+    lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status } }
+    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
     compared.value = null
     pick.value = null
     keepLast()
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    estimateSex()
   } catch (err) {
     const m = String((err as Error)?.message ?? err)
     runError.value = /memory|allocation|out of/i.test(m)
@@ -300,8 +311,10 @@ async function identifyOnline(photo: Photo) {
     const started = performance.now()
     const out = await identifyOnServer(sent, side)
     firstRun.value = false
+    const at = new Date().toISOString()
+    lastPhoto.value = { at, photo }
     result.value = {
-      at: new Date().toISOString(),
+      at,
       source: 'online',
       crop: squareCrop(canvas, out.wingBox),
       status: out.crop ?? 'success',
@@ -314,6 +327,7 @@ async function identifyOnline(photo: Photo) {
     pick.value = null
     keepLast()
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    estimateSex()
   } catch (err) {
     runError.value = onlineError(err)
   } finally {
@@ -353,6 +367,8 @@ function sideFromResult(r: Result) {
 }
 function clearResult() {
   result.value = null
+  lastPhoto.value = null
+  sexError.value = null
   compared.value = null
   pick.value = null
   try {
@@ -541,6 +557,75 @@ watch(sideValue, () => {
     log.value = writeLog({ at: result.value.at, thumb: smallThumb.value, ai: top.value.name, p: top.value.p, pick: pick.value, side: sideValue.value }, log.value)
 })
 
+// ---------------------------------------------------------------- the sex estimate (team only, experimental)
+
+const sexReady = ref(false)
+/** Bytes still to download for it (the detector may be on the phone already); null: not known. */
+const sexSize = ref<number | null>(null)
+const sexDownload = ref<{ done: number; total: number } | null>(null)
+const sexError = ref<string | null>(null)
+let sexBusy = false
+/** The last photo, and its square when this phone read it: in memory only, for the estimate. */
+const lastPhoto = shallowRef<{ at: string; photo: Photo; cut?: { square: Uint8Array; status: string } } | null>(null)
+const sexListed = computed(() => !!files.value?.some(f => f.role === 'sex' && f.name === SEX_FILE.name))
+
+/** The estimate of the result on screen, once (the server's result too: the box and the square come from this phone). */
+async function estimateSex() {
+  const r = result.value, p = lastPhoto.value
+  if (sexBusy || !r || r.sex || !session.user || !sexReady.value || !p || p.at !== r.at) return
+  sexBusy = true
+  sexError.value = null
+  try {
+    const cut = p.cut ?? (await engine.square(p.photo))
+    const sex = cut.status !== 'success' ? { na: 'nowings' as const } : { z: await engine.sexLogit(cut.square) }
+    if (result.value?.at !== r.at) return
+    result.value = { ...result.value, sex }
+    keepLast()
+  } catch (err) {
+    if (result.value?.at === r.at)
+      sexError.value = /memory|allocation|out of/i.test(String((err as Error)?.message ?? err))
+        ? t('El teléfono se quedó sin memoria para el sexo estimado.')
+        : t('No se pudo estimar el sexo en esta foto.')
+  } finally {
+    sexBusy = false
+    // Another photo came meanwhile: its turn now.
+    if (result.value && result.value.at !== r.at) estimateSex()
+  }
+}
+
+async function downloadSexModel() {
+  if (!files.value || sexDownload.value || download.value) return
+  sexError.value = null
+  sexDownload.value = { done: 0, total: 1 }
+  try {
+    await engine.downloadSex(files.value, (done, total) => (sexDownload.value = { done, total }))
+    sexReady.value = await engine.sexReady(files.value)
+    ready.value = await engine.ready(files.value)
+    sexSize.value = engine.sexToDownload(files.value, await engine.stored()).plain
+  } catch {
+    sexError.value = t('No se pudo descargar el modelo. Pruebe de nuevo.')
+  } finally {
+    sexDownload.value = null
+  }
+  estimateSex()
+}
+
+const sexState = computed<SexState | null>(() => {
+  const r = result.value
+  if (!session.user || !r || !ranked.value) return null
+  const name = said.value?.kind === 'genus' ? (said.value as { genus: string }).genus : top.value?.name
+  const applies = sexApplies(name, ithomiiniGenera.value)
+  if (applies === 'no') return null
+  if (applies === 'genus') return { kind: 'genus', genus: name!.split(' ')[0] }
+  if (r.sex) return 'na' in r.sex ? { kind: 'nowings' } : { kind: 'ready', z: r.sex.z }
+  if (sexDownload.value) return { kind: 'downloading', ...sexDownload.value }
+  if (sexError.value) return { kind: 'error', message: sexError.value }
+  // A result restored after another tab, without its photo: nothing to estimate.
+  if (sexReady.value) return lastPhoto.value?.at === r.at ? { kind: 'running' } : null
+  if (!sexListed.value) return null // not on this server, or no list (offline)
+  return { kind: 'download', mb: mb(sexSize.value ?? SEX_FILE.bytes) }
+})
+
 // ---------------------------------------------------------------- reference photos
 
 const refs = ref<Record<string, Refs>>({})
@@ -689,7 +774,7 @@ onMounted(async () => {
     },
   )
   // Signed out (the server said so): the team's inventory a session left on this phone goes.
-  if (known && !session.user && navigator.onLine) await engine.forgetStock()
+  if (known && !session.user && navigator.onLine) await Promise.all([engine.forgetStock(), engine.forgetSex()])
   if (session.user) stock.value = await engine.stock()
   await refresh()
   await restoreLast()
@@ -869,6 +954,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p class="mt-1 text-xs text-fg-subtle" data-testid="result-source">
               {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
+            <SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />
 
             <section class="mt-4">
               <div class="mb-2 flex items-baseline justify-between gap-2">
