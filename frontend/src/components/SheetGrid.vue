@@ -119,6 +119,8 @@ const emit = defineEmits<{
   edge: [side: 'top' | 'bottom']
   /** The history of a cell (or, field null, of its whole row) was asked for. */
   history: [target: HistoryTarget]
+  /** The row drawer opened (true) or closed (false), so a parent can hold changes that would rebuild this grid. */
+  form: [open: boolean]
 }>()
 
 type GridRow = Record<string, CellValue> & { __id: string; __row: number | null; __new: string | null }
@@ -127,6 +129,10 @@ const pending = usePending()
 const session = useSession()
 const host = ref<HTMLDivElement>()
 const drawerId = ref<string | null>(null)
+watch(
+  () => !!drawerId.value,
+  open => emit('form', open),
+)
 let table: Tabulator | null = null
 // Tabulator builds asynchronously; data changes before that point wait for it.
 let built = false

@@ -17,7 +17,7 @@ import { useSession } from '../../stores/session'
  * other matches, as Ctrl+F does.
  */
 const props = defineProps<{ result: SearchSheet; query: string; pinned?: boolean }>()
-const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget] }>()
+const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget]; form: [open: boolean] }>()
 
 const session = useSession()
 const tables = useTables()
@@ -225,6 +225,7 @@ onBeforeUnmount(stop)
         @notice="notify"
         @edge="onEdge"
         @history="target => emit('history', target)"
+        @form="open => emit('form', open)"
       />
     </div>
   </section>
