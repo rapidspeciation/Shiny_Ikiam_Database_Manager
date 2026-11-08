@@ -70,8 +70,10 @@ const ticks = [
         <div class="relative h-4 text-[0.7rem] leading-4 text-fg-muted tabular-nums">
           <span v-for="(tk, i) in ticks" :key="i" class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: at(tk.z) }">{{ tk.label }}</span>
         </div>
-        <div class="mt-0.5 flex justify-between text-xs text-fg-muted">
-          <span>♂ {{ $t('macho') }}</span><span>{{ $t('no seguro') }}</span><span>♀ {{ $t('hembra') }}</span>
+        <div class="relative mt-0.5 h-4 text-xs leading-4 text-fg-muted">
+          <span class="absolute left-0">♂ {{ $t('macho') }}</span>
+          <span class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: `calc((${at(SEX_CUT.lo)} + ${at(SEX_CUT.hi)}) / 2)` }">{{ $t('no seguro') }}</span>
+          <span class="absolute right-0">♀ {{ $t('hembra') }}</span>
         </div>
       </div>
       <p class="sr-only">
