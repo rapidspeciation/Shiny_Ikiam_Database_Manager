@@ -19,7 +19,7 @@ concurrent only), `claw-final` (base, final). `compare.mjs <folder>` prints each
 | E2 | sync (lab): LocalSheets.readSheet copies and hashes a sheet 500 rows at a time with a turn for others in between (same rows, same digest) | sync event-loop max | **kept**: sync event loop max 2981 → 179 ms (server), 1632 → 114 ms (PC) |
 | E3 | big answers compressed with the async zlib calls instead of `brotliCompressSync`/`gzipSync` | event loop max in `pages` and `concurrent` | **dropped**: search-phase loop p95 −23 % but concurrent p95 +21 % on the server (the 4 libuv threads queue the big answers); pages unchanged |
 | E4 | the rack reader's `enlarge`: made once per size for both binarizers, its column weights once per size (the same pixels) | `tools.rack_read_photos.*_ms` | **kept**: 13.2 → 8.4 s a rack photo (server), 6.4 → 4.5 s (PC); the same 94 tubes |
-| E5 | LOCAL_MODE: the in-memory workbook (LocalSheets rows) kept in SQLite instead | anon memory idle/peak, start time | deferred on 1 Nov (budget); run on 7 Nov, see "E5, 7 Nov" below |
+| E5 | LOCAL_MODE: the in-memory workbook (LocalSheets rows) kept in SQLite instead | anon memory idle/peak, start time | **kept** (7–8 Nov): server RSS −600 to −730 MB at rest after the start's sync, −300 to −370 MB after a forced whole-workbook sync; start −9 to −22 %, start CPU −50 %, sync −5 to −10 %; same answers. See "E5, 7–8 Nov: outcome" |
 
 ## E5, deferred: the lab's workbook in SQLite
 
@@ -59,6 +59,49 @@ least 400 MB on the bench, no endpoint more than 10 % slower at p50, the same an
   `JSON.parse` at each start (faster start, lower start peak); sync about as fast (deserialising instead of
   cloning). Risk: an inserted row in Insectary_data rewrites every row with a formula (SQL instead of memory).
 - **Way back:** `LOCAL_SHEETS=memory` keeps today's in-memory rows without a code change.
+
+## E5, 7–8 Nov: outcome
+
+Runs on claudeclaw (`/home/ubuntu/perf-bench/results/`, arms `base-7048d72`, `e5-sqlite` = the round-1 code,
+`e5b-sqlite` = the reviewed code; interleaved repeats, `--max 7G`, `--cpu-weight 20`): `claw-e5-20261108` (base, e5;
+3 each), `claw-e5b-20261108` (base, e5b; 3 each), `claw-e5b-pages-20261108` (pages and tools only, 3 each),
+`claw-e5b-pages5-20261108` (pages only, 5 each). The pages phase failed in the first two (the bench's Playwright
+path moved to T3 runtime 0.1.7); the last two ran it. compare.mjs: same answers as base in all four.
+
+- Real-data check (`e5-check.mjs`, the lab's 5 Oct snapshot): all 107,437 rows of 25 sheets the same from memory and
+  from the file (rows, order, digests, sheetInfo, rowCount), also after an inserted row, a deleted row and 20 edits
+  in Insectary_data. LocalSheets holds 738 MB of heap for them; FileSheets about 0.
+- Server RSS (median, claw-e5b): idle after the start's sync 2331 → 1602 MB (−729), search 2368 → 1765 (−603); after
+  a forced whole-workbook sync 2981 → 2613 (−368), tools 3186 → 2815 (−371), end idle 2294 → 1934 (−360); peak
+  (VmHWM) 3186 → 2816 (−370). claw-e5: idle −599, end idle −456, peak −326. After a whole-workbook sync V8 keeps the
+  pages of the sheets' copies (garbage) in its 2 GB heap, so the gap narrows to about −350 MB until it shrinks.
+- Speed: start ready 29.2 → 26.6 s, 29.5 → 25.7 s, 30.4 → 23.6 s, 28.8 → 22.4 s; start CPU 32 → 16 s (no snapshot
+  parse); sync 13.3 → 12.0 s and 13.4 → 12.7 s, its event loop p95 −19 to −31 %; search p50 +4.8 % / −2.3 %;
+  5 clients p50 +1.4 % / 0 %; tools pooled over 9 repeats each within ±5 % (identify_species first is bimodal,
+  ~5 s or ~10 s, in both arms). Tabs (claw-e5b-pages5): all within their ranges. Monitoreo's /api/table (9 kB) was
+  more often ~600 ms than ~300 ms: it waits behind a ~2 s main-thread block both arms have (pages loop max 2102 vs
+  2194 ms, main-thread CPU 5.6 vs 5.5 s), which falls in Monitoreo's window when the app starts 6 s sooner.
+- Rows file: 15–18 s and 1.9 GB peak in the child, once per snapshot; 442 MB (a WITHOUT ROWID table was 597 MB).
+  An inserted row in Insectary_data: 8.0 s (memory 5.5 s); a deleted row 7.9 s (memory 10.8 s); both are mostly
+  moveRowRefs over every formula of the sheet.
+- Review: 2 rounds, GPT-6.1 Sol + fresh Opus (below).
+
+## Review of E5 (sol-loop, 2 rounds, GPT-6.1 Sol + fresh Opus, on 7048d726..branch)
+
+Grades: Sol C → A, Opus B+ → A−.
+
+| round | critic | id | severity | outcome | reason |
+|---|---|---|---|---|---|
+| 1 | sol | F1 | blocker | fixed | readSheet order: a row written into a gap (or an unsorted seed) came back sorted, LocalSheets keeps it last: rows carry their place (`seq`); 6 of the 8 tests fail without it |
+| 1 | sol | F2 | nit | fixed | temporary folders without a database file: no file then (rows in memory) |
+| 1 | opus | F1 | should | fixed | same as sol F1 |
+| 1 | opus | F2 | nit | fixed | the file's stamp covers the code that shapes the rows |
+| 1 | opus | F3 | nit | fixed | a build child killed for memory left its half file |
+| 1 | opus | F4 | nit | fixed | same as sol F2 |
+| 1 | opus | F5 | nit | declined | readRow copies a fresh row once more; speed matched |
+| 1 | opus | F6 | nit | declined (noted) | the unit's count includes page cache: judged on server RSS and anon |
+| 2 | sol | – | – | – | all round-1 ids resolved, no new findings |
+| 2 | opus | R2-F1 | nit | fixed | the stamp also covers docs/workbook-schema.json |
 
 ## Review (dual-critic-loop, 2 rounds, GPT-6.1 Sol + fresh Opus, on the combined diff a6ad89e..perf-combo)
 
