@@ -322,6 +322,20 @@ export default {
   Elegida: 'Chosen',
   '(propuesta)': '(proposed)',
   'No es ninguna': 'None of them',
+  '¿Cómo funciona?': 'How does it work?',
+  'Teclas: j/k mover · S sí es la fila · O otra fila · N ninguna · 1–9 elegir fila':
+    'Keys: j/k move · S yes, it is the row · O another row · N none · 1–9 choose a row',
+  'Sexo estimado (experimental): descargar el modelo, {mb} MB': 'Estimated sex (experimental): download the model, {mb} MB',
+  'Descargando el modelo de sexo: {done} de {total} MB': 'Downloading the sex model: {done} of {total} MB',
+  'Fila conservada con marca de campo: posible fila corrida': 'Preserved row with a field mark: rows may be shifted',
+  'Modelo experimental de sexo en fotos en mano, calculado en este navegador sobre las alas':
+    'Experimental sex model for in-hand photos, run in this browser on the wings',
+  Estimado: 'Estimated',
+  experimental: 'experimental',
+  'Más de 10 min entre dos de estas horas': 'More than 10 min between two of these times',
+  nota: 'note',
+  fila: 'row',
+  'misma hora': 'same time',
 
   // Import
   'El archivo no es un GPX': 'The file is not a GPX',

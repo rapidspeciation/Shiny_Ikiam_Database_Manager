@@ -20,7 +20,16 @@ export function initWalkIds(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS walk_photo_ids(photo_id TEXT PRIMARY KEY, walk_id TEXT NOT NULL, status TEXT NOT NULL,
     species_json TEXT, subspecies_json TEXT, crop TEXT, error TEXT, ms INTEGER, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS walk_photo_ids_walk ON walk_photo_ids(walk_id);`);
+  // The wing detector's box ([x0, y0, x1, y1], fractions of the photo), for Dudas to show the wings.
+  if (!db.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name=?').get('walk_photo_ids', 'wing_box'))
+    db.exec('ALTER TABLE walk_photo_ids ADD COLUMN wing_box TEXT');
 }
+
+/** A box of four fractions from 0 to 1 (x0 < x1, y0 < y1), else null. */
+export const wingBoxOf = box =>
+  Array.isArray(box) && box.length === 4 && box.every(v => Number.isFinite(v) && v >= 0 && v <= 1) && box[0] < box[2] && box[1] < box[3]
+    ? box.map(Number)
+    : null;
 
 const kept = list =>
   (Array.isArray(list) ? list : [])
@@ -76,8 +85,16 @@ export function createWalkIds({ store, identifier, onRead = () => {}, scratch = 
       );
     else
       db.prepare(
-        "UPDATE walk_photo_ids SET status='done', species_json=?, subspecies_json=?, crop=?, error=NULL, ms=?, updated_at=? WHERE photo_id=?",
-      ).run(JSON.stringify(kept(out?.species)), JSON.stringify(kept(out?.subspecies)), out?.crop ?? null, Date.now() - started, now(), job.photo_id);
+        "UPDATE walk_photo_ids SET status='done', species_json=?, subspecies_json=?, crop=?, wing_box=?, error=NULL, ms=?, updated_at=? WHERE photo_id=?",
+      ).run(
+        JSON.stringify(kept(out?.species)),
+        JSON.stringify(kept(out?.subspecies)),
+        out?.crop ?? null,
+        wingBoxOf(out?.wingBox) ? JSON.stringify(wingBoxOf(out.wingBox)) : null,
+        Date.now() - started,
+        now(),
+        job.photo_id,
+      );
     try {
       onRead(job.walk_id);
     } catch (e) {

@@ -23,6 +23,7 @@ import {
   linkCapture,
   storeReviewedWalk,
 } from '../server/monitoring.mjs';
+import { createWalkIds } from '../server/walk-ids.mjs';
 
 const editor = { id: 'e1', username: 'editor', role: 'editor' };
 const other = { id: 'e2', username: 'other', role: 'editor' };
@@ -483,6 +484,38 @@ test('a waiting walk whose points do not pair surely is listed to be paired by h
   );
   assert.equal(listWalks(s)[0].status, 'imported');
   assert.equal(rematchTracks(s).doubts.filter(d => d.walkId === walk.id).length, 0);
+  s.close();
+});
+
+test("a doubt carries its point's GPS time and the identifier's reading of its photo (species, wing box)", async () => {
+  const { s } = await misPaired();
+  const { walk } = await saveWalk(
+    s,
+    {
+      ...walkBody(),
+      date: '2025-09-10',
+      collector: 'AA - Alex Arias',
+      waypoints: [
+        // Saved in Wikiloc at 14:47 UTC: 9:47 in Ecuador.
+        { lat: -0.95, lon: -77.86, text: 'Marip 1', photos: ['https://s2.wklcdn.com/image_458/1/2/555Master.jpg'], time: '2025-09-10T14:47:00Z' },
+        { lat: -0.95, lon: -77.87, text: 'Planta', photos: [] },
+      ],
+    },
+    editor,
+    { fetchImage: async () => ({ type: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) }) },
+  );
+  const read = createWalkIds({
+    store: s,
+    identifier: { status: () => ({ installed: true }), identify: async () => ({ species: [['Oleria onega', 0.61], ['Oleria ilerdina', 0.11]], subspecies: [], crop: 'success', wingBox: [0.1, 0.2, 0.8, 0.9] }) },
+  });
+  read.start(walk.id);
+  await read.idle();
+  const [marip, planta] = rematchTracks(s).doubts.filter(d => d.walkId === walk.id);
+  assert.equal(marip.gps, 587);
+  assert.deepEqual(marip.readings, [{ photo: '555', species: [['Oleria onega', 0.61], ['Oleria ilerdina', 0.11]], box: [0.1, 0.2, 0.8, 0.9] }]);
+  // No time, no photo: nothing made up.
+  assert.equal(planta.gps, null);
+  assert.deepEqual(planta.readings, []);
   s.close();
 });
 

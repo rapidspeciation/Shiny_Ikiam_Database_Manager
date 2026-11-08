@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import ChoiceField from '../ChoiceField.vue'
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Columns2, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
 import PointPhotoViewer from './PointPhotoViewer.vue'
 import PointSection from './PointSection.vue'
+import IdentBox from './IdentBox.vue'
+import WingPhoto from './WingPhoto.vue'
 import { useMonitoring, type WikilocWalk } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
+import { appRoot } from '../../lib/appRoot'
 import { formatSerial, isoToSerial } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
+import { createEngine, type ModelFile } from '../../lib/offlineEngine'
+import { SEX_FILE, SEX_GENERA, sexCall, sigmoid } from '../../lib/sexModel'
+import { estimatedSection, sectionDiffers } from '../../lib/transects'
 import { CONFLICT } from '../../lib/walkBoard'
 import { useSession } from '../../stores/session'
 
@@ -47,6 +53,12 @@ interface NoteInfo {
   minutes: number | null
   markId: string | null
 }
+/** The identifier's reading of one photo (server/walk-ids.mjs): its first species and the wing box (fractions). */
+interface Reading {
+  photo: string
+  species: [string, number][]
+  box: number[] | null
+}
 interface Doubt {
   source: 'track' | 'walk'
   trackId?: string
@@ -63,8 +75,12 @@ interface Doubt {
   minutes: number | null
   /** What the note itself says (species, sex, mark, time), to set beside its row. */
   note?: NoteInfo
+  /** When the point was saved in Wikiloc (its GPS time, minutes of the day), if Wikiloc gave it. */
+  gps?: number | null
   photos: string[]
   photoLinks: string[]
+  /** The identifier's readings of its photos, for those already read. */
+  readings?: Reading[]
   confidence: MatchConfidence
   conflicts: MatchConflict[]
   changed: boolean
@@ -109,6 +125,7 @@ async function load() {
   loading.value = true
   try {
     data.value = await api('monitoring/rematch')
+    estimateAll()
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
@@ -193,14 +210,56 @@ function compare(d: Doubt, r: RowInfo) {
       row: r.markId,
       differ: !!n?.markId && !!r.markId && lower(n.markId) !== lower(r.markId),
     },
-    {
-      label: 'Hora',
-      note: n?.minutes != null ? formatMinutes(n.minutes) : null,
-      row: r.minutes != null ? formatMinutes(r.minutes) : null,
-      differ: false,
-    },
   ]
   return lines.filter(l => l.note || l.row)
+}
+/** The table already shows why the note and its row disagree (a field differs): no sentence needed. */
+const tableShowsIt = (d: Doubt, r: RowInfo) => compare(d, r).some(l => l.differ)
+
+// ------------------------------------------------------------ evidence beside the table
+/** The note's time, its row's and the GPS time of the point, as one line; `off` when two are more than 10 min apart. */
+function times(d: Doubt, r: RowInfo | null) {
+  const parts = (
+    [
+      ['nota', d.note?.minutes ?? null],
+      ['fila', r?.minutes ?? null],
+      ['GPS', d.gps ?? null],
+    ] as [string, number | null][]
+  ).filter((p): p is [string, number] => p[1] != null)
+  if (!parts.length) return null
+  const all = parts.map(p => p[1])
+  return {
+    text: parts.map(([label, m]) => `${label === 'GPS' ? 'GPS' : t(label)} ${formatMinutes(m)}`).join(' · '),
+    off: parts.length > 1 && Math.max(...all) - Math.min(...all) > 10,
+  }
+}
+/** The reading of the photo shown (the first one), else of any photo of the point. */
+const readingOf = (d: Doubt) => d.readings?.find(r => r.photo === d.photos[0]) ?? d.readings?.[0] ?? null
+const boxOf = (d: Doubt, photo: string) => d.readings?.find(r => r.photo === photo)?.box ?? null
+const sameSpecies = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && lower(a) === lower(b)
+/** The identifier's first three species, and the note's or the row's when they come lower in its list. */
+function idLines(d: Doubt, r: RowInfo | null) {
+  const list = readingOf(d)?.species ?? []
+  return list
+    .map(([name, p], i) => ({ name, p, note: sameSpecies(name, d.note?.species), row: sameSpecies(name, r?.species), i }))
+    .filter(l => l.i < 3 || l.note || l.row)
+}
+/** A percentage; above 99.5 % it reads «> 99 %» (never a sure-looking 100 %). */
+const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
+/** A Collected_Preserved row with a field mark: marked butterflies are released, so the rows may be shifted by one. */
+const shifted = (r: RowInfo | null | undefined) => !!r?.markId && /preserv/i.test(r.kind || '')
+/** How a candidate row agrees with the note: species, sex and its time against the note's (or the GPS time). */
+function agreement(d: Doubt, r: RowInfo) {
+  const n = d.note
+  const out: { ok: boolean; label: string }[] = []
+  if (n?.species && r.species) out.push({ ok: sameSpecies(n.species, r.species), label: t('especie') })
+  if (n?.sex && r.sex) out.push({ ok: n.sex === r.sex, label: t('sexo') })
+  const at = n?.minutes ?? d.gps ?? null
+  if (at != null && r.minutes != null) {
+    const diff = r.minutes - at
+    out.push({ ok: Math.abs(diff) <= 10, label: diff === 0 ? t('misma hora') : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} min` })
+  }
+  return out
 }
 /** Why the point is surely this row: the same mark, the same minute. */
 function pairedBy(d: Doubt, r: RowInfo) {
@@ -359,6 +418,130 @@ async function boardStored() {
 // ------------------------------------------------------------ enlarged photo
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 const viewer = ref<{ photos: string[]; index: number; text: string } | null>(null)
+/** The point's GPS section only when it differs from its row's Transect_section (evidence, not noise). */
+const sectionOff = (d: Doubt) => {
+  const row = rowOf(d)?.section ?? null
+  const est = typeof d.lat === 'number' && typeof d.lon === 'number' ? estimatedSection(d.lat, d.lon) : null
+  return !!row && !!est && sectionDiffers(est, row)
+}
+
+// ------------------------------------------------------------ sex estimate (team only, experimental; lib/sexModel.ts)
+/**
+ * The in-hand sex model of Identificar, run in this browser on the photo's wings, for the genera it was trained on.
+ * Only once the model is on this device (downloaded here or on Identificar); shown in the Sexo line as «Estimado».
+ */
+const engine = createEngine(new URL('prueba-offline/', appRoot()).href, () => [], { signedIn: () => !!session.user })
+const sexModel = ref<{ state: 'download'; mb: number; files: ModelFile[] } | { state: 'downloading'; done: number; total: number } | { state: 'ready' } | null>(null)
+/** Logit per photo; null: no wings found. */
+const sexZ = ref<Record<string, number | null>>({})
+/** The genus the estimate is for: the identifier's first species, else the note's or the row's. */
+function sexGenus(d: Doubt, r: RowInfo | null) {
+  const name = readingOf(d)?.species[0]?.[0] || d.note?.species || r?.species || ''
+  const genus = name.split(' ')[0]
+  return SEX_GENERA.includes(genus) ? genus : null
+}
+function sexOf(d: Doubt, r: RowInfo | null) {
+  const z = d.photos[0] ? sexZ.value[d.photos[0]] : undefined
+  if (z == null || !sexGenus(d, r)) return null
+  const call = sexCall(z)
+  const female = sigmoid(z)
+  // The probability of the sex called (of the likelier one when not sure), never P(hembra) beside a male call.
+  const leans = call === 'hembra' || (call === 'no seguro' && female >= 0.5)
+  return { call, sign: leans ? '♀' : '♂', p: leans ? female : 1 - female }
+}
+async function checkSexModel() {
+  if (!session.canEdit) return
+  const listing = await engine.list().catch(() => null)
+  if (!listing || 'error' in listing || listing.source !== 'server') return
+  if (!listing.files.some(f => f.role === 'sex' && f.name === SEX_FILE.name)) return
+  if (await engine.sexReady(listing.files)) {
+    sexModel.value = { state: 'ready' }
+    estimateAll()
+  } else
+    sexModel.value = {
+      state: 'download',
+      mb: Math.max(1, Math.round(engine.sexToDownload(listing.files, await engine.stored()).plain / 1e6)),
+      files: listing.files,
+    }
+}
+async function downloadSexModel() {
+  const m = sexModel.value
+  if (m?.state !== 'download') return
+  sexModel.value = { state: 'downloading', done: 0, total: 1 }
+  try {
+    await engine.downloadSex(m.files, (done, total) => (sexModel.value = { state: 'downloading', done, total }))
+    sexModel.value = { state: 'ready' }
+    estimateAll()
+  } catch (e) {
+    sexModel.value = m
+    notify(errorText(e), 'error')
+  }
+}
+let estimating = false
+/** One photo after another, in the order of the list; each photo once. */
+async function estimateAll() {
+  if (estimating || sexModel.value?.state !== 'ready') return
+  estimating = true
+  try {
+    for (const d of flat.value) {
+      const id = d.photos[0]
+      if (!id || id in sexZ.value || !sexGenus(d, rowOf(d))) continue
+      try {
+        const bytes = await (await fetch(photoUrl(id), { credentials: 'same-origin' })).arrayBuffer()
+        const blob = new Blob([bytes], { type: 'image/jpeg' })
+        const cut = await engine.square({ bytes, blob, name: `${id}.jpg`, type: 'image/jpeg', size: bytes.byteLength })
+        sexZ.value = { ...sexZ.value, [id]: cut.status === 'success' ? await engine.sexLogit(cut.square) : null }
+      } catch {
+        sexZ.value = { ...sexZ.value, [id]: null }
+      }
+    }
+  } finally {
+    estimating = false
+  }
+}
+
+// ------------------------------------------------------------ keys
+/** Every card in the order shown; the focused one takes the keys (S, O, N, 1 to 9, j and k). */
+const flat = computed(() => groups.value.flatMap(g => g.doubts))
+const focusAt = ref(0)
+const focused = computed(() => flat.value[Math.min(focusAt.value, flat.value.length - 1)] ?? null)
+const isFocused = (d: Doubt) => !!focused.value && doubtKey(focused.value) === doubtKey(d)
+function focusCard(d: Doubt) {
+  const i = flat.value.findIndex(x => doubtKey(x) === doubtKey(d))
+  if (i >= 0) focusAt.value = i
+}
+async function move(by: number) {
+  focusAt.value = Math.max(0, Math.min(flat.value.length - 1, focusAt.value + by))
+  await nextTick()
+  document.querySelector('[data-doubt-focused]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+/** The rows a key number picks on the focused card: the other rows when open, or the card's rows. */
+function keyRows(d: Doubt): RowInfo[] {
+  const settled = settledRow(d)
+  if (settled) return opened.value.has(doubtKey(d)) ? d.candidates.filter(c => c.recordId !== settled.recordId) : []
+  return d.candidates
+}
+function onKey(event: KeyboardEvent) {
+  if (event.ctrlKey || event.metaKey || event.altKey || viewer.value || boardWalk.value) return
+  const el = event.target as HTMLElement | null
+  if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+  const d = focused.value
+  if (!d) return
+  const key = event.key.toLowerCase()
+  const can = session.canEdit && !busy.value
+  if (key === 'j' || key === 'k') move(key === 'j' ? 1 : -1)
+  else if (key === 's' && can && settledRow(d)) choose(d, settledRow(d))
+  else if (key === 'o' && settledRow(d)) toggleOthers(d)
+  else if (key === 'n' && can && !settledRow(d)) choose(d, null)
+  else if (/^[1-9]$/.test(key) && can && keyRows(d)[Number(key) - 1]) choose(d, keyRows(d)[Number(key) - 1])
+  else return
+  event.preventDefault()
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  checkSexModel()
+})
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -382,13 +565,30 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
           >; {{ $t('{n} recorridos por revisar para emparejar a mano', { n: waitingWalks }) }}</template
         >
       </p>
-      <p class="hint order-last basis-full pb-1 text-xs">
-        {{
-          $t(
-            'Cada tarjeta es un punto de Wikiloc (una mariposa) y la fila de Collection_data que le corresponde. No son recapturas: «La nota no coincide» es un punto ya emparejado donde la nota y la hoja dicen algo distinto; «¿Qué fila es?» es un punto que puede ser más de una fila.',
-          )
-        }}
-      </p>
+      <div class="order-last flex basis-full flex-wrap items-baseline gap-x-4 gap-y-1 pb-1 text-xs">
+        <details class="hint">
+          <summary class="cursor-pointer select-none">{{ $t('¿Cómo funciona?') }}</summary>
+          <p class="mt-1 max-w-3xl">
+            {{
+              $t(
+                'Cada tarjeta es un punto de Wikiloc (una mariposa) y la fila de Collection_data que le corresponde. No son recapturas: «La nota no coincide» es un punto ya emparejado donde la nota y la hoja dicen algo distinto; «¿Qué fila es?» es un punto que puede ser más de una fila.',
+              )
+            }}
+          </p>
+        </details>
+        <p v-if="session.canEdit" class="key-hint hint">
+          {{ $t('Teclas: j/k mover · S sí es la fila · O otra fila · N ninguna · 1–9 elegir fila') }}
+        </p>
+        <button v-if="sexModel?.state === 'download'" class="btn-ghost text-xs underline" @click="downloadSexModel">
+          {{ $t('Sexo estimado (experimental): descargar el modelo, {mb} MB', { mb: sexModel.mb }) }}
+        </button>
+        <span v-else-if="sexModel?.state === 'downloading'" class="hint tabular-nums">{{
+          $t('Descargando el modelo de sexo: {done} de {total} MB', {
+            done: Math.round(sexModel.done / 1e6),
+            total: Math.round(sexModel.total / 1e6),
+          })
+        }}</span>
+      </div>
       <label class="block min-w-0 sm:w-80">
         <span class="field-label">{{ $t('Tablero de un recorrido') }}</span>
         <ChoiceField
@@ -476,7 +676,14 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
           </button>
         </header>
         <ol class="divide-y divide-stone-100">
-          <li v-for="d in g.doubts" :key="`${walkKey(d)}|${d.indexes[0]}`" class="flex flex-col gap-3 p-3 md:flex-row">
+          <li
+            v-for="d in g.doubts"
+            :key="`${walkKey(d)}|${d.indexes[0]}`"
+            class="doubt flex flex-col gap-3 p-3 md:flex-row"
+            :class="{ 'doubt-focused': isFocused(d) }"
+            :data-doubt-focused="isFocused(d) ? '' : undefined"
+            @pointerdown="focusCard(d)"
+          >
             <figure class="w-full shrink-0 md:w-56">
               <div class="flex gap-1">
                 <button
@@ -486,7 +693,7 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   class="block flex-1 overflow-hidden rounded bg-stone-100"
                   @click="viewer = { photos: d.photos, index: k, text: d.text }"
                 >
-                  <img :src="photoUrl(id)" alt="" loading="lazy" class="h-36 w-full object-cover" />
+                  <WingPhoto :src="photoUrl(id)" :box="boxOf(d, id)" class="h-36" />
                 </button>
                 <div
                   v-if="!d.photos.length"
@@ -500,16 +707,21 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                 <span v-if="d.indexes.length > 1" class="text-stone-500">
                   ({{ $t('{n} mariposas', { n: d.indexes.length }) }})</span
                 >
-                <span class="mt-0.5 block"><PointSection :lat="d.lat" :lon="d.lon" :row="rowOf(d)?.section ?? null" /></span>
+                <span v-if="sectionOff(d)" class="mt-0.5 block"
+                  ><PointSection :lat="d.lat" :lon="d.lon" :row="rowOf(d)?.section ?? null"
+                /></span>
               </figcaption>
             </figure>
             <div v-if="settledRow(d)" class="min-w-0 flex-1 text-sm">
-              <p class="mb-1">
+              <p class="mb-1 flex flex-wrap gap-1">
                 <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
                   $t('La nota no coincide con su fila')
                 }}</span>
+                <span v-if="shifted(settledRow(d))" class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
+                  $t('Fila conservada con marca de campo: posible fila corrida')
+                }}</span>
               </p>
-              <p class="mb-2 text-xs text-stone-500">
+              <p v-if="!tableShowsIt(d, settledRow(d)!)" class="mb-2 text-xs text-stone-500">
                 {{
                   $t('Es la fila {n} ({why}); falta saber cuál de las dos tiene razón.', {
                     n: settledRow(d)!.row,
@@ -517,7 +729,8 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   })
                 }}
               </p>
-              <table class="mb-2 w-full max-w-xl text-left">
+              <div class="mb-2 flex flex-wrap items-start gap-x-4 gap-y-2">
+              <table class="min-w-0 max-w-xl flex-1 basis-72 text-left">
                 <thead class="text-xs text-stone-500">
                   <tr>
                     <th class="w-20 py-0.5 pr-2 font-normal"></th>
@@ -532,13 +745,47 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   <tr v-for="l in compare(d, settledRow(d)!)" :key="l.label" :class="l.differ ? 'bg-amber-50 font-medium' : ''">
                     <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t(l.label) }}</td>
                     <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.note || '—' }}</td>
-                    <td class="py-0.5" :class="l.differ ? 'text-amber-900' : ''">{{ l.row || '—' }}</td>
+                    <td class="py-0.5" :class="l.differ ? 'text-amber-900' : ''">
+                      {{ l.row || '—' }}
+                      <span
+                        v-if="l.label === 'Sexo' && sexOf(d, settledRow(d))"
+                        class="estimate ml-1 inline-block rounded border border-stone-300 px-1 text-xs font-normal whitespace-nowrap"
+                        :class="
+                          sexOf(d, settledRow(d))!.call === 'hembra'
+                            ? 'text-fill-pink'
+                            : sexOf(d, settledRow(d))!.call === 'macho'
+                              ? 'text-fill-sky'
+                              : 'text-stone-600'
+                        "
+                        :title="$t('Modelo experimental de sexo en fotos en mano, calculado en este navegador sobre las alas')"
+                        ><template v-if="sexOf(d, settledRow(d))!.call === 'no seguro'"
+                          >{{ $t('Estimado') }} {{ $t('no seguro') }} ({{ sexOf(d, settledRow(d))!.sign }}
+                          {{ pct(sexOf(d, settledRow(d))!.p) }})</template
+                        ><template v-else
+                          >{{ $t('Estimado') }} {{ sexOf(d, settledRow(d))!.sign }} {{ pct(sexOf(d, settledRow(d))!.p) }}</template
+                        >
+                        · <i>{{ $t('experimental') }}</i></span
+                      >
+                    </td>
+                  </tr>
+                  <tr v-if="times(d, settledRow(d))">
+                    <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t('Hora') }}</td>
+                    <td colspan="2" class="py-0.5">
+                      <span
+                        class="rounded px-1 text-xs tabular-nums"
+                        :class="times(d, settledRow(d))!.off ? 'bg-amber-100 font-medium text-amber-900' : 'bg-stone-100 text-stone-700'"
+                        :title="times(d, settledRow(d))!.off ? $t('Más de 10 min entre dos de estas horas') : undefined"
+                        >{{ times(d, settledRow(d))!.text }}</span
+                      >
+                    </td>
                   </tr>
                 </tbody>
               </table>
+              <IdentBox v-if="idLines(d, settledRow(d)).length" :lines="idLines(d, settledRow(d))" />
+              </div>
               <ul v-if="opened.has(doubtKey(d))" class="mb-2 space-y-1">
                 <li class="text-xs text-stone-500">{{ $t('Otras filas de ese día:') }}</li>
-                <li v-for="r in d.candidates.filter(c => c.recordId !== settledRow(d)!.recordId)" :key="r.recordId">
+                <li v-for="(r, k) in d.candidates.filter(c => c.recordId !== settledRow(d)!.recordId)" :key="r.recordId">
                   <button
                     type="button"
                     class="w-full rounded border border-stone-200 px-2 py-1 text-left hover:border-brand-600 disabled:opacity-60"
@@ -546,7 +793,16 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                     :title="$t('Es esta fila')"
                     @click="choose(d, r)"
                   >
+                    <kbd v-if="isFocused(d) && k < 9" class="key-hint">{{ k + 1 }}</kbd>
                     {{ rowLabel(r) }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span>
+                    <span class="ml-1 inline-flex flex-wrap gap-x-1.5 text-xs">
+                      <span v-for="a in agreement(d, r)" :key="a.label" :class="a.ok ? 'text-green-700' : 'text-amber-800'"
+                        >{{ a.ok ? '✓' : '✗' }} {{ a.label }}</span
+                      >
+                    </span>
+                    <span v-if="shifted(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{
+                      $t('Fila conservada con marca de campo: posible fila corrida')
+                    }}</span>
                   </button>
                 </li>
               </ul>
@@ -577,6 +833,12 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                   $t('cambia al emparejar de nuevo')
                 }}</span>
                 <span
+                  v-if="times(d, null)"
+                  class="ml-1 rounded px-1 text-xs tabular-nums"
+                  :class="times(d, null)!.off ? 'bg-amber-100 font-medium text-amber-900' : 'bg-stone-100 text-stone-700'"
+                  >{{ times(d, null)!.text }}</span
+                >
+                <span
                   v-if="d.pending"
                   class="ml-1 rounded bg-stone-100 px-1 text-xs text-stone-700"
                   :title="$t('Pasar al mapa lo guardó sin fila por la duda; no aparece en el mapa hasta elegir su fila')"
@@ -593,8 +855,9 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                 }}
               </p>
               <p class="mb-1 text-xs text-stone-500">{{ $t('Filas de ese día que puede ser (elige una):') }}</p>
-              <ul class="space-y-1">
-                <li v-for="r in d.candidates" :key="r.recordId">
+              <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
+              <ul class="min-w-0 flex-1 basis-72 space-y-1">
+                <li v-for="(r, k) in d.candidates" :key="r.recordId">
                   <button
                     type="button"
                     class="w-full rounded border px-2 py-1 text-left hover:border-brand-600 disabled:opacity-60"
@@ -603,12 +866,23 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
                     :title="chosenOf(d).includes(r.recordId) ? $t('Elegida') : $t('Es esta fila')"
                     @click="choose(d, r)"
                   >
+                    <kbd v-if="isFocused(d) && k < 9" class="key-hint">{{ k + 1 }}</kbd>
                     <Check v-if="chosenOf(d).includes(r.recordId)" :size="13" class="mr-1 inline text-brand-700" />{{ rowLabel(r)
                     }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span
                     ><span v-if="isProposed(d, r)" class="ml-1 text-xs text-sky-700">{{ $t('(propuesta)') }}</span>
+                    <span class="ml-1 inline-flex flex-wrap gap-x-1.5 text-xs">
+                      <span v-for="a in agreement(d, r)" :key="a.label" :class="a.ok ? 'text-green-700' : 'text-amber-800'"
+                        >{{ a.ok ? '✓' : '✗' }} {{ a.label }}</span
+                      >
+                    </span>
+                    <span v-if="shifted(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{
+                      $t('Fila conservada con marca de campo: posible fila corrida')
+                    }}</span>
                   </button>
                 </li>
               </ul>
+              <IdentBox v-if="idLines(d, rowOf(d)).length" :lines="idLines(d, rowOf(d))" />
+              </div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <button class="btn py-0.5" :disabled="busy || !session.canEdit" @click="choose(d, null)">
                   <X :size="13" /> {{ $t('No es ninguna') }}
@@ -623,3 +897,30 @@ const viewer = ref<{ photos: string[]; index: number; text: string } | null>(nul
     <PointPhotoViewer v-if="viewer" :photos="viewer.photos" :start="viewer.index" :text="viewer.text" @close="viewer = null" />
   </div>
 </template>
+
+<style scoped>
+/* The card the keys act on (S, O, N, 1 to 9; j and k move it): marked on screens with a mouse only. */
+@media (hover: hover) {
+  .doubt-focused {
+    box-shadow: inset 3px 0 0 var(--color-brand, #2f6b4f);
+  }
+}
+.key-hint {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .key-hint {
+    display: initial;
+  }
+  kbd.key-hint {
+    display: inline-block;
+    min-width: 1.1rem;
+    margin-right: 0.25rem;
+    border: 1px solid var(--color-border-strong, #a8a29e);
+    border-radius: 0.25rem;
+    text-align: center;
+    font-size: 0.7rem;
+    line-height: 1rem;
+  }
+}
+</style>

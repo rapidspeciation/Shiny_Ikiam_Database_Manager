@@ -329,6 +329,45 @@ function nearby(day, point, match) {
     .slice(0, 6);
 }
 
+/**
+ * The identifier's reading of each photo already read (server/walk-ids.mjs): its first three species and the wing
+ * detector's box, for Dudas (the species beside the note and the row; the photo shown on its wings).
+ */
+function photoReadings(store, ids) {
+  if (!ids?.length || !store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='walk_photo_ids'").get()) return [];
+  const get = store.db.prepare("SELECT * FROM walk_photo_ids WHERE photo_id=? AND status='done'");
+  return ids.flatMap(id => {
+    const r = get.get(String(id));
+    const species = r?.species_json ? JSON.parse(r.species_json).slice(0, 3) : [];
+    return species.length ? [{ photo: String(id), species, box: r.wing_box ? JSON.parse(r.wing_box) : null }] : [];
+  });
+}
+
+/**
+ * When each Wikiloc point was saved (the waypoint's GPS time; Wikiloc's photos keep no EXIF time), by photo and by
+ * place, from every walk read: a stored track's point may come from another copy of its walk.
+ */
+function savedTimes(store) {
+  const byPhoto = new Map();
+  const byPlace = new Map();
+  const rows = store.db
+    .prepare(
+      "SELECT wp.value AS point FROM wikiloc_walks, json_each(wikiloc_walks.data_json, '$.waypoints') wp WHERE json_extract(wp.value, '$.time') IS NOT NULL",
+    )
+    .all();
+  for (const { point } of rows) {
+    const w = JSON.parse(point);
+    for (const id of w.photos || []) byPhoto.set(String(id), w.time);
+    byPlace.set(`${w.lat},${w.lon}`, w.time);
+  }
+  return { byPhoto, byPlace };
+}
+/** A point's GPS time in minutes of the day in Ecuador, or null. */
+function gpsMinutes(saved, c) {
+  const time = (c.photos || []).map(id => saved.byPhoto.get(String(id))).find(Boolean) || saved.byPlace.get(`${c.lat},${c.lon}`);
+  return time ? (lib.localTime(time)?.minutes ?? null) : null;
+}
+
 /** Public (wklcdn) addresses of the photos, for the message to a collector. */
 function photoLinks(store, ids) {
   if (!ids?.length) return [];
@@ -346,7 +385,7 @@ const waitingPair = c => !!c.doubt && !c.recordId && !c.link;
  * and never changes (the banner does not pair them); a person picks their row,
  * also among the rows of the day that no other point has.
  */
-function trackDoubts(store, index, t) {
+function trackDoubts(store, index, t, saved = savedTimes(store)) {
   const { taxa, local } = index.taxa();
   const changes = [];
   const doubts = [];
@@ -409,8 +448,10 @@ function trackDoubts(store, index, t) {
       lon: c.lon,
       minutes: points[p].timeFromTrack ? null : points[p].minutes,
       note: noteInfo(points[p]),
+      gps: gpsMinutes(saved, c),
       photos: c.photos || [],
       photoLinks: photoLinks(store, c.photos),
+      readings: photoReadings(store, c.photos),
       confidence: m.confidence,
       conflicts: m.conflicts,
       changed,
@@ -429,9 +470,10 @@ function trackDoubts(store, index, t) {
  */
 export function pendingPoints(store) {
   const index = rowsByDay(store);
+  const saved = savedTimes(store);
   return listTracks(store)
     .filter(t => t.captures.some(waitingPair))
-    .flatMap(t => trackDoubts(store, index, t).doubts.filter(d => d.pending));
+    .flatMap(t => trackDoubts(store, index, t, saved).doubts.filter(d => d.pending));
 }
 
 /**
@@ -449,8 +491,9 @@ export function rematchTracks(store, user = null) {
   const changes = [];
   const doubts = [];
   const walks = [];
+  const saved = savedTimes(store);
   for (const t of tracks) {
-    const found = trackDoubts(store, index, t);
+    const found = trackDoubts(store, index, t, saved);
     changes.push(...found.changes);
     doubts.push(...found.doubts);
     if (found.doubts.length)
@@ -478,8 +521,10 @@ export function rematchTracks(store, user = null) {
         lon: captures[i].lon,
         minutes: captures[i].minutes,
         note: noteInfo(captures[i]),
+        gps: gpsMinutes(saved, captures[i]),
         photos: captures[i].photos,
         photoLinks: photoLinks(store, captures[i].photos),
+        readings: photoReadings(store, captures[i].photos),
         confidence: m.confidence,
         conflicts: m.conflicts,
         changed: false,

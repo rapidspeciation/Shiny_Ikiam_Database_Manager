@@ -2038,7 +2038,8 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
     ...(compressed ? { vary: 'accept-encoding' } : {}),
     ...(br ? { 'content-encoding': 'br', 'content-length': statSync(`${file}.br`).size } : {}),
     'x-content-type-options': 'nosniff',
-    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-src 'self'${frameSrc ? ` ${frameSrc}` : ''}`,
+    // 'wasm-unsafe-eval': WebAssembly only (not JS eval), for the sex estimate of Monitoreo → Dudas (onnxruntime-web).
+    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; frame-src 'self'${frameSrc ? ` ${frameSrc}` : ''}`,
     // Built scripts and styles, and the app's icons, carry a content hash in their name: a new build or
     // icon gets new names. The manifest is checked each time: installed apps compare it to update their icon.
     'cache-control': /(index\.html|\.webmanifest)$/.test(file)
