@@ -33,22 +33,24 @@ export function skillListing(text) {
   return `- ${field('name')}: ${field('description')}`;
 }
 
-/** The parts' sizes in bytes, from this checkout's source: { key: bytes }. */
-export async function measureParts(root = ROOT) {
-  const { composeBrief, GENERIC_PERSON, SERVER_PATHS } = await import(join(root, 'server', 'brief.mjs'));
-  const { mcpTools, mcpInitialize } = await import(join(root, 'server', 'assistant.mjs'));
+/**
+ * The parts' sizes in bytes, from the given modules (server/brief.mjs, server/assistant.mjs): { key: bytes }.
+ * `read(relPath)`: how the assistant/ files are read (the app's overlay of applied changes, server/doc-review.mjs).
+ */
+export function measureWith({ composeBrief, GENERIC_PERSON, SERVER_PATHS, mcpTools, mcpInitialize }, root = ROOT, read = null) {
+  const readRel = read ?? (rel => readFileSync(join(root, rel), 'utf8'));
   const parts = {};
-  parts.brief = bytes(composeBrief(GENERIC_PERSON, SERVER_PATHS));
+  parts.brief = bytes(composeBrief(GENERIC_PERSON, { ...SERVER_PATHS, root, read: readRel }));
 
   // Project skills: the release's (assistant/skills) and the WhatsApp workspace's bridge skill.
   const skillFiles = readdirSync(join(root, 'assistant', 'skills'))
     .sort()
-    .map(n => join(root, 'assistant', 'skills', n, 'SKILL.md'))
-    .concat(join(root, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md'))
-    .filter(existsSync);
+    .map(n => `assistant/skills/${n}/SKILL.md`)
+    .concat('tools/whatsapp/bridge-skill/SKILL.md')
+    .filter(f => existsSync(join(root, f)));
   let skills = 0;
   for (const f of skillFiles) {
-    const line = skillListing(readFileSync(f, 'utf8'));
+    const line = skillListing(f.startsWith('assistant/') ? readRel(f) : readFileSync(join(root, f), 'utf8'));
     const name = /^- ([^:]*):/.exec(line)[1];
     parts[`skill:${name}`] = bytes(line);
     skills += bytes(line) + 1;
@@ -67,6 +69,18 @@ export async function measureParts(root = ROOT) {
   parts['mcp deferred names'] = bytes(tools.filter(t => !t._meta?.['anthropic/alwaysLoad']).map(t => MCP_PREFIX + t.name).join('\n'));
   parts['mcp server instructions'] = bytes(mcpInitialize().instructions ?? '');
   return parts;
+}
+
+/** The modules measureWith needs, from a checkout. */
+export async function measureModules(root = ROOT) {
+  const brief = await import(join(root, 'server', 'brief.mjs'));
+  const assistant = await import(join(root, 'server', 'assistant.mjs'));
+  return { ...brief, mcpTools: assistant.mcpTools, mcpInitialize: assistant.mcpInitialize };
+}
+
+/** The parts' sizes in bytes, from this checkout's source: { key: bytes }. */
+export async function measureParts(root = ROOT, { read = null } = {}) {
+  return measureWith(await measureModules(root), root, read);
 }
 
 /**
