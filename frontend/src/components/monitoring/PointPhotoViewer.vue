@@ -2,8 +2,11 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 
-/** A Wikiloc point's photos enlarged over the page, with its note (Esc closes, arrows step). */
-const props = defineProps<{ photos: string[]; start?: number; text: string }>()
+/**
+ * A Wikiloc point's photos enlarged over the page, with its note (Esc closes, arrows step). `urls`: other photos by
+ * their address (the project photos of a row), in place of the point's photo ids.
+ */
+const props = defineProps<{ photos: string[]; start?: number; text: string; urls?: string[] }>()
 const emit = defineEmits<{ close: [] }>()
 
 const index = ref(props.start ?? 0)
@@ -39,7 +42,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <button v-if="photos.length > 1" class="absolute left-2 rounded-full bg-white/10 p-2 hover:bg-white/20" @click="step(-1)">
         <ChevronLeft :size="24" />
       </button>
-      <img :src="photoUrl(photos[index])" alt="" class="max-h-full max-w-full object-contain" />
+      <img :src="urls?.[index] ?? photoUrl(photos[index])" alt="" class="max-h-full max-w-full object-contain" />
       <button v-if="photos.length > 1" class="absolute right-2 rounded-full bg-white/10 p-2 hover:bg-white/20" @click="step(1)">
         <ChevronRight :size="24" />
       </button>

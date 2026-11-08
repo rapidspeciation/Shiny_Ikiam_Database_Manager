@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { photoIndex } from './photodata.mjs';
+import { unreliableFor } from './sex-check.mjs';
 // The pairing of walk points with sheet rows is shared with the browser (Node strips the types).
 import * as lib from '../frontend/src/lib/monitoring.ts';
 
@@ -303,7 +306,62 @@ const rowInfo = row =>
     markId: lib.hasMark(row) ? clean(row.values.FieldMark_ID).toUpperCase() : null,
     kind: clean(row.values.Release_Collect) || null,
     section: clean(row.values.Transect_section) || null,
+    cam: /^CAM\d{6}$/i.test(clean(row.values.CAM_ID)) ? clean(row.values.CAM_ID).toUpperCase() : null,
   };
+
+/**
+ * CAMs whose collection sex score is never shown (COLLECTION_SEX_SKIP_FILE, one CAM per line or space): the
+ * collection sex model's locked test portion stays closed. Read once.
+ */
+let skipped = null;
+function sexSkipped() {
+  if (skipped) return skipped;
+  const file = process.env.COLLECTION_SEX_SKIP_FILE;
+  try {
+    skipped = new Set(file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean).map(c => c.toUpperCase()) : []);
+  } catch {
+    skipped = new Set();
+  }
+  return skipped;
+}
+
+/**
+ * The project photos and the collection sex model's call of each CAM, for Dudas: the CAM's first dorsal and ventral
+ * photo (Photo_links; served by /api/photo) with the wing box of the photo readings (photo_wing_boxes, fractions), and
+ * the sex of photo_predictions. That sex is out of fold: the readings score each CAM with the fold model trained
+ * without it (identifier/sex cand_cv), so it never repeats the CAM's own label. A CAM of the skip list gets no sex.
+ */
+export function projectInfo(store, cams) {
+  const out = {};
+  if (!cams.size) return out;
+  const index = photoIndex(store);
+  const boxes = new Map(
+    store.db
+      .prepare('SELECT name, box_json FROM photo_wing_boxes')
+      .all()
+      .map(b => [String(b.name).toUpperCase(), b.box_json]),
+  );
+  const prediction = store.db.prepare('SELECT sex_p_male, sex_supported, sex_species, sex_status FROM photo_predictions WHERE cam=?');
+  for (const cam of cams) {
+    const entry = index.byCam.get(cam);
+    const photos = ['dorsal', 'ventral'].flatMap(view => {
+      const id = entry?.[view]?.[0];
+      if (!id) return [];
+      let box = null;
+      try {
+        box = JSON.parse(boxes.get(index.files.get(id).name.toUpperCase()) ?? 'null');
+      } catch {}
+      return [{ id, view, box: Array.isArray(box) && box.length === 4 ? box : null }];
+    });
+    const p = sexSkipped().has(cam) ? null : prediction.get(cam);
+    const scored = p && p.sex_p_male !== null && p.sex_p_male !== undefined && !String(p.sex_status ?? '').startsWith('not_scored');
+    out[cam] = {
+      photos,
+      sex: scored ? { pMale: p.sex_p_male, supported: !!p.sex_supported, unreliable: !!unreliableFor(p.sex_species) } : null,
+    };
+  }
+  return out;
+}
 
 /** What the Wikiloc note itself says, beside its row's values in Dudas. */
 const noteInfo = c => ({
@@ -541,7 +599,8 @@ export function rematchTracks(store, user = null) {
     });
     walks.push({ source: 'walk', id: w.id, date: match.date, collector: w.collector, name: w.name, doubts: captures.length });
   }
-  return { changes, doubts, walks };
+  const cams = new Set(doubts.flatMap(d => [...d.current, ...d.proposed, ...d.candidates].flatMap(r => (r?.cam ? [r.cam] : []))));
+  return { changes, doubts, walks, projects: projectInfo(store, cams) };
 }
 
 /** Applies the changes of rematchTracks that are still the same now (each named by track, capture, from and to). */

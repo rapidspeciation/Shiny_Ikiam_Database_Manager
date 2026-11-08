@@ -6,6 +6,7 @@ import { Check, Columns2, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-
 import PointPhotoViewer from './PointPhotoViewer.vue'
 import PointSection from './PointSection.vue'
 import IdentBox from './IdentBox.vue'
+import SexChip, { type SexEvidence } from './SexChip.vue'
 import WingPhoto from './WingPhoto.vue'
 import { useMonitoring, type WikilocWalk } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
@@ -15,7 +16,7 @@ import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
 import { createEngine, type ModelFile } from '../../lib/offlineEngine'
-import { SEX_CUT, SEX_FILE, SEX_GENERA, sexCall, sigmoid } from '../../lib/sexModel'
+import { SEX_FILE, SEX_GENERA, sexShown } from '../../lib/sexModel'
 import { estimatedSection, sectionDiffers } from '../../lib/transects'
 import { CONFLICT } from '../../lib/walkBoard'
 import { useSession } from '../../stores/session'
@@ -45,6 +46,13 @@ interface RowInfo {
   markId: string | null
   kind: string | null
   section: string | null
+  /** Its CAM_ID, when it is one (CAM and six digits). */
+  cam?: string | null
+}
+/** A CAM's project photos (dorsal, ventral; wing box in fractions) and the collection sex model's out-of-fold call. */
+interface Project {
+  photos: { id: string; view: 'dorsal' | 'ventral'; box: number[] | null }[]
+  sex: { pMale: number; supported: boolean; unreliable: boolean } | null
 }
 interface NoteInfo {
   species: string | null
@@ -118,7 +126,7 @@ const route = useRoute()
 const router = useRouter()
 const canReview = computed(() => ['reviewer', 'admin'].includes(session.user?.role || ''))
 
-const data = ref<{ changes: Change[]; doubts: Doubt[]; walks: WalkCount[] } | null>(null)
+const data = ref<{ changes: Change[]; doubts: Doubt[]; walks: WalkCount[]; projects?: Record<string, Project> } | null>(null)
 const loading = ref(false)
 const busy = ref(false)
 async function load() {
@@ -211,7 +219,8 @@ function compare(d: Doubt, r: RowInfo) {
       differ: !!n?.markId && !!r.markId && lower(n.markId) !== lower(r.markId),
     },
   ]
-  return lines.filter(l => l.note || l.row || (l.label === 'Sexo' && sexOf(d, r)))
+  // The Sexo line always: the estimates of the field photo and of the project photos sit on it.
+  return lines.filter(l => l.note || l.row || l.label === 'Sexo')
 }
 /** The table already shows why the note and its row disagree (a field differs): no sentence needed. */
 const tableShowsIt = (d: Doubt, r: RowInfo) => compare(d, r).some(l => l.differ)
@@ -246,8 +255,20 @@ function idLines(d: Doubt, r: RowInfo | null) {
 }
 /** A percentage; above 99.5 % it reads «> 99 %» (never a sure-looking 100 %). */
 const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
-/** A Collected_Preserved row with a field mark: marked butterflies are released, so the rows may be shifted by one. */
-const shifted = (r: RowInfo | null | undefined) => !!r?.markId && /preserv/i.test(r.kind || '')
+/**
+ * A row whose kind contradicts its marks (Franz, 8 Nov: «we never preserve a mark release butterfly»): a
+ * Collected_Preserved row with a field mark, or a Mark_Released row with project photos. The rows may be shifted by one.
+ */
+function shiftOf(r: RowInfo | null | undefined) {
+  if (!r) return null
+  if (r.markId && /preserv/i.test(r.kind || '')) return t('Fila conservada con marca de campo: posible fila corrida')
+  if (released(r) && projectOf(r)?.photos.length) return t('Fila liberada con fotos del proyecto: posible fila corrida')
+  return null
+}
+const released = (r: RowInfo | null | undefined) => /mark_?released/i.test(r?.kind || '')
+const projectOf = (r: RowInfo | null | undefined) => (r?.cam ? (data.value?.projects?.[r.cam] ?? null) : null)
+/** The project photo's address (Drive, through the app; 1600 px for the wing crop). */
+const projectUrl = (id: string) => `api/photo/${encodeURIComponent(id)}?w=1600`
 /** How a candidate row agrees with the note: species, sex and its time against the note's (or the GPS time). */
 function agreement(d: Doubt, r: RowInfo) {
   const n = d.note
@@ -417,7 +438,11 @@ async function boardStored() {
 
 // ------------------------------------------------------------ enlarged photo
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
-const viewer = ref<{ photos: string[]; index: number; text: string } | null>(null)
+const viewer = ref<{ photos: string[]; index: number; text: string; urls?: string[] } | null>(null)
+function openProject(r: RowInfo, index: number) {
+  const photos = projectOf(r)?.photos ?? []
+  viewer.value = { photos: photos.map(ph => ph.id), urls: photos.map(ph => projectUrl(ph.id)), index, text: `${r.cam} · ${t('fila {n}', { n: r.row })}` }
+}
 /** The point's GPS section only when it differs from its row's Transect_section (evidence, not noise). */
 const sectionOff = (d: Doubt) => {
   const row = rowOf(d)?.section ?? null
@@ -434,22 +459,49 @@ const engine = createEngine(new URL('prueba-offline/', appRoot()).href, () => []
 const sexModel = ref<{ state: 'download'; mb: number; files: ModelFile[] } | { state: 'downloading'; done: number; total: number } | { state: 'ready' } | null>(null)
 /** Logit per photo; null: no wings found. */
 const sexZ = ref<Record<string, number | null>>({})
-/** The genus the estimate is for: the identifier's first species, else the note's or the row's. */
+/**
+ * The genus the estimate is for: the note's or the row's (a person named it), else the identifier's first species;
+ * the first of them among the model's 13 genera, else none.
+ */
 function sexGenus(d: Doubt, r: RowInfo | null) {
-  const name = readingOf(d)?.species[0]?.[0] || d.note?.species || r?.species || ''
-  const genus = name.split(' ')[0]
-  return SEX_GENERA.includes(genus) ? genus : null
+  const names = [d.note?.species, r?.species, readingOf(d)?.species[0]?.[0]]
+  return names.map(n => (n || '').split(' ')[0]).find(g => SEX_GENERA.includes(g)) ?? null
 }
-function sexOf(d: Doubt, r: RowInfo | null) {
-  const z = d.photos[0] ? sexZ.value[d.photos[0]] : undefined
-  if (z == null || !sexGenus(d, r)) return null
-  const call = sexCall(z)
-  // The model scores in-hand males high too (its cutoff t sits at P 0.95), so its raw P(hembra) would read
-  // «♂ 18 %» beside a male call. Shown instead: the score measured from the cutoff, sigmoid(z − t), for the side
-  // called (the side of t when not sure). Not a calibrated probability: the chip says experimental.
-  const female = sigmoid(z - SEX_CUT.t)
-  const leans = call === 'hembra' || (call === 'no seguro' && z >= SEX_CUT.t)
-  return { call, sign: leans ? '♀' : '♂', p: leans ? female : 1 - female }
+const agreeWith = (call: string, r: RowInfo | null) =>
+  call === 'no seguro' || !r?.sex ? null : (call === 'hembra') === (r.sex === 'female')
+/** The field photo's estimate (the in-hand model, in this browser), or why there is none. */
+function fieldEvidence(d: Doubt, r: RowInfo | null): SexEvidence | null {
+  const id = d.photos[0]
+  if (!id) return { kind: 'reason', text: t('sin foto') }
+  if (!sexGenus(d, r)) return { kind: 'reason', text: t('género fuera de los 13') }
+  const m = sexModel.value
+  if (!m) return null
+  if (m.state === 'download') return { kind: 'download', mb: m.mb }
+  if (m.state === 'downloading') return { kind: 'downloading', share: m.done / Math.max(1, m.total) }
+  const z = sexZ.value[id]
+  if (z === undefined) return { kind: 'running' }
+  if (z === null) return { kind: 'reason', text: t('no se ven las alas') }
+  const shown = sexShown(z)
+  return { kind: 'call', ...shown, agree: agreeWith(shown.call, r) }
+}
+/** The collection sex model's call on the row's project photos (out of fold), or why there is none. */
+function projectEvidence(r: RowInfo | null): SexEvidence | null {
+  if (!r) return null
+  // Released: no project photos (the photo column says so).
+  if (released(r) && !projectOf(r)?.photos.length) return { kind: 'reason', text: '—' }
+  if (!r.cam) return { kind: 'reason', text: t('sin CAM') }
+  const sex = projectOf(r)?.sex
+  if (!sex) return { kind: 'reason', text: '—' }
+  if (sex.unreliable) return { kind: 'reason', text: t('no fiable en esta especie') }
+  const call = sex.pMale >= 0.5 ? 'macho' : 'hembra'
+  return {
+    kind: 'call',
+    call,
+    sign: call === 'macho' ? '♂' : '♀',
+    p: Math.max(sex.pMale, 1 - sex.pMale),
+    agree: agreeWith(call, r),
+    ...(sex.supported ? {} : { weak: t('Llamada sin respaldo de la especie: solo una tendencia') }),
+  }
 }
 async function checkSexModel() {
   if (!session.canEdit) return
@@ -487,7 +539,7 @@ async function estimateAll() {
   try {
     for (const d of flat.value) {
       const id = d.photos[0]
-      if (!id || id in sexZ.value || !settledRow(d) || !sexGenus(d, settledRow(d))) continue
+      if (!id || id in sexZ.value || !sexGenus(d, rowOf(d))) continue
       try {
         const bytes = await (await fetch(photoUrl(id), { credentials: 'same-origin' })).arrayBuffer()
         const blob = new Blob([bytes], { type: 'image/jpeg' })
@@ -594,15 +646,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <p v-if="session.canEdit" class="key-hint hint">
           {{ $t('Teclas: j/k mover · S sí es la fila · O otra fila · N ninguna · 1–9 elegir fila') }}
         </p>
-        <button v-if="sexModel?.state === 'download'" class="btn-ghost text-xs underline" @click="downloadSexModel">
-          {{ $t('Sexo estimado (experimental): descargar el modelo, {mb} MB', { mb: sexModel.mb }) }}
-        </button>
-        <span v-else-if="sexModel?.state === 'downloading'" class="hint tabular-nums">{{
-          $t('Descargando el modelo de sexo: {done} de {total} MB', {
-            done: Math.round(sexModel.done / 1e6),
-            total: Math.round(sexModel.total / 1e6),
-          })
-        }}</span>
+
       </div>
       <label class="block min-w-0 sm:w-80">
         <span class="field-label">{{ $t('Tablero de un recorrido') }}</span>
@@ -701,24 +745,45 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             @pointerdown="focusCard(d)"
             @focusin="focusCard(d)"
           >
-            <figure class="w-full shrink-0 md:w-56">
-              <div class="flex gap-1">
+            <figure class="w-full shrink-0" :class="projectOf(rowOf(d))?.photos.length ? 'md:w-[28rem]' : 'md:w-56'">
+              <div class="flex gap-1" :class="projectOf(rowOf(d))?.photos.length ? 'h-48' : 'h-36'">
                 <button
-                  v-for="(id, k) in d.photos.slice(0, 2)"
+                  v-for="(id, k) in d.photos.slice(0, projectOf(rowOf(d))?.photos.length ? 1 : 2)"
                   :key="id"
                   type="button"
-                  class="block flex-1 overflow-hidden rounded bg-stone-100"
+                  class="relative block min-w-0 flex-1 overflow-hidden rounded bg-stone-100"
+                  :aria-label="$t('Foto de campo')"
                   @click="viewer = { photos: d.photos, index: k, text: d.text }"
                 >
-                  <WingPhoto :src="photoUrl(id)" :box="boxOf(d, id)" class="h-36" />
+                  <WingPhoto :src="photoUrl(id)" :box="boxOf(d, id)" class="h-full" />
+                  <span v-if="projectOf(rowOf(d))?.photos.length" class="photo-tag">{{ $t('Foto de campo') }}</span>
                 </button>
                 <div
                   v-if="!d.photos.length"
-                  class="flex h-36 w-full items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
+                  class="flex w-full min-w-0 flex-1 items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
                 >
                   {{ $t('Sin foto') }}
                 </div>
+                <div v-if="projectOf(rowOf(d))?.photos.length" class="flex w-1/2 shrink-0 flex-col gap-1">
+                  <button
+                    v-for="(ph, k) in projectOf(rowOf(d))!.photos"
+                    :key="ph.id"
+                    type="button"
+                    class="relative block min-h-0 flex-1 overflow-hidden rounded bg-stone-100"
+                    :aria-label="ph.view === 'dorsal' ? $t('Dorsal') : $t('Ventral')"
+                    @click="openProject(rowOf(d)!, k)"
+                  >
+                    <WingPhoto :src="projectUrl(ph.id)" :box="ph.box" class="h-full" />
+                    <span class="photo-tag">{{ ph.view === 'dorsal' ? $t('Dorsal') : $t('Ventral') }}</span>
+                  </button>
+                </div>
               </div>
+              <p v-if="projectOf(rowOf(d))?.photos.length" class="mt-0.5 text-right text-xs text-stone-500">
+                {{ $t('Fotos del proyecto') }}: {{ rowOf(d)!.cam }} · {{ $t('fila {n}', { n: rowOf(d)!.row }) }}
+              </p>
+              <p v-else-if="released(rowOf(d))" class="mt-0.5 text-xs text-stone-500">
+                {{ $t('Sin fotos del proyecto (marcada y liberada)') }}
+              </p>
               <figcaption class="mt-1 text-sm">
                 «{{ d.text }}»
                 <span v-if="d.indexes.length > 1" class="text-stone-500">
@@ -734,8 +799,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
                   $t('La nota no coincide con su fila')
                 }}</span>
-                <span v-if="shifted(settledRow(d))" class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
-                  $t('Fila conservada con marca de campo: posible fila corrida')
+                <span v-if="shiftOf(settledRow(d))" class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
+                  shiftOf(settledRow(d))
                 }}</span>
               </p>
               <p v-if="!tableShowsIt(d, settledRow(d)!)" class="mb-2 text-xs text-stone-500">
@@ -747,47 +812,65 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 }}
               </p>
               <div class="mb-2 flex flex-wrap items-start gap-x-4 gap-y-2">
-              <table class="min-w-0 max-w-xl flex-1 basis-72 text-left">
+              <table class="min-w-0 max-w-3xl flex-1 basis-72 text-left">
                 <thead class="text-xs text-stone-500">
-                  <tr>
-                    <th class="w-20 py-0.5 pr-2 font-normal"></th>
+                  <tr class="align-bottom">
+                    <th class="w-16 py-0.5 pr-2 font-normal"></th>
                     <th class="py-0.5 pr-2 font-normal">{{ $t('Nota de Wikiloc') }}</th>
-                    <th class="py-0.5 font-normal">
+                    <th class="py-0.5 pr-2 font-normal">
                       {{ $t('Fila {n}', { n: settledRow(d)!.row })
                       }}<span v-if="settledRow(d)!.kind"> · {{ settledRow(d)!.kind }}</span>
+                    </th>
+                    <th
+                      class="hidden py-0.5 pr-2 font-normal sm:table-cell"
+                      :title="$t('Modelo experimental de sexo en fotos en mano, calculado en este navegador sobre las alas')"
+                    >
+                      {{ $t('Foto de campo') }}<span class="block text-[0.7rem]">{{ $t('estimado, experimental') }}</span>
+                    </th>
+                    <th
+                      class="hidden py-0.5 font-normal sm:table-cell"
+                      :title="$t('Modelo de sexo de la colección en las fotos del proyecto, fuera de su entrenamiento')"
+                    >
+                      {{ $t('Fotos del proyecto') }}<span class="block text-[0.7rem]">{{ $t('modelo de la colección') }}</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="l in compare(d, settledRow(d)!)" :key="l.label" :class="l.differ ? 'bg-amber-50 font-medium' : ''">
-                    <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t(l.label) }}</td>
-                    <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.note || '—' }}</td>
-                    <td class="py-0.5" :class="l.differ ? 'text-amber-900' : ''">
-                      {{ l.row || '—' }}
-                      <span
-                        v-if="l.label === 'Sexo' && sexOf(d, settledRow(d))"
-                        class="estimate ml-1 inline-block rounded border border-stone-300 px-1 text-xs font-normal"
-                        :class="
-                          sexOf(d, settledRow(d))!.call === 'hembra'
-                            ? 'sex-f'
-                            : sexOf(d, settledRow(d))!.call === 'macho'
-                              ? 'sex-m'
-                              : 'text-stone-600'
-                        "
-                        :title="$t('Modelo experimental de sexo en fotos en mano, calculado en este navegador sobre las alas')"
-                        ><template v-if="sexOf(d, settledRow(d))!.call === 'no seguro'"
-                          >{{ $t('Estimado') }} {{ $t('no seguro') }} ({{ sexOf(d, settledRow(d))!.sign }}
-                          {{ pct(sexOf(d, settledRow(d))!.p) }})</template
-                        ><template v-else
-                          >{{ $t('Estimado') }} {{ sexOf(d, settledRow(d))!.sign }} {{ pct(sexOf(d, settledRow(d))!.p) }}</template
-                        >
-                        · <i>{{ $t('experimental') }}</i></span
-                      >
-                    </td>
-                  </tr>
+                  <template v-for="l in compare(d, settledRow(d)!)" :key="l.label">
+                    <tr :class="l.differ ? 'bg-amber-50 font-medium' : ''">
+                      <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t(l.label) }}</td>
+                      <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.note || '—' }}</td>
+                      <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.row || '—' }}</td>
+                      <td class="hidden py-0.5 pr-2 font-normal sm:table-cell">
+                        <SexChip
+                          v-if="l.label === 'Sexo' && fieldEvidence(d, settledRow(d))"
+                          :evidence="fieldEvidence(d, settledRow(d))!"
+                          @download="downloadSexModel"
+                        />
+                      </td>
+                      <td class="hidden py-0.5 font-normal sm:table-cell">
+                        <SexChip v-if="l.label === 'Sexo' && projectEvidence(settledRow(d))" :evidence="projectEvidence(settledRow(d))!" />
+                      </td>
+                    </tr>
+                    <tr v-if="l.label === 'Sexo'" class="sm:hidden">
+                      <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t('Estimado') }}</td>
+                      <td colspan="2" class="py-0.5 text-xs">
+                        <span class="block"
+                          >{{ $t('Foto de campo') }}:
+                          <SexChip
+                            v-if="fieldEvidence(d, settledRow(d))"
+                            :evidence="fieldEvidence(d, settledRow(d))!"
+                            @download="downloadSexModel" /></span
+                        ><span class="block"
+                          >{{ $t('Fotos del proyecto') }}:
+                          <SexChip v-if="projectEvidence(settledRow(d))" :evidence="projectEvidence(settledRow(d))!"
+                        /></span>
+                      </td>
+                    </tr>
+                  </template>
                   <tr v-if="times(d, settledRow(d))">
                     <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t('Hora') }}</td>
-                    <td colspan="2" class="py-0.5">
+                    <td colspan="4" class="py-0.5">
                       <span
                         class="rounded px-1 text-xs tabular-nums"
                         :class="times(d, settledRow(d))!.off ? 'bg-amber-100 font-medium text-amber-900' : 'bg-stone-100 text-stone-700'"
@@ -817,9 +900,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                         >{{ a.ok ? '✓' : '✗' }} {{ a.label }}</span
                       >
                     </span>
-                    <span v-if="shifted(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{
-                      $t('Fila conservada con marca de campo: posible fila corrida')
-                    }}</span>
+                    <span v-if="shiftOf(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{ shiftOf(r) }}</span>
                   </button>
                 </li>
               </ul>
@@ -874,6 +955,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     .join('; ') || $t('sin fila')
                 }}
               </p>
+              <p v-if="fieldEvidence(d, rowOf(d)) || projectEvidence(rowOf(d))" class="mb-1 flex flex-wrap items-baseline gap-x-3 text-xs">
+                <span class="text-stone-500">{{ $t('Sexo estimado') }}:</span>
+                <span v-if="fieldEvidence(d, rowOf(d))"
+                  >{{ $t('foto de campo') }}
+                  <SexChip :evidence="fieldEvidence(d, rowOf(d))!" @download="downloadSexModel"
+                /></span>
+                <span v-if="projectEvidence(rowOf(d))"
+                  >{{ $t('fotos del proyecto (fila {n})', { n: rowOf(d)!.row }) }} <SexChip :evidence="projectEvidence(rowOf(d))!"
+                /></span>
+              </p>
               <p class="mb-1 text-xs text-stone-500">{{ $t('Filas de ese día que puede ser (elige una):') }}</p>
               <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
               <ul class="min-w-0 flex-1 basis-72 space-y-1">
@@ -895,9 +986,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                         >{{ a.ok ? '✓' : '✗' }} {{ a.label }}</span
                       >
                     </span>
-                    <span v-if="shifted(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{
-                      $t('Fila conservada con marca de campo: posible fila corrida')
-                    }}</span>
+                    <span v-if="shiftOf(r)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{ shiftOf(r) }}</span>
                   </button>
                 </li>
               </ul>
@@ -914,23 +1003,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </section>
     </div>
 
-    <PointPhotoViewer v-if="viewer" :photos="viewer.photos" :start="viewer.index" :text="viewer.text" @close="viewer = null" />
+    <PointPhotoViewer
+      v-if="viewer"
+      :photos="viewer.photos"
+      :urls="viewer.urls"
+      :start="viewer.index"
+      :text="viewer.text"
+      @close="viewer = null"
+    />
   </div>
 </template>
 
 <style scoped>
 /* The card the keys act on (S, O, N, 1 to 9; j and k move it): marked on screens with a mouse only. */
-.sex-f {
-  color: var(--color-fill-pink);
-}
-.sex-m {
-  color: var(--color-fill-sky);
-}
-[data-theme='dark'] .sex-f {
-  color: oklch(80% 0.11 4);
-}
-[data-theme='dark'] .sex-m {
-  color: oklch(80% 0.09 242);
+.photo-tag {
+  position: absolute;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  border-radius: 0.25rem;
+  background: rgb(0 0 0 / 0.6);
+  padding: 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+  color: white;
 }
 .doubt:focus {
   outline: none;

@@ -1,4 +1,7 @@
 import test from 'node:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
@@ -19,11 +22,13 @@ import {
   saveWalk,
   reopenWalk,
   rematchTracks,
+  projectInfo,
   applyRematch,
   linkCapture,
   storeReviewedWalk,
 } from '../server/monitoring.mjs';
 import { createWalkIds } from '../server/walk-ids.mjs';
+import { initPhotoTables } from '../server/photodata.mjs';
 
 const editor = { id: 'e1', username: 'editor', role: 'editor' };
 const other = { id: 'e2', username: 'other', role: 'editor' };
@@ -531,6 +536,43 @@ test("a doubt carries its point's GPS time and the identifier's reading of its p
   s.close();
 });
 
+test("a row's project photos (dorsal, ventral, wing box) and its collection sex call; a skipped CAM gets no sex", async () => {
+  const id1 = '1AbCdEfGhIjKlMnOpQrStUvWx01';
+  const id2 = '1AbCdEfGhIjKlMnOpQrStUvWx02';
+  const sheets = new LocalSheets({
+    Photo_links: [
+      { row: 2, values: { 'Full Path': 'Peru/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id1}/view` } },
+      { row: 3, values: { 'Full Path': 'Peru/CAM000001v.JPG', Name: 'CAM000001v.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id2}/view` } },
+    ],
+  });
+  const s = new Store({ localMode: true }, { sheets });
+  await s.sync({ sheets: ['Photo_links'] });
+  initPhotoTables(s.db);
+  s.db.prepare('INSERT INTO photo_wing_boxes(name, box_json, conf) VALUES(?,?,?)').run('CAM000001d', '[0.1,0.2,0.6,0.7]', 0.9);
+  s.db
+    .prepare("INSERT INTO photo_predictions(cam, sex, sex_p_male, sex_supported, sex_species, sex_status, imported_at) VALUES(?,?,?,?,?,?,'x')")
+    .run('CAM000001', 'male', 0.93, 1, 'Oleria onega', 'species_supported');
+  s.db
+    .prepare("INSERT INTO photo_predictions(cam, sex, sex_p_male, sex_supported, sex_species, sex_status, imported_at) VALUES(?,?,?,?,?,?,'x')")
+    .run('CAM000003', 'female', 0.02, 1, 'Oleria onega', 'species_supported');
+  // The locked test portion of the collection sex model: listed, never scored here.
+  const dir = mkdtempSync(join(tmpdir(), 'skip-'));
+  writeFileSync(join(dir, 'skip.txt'), 'CAM000003\n');
+  process.env.COLLECTION_SEX_SKIP_FILE = join(dir, 'skip.txt');
+  const got = projectInfo(s, new Set(['CAM000001', 'CAM000002', 'CAM000003']));
+  delete process.env.COLLECTION_SEX_SKIP_FILE;
+  assert.deepEqual(got.CAM000003, { photos: [], sex: null });
+  assert.deepEqual(got.CAM000001, {
+    photos: [
+      { id: id1, view: 'dorsal', box: [0.1, 0.2, 0.6, 0.7] },
+      { id: id2, view: 'ventral', box: null },
+    ],
+    sex: { pMale: 0.93, supported: true, unreliable: false },
+  });
+  assert.deepEqual(got.CAM000002, { photos: [], sex: null });
+  s.close();
+});
+
 test('the pairing board stores a point whose recapture row is being added, and rows without a point', async () => {
   const { s, id } = await misPaired();
   const { walk } = await saveWalk(
@@ -670,7 +712,7 @@ test('Pasar al mapa stores a walk with doubtful points: sure ones linked, doubtf
       [null, 'none', false],
     ],
   );
-  assert.deepEqual(rematchTracks(s), { changes: [], doubts: [], walks: [] });
+  assert.deepEqual(rematchTracks(s), { changes: [], doubts: [], walks: [], projects: {} });
   s.close();
 });
 
