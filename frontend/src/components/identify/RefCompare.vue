@@ -49,7 +49,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         >
           {{ $t('Cargando foto…') }}
         </div>
-        <div v-else class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
+        <div v-if="!photo" class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
           {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
         </div>
         <template v-if="photos.length > 1">
