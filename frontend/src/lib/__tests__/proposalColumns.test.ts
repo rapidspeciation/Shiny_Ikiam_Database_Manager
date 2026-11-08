@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHANGES_ONLY_KEY,
   columnChoices,
+  proposalFrame,
   inCustomOrder,
   inNotebookOrder,
   inSheetOrder,
@@ -174,5 +176,20 @@ describe("the person's column choices, kept in the browser", () => {
     expect(columnChoices('tester').view).toBe('custom')
     b.setCustom('Insectary_data', null)
     expect(localStorage.getItem('ithomiini:proposal-columns-custom:tester:Insectary_data')).toBeNull()
+  })
+})
+
+describe('«Solo cambios» on a phone', () => {
+  it('drops «Fila» and narrows «Nota IA» to 90 px on a phone only', () => {
+    expect(proposalFrame(true, false)).toEqual({ rowColumn: false, note: { width: 90, minWidth: 60 } })
+    expect(proposalFrame(true, true)).toEqual({ rowColumn: true, note: { width: 150, minWidth: 70 } })
+    expect(proposalFrame(false, false)).toEqual({ rowColumn: true, note: { width: 150, minWidth: 70 } })
+  })
+  it('puts Death_date in the first 390 px screen (364 px grid): ID 41 + Nota IA 90 + Sex 107 + Death_date 114', () => {
+    const { note } = proposalFrame(true, false)
+    expect(41 + note.width + 107 + 114).toBeLessThanOrEqual(364)
+  })
+  it('is kept under a key of its own (the old one hid only rows)', () => {
+    expect(CHANGES_ONLY_KEY).toBe('proposal-changes-only-2')
   })
 })

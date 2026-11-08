@@ -61,7 +61,7 @@ import {
   type ProposalChange,
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
-import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
+import { CHANGES_ONLY_KEY, columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
 import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
 import { useMedia } from '../composables/usePhone'
@@ -402,10 +402,10 @@ const groups = computed(() => sheetGroups(shown.value, extra.value, sheet => fie
 // ------------------------------------------------------------ a notebook page
 /**
  * "Solo cambios": the page's lines that write nothing hidden (a line to look at, not found or refused, stays), and
- * the columns where no shown row changes anything, so the changed cells sit together beside the ID. On by default on
- * a phone, where a sheet's forty columns are some thirteen screens wide.
+ * the columns where no shown row changes anything, so the changed cells sit together beside the ID. On by default at
+ * every width (a choice the person made still wins). A key of its own: the old one (rows only) meant something else.
  */
-const changesOnly = persistentRef('proposal-changes-only', !wide.value)
+const changesOnly = persistentRef(CHANGES_ONLY_KEY, true)
 const lookAt = (c: ProposalChange) => !!c.page?.error || (!!c.placeholder && c.page?.status !== 'crossed')
 const rowsOf = (changes: ProposalChange[]) => (changesOnly.value ? changes.filter(c => !c.context || lookAt(c)) : changes)
 const quietRows = (changes: ProposalChange[]) => changes.filter(c => c.context && !lookAt(c)).length
@@ -960,6 +960,7 @@ const statusText = computed(
         "
         :flash="flash"
         :history-key="`${proposal.id}:${g.id}`"
+        :compact="changesOnly && narrow"
         @edit="onEdit"
         @remove="removeRow"
         @check="onCheck"
@@ -1015,7 +1016,7 @@ const statusText = computed(
           </button>
           <label
             v-if="g.quiet || g.still"
-            class="flex cursor-pointer items-center gap-1 pointer-coarse:min-h-11 pointer-coarse:px-1"
+            class="hit-target flex cursor-pointer items-center gap-1"
             :title="$t('Oculta las filas y las columnas que no cambian nada (iguales a la hoja o tachadas): quedan juntas las celdas que cambian')"
           >
             <input v-model="changesOnly" type="checkbox" class="h-3 w-3" />
@@ -1045,7 +1046,7 @@ const statusText = computed(
           </button>
           <select
             v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
-            class="rounded border border-control bg-surface px-1 py-0.5 text-xs"
+            class="rounded border border-control bg-surface px-1 py-0.5 text-xs max-sm:order-1"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
@@ -1064,7 +1065,8 @@ const statusText = computed(
           />
         </template>
         <template v-if="editable && !g.near" #end>
-          <span class="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+          <!-- On a phone after «+ Columna…» (which follows ⋯ there), left-aligned so its chips share lines with it. -->
+          <span class="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1 max-sm:contents max-sm:*:order-2">
             <span class="legend is-proposed" :title="$t('Valor de la IA: se escribe al aplicar')">{{ $t('IA') }}</span>
             <span class="legend is-person" :title="$t('Escrito por ti: se escribe al aplicar')">{{ $t('tú') }}</span>
             <span class="legend is-sheet" :title="$t('Valor actual de la hoja: no cambia')">{{ $t('hoja') }}</span>
