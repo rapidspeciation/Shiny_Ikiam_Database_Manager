@@ -489,6 +489,28 @@ export function viewOf(points, minZoom = 3, maxZoom = 12) {
   return { lng: (w + e) / 2, lat: (s + n) / 2, zoom };
 }
 
+// A record within this many degrees (about 100 m) of an earlier one, at the same minute, repeats it.
+const REPEAT_DEG = 0.001;
+
+/**
+ * A gallery's photos without those of a record that repeats an earlier record: the same observation posted twice
+ * (iNaturalist; the same minute, within about 100 m) shows the same pictures again under another record and photo
+ * ids. A date without a time, or a photo shown for a record that has none of its own, is never taken for a repeat.
+ */
+export function withoutRepeatedRecords(photos) {
+  const byMinute = new Map();
+  const known = new Set();
+  const repeats = new Set();
+  for (const ph of photos) {
+    if (!ph.record || !ph.minute || ph.fallback || known.has(ph.record) || !Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
+    known.add(ph.record);
+    const earlier = byMinute.get(ph.minute) ?? [];
+    if (earlier.some(o => Math.abs(o.lat - ph.lat) < REPEAT_DEG && Math.abs(o.lng - ph.lng) < REPEAT_DEG)) repeats.add(ph.record);
+    else byMinute.set(ph.minute, [...earlier, ph]);
+  }
+  return repeats.size ? photos.filter(ph => !repeats.has(ph.record)) : photos;
+}
+
 /**
  * A plant's tiles for a contact sheet: `k` of its photos (already by place), one per GBIF record before a second of
  * the same; then the nearest leaves-or-plant photo and the nearest flower (photo tags) are made sure of, in place of
@@ -1534,6 +1556,8 @@ export function createMapsTools({
           lat: Number(p.lat),
           lng: Number(p.lng),
           year: yearOf(p.observation_date),
+          // To the minute, when the record has a time (withoutRepeatedRecords).
+          minute: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.exec(text(p.observation_date))?.[0] ?? null,
           field: p.photo_context === 'field',
           // A pressed museum specimen: its record says so, or the gallery's context.
           herbarium: /preserved|fossil|material/i.test(text(p.basisOfRecord)) || p.photo_context === 'preserved',
@@ -2002,7 +2026,8 @@ export function createMapsTools({
   }
 
   /**
-   * Each plant's gallery photos (its first SEND_PAGES pages, no fallback items), ranked: a living plant before
+   * Each plant's gallery photos (its first SEND_PAGES pages, no fallback items, no record that repeats another; a longer
+   * gallery's list has `cut`: { pages, total }), ranked: a living plant before
    * anything else, a herbarium sheet last; within that, leaves or the whole plant (photo tags), untagged, then flowers
    * and fruits; then in the area, within `nearbyKm`, nearer, newer. Each photo with inside, away, live, view.
    */
@@ -2016,14 +2041,14 @@ export function createMapsTools({
         const pages = await Promise.all(index.pages.slice(0, SEND_PAGES).map(page => galleryPage(page).then(r => r.value)));
         // nth: the photo's place among its record's photos in the gallery (0 = the record's first photo).
         const perRecord = new Map();
-        return pages
-          .flat()
+        const photos = withoutRepeatedRecords(pages.flat())
           .map(ph => {
             const nth = ph.record ? perRecord.get(ph.record) ?? 0 : 0;
             if (ph.record) perRecord.set(ph.record, nth + 1);
             return { ...ph, nth };
           })
           .filter(ph => !ph.fallback && Number.isFinite(ph.lat) && Number.isFinite(ph.lng));
+        return Object.assign(photos, index.pages.length > SEND_PAGES ? { cut: { pages: index.pages.length, total: index.total } } : {});
       }).map(x => x.catch(() => [])),
     );
     const viewOf = ph => {
@@ -2038,15 +2063,18 @@ export function createMapsTools({
     const box = area?.admin?.bbox ?? area?.bbox ?? null;
     const middle = box ? { lat: (box[1] + box[3]) / 2, lng: (box[0] + box[2]) / 2 } : area?.near ?? null;
     return galleries.map(gallery =>
-      gallery
-        .map(ph => {
-          const inside = !area || area.test(ph.lng, ph.lat);
-          const measured = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
-          const away = Number.isFinite(measured) ? measured : middle ? NEAREST_MAX_KM + km(middle, ph) : Infinity;
-          const live = ph.field && !ph.herbarium ? 0 : !ph.herbarium ? 1 : 2;
-          return { ...ph, inside, away, live, view: viewOf(ph), loc: inside ? 0 : away <= nearbyKm ? 1 : 2 };
-        })
-        .sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b) || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0)),
+      Object.assign(
+        gallery
+          .map(ph => {
+            const inside = !area || area.test(ph.lng, ph.lat);
+            const measured = inside ? 0 : area.distance ? area.distance(ph.lng, ph.lat) : Infinity;
+            const away = Number.isFinite(measured) ? measured : middle ? NEAREST_MAX_KM + km(middle, ph) : Infinity;
+            const live = ph.field && !ph.herbarium ? 0 : !ph.herbarium ? 1 : 2;
+            return { ...ph, inside, away, live, view: viewOf(ph), loc: inside ? 0 : away <= nearbyKm ? 1 : 2 };
+          })
+          .sort((a, b) => a.live - b.live || viewRank(a) - viewRank(b) || a.loc - b.loc || a.away - b.away || (b.year ?? 0) - (a.year ?? 0)),
+        gallery.cut ? { cut: gallery.cut } : {},
+      ),
     );
   }
 
@@ -2211,7 +2239,17 @@ export function createMapsTools({
       // `more` (later_photos, photo_skip): the plant's photos in place order, the records' later photos only when asked
       // (where observers put the leaf underside and close-ups), from `skip` on; no leaves or flower tile swapped in.
       const pool = more ? ranked[i].filter(ph => !seen.has(ph.img) && ph.live === 0 && (!more.later || ph.nth > 0)).sort(byPlace) : null;
-      if (pool) moreCounts.push({ plant: p.e.taxon.name, photos: pool.length, shown: Math.max(0, Math.min(k, pool.length - more.skip)), more_after: Math.max(0, pool.length - more.skip - k) });
+      if (pool) {
+        const cut = ranked[i].cut;
+        moreCounts.push({
+          plant: p.e.taxon.name,
+          photos: pool.length,
+          shown: Math.max(0, Math.min(k, pool.length - more.skip)),
+          more_after: Math.max(0, pool.length - more.skip - k),
+          // A gallery longer than SEND_PAGES pages: the counts are of its first pages only.
+          ...(cut ? { counted_in: `the first ${SEND_PAGES} of ${cut.pages} gallery pages (${cut.total} photos in all): there are more than these counts` } : {}),
+        });
+      }
       const best = pool ? pool.slice(more.skip, more.skip + k) : sheetPicks(ranked[i].filter(ph => !seen.has(ph.img)).sort(byPlace), k);
       for (const ph of best) {
         seen.add(ph.img);

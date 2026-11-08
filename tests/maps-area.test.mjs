@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOUNDARY_URLS, createAdminAreas } from '../server/admin-areas.mjs';
-import { TAGS_FILE, createMapsTools, sheetPicks } from '../server/maps-tools.mjs';
+import { TAGS_FILE, createMapsTools, sheetPicks, withoutRepeatedRecords } from '../server/maps-tools.mjs';
 import { MAX_PX, creditOf, jpegSize, licenceName, proxyUrl, sizedUrl } from '../server/plant-photos.mjs';
 
 const MAPS = 'https://maps.test/ithomiini_maps/';
@@ -507,6 +507,59 @@ test('host_plants later_photos and photo_skip: the records\' later photos on 2 s
     assert.equal(sent.images[0].url, 'https://inaturalist-open-data.s3.amazonaws.com/photos/201/original.jpg');
   } finally {
     restore();
+  }
+});
+
+test('withoutRepeatedRecords: a record posted twice (same minute, within about 100 m) is left out; nothing else is', () => {
+  const ph = (record, minute, lat, lng, extra = {}) => ({ img: `${record}-${Math.random()}`, record, minute, lat, lng, ...extra });
+  const photos = [
+    ph('shown-for-another', '2024-10-05T07:21', -3.3903, -60.3095, { fallback: true }),
+    ph('a', '2024-10-05T07:21', -3.390285, -60.309525),
+    ph('a', '2024-10-05T07:21', -3.390285, -60.309525),
+    ph('b', '2024-10-05T07:21', -3.390287, -60.309525),
+    ph('b', '2024-10-05T07:21', -3.390287, -60.309525),
+    ph('far', '2024-10-05T07:21', -3.43, -60.3095),
+    ph('later', '2024-10-05T07:22', -3.390285, -60.309525),
+    ph('no-time', null, -3.390285, -60.309525),
+    ph('no-time-2', null, -3.390285, -60.309525),
+    ph(null, '2024-10-05T07:21', -3.390285, -60.309525),
+  ];
+  assert.deepEqual(
+    withoutRepeatedRecords(photos).map(p => p.record),
+    ['shown-for-another', 'a', 'a', 'far', 'later', 'no-time', 'no-time-2', null],
+  );
+  // None repeated: the same list back.
+  const plain = photos.filter(p => p.record !== 'b');
+  assert.equal(withoutRepeatedRecords(plain), plain);
+});
+
+test('host_plants: the photos of a record posted twice are on the sheets once; a gallery past 12 pages says its counts are partial', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const page = 'host_plants/gallery/mite/p1.json';
+  const index = 'host_plants/gallery/mite/index.json';
+  const [savedPage, savedIndex] = [FILES[page], FILES[index]];
+  const [sucumbios, tena] = savedPage.items;
+  const photo = (base, id, extra = {}) => ({ ...base, image_url: `https://inaturalist-open-data.s3.amazonaws.com/photos/${id}/original.jpg`, ...extra });
+  const first = { ...tena, observation_date: '2019-05-01T10:00:00' };
+  // The Tena record with 3 more photos, then the same observation again (another record and photo ids, 0.2 m away).
+  const again = { ...first, observation_url: 'https://www.gbif.org/occurrence/9', observation_date: '2019-05-01T10:00', lat: TENA.lat + 0.000002 };
+  FILES[page] = { items: [sucumbios, first, ...[301, 302, 303].map(id => photo(first, id)), ...[401, 402, 403, 404].map(id => photo(again, id))] };
+  try {
+    const tools = () => createMapsTools({ fetchImpl: fakeWeb().fetchImpl, mapsBase: MAPS, cacheDir: mkdtempSync(join(tmpdir(), 'maps-cache-')) });
+    const plain = await tools().run('host_plants', { plant: 'Solanum mite', area: 'Napo', photo_sheet: true });
+    // The two records' first photos and the Tena record's 3 more: 5 tiles, not 9.
+    assert.deepEqual(plain.photo_sheets.map(sh => sh.tiles.length), [5]);
+    const later = await tools().run('host_plants', { plant: 'Solanum mite', area: 'Napo', later_photos: true });
+    assert.deepEqual(later.photo_sheet_more.plants, [{ plant: 'Solanum mite', photos: 3, shown: 3, more_after: 0 }]);
+    // 13 pages: the counts are of the first 12, and the answer says so.
+    FILES[index] = { total_images: 1203, pages: Array.from({ length: 13 }, (_, i) => (i ? `gallery/mite/p${i + 1}.json` : 'gallery/mite/p1.json')) };
+    for (let i = 2; i <= 13; i++) FILES[`host_plants/gallery/mite/p${i}.json`] = { items: [] };
+    const long = await tools().run('host_plants', { plant: 'Solanum mite', area: 'Napo', later_photos: true });
+    assert.equal(long.photo_sheet_more.plants[0].photos, 3);
+    assert.match(long.photo_sheet_more.plants[0].counted_in, /first 12 of 13 gallery pages \(1203 photos in all\)/);
+  } finally {
+    FILES[page] = savedPage;
+    FILES[index] = savedIndex;
+    for (let i = 2; i <= 13; i++) delete FILES[`host_plants/gallery/mite/p${i}.json`];
   }
 });
 
