@@ -96,7 +96,10 @@
   Preservation_date blank, dead ones `NA`), racks of other series run at the
   same time, and a typo with an extra digit outnumbers every real tube. The
   query copy's `tubes` table gives each tube's number, `well_formed` and when
-  it was entered; the next tube is the run's next number held by no sheet.
+  it was entered (compare within one sample sheet, Insectary_data or
+  Collection_data, filtered by tissue: the location and manifest sheets only
+  repeat tubes); the next tube is the run's next number held by no sheet and
+  not waiting in `staged`.
 - A 7-digit or 9-digit tube is a dropped or doubled digit (Sep 2026: `FS3886683`
   for `FS63886683`, `FS5848961` for `FS50848961`): suggest the form that
   continues a known run, flagged as a suggestion.

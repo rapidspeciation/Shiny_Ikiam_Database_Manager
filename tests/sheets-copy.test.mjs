@@ -155,7 +155,7 @@ test('date columns hold dates only: NA and other text are in <column>_text, so a
     const { store } = await setup(dir, {
       Insectary_data: [
         { row: 2, values: { Insectary_ID: 'A1A', Death_date: d('2026-10-30'), Death_cause: 'Unknown' } },
-        { row: 3, values: { Insectary_ID: 'A2A', SPECIES: 'Melinaea mothone', Death_date: 'NA', Death_cause: 'Disappearance' } },
+        { row: 3, values: { Insectary_ID: 'A2A', SPECIES: 'Melinaea mothone', Death_date: 'NA', Death_cause: 'Disappearance', Preservation_date: 'NA' } },
         { row: 4, values: { Insectary_ID: 'A3A', Death_date: '9/30', Death_cause: 'NA' } },
         { row: 5, values: { Insectary_ID: 'A4A', Sex: 'male' } },
       ],
@@ -182,6 +182,9 @@ test('date columns hold dates only: NA and other text are in <column>_text, so a
         { Insectary_ID: 'A4A', Death_date: null, Death_date_text: null },
       ]);
       assert.equal(one('SELECT "DATE LAID_text" t FROM Insectary_stocks WHERE "CLUTCH NUMBER" = 998').t, 'NA');
+      // A date column holding only NA (no date yet) is still a date column.
+      assert.equal(one("SELECT count(*) n FROM Insectary_data WHERE Preservation_date >= '2026-10-29'").n, 0);
+      assert.equal(one("SELECT Preservation_date_text t FROM Insectary_data WHERE Insectary_ID = 'A2A'").t, 'NA');
       // _columns lists the companion right after its date column, without a header of its own.
       const cols = all("SELECT column, header, type FROM _columns WHERE sheet = 'Insectary_data'");
       const at = cols.findIndex(c => c.column === 'Death_date');
