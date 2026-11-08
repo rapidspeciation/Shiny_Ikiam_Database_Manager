@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 /**
- * A photo shown on the butterfly's wings: the wing detector's box (fractions of the photo, from the identifier's
- * reading) with some padding, scaled to fit the frame; the rest of the frame shows the photo around it. Without a
- * box, the whole photo covers the frame as before.
+ * A photo cut to the butterfly's wings, as /gphotos-sexed/ shows them: the wing box (fractions of the photo: the
+ * identifier's for a field photo, the photo readings' union of the four wings for a project photo) with some padding,
+ * scaled to fit the frame and centred; nothing outside it is drawn (no label, no colour chart), the frame's own
+ * background fills the rest. Without a box, the whole photo covers the frame as before.
  */
 const props = withDefaults(defineProps<{ src: string; box?: number[] | null; pad?: number }>(), { box: null, pad: 0.08 })
 
@@ -34,23 +35,22 @@ const placed = computed(() => {
   const x1 = Math.min(nw, b[2] * nw + props.pad * bw)
   const y0 = Math.max(0, b[1] * nh - props.pad * bh)
   const y1 = Math.min(nh, b[3] * nh + props.pad * bh)
-  // The whole padded box in the frame, and never less than the photo covering it.
-  const s = Math.max(Math.min(W / (x1 - x0), H / (y1 - y0)), W / nw, H / nh)
-  const left = Math.min(0, Math.max(W - nw * s, W / 2 - ((x0 + x1) / 2) * s))
-  const top = Math.min(0, Math.max(H - nh * s, H / 2 - ((y0 + y1) / 2) * s))
-  return { width: `${nw * s}px`, height: `${nh * s}px`, left: `${left}px`, top: `${top}px`, maxWidth: 'none' }
+  // The whole padded box, as large as the frame allows: a window of its size, centred, the photo moved under it.
+  const s = Math.min(W / (x1 - x0), H / (y1 - y0))
+  const cw = (x1 - x0) * s
+  const ch = (y1 - y0) * s
+  return {
+    window: { width: `${cw}px`, height: `${ch}px`, left: `${(W - cw) / 2}px`, top: `${(H - ch) / 2}px` },
+    image: { width: `${nw * s}px`, height: `${nh * s}px`, left: `${-x0 * s}px`, top: `${-y0 * s}px`, maxWidth: 'none' },
+  }
 })
 </script>
 
 <template>
   <div ref="root" class="relative w-full overflow-hidden">
-    <img
-      :src="src"
-      alt=""
-      loading="lazy"
-      :class="placed ? 'absolute' : 'h-full w-full object-cover'"
-      :style="placed ?? undefined"
-      @load="loaded"
-    />
+    <div v-if="placed" class="absolute overflow-hidden" :style="placed.window">
+      <img :src="src" alt="" class="absolute" :style="placed.image" @load="loaded" />
+    </div>
+    <img v-else :src="src" alt="" loading="lazy" class="h-full w-full object-cover" @load="loaded" />
   </div>
 </template>

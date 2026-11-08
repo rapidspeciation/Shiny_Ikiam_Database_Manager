@@ -806,7 +806,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 >
                   {{ $t('Sin foto') }}
                 </div>
-                <div v-if="projectOf(rowOf(d))?.photos.length" class="flex w-1/2 shrink-0 flex-col gap-1">
+                <div v-if="projectOf(rowOf(d))?.photos.length" class="flex w-[9.5rem] shrink-0 flex-col gap-1">
                   <button
                     v-for="(ph, k) in projectOf(rowOf(d))!.photos"
                     :key="ph.id"
