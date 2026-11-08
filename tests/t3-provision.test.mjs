@@ -83,6 +83,9 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     // The claude.ai account's connectors (Claude Docs…) are not loaded in the chats.
     assert.equal(settings.disableClaudeAiConnectors, true);
     assert.equal(settings.env.ENABLE_CLAUDEAI_MCP_SERVERS, undefined);
+    // No Claude Code auto-memory: the app's documentation is what every chat knows.
+    assert.equal(settings.autoMemoryEnabled, false);
+    assert.equal(settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
     // Trusted by the other Claude account too; a Codex instance's home is not a Claude config.
     assert.ok(JSON.parse(readFileSync(join(ithomiiniHome, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);

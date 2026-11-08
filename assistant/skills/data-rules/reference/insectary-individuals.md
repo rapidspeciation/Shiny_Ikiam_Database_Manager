@@ -35,6 +35,15 @@ blank means it has not died yet.
   notebook is typed over it. A proposed species equal to the clutch's is left
   to the formula, not written. `match_notebook` does this, and `lookAt`
   (`formulaEmpty`) names the rows still left without one.
+- *Mechanitis polymnia* eurydice and proceriformis: one mother can give both
+  forms. 106 of the 203 clutches where either emerged had both (database,
+  4 Nov 2026), in proceriformis clutches (191: 21 eurydice, 10 proceriformis)
+  and in eurydice ones (322, 394, 421, 433). The team considers them forms of
+  one population, not separate stocks (meetings 23/3/2023 and 19/4/2023, F1/F2
+  crosses eurydice ♀ × proceriformis ♂; 10/8/2023, separating the two to make
+  pure stocks). Their genetics is not confirmed, so give this as the team's
+  view. A polymnia whose form differs from its clutch's keeps the clutch, and
+  the clutch is not doubtful: the form that emerged goes in SPECIES.
 - `Stock_of_origin`: only for the *Mechanitis messenoides* stock lines:
   `messenoides`, `intermedia`, `deceptus` (lowercase) = the **clutch's**
   subspecies, even when the phenotype differs. Every other species and every
@@ -223,6 +232,12 @@ duplicated". The repeat's row goes where the Emergidos notebook puts it,
 after the ID written just before it on that page, which can be far from the
 first use. Point a new duplicate out to the person, with the row it goes
 after.
+
+The app's account cannot insert rows in Insectary_data (protected columns
+reach every row). A curator (PAS) inserts the repeat's row by hand in Google
+Sheets, where it goes; then its data are filled with a normal proposal on
+that row. Renaming an ID with a suffix (`W0B` → `W0B.1`) is a cell edit and
+works from the app.
 
 How it has happened:
 

@@ -301,6 +301,11 @@ function provision(user, { freshToken, addProject, folder = user.username, title
   // documents come from the server's Drive copy, and the connectors add tools to every turn. Claude Code
   // reads the env variable before the folder's `env` applies, so the setting is the switch here.
   settings.disableClaudeAiConnectors = true;
+  // No Claude Code auto-memory: what every chat should know lives in the app's documentation (assistant/,
+  // the brief and skills), the same for every person. The setting and the variable both switch it off;
+  // the Claude homes' own settings.json and the launch wrapper do the same on the server.
+  settings.autoMemoryEnabled = false;
+  settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
   settings.permissions ??= {};
   settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []).filter(rule => rule !== `mcp__${OLD_MCP_SERVER}`), `mcp__${MCP_SERVER}`, 'Skill'])];
   // The old guard hook out; other hooks of the folder are kept.
