@@ -38,14 +38,17 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 
 ## Memory and disk (measured 8 Nov 2026)
 
-| | this PC (15 GB) | claudeclaw (24 GB) |
+| 3 instances side by side | this PC (15 GB, btrfs) | claudeclaw (24 GB, ext4) |
 |---|---:|---:|
-| 3 instances at rest, server RSS each | 1345, 1502, 1379 MB | see below |
-| the same, whole unit each (memory.current) | 1474, 1658, 1527 MB | see below |
+| start, until its first sync is done | 2.4 s to listen (the sync after it was not timed here) | 23 s (44 s when the rows file is made first) |
+| server RSS in the first minute after the start | 1345, 1502, 1379 MB | 1524, 1440 MB |
+| server RSS after about 2 minutes idle | 284 MB | 358 MB |
+| the whole unit (memory.current, page cache of its files included) | 1474–1658 MB | 2206–2291 MB |
 
-The app's memory grows while it is used: an instance that synced the whole workbook again and ran the assistant's
-tools holds about 2.6–2.8 GB, and the identifier adds about 1.5 GB while it runs. On this PC, plan on 3 instances,
-4 at most, and stop them when done.
+After a short idle, V8 gives back the memory of the start (the first sync's copies). The app's memory grows while
+it is used: on the perf bench, an instance that synced the whole workbook again and ran the assistant's tools held
+2.6–2.8 GB, and the identifier added about 1.5 GB while it ran. On this PC, plan on 3 instances, 4 at most, and stop
+them when done.
 
 - The workbook's rows live in a SQLite file instead of memory (about 0.7 GB less per instance). The first start
   after a new snapshot, or after a change to the code that shapes the rows, makes
