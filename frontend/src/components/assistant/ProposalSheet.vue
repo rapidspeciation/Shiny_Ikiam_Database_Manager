@@ -1642,9 +1642,11 @@ watch(
       <slot />
       <template v-if="editable">
         <!-- On a phone the tools for the selected cells wait behind «⋯» (a row of their own when opened). -->
+        <!-- In a span: .proposal-use sets display outside Tailwind's layers, so sm:hidden on the button would lose. -->
+        <span class="flex self-stretch sm:hidden">
         <button
           type="button"
-          class="proposal-use hit-target min-w-8 justify-center self-stretch sm:hidden"
+          class="proposal-use hit-target min-w-8 justify-center"
           :aria-expanded="toolsOpen"
           :aria-label="$t('Más herramientas')"
           :title="$t('Más herramientas')"
@@ -1654,6 +1656,7 @@ watch(
         >
           <Ellipsis :size="14" />
         </button>
+        </span>
         <span
           class="items-center gap-2 sm:contents"
           :class="toolsOpen ? 'flex basis-full flex-wrap' : 'max-sm:hidden'"
