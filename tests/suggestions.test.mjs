@@ -328,7 +328,8 @@ test('alerts: a CAM range running low whose next range is already on Lists is in
   const cams = data.alerts.filter(a => a.id.startsWith('cam:'));
   assert.equal(cams.length, 1);
   assert.equal(cams[0].level, 'info');
-  assert.match(cams[0].text, /quedan 39 CAM en CAM078000–CAM078099 .*el siguiente rango ya está en Lists: CAM110000–CAM110099\./);
+  assert.match(cams[0].text, /quedan 39 CAM; el siguiente rango ya está en Lists\./);
+  assert.match(cams[0].detail, /^Rango CAM078000–CAM078099, .*siguiente rango CAM110000–CAM110099\.$/);
   assert.doesNotMatch(cams[0].text, /Pidan/);
   store.close();
 });

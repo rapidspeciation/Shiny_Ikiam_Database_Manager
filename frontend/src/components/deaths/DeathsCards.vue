@@ -1496,7 +1496,7 @@ const choice = (on: boolean) =>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
-              Death_cause <span v-if="isMixed('cause')" :class="mixedChip">{{ $t('varios') }}</span>
+              {{ $t('Causa de muerte') }} <span v-if="isMixed('cause')" :class="mixedChip">{{ $t('varios') }}</span>
             </h2>
             <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
               <button
@@ -1565,7 +1565,7 @@ const choice = (on: boolean) =>
                 {{ $tn(spread('preserved').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
               </button>
               <p v-if="shown.preserved === false && !isMixed('preserved')" class="mt-1.5 text-sm text-stone-600">
-                {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
+                {{ $t('Sin preservar: sin CAM ni tubos') }}
               </p>
               <!-- A cross or pheromone parent going in as not preserved: a reminder, not a block. -->
               <p
@@ -1810,7 +1810,7 @@ const choice = (on: boolean) =>
               </span>
               <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
               <span class="flex items-center gap-1.5 text-xs text-stone-600"><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span>
-              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">Death_cause: {{ factsFor(row).life.cause }}</span>
+              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">{{ $t('Causa de muerte') }}: {{ factsFor(row).life.cause }}</span>
             </button>
             <button
               class="absolute top-1 right-1 grid h-11 w-11 place-items-center rounded-lg text-stone-500 active:bg-stone-100"

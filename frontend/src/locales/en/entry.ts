@@ -299,12 +299,13 @@ export default {
   '{n} celdas escritas; revisa y guarda': '{n} cells written; review and save',
   'Nada que escribir: esas filas ya tienen fecha y causa': 'Nothing to write: those rows already have a date and cause',
   'Fecha de muerte': 'Death date',
+  'Causa de muerte': 'Cause of death',
   'Elige la fecha': 'Choose the date',
   'Causa por defecto': 'Default cause',
   'p. ej. {example}': 'e.g. {example}',
   'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; tejidos y medios en NOT_COLLECTED. Sin marcar, solo fecha y causa: el CAM y el tubo van en Tubos o en las tarjetas.':
     'For causes other than Killed_Preserved and rows without a CAM or tube: CAM, tubes, Preservation_date, Location_body and Preserved_Dead_Alive set to NA; tissues and media set to NOT_COLLECTED. Unticked, only the date and cause: the CAM and tube go in Tubos or in the cards.',
-  'Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED': 'Not preserved: CAM and tubes NA, tissues and media NOT_COLLECTED',
+  'Sin preservar: sin CAM ni tubos': 'Not preserved: no CAM or tubes',
   '{ids} tiene un clip de ala (cruces o feromonas): su cuerpo se suele preservar.':
     '{ids} has a wing clip (crosses or pheromones): its body is usually preserved.',
   '{ids} tienen un clip de ala (cruces o feromonas): su cuerpo se suele preservar.':

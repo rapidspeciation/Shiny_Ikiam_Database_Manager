@@ -48,8 +48,15 @@ const alerts = computed(() => data.value?.alerts ?? [])
       >
         <AlertTriangle v-if="a.level === 'warn'" :size="15" class="mt-0.5 shrink-0 text-amber-700" />
         <Info v-else :size="15" class="mt-0.5 shrink-0 text-stone-500" />
-        <a v-if="/^#\/(tablas|censo|propuestas)/.test(a.link ?? '')" :href="a.link" class="hover:underline">{{ tx(a.text, a.textMsg) }}</a>
-        <span v-else>{{ tx(a.text, a.textMsg) }}</span>
+        <span class="min-w-0">
+          <a v-if="/^#\/(tablas|censo|propuestas)/.test(a.link ?? '')" :href="a.link" class="hover:underline">{{ tx(a.text, a.textMsg) }}</a>
+          <span v-else>{{ tx(a.text, a.textMsg) }}</span>
+          <!-- The range and its last CAM: on request. -->
+          <details v-if="a.detail">
+            <summary class="cursor-pointer text-xs text-fg-muted hover:underline">{{ $t('Ver el rango') }}</summary>
+            <span class="text-xs">{{ tx(a.detail, a.detailMsg) }}</span>
+          </details>
+        </span>
       </li>
     </ul>
     <p v-if="alerts.length > SHOWN" class="mt-1 text-xs text-stone-500">

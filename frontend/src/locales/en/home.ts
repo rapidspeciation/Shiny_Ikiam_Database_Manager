@@ -241,5 +241,7 @@ export default {
   Tabla: 'Table',
   // AlertsCard
   'Ver rangos de CAM y la regla de los 30': 'See the CAM ranges and the 30 rule',
+  // AlertsCard: a CAM alert's range, on request.
+  'Ver el rango': 'See the range',
   'y {n} más': 'and {n} more',
 } as Record<string, string>
