@@ -211,7 +211,7 @@ function createLayout(db) {
 }
 
 /** The code that shapes the rows (seedRows and the sheets' fields): a change to it makes the file again. */
-const CODE = ['./sheets.mjs', './schema.mjs', './file-sheets.mjs'].map(f => readFileSync(new URL(f, import.meta.url)));
+const CODE = ['./sheets.mjs', './schema.mjs', '../docs/workbook-schema.json', './file-sheets.mjs'].map(f => readFileSync(new URL(f, import.meta.url)));
 const codeHash = createHash('sha256').update(Buffer.concat(CODE)).digest('hex').slice(0, 16);
 /** What the rows file was made from: the seed's size and time, the file's layout and the code. */
 function seedStamp(seedFile) {
