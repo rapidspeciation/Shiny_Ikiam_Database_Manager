@@ -1,4 +1,5 @@
-import { defineStore } from 'pinia'
+import { defineStore, getActivePinia } from 'pinia'
+import { getCurrentScope, onScopeDispose } from 'vue'
 import { api, ApiError, learnItems, requestId } from '../lib/api'
 import { mainPurpose, purposeFromHash } from '../lib/history'
 import { t } from '../lib/i18n'
@@ -89,6 +90,22 @@ const AUTO_DELAY = 2500
 let autoTimer: ReturnType<typeof setTimeout> | null = null
 let autoRetries = 0
 let checkTimer: ReturnType<typeof setTimeout> | null = null
+/** Bumped when the timers are stopped: an automatic save already on its way then schedules no retry. */
+let timerEpoch = 0
+
+/**
+ * Stops the check and automatic-save timers (sign-out, a disposed store). They are the module's, one of each, so a
+ * new store's schedule call replaces them; stopping them here means an old one never fires into the next session or
+ * store (a store's action makes its own pinia the active one again).
+ */
+function stopTimers() {
+  if (autoTimer) clearTimeout(autoTimer)
+  if (checkTimer) clearTimeout(checkTimer)
+  autoTimer = null
+  checkTimer = null
+  autoRetries = 0
+  timerEpoch++
+}
 
 /**
  * Edits are kept in the browser (and in localStorage, so a closed tab or a
@@ -96,37 +113,42 @@ let checkTimer: ReturnType<typeof setTimeout> | null = null
  * This mirrors the original app's "Guardar en local" → "Subir cambios" flow.
  */
 export const usePending = defineStore('pending', {
-  state: () => ({
-    edits: {} as Record<string, PendingEdit>,
-    creates: [] as PendingCreate[],
-    /** Why the server did not save a cell ("rowId:field", or "rowId:*" for the whole row). */
-    errors: {} as Record<string, string>,
-    /** Why a cell is not sent at all: the app's own checks (bad date, strict list, repeated ID). */
-    problems: {} as Record<string, string>,
-    saving: false,
-    /**
-     * One request ID per set of changes, kept until the server gives a definite
-     * answer, so retrying a save whose outcome was unclear can never write twice.
-     * `requestBody` is what that request sent: a different set gets a new ID.
-     */
-    requestId: null as string | null,
-    requestBody: null as string | null,
-    /** The same for the changes kept in the app (Emergidos, Clutches: POST /api/staged). */
-    stagedId: null as string | null,
-    stagedBody: null as string | null,
-    /** Changes the server keeps until Google answers, by outbox id: still shown as pending, not sent again. */
-    queued: {} as Record<string, QueuedSave>,
-    /** Bumped on every cell change, so checks such as repeated IDs follow typing. */
-    edited: 0,
-    /** Bumped whenever changes happen outside a grid's own editing (save, discard, bulk fills). */
-    revision: 0,
-    /** The last save: written to Google Sheets, or kept in the app (Emergidos, Clutches) for «Guardar en Google Sheets». */
-    lastSaved: null as { count: number; at: string; where?: 'sheet' | 'app' } | null,
-    /** Save automatically a moment after the last change (per person, remembered on this device). */
-    autoSave: true,
-    /** Why automatic saving is waiting (offline, conflict to review…), if it is: Spanish, shown through $t. */
-    autoBlocked: '' as string,
-  }),
+  state: () => {
+    // state() runs in the store's own scope when the store is made (its pinia has no 'pending' state yet; a later
+    // $reset() call has one and may run in a component's scope): disposing the store (or its pinia) stops the timers.
+    if (getCurrentScope() && !getActivePinia()?.state.value.pending) onScopeDispose(stopTimers)
+    return {
+      edits: {} as Record<string, PendingEdit>,
+      creates: [] as PendingCreate[],
+      /** Why the server did not save a cell ("rowId:field", or "rowId:*" for the whole row). */
+      errors: {} as Record<string, string>,
+      /** Why a cell is not sent at all: the app's own checks (bad date, strict list, repeated ID). */
+      problems: {} as Record<string, string>,
+      saving: false,
+      /**
+       * One request ID per set of changes, kept until the server gives a definite
+       * answer, so retrying a save whose outcome was unclear can never write twice.
+       * `requestBody` is what that request sent: a different set gets a new ID.
+       */
+      requestId: null as string | null,
+      requestBody: null as string | null,
+      /** The same for the changes kept in the app (Emergidos, Clutches: POST /api/staged). */
+      stagedId: null as string | null,
+      stagedBody: null as string | null,
+      /** Changes the server keeps until Google answers, by outbox id: still shown as pending, not sent again. */
+      queued: {} as Record<string, QueuedSave>,
+      /** Bumped on every cell change, so checks such as repeated IDs follow typing. */
+      edited: 0,
+      /** Bumped whenever changes happen outside a grid's own editing (save, discard, bulk fills). */
+      revision: 0,
+      /** The last save: written to Google Sheets, or kept in the app (Emergidos, Clutches) for «Guardar en Google Sheets». */
+      lastSaved: null as { count: number; at: string; where?: 'sheet' | 'app' } | null,
+      /** Save automatically a moment after the last change (per person, remembered on this device). */
+      autoSave: true,
+      /** Why automatic saving is waiting (offline, conflict to review…), if it is: Spanish, shown through $t. */
+      autoBlocked: '' as string,
+    }
+  },
   getters: {
     changeCount: s => Object.values(s.edits).reduce((n, e) => n + Object.keys(e.values).length, 0) + s.creates.length,
     rowCount: s => Object.keys(s.edits).length + s.creates.length,
@@ -182,12 +204,15 @@ export const usePending = defineStore('pending', {
         this.autoBlocked = 'Sin conexión: se guardará al volver la conexión'
         return
       }
+      const epoch = timerEpoch
       try {
         // Cells refused before wait until they are edited again; everything else is saved.
         await this.save('', { retryRefused: false, auto: true })
         autoRetries = 0
         this.autoBlocked = ''
       } catch (e) {
+        // Signed out (or the store disposed) while it was on its way: no retry into the next session.
+        if (epoch !== timerEpoch) return
         const code = e instanceof ApiError ? e.code : ''
         if (['WRITE_UNCERTAIN', 'OFFLINE', 'SERVER_ERROR'].includes(code) || (e instanceof ApiError && e.status >= 500)) {
           autoRetries++
@@ -226,8 +251,16 @@ export const usePending = defineStore('pending', {
       this.revision++
       this.scheduleCheck()
     },
+    /**
+     * Before signing out: no check and no automatic save after it. The drafts are not saved first: the sign-out
+     * dialog says they are kept on this device for that person (restore() brings them back on the next sign-in).
+     */
+    stopTimers() {
+      stopTimers()
+    },
     /** Called on sign-out: the drafts stay saved for that person, but leave the screen. */
     clear() {
+      stopTimers()
       this.edits = {}
       this.creates = []
       this.errors = {}

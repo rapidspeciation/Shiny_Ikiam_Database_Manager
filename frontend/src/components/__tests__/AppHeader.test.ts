@@ -5,12 +5,13 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { t, tn } from '../../lib/i18n'
 import AppHeader from '../AppHeader.vue'
 import { useSession } from '../../stores/session'
+import { usePending } from '../../stores/pending'
 import { THEME_KEY, oppositeTheme, theme, themePref } from '../../lib/theme'
 
 // The header's two menus («Más» and the user's name) close the way people expect: outside click, Escape (focus back
 // on their button) and a change of page.
 
-vi.mock('../../lib/api', () => ({ api: async () => ({}) }))
+vi.mock('../../lib/api', () => ({ api: async () => ({}), setCsrf: () => {} }))
 vi.mock('../../router', () => ({
   tabs: [
     { path: '/inicio', label: 'Inicio', open: true },
@@ -166,5 +167,38 @@ describe('AppHeader theme toggle', () => {
     expect(themePref.value).toBe('system')
     expect(localStorage.getItem(THEME_KEY)).toBeNull()
     expect(systemItem(h)).toBeNull()
+  })
+})
+
+describe('AppHeader sign-out', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.stubGlobal('ResizeObserver', Observer)
+  })
+
+  it('«Cerrar sesión» with an unsaved change: no check and no automatic save run after it, and the change is kept', async () => {
+    const h = await mount()
+    vi.useFakeTimers()
+    vi.stubGlobal('confirm', () => true)
+    const session = useSession()
+    session.user = { id: 'u', username: 'ana', displayName: 'Ana', role: 'admin' } as never
+    const pending = usePending()
+    pending.creates.push({ clientId: 'c1', module: 'Insectary_data', label: 'Nueva', values: { Sex: 'female' } })
+    pending.persist()
+    expect(vi.getTimerCount()).toBe(2)
+    const ran: string[] = []
+    pending.$onAction(({ name }) => void ran.push(name))
+    h.host.querySelector<HTMLElement>('button[aria-expanded][title="Ana"]')!.click()
+    await h.tick()
+    const out = [...h.host.querySelectorAll<HTMLElement>('[data-user-menu] button')].find(b => b.textContent?.includes('Cerrar sesión'))!
+    out.click()
+    await h.tick()
+    expect(session.user).toBeNull()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(ran).not.toContain('check')
+    expect(ran).not.toContain('runAutoSave')
+    expect(pending.changeCount).toBe(0)
+    expect(JSON.parse(localStorage.getItem('ithomiini:pending:ana')!).creates).toHaveLength(1)
   })
 })

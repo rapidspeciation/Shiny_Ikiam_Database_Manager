@@ -176,7 +176,14 @@ async function logout() {
     !confirm(t('Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?'))
   )
     return
-  await session.logout()
+  // No check and no automatic save while signing out or after it: the drafts stay on this device, as the question says.
+  pending.stopTimers()
+  try {
+    await session.logout()
+  } catch (e) {
+    pending.scheduleAutoSave()
+    throw e
+  }
   pending.clear()
   notify(t('Sesión cerrada'))
 }

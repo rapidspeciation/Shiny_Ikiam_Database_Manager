@@ -32,6 +32,8 @@ watch(
   (name, before) => {
     // Visitors get reduced copies of a few sheets: signing in or out starts afresh.
     if (name !== before) tables.$reset()
+    // The last person's check and automatic save must not fire into this session (stores/pending.ts).
+    if (name !== before) pending.stopTimers()
     if (!name) return live.stop()
     pending.restore()
     tables.follow()

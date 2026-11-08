@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { markRaw } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { effectScope, markRaw } from 'vue'
+import { createPinia, disposePinia, getActivePinia, setActivePinia } from 'pinia'
 import type { Field, TableRow } from '../../lib/types'
 import { setStagedSaving } from '../../lib/stagedSwitch'
 import { verificationsFor } from '../../lib/verifications'
 import { isStaged, usePending } from '../pending'
+import { useSession } from '../session'
 import { useTables } from '../tables'
 
 // Pending changes on their way to the sheet: checked first, written (POST /api/records/batch), kept in
@@ -209,5 +210,128 @@ describe('where pending changes go', () => {
     expect(pending.queuedCount).toBe(0)
     expect(pending.edits.r2.values.Sex).toBe('female')
     expect(pending.issues['r2:Sex']).toBe('Otra persona cambió Sex en la hoja')
+  })
+})
+
+describe('the check and automatic-save timers after a sign-out or a disposed store', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  /** A change typed with automatic saving on: it schedules the check (200 ms) and the save (2.5 s). */
+  const typed = (pending: ReturnType<typeof usePending>) => {
+    pending.setCell('Insectary_data', rows[1], 'N3D', 'Sex', 'female')
+    expect(vi.getTimerCount()).toBe(2)
+  }
+  const actions = (pending: ReturnType<typeof usePending>) => {
+    const names: string[] = []
+    pending.$onAction(({ name }) => void names.push(name))
+    return names
+  }
+
+  it('signing out stops both, the change is not saved, and it stays on this device for that person', async () => {
+    vi.useFakeTimers()
+    useSession().user = { username: 'ana' } as never
+    const pending = usePending()
+    pending.restore()
+    typed(pending)
+    const ran = actions(pending)
+    // AppHeader's logout: stopTimers() before auth/logout, clear() after it.
+    pending.stopTimers()
+    expect(vi.getTimerCount()).toBe(0)
+    useSession().user = null
+    pending.clear()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(ran).not.toContain('check')
+    expect(ran).not.toContain('runAutoSave')
+    expect(sent()).toEqual([])
+    expect(JSON.parse(localStorage.getItem('ithomiini:pending:ana')!).edits.r2.values).toEqual({ Sex: 'female' })
+    // Signing in again brings the change back (and the check), and the next edit saves it.
+    useSession().user = { username: 'ana' } as never
+    pending.restore()
+    expect(pending.changeCount).toBe(1)
+  })
+
+  it('clear() (sign-out) stops both on its own', async () => {
+    vi.useFakeTimers()
+    const pending = usePending()
+    typed(pending)
+    pending.clear()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(sent()).toEqual([])
+  })
+
+  it('an automatic save on its way when the person signs out schedules no retry', async () => {
+    vi.useFakeTimers()
+    let answer: (r: Response) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        calls.push({ url, body: {} })
+        return new Promise<Response>(resolve => (answer = resolve))
+      }),
+    )
+    const pending = usePending()
+    typed(pending)
+    await vi.advanceTimersByTimeAsync(2_500)
+    expect(calls.map(c => c.url)).toEqual(['api/records/batch'])
+    pending.stopTimers()
+    answer(new Response(JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'x' } }), { status: 500 }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(pending.autoBlocked).toBe('')
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('the same failed save still retries when nobody signed out', async () => {
+    vi.useFakeTimers()
+    let answer: (r: Response) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        calls.push({ url, body: {} })
+        return new Promise<Response>(resolve => (answer = resolve))
+      }),
+    )
+    const pending = usePending()
+    typed(pending)
+    await vi.advanceTimersByTimeAsync(2_500)
+    answer(new Response(JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'x' } }), { status: 500 }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    expect(pending.autoBlocked).toBe('No se pudo guardar; se reintentará')
+  })
+
+  for (const how of ['store.$dispose()', 'disposePinia()'] as const)
+    it(`after ${how}, the old store's timers do not touch the new store`, async () => {
+      vi.useFakeTimers()
+      const old = usePending()
+      const oldPinia = getActivePinia()!
+      typed(old)
+      const ran = actions(old)
+      if (how === 'store.$dispose()') old.$dispose()
+      else disposePinia(oldPinia)
+      expect(vi.getTimerCount()).toBe(0)
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      useTables().tables.Insectary_data = markRaw({ module: 'Insectary_data', revision: '1', columns, rows, headerProblems: [] })
+      const fresh = usePending()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(ran).toEqual([])
+      expect(getActivePinia()).toBe(pinia)
+      expect(fresh.problems).toEqual({})
+      expect(sent()).toEqual([])
+    })
+
+  it('$reset() run in another scope does not tie the timers to that scope', () => {
+    vi.useFakeTimers()
+    const pending = usePending()
+    const scope = effectScope()
+    scope.run(() => pending.$reset())
+    typed(pending)
+    scope.stop()
+    expect(vi.getTimerCount()).toBe(2)
+    pending.clear()
   })
 })
