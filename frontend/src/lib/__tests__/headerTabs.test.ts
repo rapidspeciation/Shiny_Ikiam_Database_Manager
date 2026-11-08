@@ -66,14 +66,21 @@ describe('headerLayout', () => {
         expect([...l.row, ...l.menu]).toHaveLength(all.length)
       }
   })
-  it('names the open page on «Más» when it waits there (unnamed but marked where its name does not fit)', () => {
-    expect(lay('/censo', P360)).toMatchObject({ moreLabel: { path: '/censo' }, moreActive: true })
+  it('names the open page on «Más» when it waits there, cut short with «…» where the whole name does not fit', () => {
+    expect(lay('/censo', P360)).toMatchObject({ moreLabel: { path: '/censo' }, moreActive: true, moreRoom: null })
     expect(lay('/inicio', P360).moreLabel?.path).toBe('/inicio')
-    expect(lay('/emergidos', P360)).toMatchObject({ moreLabel: null, moreActive: true })
+    // Never a bare «Más» while the open page is in it: at 360 px Emergidos, Monitoreo, Historial keep Buscador.
+    for (const path of ['/emergidos', '/monitoreo', '/historial']) {
+      const l = lay(path, P360)
+      expect(l.moreLabel?.path).toBe(path)
+      expect(paths(l.row)).toEqual(['/muertes', '/asistente', '/identificar', '/tablas'])
+      expect(l.moreRoom).toBe(P360 - (64 + 72 + 77 + 72))
+    }
     // At 390 px every name fits.
     for (const t of all.filter(t => !['/muertes', '/asistente', '/identificar', '/tablas'].includes(t.path)))
       expect(lay(t.path, P390).moreLabel?.path).toBe(t.path)
-    expect(lay('/muertes', P390)).toMatchObject({ moreLabel: null, moreActive: false })
+    expect(lay('/muertes', P390)).toMatchObject({ moreLabel: null, moreActive: false, moreRoom: null })
+    expect(lay('/emergidos', P390).moreRoom).toBeNull()
   })
   it('lists the daily tabs in «Más» before the hidden ones', () => {
     const l = lay('/muertes', P390)

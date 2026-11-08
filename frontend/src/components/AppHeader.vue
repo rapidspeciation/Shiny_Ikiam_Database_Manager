@@ -112,6 +112,8 @@ const firstHidden = computed(() => layout.value.firstHidden)
 /** The open page, when it waits in «Más»: the button carries its name (and is marked as the open one). */
 const moreLabel = computed(() => layout.value.moreLabel)
 const moreActive = computed(() => layout.value.moreActive)
+/** The room for «Más» when the open page's name has to end in «…» (360 px, a long name). */
+const moreRoom = computed(() => layout.value.moreRoom)
 /** Changes waiting in the tabs behind «Más»: shown on the button, since those tabs are out of sight. */
 const waitingInMenu = computed(() => menuTabs.value.reduce((n, tab) => n + (waiting.value[tab.path] ?? 0), 0))
 let observer: ResizeObserver | null = null
@@ -245,7 +247,8 @@ async function logout() {
             <button
               ref="moreTrigger"
               type="button"
-              :class="[TAB, 'inline-flex items-center gap-0.5', { '!border-white !text-white': moreActive }]"
+              :class="[TAB, 'inline-flex min-w-0 items-center gap-0.5', { '!border-white !text-white': moreActive }]"
+              :style="moreRoom === null ? undefined : { maxWidth: `${moreRoom}px` }"
               :aria-expanded="more"
               aria-controls="more-tabs"
               :aria-label="moreLabel ? $t('{tab}: más secciones', { tab: $t(moreLabel.label) }) : undefined"
@@ -253,10 +256,10 @@ async function logout() {
               @click="toggleMore"
               @keydown="openMoreWithKeys"
             >
-              {{ moreLabel ? $t(moreLabel.label) : $t('Más') }}
+              <span class="min-w-0 truncate">{{ moreLabel ? $t(moreLabel.label) : $t('Más') }}</span>
               <span
                 v-if="waitingInMenu"
-                class="ml-1 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
+                class="ml-1 shrink-0 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
                 :title="
                   $tn(
                     waitingInMenu,
@@ -266,7 +269,7 @@ async function logout() {
                 "
                 >{{ waitingInMenu }}</span
               >
-              <ChevronDown :size="14" aria-hidden="true" />
+              <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
             </button>
             <ul
               v-if="more"

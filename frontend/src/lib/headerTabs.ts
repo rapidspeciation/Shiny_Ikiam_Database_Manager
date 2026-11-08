@@ -49,18 +49,20 @@ export interface HeaderLayout<T> {
   menu: T[]
   /** Where the hidden tabs begin in the menu (a line above them). */
   firstHidden: number
-  /** The open page when it is in «Más» and its name fits there: the button shows it («Censo ▾»). */
+  /** The open page when it is in «Más»: the button shows its name («Censo ▾»), never a bare «Más». */
   moreLabel: T | null
-  /** The open page is in «Más» (the button is marked as the open one, named or not). */
+  /** The open page is in «Más» (the button is marked as the open one). */
   moreActive: boolean
+  /** Pixels left for «Más» when the open page's whole name does not fit beside the daily tabs: it ends in «…». */
+  moreRoom: number | null
 }
 
 /**
  * The header's row and «Más» for `room` pixels. The usual row (every tab but the hidden ones, fitTabs) while it fits
  * whole beside «Más»; otherwise PHONE_ROW, whatever page is open: the open page, when it is not one of those, is
  * named on «Más» instead of pushing a daily tab out (on the narrowest phones a long name does not fit beside them:
- * «Más» is then only marked as the open one). `width` is a tab's width in the row, `moreAs` the width of «Más»
- * carrying that tab's name.
+ * it is cut short with «…» in the room left, `moreRoom`). `width` is a tab's width in the row, `moreAs` the width
+ * of «Más» carrying that tab's name.
  */
 export function headerLayout<T extends { path: string }>(
   tabs: readonly T[],
@@ -81,18 +83,18 @@ export function headerLayout<T extends { path: string }>(
     const kept = fitTabs(split.row.map(width), room, moreWidth, split.menu.length > 0, at)
     const row = split.row.filter((_, i) => kept.includes(i))
     const left = split.row.filter((_, i) => !kept.includes(i))
-    return { row, menu: [...left, ...split.menu], firstHidden: left.length, moreLabel: null, moreActive: false }
+    return { row, menu: [...left, ...split.menu], firstHidden: left.length, moreLabel: null, moreActive: false, moreRoom: null }
   }
   const open = tabs.find(t => t.path === active)
   const outside = !!open && !first.includes(open)
   const at = first.findIndex(t => t.path === active)
   const sizes = first.map(width)
   let kept = fitTabs(sizes, room, outside ? Math.max(moreWidth, moreAs(open!)) : moreWidth, true, at)
-  let named = outside
+  let cut = false
   if (outside && kept.length < first.length) {
-    // The name does not fit beside the daily tabs: «Más» unnamed rather than one of them in the menu.
+    // The whole name does not fit beside the daily tabs: the name cut short rather than one of them in the menu.
     const plain = fitTabs(sizes, room, moreWidth, true, at)
-    if (plain.length > kept.length) [kept, named] = [plain, false]
+    if (plain.length > kept.length) [kept, cut] = [plain, true]
   }
   const row = first.filter((_, i) => kept.includes(i))
   const rest = tabs.filter(t => !row.includes(t))
@@ -101,7 +103,8 @@ export function headerLayout<T extends { path: string }>(
     row,
     menu: [...daily, ...rest.filter(t => hidden.includes(t.path))],
     firstHidden: daily.length,
-    moreLabel: named ? open! : null,
+    moreLabel: outside ? open! : null,
     moreActive: outside,
+    moreRoom: cut ? Math.floor(room - kept.reduce((n, i) => n + sizes[i]!, 0)) : null,
   }
 }
