@@ -18,6 +18,9 @@ const genus = computed(() => props.name.split(' ')[0])
 const step = (d: number) => (at.value = (at.value + d + photos.value.length) % photos.value.length)
 // A photo the phone does not have and cannot fetch (no signal): left out.
 const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
+// Until a reference photo is in: a light surface saying it loads, not a black box beside the person's photo.
+const loaded = ref(new Set<string>())
+const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
 </script>
 
 <template>
@@ -33,9 +36,19 @@ const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
           :key="photo.src"
           :src="photo.src"
           alt=""
-          class="aspect-square w-full rounded-md bg-photo-mat object-cover"
+          class="aspect-square w-full rounded-md object-cover"
+          :class="loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken'"
+          @load="done(photo.src)"
           @error="failed(photo.src)"
         />
+        <div
+          v-if="photo && !loaded.has(photo.src)"
+          class="pointer-events-none absolute inset-0 grid place-items-center text-xs text-fg-muted"
+          role="status"
+          data-ref-loading
+        >
+          {{ $t('Cargando foto…') }}
+        </div>
         <div v-else class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
           {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
         </div>
