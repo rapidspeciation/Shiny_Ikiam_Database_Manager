@@ -123,7 +123,7 @@ function kindOf(field, values) {
   }
   if (TIME_FIELD.test(field.key) && jsNumbers && fractions >= 0.8 * jsNumbers) return 'time';
   // A date column with no date yet (empty, or only NA) is still a date column: NA goes to <column>_text.
-  if (field.type === 'date' && (jsNumbers ? serials >= 0.8 * jsNumbers : dates >= texts)) return 'date';
+  if (field.type === 'date' && (jsNumbers ? serials >= 0.8 * jsNumbers : (dates || !numbers) && dates >= texts)) return 'date';
   const all = numbers + dates + texts;
   if (!numbers) return 'text';
   if (field.type !== 'text' && numbers >= 0.8 * all) return 'number';
