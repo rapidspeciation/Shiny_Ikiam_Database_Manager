@@ -41,6 +41,14 @@ if [ "$ACTION" = list ]; then
   done
   exit 0
 fi
+if [ "$ACTION" = start ]; then
+  [ "$FRESH" = 1 ] && [ -n "$DIR" ] && { echo "--fresh makes its own folder: give --fresh or --dir, not both" >&2; exit 2; }
+  # One start at a time, from choosing the port until its first sync is done: two starts together could take the
+  # same port, pass the limit together, or both pass the memory check before either has grown.
+  mkdir -p "$LAB"
+  exec 9>"$LAB/.start.lock"
+  flock 9
+fi
 if [ -z "$PORT" ] && [ "$ACTION" = start ]; then
   # The first port from 8821 that no app listens on and no dev app's unit holds.
   for p in $(seq 8821 8899); do
@@ -74,10 +82,10 @@ while [ "$pid" -gt 1 ]; do
   pid="$(awk '/^PPid:/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 1)"
 done
 [ -f "$HERE/web/index.html" ] || npm --prefix "$HERE" run build
-# The workbook's rows file (server/file-sheets.mjs), made once per snapshot and checkout code, one start at a time:
-# several starting together would each make it (1.9 GB each for a minute).
-systemd-run --user --scope -q -p MemoryMax=3G flock "$LAB/.rows.lock" node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
-  || echo "The rows file could not be made: this app keeps the workbook in memory (about 0.7 GB more)." >&2
+# The workbook's rows file (server/file-sheets.mjs), one per snapshot and version of the code that shapes the rows,
+# made here (under the start lock) so the app only copies it.
+systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
+  || echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
 systemd-run --user --unit="$UNIT" --collect --quiet \
   --description="Ithomiini dev app :$PORT ($DIR), for pid $owner, $TTL at most" \
   -p WorkingDirectory="$HERE" -p RuntimeMaxSec="$TTL" -p MemoryMax="$MAX" -p MemorySwapMax=1G \
@@ -93,16 +101,19 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   "${EXTRA[@]}" \
   node server/index.mjs
 URL="http://127.0.0.1:$PORT"
-for _ in $(seq 120); do
-  curl -fs -o /dev/null -m 2 "$URL/health" && break
+# Ready once it answers and its first sync of the snapshot is done (the sync starts before it listens, so an answer
+# that is not "syncing" comes after it).
+state=""
+for _ in $(seq 150); do
+  health="$(curl -fs -m 5 "$URL/health" || true)"
+  if [ -n "$health" ] && ! grep -q '"sync":"syncing"' <<<"$health"; then
+    state="$(grep -o '"sync":"[^"]*"' <<<"$health" | head -n 1 | cut -d'"' -f4)"
+    break
+  fi
   systemctl --user is-active --quiet "$UNIT.service" || { echo "$UNIT stopped while starting: $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
   sleep 2
 done
-# Ready once its first sync of the snapshot is done (about 20 s after it listens).
-for _ in $(seq 120); do
-  curl -fs -m 2 "$URL/health" | grep -qE '"sync":"(syncing|not_synced)"' || break
-  sleep 2
-done
+[ -n "$state" ] || { echo "$UNIT did not finish its first sync within 5 min (it still runs; $DIR/app.log; --stop it)" >&2; exit 1; }
 if [ ! -s "$DIR/credentials.json" ]; then
   PASS="$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 14)"
   node -e '
@@ -114,4 +125,5 @@ if [ ! -s "$DIR/credentials.json" ]; then
       .catch(e => { console.error(e.message); process.exit(1); });
   ' "$URL" "$(cat "$DIR/setup-token")" "$PASS" "$DIR/credentials.json"
 fi
-echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; log $DIR/app.log; login $DIR/credentials.json)"
+flock -u 9 2>/dev/null || true
+echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; first sync: $state; log $DIR/app.log; login $DIR/credentials.json)"

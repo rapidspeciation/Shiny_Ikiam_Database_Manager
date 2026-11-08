@@ -213,6 +213,11 @@ function createLayout(db) {
 /** The code that shapes the rows (seedRows and the sheets' fields): a change to it makes the file again. */
 const CODE = ['./sheets.mjs', './schema.mjs', '../docs/workbook-schema.json', './file-sheets.mjs'].map(f => readFileSync(new URL(f, import.meta.url)));
 const codeHash = createHash('sha256').update(Buffer.concat(CODE)).digest('hex').slice(0, 16);
+/**
+ * The rows file of `seedFile` beside it: one per version of the code that shapes the rows, so checkouts of two
+ * branches started side by side do not make each other's file again.
+ */
+export const rowsFileName = seedFile => `${seedFile}.${codeHash}.rows.sqlite`;
 /** What the rows file was made from: the seed's size and time, the file's layout and the code. */
 function seedStamp(seedFile) {
   const { size, mtimeMs } = statSync(seedFile);
@@ -294,8 +299,8 @@ const writable = dir => {
  * memory) when missing or out of date: beside the snapshot, else in `workDir`.
  */
 async function rowsFileOf(seedFile, workDir, log) {
-  const beside = `${seedFile}.rows.sqlite`;
-  const name = `${basename(seedFile)}-${createHash('sha256').update(seedFile).digest('hex').slice(0, 8)}.rows.sqlite`;
+  const beside = rowsFileName(seedFile);
+  const name = `${basename(seedFile)}-${createHash('sha256').update(seedFile).digest('hex').slice(0, 8)}.${codeHash}.rows.sqlite`;
   const file = writable(dirname(seedFile)) ? beside : join(workDir, name);
   if (rowsFileFresh(file, seedFile)) return file;
   const started = Date.now();
@@ -334,7 +339,7 @@ export async function openFileSheets({ seedFile, databasePath, health, log = con
     // Copy-on-write where the disk can (btrfs, xfs): a start costs no copy of the rows.
     copyFileSync(source, copy, constants.COPYFILE_FICLONE);
     // Another checkout's start may have made the file again meanwhile, from its own code.
-    if (!rowsFileFresh(copy, seedFile)) throw new Error(`${source} was made again by another checkout while it was copied`);
+    if (!rowsFileFresh(copy, seedFile)) throw new Error(`${source} changed while it was copied`);
     return new FileSheets(copy, { health });
   } catch (error) {
     log?.(`Workbook rows kept in memory (${error.message})`);
@@ -343,10 +348,10 @@ export async function openFileSheets({ seedFile, databasePath, health, log = con
 }
 
 // node server/file-sheets.mjs build <snapshot.json> <out.rows.sqlite>
-// node server/file-sheets.mjs ensure <snapshot.json>   the rows file beside the snapshot, made only when out of date
+// node server/file-sheets.mjs ensure <snapshot.json>   the rows file beside the snapshot (rowsFileName), made only when out of date
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, seedFile, given] = process.argv.slice(2);
-  const out = command === 'ensure' ? `${seedFile}.rows.sqlite` : given;
+  const out = command === 'ensure' ? rowsFileName(seedFile) : given;
   if (!['build', 'ensure'].includes(command) || !seedFile || !out) {
     console.error('Usage: node server/file-sheets.mjs build <snapshot.json> <out.rows.sqlite> | ensure <snapshot.json>');
     process.exit(2);

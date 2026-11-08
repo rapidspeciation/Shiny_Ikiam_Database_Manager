@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, utimesSync, existsSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSheets } from '../server/sheets.mjs';
-import { FileSheets, buildRowsFile, openFileSheets, rowsFileFresh } from '../server/file-sheets.mjs';
+import { FileSheets, buildRowsFile, openFileSheets, rowsFileFresh, rowsFileName } from '../server/file-sheets.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
 // FileSheets (the lab's rows in a SQLite file) must answer as LocalSheets (rows in memory) does: every test runs
@@ -207,7 +207,7 @@ test('openFileSheets makes the rows file once, again when the snapshot changes, 
   const log = line => logs.push(line);
   let sheets = await openFileSheets({ seedFile, databasePath, log });
   assert.ok(sheets instanceof FileSheets);
-  assert.ok(rowsFileFresh(`${seedFile}.rows.sqlite`, seedFile));
+  assert.ok(rowsFileFresh(rowsFileName(seedFile), seedFile));
   assert.equal(logs.filter(l => l.startsWith('Workbook rows file made')).length, 1);
   await sheets.externalEdit(SHEET, 2, { SPECIES: 'changed' });
   sheets.close();

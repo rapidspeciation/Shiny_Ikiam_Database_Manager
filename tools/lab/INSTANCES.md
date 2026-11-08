@@ -20,7 +20,11 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 - **Settings:** `--env K=V` adds or overrides one setting, e.g. `--env LOCAL_SHEETS=memory` to keep the rows in
   memory as before.
 - **Limits:** at most 4 at once (`DEV_APP_LIMIT`). Each needs 2.5 GB available to start (MemAvailable), has a 3 GB
-  ceiling (`--max`) and a 90-minute limit (`--ttl`). It stops by itself when the chat that started it ends.
+  ceiling (`--max`) and a 90-minute limit (`--ttl`). Starts take turns (a lock, until each one's first sync is done),
+  so starting several from parallel scripts is safe.
+- **Stopping:** `--stop`, else the time limit. On this PC the reaper (`node tools/lab/reap.mjs --install`, a user
+  timer) also stops an instance once the Claude or Codex chat that started it has ended; an instance started from
+  anywhere else (a plain shell, ssh) has no such chat and runs until `--stop` or its time limit.
 
 ## What it never touches
 
@@ -40,7 +44,8 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 
 | 3 instances side by side | this PC (15 GB, btrfs) | claudeclaw (24 GB, ext4) |
 |---|---:|---:|
-| start, until its first sync is done | 2.4 s to listen (the sync after it was not timed here) | 23 s (44 s when the rows file is made first) |
+| start, until its first sync is done | about 12 s (22 s when the rows file is made first) | about 23 s (40 s when the rows file is made first) |
+| 3 started at the same moment (they take turns) | ready at 22, 34, 47 s | ready at 40, 63, 86 s |
 | server RSS in the first minute after the start | 1345, 1502, 1379 MB | 1524, 1440 MB |
 | server RSS after about 2 minutes idle | 284 MB | 358 MB |
 | the whole unit (memory.current, page cache of its files included) | 1474–1658 MB | 2206–2291 MB |
@@ -51,9 +56,11 @@ it is used: on the perf bench, an instance that synced the whole workbook again 
 them when done.
 
 - The workbook's rows live in a SQLite file instead of memory (about 0.7 GB less per instance). The first start
-  after a new snapshot, or after a change to the code that shapes the rows, makes
-  `~/.cache/ithomiini-lab/snapshot.json.rows.sqlite` once: about 11–18 s and 1.9 GB, one start at a time (a lock).
-  Later starts copy it.
+  after a new snapshot, or with a version of the code that shapes the rows not seen before (`server/sheets.mjs`,
+  `server/schema.mjs`, `docs/workbook-schema.json`, `server/file-sheets.mjs`), makes
+  `~/.cache/ithomiini-lab/snapshot.json.<code>.rows.sqlite` once: about 11–18 s and 1.9 GB. Later starts copy it.
+  Each such version keeps its own file (442 MB), so two branches run side by side without making each other's
+  again; delete the ones of finished branches.
 - Disk per instance: on btrfs (this PC) the copy shares the file and costs nothing until it is written. On ext4
   (claudeclaw) it is a real 442 MB copy in the instance's folder. Old `dev/<port>-<time>` folders can be deleted
   when their instance has stopped.

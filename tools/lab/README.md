@@ -279,7 +279,7 @@ So:
   port from 8821), several side by side, each on its own copy of the workbook (tools/lab/INSTANCES.md). Each has a
   time limit (90 min), a memory ceiling (3 GB) and light settings, and stops when your chat ends; `--stop` it when
   done. At most 4 at once (`DEV_APP_LIMIT`), each refused with less than 2.5 GB available. Since 8 Nov 2026 the
-  workbook's rows are in a SQLite file, not in memory: about 1.4 GB per app at rest instead of 2.
+  workbook's rows are in a SQLite file, not in memory (0.7 GB less per app; measured numbers in INSTANCES.md).
 - Scenario runs: at most 4 chats at once, each archived as soon as its answer is collected. `tools/lab/reap.mjs`
   (a user timer every 5 minutes: `node tools/lab/reap.mjs --install`) archives scenario chats of the lab T3 left
   idle 5 minutes (titles `WA soul lab`/`WA soul critic`; `--chats` for others), stops dev apps whose chat ended and
