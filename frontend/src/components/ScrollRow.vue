@@ -8,12 +8,21 @@ import { moreSide, type MoreSide } from '../lib/scrollRow'
  * the row opens and whenever `active` changes.
  */
 const props = withDefaults(defineProps<{ as?: string; active?: unknown }>(), { as: 'div', active: undefined })
+/** Which edges hide more of the row, for a cue of the parent's own (Monitoreo's ›). */
+const emit = defineEmits<{ more: [side: MoreSide] }>()
 const row = ref<HTMLElement>()
 const more = ref<MoreSide>('none')
 const measure = () => {
   const el = row.value
   if (el) more.value = moreSide(el.scrollLeft, el.clientWidth, el.scrollWidth)
 }
+watch(more, side => emit('more', side))
+/** Scrolls the row most of its width towards its end. */
+function scrollOn() {
+  const el = row.value
+  el?.scrollBy?.({ left: Math.round(el.clientWidth * 0.6), behavior: 'smooth' })
+}
+defineExpose({ scrollOn })
 function reveal() {
   const el = row.value
   const item = el?.querySelector<HTMLElement>('[data-active]')
