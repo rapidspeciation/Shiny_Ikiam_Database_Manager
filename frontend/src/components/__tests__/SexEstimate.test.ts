@@ -38,8 +38,8 @@ describe('SexEstimate', () => {
     await nextTick()
     expect(text(el.querySelector('[data-testid=sex-call]'))).toContain('♂')
     // The cutoff and the band edges are on the scale.
-    expect(text(el)).toMatch(/83 %/)
-    expect(text(el)).toMatch(/95[.,]2 %/)
+    expect(text(el)).toMatch(/83[.,]4 %/)
+    expect(text(el)).toMatch(/(corte|cutoff) 95[.,]2 %/)
     expect(text(el)).toMatch(/99[.,]2 %/)
   })
 

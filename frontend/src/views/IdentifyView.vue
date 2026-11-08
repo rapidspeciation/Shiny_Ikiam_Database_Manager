@@ -103,7 +103,7 @@ async function refresh() {
     const list = files.value
     for (const k of KINDS) {
       const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !sameFile(s?.files[f.name], f))
-      if (ready.value[k] || !need.length || need.some(f => f.role !== 'head-meta')) continue
+      if (ready.value[k] || !need.length || need.some(f => f.role !== 'head-meta') || sexDownload.value) continue
       headTried = true
       head.value = null
       await engine.download(k, list, () => {}).catch(() => null)
@@ -152,6 +152,7 @@ const lacksSpace = computed(() => {
 })
 
 async function startDownload() {
+  if (sexDownload.value) return
   const kind = wanted.value
   dlError.value = null
   // Asked inside the tap (Chrome weighs the gesture): the phone then does not clear the models when short of space.

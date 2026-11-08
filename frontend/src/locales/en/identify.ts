@@ -183,6 +183,7 @@ export default {
   'Las fotos que ya no entran en la elección se borran del teléfono.': 'Photos no longer in the choice are removed from the phone.',
   // The sex estimate (SexEstimate.vue), team only.
   'Sexo estimado': 'Estimated sex',
+  corte: 'cutoff',
   'experimental: fotos en mano': 'experimental: in-hand photos',
   'No seguro': 'Not sure',
   'no seguro': 'not sure',

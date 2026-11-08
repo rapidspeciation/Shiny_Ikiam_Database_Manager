@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { letterboxCrop, roleOf, rolesReady } from '../offlineId'
-import { meanLogit, SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sigmoid } from '../sexModel'
+import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sigmoid } from '../sexModel'
 import { ITHOMIINI_GENERA } from '../publicModels'
 
 // The sex estimate's preprocessing and decision (lib/sexModel.ts; PLAN.md Amendment 8 in WingsClassificator).
@@ -66,10 +66,6 @@ describe('sex call: cutoff and «no seguro» band', () => {
     expect(sexCall(0)).toBe('macho')
   })
 
-  it('several photos of one butterfly: the mean logit', () => {
-    expect(meanLogit([1, 2, 6])).toBe(3)
-    expect(sexCall(meanLogit([1, 9]))).toBe('hembra')
-  })
 })
 
 describe('where the estimate applies', () => {

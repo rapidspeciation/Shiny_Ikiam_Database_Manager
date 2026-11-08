@@ -295,6 +295,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       }
       keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.parts ? { parts: f.parts } : {}) }
     }
+    // Another download may have finished meanwhile (the sex model beside an identifier model): its listed files stay.
+    for (const [name, f] of Object.entries((await stored())?.files ?? {}))
+      if (!keep.files[name] && !roles.includes(roleOf(name, f.role)) && files.some(l => l.name === name)) keep.files[name] = f
     await cache.put(at('models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
   }
 

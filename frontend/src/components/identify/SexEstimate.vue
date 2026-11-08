@@ -5,7 +5,7 @@
  * photos only. The view decides the state; this only shows it.
  */
 import { computed } from 'vue'
-import { locale } from '../../lib/i18n'
+import { locale, t } from '../../lib/i18n'
 import { SEX_CUT, sexCall, sigmoid } from '../../lib/sexModel'
 
 export type SexState =
@@ -23,17 +23,17 @@ defineEmits<{ download: [] }>()
 /** The scale: logit -1 to 7 (P 27 % to 99.9 %), where the cutoff and the band sit apart. */
 const LO = -1, HI = 7
 const at = (z: number) => `${(100 * (Math.min(HI, Math.max(LO, z)) - LO)) / (HI - LO)}%`
-const pct = (p: number) => {
-  const f = new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { maximumFractionDigits: p >= 0.9 && p < 0.9995 ? 1 : 0 })
-  return p >= 0.9995 ? '> 99.9 %' : `${f.format(p * 100)} %`
-}
+const fmt = (v: number, digits: number) => new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)
+/** The model's P: one decimal from 90 % (the cutoff and the band are there). */
+const pct = (p: number) => (p >= 0.9995 ? `> ${fmt(99.9, 1)} %` : `${fmt(p * 100, p >= 0.9 ? 1 : 0)} %`)
+const tick = (z: number) => `${fmt(100 * sigmoid(z), 1)} %`
 const z = computed(() => (props.state.kind === 'ready' ? props.state.z : null))
 const call = computed(() => (z.value == null ? null : sexCall(z.value)))
-const ticks = [
-  { z: SEX_CUT.lo, label: pct(sigmoid(SEX_CUT.lo)) },
-  { z: SEX_CUT.t, label: pct(sigmoid(SEX_CUT.t)) },
-  { z: SEX_CUT.hi, label: pct(sigmoid(SEX_CUT.hi)) },
-]
+const ticks = computed(() => [
+  { z: SEX_CUT.lo, label: tick(SEX_CUT.lo) },
+  { z: SEX_CUT.t, label: `${t('corte')} ${tick(SEX_CUT.t)}` },
+  { z: SEX_CUT.hi, label: tick(SEX_CUT.hi) },
+])
 </script>
 
 <template>
@@ -77,7 +77,7 @@ const ticks = [
         </div>
       </div>
       <p class="sr-only">
-        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: ticks[1].label, lo: ticks[0].label, hi: ticks[2].label }) }}
+        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: tick(SEX_CUT.t), lo: ticks[0].label, hi: ticks[2].label }) }}
       </p>
     </template>
 

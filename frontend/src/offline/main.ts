@@ -217,7 +217,8 @@ async function listFiles() {
     show('dlErr', 'El servidor usa otro tamaño de parte: recargue la página.')
     return
   }
-  files = list.files
+  // The team's sex model (Identificar only) is not part of this page's models.
+  files = list.files.filter(f => f.role !== 'sex')
   const wire = files.reduce((a, f) => a + (f.wire ?? f.bytes), 0), plain = files.reduce((a, f) => a + f.bytes, 0)
   diag.listWire = { plainMB: mb(plain), wireMB: mb(wire), encodings: [...new Set(files.map(f => f.encoding ?? 'none'))] }
   $('files').textContent =

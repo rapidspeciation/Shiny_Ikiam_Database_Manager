@@ -44,9 +44,6 @@ export function sexInput(rgb: Uint8Array, size = 224): Float32Array {
 
 export const sigmoid = (z: number) => 1 / (1 + Math.exp(-z))
 
-/** A butterfly's score from several photos of it: the mean logit. */
-export const meanLogit = (z: number[]) => z.reduce((a, b) => a + b, 0) / z.length
-
 /** The call for a score: female at or above HI, male below LO, otherwise not sure. */
 export function sexCall(z: number, cut = SEX_CUT): SexCall {
   if (z >= cut.hi) return 'hembra'
