@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** The identifier's first species for a point's photo, with bars; the note's and the row's species marked. */
-defineProps<{ lines: { name: string; p: number; note: boolean; row: boolean }[] }>()
+/** `p` null: a name the identifier does not list (below 1 %, or `past` its first five). */
+defineProps<{ lines: { name: string; p: number | null; note: boolean; row: boolean; past?: boolean }[] }>()
 const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
 </script>
 
@@ -13,9 +14,10 @@ const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
           <span class="min-w-0 truncate italic" :title="l.name">{{ l.name }}</span>
           <span v-if="l.note" class="tag">{{ $t('nota') }}</span>
           <span v-if="l.row" class="tag">{{ $t('fila') }}</span>
-          <span class="ml-auto tabular-nums">{{ pct(l.p) }}</span>
+          <span v-if="l.p !== null" class="ml-auto tabular-nums">{{ pct(l.p) }}</span>
+          <span v-else class="ml-auto whitespace-nowrap text-amber-800">{{ l.past ? $t('no entre las 5') : '< 1 %' }}</span>
         </div>
-        <div class="h-1.5 overflow-hidden rounded-sm bg-stone-100" aria-hidden="true">
+        <div v-if="l.p !== null" class="h-1.5 overflow-hidden rounded-sm bg-stone-100" aria-hidden="true">
           <div class="h-full bg-brand-600" :style="{ width: `${Math.round(l.p * 100)}%` }" />
         </div>
       </li>

@@ -560,6 +560,11 @@ test("a row's project photos (dorsal, ventral, wing box) and its collection sex 
   writeFileSync(join(dir, 'skip.txt'), 'CAM000003\n');
   process.env.COLLECTION_SEX_SKIP_FILE = join(dir, 'skip.txt');
   const got = projectInfo(s, new Set(['CAM000001', 'CAM000002', 'CAM000003']));
+  // Without the list (unset, or unreadable), no collection sex at all: the locked portion never leaks.
+  delete process.env.COLLECTION_SEX_SKIP_FILE;
+  assert.equal(projectInfo(s, new Set(['CAM000001'])).CAM000001.sex, null);
+  process.env.COLLECTION_SEX_SKIP_FILE = join(dir, 'missing.txt');
+  assert.equal(projectInfo(s, new Set(['CAM000001'])).CAM000001.sex, null);
   delete process.env.COLLECTION_SEX_SKIP_FILE;
   assert.deepEqual(got.CAM000003, { photos: [], sex: null });
   assert.deepEqual(got.CAM000001, {
@@ -567,7 +572,7 @@ test("a row's project photos (dorsal, ventral, wing box) and its collection sex 
       { id: id1, view: 'dorsal', box: [0.1, 0.2, 0.6, 0.7] },
       { id: id2, view: 'ventral', box: null },
     ],
-    sex: { pMale: 0.93, supported: true, unreliable: false },
+    sex: { pMale: 0.93, sure: true, supported: true, unreliable: false },
   });
   assert.deepEqual(got.CAM000002, { photos: [], sex: null });
   s.close();

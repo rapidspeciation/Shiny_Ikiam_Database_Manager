@@ -52,7 +52,7 @@ interface RowInfo {
 /** A CAM's project photos (dorsal, ventral; wing box in fractions) and the collection sex model's out-of-fold call. */
 interface Project {
   photos: { id: string; view: 'dorsal' | 'ventral'; box: number[] | null }[]
-  sex: { pMale: number; supported: boolean; unreliable: boolean } | null
+  sex: { pMale: number; sure: boolean; supported: boolean; unreliable: boolean } | null
 }
 interface NoteInfo {
   species: string | null
@@ -133,6 +133,7 @@ async function load() {
   loading.value = true
   try {
     data.value = await api('monitoring/rematch')
+    sexZ.value = Object.fromEntries(Object.entries(sexZ.value).filter(([, z]) => z !== 'error'))
     estimateAll()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -168,6 +169,14 @@ const REASON: Record<MatchConfidence, string> = {
   order: '¿Qué fila es? Puesta por orden: la nota no tiene hora que encaje',
   none: 'Sin fila',
 }
+/** Release_Collect in words (the sheet's value as the title). */
+const KIND: Record<string, string> = {
+  Mark_Released: 'liberada',
+  Collected_Preserved: 'conservada',
+  Collected_Sent2Insectary: 'al insectario',
+  Released_Unmarked: 'liberada sin marca',
+}
+const kindLabel = (kind: string | null) => (kind ? (KIND[kind] ? t(KIND[kind]) : kind) : '')
 const rowLabel = (r: RowInfo) =>
   [
     t('fila {n}', { n: r.row }),
@@ -246,12 +255,27 @@ function times(d: Doubt, r: RowInfo | null) {
 const readingOf = (d: Doubt) => d.readings?.find(r => r.photo === d.photos[0]) ?? d.readings?.[0] ?? null
 const boxOf = (d: Doubt, photo: string) => d.readings?.find(r => r.photo === photo)?.box ?? null
 const sameSpecies = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && lower(a) === lower(b)
-/** The identifier's first three species, and the note's or the row's when they come lower in its list. */
+/**
+ * The identifier's first three species, and the note's or the row's when they come lower in its list; when they are
+ * not in it at all, a line without a bar (below 1 %, or past its first five).
+ */
 function idLines(d: Doubt, r: RowInfo | null) {
   const list = readingOf(d)?.species ?? []
-  return list
+  if (!list.length) return []
+  const lines: { name: string; p: number | null; note: boolean; row: boolean; past?: boolean }[] = list
     .map(([name, p], i) => ({ name, p, note: sameSpecies(name, d.note?.species), row: sameSpecies(name, r?.species), i }))
     .filter(l => l.i < 3 || l.note || l.row)
+    .map(({ i, ...l }) => l)
+  for (const [name, tag] of [
+    [d.note?.species, 'note'],
+    [r?.species, 'row'],
+  ] as const) {
+    if (!name || list.some(([n]) => sameSpecies(n, name))) continue
+    const had = lines.find(l => l.p === null && sameSpecies(l.name, name))
+    if (had) had[tag] = true
+    else lines.push({ name, p: null, note: tag === 'note', row: tag === 'row', past: list.length >= 5 })
+  }
+  return lines
 }
 /** A percentage; above 99.5 % it reads «> 99 %» (never a sure-looking 100 %). */
 const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
@@ -458,14 +482,17 @@ const sectionOff = (d: Doubt) => {
 const engine = createEngine(new URL('prueba-offline/', appRoot()).href, () => [], { signedIn: () => !!session.user })
 const sexModel = ref<{ state: 'download'; mb: number; files: ModelFile[] } | { state: 'downloading'; done: number; total: number } | { state: 'ready' } | null>(null)
 /** Logit per photo; null: no wings found. */
-const sexZ = ref<Record<string, number | null>>({})
+const sexZ = ref<Record<string, number | null | 'error'>>({})
 /**
- * The genus the estimate is for: the note's or the row's (a person named it), else the identifier's first species;
- * the first of them among the model's 13 genera, else none.
+ * The genus the estimate is for: the identifier's when it is sure (90 % or more) of a genus the note and the row do
+ * not name; else the note's or the row's (a person named it), else the identifier's. None outside the model's 13.
  */
 function sexGenus(d: Doubt, r: RowInfo | null) {
-  const names = [d.note?.species, r?.species, readingOf(d)?.species[0]?.[0]]
-  return names.map(n => (n || '').split(' ')[0]).find(g => SEX_GENERA.includes(g)) ?? null
+  const genus = (n: string | null | undefined) => (n || '').split(' ')[0]
+  const [top, p] = readingOf(d)?.species[0] ?? ['', 0]
+  const named = [genus(d.note?.species), genus(r?.species)].filter(Boolean)
+  const names = p >= 0.9 && !named.includes(genus(top)) ? [genus(top)] : [...named, genus(top)]
+  return names.find(g => SEX_GENERA.includes(g)) ?? null
 }
 const agreeWith = (call: string, r: RowInfo | null) =>
   call === 'no seguro' || !r?.sex ? null : (call === 'hembra') === (r.sex === 'female')
@@ -476,10 +503,11 @@ function fieldEvidence(d: Doubt, r: RowInfo | null): SexEvidence | null {
   if (!sexGenus(d, r)) return { kind: 'reason', text: t('género fuera de los 13') }
   const m = sexModel.value
   if (!m) return null
-  if (m.state === 'download') return { kind: 'download', mb: m.mb }
-  if (m.state === 'downloading') return { kind: 'downloading', share: m.done / Math.max(1, m.total) }
+  // Not on this device yet: the one download link is in the bar above the cards.
+  if (m.state !== 'ready') return { kind: 'reason', text: '—' }
   const z = sexZ.value[id]
   if (z === undefined) return { kind: 'running' }
+  if (z === 'error') return { kind: 'reason', text: t('no se pudo calcular') }
   if (z === null) return { kind: 'reason', text: t('no se ven las alas') }
   const shown = sexShown(z)
   return { kind: 'call', ...shown, agree: agreeWith(shown.call, r) }
@@ -493,13 +521,17 @@ function projectEvidence(r: RowInfo | null): SexEvidence | null {
   const sex = projectOf(r)?.sex
   if (!sex) return { kind: 'reason', text: '—' }
   if (sex.unreliable) return { kind: 'reason', text: t('no fiable en esta especie') }
-  const call = sex.pMale >= 0.5 ? 'macho' : 'hembra'
+  const leans = sex.pMale >= 0.5 ? 'macho' : 'hembra'
+  const sign = leans === 'macho' ? '♂' : '♀'
+  const p = Math.max(sex.pMale, 1 - sex.pMale)
+  // Below the model's own confidence screen: not sure, no mark against the row.
+  if (!sex.sure) return { kind: 'call', call: 'no seguro', sign, p, agree: null }
   return {
     kind: 'call',
-    call,
-    sign: call === 'macho' ? '♂' : '♀',
-    p: Math.max(sex.pMale, 1 - sex.pMale),
-    agree: agreeWith(call, r),
+    call: leans,
+    sign,
+    p,
+    agree: agreeWith(leans, r),
     ...(sex.supported ? {} : { weak: t('Llamada sin respaldo de la especie: solo una tendencia') }),
   }
 }
@@ -546,7 +578,8 @@ async function estimateAll() {
         const cut = await engine.square({ bytes, blob, name: `${id}.jpg`, type: 'image/jpeg', size: bytes.byteLength })
         sexZ.value = { ...sexZ.value, [id]: cut.status === 'success' ? await engine.sexLogit(cut.square) : null }
       } catch {
-        sexZ.value = { ...sexZ.value, [id]: null }
+        // A failed download or run is not «no wings»: said so, and tried again on the next load.
+        sexZ.value = { ...sexZ.value, [id]: 'error' }
       }
     }
   } finally {
@@ -643,6 +676,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             }}
           </p>
         </details>
+        <button v-if="sexModel?.state === 'download'" class="btn py-0.5 text-xs" @click="downloadSexModel">
+          {{ $t('Sexo de la foto de campo (experimental): descargar el modelo, {mb} MB', { mb: sexModel.mb }) }}
+        </button>
+        <span v-else-if="sexModel?.state === 'downloading'" class="hint tabular-nums">{{
+          $t('Descargando el modelo de sexo: {done} de {total} MB', {
+            done: Math.round(sexModel.done / 1e6),
+            total: Math.round(sexModel.total / 1e6),
+          })
+        }}</span>
         <p v-if="session.canEdit" class="key-hint hint">
           {{ $t('Teclas: j/k mover · S sí es la fila · O otra fila · N ninguna · 1–9 elegir fila') }}
         </p>
@@ -811,15 +853,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   })
                 }}
               </p>
-              <div class="mb-2 flex flex-wrap items-start gap-x-4 gap-y-2">
-              <table class="min-w-0 max-w-3xl flex-1 basis-72 text-left">
+              <div class="grid items-start gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_14rem]">
+              <table class="w-full max-w-3xl text-left sm:col-start-1 sm:row-start-1">
                 <thead class="text-xs text-stone-500">
                   <tr class="align-bottom">
                     <th class="w-16 py-0.5 pr-2 font-normal"></th>
                     <th class="py-0.5 pr-2 font-normal">{{ $t('Nota de Wikiloc') }}</th>
                     <th class="py-0.5 pr-2 font-normal">
                       {{ $t('Fila {n}', { n: settledRow(d)!.row })
-                      }}<span v-if="settledRow(d)!.kind"> · {{ settledRow(d)!.kind }}</span>
+                      }}<span v-if="settledRow(d)!.kind" :title="settledRow(d)!.kind!"> · {{ kindLabel(settledRow(d)!.kind) }}</span>
                     </th>
                     <th
                       class="hidden py-0.5 pr-2 font-normal sm:table-cell"
@@ -845,7 +887,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                         <SexChip
                           v-if="l.label === 'Sexo' && fieldEvidence(d, settledRow(d))"
                           :evidence="fieldEvidence(d, settledRow(d))!"
-                          @download="downloadSexModel"
                         />
                       </td>
                       <td class="hidden py-0.5 font-normal sm:table-cell">
@@ -859,8 +900,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                           >{{ $t('Foto de campo') }}:
                           <SexChip
                             v-if="fieldEvidence(d, settledRow(d))"
-                            :evidence="fieldEvidence(d, settledRow(d))!"
-                            @download="downloadSexModel" /></span
+                            :evidence="fieldEvidence(d, settledRow(d))!" /></span
                         ><span class="block"
                           >{{ $t('Fotos del proyecto') }}:
                           <SexChip v-if="projectEvidence(settledRow(d))" :evidence="projectEvidence(settledRow(d))!"
@@ -881,8 +921,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   </tr>
                 </tbody>
               </table>
-              <IdentBox v-if="idLines(d, settledRow(d)).length" :lines="idLines(d, settledRow(d))" />
-              </div>
+              <div class="sm:col-start-1 sm:row-start-2">
               <ul v-if="opened.has(doubtKey(d))" class="mb-2 space-y-1">
                 <li class="text-xs text-stone-500">{{ $t('Otras filas de ese día:') }}</li>
                 <li v-for="(r, k) in d.candidates.filter(c => c.recordId !== settledRow(d)!.recordId)" :key="r.recordId">
@@ -894,7 +933,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     @click="choose(d, r)"
                   >
                     <kbd v-if="isFocused(d) && k < 9" class="key-hint">{{ k + 1 }}</kbd>
-                    {{ rowLabel(r) }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span>
+                    {{ rowLabel(r) }}<span v-if="r.kind" class="text-stone-500" :title="r.kind"> · {{ kindLabel(r.kind) }}</span>
                     <span class="ml-1 inline-flex flex-wrap gap-x-1.5 text-xs">
                       <span v-for="a in agreement(d, r)" :key="a.label" :class="a.ok ? 'text-green-700' : 'text-amber-800'"
                         >{{ a.ok ? '✓' : '✗' }} {{ a.label }}</span
@@ -916,6 +955,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <button class="btn py-0.5" @click="toggleOthers(d)">
                   {{ opened.has(doubtKey(d)) ? $t('Ocultar otras filas') : $t('Es otra fila…') }}
                 </button>
+              </div>
+              </div>
+              <IdentBox
+                v-if="idLines(d, settledRow(d)).length"
+                :lines="idLines(d, settledRow(d))"
+                class="sm:col-start-2 sm:row-span-2 sm:row-start-1"
+              />
               </div>
             </div>
             <div v-else class="min-w-0 flex-1 text-sm">
@@ -959,15 +1005,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <span class="text-stone-500">{{ $t('Sexo estimado') }}:</span>
                 <span v-if="fieldEvidence(d, rowOf(d))"
                   >{{ $t('foto de campo') }}
-                  <SexChip :evidence="fieldEvidence(d, rowOf(d))!" @download="downloadSexModel"
+                  <SexChip :evidence="fieldEvidence(d, rowOf(d))!"
                 /></span>
                 <span v-if="projectEvidence(rowOf(d))"
-                  >{{ $t('fotos del proyecto (fila {n})', { n: rowOf(d)!.row }) }} <SexChip :evidence="projectEvidence(rowOf(d))!"
+                  >{{ $t('fotos del proyecto') }} <SexChip :evidence="projectEvidence(rowOf(d))!"
                 /></span>
               </p>
               <p class="mb-1 text-xs text-stone-500">{{ $t('Filas de ese día que puede ser (elige una):') }}</p>
-              <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-              <ul class="min-w-0 flex-1 basis-72 space-y-1">
+              <div class="grid items-start gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_14rem]">
+              <ul class="min-w-0 space-y-1 sm:col-start-1 sm:row-start-1">
                 <li v-for="(r, k) in d.candidates" :key="r.recordId">
                   <button
                     type="button"
@@ -979,7 +1025,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   >
                     <kbd v-if="isFocused(d) && k < 9" class="key-hint">{{ k + 1 }}</kbd>
                     <Check v-if="chosenOf(d).includes(r.recordId)" :size="13" class="mr-1 inline text-brand-700" />{{ rowLabel(r)
-                    }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span
+                    }}<span v-if="r.kind" class="text-stone-500" :title="r.kind"> · {{ kindLabel(r.kind) }}</span
                     ><span v-if="isProposed(d, r)" class="ml-1 text-xs text-sky-700">{{ $t('(propuesta)') }}</span>
                     <span class="ml-1 inline-flex flex-wrap gap-x-1.5 text-xs">
                       <span v-for="a in agreement(d, r)" :key="a.label" :class="a.ok ? 'text-green-700' : 'text-amber-800'"
@@ -990,12 +1036,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   </button>
                 </li>
               </ul>
-              <IdentBox v-if="idLines(d, rowOf(d)).length" :lines="idLines(d, rowOf(d))" />
-              </div>
-              <div class="mt-2 flex flex-wrap gap-2">
+              <div class="flex flex-wrap gap-2 sm:col-start-1 sm:row-start-2">
                 <button class="btn py-0.5" :disabled="busy || !session.canEdit" @click="choose(d, null)">
                   <X :size="13" /> {{ $t('No es ninguna') }}
                 </button>
+              </div>
+              <IdentBox
+                v-if="idLines(d, rowOf(d)).length"
+                :lines="idLines(d, rowOf(d))"
+                class="sm:col-start-2 sm:row-span-2 sm:row-start-1"
+              />
               </div>
             </div>
           </li>

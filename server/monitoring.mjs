@@ -311,18 +311,21 @@ const rowInfo = row =>
 
 /**
  * CAMs whose collection sex score is never shown (COLLECTION_SEX_SKIP_FILE, one CAM per line or space): the
- * collection sex model's locked test portion stays closed. Read once.
+ * collection sex model's locked test portion stays closed. Fails closed: without a readable, non-empty list no
+ * collection sex is shown at all (null). Read once per file name.
  */
-let skipped = null;
+let skipped = { file: undefined, set: null };
 function sexSkipped() {
-  if (skipped) return skipped;
   const file = process.env.COLLECTION_SEX_SKIP_FILE;
+  if (skipped.file === file) return skipped.set;
+  let set = null;
   try {
-    skipped = new Set(file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean).map(c => c.toUpperCase()) : []);
-  } catch {
-    skipped = new Set();
-  }
-  return skipped;
+    const list = file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean) : [];
+    set = list.length ? new Set(list.map(c => c.toUpperCase())) : null;
+  } catch {}
+  if (!set) console.error('Dudas: COLLECTION_SEX_SKIP_FILE is not set or not readable: no collection sex is shown.');
+  skipped = { file, set };
+  return set;
 }
 
 /**
@@ -342,6 +345,7 @@ export function projectInfo(store, cams) {
       .map(b => [String(b.name).toUpperCase(), b.box_json]),
   );
   const prediction = store.db.prepare('SELECT sex_p_male, sex_supported, sex_species, sex_status FROM photo_predictions WHERE cam=?');
+  const skip = sexSkipped();
   for (const cam of cams) {
     const entry = index.byCam.get(cam);
     const photos = ['dorsal', 'ventral'].flatMap(view => {
@@ -353,11 +357,19 @@ export function projectInfo(store, cams) {
       } catch {}
       return [{ id, view, box: Array.isArray(box) && box.length === 4 ? box : null }];
     });
-    const p = sexSkipped().has(cam) ? null : prediction.get(cam);
+    const p = !skip || skip.has(cam) ? null : prediction.get(cam);
     const scored = p && p.sex_p_male !== null && p.sex_p_male !== undefined && !String(p.sex_status ?? '').startsWith('not_scored');
     out[cam] = {
       photos,
-      sex: scored ? { pMale: p.sex_p_male, supported: !!p.sex_supported, unreliable: !!unreliableFor(p.sex_species) } : null,
+      // sure: the model's own confidence screen passed (not «below_confidence»); supported: its species screen too.
+      sex: scored
+        ? {
+            pMale: p.sex_p_male,
+            sure: p.sex_status !== 'below_confidence',
+            supported: !!p.sex_supported,
+            unreliable: !!unreliableFor(p.sex_species),
+          }
+        : null,
     };
   }
   return out;
