@@ -4,7 +4,8 @@
  *
  * The scores are the head's probabilities, not calibrated on people's photos: the tab never turns them into words
  * like «muy probable». It only names the genus instead of the species when the species is unclear and the genus is
- * not (CLEAR, a cut not yet checked against held-out photos: DESIGN.md, «Not in this version»).
+ * not (CLEAR, a cut not yet checked against held-out photos: DESIGN.md, «Not in this version»); with the lab flag
+ * TRIBE_RUNG, then the tribe and the subfamily.
  */
 import type { StockCount } from './frozenStock'
 
@@ -45,15 +46,81 @@ export function groupByGenus(candidates: Candidate[], genus: Map<string, number>
   return { groups, rest: Math.max(0, 1 - shown) }
 }
 
-export type Headline = { kind: 'species'; name: string } | { kind: 'genus'; genus: string } | { kind: 'unsure' }
+export type Headline =
+  | { kind: 'species'; name: string }
+  | { kind: 'genus'; genus: string }
+  | { kind: 'tribe' | 'subfamily'; name: string; p: number }
+  | { kind: 'unsure' }
 
-/** The species when its score is clear, else its genus when that is, else «not sure». */
-export function headline(top: Candidate | undefined, genus: Map<string, number>): Headline {
+/**
+ * The tribe and subfamily answer (WingsClassificator X-A8, S1-confirmed with the same CLEAR): a lab flag, off unless
+ * the page is built with VITE_TRIBE_RUNG=1, so the ladder stays species, genus, «not sure» everywhere else.
+ */
+export const TRIBE_RUNG = import.meta.env.VITE_TRIBE_RUNG === '1'
+
+/** Every tribe's and subfamily's total: the sum of its species' scores (all of them, not only the listed ones). */
+export interface Higher {
+  tribe: Map<string, number>
+  subfamily: Map<string, number>
+}
+
+/**
+ * A name the page may show as a tribe or subfamily: not a placeholder of the head's taxonomy (UNKNOWN_tribe_<genus>,
+ * UNKNOWN_subfamily_<genus>, any UNKNOWN_*) and not «incertae sedis». A species under such a name has no tribe (or
+ * subfamily) for that rung: it still counts for the other one.
+ */
+export const shownTaxon = (name: string | undefined | null) => !!name && !name.startsWith('UNKNOWN') && name !== 'incertae sedis'
+
+function best(totals: Map<string, number> | undefined): { name: string; p: number } | null {
+  let out: { name: string; p: number } | null = null
+  for (const [name, p] of totals ?? []) if (shownTaxon(name) && (!out || p > out.p)) out = { name, p }
+  return out
+}
+
+/**
+ * The species when its score is clear, else its genus when that is, else (with the lab flag `on` and the totals
+ * `higher`) the tribe, then the subfamily, whose total is clear, else «not sure». Used for both the server's answer
+ * and the phone's.
+ */
+export function headline(top: Candidate | undefined, genus: Map<string, number>, higher: Higher | null = null, on = TRIBE_RUNG): Headline {
   if (!top) return { kind: 'unsure' }
   if (top.p >= CLEAR) return { kind: 'species', name: top.name }
   const g = top.name.split(' ')[0]
   if ((genus.get(g) ?? 0) >= CLEAR) return { kind: 'genus', genus: g }
+  if (on && higher) {
+    for (const kind of ['tribe', 'subfamily'] as const) {
+      const b = best(higher[kind])
+      if (b && b.p >= CLEAR) return { kind, ...b }
+    }
+  }
   return { kind: 'unsure' }
+}
+
+/**
+ * The head's tribe and subfamily per species (tools/identifier/taxonomy_6fa6ab78.json, from the head's own taxonomy by
+ * tools/identifier/export_taxonomy.py; the server identifier reads the same file): indexes into `tribes` and
+ * `subfamilies`, -1 for none (placeholders are already left out); species not listed have neither.
+ */
+export interface Taxonomy {
+  head: string
+  tribes: string[]
+  subfamilies: string[]
+  species: Record<string, [number, number]>
+}
+
+/** The phone's totals: every species' score (`scores`, in the order of `species`) summed by its tribe and subfamily. */
+export function higherRanks(scores: ArrayLike<number>, species: string[], tax: Taxonomy): Higher {
+  const out: Higher = { tribe: new Map(), subfamily: new Map() }
+  for (let i = 0; i < species.length; i++) {
+    const pair = tax.species[species[i]]
+    if (!pair) continue
+    const [t, s] = pair
+    const tn = t >= 0 ? tax.tribes[t] : undefined
+    const sn = s >= 0 ? tax.subfamilies[s] : undefined
+    if (shownTaxon(tn)) out.tribe.set(tn!, (out.tribe.get(tn!) ?? 0) + scores[i])
+    if (shownTaxon(sn)) out.subfamily.set(sn!, (out.subfamily.get(sn!) ?? 0) + scores[i])
+  }
+  return out
 }
 
 /**
@@ -75,7 +142,7 @@ export interface SubspeciesHint {
   only: boolean
 }
 export function subspeciesHint(said: Headline | null, top: Candidate | undefined, ssp: Candidate[] | undefined): SubspeciesHint | null {
-  if (!said || said.kind === 'genus' || !top || !ssp?.length) return null
+  if (!said || said.kind === 'genus' || said.kind === 'tribe' || said.kind === 'subfamily' || !top || !ssp?.length) return null
   const [first, second] = ssp
   if (first.p < SSP_MIN || first.p < SSP_SHARE * top.p) return null
   const alt = second && second.p >= SSP_MIN && second.p >= first.p / 2 ? second : undefined

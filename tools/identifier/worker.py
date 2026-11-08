@@ -10,7 +10,8 @@ on that side of the Andes in Ecuador weigh 2 %.
 Started by the app (server/identifier.mjs), one per app. JSON lines on stdin, one answer per
 line on stdout, one photo at a time:
   {"id": "1", "path": "/abs/photo.jpg", "side": "East"|"West"|null, "box": [x0,y0,x1,y1]|null}
-  -> {"id": "1", "species": [[name, p], ...], "subspecies": [...], "genus": [...], "crop": ..., "ms": ...}
+  -> {"id": "1", "species": [[name, p], ...], "subspecies": [...], "genus": [...], "tribe": [...], "subfamily": [...],
+      "crop": ..., "ms": ...}   (tribe, subfamily: with taxonomy_6fa6ab78.json beside this file, placeholders left out)
      or {"id": "1", "error": "..."}
 The models load on the first photo (about 4 s, 2.3 GB) and the process ends after --idle seconds
 without photos (the memory goes back to the server), or when stdin closes (the app stopped).
@@ -63,6 +64,9 @@ DETECTOR = "wing_seg_s2"  # 5 Nov 2026: V5N retrained on mined photos (WingsClas
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
 TOP = 5
+# The head's tribe and subfamily per species, placeholders left out (export_taxonomy.py): the worker adds each
+# tribe's and subfamily's total to a photo's answer (Identificar's tribe / subfamily answer, a lab flag on the page).
+TAXONOMY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "taxonomy_6fa6ab78.json")
 
 
 def parse_args():
@@ -181,6 +185,7 @@ class Identifier:
         self.leaf2ge = np.array(ck["leaf2rank"]["genus"])
         self.is_ssp = np.array([lf.count(" ") >= 2 for lf in self.leaves])
         del ck
+        self.higher = load_taxonomy(TAXONOMY, self.sp_vocab, np)
 
         # The Space's geographic prior (hf-space/geo_prior.py), when its checklist is there.
         self.geo = None
@@ -230,7 +235,7 @@ class Identifier:
         feat = self.encoder.run(None, {"pixel_values": x})[0]
         return feat / np.linalg.norm(feat, axis=1, keepdims=True), prov
 
-    def tops(self, feat, side=None, ecuador=None):
+    def tops(self, feat, side=None, ecuador=None, higher=False):
         np, torch = self.np, self.torch
         with torch.no_grad():
             probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
@@ -252,13 +257,18 @@ class Identifier:
                 subs.append([self.leaves[i], round(float(probs[i]), 4)])
                 if len(subs) >= TOP:
                     break
-        return {
+        out = {
             "species": marg(self.leaf2sp, self.sp_vocab, TOP),
             "subspecies": subs,
             "genus": marg(self.leaf2ge, self.ge_vocab, 3),
             "top": [self.leaves[order[0]], round(float(probs[order[0]]), 4)],
             "prior": side if prior and side in ("East", "West") else ("Ecuador" if prior else None),
         }
+        if higher and self.higher:
+            sp = np.zeros(len(self.sp_vocab))
+            np.add.at(sp, self.leaf2sp, probs)
+            out.update(higher_totals(sp, self.higher, np))
+        return out
 
     def identify(self, path, side=None, box=None, ecuador=None):
         t0 = time.perf_counter()
@@ -266,7 +276,7 @@ class Identifier:
             raw = f.read()
         feat, prov = self.feature(raw, box)
         geometry = prov.get("geometry") or {}
-        out = self.tops(feat, side, ecuador)
+        out = self.tops(feat, side, ecuador, higher=True)
         if out["prior"] == "Ecuador":
             out["prior"] = None
         return {
@@ -455,6 +465,36 @@ class SexModel:
         return {"pMale": round(pm, 4), "status": status, "supported": bool(supported and max(pm, 1 - pm) >= 0.8), "fold": fold, "foldHow": how,
                 "seeds": {k: round(v, 4) for k, v in seeds.items()}, "model": self.arm, "kind": "cnn", "crops": sum(present), "boxes": "nano",
                 "ms": round((time.perf_counter() - t0) * 1000)}
+
+
+def load_taxonomy(path, sp_vocab, np):
+    """For each rank (tribe, subfamily): its shown names and each head species' index into them (-1: none or a
+    placeholder). None without the file, or when it is another head's."""
+    if not os.path.exists(path):
+        return None
+    doc = json.load(open(path))
+    if doc.get("head") != HEAD_SHA256:
+        return None
+    out = {}
+    for rank, names, col in (("tribe", doc["tribes"], 0), ("subfamily", doc["subfamilies"], 1)):
+        idx = np.full(len(sp_vocab), -1, np.int64)
+        for i, name in enumerate(sp_vocab):
+            pair = doc["species"].get(name)
+            if pair is not None:
+                idx[i] = pair[col]
+        out[rank] = (names, idx)
+    return out
+
+
+def higher_totals(sp_probs, higher, np, k=3):
+    """The `k` most probable tribes and subfamilies: [[name, p], ...], each the sum of its species' scores."""
+    out = {}
+    for rank, (names, idx) in higher.items():
+        has = idx >= 0
+        agg = np.zeros(len(names))
+        np.add.at(agg, idx[has], sp_probs[has])
+        out[rank] = [[names[j], round(float(agg[j]), 4)] for j in np.argsort(-agg, kind="stable")[:k] if agg[j] > 0]
+    return out
 
 
 def main():
