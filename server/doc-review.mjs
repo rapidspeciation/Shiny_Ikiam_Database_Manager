@@ -184,6 +184,28 @@ export function findSection(text, heading, containing = '') {
   return s ? { ...s, text: text.slice(s.start, s.end) } : null;
 }
 
+/** The section name that stands for a file's front-matter `description:` value (a skill's or a subagent's). */
+export const DESCRIPTION = 'description';
+
+/** The value of the front matter's `description:` line as a section ({ heading, start, end, text }), or null. */
+export function descriptionPart(text) {
+  const end0 = bodyStart(text);
+  if (!end0) return null;
+  const m = /^description:[ \t]*(.*)$/m.exec(text.slice(0, end0));
+  if (!m) return null;
+  const start = m.index + m[0].length - m[1].length;
+  return { heading: DESCRIPTION, level: 0, start, end: start + m[1].length, text: m[1] };
+}
+
+/**
+ * The part of a file a change targets: the front matter's description value for the section name «description»
+ * (a file whose headings have none of that name), else the section with that heading (findSection).
+ */
+export function findPart(text, heading, containing = '') {
+  if (plain(heading).toLowerCase() === DESCRIPTION && !sections(text).some(s => plain(s.heading).toLowerCase() === DESCRIPTION)) return descriptionPart(text);
+  return findSection(text, heading, containing);
+}
+
 /**
  * Where a quote of the rendered text sits in `text`: every match scored by its prefix and suffix agreeing,
  * ties to the nearest offset (md-review's locate). -1 when the quote is not there.
@@ -474,7 +496,7 @@ export const DOC_TOOLS = [
         type: 'object',
         properties: {
           path: { type: 'string' },
-          heading: { type: 'string', description: "The section's heading ('' before the first)" },
+          heading: { type: 'string', description: "The section's heading ('' before the first; 'description': the front matter's description value)" },
           before: { type: 'string' },
           after: { type: 'string' },
           thread_ids: { type: 'array', items: { type: 'string' } },
@@ -600,7 +622,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   /** A change's section now, and whether it still is what the change was made on. */
   function sectionNow(c) {
     try {
-      return findSection(read(c.path), c.heading, c.before_part);
+      return findPart(read(c.path), c.heading, c.before_part);
     } catch {
       return null;
     }
@@ -638,6 +660,8 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       lost,
       revising,
       external: c.source === 'external',
+      // A change to the front matter's description, not to a section.
+      field: c.heading === DESCRIPTION && !!descriptionPart(read(c.path)) ? DESCRIPTION : null,
       awaiting,
       chat: c.chat_id,
       createdAt: c.created_at,
@@ -654,7 +678,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   /** The guards with a change in: the checks' failures and the parts that grow. */
   function guards(c, sectionText = null) {
     const text = read(c.path);
-    const section = sectionText ?? findSection(text, c.heading, c.before_part);
+    const section = sectionText ?? findPart(text, c.heading, c.before_part);
     if (!section) return { checks: [{ code: 'stale' }], budget: [] };
     const changed = text.slice(0, section.start) + c.after + text.slice(section.end);
     const withChange = rel => (rel === c.path ? changed : read(rel));
@@ -774,13 +798,29 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   async function draft({ path, heading, before, after, threadIds = [], series = null, version = 1, chat = null, by = null, source = null, dry = false }) {
     if (!exists(path)) return { error: `Not an instructions file: ${path}. Only assistant/**/*.md.` };
     const text = read(path);
-    const section = findSection(text, heading, before);
-    if (!section) return { error: `No section "${heading}" in ${path}: use the heading as doc_threads gives it.` };
     const part = String(before ?? '');
+    const asked = plain(heading);
+    const isDescription = asked.toLowerCase() === DESCRIPTION;
+    if (isDescription && sections(text).some(s => plain(s.heading).toLowerCase() === DESCRIPTION))
+      return { error: `${path} has a heading named "description" too: this file's front-matter description cannot be told apart from it.` };
+    // The same heading twice in a file: the one whose text holds `before`, when only one does.
+    const named = isDescription ? [] : sections(text).filter(s => plain(s.heading) === asked);
+    if (named.length > 1) {
+      const holding = named.filter(s => text.slice(s.start, s.end).includes(part));
+      if (holding.length !== 1)
+        return { error: `${named.length} sections are named "${heading}" in ${path}${holding.length ? ` and before is in ${holding.length} of them` : ''}: make before unique to one of them.` };
+    }
+    const section = findPart(text, heading, before);
+    if (!section) return { error: isDescription ? `${path} has no front-matter description.` : `No section "${heading}" in ${path}: use the heading as doc_threads gives it.` };
     const changedSection = replacePart(section.text, part, String(after ?? ''));
     if (changedSection === null)
-      return { error: `before does not match the current source of § ${heading || '(start)'} exactly once. Copy it from doc_threads' section.` };
-    if (section.start === 0 && bodyStart(text) > 0) return { error: 'The front matter is not changed here.' };
+      return {
+        error: isDescription
+          ? 'before does not match the current description exactly once (only the value after «description:» changes).'
+          : `before does not match the current source of § ${heading || '(start)'} exactly once. Copy it from doc_threads' section.`,
+      };
+    if (!isDescription && section.start === 0 && bodyStart(text) > 0) return { error: 'The front matter is not changed here.' };
+    if (isDescription && (/\n/.test(changedSection) || !changedSection.trim())) return { error: 'The description stays one line, not empty.' };
     if (changedSection === section.text) return { error: 'after is the same as before.' };
     if (changedSection.length > MAX_TEXT) return { error: 'The section is too long.' };
     if (dry) {
@@ -835,7 +875,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const last = latestOf(prev);
     if (!['pending', 'superseded'].includes(last.status) && last.status !== 'discarded')
       return { error: `The change is ${last.status}: propose a new one with propose_doc_change.` };
-    const now0 = findSection(read(last.path), last.heading, last.before_part);
+    const now0 = findPart(read(last.path), last.heading, last.before_part);
     const wasStale = !now0 || hashText(now0.text) !== last.base_hash;
     const out = await draft({
       path: last.path,
@@ -936,7 +976,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     if (!['pending', 'undone'].includes(c.status)) throw fail('NOT_PENDING', 'The change is not pending', 409);
     if (version !== null && Number(version) !== c.version) throw fail('NOT_LATEST', 'A newer version of the change arrived: look at it first', 409);
     const text = read(c.path);
-    const section = findSection(text, c.heading, c.before_part);
+    const section = findPart(text, c.heading, c.before_part);
     if (!section || hashText(section.text) !== hashText(c.before)) throw fail('STALE', 'The section changed since the proposal', 409);
     const g = guards(c, section);
     if (g.checks.length) throw Object.assign(fail('CHECKS', 'The checks refuse this change', 409), { details: { checks: g.checks } });
@@ -958,7 +998,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const c = pendingChange(id);
     if (c.status !== 'applied') throw fail('NOT_APPLIED', 'The change is not applied', 409);
     const text = read(c.path);
-    const section = findSection(text, c.heading, c.after_part) ?? findSection(text, c.heading);
+    const section = findPart(text, c.heading, c.after_part) ?? findPart(text, c.heading);
     if (!section || section.text !== c.after) {
       const out = section ? await draft({ path: c.path, heading: c.heading, before: c.after_part, after: c.before_part, by: user.id }) : { error: 'gone' };
       if (out.error) throw fail('UNDO_CONFLICT', 'The section changed since: the undo cannot be made', 409);
@@ -980,7 +1020,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   async function repropose(user, id) {
     requireAdmin(user);
     const c = pendingChange(id);
-    const out = await draft({ path: c.path, heading: c.heading, before: findSection(read(c.path), c.heading)?.text ?? c.before, after: c.after, threadIds: parse(c.thread_ids, []), series: c.series_id, version: c.version + 1, chat: c.chat_id, by: user.id });
+    const out = await draft({ path: c.path, heading: c.heading, before: findPart(read(c.path), c.heading)?.text ?? c.before, after: c.after, threadIds: parse(c.thread_ids, []), series: c.series_id, version: c.version + 1, chat: c.chat_id, by: user.id });
     if (out.error) throw fail('REPROPOSE', out.error, 409);
     addComment({ series: c.series_id, author: 'system', kind: 'system', text: `version_reproposed:${out.change.version}` });
     return { change: seriesView(c.series_id, user) };

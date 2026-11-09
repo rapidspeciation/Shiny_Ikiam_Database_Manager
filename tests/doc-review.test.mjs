@@ -550,3 +550,53 @@ test('an outside proposer (no T3 chat): its reason is the card’s first Claude 
   const own = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NC' }, { user: admin, chat: 'chat-t3' });
   assert.throws(() => d.requestRevision(admin, own.changeId, {}), e => e.code === 'NOT_EXTERNAL');
 });
+
+test('section «description»: only the front matter description value changes; name and the shape stay locked; the skills listing is measured', async () => {
+  const { root, db, put } = fixture();
+  const { skillListing } = await import('../scripts/context-budget.mjs');
+  const measure = read => ({ 'skill:demo': Buffer.byteLength(skillListing(read(SKILL_PATH))) });
+  const recorded = measure(rel => readFileSync(join(root, rel), 'utf8'))['skill:demo'];
+  const d = createDocReview({ db, root, measure, budget: () => ({ 'skill:demo': { bytes: recorded } }) });
+  const shorter = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'A demo skill.', after: 'Demo.' }, { user: admin });
+  assert.equal(shorter.grows, undefined);
+  const card = d.state(admin).changes[0];
+  assert.equal(card.field, 'description');
+  assert.equal(card.before, 'A demo skill.');
+  assert.equal(card.after, 'Demo.');
+  assert.match(card.diff, /^-A demo skill\.$/m);
+  // name: and the shape cannot be reached: before is looked for inside the value only.
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'name: demo', after: 'name: other' }, { user: admin })).error, /does not match the current description/);
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'A demo skill.', after: 'Two\nlines' }, { user: admin })).error, /stays one line/);
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'A demo skill.', after: ' ' }, { user: admin })).error, /stays one line, not empty/);
+  assert.match((await d.runTool('propose_doc_change', { path: 'assistant/AGENTS.md', heading: 'description', before: 'x', after: 'y' }, { user: admin })).error, /no front-matter description/);
+  // A longer description grows the listing: «Aplicar igualmente».
+  const longer = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'A demo skill.', after: 'A demo skill for the tests.' }, { user: admin });
+  assert.deepEqual(longer.grows, ['skill:demo +14 bytes: an admin applies it anyway or not']);
+  d.discard(admin, longer.changeId);
+  // Applying it: the file's front matter has the new value, name and the rest as they were; undo brings it back.
+  d.apply(admin, shorter.changeId);
+  assert.equal(d.effectiveText(SKILL_PATH), SKILL.replace('description: A demo skill.', 'description: Demo.'));
+  assert.deepEqual(docChecks(SKILL_PATH, d.read, root), []);
+  await d.undo(admin, shorter.changeId);
+  assert.equal(d.effectiveText(SKILL_PATH), SKILL);
+  // A file with a heading named «description» too: refused, it would be ambiguous.
+  put('assistant/skills/demo/SKILL.md', `${SKILL}\n## Description\n\nText.\n`);
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'description', before: 'A demo skill.', after: 'Demo.' }, { user: admin })).error, /heading named "description" too/);
+});
+
+test('sections of any level by their heading; the same heading twice is told apart by before, else refused', async () => {
+  const { root, db, put } = fixture();
+  put(SKILL_PATH, `${SKILL}\n## Notas\n\nUna nota sobre fotos.\n\n### Notas\n\nOtra nota.\n`);
+  const d = createDocReview({ db, root });
+  // A level-3 heading by its text (its # marks ignored too).
+  assert.equal((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: '### Detalle', before: 'Una línea más.', after: 'Una línea.' }, { user: admin })).version, 1);
+  // «Notas» twice (nested): before in both → refused; before only in the inner one is still in both (the outer holds it).
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Notas', before: 'nota', after: 'x' }, { user: admin })).error, /2 sections are named "Notas".*before is in 2 of them/);
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Notas', before: 'ninguna', after: 'x' }, { user: admin })).error, /2 sections are named "Notas".*make before unique/);
+  // Two separate sections with the same name: before picks one.
+  put(SKILL_PATH, `${SKILL}\n## Notas\n\nUna nota sobre fotos.\n\n## Notas\n\nOtra nota.\n`);
+  const ok = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Notas', before: 'Otra nota.', after: 'Segunda nota.' }, { user: admin });
+  assert.equal(ok.version, 1);
+  d.apply(admin, ok.changeId);
+  assert.match(d.effectiveText(SKILL_PATH), /Una nota sobre fotos\.\n\n## Notas\n\nSegunda nota\./);
+});
