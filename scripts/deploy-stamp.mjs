@@ -38,7 +38,7 @@ function tree(root, rel, out) {
   else if (st.isDirectory()) {
     out.push(`d ${rel}`);
     for (const name of readdirSync(path).sort()) tree(root, `${rel}/${name}`, out);
-  } else out.push(`f ${rel} ${st.mode & 0o777} ${createHash('sha256').update(readFileSync(path)).digest('hex')}`);
+  } else out.push(`f ${rel} ${st.mode & 0o111 ? 'x' : '-'} ${createHash('sha256').update(readFileSync(path)).digest('hex')}`);
 }
 
 const readOr = (path, fallback = '') => {

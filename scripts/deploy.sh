@@ -112,7 +112,8 @@ rm -rf "$logs"
 # assemble <release dir> <dir holding the build>: the commit's files and the build of the run.
 assemble() {
   mkdir -p "$1/server"
-  git archive --format=tar "$commit" -- "${paths[@]}" | tar -xf - -C "$1"
+  # umask 077: the same file modes from a PC and from claudeclaw (600 and 700, as the releases have had).
+  (umask 077 && git archive --format=tar "$commit" -- "${paths[@]}" | tar -xf - -C "$1")
   # Hard links where the two are on one disk (claudeclaw: staged/ beside releases/), else a copy.
   cp -al "$2/web" "$1/" 2>/dev/null || cp -a "$2/web" "$1/"
   cp -a "$2/server/instructions-history.json" "$1/server/"
