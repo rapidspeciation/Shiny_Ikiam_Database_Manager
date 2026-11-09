@@ -34,6 +34,7 @@ const PLACEHOLDERS = new Set(['person', 'username', 'docs', 'knowledge', 'sheets
 // ------------------------------------------------------------------ tables
 
 export function initDocReview(db) {
+  migrate(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS doc_threads (
       id TEXT PRIMARY KEY, path TEXT NOT NULL, quote TEXT NOT NULL, prefix TEXT NOT NULL DEFAULT '', suffix TEXT NOT NULL DEFAULT '',
@@ -49,7 +50,7 @@ export function initDocReview(db) {
       id TEXT PRIMARY KEY, series_id TEXT NOT NULL, version INTEGER NOT NULL, path TEXT NOT NULL, heading TEXT NOT NULL,
       base_hash TEXT NOT NULL, before_part TEXT NOT NULL, after_part TEXT NOT NULL, before TEXT NOT NULL, after TEXT NOT NULL,
       diff TEXT, thread_ids TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', chat_id TEXT,
-      created_by TEXT, created_at TEXT NOT NULL, decided_by TEXT, decided_at TEXT, revision_id INTEGER);
+      created_by TEXT, created_at TEXT NOT NULL, decided_by TEXT, decided_at TEXT, revision_id INTEGER, source TEXT);
     CREATE INDEX IF NOT EXISTS doc_changes_series ON doc_changes(series_id, version);
     CREATE TABLE IF NOT EXISTS doc_revisions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT NOT NULL, parent_hash TEXT NOT NULL, hash TEXT NOT NULL, text TEXT NOT NULL,
@@ -62,6 +63,15 @@ export function initDocReview(db) {
       id TEXT PRIMARY KEY, asked_by TEXT NOT NULL, asked_at TEXT NOT NULL, chat_id TEXT, kind TEXT NOT NULL DEFAULT 'ask',
       thread_ids TEXT NOT NULL DEFAULT '[]', change_ids TEXT NOT NULL DEFAULT '[]');
   `);
+}
+
+/** Columns added after the first version of the tables (a lab database made before them). */
+function migrate(db) {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'doc_changes'").get();
+  if (!has) return;
+  const cols = new Set(db.prepare('PRAGMA table_info(doc_changes)').all().map(c => c.name));
+  // 'external': proposed with a token of an outside proposer (no T3 chat; tools/lab/doc-proposals.md).
+  if (!cols.has('source')) db.exec('ALTER TABLE doc_changes ADD COLUMN source TEXT');
 }
 
 // ------------------------------------------------------------------ the overlay
@@ -468,6 +478,8 @@ export const DOC_TOOLS = [
           before: { type: 'string' },
           after: { type: 'string' },
           thread_ids: { type: 'array', items: { type: 'string' } },
+          reason: { type: 'string', description: "One line on the card: why" },
+          dry_run: { type: 'boolean', description: 'Only check; nothing is proposed' },
         },
         required: ['path', 'heading', 'before', 'after'],
       },
@@ -610,6 +622,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     // «Pedir versión nueva» sent and no newer version yet, while Claude's run goes on.
     const asked = c.status === 'pending' ? db.prepare("SELECT asked_at, chat_id FROM doc_asks WHERE kind = 'revise' AND change_ids LIKE ? ORDER BY asked_at DESC LIMIT 1").get(`%${seriesId}%`) : null;
     const revising = !!asked && asked.asked_at > c.created_at && working(asked.chat_id, asked.asked_at);
+    const awaiting = c.status === 'pending' && !!waitingFor(c);
     return {
       id: c.id,
       seriesId,
@@ -624,6 +637,8 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       stale,
       lost,
       revising,
+      external: c.source === 'external',
+      awaiting,
       chat: c.chat_id,
       createdAt: c.created_at,
       decidedAt: c.decided_at,
@@ -756,7 +771,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   const latestOf = c => db.prepare('SELECT * FROM doc_changes WHERE series_id = ? ORDER BY version DESC LIMIT 1').get(c.series_id);
 
   /** A new change or version: `before` checked against the section now. { change } or { error }. */
-  async function draft({ path, heading, before, after, threadIds = [], series = null, version = 1, chat = null, by = null }) {
+  async function draft({ path, heading, before, after, threadIds = [], series = null, version = 1, chat = null, by = null, source = null, dry = false }) {
     if (!exists(path)) return { error: `Not an instructions file: ${path}. Only assistant/**/*.md.` };
     const text = read(path);
     const section = findSection(text, heading, before);
@@ -768,31 +783,51 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     if (section.start === 0 && bodyStart(text) > 0) return { error: 'The front matter is not changed here.' };
     if (changedSection === section.text) return { error: 'after is the same as before.' };
     if (changedSection.length > MAX_TEXT) return { error: 'The section is too long.' };
+    if (dry) {
+      const g = guards({ path, heading: section.heading, before_part: part, after: changedSection });
+      return { dry: true, checks: g.checks, budget: g.budget };
+    }
     const known = new Set(db.prepare('SELECT id FROM doc_threads').all().map(t => t.id));
     const ids = [...new Set((threadIds ?? []).map(String))].filter(id => known.has(id));
     const id = randomUUID();
     const seriesId = series ?? id;
     const diff = await wordDiff(section.text, changedSection);
     db.prepare(
-      `INSERT INTO doc_changes (id, series_id, version, path, heading, base_hash, before_part, after_part, before, after, diff, thread_ids, chat_id, created_by, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(id, seriesId, version, path, section.heading, hashText(section.text), part, String(after ?? ''), section.text, changedSection, diff, JSON.stringify(ids), chat, by, now());
+      `INSERT INTO doc_changes (id, series_id, version, path, heading, base_hash, before_part, after_part, before, after, diff, thread_ids, chat_id, created_by, created_at, source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(id, seriesId, version, path, section.heading, hashText(section.text), part, String(after ?? ''), section.text, changedSection, diff, JSON.stringify(ids), chat, by, now(), source);
     if (series) db.prepare("UPDATE doc_changes SET status = 'superseded' WHERE series_id = ? AND id <> ? AND status = 'pending'").run(seriesId, id);
     const c = db.prepare('SELECT * FROM doc_changes WHERE id = ?').get(id);
     const g = guards(c);
     return { change: c, checks: g.checks, budget: g.budget };
   }
 
-  async function propose(args, { user, chat }) {
+  /** `external`: a proposer with no T3 chat (its token's label is «external»): no chat is ever linked or started for it. */
+  async function propose(args, { user, chat, external = false }) {
     if (!isAdmin(user)) return { error: "Only an administrator's chat proposes changes to the instructions." };
-    const out = await draft({ path: String(args.path ?? ''), heading: String(args.heading ?? ''), before: args.before, after: args.after, threadIds: args.thread_ids, chat: chat ?? lastAskChat(), by: user.id });
+    const out = await draft({
+      path: String(args.path ?? ''),
+      heading: String(args.heading ?? ''),
+      before: args.before,
+      after: args.after,
+      threadIds: args.thread_ids,
+      chat: external ? null : (chat ?? lastAskChat()),
+      by: user.id,
+      source: external ? 'external' : null,
+      dry: args.dry_run === true,
+    });
     if (out.error) return out;
+    if (out.dry) return out.checks.length ? { error: `Refused by the checks: ${JSON.stringify(out.checks)}` } : { ok: true, dryRun: true, ...(out.budget.length ? { grows: grows(out.budget) } : {}) };
     if (out.checks.length) {
       db.prepare("UPDATE doc_changes SET status = 'discarded' WHERE id = ?").run(out.change.id);
       return { error: `Refused by the checks: ${JSON.stringify(out.checks)}` };
     }
+    // The reason is the card's first line from Claude.
+    const reason = clip(String(args.reason ?? '').trim(), 500);
+    if (reason) addComment({ series: out.change.series_id, author: 'claude', kind: 'claude', text: reason });
     return answer(out);
   }
+  const grows = budget => budget.map(g => `${g.part} +${g.bytes} bytes: an admin applies it anyway or not`);
   async function revise(args, { user, chat }) {
     if (!isAdmin(user)) return { error: "Only an administrator's chat revises changes to the instructions." };
     const prev = changeRow(String(args.change_id ?? ''));
@@ -810,8 +845,9 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       threadIds: parse(last.thread_ids, []),
       series: last.series_id,
       version: last.version + 1,
-      chat: chat ?? last.chat_id,
+      chat: last.source === 'external' ? null : (chat ?? last.chat_id),
       by: user.id,
+      source: last.source ?? null,
     });
     if (out.error) return out;
     if (out.checks.length) {
@@ -823,10 +859,10 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     if (wasStale) addComment({ series: last.series_id, author: 'system', kind: 'system', text: `version_after_stale:${out.change.version}` });
     return answer(out);
   }
-  const answer = ({ change, budget: grows }) => ({
+  const answer = ({ change, budget: budgetGrown }) => ({
     changeId: change.series_id,
     version: change.version,
-    ...(grows.length ? { grows: grows.map(g => `${g.part} +${g.bytes} bytes: an admin applies it anyway or not`) } : {}),
+    ...(budgetGrown.length ? { grows: grows(budgetGrown) } : {}),
   });
 
   const pendingChange = id => {
@@ -965,7 +1001,27 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   }
 
   // ---------------------------------------------------------- asks
-  const lastAsk = () => db.prepare('SELECT * FROM doc_asks ORDER BY asked_at DESC, rowid DESC LIMIT 1').get();
+  const lastAsk = () => db.prepare("SELECT * FROM doc_asks WHERE kind <> 'revision_request' ORDER BY asked_at DESC, rowid DESC LIMIT 1").get();
+  /**
+   * An external change's open request for a new version: the time it was asked, while neither a newer version nor a
+   * reply from the proposer has come since; else null.
+   */
+  function waitingFor(c) {
+    if (c.source !== 'external') return null;
+    const req = db.prepare("SELECT asked_at FROM doc_asks WHERE kind = 'revision_request' AND change_ids LIKE ? ORDER BY asked_at DESC LIMIT 1").get(`%${c.series_id}%`);
+    if (!req || req.asked_at < c.created_at) return null;
+    const answered = db.prepare("SELECT 1 FROM doc_comments WHERE series_id = ? AND kind = 'claude' AND created_at >= ?").get(c.series_id, req.asked_at);
+    return answered ? null : req.asked_at;
+  }
+  /** «Pedir versión nueva» on an external change: recorded for its proposer (no chat is started); the card waits. */
+  function requestRevision(user, id, { body: text = '' } = {}) {
+    requireAdmin(user);
+    const c = pendingChange(id);
+    if (c.source !== 'external') throw fail('NOT_EXTERNAL', 'This change has a chat of its own', 409);
+    if (String(text ?? '').trim()) addComment({ series: c.series_id, author: user.id, text: body(text) });
+    recordAsk(user, null, 'revision_request', { changes: [c.series_id] });
+    return seriesView(c.series_id, user);
+  }
   const lastAskChat = () => lastAsk()?.chat_id ?? null;
   /** A chat answering, or asked a moment ago (T3 may not show its run yet). */
   const working = (chat, at) => !!chats?.session?.(chat)?.busy || Date.parse(now()) - Date.parse(at) < 20_000;
@@ -980,7 +1036,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const state = s === null ? 'gone' : working(a.chat_id, a.asked_at) ? 'running' : 'finished';
     const out = { id: a.id, state, chat: a.chat_id, at: a.asked_at };
     if (state === 'running') return out;
-    const made = db.prepare('SELECT path FROM doc_changes WHERE created_at >= ? ORDER BY created_at').all(a.asked_at);
+    const made = db.prepare("SELECT path FROM doc_changes WHERE created_at >= ? AND source IS NOT 'external' ORDER BY created_at").all(a.asked_at);
     const replies = db
       .prepare("SELECT coalesce(t.path, ch.path) AS path FROM doc_comments c LEFT JOIN doc_threads t ON t.id = c.thread_id LEFT JOIN doc_changes ch ON ch.series_id = c.series_id AND ch.version = 1 WHERE c.kind = 'claude' AND c.created_at >= ? ORDER BY c.created_at")
       .all(a.asked_at);
@@ -1008,7 +1064,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   }
 
   // ---------------------------------------------------------- MCP
-  function toolThreads(args, user) {
+  function toolThreads(args, user, external = false) {
     const only = args.path ? String(args.path) : null;
     // A thread Claude answered last waits for people (they reply or resolve it).
     const lastWord = db.prepare("SELECT kind FROM doc_comments WHERE thread_id = ? AND kind <> 'system' AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1");
@@ -1028,21 +1084,29 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
           comments: commentsOf('thread_id', t.id, user).filter(c => !c.deleted).map(c => ({ by: c.kind === 'claude' ? 'Claude' : c.kind === 'system' ? 'app' : c.author, text: c.body })),
         };
       });
-    const changes = db
-      .prepare("SELECT series_id FROM doc_changes GROUP BY series_id HAVING max(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) = 1")
-      .all()
-      .map(s => seriesView(s.series_id, user, { checks: false }))
-      .filter(c => c && (!only || c.path === only))
-      .map(c => ({
-        id: c.seriesId,
-        version: c.version,
-        path: c.path,
-        heading: c.heading,
-        ...(c.stale ? { stale: true, section: sectionNow({ path: c.path, heading: c.heading, before_part: '' })?.text ?? null } : {}),
-        before: c.versions.at(-1)?.before,
-        after: c.after,
-        comments: c.comments.filter(x => !x.deleted).map(x => ({ by: x.kind === 'claude' ? 'Claude' : x.author, text: x.body })),
-      }));
+    const comment = x => ({ by: x.kind === 'claude' ? 'Claude' : x.kind === 'system' ? 'app' : x.author, text: x.body, at: x.createdAt });
+    // A T3 chat sees the pending changes of chats; an external proposer sees its own changes, decided ones too.
+    const rows = external
+      ? db.prepare("SELECT series_id FROM doc_changes GROUP BY series_id HAVING max(CASE WHEN source = 'external' THEN 1 ELSE 0 END) = 1").all()
+      : db.prepare("SELECT series_id FROM doc_changes GROUP BY series_id HAVING max(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) = 1 AND max(CASE WHEN source = 'external' THEN 1 ELSE 0 END) = 0").all();
+    const changes = rows
+      .map(r => seriesView(r.series_id, user, { checks: false }))
+      .filter(c => c && c.status !== 'superseded' && (!only || c.path === only))
+      .map(c => {
+        const since = c.versions.at(-1)?.createdAt ?? '';
+        return {
+          id: c.seriesId,
+          version: c.version,
+          path: c.path,
+          heading: c.heading,
+          ...(external ? { status: c.status, revisionRequested: c.awaiting } : {}),
+          ...(c.stale ? { stale: true, section: sectionNow({ path: c.path, heading: c.heading, before_part: '' })?.text ?? null } : {}),
+          before: c.versions.at(-1)?.before,
+          after: c.after,
+          comments: c.comments.filter(x => !x.deleted).map(comment),
+          ...(external && c.awaiting ? { commentsSinceVersion: c.comments.filter(x => !x.deleted && x.kind === 'person' && x.createdAt >= since).map(comment) } : {}),
+        };
+      });
     return { threads, changes };
   }
   function toolReply(args, user) {
@@ -1061,10 +1125,10 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     addComment({ series: c.series_id, author: 'claude', kind: 'claude', text });
     return { ok: true };
   }
-  async function runTool(name, args = {}, { user, chat = null } = {}) {
-    if (name === 'doc_threads') return toolThreads(args, user);
+  async function runTool(name, args = {}, { user, chat = null, external = false } = {}) {
+    if (name === 'doc_threads') return toolThreads(args, user, external);
     if (name === 'reply_doc_thread') return toolReply(args, user);
-    if (name === 'propose_doc_change') return propose(args, { user, chat });
+    if (name === 'propose_doc_change') return propose(args, { user, chat, external });
     if (name === 'revise_doc_change') return revise(args, { user, chat });
     return { error: `Unknown tool ${name}` };
   }
@@ -1108,6 +1172,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     recordAsk,
     askState,
     seenAsk,
+    requestRevision,
     lastAskChat,
     change: id => {
       const c = changeRow(String(id ?? ''));

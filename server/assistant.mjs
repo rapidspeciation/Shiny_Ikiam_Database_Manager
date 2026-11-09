@@ -6364,7 +6364,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
     // The instructions' comments and changes live in the app's thread (server/doc-review.mjs).
-    if (DOC_TOOL_NAMES.has(name)) return docReview && !inWorker ? docReview.runTool(name, args, { user: context.user, chat: context.t3 ? (chatOfCall(context)?.id ?? null) : null }) : { error: 'Call it again in a moment.' };
+    if (DOC_TOOL_NAMES.has(name)) return docReview && !inWorker ? docReview.runTool(name, args, { user: context.user, external: !!context.external, chat: context.t3 && !context.external ? (chatOfCall(context)?.id ?? null) : null }) : { error: 'Call it again in a moment.' };
     if (MEETING_DOC_TOOL_NAMES.has(name)) return meetingDocs ? meetingDocs.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     // A rack read goes at once into this chat's deposit (its proposal): the grid, the fields, the tube-locations rows.
@@ -6566,11 +6566,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const hash = createHash('sha256').update(token).digest('hex');
     const row = db
       .prepare(
-        'SELECT u.* FROM ai_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.active = 1',
+        'SELECT u.*, t.label AS token_label FROM ai_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.active = 1',
       )
       .get(hash);
     if (!row) return null;
     const user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
+    // A token labelled «external»: a proposer outside T3 (tools/lab/doc-proposals.md); its doc changes have no chat.
+    const external = row.token_label === 'external';
     const thread = { id: namedThread(user, 'T3 Code') };
     const cached = agents.get(hash);
     if (cached?.context.threadId === thread.id) return cached;
@@ -6583,6 +6585,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         results: [],
         proposals: [],
         applied: [],
+        external,
       },
     };
     agents.set(hash, turn);

@@ -501,3 +501,52 @@ test('a version made after the section changed, or proposed again, says so in a 
   await d.repropose(admin, one.changeId);
   assert.deepEqual(lines(), ['version_after_stale:2', 'version_reproposed:3']);
 });
+
+test('an outside proposer (no T3 chat): its reason is the card’s first Claude line, a request for a new version waits for it and is cleared by its answer; T3 chats never see its cards', async () => {
+  const { root, db } = fixture();
+  let clock = Date.parse('2026-11-09T10:00:00Z');
+  const now = () => new Date((clock += 1000)).toISOString();
+  const d = createDocReview({ db, root, now });
+  // A T3 ask exists: an outside change is not linked to its chat.
+  d.recordAsk(admin, 'chat-t3', 'ask', {});
+  const t = d.createThread(observer, { path: SKILL_PATH, quote: 'Dos fotos', heading: 'Fotos', body: '¿Dos?' });
+  const dry = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'Dos fotos', after: 'Tres fotos', dry_run: true }, { user: admin, external: true });
+  assert.deepEqual(dry, { ok: true, dryRun: true });
+  assert.equal(d.state(admin).changes.length, 0, 'a dry run proposes nothing');
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'Cuatro', after: 'x', dry_run: true }, { user: admin, external: true })).error, /does not match/);
+  const made = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'Dos fotos', after: 'Tres fotos', reason: 'Estilo: el número va en cifras.', thread_ids: [t.id] }, { user: admin, external: true });
+  let card = d.state(admin).changes[0];
+  assert.equal(card.external, true);
+  assert.equal(card.chat, null);
+  assert.deepEqual(card.comments.map(c => [c.kind, c.body]), [['claude', 'Estilo: el número va en cifras.']]);
+  // T3 chats (doc_threads without the external flag) don't see it; «Pedir a Claude» doesn't count its thread.
+  assert.deepEqual((await d.runTool('doc_threads', {}, { user: admin })).changes, []);
+  assert.deepEqual(d.openThreads(), []);
+  // Franz comments and asks for a new version: recorded, the card waits.
+  const waiting = d.requestRevision(admin, made.changeId, { body: 'Mejor «tres fotos por lado».' });
+  assert.equal(waiting.awaiting, true);
+  assert.equal(d.state(admin).ask.chat, 'chat-t3', 'the request is not an ask');
+  let mine = (await d.runTool('doc_threads', {}, { user: admin, external: true })).changes[0];
+  assert.equal(mine.status, 'pending');
+  assert.equal(mine.revisionRequested, true);
+  assert.deepEqual(mine.commentsSinceVersion.map(c => c.text), ['Mejor «tres fotos por lado».']);
+  // The proposer answers with v2: the request is cleared.
+  await d.runTool('revise_doc_change', { change_id: made.changeId, after: 'Tres fotos' }, { user: admin, external: true });
+  card = d.state(admin).changes[0];
+  assert.equal(card.version, 2);
+  assert.equal(card.awaiting, false);
+  assert.equal(card.external, true);
+  // Another request, answered by a reply instead.
+  d.requestRevision(admin, made.changeId, {});
+  assert.equal(d.state(admin).changes[0].awaiting, true);
+  await d.runTool('reply_doc_thread', { id: made.changeId, text: 'Ya está así en v2.' }, { user: admin, external: true });
+  assert.equal(d.state(admin).changes[0].awaiting, false);
+  mine = (await d.runTool('doc_threads', {}, { user: admin, external: true })).changes[0];
+  assert.equal(mine.revisionRequested, false);
+  // Decided changes stay in its list with their status.
+  d.discard(admin, made.changeId);
+  assert.equal((await d.runTool('doc_threads', {}, { user: admin, external: true })).changes[0].status, 'discarded');
+  // A chat's own change is not «external»: requestRevision refuses it (the route tells its chat).
+  const own = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NC' }, { user: admin, chat: 'chat-t3' });
+  assert.throws(() => d.requestRevision(admin, own.changeId, {}), e => e.code === 'NOT_EXTERNAL');
+});

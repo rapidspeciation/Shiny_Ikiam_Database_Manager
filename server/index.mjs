@@ -733,6 +733,8 @@ async function docReviewRoute({ docReview: d, method, path, body, user, config, 
     if (!d.isAdmin(user)) throw fail('FORBIDDEN', 'Only administrators', 403);
     const c = d.change(id);
     if (!c) throw fail('NOT_FOUND', 'No such change', 404);
+    // An outside proposer's change: the request waits for it (doc_threads), no T3 chat is started.
+    if (c.source === 'external') return { chat: null, sent: false, waiting: true, change: d.requestRevision(user, c.id, { body: body?.body }) };
     if (String(body?.body ?? '').trim()) d.commentChange(user, c.id, body.body);
     const text = REVISE_TEXT(c, body?.why === 'stale' ? 'stale' : 'comment');
     const chat = c.chat_id ?? d.lastAskChat();
