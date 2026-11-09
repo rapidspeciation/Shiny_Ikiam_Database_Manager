@@ -240,6 +240,25 @@ test('a suffixed ID that is used, has no butterfly to follow, or whose group mov
   store.close();
 });
 
+test('a suffixed ID already used (a second W2B.2) is refused as DUPLICATE_ID, and nothing is written', async () => {
+  const { sheets, store, idOf } = await fixture();
+  const create = id => ({ requestId: randomUUID(), creates: [{ module: SHEET, values: { Insectary_ID: id, Sex: 'male' } }] });
+  assert.equal((await applyBatch(store, create('W2B.2'), user)).status, 'verified');
+  assert.deepEqual([4, 5, 6].map(idOf), ['W2B', 'W2B.2', 'W3B']);
+  const actions = () => store.db.prepare('SELECT count(*) n FROM actions').get().n;
+  const before = actions();
+  // The same ID as typed on a notebook page (lower case, spaces): still the W2B.2 of row 5.
+  for (const again of ['W2B.2', ' w2b.2 ']) {
+    const refused = await applyBatch(store, create(again), user).then(() => null, e => e);
+    assert.ok(refused, `${again}: refused`);
+    assert.deepEqual(refused.details.items.map(i => [i.code, i.field]), [['DUPLICATE_ID', 'Insectary_ID']]);
+  }
+  assert.equal(sheets.rows.get(SHEET).length, 9, 'only the first W2B.2 was inserted');
+  assert.deepEqual([4, 5, 6].map(idOf), ['W2B', 'W2B.2', 'W3B']);
+  assert.equal(actions(), before, 'no save recorded');
+  store.close();
+});
+
 test('the requests: rows inserted from the bottom up, copied, emptied, then the cells at their final rows', async () => {
   const write = (at, extra = {}) => ({
     sheet: SHEET,
