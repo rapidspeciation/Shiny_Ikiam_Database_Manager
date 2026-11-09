@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
@@ -11,6 +11,7 @@ import { createAssistant } from '../server/assistant.mjs';
 import { findRecords, keyColumns } from '../server/records-tool.mjs';
 import { noteText } from '../server/notebook.mjs';
 import { LINES_FILE_BYTES } from '../server/notebook-tool.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 // The assistant's tools after their first real use: what null means in a proposal, notes in the
 // team's form, notebook pages in line order with context rows, and row queries that stay small.
@@ -338,6 +339,59 @@ test('update_proposal takes highlight in changes (a row already in the proposal)
   }
 });
 
+test("linesFile and saveLines in the calling chat's own workspace: the eval's and the lab's (retro 9 Nov: 10 + 2 calls)", async () => {
+  // The eval app: the admin `lab` chats in ~/.t3-ithomiini-lab/workspaces-eval/eval, a T3 project folder that is not
+  // <t3Workspaces>/lab. T3 knows the chat of each tool call (its tool-use id) and that chat's project folder.
+  const dir = mkdtempSync(join(tmpdir(), 'ithomiini-chatroot-'));
+  const workspaces = join(dir, 't3-workspaces');
+  const evalRoot = join(dir, 'workspaces-eval', 'eval');
+  const anaOwn = join(dir, 'workspaces', 'ana');
+  mkdirSync(workspaces, { recursive: true });
+  mkdirSync(join(evalRoot, 'work', '2026-11-09-nb'), { recursive: true });
+  mkdirSync(join(anaOwn, 'work'), { recursive: true });
+  writeFileSync(join(evalRoot, 'work', '2026-11-09-nb', 'page.json'), JSON.stringify(PAGE));
+  writeFileSync(join(anaOwn, 'work', 'p.json'), JSON.stringify(PAGE));
+  const chats = { toolu_eval_0001: ['t-eval', evalRoot], toolu_ana_0001: ['t-ana', anaOwn], toolu_ana_0002: ['t-ana-eval', evalRoot] };
+  const t3Chats = {
+    threadOfToolUse: id => chats[id]?.[0] ?? null,
+    workspaceOf: thread => Object.values(chats).find(([t]) => t === thread)?.[1] ?? null,
+    threads: () => new Map(),
+    onlyRunning: () => null,
+    findProposals: () => [],
+    ownerOf: () => null,
+  };
+  const sheets = new LocalSheets(NOTEBOOK_SHEETS);
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: Object.keys(NOTEBOOK_SHEETS) });
+    const assistant = createAssistant({ store, config: { t3Workspaces: workspaces, t3Chats, chatRootWaitMs: 0 } });
+    const lab = signIn(store, assistant, { id: 'u-lab', username: 'lab', role: 'admin', toolUseId: 'toolu_eval_0001' });
+    // Relative to the chat's folder, or its full path, as the logged chats gave it.
+    const out = await lab.call('match_notebook', { linesFile: 'work/2026-11-09-nb/page.json', includeUnchanged: true });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    const full = await lab.call('match_notebook', { linesFile: join(evalRoot, 'work', '2026-11-09-nb', 'page.json'), replaceProposalId: out.proposalId });
+    assert.equal(full.proposalId, out.proposalId, JSON.stringify(full));
+    // saveLines writes into the chat's work/ (logged: "cannot be written there").
+    const saved = await lab.call('get_proposal', { proposalId: out.proposalId, saveLines: 'work/2026-11-09-nb/again.json' });
+    assert.ok(!saved.error, JSON.stringify(saved));
+    assert.ok(existsSync(join(evalRoot, 'work', '2026-11-09-nb', 'again.json')));
+    assert.ok(Array.isArray(JSON.parse(readFileSync(join(evalRoot, 'work', '2026-11-09-nb', 'again.json'), 'utf8')).lines));
+    // Missing there: the path checked, the folders allowed, the lines inline.
+    assert.equal(
+      (await lab.call('match_notebook', { linesFile: 'work/2026-11-09-nb/nope.json' })).error,
+      `linesFile work/2026-11-09-nb/nope.json: not found (checked ${join(evalRoot, 'work', '2026-11-09-nb', 'nope.json')}); allowed folders: ${realpathSync(join(evalRoot, 'work'))}/; or pass \`lines\` inline. Nothing was proposed.`,
+    );
+    // A person's chat in their own folder elsewhere (the lab layout) is theirs; another's folder is not, unless admin.
+    const ana = signIn(store, assistant, { id: 'u-ana', username: 'ana', role: 'editor', toolUseId: 'toolu_ana_0001' });
+    assert.ok((await ana.call('match_notebook', { linesFile: 'work/p.json' })).proposalId);
+    const anaInEval = await ana.call('match_notebook', { linesFile: 'work/2026-11-09-nb/page.json' }, { 'claudecode/toolUseId': 'toolu_ana_0002' });
+    assert.equal(anaInEval.error, `linesFile work/2026-11-09-nb/page.json: no workspace of yours (ana) on this server (looked in ${join(workspaces, 'ana')}); or pass \`lines\` inline. Nothing was proposed.`);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("match_notebook reads a notebook reader's file from the work/ folder of the person's own workspace", async () => {
   const workspaces = mkdtempSync(join(tmpdir(), 'ithomiini-workspaces-'));
   const own = join(workspaces, 'franz');
@@ -370,17 +424,15 @@ test("match_notebook reads a notebook reader's file from the work/ folder of the
     writeFileSync(join(own, 'work', 'empty.json'), '{"kind": "stocks"}');
     writeFileSync(join(own, 'work', 'p1.txt'), JSON.stringify(PAGE));
     for (const [linesFile, why] of [
-      ['page.json', /not in this workspace's work\/ folder/],
-      ['work/../../other/work/p.json', /not in this workspace's work\/ folder/],
-      [join(workspaces, 'other', 'work', 'p.json'), /not in this workspace's work\/ folder/],
-      ['work/link.json', /not in this workspace's work\/ folder/],
-      // Where the server looked, and what to give instead (retro 8 Nov: 10 calls refused "not found", then retried with the full path).
-      ['work/missing.json', new RegExp(`: not found in ${realpathSync(own)}/work/; give the page's \`lines\` in the call instead\\. Nothing was proposed\\.$`)],
-      // Missing and outside work/: said as outside, not as not found in work/ (critic F4).
-      // …naming the work/ folder and the lines instead (critic N2), as for an existing file outside it.
-      ['nowhere/missing.json', new RegExp(`: not in this workspace's work/ folder \\(${realpathSync(own)}/work/\\); give the page's \`lines\` in the call instead\\. Nothing was proposed\\.$`)],
-      [join(workspaces, 'other', 'work', 'missing.json'), /: not in this workspace's work\/ folder \(.*\/franz\/work\/\); give the page's `lines` in the call instead\. Nothing was proposed\.$/],
-      ['page.json', /: not in this workspace's work\/ folder \(.*\/franz\/work\/\); give the page's `lines` in the call instead\. Nothing was proposed\.$/],
+      ['page.json', /not in an allowed work\/ folder/],
+      ['work/../../other/work/p.json', /not in an allowed work\/ folder/],
+      [join(workspaces, 'other', 'work', 'p.json'), /not in an allowed work\/ folder/],
+      ['work/link.json', /not in an allowed work\/ folder/],
+      // The path checked, the folders allowed, or the lines inline (retro 8 and 9 Nov: "not found", then the full path tried again).
+      ['work/missing.json', new RegExp(`: not found \\(checked ${join(own, 'work', 'missing.json')}\\); allowed folders: ${realpathSync(own)}/work/; or pass \`lines\` inline\\. Nothing was proposed\\.$`)],
+      // Missing and outside work/: said as outside (critic F4), with the folders allowed and the lines inline.
+      ['nowhere/missing.json', new RegExp(`: not in an allowed work/ folder \\(checked ${join(own, 'nowhere', 'missing.json')}\\); allowed folders: ${realpathSync(own)}/work/; or pass \`lines\` inline\\. Nothing was proposed\\.$`)],
+      [join(workspaces, 'other', 'work', 'missing.json'), /: not in an allowed work\/ folder \(checked .*\/other\/work\/missing\.json\); allowed folders: .*\/franz\/work\/; or pass `lines` inline\. Nothing was proposed\.$/],
       ['work/big.json', /larger than 512 KB/],
       ['work/bad.json', /not valid JSON/],
       ['work/empty.json', /no `lines`/],
@@ -405,7 +457,7 @@ test("match_notebook reads a notebook reader's file from the work/ folder of the
     try {
       assert.equal(
         (await other.call('match_notebook', { linesFile: 'work/2026-11-06-nb/page.json' })).error,
-        `linesFile work/2026-11-06-nb/page.json: no workspace of yours (franz) on this server (looked in ${join(elsewhere, 'franz')}); give the page's \`lines\` in the call instead. Nothing was proposed.`,
+        `linesFile work/2026-11-06-nb/page.json: no workspace of yours (franz) on this server (looked in ${join(elsewhere, 'franz')}); or pass \`lines\` inline. Nothing was proposed.`,
       );
     } finally {
       other.store.close();

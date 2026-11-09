@@ -141,11 +141,11 @@ test('saveLines: implied columns left out, pages kept before page_json from thei
     writeFileSync(join(workspaces, 'other', 'work', 'x.json'), '{}');
     symlinkSync(join(workspaces, 'other', 'work'), join(own, 'work', 'out'));
     for (const [saveLines, why] of [
-      ['page.json', /not in this workspace's work\/ folder/],
-      ['work/../../other/work/p.json', /not in this workspace's work\/ folder/],
-      [join(workspaces, 'other', 'work', 'p.json'), /not in this workspace's work\/ folder/],
-      ['work/out/p.json', /not in this workspace's work\/ folder/],
-      ['work/out/x.json', /not in this workspace's work\/ folder/],
+      ['page.json', /not in an allowed work\/ folder/],
+      ['work/../../other/work/p.json', /not in an allowed work\/ folder/],
+      [join(workspaces, 'other', 'work', 'p.json'), /not in an allowed work\/ folder/],
+      ['work/out/p.json', /not in an allowed work\/ folder/],
+      ['work/out/x.json', /not in an allowed work\/ folder/],
       ['work/p.txt', /\.json/],
       ['work', /\.json/],
     ]) {

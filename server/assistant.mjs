@@ -3209,7 +3209,25 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * label by index; `full`: every row as the table shows it, from row `offset` on, as many
    * as fit in one answer.
    */
-  function getProposal(args, context) {
+  /**
+   * The calling chat's project folder (T3: the thread of this tool call), for the files of its work/
+   * (linesFile, saveLines): a person's own, or any for an admin (the eval and lab workspaces). T3 may
+   * record the call a moment late: asked again for up to `chatRootWaitMs`.
+   */
+  async function chatRootOf(context) {
+    const toolUseId = context.t3?.toolUseId;
+    if (!t3?.workspaceOf || !toolUseId) return null;
+    const end = Date.now() + (config.chatRootWaitMs ?? 2000);
+    for (;;) {
+      const id = t3.threadOfToolUse(toolUseId, ago(now(), 10 * 60_000));
+      const root = id ? t3.workspaceOf(id) : null;
+      if (root) return basename(root) === context.user?.username || context.user?.role === 'admin' ? root : null;
+      if (Date.now() >= end) return null;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+
+  async function getProposal(args, context) {
     const proposal = readableProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
@@ -3227,7 +3245,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (args.saveLines) {
       const page = proposalPage(proposal, id => store.getRecord(id));
       if (page.error) return { error: `saveLines: ${page.error}` };
-      const saved = writeLinesFile(String(args.saveLines).trim(), page.file, { workspaces, username: context.user?.username });
+      const chatRoot = await chatRootOf(context);
+      const saved = writeLinesFile(String(args.saveLines).trim(), page.file, { workspaces, username: context.user?.username, chatRoot });
       if (saved.error) return saved;
       return {
         proposalId: proposal.id,
@@ -6661,9 +6680,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * proposal for the page, replacing the page's earlier one when Claude matches
    * it again after a correction.
    */
-  function matchNotebook(given, context) {
-    // A notebook-reader's file (linesFile) in the person's own workspace: its lines are read here.
-    const loaded = withLinesFile(given, { workspaces, username: context.user?.username });
+  async function matchNotebook(given, context) {
+    // A notebook-reader's file (linesFile) in the person's own workspace, else in the calling chat's: its lines are read here.
+    let loaded = withLinesFile(given, { workspaces, username: context.user?.username });
+    if (loaded.error) {
+      const chatRoot = await chatRootOf(context);
+      if (chatRoot) loaded = withLinesFile(given, { workspaces, username: context.user?.username, chatRoot });
+    }
     if (loaded.error) return { error: loaded.error };
     const args = loaded.args;
     if (!Array.isArray(args.lines) && typeof args.lines !== 'string') return { error: 'Give `lines` or `linesFile`. Nothing was proposed.' };

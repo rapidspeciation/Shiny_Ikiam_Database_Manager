@@ -139,22 +139,36 @@ const exists = path => {
 };
 
 /**
- * A file in the work/ folder of the person's own T3 workspace (<workspaces>/<username>, as
- * scripts/t3-provision.mjs makes it), given relative to the workspace or as its full path:
- * { path } (links followed, still in work/) or { why }. `create`: the file and its folders
- * may not be there yet.
+ * A file in a work/ folder the person may use: their own T3 workspace (<workspaces>/<username>, as
+ * scripts/t3-provision.mjs makes it) and the calling chat's project folder (`chatRoot`, when the
+ * server knows it: the eval and lab workspaces), given relative to the workspace (the chat's first)
+ * or as its full path: { path } (links followed, still in work/) or { why, none? } naming the paths
+ * checked and the folders allowed. `create`: the file and its folders may not be there yet.
  */
-function workFile(given, { workspaces, username }, { create = false } = {}) {
+function workFile(given, { workspaces, username, chatRoot = null }, { create = false } = {}) {
   const name = String(username ?? '');
-  if (!workspaces || !name || basename(name) !== name || name.startsWith('.')) return { why: 'no workspace of yours on this server', none: true };
-  const root = join(workspaces, name);
-  // The person's workspace is not on this server (another machine's chat, or not provisioned): no file of theirs is here.
-  if (!exists(root)) return { why: `no workspace of yours (${name}) on this server (looked in ${root})`, none: true };
+  const own = workspaces && name && basename(name) === name && !name.startsWith('.') ? join(workspaces, name) : null;
+  const roots = [...new Set([chatRoot, own].filter(Boolean))];
+  const there = roots.filter(exists);
+  if (!there.length)
+    return { why: own ? `no workspace of yours (${name}) on this server (looked in ${roots.join(', ')})` : 'no workspace of yours on this server', none: true };
+  const tried = there.map(root => inWork(given, root, create));
+  const hit = tried.find(t => t.path);
+  if (hit) return hit;
+  const allowed = `allowed folders: ${tried.map(t => `${t.work}/`).join(', ')}`;
+  const other = tried.find(t => !t.missing && !t.outside);
+  if (other) return { why: other.why };
+  const missing = tried.filter(t => t.missing);
+  if (missing.length) return { why: `not found (checked ${missing.map(t => t.checked).join(', ')}); ${allowed}`, none: true };
+  return { why: `not in an allowed work/ folder (checked ${tried[0].checked}); ${allowed}`, none: true };
+}
+
+/** `given` in the work/ folder of one workspace `root`: { path, work } or { why, work, missing?, checked?, outside? }. */
+function inWork(given, root, create) {
   let work = join(root, 'work');
-  // Outside work/: the folder it must be in, and (match_notebook) the lines instead.
-  const outside = () => ({ why: `not in this workspace's work/ folder (${work}/)`, none: true });
   // The path as given, resolved: whether a missing file would be in work/.
   let base = resolve(isAbsolute(given) ? given : join(root, given));
+  const checked = base;
   try {
     work = exists(work) ? realpathSync(work) : join(realpathSync(root), 'work');
     // The part of the path that is there, links followed (so a link out of work/ is refused), then the rest.
@@ -164,15 +178,13 @@ function workFile(given, { workspaces, username }, { create = false } = {}) {
       base = dirname(base);
     }
     const path = join(realpathSync(base), ...rest);
-    if (!path.startsWith(work + sep)) return outside();
-    if (exists(path) && !statSync(path).isFile()) return { why: 'not a file' };
-    return { path };
+    if (!path.startsWith(work + sep)) return { why: 'outside', outside: true, checked, work };
+    if (exists(path) && !statSync(path).isFile()) return { why: 'not a file', work };
+    return { path, work };
   } catch (e) {
     if (!create && e.code === 'ENOENT')
-      return [work, join(root, 'work')].some(w => base.startsWith(w + sep))
-        ? { why: `not found in ${work}/`, none: true }
-        : outside();
-    return { why: create ? 'cannot be written there' : 'cannot be read' };
+      return [work, join(root, 'work')].some(w => checked.startsWith(w + sep)) ? { why: 'missing', missing: true, checked, work } : { why: 'outside', outside: true, checked, work };
+    return { why: create ? 'cannot be written there' : 'cannot be read', work };
   }
 }
 
@@ -188,7 +200,7 @@ export function withLinesFile(args, workspace) {
   const fail = why => ({ error: `linesFile ${clip(given, 200)}: ${why}. Nothing was proposed.` });
   if (!/\.json$/i.test(given)) return fail('give the .json file the reader wrote in work/');
   const at = workFile(given, workspace);
-  if (at.why) return fail(at.none ? `${at.why}; give the page's \`lines\` in the call instead` : at.why);
+  if (at.why) return fail(at.none ? `${at.why}; or pass \`lines\` inline` : at.why);
   let data;
   try {
     if (statSync(at.path).size > LINES_FILE_BYTES) return fail(`larger than ${LINES_FILE_BYTES / 1024} KB`);
