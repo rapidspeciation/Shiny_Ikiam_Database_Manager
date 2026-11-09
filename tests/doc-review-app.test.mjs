@@ -144,7 +144,7 @@ test('a refresh writes the change into the workspaces: their brief and their ski
   assert.doesNotMatch(readFileSync(join(workspace, '.claude', 'skills', 'app-dev', 'SKILL.md'), 'utf8'), /applied in the app/);
 });
 
-test('git: a change that grows a part records it in assistant/context-budget.json in the same commit', async () => {
+test('git: a change that grows or shrinks a part records only that part in assistant/context-budget.json, in the same commit', async () => {
   // A clone of this checkout's last commit: the real budget script measures it.
   const base = mkdtempSync(join(tmpdir(), 'doc-budget-'));
   const work = join(base, 'work');
@@ -152,7 +152,13 @@ test('git: a change that grows a part records it in assistant/context-budget.jso
   const g = (...args) => execFileSync('git', ['-C', work, ...args], { encoding: 'utf8' });
   const rel = 'assistant/AGENTS.md';
   const was = readFileSync(join(work, rel), 'utf8');
-  const budgetBefore = JSON.parse(readFileSync(join(work, 'assistant', 'context-budget.json'), 'utf8')).parts.brief.bytes;
+  // Drift already in the worktree (another part off its recorded size): not this change's, so left as it is.
+  const budgetPath = join(work, 'assistant', 'context-budget.json');
+  const seeded = JSON.parse(readFileSync(budgetPath, 'utf8'));
+  seeded.parts['skill:weather'] = { bytes: 1, reason: 'drift' };
+  writeFileSync(budgetPath, JSON.stringify(seeded, null, 2) + '\n');
+  g('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-am', 'drift');
+  const budgetBefore = seeded.parts.brief.bytes;
   const text = `${was.trimEnd()}\n\nOne more line.\n`;
   const sync = createGitSync({ worktree: work, push: false, author: { name: 'App', email: 'app@example.invalid' } });
   const out = await sync.commit({ path: rel, text, parentHash: hashText(was), message: 'Instrucciones: AGENTS.md § Brief', budgetReason: 'Instrucciones: AGENTS.md § Brief (doc change x)' });
@@ -161,4 +167,19 @@ test('git: a change that grows a part records it in assistant/context-budget.jso
   const brief = JSON.parse(readFileSync(join(work, 'assistant', 'context-budget.json'), 'utf8')).parts.brief;
   assert.equal(brief.bytes, budgetBefore + Buffer.byteLength('\n\nOne more line.'));
   assert.equal(brief.reason, 'Instrucciones: AGENTS.md § Brief (doc change x)');
+  const after = JSON.parse(readFileSync(budgetPath, 'utf8')).parts;
+  assert.deepEqual(after['skill:weather'], { bytes: 1, reason: 'drift' }, 'drift elsewhere is not recorded');
+  assert.deepEqual(after['mcp deferred names'], seeded.parts['mcp deferred names']);
+  // A shrink: the bytes go down, the part keeps its reason.
+  const shorter = text.replace('\n\nOne more line.', '');
+  const back = await sync.commit({ path: rel, text: shorter, parentHash: hashText(text), message: 'Instrucciones: AGENTS.md § Brief (deshecho)', budgetReason: 'y' });
+  assert.equal(back.state, 'committed');
+  const shrunk = JSON.parse(readFileSync(budgetPath, 'utf8')).parts.brief;
+  assert.deepEqual(shrunk, { bytes: budgetBefore, reason: 'Instrucciones: AGENTS.md § Brief (doc change x)' });
+  // A change that moves no part (a skill's body): the budget file is not in the commit.
+  const skill = 'assistant/skills/weather/SKILL.md';
+  const skillText = readFileSync(join(work, skill), 'utf8');
+  const body = await sync.commit({ path: skill, text: `${skillText.trimEnd()}\n\nOne more line.\n`, parentHash: hashText(skillText), message: 'Instrucciones: weather' });
+  assert.equal(body.state, 'committed');
+  assert.deepEqual(g('show', '--name-only', '--format=', 'HEAD').trim().split('\n'), [skill]);
 });

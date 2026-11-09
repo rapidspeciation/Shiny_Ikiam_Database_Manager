@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   DOC_TOOLS,
+  budgetChanges,
   budgetGrowth,
   createDocReview,
   createGitSync,
@@ -323,6 +324,15 @@ test('the context-size ratchet: a growth past the recorded bytes is shown and ne
   const shrink = await d.runTool('propose_doc_change', { path: 'assistant/AGENTS.md', heading: 'Reglas', before: 'Una regla más larga.', after: 'Regla.' }, { user: admin });
   assert.equal(shrink.grows, undefined);
   d.apply(admin, shrink.changeId);
+});
+
+test('the budget file after a change: only the parts it moved, a growth with its reason, a shrink keeps its own', () => {
+  const budget = { about: 'x', parts: { brief: { bytes: 100, reason: 'old' }, 'skill:a': { bytes: 5, reason: 'drift' } } };
+  const grown = budgetChanges(budget, { brief: 90, 'skill:a': 7 }, { brief: 95, 'skill:a': 7 }, 'change 1');
+  assert.deepEqual(grown.parts, { brief: { bytes: 105, reason: 'change 1' }, 'skill:a': { bytes: 5, reason: 'drift' } });
+  assert.equal(grown.about, 'x');
+  assert.deepEqual(budgetChanges(budget, { brief: 90 }, { brief: 80 }, 'change 2').parts.brief, { bytes: 90, reason: 'old' });
+  assert.equal(budgetChanges(budget, { brief: 90 }, { brief: 90 }, 'r'), null);
 });
 
 test('the doc tools are deferred and carry the writing rules', () => {

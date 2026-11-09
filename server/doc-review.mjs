@@ -304,6 +304,39 @@ export async function wordDiff(before, after) {
   }
 }
 
+/** The context parts' bytes of a checkout (its scripts/context-budget.mjs, in a child process); null when it fails. */
+function measureIn(worktree, node = process.execPath) {
+  // The paths in the environment: as argv[1] the script would take itself for the command line and print its table.
+  const code = 'const m = await import(process.env.DOC_BUDGET_SCRIPT); process.stdout.write(JSON.stringify(await m.measureParts(process.env.DOC_BUDGET_ROOT)));';
+  const env = { ...process.env, DOC_BUDGET_SCRIPT: join(worktree, 'scripts', 'context-budget.mjs'), DOC_BUDGET_ROOT: worktree };
+  return new Promise(resolve =>
+    execFile(node, ['--input-type=module', '-e', code], { cwd: worktree, env, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (e, out) => {
+      try {
+        resolve(e ? null : JSON.parse(String(out)));
+      } catch {
+        resolve(null);
+      }
+    }),
+  );
+}
+
+/**
+ * The budget file with only the parts that differ between `before` and `after` moved by that difference: a growth
+ * takes `reason`, a shrink keeps the part's reason. null when no part changed.
+ */
+export function budgetChanges(budget, before, after, reason) {
+  const parts = { ...(budget.parts ?? {}) };
+  let changed = false;
+  for (const [key, bytes] of Object.entries(after)) {
+    const delta = bytes - (before[key] ?? 0);
+    if (!delta) continue;
+    changed = true;
+    const old = parts[key] ?? { bytes: 0 };
+    parts[key] = delta > 0 ? { ...old, bytes: old.bytes + delta, reason } : { ...old, bytes: old.bytes + delta };
+  }
+  return changed ? { ...budget, parts } : null;
+}
+
 /**
  * Commits revisions in a worktree of the source (docSync): fetch and fast-forward first, then the file, the
  * budget file when a size changed, one commit; a push only when `push`, with up to 3 rebases.
@@ -340,14 +373,24 @@ export function createGitSync({ worktree, push = false, remote = 'origin', branc
       if (!job.sectionBefore || at < 0 || was.indexOf(job.sectionBefore, at + 1) >= 0) return { state: 'failed', error: 'conflict' };
       next = was.slice(0, at) + job.sectionAfter + was.slice(at + job.sectionBefore.length);
     }
+    // The size ratchet: the parts this change makes larger or smaller, measured in the worktree before and after
+    // it, are recorded (a growth with the change's reason), so the next deploy's test passes. Other parts are left
+    // as recorded, drift included: that is not this change's to explain.
+    const budgetFile = join(worktree, 'assistant', 'context-budget.json');
+    const ratchet = existsSync(join(worktree, 'scripts', 'context-budget.mjs')) && existsSync(budgetFile);
+    const sizesBefore = ratchet ? await measureIn(worktree, node) : null;
     writeFileSync(file, next);
     const paths = [job.path];
-    // The size ratchet: the next deploy's test needs the file to match (a growth with this change's reason).
-    if (existsSync(join(worktree, 'scripts', 'context-budget.mjs')) && existsSync(join(worktree, 'assistant', 'context-budget.json'))) {
-      await new Promise(resolve =>
-        execFile(node, ['scripts/context-budget.mjs', '--write', '--reason', job.budgetReason || job.message], { cwd: worktree, timeout: 120_000 }, () => resolve()),
-      );
-      if ((await git(worktree, ['status', '--porcelain', '--', 'assistant/context-budget.json'])).trim()) paths.push('assistant/context-budget.json');
+    if (sizesBefore) {
+      const sizesAfter = await measureIn(worktree, node);
+      if (sizesAfter) {
+        const budget = JSON.parse(readFileSync(budgetFile, 'utf8'));
+        const recorded = budgetChanges(budget, sizesBefore, sizesAfter, job.budgetReason || job.message);
+        if (recorded) {
+          writeFileSync(budgetFile, JSON.stringify(recorded, null, 2) + '\n');
+          paths.push('assistant/context-budget.json');
+        }
+      }
     }
     await git(worktree, ['add', '--', ...paths]);
     if (!(await git(worktree, ['diff', '--cached', '--name-only'])).trim()) {
