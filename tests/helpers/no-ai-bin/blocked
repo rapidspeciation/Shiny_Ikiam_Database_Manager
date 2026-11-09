@@ -1,0 +1,11 @@
+#!/bin/sh
+# First on every test's PATH (tests/helpers/no-ai-core.mjs): stands for a model CLI, wacli or ssh that a test or a script
+# it ran would start. Writes the attempt to the guard's logs (the test then fails) and exits 1, as a failing CLI would.
+name=${0##*/}
+line="no-ai guard: refused CLI $name $* (PATH shim, test ${NOAI_GUARD_FILE:-?}, parent pid $PPID)"
+IFS=:
+for log in ${NOAI_GUARD_LOGS:-} ${NOAI_GUARD_RECORD:-}; do
+  [ -n "$log" ] && printf '%s\n' "$line" >> "$log" 2>/dev/null
+done
+echo "no-ai guard: $name is not started in tests (tests/helpers/no-ai-bin)" >&2
+exit 1
