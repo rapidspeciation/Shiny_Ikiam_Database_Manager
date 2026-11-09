@@ -436,3 +436,68 @@ test('git: each revision is one commit in the worktree; pushed only when enabled
   assert.equal((await pushing.commit({ path: 'server/index.mjs', text: 'x' })).state, 'failed');
   assert.equal((await pushing.commit({ path: 'assistant/x.json', text: 'x' })).state, 'failed');
 });
+
+test("Claude's answer without a change leaves the thread open for people; «Pedir a Claude» and doc_threads skip it until someone replies", async () => {
+  const { root, db } = fixture();
+  const d = createDocReview({ db, root });
+  const t = d.createThread(observer, { path: SKILL_PATH, quote: 'Dos fotos', heading: 'Fotos', body: '¿Por qué dos?' });
+  assert.equal((await d.runTool('reply_doc_thread', { id: t.id, text: 'Una por lado.', resolve: true }, { user: admin })).ok, true);
+  assert.equal(d.state(observer).threads[0].status, 'open', 'Claude cannot resolve');
+  assert.deepEqual(d.openThreads(), []);
+  assert.deepEqual((await d.runTool('doc_threads', {}, { user: admin })).threads, []);
+  assert.doesNotMatch(DOC_TOOLS.find(x => x.function.name === 'reply_doc_thread').function.description, /resolve\b(?! threads)/);
+  assert.equal(DOC_TOOLS.find(x => x.function.name === 'reply_doc_thread').function.parameters.properties.resolve, undefined);
+  d.reply(observer, t.id, 'Pero en el tubo hay tres.');
+  assert.deepEqual(d.openThreads(), [t.id]);
+});
+
+test('an ask: running while Claude works, then what it produced until the person opens or dismisses it; a new version shows «respondiendo» meanwhile', async () => {
+  const { root, db } = fixture();
+  let clock = Date.parse('2026-11-09T10:00:00Z');
+  const now = () => new Date(clock).toISOString();
+  let busy = true;
+  const d = createDocReview({ db, root, now, chats: { session: () => ({ busy }) } });
+  const t = d.createThread(observer, { path: SKILL_PATH, quote: 'Usa NA', heading: 'Datos', body: '¿NA?' });
+  d.recordAsk(admin, 'chat-1', 'ask', { threads: [t.id] });
+  assert.equal(d.state(admin).ask.state, 'running');
+  clock += 5_000;
+  const c = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NC', thread_ids: [t.id] }, { user: admin, chat: 'chat-1' });
+  await d.runTool('reply_doc_thread', { id: t.id, text: 'Propuesto.' }, { user: admin });
+  clock += 60_000;
+  busy = false;
+  const ask = d.state(admin).ask;
+  assert.equal(ask.state, 'finished');
+  assert.deepEqual(ask.result, { changes: 1, replies: 1, path: SKILL_PATH });
+  assert.equal(ask.seen, false);
+  d.seenAsk(admin, ask.id);
+  assert.equal(d.state(admin).ask.seen, true);
+  assert.equal(d.state(observer).ask.seen, false, 'seen per person');
+  // «Pedir versión nueva»: respondiendo until the new version arrives or the run ends.
+  clock += 1000;
+  busy = true;
+  d.recordAsk(admin, 'chat-1', 'revise', { changes: [c.changeId] });
+  assert.equal(d.state(admin).changes[0].revising, true);
+  clock += 30_000;
+  busy = false;
+  assert.equal(d.state(admin).changes[0].revising, false, 'the run ended');
+  busy = true;
+  d.recordAsk(admin, 'chat-1', 'revise', { changes: [c.changeId] });
+  clock += 1000;
+  await d.runTool('revise_doc_change', { change_id: c.changeId, after: 'Usa NOT_COLLECTED' }, { user: admin });
+  assert.equal(d.state(admin).changes[0].revising, false, 'a new version arrived');
+});
+
+test('a version made after the section changed, or proposed again, says so in a system line', async () => {
+  const { root, db } = fixture();
+  const d = createDocReview({ db, root });
+  const one = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'Dos fotos', after: 'Tres fotos' }, { user: admin });
+  const two = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'por lado', after: 'por cada lado' }, { user: admin });
+  d.apply(admin, two.changeId);
+  await d.runTool('revise_doc_change', { change_id: one.changeId, after: 'Tres fotos' }, { user: admin });
+  const lines = () => d.state(admin).changes.find(c => c.seriesId === one.changeId).comments.filter(c => c.kind === 'system').map(c => c.body);
+  assert.deepEqual(lines(), ['version_after_stale:2']);
+  d.apply(admin, one.changeId);
+  await d.undo(admin, one.changeId);
+  await d.repropose(admin, one.changeId);
+  assert.deepEqual(lines(), ['version_after_stale:2', 'version_reproposed:3']);
+});

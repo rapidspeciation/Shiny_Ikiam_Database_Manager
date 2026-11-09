@@ -727,6 +727,7 @@ async function docReviewRoute({ docReview: d, method, path, body, user, config, 
   if (method === 'POST' && kind === 'changes' && action === 'undo') return d.undo(user, id);
   if (method === 'POST' && kind === 'changes' && action === 'repropose') return d.repropose(user, id);
   if (method === 'POST' && kind === 'revisions' && action === 'retry') return d.retryGit(user, id);
+  if (method === 'POST' && kind === 'asks' && action === 'seen') return d.seenAsk(user, id);
   // «Pedir versión nueva» (a comment on a change) and «Pedir a Claude que la rehaga» (a stale one): to the change's chat.
   if (method === 'POST' && kind === 'changes' && action === 'revise') {
     if (!d.isAdmin(user)) throw fail('FORBIDDEN', 'Only administrators', 403);
@@ -748,7 +749,7 @@ async function docReviewRoute({ docReview: d, method, path, body, user, config, 
     if (!d.isAdmin(user)) throw fail('FORBIDDEN', 'Only administrators', 403);
     const open = d.openThreads();
     if (!open.length) throw fail('NOTHING_OPEN', 'No open comments', 409);
-    const now = d.askState();
+    const now = d.askState(user);
     if (now.state === 'running') return { chat: now.chat, running: true };
     const text = ASK_TEXT(open.length, config.publicUrl);
     const chat = await startDocChat({ config, t3Projects, user, text });

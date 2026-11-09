@@ -57,6 +57,7 @@ export function initDocReview(db) {
       applied_by TEXT, applied_at TEXT NOT NULL, undone_by TEXT, undone_at TEXT,
       git_state TEXT NOT NULL DEFAULT 'pending', git_commit TEXT, git_error TEXT);
     CREATE INDEX IF NOT EXISTS doc_revisions_path ON doc_revisions(path, id);
+    CREATE TABLE IF NOT EXISTS doc_ask_seen (ask_id TEXT NOT NULL, user_id TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY (ask_id, user_id));
     CREATE TABLE IF NOT EXISTS doc_asks (
       id TEXT PRIMARY KEY, asked_by TEXT NOT NULL, asked_at TEXT NOT NULL, chat_id TEXT, kind TEXT NOT NULL DEFAULT 'ask',
       thread_ids TEXT NOT NULL DEFAULT '[]', change_ids TEXT NOT NULL DEFAULT '[]');
@@ -446,10 +447,10 @@ export const DOC_TOOLS = [
     type: 'function',
     function: {
       name: 'reply_doc_thread',
-      description: 'Reply in a comment thread or on a change (its id). Short: the answer, or why nothing changes.',
+      description: 'Reply in a comment thread or on a change (its id). Short: the answer, or why nothing changes. People resolve threads.',
       parameters: {
         type: 'object',
-        properties: { id: { type: 'string' }, text: { type: 'string' }, resolve: { type: 'boolean' } },
+        properties: { id: { type: 'string' }, text: { type: 'string' } },
         required: ['id', 'text'],
       },
     },
@@ -606,6 +607,9 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const later = c.status === 'applied' && db.prepare("SELECT 1 FROM doc_changes WHERE path = ? AND heading = ? AND status = 'applied' AND decided_at > ? AND series_id <> ?").get(c.path, c.heading, c.decided_at, c.series_id);
     const lost = c.status === 'applied' && !later && !read(c.path).includes(c.after);
     const guard = checks && c.status === 'pending' && !stale ? cachedGuards(c) : null;
+    // «Pedir versión nueva» sent and no newer version yet, while Claude's run goes on.
+    const asked = c.status === 'pending' ? db.prepare("SELECT asked_at, chat_id FROM doc_asks WHERE kind = 'revise' AND change_ids LIKE ? ORDER BY asked_at DESC LIMIT 1").get(`%${seriesId}%`) : null;
+    const revising = !!asked && asked.asked_at > c.created_at && working(asked.chat_id, asked.asked_at);
     return {
       id: c.id,
       seriesId,
@@ -619,6 +623,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       status: c.status,
       stale,
       lost,
+      revising,
       chat: c.chat_id,
       createdAt: c.created_at,
       decidedAt: c.decided_at,
@@ -678,7 +683,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const counts = {};
     for (const t of threads) if (t.status === 'open') counts[t.path] = (counts[t.path] ?? 0) + 1;
     for (const c of changes) if (c.status === 'pending') counts[c.path] = (counts[c.path] ?? 0) + 1;
-    return { admin: isAdmin(user), threads, changes, counts, ask: askState() };
+    return { admin: isAdmin(user), threads, changes, counts, ask: askState(user) };
   }
 
   // ---------------------------------------------------------- threads and comments
@@ -795,6 +800,8 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const last = latestOf(prev);
     if (!['pending', 'superseded'].includes(last.status) && last.status !== 'discarded')
       return { error: `The change is ${last.status}: propose a new one with propose_doc_change.` };
+    const now0 = findSection(read(last.path), last.heading, last.before_part);
+    const wasStale = !now0 || hashText(now0.text) !== last.base_hash;
     const out = await draft({
       path: last.path,
       heading: last.heading,
@@ -812,6 +819,8 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       db.prepare("UPDATE doc_changes SET status = 'pending' WHERE id = ?").run(last.id);
       return { error: `Refused by the checks: ${JSON.stringify(out.checks)}` };
     }
+    // Why this version exists when its diff may look like the last one's.
+    if (wasStale) addComment({ series: last.series_id, author: 'system', kind: 'system', text: `version_after_stale:${out.change.version}` });
     return answer(out);
   }
   const answer = ({ change, budget: grows }) => ({
@@ -937,6 +946,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const c = pendingChange(id);
     const out = await draft({ path: c.path, heading: c.heading, before: findSection(read(c.path), c.heading)?.text ?? c.before, after: c.after, threadIds: parse(c.thread_ids, []), series: c.series_id, version: c.version + 1, chat: c.chat_id, by: user.id });
     if (out.error) throw fail('REPROPOSE', out.error, 409);
+    addComment({ series: c.series_id, author: 'system', kind: 'system', text: `version_reproposed:${out.change.version}` });
     return { change: seriesView(c.series_id, user) };
   }
 
@@ -957,28 +967,55 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   // ---------------------------------------------------------- asks
   const lastAsk = () => db.prepare('SELECT * FROM doc_asks ORDER BY asked_at DESC, rowid DESC LIMIT 1').get();
   const lastAskChat = () => lastAsk()?.chat_id ?? null;
-  function askState() {
+  /** A chat answering, or asked a moment ago (T3 may not show its run yet). */
+  const working = (chat, at) => !!chats?.session?.(chat)?.busy || Date.parse(now()) - Date.parse(at) < 20_000;
+  /**
+   * The last ask: running, finished or gone; once it ends, what it produced (changes and versions, Claude's replies)
+   * and the first file they are in, until `user` opened or dismissed it (`seen`).
+   */
+  function askState(user = null) {
     const a = lastAsk();
     if (!a?.chat_id) return { state: 'idle', chat: null, at: a?.asked_at ?? null };
     const s = chats?.session?.(a.chat_id);
-    return { state: s?.busy ? 'running' : s ? 'finished' : 'gone', chat: a.chat_id, at: a.asked_at };
+    const state = s === null ? 'gone' : working(a.chat_id, a.asked_at) ? 'running' : 'finished';
+    const out = { id: a.id, state, chat: a.chat_id, at: a.asked_at };
+    if (state === 'running') return out;
+    const made = db.prepare('SELECT path FROM doc_changes WHERE created_at >= ? ORDER BY created_at').all(a.asked_at);
+    const replies = db
+      .prepare("SELECT coalesce(t.path, ch.path) AS path FROM doc_comments c LEFT JOIN doc_threads t ON t.id = c.thread_id LEFT JOIN doc_changes ch ON ch.series_id = c.series_id AND ch.version = 1 WHERE c.kind = 'claude' AND c.created_at >= ? ORDER BY c.created_at")
+      .all(a.asked_at);
+    const seen = !!(user?.id && db.prepare('SELECT 1 FROM doc_ask_seen WHERE ask_id = ? AND user_id = ?').get(a.id, user.id));
+    return { ...out, result: { changes: made.length, replies: replies.length, path: made[0]?.path ?? replies[0]?.path ?? null }, seen };
+  }
+  function seenAsk(user, id) {
+    requireUser(user);
+    db.prepare('INSERT OR IGNORE INTO doc_ask_seen (ask_id, user_id, seen_at) VALUES (?,?,?)').run(String(id), user.id, now());
+    return { ok: true };
   }
   function recordAsk(user, chat, kind, { threads = [], changes = [] } = {}) {
     db.prepare('INSERT INTO doc_asks (id, asked_by, asked_at, chat_id, kind, thread_ids, change_ids) VALUES (?,?,?,?,?,?,?)').run(randomUUID(), user.id, now(), chat, kind, JSON.stringify(threads), JSON.stringify(changes));
   }
   /** Open threads no pending change answers yet (what «Pedir a Claude» sends). */
+  /** Open threads no pending change answers and Claude has not answered last (what «Pedir a Claude» sends). */
   function openThreads() {
     const covered = new Set(db.prepare("SELECT thread_ids FROM doc_changes WHERE status = 'pending'").all().flatMap(c => parse(c.thread_ids, [])));
-    return db.prepare("SELECT id FROM doc_threads WHERE status = 'open'").all().map(t => t.id).filter(id => !covered.has(id));
+    const lastWord = db.prepare("SELECT kind FROM doc_comments WHERE thread_id = ? AND kind <> 'system' AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1");
+    return db
+      .prepare("SELECT id FROM doc_threads WHERE status = 'open'")
+      .all()
+      .map(t => t.id)
+      .filter(id => !covered.has(id) && lastWord.get(id)?.kind !== 'claude');
   }
 
   // ---------------------------------------------------------- MCP
   function toolThreads(args, user) {
     const only = args.path ? String(args.path) : null;
+    // A thread Claude answered last waits for people (they reply or resolve it).
+    const lastWord = db.prepare("SELECT kind FROM doc_comments WHERE thread_id = ? AND kind <> 'system' AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1");
     const threads = db
       .prepare("SELECT * FROM doc_threads WHERE status = 'open' ORDER BY path, created_at")
       .all()
-      .filter(t => !only || t.path === only)
+      .filter(t => (!only || t.path === only) && lastWord.get(t.id)?.kind !== 'claude')
       .map(t => {
         const s = threadSection(read, t.path, t);
         return {
@@ -1015,8 +1052,8 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const id = String(args.id ?? '');
     const t = threadRow(id);
     if (t) {
+      // The thread stays open: the person who asked, or an admin, resolves it.
       addComment({ thread: t.id, author: 'claude', kind: 'claude', text });
-      if (args.resolve) db.prepare("UPDATE doc_threads SET status = 'resolved', resolved_by = 'claude', resolved_at = ? WHERE id = ?").run(now(), t.id);
       return { ok: true };
     }
     const c = changeRow(id);
@@ -1070,6 +1107,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     openThreads,
     recordAsk,
     askState,
+    seenAsk,
     lastAskChat,
     change: id => {
       const c = changeRow(String(id ?? ''));
