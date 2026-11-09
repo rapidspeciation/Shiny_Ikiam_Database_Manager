@@ -992,7 +992,9 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   async function revisionDiff(path, id) {
     const r = db.prepare('SELECT * FROM doc_revisions WHERE path = ? AND id = ?').get(path, Number(id));
     if (!r) return null;
-    return { revision: r.id, diff: (await wordDiff(r.section_before ?? '', r.section_after ?? '')) ?? '' };
+    // The section's own lines: the hunk's line numbers are not the file's.
+    const diff = (await wordDiff(r.section_before ?? '', r.section_after ?? '')) ?? '';
+    return { revision: r.id, diff: diff.replace(/^@@[^\n]*\n/, '') };
   }
 
   return {
