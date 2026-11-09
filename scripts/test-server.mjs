@@ -29,11 +29,11 @@ export const ALONE = [
   [/\bprocess\.(env|on|once|off|addListener|removeListener|removeAllListeners|prependListener|chdir|exit|exitCode|argv|umask|title|stdin|emit|setUncaughtExceptionCaptureCallback)\b|\bprocess\.kill\(\s*process\.pid/, 'the process: environment, handlers, cwd, exit'],
   [/\bglobalThis\b|\bglobal\./, 'globals'],
   [/\bmock\b/, 'mocks (timers, methods, modules)'],
-  [/\b(before|after|beforeEach|afterEach)\s*\(/, 'hooks (in a shared process they would run around every file)'],
+  // A test's own hooks (t.after) stay with that test; a file's (after(), test.after()) would run around every file.
+  [/(^|[^.\w$])(before|after|beforeEach|afterEach)\s*\(|\btest\.(before|after|beforeEach|afterEach)\s*\(/m, "a file's hooks (in a shared process they would run around every file)"],
   [/\b(console|Date|Math|JSON|Promise|performance|crypto|fetch|setTimeout|setInterval|clearTimeout|Buffer|URL)(\.[\w$]+)*\s*=(?!=)/, 'a built-in replaced'],
   [/Object\.(defineProperty|assign|setPrototypeOf)\s*\(\s*(process|globalThis|console|Date|Math|[\w$]+\.prototype)\b|\.prototype\.[\w$]+\s*=(?!=)/, 'a built-in or prototype changed'],
   [/\bsyncBuiltinESMExports\b/, 'built-in modules changed'],
-  [/\bimport\s*\(/, 'a module imported while running (its state)'],
   [/\bset[A-Z][\w$]*Cost\s*\(|\bsetPasswordHashCost\b/, 'a module setting (setPasswordHashCost)'],
 ];
 /** Files kept alone by hand, with why (state the patterns cannot see). */
