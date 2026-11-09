@@ -192,6 +192,9 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
       ...process.env,
       HOME: home,
       CODEX_HOME: join(home, '.codex'),
+      // Its own T3 home: the machine's (T3CODE_HOME in a T3 shell) names the real Claude accounts, whose .claude.json
+      // the provision would mark this temporary workspace trusted in.
+      T3CODE_HOME: join(home, '.t3'),
       ITHOMIINI_SHARED: lab,
       DATABASE_PATH: database,
       ITHOMIINI_MCP_URL: 'http://127.0.0.1:8795/api/ai/mcp',
