@@ -407,6 +407,8 @@ function nearOnly(db, message, sql) {
   if (loose(asked).length < 2) return {};
   try {
     if (m[1] === 'table') {
+      // A table-valued function this SQLite build does not have (retro 8 Nov): the way to number rows here.
+      if (/^generate_series$/i.test(asked)) return { near: ['WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT x FROM n'] };
       const near = db
         .prepare('SELECT name FROM _tables')
         .all()

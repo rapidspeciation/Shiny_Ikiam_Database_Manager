@@ -406,6 +406,7 @@ test('a column the query does not find: the closest of its own tables, else wher
       [['CLUTCH NUMBER']],
     );
     assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
+    assert.deepEqual(near('SELECT value FROM generate_series(1, 5)'), ['WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT x FROM n']);
 
     // The 8 Nov retro (30 "no such column" in a week). A UNION's half that lacks the column is named.
     const union = runQuery(db, "SELECT 'C', CAM_ID, Stock_of_origin FROM Collection_data UNION ALL SELECT 'I', Insectary_ID, Stock_of_origin FROM Insectary_data", 5);
