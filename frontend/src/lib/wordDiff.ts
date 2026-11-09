@@ -106,21 +106,35 @@ export function parseWordDiff(text: string, context = CONTEXT): DiffFile[] {
 
 /** A block of a section's diff read as text (ProseDiff): a paragraph whose source lines are joined, or a code line. */
 export type ProseBlock =
-  | { type: 'para' | 'code'; segments: Segment[]; changed: boolean }
+  | { type: 'para'; segments: Segment[]; changed: boolean; marker: 'bullet' | 'heading' | string | null }
+  | { type: 'code'; segments: Segment[]; changed: boolean }
   | { type: 'skip'; count: number }
   | { type: 'note'; text: string }
 
 /** A line that starts a block of its own in Markdown: a heading, a list item, a table row, a quote. */
 const BLOCK_START = /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>)/
 const FENCE = /^\s*(?:```|~~~)/
+/** The Markdown mark a block starts with: a heading's #, a list item's -, * or 1. (taken out of the text). */
+const MARKER = /^\s*(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)/
+
+/** Takes a block's Markdown mark out of its first words: 'heading', 'bullet', the item's number ('2.') or null. */
+function takeMarker(segments: Segment[]): string | null {
+  const first = segments.find(s => s.text.trim())
+  const m = first && MARKER.exec(first.text)
+  if (!first || !m) return null
+  first.text = first.text.slice(m[0].length)
+  const mark = m[1].trim()
+  return mark.startsWith('#') ? 'heading' : /^\d/.test(mark) ? mark : 'bullet'
+}
 
 /**
  * The rows of a word diff as prose: lines wrapped in the source join into one paragraph (with a space), blank
- * lines and Markdown block starts begin a new one, fenced code stays line by line. Hunk headers are dropped.
+ * lines and Markdown block starts begin a new one, fenced code stays line by line. Hunk headers are dropped, and
+ * headings and list items lose their Markdown mark (`marker` says which it was).
  */
 export function proseBlocks(rows: DiffRow[]): ProseBlock[] {
   const out: ProseBlock[] = []
-  let para: { type: 'para'; segments: Segment[]; changed: boolean } | null = null
+  let para: Extract<ProseBlock, { type: 'para' }> | null = null
   let fence = false
   for (const row of rows) {
     if (row.type === 'hunk') continue
@@ -142,7 +156,8 @@ export function proseBlocks(rows: DiffRow[]): ProseBlock[] {
       continue
     }
     if (!para || BLOCK_START.test(text)) {
-      para = { type: 'para', segments: [...row.segments], changed }
+      const segments = row.segments.map(s => ({ ...s }))
+      para = { type: 'para', segments, changed, marker: takeMarker(segments) }
       out.push(para)
       continue
     }
@@ -152,6 +167,26 @@ export function proseBlocks(rows: DiffRow[]): ProseBlock[] {
   return out
 }
 
-/** A segment's text split into plain text and `code` spans. */
-export const codeSpans = (text: string) =>
-  text.split(/(`[^`\n]+`)/).filter(Boolean).map(part => ({ code: part.length > 2 && part.startsWith('`') && part.endsWith('`'), text: part }))
+export interface InlinePiece {
+  text: string
+  code: boolean
+  bold: boolean
+}
+/**
+ * Each segment's text as the doc shows it: `code` spans without their backticks and **bold** without its stars
+ * (a span may run across segments: the word diff splits at spaces), links as their text.
+ */
+export function inlinePieces(segments: Segment[]): InlinePiece[][] {
+  let code = false
+  let bold = false
+  return segments.map(seg => {
+    const pieces: InlinePiece[] = []
+    const text = seg.text.replace(/\[([^\]]*)\]\([^)\s]*\)/g, '$1')
+    for (const part of text.split(/(`|\*\*)/)) {
+      if (part === '`') code = !code
+      else if (part === '**' && !code) bold = !bold
+      else if (part) pieces.push({ text: part, code, bold })
+    }
+    return pieces
+  })
+}

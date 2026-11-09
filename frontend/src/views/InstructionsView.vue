@@ -179,7 +179,7 @@ watch(
       <button
         v-else-if="review.state?.admin && openThreads"
         type="button"
-        class="btn ml-auto gap-1 px-2 py-0.5 text-xs"
+        class="btn-primary ml-auto gap-1 px-2 py-0.5 text-xs"
         :class="{ 'sm:ml-3': page && !page.historySource }"
         :disabled="asking"
         @click="askClaude"

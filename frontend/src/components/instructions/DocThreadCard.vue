@@ -70,7 +70,7 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
     </button>
     <ol class="space-y-2">
       <li v-for="c in shown" :key="c.id">
-        <p v-if="c.kind === 'system'" class="text-xs text-stone-500">{{ $t('Resuelto con el cambio') }}</p>
+        <p v-if="c.kind === 'system'" class="text-xs text-stone-500">{{ c.body === 'reopened_by_undo' ? $t('Reabierto al deshacer') : $t('Resuelto con el cambio') }}</p>
         <template v-else>
           <div class="flex items-baseline gap-2 text-xs text-stone-500">
             <span v-if="c.kind === 'claude'" class="doc-claude-tag">Claude</span>
@@ -78,23 +78,23 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
             <span>{{ commitTime(c.createdAt) }}</span>
             <span v-if="c.editedAt && !c.deleted">· {{ $t('editado') }}</span>
             <span v-if="c.own && !c.deleted && editing !== c.id" class="ml-auto flex gap-2">
-              <button type="button" class="hover:text-stone-800" @click.stop="startEdit(c)">{{ $t('Editar') }}</button>
-              <button type="button" class="hover:text-stone-800" @click.stop="remove(c)">{{ $t('Borrar') }}</button>
+              <button type="button" class="doc-act hover:text-stone-800" @click.stop="startEdit(c)">{{ $t('Editar') }}</button>
+              <button type="button" class="doc-act hover:text-stone-800" @click.stop="remove(c)">{{ $t('Borrar') }}</button>
             </span>
           </div>
           <p v-if="c.deleted" class="text-stone-400 italic">{{ $t('Comentario borrado') }}</p>
           <form v-else-if="editing === c.id" class="mt-1" @submit.prevent="saveEdit(c)">
             <textarea v-model="editText" rows="3" class="doc-box" />
             <div class="mt-1 flex justify-end gap-2">
-              <button type="button" class="btn-ghost px-2 py-0.5 text-xs" @click="editing = null">{{ $t('Cancelar') }}</button>
-              <button class="btn-primary px-2 py-0.5 text-xs" :disabled="busy || !editText.trim()">{{ $t('Guardar') }}</button>
+              <button type="button" class="doc-act btn-ghost px-2 py-0.5 text-xs" @click="editing = null">{{ $t('Cancelar') }}</button>
+              <button class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || !editText.trim()">{{ $t('Guardar') }}</button>
             </div>
           </form>
           <p v-else class="whitespace-pre-wrap text-stone-800">{{ c.body }}</p>
         </template>
       </li>
     </ol>
-    <button v-if="answeredBy && !resolved" type="button" class="mt-2 text-xs font-medium text-brand-text hover:underline" @click.stop="emit('change', answeredBy)">
+    <button v-if="answeredBy && !resolved" type="button" class="doc-act mt-2 text-xs font-medium text-brand-text hover:underline" @click.stop="emit('change', answeredBy)">
       {{ $t('Ver cambio') }}
     </button>
     <p v-if="resolved" class="mt-2 text-xs text-stone-500">
@@ -110,13 +110,13 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
         @keydown.ctrl.enter.prevent="reply"
         @keydown.meta.enter.prevent="reply"
       />
-      <div class="mt-1 flex items-center justify-end gap-2">
-        <button type="button" class="btn-ghost px-2 py-0.5 text-xs" :disabled="busy" @click="setStatus('resolve')">{{ $t('Resolver') }}</button>
-        <button class="btn-primary px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Responder') }}</button>
+      <div class="mt-1 flex items-center justify-end gap-3">
+        <button type="button" class="doc-act btn-ghost px-2 py-0.5 text-xs" :disabled="busy" @click="setStatus('resolve')">{{ $t('Resolver') }}</button>
+        <button class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Responder') }}</button>
       </div>
     </form>
     <div v-else-if="active && resolved" class="mt-2 flex justify-end">
-      <button type="button" class="btn-ghost px-2 py-0.5 text-xs" :disabled="busy" @click="setStatus('reopen')">{{ $t('Reabrir') }}</button>
+      <button type="button" class="doc-act btn-ghost px-2 py-0.5 text-xs" :disabled="busy" @click="setStatus('reopen')">{{ $t('Reabrir') }}</button>
     </div>
   </article>
 </template>

@@ -23,6 +23,8 @@ watch(
 )
 const shownVersion = computed(() => props.change.versions.find(v => v.version === (picked.value ?? props.change.version)) ?? props.change.versions.at(-1)!)
 const older = computed(() => props.change.versions.length > 1)
+/** An earlier version on screen: read only, no status or decisions of the current one. */
+const viewingOld = computed(() => shownVersion.value.version !== props.change.version)
 const diff = computed(() => shownVersion.value.diff ?? '')
 const after = computed(() => renderMarkdown(shownVersion.value.after).html)
 const pending = computed(() => props.change.status === 'pending')
@@ -45,7 +47,18 @@ const checkText = (c: DocCheck) =>
             : t('La comprobación falló: {text}', { text: c.text ?? '' })
 const checks = computed(() => [...props.change.checks, ...refused.value])
 const grows = computed(() => props.change.budget)
-const gitState = computed(() => props.change.revision?.gitState ?? null)
+/** A part of the chats' fixed context in words (scripts/context-budget.mjs names them skill:<x>, brief, mcp …). */
+const partName = (part: string) =>
+  part.startsWith('skill:')
+    ? t('la habilidad {name}', { name: part.slice(6) })
+    : part === 'brief'
+      ? t('las instrucciones generales')
+      : part.startsWith('mcp')
+        ? t('las herramientas')
+        : part
+const gitFailed = computed(() => props.change.revision?.gitState === 'failed')
+/** The commit, for admins, in the «Aplicado por…» line's tooltip only. */
+const commitTitle = computed(() => (props.admin && props.change.revision?.gitCommit ? props.change.revision.gitCommit.slice(0, 7) : undefined))
 
 async function run(fn: () => Promise<unknown>) {
   busy.value = true
@@ -59,7 +72,8 @@ async function run(fn: () => Promise<unknown>) {
     busy.value = false
   }
 }
-const apply = (anyway = false) => run(() => act(`changes/${props.change.seriesId}/apply`, 'POST', { anyway }))
+/** Applies the version on screen, which is always the current one (older versions are read only). */
+const apply = (anyway = false) => run(() => act(`changes/${props.change.seriesId}/apply`, 'POST', { anyway, version: props.change.version }))
 const discard = () => run(() => act(`changes/${props.change.seriesId}/discard`))
 const undo = () =>
   run(async () => {
@@ -110,7 +124,7 @@ const askAgain = (why: 'comment' | 'stale') =>
             v-for="v in change.versions"
             :key="v.id"
             type="button"
-            class="rounded px-1"
+            class="doc-act rounded px-1"
             :class="v.version === shownVersion.version ? 'bg-stone-200 text-stone-800' : 'text-stone-500 hover:text-stone-800'"
             @click.stop="picked = v.version === change.version ? null : v.version"
           >
@@ -120,31 +134,39 @@ const askAgain = (why: 'comment' | 'stale') =>
       </span>
     </header>
 
-    <p v-if="change.stale" class="mt-1 text-xs font-medium text-amber-800">{{ $t('Desactualizada') }}</p>
+    <p v-if="viewingOld" class="mt-1 flex items-center gap-2 text-xs text-stone-600">
+      <span class="font-medium">{{ $t('Versión anterior') }}</span>
+      <button type="button" class="doc-act font-medium text-brand-text hover:underline" @click.stop="picked = null">{{ $t('Ver v{n}', { n: change.version }) }}</button>
+    </p>
+    <p v-else-if="change.stale" class="mt-1 text-xs font-medium text-amber-800">{{ $t('Desactualizada') }}</p>
     <p v-else-if="change.lost" class="mt-1 text-xs font-medium text-amber-800">{{ $t('No está en la versión desplegada') }}</p>
-    <p v-else-if="change.status === 'applied'" class="mt-1 text-xs text-stone-500">
+    <p v-else-if="change.status === 'applied'" class="mt-1 text-xs text-stone-500" :title="commitTitle">
       {{ $t('Aplicado por {name} · {date}', { name: change.decidedBy ?? '', date: change.decidedAt ? commitTime(change.decidedAt) : '' }) }}
     </p>
-    <p v-else-if="change.status === 'undone'" class="mt-1 text-xs text-stone-500">{{ $t('Deshecho') }}</p>
+    <p v-else-if="change.status === 'undone'" class="mt-1 text-xs text-stone-500">
+      {{ $t('Deshecho por {name} · {date}', { name: change.decidedBy ?? '', date: change.decidedAt ? commitTime(change.decidedAt) : '' }) }}
+    </p>
 
     <div class="mt-2 inline-flex rounded-md border border-stone-300 p-0.5 text-xs" role="tablist">
-      <button role="tab" type="button" class="rounded px-2 py-0.5" :class="view === 'diff' ? 'bg-stone-200 text-stone-900' : 'text-stone-600'" :aria-selected="view === 'diff'" @click="view = 'diff'">
+      <button role="tab" type="button" class="doc-act rounded px-2 py-0.5" :class="view === 'diff' ? 'bg-stone-200 text-stone-900' : 'text-stone-600'" :aria-selected="view === 'diff'" @click="view = 'diff'">
         {{ $t('Cambios') }}
       </button>
-      <button role="tab" type="button" class="rounded px-2 py-0.5" :class="view === 'after' ? 'bg-stone-200 text-stone-900' : 'text-stone-600'" :aria-selected="view === 'after'" @click="view = 'after'">
+      <button role="tab" type="button" class="doc-act rounded px-2 py-0.5" :class="view === 'after' ? 'bg-stone-200 text-stone-900' : 'text-stone-600'" :aria-selected="view === 'after'" @click="view = 'after'">
         {{ $t('Después') }}
       </button>
     </div>
-    <div class="mt-2 max-h-80 overflow-y-auto">
+    <div class="mt-2 max-h-80 overflow-y-auto" :class="{ 'opacity-70': change.status === 'undone' && !viewingOld }" data-diff>
       <ProseDiff v-if="view === 'diff' && diff" :diff="diff" />
       <!-- renderMarkdown escapes every text. -->
       <div v-else class="md md-small rounded-md border border-stone-200 px-3 py-2" v-html="after" />
     </div>
 
-    <ul v-if="checks.length" class="mt-2 space-y-0.5 text-xs text-error-text">
-      <li v-for="(c, i) in checks" :key="i">{{ checkText(c) }}</li>
-    </ul>
-    <p v-for="g in grows" :key="g.part" class="mt-2 text-xs text-stone-600">+{{ g.bytes }} bytes · {{ g.part }}</p>
+    <template v-if="!viewingOld">
+      <ul v-if="checks.length" class="mt-2 space-y-0.5 text-xs text-error-text">
+        <li v-for="(c, i) in checks" :key="i">{{ checkText(c) }}</li>
+      </ul>
+      <p v-for="g in grows" :key="g.part" class="mt-2 text-xs text-stone-600">{{ $t('Crece {n} bytes: {part}', { n: g.bytes, part: partName(g.part) }) }}</p>
+    </template>
 
     <ol v-if="change.comments.length" class="mt-3 space-y-2 border-t border-stone-100 pt-2">
       <li v-for="c in change.comments" :key="c.id">
@@ -157,44 +179,44 @@ const askAgain = (why: 'comment' | 'stale') =>
       </li>
     </ol>
 
-    <form v-if="active && pending" class="mt-2" @submit.prevent="comment">
+    <form v-if="active && pending && !viewingOld" class="mt-2" @submit.prevent="comment">
       <textarea v-model="draft" rows="2" class="doc-box" :placeholder="$t('Comentar el cambio')" />
       <div class="mt-1 flex flex-wrap justify-end gap-2">
-        <button class="btn px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Comentar') }}</button>
-        <button v-if="admin" type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()" @click="askAgain('comment')">
+        <button class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Comentar') }}</button>
+        <button v-if="admin" type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()" @click="askAgain('comment')">
           {{ $t('Pedir versión nueva') }}
         </button>
       </div>
     </form>
 
-    <div v-if="admin" class="mt-2 flex flex-wrap items-center justify-end gap-2">
+    <!-- Decisions: the destructive one on the left, the main one on the right. -->
+    <div v-if="admin && !viewingOld" class="doc-decide mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
       <template v-if="pending && change.stale">
-        <button type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
-        <button type="button" class="btn-primary px-2 py-0.5 text-xs" :disabled="busy" @click="askAgain('stale')">{{ $t('Pedir a Claude que la rehaga') }}</button>
+        <button type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
+        <button type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy" @click="askAgain('stale')">{{ $t('Pedir a Claude que la rehaga') }}</button>
       </template>
       <template v-else-if="pending">
-        <button type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
-        <button v-if="grows.length" type="button" class="btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0" @click="apply(true)">
+        <button type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
+        <button v-if="grows.length" type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0" @click="apply(true)">
           {{ $t('Aplicar igualmente') }}
         </button>
-        <button v-else type="button" class="btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0" @click="apply()">{{ $t('Aplicar') }}</button>
+        <button v-else type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0" @click="apply()">{{ $t('Aplicar') }}</button>
       </template>
       <template v-else-if="change.lost">
-        <button type="button" class="btn-primary px-2 py-0.5 text-xs" :disabled="busy" @click="repropose">{{ $t('Volver a proponer') }}</button>
+        <span />
+        <button type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy" @click="repropose">{{ $t('Volver a proponer') }}</button>
       </template>
       <template v-else-if="change.status === 'applied'">
-        <span v-if="gitState === 'failed'" class="mr-auto text-xs text-amber-800">
+        <span v-if="gitFailed" class="text-xs text-amber-800">
           {{ $t('Sin subir a git') }} ·
-          <button type="button" class="underline" :disabled="busy" @click="retry">{{ $t('Reintentar') }}</button>
+          <button type="button" class="doc-act underline" :disabled="busy" @click="retry">{{ $t('Reintentar') }}</button>
         </span>
-        <span v-else-if="gitState === 'pending'" class="mr-auto text-xs text-stone-500">{{ $t('Guardando en git…') }}</span>
-        <span v-else-if="gitState === 'committed' || gitState === 'pushed'" class="mr-auto font-mono text-xs text-stone-500">
-          {{ gitState === 'pushed' ? $t('En git') : $t('En git (local)') }} {{ change.revision?.gitCommit?.slice(0, 7) }}
-        </span>
-        <button type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="undo">{{ $t('Deshacer') }}</button>
+        <span v-else />
+        <button type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy" @click="undo">{{ $t('Deshacer') }}</button>
       </template>
       <template v-else-if="change.status === 'undone'">
-        <button type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="apply()">{{ $t('Aplicar de nuevo') }}</button>
+        <span />
+        <button type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy" @click="apply()">{{ $t('Aplicar de nuevo') }}</button>
       </template>
     </div>
   </article>

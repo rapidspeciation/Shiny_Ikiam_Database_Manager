@@ -129,15 +129,27 @@ describe('DocThreadCard', () => {
 })
 
 describe('ProseDiff', () => {
-  it('reads as text: wrapped source lines joined, a space between removed and added words, mono only for code', () => {
-    const diff = '@@ -1,4 +1,4 @@\n ## The site\n~\n \n~\n nombre y coordenadas.» \n-A partial\n+When the\n  name or a\n~\n nearby town with `place`.\n~\n \n~\n ```sh\n~\n-gog --readonly\n+gog\n~\n ```\n~'
+  it('reads as the doc: lines joined, headings and list items without their marks, code without backticks, mono only for fenced code', () => {
+    const diff =
+      '@@ -1,4 +1,4 @@\n ## The site\n~\n \n~\n nombre y coordenadas.» \n-A partial\n+When the\n  name or a\n~\n nearby town with `place`.\n~\n - Meeting notes go in **the\n~\n folder**.\n~\n \n~\n ```sh\n~\n-gog --readonly\n+gog\n~\n ```\n~'
     const host = mount(ProseDiff, { diff })
-    const paras = [...host.querySelectorAll('p')]
-    expect(paras.map(p => p.textContent)).toEqual(['## The site', 'nombre y coordenadas.» A partial When the name or a nearby town with `place`.', '```sh', 'gog --readonly gog', '```'])
-    expect(paras[1].className).not.toContain('font-mono')
-    expect(paras[1].querySelector('code')?.textContent).toBe('`place`')
-    expect(paras[3].className).toContain('font-mono')
-    expect(paras[1].className).toContain('border-amber-400')
+    const blocks = [...host.querySelectorAll('.doc-prose-block')]
+    expect(blocks.map(b => b.textContent)).toEqual([
+      'The site',
+      'nombre y coordenadas.» A partial When the name or a nearby town with place.',
+      '•Meeting notes go in the folder.',
+      '```sh',
+      'gog --readonly gog',
+      '```',
+    ])
+    expect(blocks[0].className).toContain('font-semibold')
+    expect(blocks[1].className).not.toContain('font-mono')
+    expect(blocks[1].querySelector('code')?.textContent).toBe('place')
+    expect(blocks[2].querySelector('strong')?.textContent).toBe('the')
+    expect(blocks[4].className).toContain('font-mono')
+    // A changed paragraph is marked in Claude's green (the class), not amber.
+    expect(blocks[1].className).toContain('is-changed')
+    expect(blocks[1].className).not.toContain('amber')
     expect(host.firstElementChild!.className).not.toContain('font-mono')
   })
 })
@@ -150,15 +162,33 @@ describe('DocChangeCard', () => {
     button(host, 'Después')!.click()
     await nextTick()
     expect(host.querySelector('.md')?.textContent).toContain('Usa NOT_COLLECTED para el sexo.')
-    button(host, 'v1')!.click()
-    await nextTick()
-    expect(host.querySelector('.md')?.textContent).toContain('Usa NC.')
     button(host, 'Aplicar')!.click()
     await flush()
-    expect(posts()[0]).toMatchObject({ url: 'api/doc-review/changes/s1/apply', body: { anyway: false } })
+    expect(posts()[0]).toMatchObject({ url: 'api/doc-review/changes/s1/apply', body: { anyway: false, version: 2 } })
     button(host, 'Descartar')!.click()
     await flush()
     expect(posts()[1].url).toBe('api/doc-review/changes/s1/discard')
+  })
+  it('an earlier version is read only: «Versión anterior», no status or decisions, «Ver v2» goes back', async () => {
+    const applied = { status: 'applied' as const, decidedBy: 'Franz', decidedAt: '2026-11-08T11:00:00Z' }
+    let host = mount(DocChangeCard, { change: change(), admin: true, active: true })
+    button(host, 'Después')!.click()
+    button(host, 'v1')!.click()
+    await nextTick()
+    expect(host.querySelector('.md')?.textContent).toContain('Usa NC.')
+    expect(host.textContent).toContain('Versión anterior')
+    for (const label of ['Aplicar', 'Descartar', 'Comentar', 'Pedir versión nueva']) expect(button(host, label), label).toBeUndefined()
+    button(host, 'Ver v2')!.click()
+    await nextTick()
+    expect(host.textContent).not.toContain('Versión anterior')
+    expect(button(host, 'Aplicar')).toBeDefined()
+    unmount()
+    host = mount(DocChangeCard, { change: change(applied), admin: true })
+    expect(host.textContent).toContain('Aplicado por Franz')
+    button(host, 'v1')!.click()
+    await nextTick()
+    expect(host.textContent).not.toContain('Aplicado por')
+    expect(button(host, 'Deshacer')).toBeUndefined()
   })
   it('a click anywhere on the card, its diff included, makes it the active one', async () => {
     let activated = 0
@@ -183,7 +213,8 @@ describe('DocChangeCard', () => {
   })
   it('a growth of the fixed context shows its bytes and needs «Aplicar igualmente»; a failed check blocks', async () => {
     let host = mount(DocChangeCard, { change: change({ budget: [{ part: 'brief', bytes: 42 }] }), admin: true })
-    expect(host.textContent).toContain('+42 bytes · brief')
+    expect(host.textContent).toContain('Crece 42 bytes: las instrucciones generales')
+    expect(host.textContent).not.toContain('brief')
     expect(button(host, 'Aplicar')).toBeUndefined()
     button(host, 'Aplicar igualmente')!.click()
     await flush()
@@ -201,6 +232,11 @@ describe('DocChangeCard', () => {
     expect(posts()[0].body).toMatchObject({ why: 'stale' })
     unmount()
     const revision = { id: 7, kind: 'apply' as const, gitState: 'failed' as const, gitCommit: null, gitError: 'push', appliedAt: '', appliedBy: 'Franz', undoneAt: null }
+    host = mount(DocChangeCard, { change: change({ status: 'applied', decidedBy: 'Franz', decidedAt: '2026-11-08T11:00:00Z', revision: { ...revision, gitState: 'committed', gitCommit: 'abcdef1234' } }), admin: true })
+    // A git sync that worked shows nothing (the commit only in a tooltip).
+    expect(host.textContent).not.toMatch(/git|abcdef1/)
+    expect(host.querySelector('[title="abcdef1"]')).not.toBe(null)
+    unmount()
     host = mount(DocChangeCard, { change: change({ status: 'applied', decidedBy: 'Franz', decidedAt: '2026-11-08T11:00:00Z', revision }), admin: true })
     expect(host.textContent).toContain('Sin subir a git')
     button(host, 'Reintentar')!.click()
@@ -209,6 +245,10 @@ describe('DocChangeCard', () => {
     button(host, 'Deshacer')!.click()
     await flush()
     expect(posts().at(-1)!.url).toBe('api/doc-review/changes/s1/undo')
+    unmount()
+    host = mount(DocChangeCard, { change: change({ status: 'undone', decidedBy: 'Franz', decidedAt: '2026-11-08T12:00:00Z' }), admin: true })
+    expect(host.textContent).toContain('Deshecho por Franz')
+    expect(host.querySelector('[data-diff]')!.className).toContain('opacity-70')
   })
 })
 
@@ -283,5 +323,40 @@ describe('DocReview', () => {
     button(host, 'Comentarios · 3')!.click()
     await nextTick()
     expect(host.querySelector('[role="dialog"]')?.textContent).toContain('§ Datos')
+    // From the list, a thread opens with «‹ Comentarios» back to the list.
+    ;[...host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.includes('¿NA o NOT_COLLECTED?'))!.click()
+    await nextTick()
+    expect(button(host, 'Comentarios')).toBeDefined()
+    button(host, 'Comentarios')!.click()
+    await nextTick()
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('§ Datos')
+    // Escape closes the sheet.
+    host.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(host.querySelector('[role="dialog"]')).toBe(null)
+    // The «Cambio» tag beside the heading opens the change's sheet.
+    const tag = host.querySelector<HTMLButtonElement>('h2 .doc-change-tag')!
+    expect(tag.textContent).toBe('Cambio')
+    tag.click()
+    await nextTick()
+    expect(host.querySelector('[role="dialog"] [data-card="s1"]')).not.toBe(null)
+  })
+  it('highlights and the change bar take the keyboard: a name, Enter opens', async () => {
+    withState()
+    const host = mount(DocReview, { entryId: PATH, html })
+    await flush()
+    await flush()
+    const mark = host.querySelector<HTMLElement>('mark[data-thread="t1"]')!
+    expect(mark.tabIndex).toBe(0)
+    expect(mark.getAttribute('aria-label')).toBe('Comentario de Ana Pérez')
+    mark.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+    expect(host.querySelector('aside [data-card="t1"]')!.className).toContain('doc-card-active')
+    const bar = host.querySelector<HTMLElement>('.doc-change-bar')!
+    expect(bar.getAttribute('tabindex')).toBe('0')
+    expect(bar.getAttribute('aria-label')).toBe('Cambio propuesto: § Datos')
+    bar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+    expect(host.querySelector('aside [data-card="s1"]')!.className).toContain('doc-card-active')
   })
 })
