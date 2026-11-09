@@ -31,7 +31,7 @@ Each line is a JSON object:
 | Field | Meaning |
 |---|---|
 | `path` | A Markdown file under `assistant/`. |
-| `section` | The heading as written, without the `#`. Use `''` for the text before the first heading. |
+| `section` | The heading's text, at any level: `The site` and `### The site` mean the same. Use `''` for the text before the first heading, or `description` for the front matter's description (below). |
 | `before` | Exact text from that section's current source: a part of it, or the whole section. |
 | `after` | Its replacement. |
 | `reason` | Optional. One short line, shown as the card's first Claude comment. |
@@ -40,13 +40,36 @@ Each line is a JSON object:
 The script prints one line per change: `line N: ok <change id> v1`, or `line N: refused: <the tool's message>`. The
 exit code is 1 if any line was refused. `--url` and `--token-file` override the defaults.
 
+### Sections
+
+- **A heading at any level.** A section runs from its heading to the next heading of the same or a higher level, so
+  a `##` section includes its `###` subsections. Headings inside code fences don't count.
+- **The same heading twice in one file.** The change goes to the one section whose text contains `before`. If
+  `before` is in none of them, or in more than one (nested sections both contain it), the change is refused:
+  «N sections are named "X" in <file>: make before unique to one of them».
+- **`description`.** The section name `description` (any case) stands for the value of the front matter's
+  `description:` line in a skill's `SKILL.md` or a subagent's file. That line is the skills listing every chat
+  carries.
+  - `before` and `after` match inside that value only, which stays one line and not empty. `name:` and the rest of
+    the front matter can't be reached.
+  - The card is titled «Descripción» and shows the same word diff.
+  - The size check measures the skill's listing (`skill:<name>`), so a longer description needs «Aplicar
+    igualmente».
+  - A file that also has a heading named «description» refuses it, because the two can't be told apart.
+  - Example:
+
+    ```json
+    {"path": "assistant/skills/weather/SKILL.md", "section": "description", "before": "for today and up to a week ahead, ", "after": "", "reason": "Recorte: el listado de habilidades."}
+    ```
+
 ### When a change is refused
 
 - **`before` doesn't match:** it must appear exactly once in the section's current source, which is the text in
   effect, including changes already applied in the app. Copy it from `doc_threads` (export) or from the file, not
   from memory.
 - **Wrong file:** only `assistant/**/*.md` takes changes, and the file must exist.
-- **Front matter:** a skill's `name:` and `description:` header can't be changed here.
+- **Front matter:** only the `description:` value can change (section `description`). `name:` and the front
+  matter's shape are locked, and the checks below verify them.
 - **The checks of `assistant/`:**
   - a skill's front matter must stay valid
   - AGENTS.md may contain no unknown `{{placeholder}}`

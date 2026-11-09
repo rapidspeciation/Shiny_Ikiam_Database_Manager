@@ -73,6 +73,8 @@ export interface DocChange {
   lost: boolean
   /** «Pedir versión nueva» sent: Claude is working on the next version. */
   revising: boolean
+  /** 'description': a change to the front matter's description (the skill's «when it is used» line), not a section. */
+  field?: 'description' | null
   /** Proposed from outside T3 (tools/lab/doc-proposals.md). */
   external?: boolean
   /** A new version was asked of that outside proposer and has not come yet. */
@@ -112,6 +114,9 @@ export interface Anchor {
   heading: string
 }
 
+/** What a change card names: its section's heading, «Descripción» for the front matter's description, «Inicio» before the first heading. */
+export const changeTitle = (c: Pick<DocChange, 'heading' | 'field'>, t: (s: string) => string) =>
+  c.field === 'description' ? t('Descripción') : c.heading || t('Inicio')
 /** Characters kept before and after a quote. */
 export const CONTEXT = 32
 /** The brief as the page shows it is AGENTS.md and the app's voice (server/brief.mjs). */

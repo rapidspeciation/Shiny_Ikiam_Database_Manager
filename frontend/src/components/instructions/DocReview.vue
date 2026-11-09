@@ -6,6 +6,7 @@ import DocChangeCard from './DocChangeCard.vue'
 import {
   act,
   answeredBy,
+  changeTitle,
   clearMarks,
   forEntry,
   fullText,
@@ -626,7 +627,7 @@ defineExpose({ openList })
               class="doc-change-edge block w-full rounded-md border border-stone-200 bg-surface p-2 text-left text-sm"
               @click="activate(c.seriesId, { fromList: true })"
             >
-              <span class="doc-claude-tag">Claude</span> {{ c.heading || $t('Inicio') }}
+              <span class="doc-claude-tag">Claude</span> {{ changeTitle(c, t) }}
               <span v-if="c.status !== 'pending'" class="text-xs text-stone-500"> · {{ c.status === 'applied' ? $t('Aplicado') : c.status === 'undone' ? $t('Deshecho') : '' }}</span>
             </button>
             <button

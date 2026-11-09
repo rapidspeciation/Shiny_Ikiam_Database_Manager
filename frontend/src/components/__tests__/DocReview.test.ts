@@ -207,6 +207,15 @@ describe('DocChangeCard', () => {
     expect(button(host, 'Aplicar')!.disabled).toBe(true)
     expect(host.textContent).toContain('v2: el texto había cambiado')
   })
+  it('a change to the front matter description is titled «Descripción», with the same word diff', () => {
+    const diff = '@@ -1 +1 @@\n-A demo skill.\n+Demo.\n~'
+    const versions = [{ id: 'ch1', version: 1, before: 'A demo skill.', after: 'Demo.', diff, createdAt: '', status: 'pending' }]
+    const host = mount(DocChangeCard, { change: change({ field: 'description', heading: 'description', version: 1, diff, versions }), admin: true })
+    expect(host.querySelector('header')!.textContent).toContain('Descripción')
+    expect(host.querySelector('header')!.textContent).not.toContain('description')
+    expect(host.querySelector('del')?.textContent).toBe('A demo skill.')
+    expect(host.querySelector('ins')?.textContent).toBe('Demo.')
+  })
   it('an outside proposer’s change waiting for its new version: «Esperando nueva versión», Aplicar disabled', () => {
     const host = mount(DocChangeCard, { change: change({ external: true, awaiting: true }), admin: true })
     expect(host.textContent).toContain('Esperando nueva versión')

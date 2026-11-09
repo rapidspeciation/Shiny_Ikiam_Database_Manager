@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ProseDiff from './ProseDiff.vue'
-import { act, type DocChange, type DocCheck } from '../../lib/docReview'
+import { act, changeTitle, type DocChange, type DocCheck } from '../../lib/docReview'
 import { commitTime } from '../../lib/instructions'
 import { renderMarkdown } from '../../lib/markdown'
 import { errorText, notify } from '../../lib/notice'
@@ -133,7 +133,7 @@ const askAgain = (why: 'comment' | 'stale') =>
     <header class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
       <span class="doc-claude-tag">Claude</span>
       <button type="button" class="min-w-0 truncate text-left font-medium text-stone-800 hover:underline" @click="emit('section')">
-        {{ change.heading || $t('Inicio') }}
+        {{ changeTitle(change, t) }}
       </button>
       <span v-if="change.path.includes('/voice/')" class="font-mono text-xs text-stone-500">{{ file }}</span>
       <span class="ml-auto hidden items-center gap-1 text-xs lg:flex">
