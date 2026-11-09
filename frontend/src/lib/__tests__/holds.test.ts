@@ -111,6 +111,35 @@ describe('quick taps hold their IDs in tap order', () => {
     expect(r.cards[0]).toMatchObject({ id: 'A9E', state: 'offline' })
   })
 
+  it('a card whose ID is changed while its hold is asked: the old answer does not mark the new ID held', async () => {
+    const card = { key: 'a', id: 'A9E', state: '' }
+    const asked: string[] = []
+    let answer: (a: HoldAnswer) => void = () => {}
+    const queue = new HoldQueue({
+      hold: (_key, id) => {
+        asked.push(id)
+        return new Promise(resolve => (answer = resolve))
+      },
+      idOf: () => card.id,
+      pick: () => null,
+      assign: () => {},
+      settled: (_key, state) => (card.state = state),
+    })
+    const first = queue.push('a')
+    await Promise.resolve()
+    card.id = 'B0E' // typed over while A9E's hold was on its way
+    answer({ held: true, value: 'A9E' })
+    await first
+    expect(card).toEqual({ key: 'a', id: 'B0E', state: '' })
+    // B0E's own request says what holds.
+    const second = queue.push('a')
+    for (let i = 0; i < 5 && asked.length < 2; i++) await Promise.resolve()
+    answer({ held: true, value: 'B0E' })
+    await second
+    expect(asked).toEqual(['A9E', 'B0E'])
+    expect(card.state).toBe('held')
+  })
+
   it('a card taken away while its hold is asked: its answer changes nothing', async () => {
     const r = round()
     const key = r.tap()
