@@ -74,6 +74,7 @@ test('offline test page: isolated page, models only signed in, ranges and ETags'
     assert.equal((await fetch(`${base}/models/other.onnx`)).status, 404);
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
@@ -166,6 +167,7 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
     assert.ok(r.body.every(b => b === 7));
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
@@ -197,6 +199,7 @@ test('model parts: a folder still being made is read again once its manifest app
     assert.equal(existsSync(join(ident, 'offline', 'parts-20261031T000002Z')), false);
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
@@ -241,6 +244,7 @@ test('the small model: one constant, listed with its role and hash, hidden when 
     assert.deepEqual(zstdDecompressSync(r.body), readFileSync(file));
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
@@ -280,5 +284,6 @@ test('the sex model: signed in only, pinned bytes, sent plain, never in the part
     sex.sha256 = good;
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
