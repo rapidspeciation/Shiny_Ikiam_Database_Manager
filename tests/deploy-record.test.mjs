@@ -5,6 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashRelease, verifyRelease, writeRecord } from '../scripts/deploy-record.mjs';
@@ -215,6 +216,49 @@ test('deploy.sh on claudeclaw with DEPLOY_LOCAL_TESTS=1: the full tests here, th
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /Checks failed: nothing was deployed/);
     assert.equal(current(f), `releases/${r}`);
+  } finally {
+    f.close();
+  }
+});
+
+test('deploy.sh from a PC: a release the install refuses (changed on the way) is removed from releases/; an installed one stays', () => {
+  const f = deployFixture();
+  try {
+    // ssh runs here: the upload (rsync) into the scratch app root, then install-release.sh.
+    const ok = f.run([], { DEPLOY_TEST_SSH: 'local' });
+    assert.equal(ok.status, 0, ok.stderr);
+    const [r1] = releasesOf(f);
+    assert.equal(current(f), `releases/${r1}`);
+    const refused = f.run([], { DEPLOY_TEST_SSH: 'local', DEPLOY_TEST_TAMPER: '1' });
+    assert.equal(refused.status, 1, refused.stderr);
+    assert.match(refused.stderr, /built frontend differs from the tested one/);
+    assert.match(refused.stderr, /Not installed: release \S+ does not match a passing test run/);
+    assert.ok(refused.ssh.some(c => /\|\| rm -rf -- '[^']+\/app\/releases\/\d{8}T\d{6}Z'$/.test(c)), 'the removal ran');
+    assert.deepEqual(releasesOf(f), [r1], 'the refused release is gone');
+    assert.equal(current(f), `releases/${r1}`, 'current unchanged');
+  } finally {
+    f.close();
+  }
+});
+
+test('rollback-release.sh: a release that no longer matches its test record is refused; one that does goes back', () => {
+  const f = deployFixture();
+  const rollback = () => spawnSync('bash', [join(f.app, 'current', 'scripts', 'rollback-release.sh')], { env: f.env, encoding: 'utf8', timeout: 30_000 });
+  try {
+    f.stage();
+    for (let i = 0; i < 2; i++) assert.equal(f.run([], { DEPLOY_LOCAL: '1' }).status, 0);
+    const [r1, r2] = releasesOf(f).sort();
+    assert.equal(current(f), `releases/${r2}`);
+    writeFileSync(join(f.app, 'releases', r1, 'server', 'index.mjs'), 'changed after the test\n');
+    const refused = rollback();
+    assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+    assert.match(refused.stderr, /release files differ from the tested ones/);
+    assert.match(refused.stderr, /Not rolled back: releases\/\S+ does not match its test record/);
+    assert.equal(current(f), `releases/${r2}`);
+    writeFileSync(join(f.app, 'releases', r1, 'server', 'index.mjs'), 'server/index.mjs\n');
+    const back = rollback();
+    assert.equal(back.status, 0, back.stderr);
+    assert.equal(current(f), `releases/${r1}`);
   } finally {
     f.close();
   }

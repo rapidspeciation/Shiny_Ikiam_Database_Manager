@@ -200,6 +200,13 @@ for v in ITHOMIINI_APP_ROOT ITHOMIINI_SYSTEMD_DIR ITHOMIINI_SERVICE ITHOMIINI_TI
 done
 s=$(ms)
 # shellcheck disable=SC2086
-ssh $ssh_opts "$host" "env$forward bash $dest/scripts/install-release.sh $release $commit"
+if ! ssh $ssh_opts "$host" "env$forward bash $dest/scripts/install-release.sh $release $commit"; then
+  # A release the install refused or stopped before the switch is removed (as on claudeclaw above): never a rollback
+  # target, never one of the releases the prune keeps. One that became current stays (roll back from it).
+  # shellcheck disable=SC2086
+  ssh $ssh_opts "$host" "[ \"\$(readlink '$app/current' 2>/dev/null)\" = 'releases/$release' ] || rm -rf -- '$dest'" ||
+    echo "Could not remove $host:$dest: remove it by hand unless it is current." >&2
+  exit 1
+fi
 echo "Installed on $host in $(( $(ms) - s )) ms."
 after_install

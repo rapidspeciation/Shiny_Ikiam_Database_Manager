@@ -2,8 +2,11 @@
 # Goes back to the release before (shared/previous-release) on claudeclaw: waits for saves in progress, points
 # current at it, installs its units, restarts, checks /health and refreshes the T3 workspaces from it.
 #   bash /home/ubuntu/ithomiini/current/scripts/rollback-release.sh [release name, default the previous one]
-# The same scratch variables as scripts/install-release.sh.
+# The same scratch variables as scripts/install-release.sh. A release with a test record (.deploy-record.json) must
+# still match it (scripts/deploy-record.mjs verify); one without (deployed before 9 Nov 2026) goes back as it is.
 set -euo pipefail
+# The physical path: node runs a script reached through the current link only when given its real path.
+here="$(cd "$(dirname "$0")" && pwd -P)"
 app="${ITHOMIINI_APP_ROOT:-/home/ubuntu/ithomiini}"
 units="${ITHOMIINI_SYSTEMD_DIR:-$HOME/.config/systemd/user}"
 service="${ITHOMIINI_SERVICE:-ithomiini.service}"
@@ -23,6 +26,13 @@ exec 9>"$app/shared/.install.lock"
 flock -w 900 9 || { echo "An install still runs after 15 minutes." >&2; exit 1; }
 node="$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' "$target/deploy/ithomiini.service")"
 export PATH="$(dirname "$node"):$PATH" ITHOMIINI_SHARED="$app/shared"
+if [ -f "$target/.deploy-record.json" ]; then
+  recorded="$(sed -n 's/^ *"commit": *"\([0-9a-f]\{40\}\)".*/\1/p' "$target/.deploy-record.json" | head -n 1)"
+  if ! "$node" "$here/deploy-record.mjs" verify "$target" --commit "${recorded:-none}"; then
+    echo "Not rolled back: $target does not match its test record. current is still $from." >&2
+    exit 1
+  fi
+fi
 bash "$target/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}" 9>&-
 echo "$from" >shared/previous-release
 ln -sfn "$target" current

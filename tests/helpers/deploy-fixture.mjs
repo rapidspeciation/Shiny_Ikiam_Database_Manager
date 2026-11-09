@@ -1,7 +1,8 @@
 // A throwaway checkout for the tests of scripts/deploy.sh and scripts/install-release.sh: the real deploy scripts in a
 // git repo with one small file per shipped path, origin and team remotes (bare repos in the same temp folder), and
 // stand-ins on PATH that record their calls. ssh only records and fails, so no step can reach claudeclaw even if a
-// guard is broken; systemctl only records; curl answers a healthy, idle /health; node runs the record and stamp
+// guard is broken (DEPLOY_TEST_SSH=local: it runs the command here instead, the scratch app root standing in for
+// claudeclaw's); systemctl only records; curl answers a healthy, idle /health; node runs the record and stamp
 // scripts (and `node -e`) for real and only records the rest (the test jobs, t3-provision). HOME is a temp folder and
 // the app root (ITHOMIINI_APP_ROOT) a scratch one, with its own unit folder and service name.
 import assert from 'node:assert/strict';
@@ -13,11 +14,13 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 export const STANDINS = ['ssh', 'node', 'npm', 'npx', 'hostname', 'systemctl', 'curl'];
-const REAL = ['scripts/deploy.sh', 'scripts/install-release.sh', 'scripts/deploy-record.mjs', 'scripts/deploy-stamp.mjs', 'scripts/wait-writes.sh', 'scripts/prune-releases.sh'];
+const REAL = ['scripts/deploy.sh', 'scripts/install-release.sh', 'scripts/rollback-release.sh', 'scripts/deploy-record.mjs', 'scripts/deploy-stamp.mjs', 'scripts/wait-writes.sh', 'scripts/prune-releases.sh'];
 
 // One stand-in for all: records "<name> <args>"; `hostname` is a PC's, ssh fails at once, and the check named in
 // DEPLOY_TEST_FAIL (check, server, frontend, build, slow) exits 1. The build writes web/ and the instructions history;
 // the slow suite writes its --result: DEPLOY_TEST_SLOW (default pass; unchanged; none writes nothing).
+// DEPLOY_TEST_SSH=local: ssh runs its command on this machine (rsync's too); DEPLOY_TEST_TAMPER: then the upload's
+// web/index.html is changed after it arrived.
 const STANDIN = `#!/bin/bash
 name="\${0##*/}"
 printf '%s %s\\n' "$name" "$*" >> "$DEPLOY_TEST_CALLS"
@@ -25,7 +28,15 @@ case "$name $*" in
   "hostname"*) echo test-pc; exit 0 ;;
   "node --version") echo v24.0.0-standin; exit 0 ;;
   "node -e"* | "node "*deploy-record.mjs* | "node "*deploy-stamp.mjs*) exec "$DEPLOY_TEST_REAL_NODE" "$@" ;;
-  "ssh "*) exit 97 ;;
+  "ssh "*" -O "*) exit 0 ;;
+  "ssh "*)
+    [ "\${DEPLOY_TEST_SSH:-}" = local ] || exit 97
+    while [ "\${1:-}" = -o ]; do shift 2; done
+    shift # the host
+    dest="\${*: -1}"
+    bash -c "$*" || exit $?
+    if [ -n "\${DEPLOY_TEST_TAMPER:-}" ] && [[ "$*" == *"rsync --server"* ]]; then echo '<p>changed on the way</p>' > "\${dest%/}/web/index.html"; fi
+    exit 0 ;;
   "curl "*) echo '{"status":"ok","writing":{"applying":0,"inFlight":0,"unconfirmed":0}}'; exit 0 ;;
   "node scripts/check.mjs"*) job=check ;;
   "node scripts/test-server.mjs"* | "node --test"*) job=server ;;
@@ -134,5 +145,5 @@ export function deployFixture() {
     assert.equal(r.status, 0, r.stderr);
     return staged;
   };
-  return { dir, repo, app, home, sh, run, stage, close: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, repo, app, home, env, sh, run, stage, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
