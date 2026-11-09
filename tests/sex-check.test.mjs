@@ -87,6 +87,18 @@ test('a species the model is not trusted on (server/sex-model-unreliable.json): 
   assert.deepEqual(decideSex({ model: { status: 'not_scored:no_wings' }, database: db('female'), unreliable: methona }).reasons, ['model_not_scored']);
 });
 
+test('the edges: an envelope sex counts from confidence 0.6 on, and the model at P(male) 0.5 calls male', () => {
+  // docs/sex-check.md: the envelope «counts only at confidence ≥ 0.6» (photo_facts' SURE.sex, the same 0.6).
+  const at = decideSex({ model: null, envelope: env('male', 0.6), database: db('female') });
+  assert.deepEqual([at.flag, at.reasons, at.envelope.sure], ['check', ['envelope_vs_database'], true]);
+  const below = decideSex({ model: null, envelope: env('male', 0.59), database: db('female') });
+  assert.deepEqual([below.flag, below.envelope.sure], ['uncertain', false]);
+  // A tie is male, as the photo readings call the same model output (server/readings.mjs: P(male) ≥ 0.5 is male),
+  // so the check names the sex the readings page shows.
+  assert.deepEqual(decideSex({ model: sure(0.5, false), database: db('female') }).model, { sex: 'male', p: 0.5, supported: false, status: 'below_confidence' });
+  assert.equal(decideSex({ model: sure(0.4999, false), database: db('female') }).model.sex, 'female');
+});
+
 // ------------------------------------------------------------ the envelope's CAM against the file's
 test('a CAM read on the envelope: normalised, and only a whole CAM', () => {
   assert.equal(camOfReading('CAM073451'), 'CAM073451');
