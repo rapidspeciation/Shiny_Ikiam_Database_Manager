@@ -97,8 +97,7 @@ function setup() {
   let n = 0;
   const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   return { bridge, outbox, log, post, settle };
 }
@@ -181,8 +180,7 @@ test('the self-chat answers at once when the tools are down, without a model tur
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   let n = 0;
   const post = text => bridge.handle({ Chat: 'ME@s.whatsapp.net', ID: `T${++n}`, SenderJID: 'ME@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: text });
@@ -216,8 +214,7 @@ test('group sends: never without a @claude or reply-to-bot trigger', async () =>
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const log = () => readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8');
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   let n = 0;
   const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `Q${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
@@ -287,8 +284,7 @@ test('group conversations: a tag opens a window, follow-ups inside it may be ans
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const turns = () => (existsSync(join(dir, 'turns')) ? readFileSync(join(dir, 'turns'), 'utf8').trim().split('\n') : []);
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   let n = 0;
   const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `C${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date(clock).toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
@@ -358,8 +354,7 @@ console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:ans}))
   let clock = Date.now();
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), now: () => clock, log: { error() {}, info() {} } });
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
     await bridge.flushHistory();
   };
   let n = 0;
@@ -506,8 +501,7 @@ test('a phone message that arrives with empty text: filled from the store; if st
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   const hook = (id, text) => bridge.handle({ Chat: 'G@g.us', ID: id, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: text });
 
@@ -545,8 +539,7 @@ test('untagged messages inside a conversation: only a quote of Claude or its nam
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const turns = () => (existsSync(join(dir, 'turns')) ? readFileSync(join(dir, 'turns'), 'utf8').trim().split('\n').length : 0);
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   let n = 0;
   const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `W${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
@@ -589,8 +582,7 @@ test('a quote of Claude aimed at the team: 👀 then ✅ and no text; a question
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
   const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   let n = 0;
   const post = (text, extra = {}) => bridge.handle({ Chat: 'G@g.us', ID: `QQ${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
@@ -729,8 +721,7 @@ test('/tono: per chat, without a model, and named in every envelope', async () =
   let n = 0;
   const post = (chat, text) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   assert.deepEqual(command('@claude /tono picante'), { name: 'tono', arg: 'picante' });
   assert.equal(post('G@g.us', '/tono gracioso').reason, 'command without trigger');
@@ -910,8 +901,7 @@ test('a reply that is only a note to the operator is not sent; the message gets 
   let n = 0;
   const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   post('@claude cuántos hay?');
   await settle();
@@ -945,8 +935,7 @@ test('a reply with only a harness block is not sent; the message gets ⚠️ and
   let n = 0;
   const post = text => bridge.handle({ Chat: 'G@g.us', ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
   const settle = async () => {
-    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 100));
+    assert.ok(await bridge.settled(), 'the bridge did not settle within 10 s');
   };
   post('@claude cuántos hay?');
   await settle();
