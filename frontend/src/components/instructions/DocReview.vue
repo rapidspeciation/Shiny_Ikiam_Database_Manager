@@ -15,6 +15,7 @@ import {
   sectionElements,
   selectionAnchor,
   shownInMargin,
+  snapToWords,
   stackCards,
   type Anchor,
 } from '../../lib/docReview'
@@ -45,6 +46,33 @@ const open = computed(() => mine.value.threads.filter(x => x.status === 'open'))
 const changes = computed(() => mine.value.changes.filter(c => shownInMargin(c)))
 const pendingChanges = computed(() => mine.value.changes.filter(c => c.status === 'pending'))
 const answers = computed(() => answeredBy(review.state))
+/** The comments a change answers, for the quote line on its card. */
+const quotesOf = (seriesId: string) =>
+  (changeOf(seriesId)?.threadIds ?? [])
+    .map(id => mine.value.threads.find(x => x.id === id) ?? review.state?.threads.find(x => x.id === id))
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .map(x => ({ id: x.id, quote: x.quote }))
+/** The quote line on a change card: its thread becomes the active card (on phones, its sheet). */
+function showThread(id: string) {
+  listMode.value = false
+  activate(id, { scroll: true, fromList: sheet.fromList })
+}
+/** The quote in a phone thread sheet: the sheet closes and the passage shows, highlighted. */
+function revealQuote(id: string) {
+  closeSheet()
+  nextTick(() => {
+    active.value = id
+    const target = targetOf(id)
+    if (target) {
+      scrollToFraction(target, 0.3)
+      ;(target as HTMLElement).focus?.({ preventScroll: true })
+    }
+  })
+}
+/** Resolved from a sheet opened from the list: back to the list. */
+function afterResolve() {
+  if (sheet.fromList) void backToList()
+}
 const total = computed(() => open.value.length + pendingChanges.value.length)
 /** «Comentarios · n», or «Comentarios» when nothing is waiting. */
 const listLabel = computed(() => (total.value ? t('Comentarios · {n}', { n: total.value }) : t('Comentarios')))
@@ -148,7 +176,7 @@ const items = computed(() => {
 const detached = computed(() => open.value.filter(x => !placed.has(x.id)))
 /** Cards start below the margin's «Comentarios · n» line. */
 const FIRST = 32
-const layout = computed(() => stackCards(items.value.map(i => ({ id: i.id, top: Math.max(FIRST, i.top), height: heights[i.id] ?? 120 })), active.value))
+const layout = computed(() => stackCards(items.value.map(i => ({ id: i.id, top: i.top, height: heights[i.id] ?? 120 })), active.value, 8, FIRST))
 const marginHeight = computed(() => Math.max(0, ...items.value.map(i => (layout.value[i.id] ?? 0) + (heights[i.id] ?? 120))))
 const listMode = ref(false)
 const threadOf = (id: string) => mine.value.threads.find(x => x.id === id)!
@@ -230,7 +258,10 @@ function onSelection() {
 function startComment() {
   const s = selection.value
   if (!s) return
-  const { rect, ...anchor } = s
+  const { rect, ...picked } = s
+  // A touch selection may cut a word: the quote takes whole words.
+  const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+  const anchor = coarse && content.value ? { ...picked, ...snapToWords(fullText(content.value), picked) } : picked
   composer.anchor = anchor
   composer.top = rect ? rect.top - (wrap.value?.getBoundingClientRect().top ?? 0) : 0
   composer.text = ''
@@ -388,7 +419,16 @@ defineExpose({ openList })
       </div>
       <template v-if="listMode">
         <div class="space-y-2">
-          <DocChangeCard v-for="c in allChanges" :key="c.seriesId" :change="c" :admin="admin" @activate="pickFromList(c.seriesId)" @asked="chat => emit('asked', chat)" />
+          <DocChangeCard
+            v-for="c in allChanges"
+            :key="c.seriesId"
+            :change="c"
+            :admin="admin"
+            :quotes="quotesOf(c.seriesId)"
+            @activate="pickFromList(c.seriesId)"
+            @asked="chat => emit('asked', chat)"
+            @thread="showThread"
+          />
           <DocThreadCard
             v-for="x in open"
             :key="x.id"
@@ -408,7 +448,7 @@ defineExpose({ openList })
         </div>
       </template>
       <template v-else>
-        <div v-for="i in items" :key="i.id" class="absolute inset-x-0 transition-[top] duration-150" :style="{ top: `${Math.max(FIRST, layout[i.id] ?? 0)}px` }">
+        <div v-for="i in items" :key="i.id" class="absolute inset-x-0 transition-[top] duration-150" :class="{ 'z-[1]': active === i.id }" :style="{ top: `${layout[i.id] ?? FIRST}px` }">
           <DocThreadCard
             v-if="i.kind === 'thread'"
             :thread="threadOf(i.id)"
@@ -423,9 +463,11 @@ defineExpose({ openList })
             :change="changeOf(i.id)!"
             :admin="admin"
             :active="active === i.id"
+            :quotes="quotesOf(i.id)"
             @activate="activate(i.id)"
             @section="activate(i.id, { scroll: true })"
             @asked="chat => emit('asked', chat)"
+            @thread="showThread"
           />
           <form v-else-if="i.kind === 'new'" data-card="new" class="doc-card doc-card-active rounded-lg border border-brand-300 bg-surface p-3 text-sm" @submit.prevent="saveComment">
             <p class="doc-quote mb-2 line-clamp-3 border-l-2 pl-2 text-xs text-stone-600">{{ composer.anchor?.quote }}</p>
@@ -510,8 +552,24 @@ defineExpose({ openList })
           </button>
         </div>
         <div ref="sheetBody" class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-          <DocThreadCard v-if="sheetThread" :thread="sheetThread" active :answered-by="answers[sheetThread.id]" @change="showChange" />
-          <DocChangeCard v-else-if="sheetChange" :change="sheetChange" :admin="admin" active @asked="chat => emit('asked', chat)" />
+          <DocThreadCard
+            v-if="sheetThread"
+            :thread="sheetThread"
+            active
+            :answered-by="answers[sheetThread.id]"
+            @change="showChange"
+            @quote="revealQuote(sheetThread.id)"
+            @resolved="afterResolve"
+          />
+          <DocChangeCard
+            v-else-if="sheetChange"
+            :change="sheetChange"
+            :admin="admin"
+            active
+            :quotes="quotesOf(sheetChange.seriesId)"
+            @asked="chat => emit('asked', chat)"
+            @thread="showThread"
+          />
           <form v-else-if="sheet.mode === 'new'" @submit.prevent="saveComment">
             <p class="doc-quote mb-2 line-clamp-3 border-l-2 pl-2 text-xs text-stone-600">{{ composer.anchor?.quote }}</p>
             <textarea v-model="composer.text" data-new-comment rows="3" class="doc-box" :placeholder="$t('Comentario')" />
@@ -529,7 +587,7 @@ defineExpose({ openList })
               class="doc-change-edge block w-full rounded-md border border-stone-200 bg-surface p-2 text-left text-sm"
               @click="activate(c.seriesId, { fromList: true })"
             >
-              <span class="doc-claude-tag">Claude</span> § {{ c.heading || $t('Inicio') }}
+              <span class="doc-claude-tag">Claude</span> {{ c.heading || $t('Inicio') }}
               <span v-if="c.status !== 'pending'" class="text-xs text-stone-500"> · {{ c.status === 'applied' ? $t('Aplicado') : c.status === 'undone' ? $t('Deshecho') : '' }}</span>
             </button>
             <button

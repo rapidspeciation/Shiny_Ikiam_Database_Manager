@@ -1799,6 +1799,11 @@ mark.doc-mark:focus-visible {
     min-width: 44px;
     min-height: 44px;
   }
+  .doc-quote-btn {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
   .doc-decide {
     column-gap: 32px;
   }

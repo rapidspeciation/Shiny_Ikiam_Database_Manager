@@ -7,7 +7,7 @@ import { t } from '../../lib/i18n'
 
 /** One comment thread: its quote, the comments and replies, a reply box, resolve and reopen. */
 const props = defineProps<{ thread: DocThread; active?: boolean; detached?: boolean; answeredBy?: string | null }>()
-const emit = defineEmits<{ activate: []; quote: []; change: [seriesId: string] }>()
+const emit = defineEmits<{ activate: []; quote: []; change: [seriesId: string]; resolved: [] }>()
 
 const draft = ref('')
 const busy = ref(false)
@@ -33,7 +33,11 @@ const reply = () =>
     await act(`threads/${props.thread.id}/comments`, 'POST', { body: draft.value })
     draft.value = ''
   })
-const setStatus = (to: 'resolve' | 'reopen') => run(() => act(`threads/${props.thread.id}/${to}`))
+const setStatus = (to: 'resolve' | 'reopen') =>
+  run(async () => {
+    await act(`threads/${props.thread.id}/${to}`)
+    if (to === 'resolve') emit('resolved')
+  })
 function startEdit(c: DocComment) {
   editing.value = c.id
   editText.value = c.body
@@ -61,7 +65,7 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
   >
     <button
       type="button"
-      class="mb-2 block w-full border-l-2 pl-2 text-left text-xs leading-5"
+      class="doc-quote-btn mb-2 block w-full border-l-2 pl-2 text-left text-xs leading-5"
       :class="detached ? 'border-stone-300 text-stone-400' : 'doc-quote text-stone-600'"
       :title="detached ? $t('El texto cambió') : $t('Ver en el texto')"
       @click.stop="emit('quote')"

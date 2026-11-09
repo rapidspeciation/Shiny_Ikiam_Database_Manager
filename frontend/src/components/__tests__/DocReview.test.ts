@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, nextTick, reactive } from 'vue'
 import DocThreadCard from '../instructions/DocThreadCard.vue'
 import DocChangeCard from '../instructions/DocChangeCard.vue'
 import DocReview from '../instructions/DocReview.vue'
@@ -76,6 +76,7 @@ const change = (over: Partial<DocChange> = {}): DocChange => ({
   status: 'pending',
   stale: false,
   lost: false,
+  revising: false,
   chat: 'chat-1',
   createdAt: '2026-11-08T10:10:00Z',
   decidedAt: null,
@@ -189,6 +190,33 @@ describe('DocChangeCard', () => {
     await nextTick()
     expect(host.textContent).not.toContain('Aplicado por')
     expect(button(host, 'Deshacer')).toBeUndefined()
+  })
+  it('shows the comment it answers (a click shows that thread), says when Claude is answering, and why a version exists', async () => {
+    let shown = ''
+    let host = mount(DocChangeCard, { change: change(), admin: true, quotes: [{ id: 't1', quote: 'Usa NA para el sexo' }, { id: 't2', quote: 'otra' }], onThread: (id: string) => (shown = id) })
+    const quote = host.querySelector<HTMLButtonElement>('.doc-quote-btn')!
+    expect(quote.textContent).toContain('Usa NA para el sexo')
+    expect(quote.textContent).toContain('+1')
+    quote.click()
+    expect(shown).toBe('t1')
+    expect(host.querySelector('header')!.textContent).not.toContain('§')
+    unmount()
+    const system = { id: 'x', body: 'version_after_stale:2', createdAt: '', editedAt: null, deleted: false, kind: 'system' as const, author: null, own: false }
+    host = mount(DocChangeCard, { change: change({ revising: true, comments: [system] }), admin: true })
+    expect(host.textContent).toContain('Claude está respondiendo…')
+    expect(button(host, 'Aplicar')!.disabled).toBe(true)
+    expect(host.textContent).toContain('v2: el texto había cambiado')
+  })
+  it('a double tap on the decision button never applies and then undoes', async () => {
+    const live = reactive(change())
+    const host = mount(DocChangeCard, { change: live, admin: true })
+    button(host, 'Aplicar')!.click()
+    await flush()
+    Object.assign(live, { status: 'applied', decidedBy: 'Franz', decidedAt: '2026-11-08T12:00:00Z' })
+    await nextTick()
+    button(host, 'Deshacer')!.click()
+    await flush()
+    expect(posts().map(p => p.url)).toEqual(['api/doc-review/changes/s1/apply'])
   })
   it('a click anywhere on the card, its diff included, makes it the active one', async () => {
     let activated = 0
@@ -322,14 +350,21 @@ describe('DocReview', () => {
     expect(host.querySelector('[role="dialog"]')?.textContent).toContain('¿NA o NOT_COLLECTED?')
     button(host, 'Comentarios · 3')!.click()
     await nextTick()
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('§ Datos')
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('Claude Datos')
     // From the list, a thread opens with «‹ Comentarios» back to the list.
     ;[...host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.includes('¿NA o NOT_COLLECTED?'))!.click()
     await nextTick()
     expect(button(host, 'Comentarios')).toBeDefined()
     button(host, 'Comentarios')!.click()
     await nextTick()
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('§ Datos')
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('Claude Datos')
+    // Resolving a thread opened from the list goes back to the list.
+    ;[...host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.includes('¿NA o NOT_COLLECTED?'))!.click()
+    await nextTick()
+    button(host, 'Resolver')!.click()
+    await flush()
+    expect(posts().at(-1)!.url).toBe('api/doc-review/threads/t1/resolve')
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('Claude Datos')
     // Escape closes the sheet.
     host.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await nextTick()
@@ -340,6 +375,19 @@ describe('DocReview', () => {
     tag.click()
     await nextTick()
     expect(host.querySelector('[role="dialog"] [data-card="s1"]')).not.toBe(null)
+  })
+  it('phones: the quote in a thread sheet closes the sheet and shows its passage', async () => {
+    viewport(390)
+    withState()
+    const host = mount(DocReview, { entryId: PATH, html })
+    await flush()
+    await flush()
+    ;(host.querySelector('mark[data-thread="t1"]') as HTMLElement).click()
+    await nextTick()
+    host.querySelector<HTMLButtonElement>('[role="dialog"] .doc-quote-btn')!.click()
+    await flush()
+    expect(host.querySelector('[role="dialog"]')).toBe(null)
+    expect(host.querySelector('mark[data-thread="t1"]')!.classList.contains('is-active')).toBe(true)
   })
   it('highlights and the change bar take the keyboard: a name, Enter opens', async () => {
     withState()

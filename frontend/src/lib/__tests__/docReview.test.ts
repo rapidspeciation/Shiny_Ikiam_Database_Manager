@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { answeredBy, clearMarks, countFor, hasPendingChange, openCount, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
+import { answeredBy, clearMarks, countFor, hasPendingChange, openCount, snapToWords, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -82,11 +82,39 @@ describe('doc review: the margin', () => {
     expect(stackCards(items, 'b')).toEqual({ a: -58, b: 50, c: 400 })
   })
 
+  it("never lets a card cover the active one: when those above can't rise past the top, the active one and those below move down", () => {
+    // AGENTS.md § The workbook: the change card (section top) and the active thread a little below it, near the top.
+    const items = [
+      { id: 'change', top: 40, height: 236 },
+      { id: 'thread', top: 90, height: 285 },
+      { id: 'later', top: 420, height: 100 },
+    ]
+    const out = stackCards(items, 'thread', 8, 32)
+    expect(out.change).toBe(32)
+    expect(out.change + 236 + 8).toBeLessThanOrEqual(out.thread)
+    expect(out.thread + 285 + 8).toBeLessThanOrEqual(out.later)
+    // With room above, the active card keeps its own top.
+    expect(stackCards([{ id: 'x', top: 400, height: 100 }, { id: 'y', top: 420, height: 100 }], 'y', 8, 32)).toEqual({ x: 312, y: 420 })
+    // No card above the margin's top without an active one either.
+    expect(stackCards([{ id: 'x', top: 0, height: 50 }], null, 8, 32)).toEqual({ x: 32 })
+  })
+
+  it('a touch selection snaps to whole words', () => {
+    const text = "Where the team's practice varied, the rule says so."
+    const at = text.indexOf('the ru')
+    expect(snapToWords(text, { quote: 'the ru', offset: at })).toMatchObject({ quote: 'the rule', offset: at })
+    const mid = text.indexOf('eam')
+    expect(snapToWords(text, { quote: "eam's prac", offset: mid }).quote).toBe("team's practice")
+    expect(snapToWords(text, { quote: 'the rule', offset: at }).quote).toBe('the rule')
+  })
+
   it('counts per file (the brief counts its voice), and which changes stay in the margin', () => {
     const state = { counts: { 'assistant/AGENTS.md': 1, 'assistant/voice/app.md': 2 }, threads: [], changes: [{ path: 'assistant/voice/app.md' }] } as unknown as DocReviewState
     expect(countFor(state, 'assistant/AGENTS.md')).toBe(3)
     const asked = { threads: [{ id: 'a', status: 'open' }, { id: 'b', status: 'open' }, { id: 'c', status: 'resolved' }], changes: [{ status: 'pending', threadIds: ['a'] }] } as unknown as DocReviewState
     expect(openCount(asked)).toBe(1)
+    const answered = { threads: [{ id: 'a', status: 'open', comments: [{ kind: 'person', deleted: false }, { kind: 'claude', deleted: false }] }], changes: [] } as unknown as DocReviewState
+    expect(openCount(answered)).toBe(0)
     expect(answeredBy({ changes: [{ status: 'pending', seriesId: 's1', threadIds: ['a'] }, { status: 'applied', seriesId: 's2', threadIds: ['b'] }] } as unknown as DocReviewState)).toEqual({ a: 's1' })
     const withChange = { changes: [{ status: 'pending', path: 'assistant/voice/app.md' }, { status: 'applied', path: 'assistant/skills/x/SKILL.md' }] } as unknown as DocReviewState
     expect(hasPendingChange(withChange, 'assistant/AGENTS.md')).toBe(true)

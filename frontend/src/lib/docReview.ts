@@ -71,6 +71,8 @@ export interface DocChange {
   status: 'pending' | 'applied' | 'undone' | 'discarded' | 'superseded'
   stale: boolean
   lost: boolean
+  /** «Pedir versión nueva» sent: Claude is working on the next version. */
+  revising: boolean
   chat: string | null
   createdAt: string
   decidedAt: string | null
@@ -82,9 +84,14 @@ export interface DocChange {
   comments: DocComment[]
 }
 export interface DocAsk {
+  id?: string
   state: 'idle' | 'running' | 'finished' | 'gone'
   chat: string | null
   at: string | null
+  /** Once the run ended: what it produced and the first file it touched. */
+  result?: { changes: number; replies: number; path: string | null }
+  /** The person opened or dismissed that result. */
+  seen?: boolean
 }
 export interface DocReviewState {
   admin: boolean
@@ -155,8 +162,10 @@ export function answeredBy(state: DocReviewState | null): Record<string, string>
 /** Open threads no pending change answers yet, across every file (the bar's «Pedir a Claude · n»). */
 export function openCount(state: DocReviewState | null) {
   const covered = new Set((state?.changes ?? []).filter(c => c.status === 'pending').flatMap(c => c.threadIds))
-  return (state?.threads ?? []).filter(t => t.status === 'open' && !covered.has(t.id)).length
+  return (state?.threads ?? []).filter(t => t.status === 'open' && !covered.has(t.id) && !claudeAnsweredLast(t)).length
 }
+/** Claude has the last word in a thread: it waits for people, not for another ask. */
+export const claudeAnsweredLast = (t: DocThread) => (t.comments ?? []).filter(c => c.kind !== 'system' && !c.deleted).at(-1)?.kind === 'claude'
 
 /** A change still to decide on, or one decided in the last day (its card stays in the margin for Deshacer). */
 export function shownInMargin(c: DocChange, now = Date.now()) {
@@ -294,8 +303,13 @@ export function sectionElements(root: Element, heading: string): { head: Element
  * The margin's cards: each at its wanted top, pushed down past the one above it (8 px apart); the active one
  * stays at its own top and those above it move up. `items`: in the order of their tops.
  */
-export function stackCards(items: { id: string; top: number; height: number }[], active: string | null = null, gap = 8): Record<string, number> {
-  const sorted = [...items].sort((a, b) => a.top - b.top)
+export function stackCards(
+  items: { id: string; top: number; height: number }[],
+  active: string | null = null,
+  gap = 8,
+  min = -Infinity,
+): Record<string, number> {
+  const sorted = [...items].map(i => ({ ...i, top: Math.max(min, i.top) })).sort((a, b) => a.top - b.top)
   const out: Record<string, number> = {}
   const pivot = active ? sorted.findIndex(i => i.id === active) : -1
   if (pivot < 0) {
@@ -320,5 +334,19 @@ export function stackCards(items: { id: string; top: number; height: number }[],
     out[i.id] = top
     ceiling = top
   }
+  // The cards above cannot rise past the margin's top: the active card and those below it move down instead, so
+  // nothing ever covers the active one.
+  if (ceiling < min) for (const id of Object.keys(out)) out[id] += min - ceiling
   return out
+}
+
+/** A quote widened to whole words (a touch selection may cut one), with its context again. */
+export function snapToWords(text: string, a: Pick<Anchor, 'quote' | 'offset'>): Pick<Anchor, 'quote' | 'offset' | 'prefix' | 'suffix'> {
+  const word = /[\p{L}\p{N}_]/u
+  let start = a.offset
+  let end = a.offset + a.quote.length
+  if (start < 0 || text.slice(start, end) !== a.quote) return { quote: a.quote, offset: a.offset, prefix: text.slice(Math.max(0, start - CONTEXT), Math.max(0, start)), suffix: text.slice(end, end + CONTEXT) }
+  while (start > 0 && word.test(text[start - 1]) && word.test(text[start])) start--
+  while (end < text.length && word.test(text[end]) && word.test(text[end - 1])) end++
+  return { quote: text.slice(start, end), offset: start, prefix: text.slice(Math.max(0, start - CONTEXT), start), suffix: text.slice(end, end + CONTEXT) }
 }

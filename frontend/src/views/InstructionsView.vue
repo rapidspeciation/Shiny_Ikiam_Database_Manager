@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Bot, ChevronDown, ChevronRight, FileCode2, FileText, History, ListTree, MessageSquare, Wrench } from 'lucide-vue-next'
+import { ArrowLeft, Bot, ChevronDown, ChevronRight, FileCode2, FileText, History, ListTree, MessageSquare, Wrench, X } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { renderMarkdown } from '../lib/markdown'
@@ -50,7 +50,29 @@ watch(
   },
 )
 const asking = ref(false)
+/** «Claude: 1 cambio · 1 respuesta» once the last ask ended, until opened or dismissed. */
+const outcome = computed(() => {
+  const ask = review.state?.ask
+  if (!ask?.result || ask.seen || ask.state === 'running') return ''
+  const parts = [
+    ask.result.changes ? tn(ask.result.changes, '{n} cambio', '{n} cambios') : '',
+    ask.result.replies ? tn(ask.result.replies, '{n} respuesta', '{n} respuestas') : '',
+  ].filter(Boolean)
+  return parts.length ? t('Claude: {what}', { what: parts.join(' · ') }) : ''
+})
+async function markSeen() {
+  const id = review.state?.ask.id
+  if (id) await act(`asks/${id}/seen`).catch(() => {})
+}
+async function openOutcome() {
+  const path = review.state?.ask.result?.path
+  await markSeen()
+  if (path) open(path)
+}
+const dismissOutcome = () => markSeen()
 const running = computed(() => review.state?.ask.state === 'running')
+/** Claude's line or button is in the bar (on phones the title gives way). */
+const barBusy = computed(() => !!review.state?.admin && (running.value || !!outcome.value || openThreads.value > 0))
 const openThreads = computed(() => openCount(review.state))
 async function askClaude() {
   asking.value = true
@@ -168,24 +190,32 @@ watch(
       <RouterLink to="/asistente" class="btn-ghost gap-1 px-2 py-0.5 text-stone-700">
         <ArrowLeft :size="14" /> {{ $t('Asistente') }}
       </RouterLink>
-      <h1 class="font-semibold text-stone-800">{{ $t('Instrucciones de la IA') }}</h1>
+      <!-- On phones the bar stays one line: the title gives way to Claude's line or button. -->
+      <h1 class="font-semibold text-stone-800" :class="{ 'hidden sm:block': barBusy }">{{ $t('Instrucciones de la IA') }}</h1>
       <span v-if="page && !page.historySource" class="ml-auto hidden text-xs text-stone-500 sm:inline">
         {{ $t('El historial de cambios no está disponible en esta instalación.') }}
       </span>
-      <span v-if="review.state?.admin && running" class="ml-auto flex items-center gap-1 text-xs text-stone-600">
-        {{ $t('Claude está revisando') }} ·
-        <button type="button" class="font-medium text-brand-text underline" @click="openChat(review.state.ask.chat)">{{ $t('Abrir chat') }}</button>
+      <span v-if="review.state?.admin && running" class="ml-auto flex items-center gap-1 text-xs text-stone-600" role="status">
+        <span class="sm:hidden">{{ $t('Revisando…') }}</span><span class="hidden sm:inline">{{ $t('Claude está revisando') }}</span> ·
+        <button type="button" class="doc-act font-medium text-brand-text underline" @click="openChat(review.state.ask.chat)">{{ $t('Abrir chat') }}</button>
       </span>
-      <button
-        v-else-if="review.state?.admin && openThreads"
-        type="button"
-        class="btn-primary ml-auto gap-1 px-2 py-0.5 text-xs"
-        :class="{ 'sm:ml-3': page && !page.historySource }"
-        :disabled="asking"
-        @click="askClaude"
-      >
-        {{ $t('Pedir a Claude · {n}', { n: openThreads }) }}
-      </button>
+      <template v-else-if="review.state?.admin">
+        <!-- What the last ask produced, until it is opened or dismissed. -->
+        <span v-if="outcome" class="ml-auto flex items-center text-xs text-stone-600">
+          <button type="button" class="doc-act font-medium text-brand-text underline" @click="openOutcome">{{ outcome }}</button>
+          <button type="button" class="doc-act btn-ghost" :aria-label="$t('Cerrar')" @click="dismissOutcome"><X :size="13" /></button>
+        </span>
+        <button
+          v-if="openThreads"
+          type="button"
+          class="doc-act btn-primary gap-1 px-2 py-0.5 text-xs"
+          :class="[outcome ? 'hidden sm:ml-2 sm:inline-flex' : 'ml-auto', { 'sm:ml-3': page && !page.historySource && !outcome }]"
+          :disabled="asking"
+          @click="askClaude"
+        >
+          {{ $t('Pedir a Claude · {n}', { n: openThreads }) }}
+        </button>
+      </template>
     </div>
     <p v-if="failed" class="p-4 text-sm text-red-700">{{ failed }}</p>
     <p v-else-if="!page" class="p-4 text-sm text-stone-500">{{ $t('Cargando…') }}</p>
@@ -203,7 +233,7 @@ watch(
           <ul>
             <li v-for="item in group.items" :key="item.id">
               <button
-                class="flex w-full items-baseline gap-2 py-1.5 pr-3 text-left text-sm hover:bg-stone-100 md:py-1"
+                class="flex w-full items-baseline gap-2 py-2.5 pr-3 text-left text-sm hover:bg-stone-100 md:py-1"
                 :class="[
                   isMain(item) ? 'pl-5' : 'pl-9 text-stone-600',
                   entry?.id === item.id ? 'bg-brand-50 font-medium text-brand-800' : '',
