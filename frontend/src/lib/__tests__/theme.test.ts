@@ -71,4 +71,20 @@ describe('theme preference', () => {
     expect(boot).toContain(THEME_COLOR.light)
     expect(boot).toContain(THEME_COLOR.dark)
   })
+  it('the boot script, run before the first paint, sets the saved choice or else the system one', () => {
+    const boot = readFileSync(resolve(import.meta.dirname, '../../../public/theme-boot.js'), 'utf8')
+    const run = (saved: string | null, systemDark: boolean) => {
+      const attrs: Record<string, string> = {}
+      const root = { setAttribute: (k: string, v: string) => (attrs[k] = v), style: { colorScheme: '' } }
+      const storage = { getItem: (k: string) => (k === THEME_KEY ? saved : null) }
+      const matchMedia = (q: string) => ({ matches: q === '(prefers-color-scheme: dark)' && systemDark })
+      const document = { documentElement: root, querySelector: () => null }
+      new Function('localStorage', 'window', 'matchMedia', 'document', boot)(storage, { matchMedia }, matchMedia, document)
+      return [attrs['data-theme'], root.style.colorScheme]
+    }
+    expect(run('dark', false)).toEqual(['dark', 'dark'])
+    expect(run('light', true)).toEqual(['light', 'light'])
+    expect(run(null, true)).toEqual(['dark', 'dark'])
+    expect(run(null, false)).toEqual(['light', 'light'])
+  })
 })

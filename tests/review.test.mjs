@@ -356,9 +356,13 @@ test('photos come from Drive once (lh3, else the thumbnail), are cached within a
     asked.map(u => new URL(u).host),
     ['lh3.googleusercontent.com', 'drive.google.com'],
   );
-  // Two cards at once share a download; the next time it comes from the cache.
-  await Promise.all([photos.get(ids.CAM000101d, 400), photos.get(ids.CAM000101d, 400)]);
+  // The next time it comes from the cache.
+  await photos.get(ids.CAM000101d, 400);
   assert.equal(asked.length, 2);
+  // Two cards at once asking for a photo not cached yet share one download (lh3, then the thumbnail).
+  const both = await Promise.all([photos.get(ids.CAM000101v, 400), photos.get(ids.CAM000101v, 400)]);
+  assert.deepEqual(both.map(p => p.data.length), [3000, 3000]);
+  assert.equal(asked.length, 4);
   await assert.rejects(photos.get('1'.repeat(33), 400), { status: 404 });
   await assert.rejects(photos.get(ids.CAM000101d, 999), { status: 400 });
   // Over the bound, the least recently used photos go.

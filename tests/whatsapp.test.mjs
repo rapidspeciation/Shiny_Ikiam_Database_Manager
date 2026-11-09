@@ -65,6 +65,8 @@ test('a body without the right signature is refused before anything is read', ()
   const { post, db } = fixture();
   assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: 'sha256=00' }).status, 403);
   assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: sign('other-secret-0000000', 'x') }).status, 403);
+  // The right secret, but the signature of another body.
+  assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: sign(SECRET, '{"text":"otra cosa"}') }).status, 403);
   assert.equal(db.prepare('SELECT count(*) n FROM wa_inbox').get().n, 0);
 });
 

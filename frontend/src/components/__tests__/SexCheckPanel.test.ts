@@ -84,7 +84,9 @@ describe('the sex check of the Fotos tab', () => {
     const asked: unknown[] = []
     renameFrame.ask = async (name, args) => {
       asked.push({ name, args })
-      return { ok: true, data: { images: [{ files: [], blob: new Blob([new Uint8Array(200).fill(65)], { type: 'image/jpeg' }) }] } }
+      // Each photo its own bytes (its file name), so a d sent as v shows.
+      const file = (args as { files: string[] }).files[0]
+      return { ok: true, data: { images: [{ files: [], blob: new Blob([`jpeg of ${file}`], { type: 'image/jpeg' }) }] } }
     }
     renameHost.state = state()
     renameHost.ready = true
@@ -108,9 +110,10 @@ describe('the sex check of the Fotos tab', () => {
       { name: 'view', args: { files: ['IMG_3.JPG'], part: 'photo', side: 1600 } },
       { name: 'view', args: { files: ['IMG_4.JPG'], part: 'photo', side: 1600 } },
     ])
-    expect(calls.map(c => [c.path, c.body?.cam, typeof c.body?.d, typeof c.body?.v])).toEqual([
-      ['sex-check', 'CAM077001', 'string', 'string'],
-      ['sex-check', 'CAM077002', 'string', 'string'],
+    // The dorsal photo as d, the ventral as v (IMG_1/IMG_3 are d, IMG_2/IMG_4 v in state()).
+    expect(calls.map(c => [c.path, c.body?.cam, c.body?.d, c.body?.v])).toEqual([
+      ['sex-check', 'CAM077001', btoa('jpeg of IMG_1.JPG'), btoa('jpeg of IMG_2.JPG')],
+      ['sex-check', 'CAM077002', btoa('jpeg of IMG_3.JPG'), btoa('jpeg of IMG_4.JPG')],
     ])
     // Only the one to look at is listed; the agreement is counted.
     const rows = [...host.querySelectorAll('[data-sex-flag]')]

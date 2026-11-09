@@ -25,8 +25,15 @@ describe('the activation page', () => {
     expect(activationStep(null)).toBeNull()
   })
   it('its own words for the code errors, the usual text for the rest', () => {
-    for (const code of ['CODE_WRONG', 'CODE_EXPIRED', 'CODE_LIMIT', 'CODE_NOT_SENT', 'CODE_NEEDED'])
-      expect(activationError(code)).toBeTruthy()
+    // Each code its own way out: check the code, ask a new one, ask first, wait an hour, try again later.
+    const advice: Record<string, RegExp> = {
+      CODE_WRONG: /no es correcto\. Revísalo/,
+      CODE_EXPIRED: /ya no vale .*Pide uno nuevo/,
+      CODE_NEEDED: /^Primero pide un código/,
+      CODE_LIMIT: /Espera una hora/,
+      CODE_NOT_SENT: /No se pudo enviar el código/,
+    }
+    for (const [code, words] of Object.entries(advice)) expect(activationError(code)).toMatch(words)
     expect(activationError('USERNAME_TAKEN')).toBeNull()
     expect(activationError(undefined)).toBeNull()
   })
