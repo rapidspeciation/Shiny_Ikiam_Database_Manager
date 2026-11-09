@@ -33,6 +33,8 @@ case "$name $*" in
   "npx vite build"*) job=build ;;
 esac
 if [ -n "\${job:-}" ] && [ "$job" = "\${DEPLOY_TEST_FAIL:-}" ]; then echo "$job failed (stand-in)"; exit 1; fi
+# DEPLOY_TEST_LINGER: a restart leaves a process running (as a stub restarting a dummy app does).
+if [ "$name" = systemctl ] && [[ "$*" == *restart* ]] && [ -n "\${DEPLOY_TEST_LINGER:-}" ]; then (sleep 45 >/dev/null 2>&1 </dev/null &); fi
 if [ "\${job:-}" = build ]; then mkdir -p ../web && echo "<p>\${DEPLOY_TEST_BUILD:-built}</p>" > ../web/index.html; fi
 exit 0
 `;

@@ -18,7 +18,8 @@ test('deploy.sh, every check passing: it gets as far as the server (a stand-in s
     // the shared connection closed at the end.
     assert.equal(run.ssh.length, 2, run.ssh.join('\n'));
     assert.match(run.ssh[1], / -O exit claudeclaw$/);
-    assert.match(run.ssh[0], /^ssh .*-o ControlMaster=auto .*claudeclaw mkdir -p '[^']+\/app\/releases' && rsync --server /);
+    // A new release folder only: never an upload into an existing release.
+    assert.match(run.ssh[0], /^ssh .*-o ControlMaster=auto .*claudeclaw mkdir -p '[^']+\/app\/releases' && test ! -e '[^']+\/app\/releases\/\d{8}T\d{6}Z' && rsync --server /);
     assert.match(run.ssh[0], /\/app\/releases\/\d{8}T\d{6}Z\/$/);
     for (const check of ['node scripts/check.mjs', 'node --test', 'npm --prefix frontend test', 'npx vite build'])
       assert.ok(run.calls.some(c => c.startsWith(check)), `${check} ran`);

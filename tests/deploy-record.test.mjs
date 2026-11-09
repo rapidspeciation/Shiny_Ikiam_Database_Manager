@@ -135,13 +135,16 @@ test('deploy.sh on claudeclaw: the PC run of HEAD is installed without testing h
     assert.equal(order.at(-1), 'curl');
     assert.ok(order.indexOf('restart') < order.lastIndexOf('curl'));
 
-    // The same inputs again: no unit copied or reloaded, no workspace refresh; current → the new one, previous kept.
-    const second = f.run([], { DEPLOY_LOCAL: '1' });
+    // The same inputs again: no unit copied or reloaded, no workspace refresh; current → the new one (a release of
+    // its own even within the same second), previous kept. Its restart leaves a process running (a stub's dummy app):
+    // that process does not hold the install's lock, so the next deploy goes on at once.
+    const second = f.run([], { DEPLOY_LOCAL: '1', DEPLOY_TEST_LINGER: '1' });
     assert.equal(second.status, 0, second.stderr);
     assert.match(second.stdout, /workspaces unchanged: not refreshed/);
     assert.ok(!second.calls.some(c => /t3-provision\.mjs/.test(c) && !/deploy-stamp/.test(c)));
     assert.ok(!second.calls.includes('systemctl --user daemon-reload'));
     const r2 = releasesOf(f).find(r => r !== r1);
+    assert.ok(r2 > r1);
     assert.equal(current(f), `releases/${r2}`);
     assert.equal(readFileSync(join(f.app, 'shared', 'previous-release'), 'utf8').trim(), `releases/${r1}`);
 
