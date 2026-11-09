@@ -113,6 +113,27 @@ test('steps: eggs in two groups hatch into larvae groups that mirror them; terms
   assert.throws(() => step(store, { recordId: c }), { code: 'INVALID_STEP' });
 });
 
+test('a step refused part way leaves nothing behind: no group, no event, no history line, no step', async () => {
+  const { store, id } = await fixture();
+  const c = id(10);
+  const saved = () =>
+    ['clutch_groups', 'clutch_events', 'clutch_log', 'clutch_steps'].map(t => store.db.prepare(`SELECT * FROM ${t} WHERE record_id = ?`).all(c));
+  const before = saved();
+  // A new group and its first event are written before the bad history line is reached.
+  assert.throws(
+    () =>
+      step(store, {
+        recordId: c,
+        groups: [{ field: 'NUMBER OF EGGS', list: [{ key: 'a', label: 'A' }] }],
+        events: [{ stage: 'egg', kind: 'laid', count: 10, term: 10, groupKey: 'a' }],
+        log: [{ kind: 'not-a-kind', field: 'NUMBER OF EGGS' }],
+      }),
+    { code: 'INVALID_LOG' },
+  );
+  assert.deepEqual(saved(), before);
+  assert.deepEqual(before, [[], [], [], []]);
+});
+
 test('the terms an event may write: a gain +N, a loss −N or none, a correction or a transfer ±N; a day not known', async () => {
   const { store, id } = await fixture();
   const c = id(11);

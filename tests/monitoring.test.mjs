@@ -250,6 +250,29 @@ test('an imported walk can be reviewed again: re-pasting its link says so, and i
   assert.throws(() => reopenWalk(s, 'nope'), { code: 'WALK_NOT_FOUND' });
 });
 
+test('a walk imported again from Wikiloc (no GPS times) keeps the timed GPX track; its captures are the new ones', async () => {
+  const s = store();
+  const { walk } = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage([]) });
+  const gpx = saveTrack(s, { ...body('request-0300'), wikilocWalkId: walk.id }, editor);
+  reopenWalk(s, walk.id);
+  const untimed = [
+    [-0.950528, -77.869962, 601, null],
+    [-0.950562, -77.869942, 600, null],
+  ];
+  const again = saveTrack(
+    s,
+    { ...body('request-0301'), track: untimed, wikilocWalkId: walk.id, captures: [{ ...body('x').captures[0], markId: 'B71' }] },
+    editor,
+  );
+  assert.equal(again.track.id, gpx.track.id);
+  // The points and their times as the GPX gave them (body()'s track), not the Wikiloc page's.
+  assert.deepEqual(listTracks(s)[0].track, [
+    [-0.950528, -77.869962, 601.4, '2026-09-26T14:11:55Z'],
+    [-0.950562, -77.869942, null, null],
+  ]);
+  assert.equal(listTracks(s)[0].captures[0].markId, 'B71');
+});
+
 test('whoever brought the walk in may remove its track; the walk then waits for review again', async () => {
   const s = store();
   const { walk } = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage([]) });

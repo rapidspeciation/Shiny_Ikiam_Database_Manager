@@ -110,6 +110,20 @@ const predictionsBundle = () => ({
   ],
 });
 
+test('an import that fails part way keeps the archive as it was: the wing boxes already replaced come back', () => {
+  const db = new DatabaseSync(':memory:');
+  const bundle = wingsBundle();
+  importBundle(db, { wings: bundle.wings, wingBoxes: bundle.wingBoxes });
+  const tables = () => ['photo_wing_sides', 'photo_wing_boxes'].map(t => db.prepare(`SELECT * FROM ${t} ORDER BY name`).all());
+  const before = tables();
+  assert.deepEqual(before.map(rows => rows.length), [3, 2]);
+  // New wing boxes (written first), then a wing row with no name: refused by the table.
+  assert.throws(() => importBundle(db, { wingBoxes: bundle.wingBoxes.slice(0, 1), wings: [{ ...bundle.wings[0], name: null }] }));
+  assert.deepEqual(tables(), before);
+  // And the next good import goes in.
+  assert.deepEqual(importBundle(db, { wingBoxes: bundle.wingBoxes.slice(0, 1) }), { wingBoxes: 1 });
+});
+
 test('the nano wing readings go in with every wing, the missing positions and the raw turn, and come out the same', () => {
   const db = new DatabaseSync(':memory:');
   const bundle = wingsBundle();

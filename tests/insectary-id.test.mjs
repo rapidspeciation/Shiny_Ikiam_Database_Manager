@@ -57,10 +57,12 @@ test('a butterfly saved under the wrong ID moves to the pre-made row of the righ
   assert.equal(row(store, 'Insectary_data', 3).SPECIES, 'Ithomia salapia salapia');
   assert.equal(row(store, 'Insectary_data', 3).CAM_ID, 'CAM000010');
   assert.equal(row(store, 'Insectary_data', 3).Insectary_ID, 'N6D');
+  assert.equal(row(store, 'Insectary_data', 3).Sex, 'female', 'the sex moves with the butterfly');
   // The old row is free again, with its ID.
   assert.equal(row(store, 'Insectary_data', 2).Insectary_ID, 'N5D');
   assert.equal(row(store, 'Insectary_data', 2).SPECIES ?? null, null);
   assert.equal(row(store, 'Insectary_data', 2).CAM_ID ?? null, null);
+  assert.equal(row(store, 'Insectary_data', 2).Sex ?? null, null);
   assert.equal(row(store, 'Collection_data', 2).Insectary_ID, 'N6D');
   assert.equal(row(store, 'Stocks_Matings', 2).female_ID, 'N6D');
 
@@ -78,6 +80,8 @@ test('two butterflies with each other’s IDs are swapped', async () => {
   assert.equal(saved.plan.mode, 'swap');
   assert.equal(row(store, 'Insectary_data', 2).SPECIES, 'Mechanitis lysimnia');
   assert.equal(row(store, 'Insectary_data', 4).SPECIES, 'Ithomia salapia salapia');
+  // Each sex goes with its butterfly: N5D's row now holds the male, N7D's the female.
+  assert.deepEqual([row(store, 'Insectary_data', 2).Sex, row(store, 'Insectary_data', 4).Sex], ['male', 'female']);
   assert.equal(row(store, 'Collection_data', 2).Insectary_ID, 'N7D');
   assert.equal(row(store, 'Collection_data', 3).Insectary_ID, 'N5D');
   const mating = row(store, 'Stocks_Matings', 2);
@@ -91,4 +95,27 @@ test('an ID that is not recorded, or has no pre-made row, is refused', async () 
   assert.throws(() => planIdChange(store, 'N5D', 'Z9Z'), /Z9Z no tiene fila preparada/);
   assert.throws(() => planIdChange(store, 'N5D', 'n5d'), /igual al actual/);
   store.close();
+});
+
+test('an ID held by two rows is refused, not moved into the first of them', async () => {
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      { row: 2, values: { Insectary_ID: 'N5D', Wild_Reared: 'Wild-caught', SPECIES: 'Ithomia salapia salapia', Sex: 'female' } },
+      { row: 3, cells: [formulaCell('=(ROW()+3)&"D"', 'N6D')] },
+      { row: 4, values: { Insectary_ID: 'N6D' } },
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data'] });
+  try {
+    const rows = () => [2, 3, 4].map(n => row(store, 'Insectary_data', n));
+    const before = rows();
+    await assert.rejects(
+      applyIdChange(store, { from: 'N5D', to: 'N6D', requestId: randomUUID() }, user),
+      e => e.code === 'IDENTITY_CONFLICT' && /2 filas con N6D/.test(e.message),
+    );
+    assert.deepEqual(rows(), before);
+  } finally {
+    store.close();
+  }
 });

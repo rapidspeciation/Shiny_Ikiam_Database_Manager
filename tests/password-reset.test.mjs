@@ -158,6 +158,26 @@ test('the reset link changes the password, signs out other sessions, signs the p
   }
 });
 
+test('a reset link of an account deactivated since changes nothing; no new link is made for it', async () => {
+  const { app, store, sent, call, as, anaId } = await start();
+  try {
+    await call('/auth/reset/request', { method: 'POST', body: { identifier: 'ana' } });
+    const token = tokenOf(sent[0]);
+    const off = await call(`/admin/users/${anaId}`, { method: 'PATCH', ...as, body: { active: false, requestId: 'req-ana-off-01' } });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    const hash = () => store.db.prepare('SELECT password_hash FROM users WHERE id=?').get(anaId).password_hash;
+    const before = hash();
+    assert.equal((await call(`/auth/reset/lookup?t=${token}`)).status, 404);
+    const used = await call('/auth/reset', { method: 'POST', body: { token, password: 'newpass1' } });
+    assert.deepEqual([used.status, used.body.error.code], [404, 'RESET_INVALID']);
+    assert.equal(hash(), before, 'the password is not changed');
+    const link = await call(`/admin/users/${anaId}/reset-link`, { method: 'POST', ...as, body: {} });
+    assert.deepEqual([link.status, link.body.error.code], [409, 'USER_INACTIVE']);
+  } finally {
+    await app.close();
+  }
+});
+
 test('an administrator makes a reset link: emailed when there is an address, and always shown to copy', async () => {
   const { app, store, sent, call, as, anaId, signIn } = await start();
   try {

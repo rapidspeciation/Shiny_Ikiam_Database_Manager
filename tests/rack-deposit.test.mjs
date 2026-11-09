@@ -318,7 +318,7 @@ test('a conflict kept as the photos have it; or gone through once its well is fr
   assert.ok(rack.missing.includes('A3'));
 });
 
-test('Rack_ID and Sort are refused in the rows; a bad well or an empty tube ID refused, the value kept; in the person\'s language', async () => {
+test('Rack_ID and Sort are refused in the rows; a bad well, an empty or malformed tube ID refused, the value kept; in the person\'s language', async () => {
   const { read, p, rowOf, key, edit } = await editable();
   const before = await p();
   const a2 = rowOf(before, read.wells.A2);
@@ -328,19 +328,22 @@ test('Rack_ID and Sort are refused in the rows; a bad well or an empty tube ID r
     { key: key(a2), field: 'Tube_location', value: 'Z9' },
     { key: key(a2), field: 'Tube_ID', value: '' },
     { key: key(rowOf(before, read.wells.A3)), field: 'Tube_ID', value: read.wells.A5 },
+    { key: key(rowOf(before, read.wells.A4)), field: 'Tube_ID', value: 'BAD' },
   ]);
   assert.equal(out.status, 200);
-  assert.equal(out.body.rejected.length, 5);
+  assert.equal(out.body.rejected.length, 6);
   assert.match(out.body.rejected.find(r => r.field === 'Rack_ID').message, /se cambia en los datos del rack/);
   assert.match(out.body.rejected.find(r => r.field === 'Sort').message, /automático/);
   assert.match(out.body.rejected.find(r => r.field === 'Tube_location').message, /Z9 no es un pocillo \(A1 a H12\): se mantiene A2/);
   assert.ok(out.body.rejected.some(r => /no puede quedar vacío/.test(r.message)));
   assert.ok(out.body.rejected.some(r => new RegExp(`${read.wells.A5} ya está en FK00274230 A5`).test(r.message)));
+  assert.ok(out.body.rejected.some(r => r.message === `BAD no es un ID de tubo (dos letras y de 6 a 10 cifras): se mantiene ${read.wells.A4}`));
   assert.ok(out.body.rejected.every(r => r.messageMsg?.key), 'each with its descriptor (shown in English too)');
   const after = await p();
   const row = rowOf(after, read.wells.A2);
   assert.deepEqual([row.values.Rack_ID, row.values.Tube_location, row.values.Sort], [a2.values.Rack_ID, 'A2', a2.values.Sort]);
   assert.equal(rowOf(after, read.wells.A3).values.Tube_ID, read.wells.A3);
+  assert.equal(rowOf(after, read.wells.A4).values.Tube_ID, read.wells.A4);
 });
 
 test('nothing the person edited is lost when the rack\'s fields or corner change: other columns, IDs, wells, rows taken out', async () => {
