@@ -96,7 +96,7 @@ const here = fileURLToPath(import.meta.url);
  * query still running after `timeoutMs` has its process killed. The limit
  * counts from when the process is ready: a new process gets `startTimeoutMs`
  * to start first. `execArgv` is for the process's Node options (tests).
- * run(sql, limit) → { columns, rows, total | more, builtAt } or { error, near?, tableColumns?, missing?, timeout? }.
+ * run(sql, limit) → { columns, rows, total | more, builtAt } or { error, near?, tableColumns?, hint?, missing?, timeout? }.
  */
 export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS, startTimeoutMs = QUERY_START_TIMEOUT_MS, execArgv = [] }) {
   let child = null;
@@ -270,6 +270,8 @@ function editDistance(a, b) {
  * loosely, one inside the other (Date: Collection_date), all the asked one's
  * words in it (Field_ID: FieldMark_ID), or a few letters apart.
  */
+/** closeness() of a name sharing only a word with the one asked: given only when nothing stronger is found anywhere. */
+const WEAK = 0.2;
 function closeness(asked, name, tableWords = new Set()) {
   const a = loose(asked);
   const b = loose(name);
@@ -282,7 +284,7 @@ function closeness(asked, name, tableWords = new Set()) {
   if (d <= 0.34) return 0.6 - d;
   // A word of 4 letters or more in both, not the table's own (Transect_ID: Transect_section; not Collection_* in Collection_data).
   const theirs = new Set(wordsOf(name));
-  return words.some(w => w.length >= 4 && !tableWords.has(w) && theirs.has(w)) ? 0.2 : 0;
+  return words.some(w => w.length >= 4 && !tableWords.has(w) && theirs.has(w)) ? WEAK : 0;
 }
 
 /**
@@ -361,6 +363,8 @@ function sameValues(db, asked, tables) {
   return out.sort((a, b) => b.shared / b.of - a.shared / a.of).slice(0, 4);
 }
 
+export const GENERATE_SERIES =
+  'This SQLite has no generate_series; number rows with WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT x FROM n';
 /** A sheet's columns listed in an error: as SQL takes them, at most this many characters per sheet. */
 const LISTED = 1500;
 const listColumns = (db, table) => {
@@ -385,6 +389,7 @@ const listColumns = (db, table) => {
  */
 export function nearNames(db, message, sql = '') {
   const out = nearOnly(db, message, sql);
+  if (out.hint) return { hint: out.hint };
   const m = /no such column: (.+?)(?: - should this be a string literal|$)/.exec(message);
   if (!m || out.settled) return out.near ? { near: out.near } : {};
   try {
@@ -408,7 +413,7 @@ function nearOnly(db, message, sql) {
   try {
     if (m[1] === 'table') {
       // A table-valued function this SQLite build does not have (retro 8 Nov): the way to number rows here.
-      if (/^generate_series$/i.test(asked)) return { near: ['WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT x FROM n'] };
+      if (/^generate_series$/i.test(asked)) return { hint: GENERATE_SERIES };
       const near = db
         .prepare('SELECT name FROM _tables')
         .all()
@@ -430,9 +435,14 @@ function nearOnly(db, message, sql) {
       columnsOf(db, table).forEach((column, index) => {
         const score = closeness(asked, column, words);
         // Among equals, one sharing a word with its table first (Collection_date in Collection_data), then the sheet's order.
-        if (score > 0) near.push({ table, column, score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0), index });
+        if (score > 0) near.push({ table, column, weak: score === WEAK, score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0), index });
       });
     }
+    // A shared word only (weak): left out beside a stronger match; with none, other sheets come first
+    // (Intro2Insectary_date on Collection_data is Insectary_data's) and the weak ones only when those find nothing.
+    const weak = near.filter(n => n.weak);
+    near.splice(0, near.length, ...near.filter(n => !n.weak));
+    const named = list => list.sort((a, b) => b.score - a.score || a.index - b.index).slice(0, 8).map(n => `${sqlName(n.table)}.${sqlName(n.column)}`);
     // The query's tables that have the column as named (loosely) and those that do not: a UNION's wrong half.
     const having = new Set(near.filter(n => loose(n.column) === loose(asked)).map(n => n.table));
     const lacking = tables.filter(t => !having.has(t) && !ownTable(t));
@@ -448,7 +458,7 @@ function nearOnly(db, message, sql) {
             n =>
               `${sqlName(n.table)}.${sqlName(n.column)}${having.has(n.table) ? notIn : ''}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date${recordedDate(sheetOf(n.table), n.column) ? `: ${recordedDate(sheetOf(n.table), n.column)}` : ''})` : ''}`,
           ),
-        settled: near.some(n => n.score >= 0.6),
+        settled: true,
         tables,
       };
     }
@@ -469,7 +479,7 @@ function nearOnly(db, message, sql) {
       .filter(r => r.score >= 0.7 && !tables.includes(r.sheet))
       .sort((a, b) => b.score - a.score)
       .slice(0, 8);
-    if (!elsewhere.length) return { tables };
+    if (!elsewhere.length) return weak.length ? { near: named(weak), tables } : { tables };
     const own = tables.filter(t => !ownTable(t)).map(table => ({ table, columns: new Set(columnsOf(db, table).map(loose)) }));
     const shared = sheet => {
       const theirs = db.prepare('SELECT column FROM _columns WHERE sheet = ?').all(sheet).map(r => r.column);

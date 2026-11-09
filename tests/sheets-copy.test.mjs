@@ -10,7 +10,7 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { buildCopy, createSheetsCopy, isoOfText } from '../server/replica.mjs';
-import { formatRows, openCopy, runQuery, sqlProblem } from '../server/query-tool.mjs';
+import { GENERATE_SERIES, formatRows, openCopy, runQuery, sqlProblem } from '../server/query-tool.mjs';
 import { addToken, addUser, mcpClient } from './helpers/assistant.mjs';
 
 // The sheets' copy the assistant's `query` reads (server/replica.mjs) and the tool itself
@@ -406,7 +406,10 @@ test('a column the query does not find: the closest of its own tables, else wher
       [['CLUTCH NUMBER']],
     );
     assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
-    assert.deepEqual(near('SELECT value FROM generate_series(1, 5)'), ['WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT x FROM n']);
+    const series = runQuery(db, 'SELECT value FROM generate_series(1, 5)', 5);
+    assert.equal(series.near, undefined);
+    assert.equal(series.hint, GENERATE_SERIES);
+    assert.match(GENERATE_SERIES, /WITH RECURSIVE n\(x\) AS \(SELECT 1 UNION ALL SELECT x \+ 1 FROM n WHERE x < 10\) SELECT x FROM n$/);
 
     // The 8 Nov retro (30 "no such column" in a week). A UNION's half that lacks the column is named.
     const union = runQuery(db, "SELECT 'C', CAM_ID, Stock_of_origin FROM Collection_data UNION ALL SELECT 'I', Insectary_ID, Stock_of_origin FROM Insectary_data", 5);
@@ -417,6 +420,20 @@ test('a column the query does not find: the closest of its own tables, else wher
     assert.deepEqual(transect.near, ['Collection_data.Transect_section']);
     assert.match(transect.tableColumns.Collection_data, /^Data_entry_order, Release_Collect, FieldMark_ID, .*Transect_section, .*Notes_Collection_data, /);
     assert.doesNotMatch(transect.tableColumns.Collection_data, /\b_row\b|\b_id\b|_premade/, 'the columns every table has are left out');
+    // A shared word only (date) does not stop the search before the other sheets: the sheet that has it, no list (critic F1).
+    const intro = runQuery(db, 'SELECT Intro2Insectary_date FROM Collection_data', 5);
+    assert.match(intro.near[0], /^Insectary_data\.Intro2Insectary_date \(not in Collection_data; shares /);
+    assert.ok(!intro.near.some(n => n.startsWith('Collection_data.')), intro.near.join('; '));
+    assert.equal(intro.tableColumns, undefined);
+    // A typo is settled: its column, no list and no shared-word noise (critic F2).
+    for (const [sql, first] of [
+      ['SELECT Speceis FROM Collection_data', 'Collection_data.SPECIES'],
+      ['SELECT Colection_date FROM Collection_data', 'Collection_data.Collection_date'],
+    ]) {
+      const typo = runQuery(db, sql, 5);
+      assert.equal(typo.near[0], first, sql);
+      assert.equal(typo.tableColumns, undefined, sql);
+    }
     // Nothing close: no near, the columns of the query's table.
     const sampling = runQuery(db, "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol, '')) LIKE '%monitor%') FROM Collection_data", 5);
     assert.equal(sampling.near, undefined);
