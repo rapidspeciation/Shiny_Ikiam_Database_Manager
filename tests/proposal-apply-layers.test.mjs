@@ -7,7 +7,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { moduleMap } from '../server/schema.mjs';
-import { addToken, mcpClient, signIn } from './helpers/assistant.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 const SEX = moduleMap.get('Collection_data').fields.find(f => f.key === 'Sex').column;
 const base = {
@@ -43,11 +43,9 @@ test('applyProposal: a person whose role became viewer is refused (from the chat
   const { store, assistant, person, record, sheetSex, proposal, propose } = await setup();
   try {
     const id = await propose();
-    // Made while an editor; the role is lowered before it is applied. The chat's next session (a new token: the
-    // app keeps a token's role from its first call) acts as a viewer.
+    // Made while an editor; the role is lowered before it is applied, and the same chat acts as a viewer.
     store.db.prepare("UPDATE users SET role = 'viewer' WHERE id = ?").run(person.user.id);
-    addToken(store, person.user.id, 'franz-token-2');
-    const fromChat = await mcpClient(assistant, 'franz-token-2').call('apply_proposal', { proposalId: id });
+    const fromChat = await person.call('apply_proposal', { proposalId: id });
     assert.equal(fromChat.error, 'Your role cannot apply changes.', JSON.stringify(fromChat));
     const fromPage = await assistant.handle({
       method: 'POST',
