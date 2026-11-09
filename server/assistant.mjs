@@ -6243,15 +6243,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         context.sources.set(record.id, recordSource(record));
       }
       const cut = (page.records?.length ?? 0) - records.length;
-      return {
+      return withDateNote({
         records,
         total: page.total,
         ...(cut ? { truncated: true, next: `${cut} more rows not shown (size limit): use find_records with filters and fields.` } : {}),
-      };
+      });
     }
-    // The manifest's DATE_OF_COLLECTION / DATE_OF_PRESERVATION shown: with the note on which column holds the date.
-    if (name === 'find_records') return withDateNote(await findRows(args, context));
-    if (name === 'count_records') return countRecords(db, args);
+    // The manifest's DATE_OF_COLLECTION / DATE_OF_PRESERVATION shown or asked for: with the note on which column holds the date.
+    if (name === 'find_records') return withDateNote(await findRows(args, context), args);
+    if (name === 'count_records') return withDateNote(countRecords(db, args), args);
     if (name === 'describe_sheet') return withDateNote(describeSheet(args));
     if (name === 'get_record') {
       // Its app recordId, or its ID in the sheet (W2B, a clutch number), in `sheet` when given.

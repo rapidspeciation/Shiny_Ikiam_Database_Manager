@@ -406,7 +406,7 @@ export function nearNames(db, message, sql = '') {
           .slice(0, 8)
           .map(
             n =>
-              `${sqlName(n.table)}.${sqlName(n.column)}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date: ${recordedDate(sheetOf(n.table), n.column)})` : ''}`,
+              `${sqlName(n.table)}.${sqlName(n.column)}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date${recordedDate(sheetOf(n.table), n.column) ? `: ${recordedDate(sheetOf(n.table), n.column)}` : ''})` : ''}`,
           ),
       };
     }

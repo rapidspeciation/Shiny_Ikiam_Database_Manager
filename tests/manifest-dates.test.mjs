@@ -62,7 +62,7 @@ async function setup() {
   return { ana, query, close };
 }
 
-const SAYS_COLLECTION_DATE = /DATE_OF_COLLECTION[^\n]*not the date[^\n]*Collection_date/;
+const SAYS_COLLECTION_DATE = /DATE_OF_COLLECTION[^\n]*Sanger manifest[^\n]*When a butterfly was collected: Collection_data.Collection_date/;
 
 test('query: a result with DATE_OF_COLLECTION says that Collection_date is the collection date', async () => {
   const { query, close } = await setup();
@@ -78,6 +78,7 @@ test('query: a result with DATE_OF_COLLECTION says that Collection_date is the c
     // SELECT * shows the column too.
     assert.match(await query('SELECT * FROM Collection_data LIMIT 1'), SAYS_COLLECTION_DATE);
     assert.match(await query('SELECT max(DATE_OF_PRESERVATION) FROM Collection_data'), /DATE_OF_PRESERVATION[^\n]*Preservation_date/);
+    assert.match(await query('SELECT DATE_OF_COLLECTION_text AS d FROM Collection_data LIMIT 1'), SAYS_COLLECTION_DATE);
 
     // The dates as recorded: two, and no note.
     const recorded = await query(
@@ -122,6 +123,20 @@ test('find_records, get_record and describe_sheet: DATE_OF_COLLECTION comes with
 
     const sheet = await ana.call('describe_sheet', { module: 'Collection_data', columns: ['Collection_date', 'DATE_OF_COLLECTION'] });
     assert.match(sheet.dateNote, SAYS_COLLECTION_DATE);
+
+    // Counted per manifest date, or filtered on it.
+    const counted = await ana.call('count_records', { sheet: 'Collection_data', groupBy: ['Collection_location', 'DATE_OF_COLLECTION'] });
+    assert.equal(counted.error, undefined, JSON.stringify(counted));
+    assert.match(counted.dateNote, SAYS_COLLECTION_DATE);
+    const byYear = await ana.call('count_records', { sheet: 'Collection_data', groupBy: 'DATE_OF_COLLECTION:year' });
+    assert.match(byYear.dateNote ?? '', SAYS_COLLECTION_DATE, JSON.stringify(byYear));
+    const recorded = await ana.call('count_records', { sheet: 'Collection_data', groupBy: ['Collection_date'] });
+    assert.equal(recorded.dateNote, undefined);
+
+    // search_text shows whole rows.
+    const searched = await ana.call('search_text', { query: 'CAM070542' });
+    assert.ok(searched.records.length);
+    assert.match(searched.dateNote, SAYS_COLLECTION_DATE);
   } finally {
     close();
   }
