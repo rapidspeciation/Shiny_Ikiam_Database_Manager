@@ -62,10 +62,12 @@ job() { # job <name> <command...>: one at a time, at the lowest priority
 job install npm --prefix frontend ci --no-audit --no-fund --prefer-offline
 [ "${result[install]}" = pass ] || finish failed "npm ci failed"
 job check node scripts/check.mjs
-# npm run test:nightly: the slow suite always (the real reads of the rack photo, scripts/test-slow.mjs; a deploy runs it
-# only when its inputs changed), then every server test file in its own process (scripts/test-server.mjs --isolated; a
-# deploy groups them), two at a time: the live app keeps the other cores. Both with the no-AI guard.
-job nightly npm run test:nightly -- --concurrency 2
+# As npm run test:nightly, one result each: the slow suite always (the real reads of the rack photo,
+# scripts/test-slow.mjs; a deploy runs it only when its inputs changed), then every server test file in its own process
+# (scripts/test-server.mjs --isolated; a deploy groups them), two at a time: the live app keeps the other cores. Both
+# run whatever the other's result, both with the no-AI guard.
+job slow node scripts/test-slow.mjs
+job server node scripts/test-server.mjs --isolated --concurrency 2
 job frontend npm --prefix frontend test -- --maxWorkers=2
 for k in "${!result[@]}"; do [ "${result[$k]}" != fail ] || finish failed "$k failed"; done
 finish ok "all suites passed"

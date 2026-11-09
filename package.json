@@ -13,6 +13,6 @@
     "check": "node scripts/check.mjs",
     "wikiloc": "node tools/wikiloc/fetch.mjs",
     "test:slow": "node scripts/test-slow.mjs",
-    "test:nightly": "node scripts/test-slow.mjs && node scripts/test-server.mjs --isolated"
+    "test:nightly": "bash -c 'node scripts/test-slow.mjs; slow=$?; node scripts/test-server.mjs --isolated \"$@\" && exit $slow' --"
   }
 }
