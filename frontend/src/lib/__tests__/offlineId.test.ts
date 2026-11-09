@@ -109,8 +109,13 @@ describe('offline identifier chain', () => {
     // Seen East, B (leaf 2) weighs 2 %: on a feature where A and B tie, A wins 50:1.
     const tie = new Float32Array([0, 0])
     const plain = speciesTop(head, tie), east = speciesTop(head, tie, 'East')
-    expect(plain[0][1]).toBeCloseTo(east[0][0] === 'A' ? plain[0][1] : 0, 6)
-    expect(east[0][0]).toBe('A')
+    // Without a side the three leaves tie: A 2/3, B 1/3. Seen East, leaves 1 and 2 weigh 0.02: A (1 + 0.02) / 1.04.
+    expect(plain.map(([s]) => s)).toEqual(['A', 'B'])
+    expect(plain[0][1]).toBeCloseTo(2 / 3, 3)
+    expect(plain[1][1]).toBeCloseTo(1 / 3, 3)
+    expect(east.map(([s]) => s)).toEqual(['A', 'B'])
+    expect(east[0][1]).toBeCloseTo(1.02 / 1.04, 3)
+    expect(east[1][1]).toBeCloseTo(0.02 / 1.04, 3)
   })
 
   it('names subspecies with a schema 2 head as worker.py tops does, and none with schema 1', () => {

@@ -262,6 +262,7 @@ describe('new rows', () => {
     })
     const d = day('2026-09-21')
     expect(preserved).toMatchObject({
+      Sex: 'male',
       Release_Collect: 'Collected_Preserved',
       FieldMark_ID: 'NA',
       CAM_ID: 'CAM079881',
@@ -292,6 +293,7 @@ describe('new rows', () => {
       section: 3,
     })
     expect(marked).toMatchObject({
+      Sex: 'male',
       Release_Collect: 'Mark_Released',
       CAM_ID: 'NA',
       Tube_1_id: 'NA',
