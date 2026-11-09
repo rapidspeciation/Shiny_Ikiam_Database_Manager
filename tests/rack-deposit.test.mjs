@@ -9,18 +9,18 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { LocalDrive } from '../server/drive.mjs';
-import { loadPhoto, readOne } from '../server/rack-reader.mjs';
 import { DRIVE_FOLDER, changesSheets, reportFile, workbook } from '../server/rack-tools.mjs';
 import { DRIVE_PHOTO_TOOLS } from '../server/drive-photos.mjs';
 import { placeReading, tubeSheet } from '../server/rack-deposit.mjs';
+import { RACK_PHOTO, rackReading } from './helpers/rack-reading.mjs';
 
 // A rack deposit as «Cambios propuestos» shows it: Franz's photo of FK00274230 (28 Oct), the workbook's
 // tube-locations sheet holding some of its tubes, and the proposal the reading makes at once.
-const RACK_PHOTO = new URL('./fixtures/rack-bottom-fk00274230.jpg', import.meta.url).pathname;
 const expected = well => `FS${50849233 + (Number(well.slice(1)) - 1) * 8 + 'ABCDEFGH'.indexOf(well[0])}`;
 const SHEET = tubeSheet();
 let photo = null;
-const readPhoto = async () => (photo ??= await readOne(await loadPhoto(RACK_PHOTO)));
+// Its reading saved from the real read (tests/helpers/rack-reading.mjs); read for real in the slow suite.
+const readPhoto = async () => (photo ??= await rackReading());
 
 const seed = () => ({
   Collection_data: [{ row: 2, values: { CAM_ID: 'CAM079877', SPECIES: 'Ithomia salapia', Tube_1_id: 'FS50849233' } }],
