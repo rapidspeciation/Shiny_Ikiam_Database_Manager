@@ -59,6 +59,7 @@ import { headSides, identifyUpload } from './identify-photos.mjs';
 import { MODELS } from './offline-id.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
+import { withDateNote, withQueryNote } from './manifest-dates.mjs';
 import { createSheetsCopy } from './replica.mjs';
 import { createT3Chats } from './t3chats.mjs';
 import { photoCacheDir } from './photos.mjs';
@@ -6213,7 +6214,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (out.timeout)
       return { error: out.error, hint: 'Narrow it: filter on an ID column (they are indexed) or a sheet, join fewer tables, or count instead of listing.' };
     if (out.error) return { error: `SQLite: ${out.error}`, ...(out.near ? { near: out.near } : {}), hint: QUERY_HINT };
-    return formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending });
+    return withQueryNote(formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending }), sql, out.columns);
   }
 
   async function executeTool(called, given, context) {
@@ -6242,15 +6243,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         context.sources.set(record.id, recordSource(record));
       }
       const cut = (page.records?.length ?? 0) - records.length;
-      return {
+      return withDateNote({
         records,
         total: page.total,
         ...(cut ? { truncated: true, next: `${cut} more rows not shown (size limit): use find_records with filters and fields.` } : {}),
-      };
+      });
     }
-    if (name === 'find_records') return findRows(args, context);
-    if (name === 'count_records') return countRecords(db, args);
-    if (name === 'describe_sheet') return describeSheet(args);
+    // The manifest's DATE_OF_COLLECTION / DATE_OF_PRESERVATION shown or asked for: with the note on which column holds the date.
+    if (name === 'find_records') return withDateNote(await findRows(args, context), args);
+    if (name === 'count_records') return withDateNote(countRecords(db, args), args);
+    if (name === 'describe_sheet') return withDateNote(describeSheet(args));
     if (name === 'get_record') {
       // Its app recordId, or its ID in the sheet (W2B, a clutch number), in `sheet` when given.
       const named = resolveRows(store, [args.key !== undefined ? { sheet: args.sheet, key: args.key } : clip(args.id ?? args.recordId, 120)], {
@@ -6261,7 +6263,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!record) return { error: 'Record not found' };
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
-      return compact(record, { allFormulas: args.formulas === true });
+      return withDateNote(compact(record, { allFormulas: args.formulas === true }));
     }
     if (['search_knowledge', 'read_document', 'list_documents', 'sync_documents'].includes(name))
       return runKnowledgeTool(knowledge, name, args, context);

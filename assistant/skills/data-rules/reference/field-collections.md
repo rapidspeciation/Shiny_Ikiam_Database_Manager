@@ -84,6 +84,11 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 - **Collection_date** day first, the capture day; `NA` only when truly
   unknown. A live butterfly's Intro2Insectary_date equals it (all 2026 rows),
   even when it was caged a day or two later.
+  It is the date a butterfly was collected, for every question about when or
+  how often a place was sampled. DATE_OF_COLLECTION and DATE_OF_PRESERVATION
+  (the Sanger manifest block) are formulas, not the dates recorded: for a row
+  dated before 14 Apr 2023 whose genus is not in Lists' Genera_0176 they give
+  Collection_date and Preservation_date plus 451 days.
 - **Collection_time** `hh:mm` 24 h (trips 09:00–15:15; monitoring 09:00–11:30);
   `NA` when not noted. A time like 02:41 is a PM typed as AM: ask.
 - **Rainfall / Cloud_cover**: list values; codes and paper shorthand in the
