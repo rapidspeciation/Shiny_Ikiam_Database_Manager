@@ -11,7 +11,7 @@
 // input file or workspace file t3-provision.mjs reads or writes goes into ENV, RELEASE_FILES or WORKSPACE_FILES here,
 // or a deploy skips a refresh it needed (these lists are a copy, nothing checks them).
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -108,7 +108,7 @@ export async function t3ProvisionStamp(release, env = process.env) {
   return createHash('sha256').update(out.join('\n')).digest('hex');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const [what, release] = process.argv.slice(2);
   if (what !== 't3-provision' || !release) {
     console.error('usage: deploy-stamp.mjs t3-provision <release dir>');

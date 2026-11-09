@@ -15,7 +15,7 @@
 // its inputs were byte for byte those of its last green run on that machine, so it was not run; `slowSuite` says which
 // inputs (their hash) and when they last passed.
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -118,7 +118,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const [command, ...rest] = process.argv.slice(2);
   const opts = parseArgs(rest);
   const dir = opts._?.[0];

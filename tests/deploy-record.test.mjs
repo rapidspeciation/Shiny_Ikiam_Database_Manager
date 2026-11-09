@@ -4,7 +4,7 @@
 // throwaway checkout with stand-ins (tests/helpers/deploy-fixture.mjs) against a scratch app root.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -102,6 +102,20 @@ test('deploy record: the slow suite ran, or was not needed (its inputs as at its
 
 const releasesOf = f => (existsSync(join(f.app, 'releases')) ? readdirSync(join(f.app, 'releases')) : []);
 const current = f => (existsSync(join(f.app, 'current')) ? readlinkSync(join(f.app, 'current')) : null);
+
+test('deploy record: run through a symlinked path (current/scripts), verify still refuses; it never exits 0 unchecked', () => {
+  const dir = release();
+  const links = mkdtempSync(join(tmpdir(), 'deploy-record-link-'));
+  try {
+    symlinkSync(join(import.meta.dirname, '..', 'scripts'), join(links, 'scripts'));
+    const r = spawnSync(process.execPath, [join(links, 'scripts', 'deploy-record.mjs'), 'verify', dir, '--commit', COMMIT], { encoding: 'utf8' });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr + r.stdout, /Refused/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(links, { recursive: true, force: true });
+  }
+});
 
 test('deploy.sh on claudeclaw, no PC run of HEAD: refused with what to do, nothing tested, built or installed', () => {
   const f = deployFixture();

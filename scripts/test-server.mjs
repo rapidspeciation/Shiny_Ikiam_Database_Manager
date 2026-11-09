@@ -14,7 +14,7 @@
 //   --concurrency <n> (default: the cores), --durations <file> (default: the deploy cache, ITHOMIINI_DEPLOY_CACHE),
 //   -- <more node --test arguments> (reporters).
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -214,4 +214,4 @@ async function main(argv) {
   return code;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) process.exit(await main(process.argv.slice(2)));
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) process.exit(await main(process.argv.slice(2)));
