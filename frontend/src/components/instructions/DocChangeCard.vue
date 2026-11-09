@@ -124,7 +124,7 @@ const askAgain = (why: 'comment' | 'stale') =>
             v-for="v in change.versions"
             :key="v.id"
             type="button"
-            class="doc-act rounded px-1"
+            class="doc-act doc-ver rounded px-1"
             :class="v.version === shownVersion.version ? 'bg-stone-200 text-stone-800' : 'text-stone-500 hover:text-stone-800'"
             @click.stop="picked = v.version === change.version ? null : v.version"
           >

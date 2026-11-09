@@ -1794,7 +1794,8 @@ mark.doc-mark:focus-visible {
   .doc-act.hover\:underline {
     padding-inline: 4px;
   }
-  .doc-sheet-close {
+  .doc-sheet-close,
+  .doc-ver {
     min-width: 44px;
     min-height: 44px;
   }
