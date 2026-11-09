@@ -118,6 +118,12 @@ assemble() {
   cp -a "$2/server/instructions-history.json" "$1/server/"
 }
 ms() { echo $(( $(date +%s%N) / 1000000 )); }
+# A release's name: the UTC time, a second later when a release of that second exists here (claudeclaw); the upload
+# from a PC refuses a name that exists there (never rsync into a release, the live one least of all).
+new_release() {
+  release="$(date -u +%Y%m%dT%H%M%SZ)"
+  while [ -n "$local_install" ] && [ -e "$app/releases/$release" ]; do sleep 1; release="$(date -u +%Y%m%dT%H%M%SZ)"; done
+}
 
 after_install() {
   if [ -n "$public" ]; then
@@ -132,7 +138,7 @@ after_install() {
 if [ -n "$local_install" ]; then
   # On claudeclaw: a PC's passing run of exactly this commit (its build and record, staged/<commit>), or the full
   # tests here when asked.
-  release="$(date -u +%Y%m%dT%H%M%SZ)"
+  new_release
   dir="$app/releases/$release"
   staged="$app/staged/$commit"
   if [ -f "$staged/.deploy-record.json" ]; then
@@ -159,18 +165,18 @@ if [ -n "$local_install" ]; then
 fi
 
 run_tests
-release="$(date -u +%Y%m%dT%H%M%SZ)"
+new_release
 stage="$(mktemp -d "$cache/release.XXXXXX")"
 ssh_opts="-o ControlMaster=auto -o ControlPath=$cache/ssh-%C -o ControlPersist=60"
 # shellcheck disable=SC2086
 trap 'rm -rf -- "$stage"; ssh $ssh_opts -O exit "$host" 2>/dev/null || true' EXIT
 assemble "$stage" .
 node scripts/deploy-record.mjs write "$stage" --commit "$commit" --tree "$tree" --jobs "$jobs_result" --source pc
-if [ -n "$stage_only" ]; then dest="$app/staged/$commit"; else dest="$app/releases/$release"; fi
+if [ -n "$stage_only" ]; then dest="$app/staged/$commit"; fresh=""; else dest="$app/releases/$release"; fresh="test ! -e '$dest' && "; fi
 # Only what changed since the live release travels: the rest is hard-linked from it (rsync --link-dest).
 s=$(ms)
 rsync -rlpD --checksum --delete --link-dest="$app/current/" -e "ssh $ssh_opts" \
-  --rsync-path="mkdir -p '$(dirname "$dest")' && rsync" "$stage/" "$host:$dest/"
+  --rsync-path="mkdir -p '$(dirname "$dest")' && ${fresh}rsync" "$stage/" "$host:$dest/"
 echo "Uploaded to $host:$dest in $(( $(ms) - s )) ms."
 if [ -n "$stage_only" ]; then
   echo "Staged $commit: scripts/deploy.sh on claudeclaw (its checkout at this commit) installs it."
