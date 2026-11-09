@@ -13,7 +13,7 @@
 // (the server tests' own fakes listen on ephemeral ports).
 import childProcess from 'node:child_process';
 import net from 'node:net';
-import workerThreads from 'node:worker_threads';
+import workerThreads, { SHARE_ENV } from 'node:worker_threads';
 import { syncBuiltinESMExports } from 'node:module';
 import { accessSync, appendFileSync, constants, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,6 +27,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TESTS = basename(HERE) === 'helpers' ? dirname(HERE) : HERE;
 const SHIMS = join(HERE, 'no-ai-bin');
 const PRELOAD = join(HERE, 'no-ai.mjs');
+// Python processes a test starts load the Python guard (no_ai_guard.py) through this folder's sitecustomize.py.
+const PYDIR = join(HERE, 'no-ai-py');
 const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'env'];
 
 export const CLIS = ['claude', 'codex', 't3', 'opencode', 'gemini', 'ollama', 'aider', 'cursor-agent', 'qwen', 'crush', 'goose', 'amp', 'llm', 'deepseek', 'wacli', 'ssh'];
@@ -46,6 +48,15 @@ const LOOPBACK = h => !h || h === 'localhost' || h === '::1' || h === '[::1]' ||
 const under = (path, dir) => path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 // A stub a test made: in the temporary folder or in tests/ (fixtures, the guard's own shims excepted).
 const stub = path => (under(path, tmpdir()) || under(path, '/tmp') || under(path, TESTS)) && !under(path, SHIMS);
+
+function executable(file) {
+  try {
+    accessSync(file, constants.X_OK);
+    return statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
 
 function onPath(name, path) {
   for (const dir of String(path ?? '').split(delimiter)) {
@@ -78,19 +89,33 @@ export function blockedCli(file, options = {}) {
 /** The first blocked CLI a shell command line would start (commands at the start of each pipeline part). */
 export function blockedInShell(command, options) {
   // A quoted `-c` script starts a command of its own (sh -c 'claude …', env -i PATH=… bash -c "…").
-  const line = String(command ?? '').replace(/(^|\s)-[a-z]*c\s+['"]/g, '$1-c ;');
+  const line = String(command ?? '').replace(/(\b(?:sh|bash|zsh|dash|ksh)\s+(?:-\S+\s+)*-[a-z]*c\s+)['"]/g, '$1;');
   const re = /(?:^|[;&|(`\n]|\$\()\s*(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|exec|env|nohup|command|nice|-\S+)\s+)*([^\s;&|()`'"<>]+)/g;
   for (const m of line.matchAll(re)) {
     const hit = blockedCli(m[1], options);
     if (hit) return hit;
   }
-  // A path to one anywhere in the line (an absolute path in a script is not seen by the PATH shims).
+  // A path to one anywhere in the line, when it is an executable file (an absolute path in a script is not seen by the
+  // PATH shims; `ls /etc/ssh` or `git log -- server/t3` are not starts).
   const cli = CLIS.map(c => c.replace('-', '\\-')).join('|');
   for (const m of line.matchAll(new RegExp(`[^\\s;&|()<>'"\`=]*/(?:${cli})(?=$|[\\s;&|()<>'"\`])`, 'g'))) {
-    const hit = blockedCli(m[0], options);
+    const hit = executable(resolve(String(options?.cwd ?? process.cwd()), m[0])) && blockedCli(m[0], options);
     if (hit) return hit;
   }
   return null;
+}
+
+/** A CommonJS file: .cjs, or .js under a package.json without "type": "module". */
+function commonJs(file) {
+  if (/\.cjs$/.test(file)) return true;
+  if (!/\.js$/.test(file)) return false;
+  for (let dir = dirname(file); ; dir = dirname(dir)) {
+    try {
+      return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).type !== 'module';
+    } catch {
+      if (dirname(dir) === dir) return true;
+    }
+  }
 }
 
 /** Why a connection is refused, or null. */
@@ -112,6 +137,9 @@ function connectTarget(args) {
   if (typeof o === 'string' && Number.isNaN(Number(o))) return { path: o };
   return { port: o, host: typeof args[1] === 'string' ? args[1] : undefined };
 }
+
+// The Python guard's folder first, the test's own PYTHONPATH after it.
+const pythonPath = given => (String(given ?? '').split(delimiter).includes(PYDIR) ? given : [PYDIR, given].filter(Boolean).join(delimiter));
 
 const where = () =>
   String(new Error().stack)
@@ -136,13 +164,17 @@ export function installNoAiGuard({ owner = false } = {}) {
 
   // In the test's own process only: what a node process it starts gets in its env (and its PATH), the test gave it on purpose.
   const first = !process.env.NOAI_GUARD_PARENT;
-  if (first) for (const k of Object.keys(process.env)) if (SECRET_ENV.test(k)) delete process.env[k];
-  process.env.NOAI_GUARD_LOGS = logs.join(delimiter);
-  process.env.NOAI_GUARD_FILE = file;
-  process.env.NOAI_GUARD_PARENT = String(process.pid);
-  if (first && !String(process.env.PATH ?? '').split(delimiter).includes(SHIMS)) process.env.PATH = `${SHIMS}${delimiter}${process.env.PATH ?? ''}`;
-  if (!String(process.env.NODE_OPTIONS ?? '').includes(PRELOAD))
-    process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${PRELOAD}`.trim();
+  // A worker thread leaves the env as it got it (its parent's settings; with SHARE_ENV, the parent's own env).
+  if (workerThreads.isMainThread) {
+    if (first) for (const k of Object.keys(process.env)) if (SECRET_ENV.test(k)) delete process.env[k];
+    process.env.NOAI_GUARD_LOGS = logs.join(delimiter);
+    process.env.NOAI_GUARD_FILE = file;
+    process.env.NOAI_GUARD_PARENT = String(process.pid);
+    if (first && !String(process.env.PATH ?? '').split(delimiter).includes(SHIMS)) process.env.PATH = `${SHIMS}${delimiter}${process.env.PATH ?? ''}`;
+    process.env.PYTHONPATH = pythonPath(process.env.PYTHONPATH);
+    if (!String(process.env.NODE_OPTIONS ?? '').includes(PRELOAD))
+      process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${PRELOAD}`.trim();
+  }
 
   const block = (kind, target) => {
     const line = `no-ai guard: refused ${kind} ${target} (test ${file}, pid ${process.pid}) at ${where()}`;
@@ -161,6 +193,7 @@ export function installNoAiGuard({ owner = false } = {}) {
     const orig = childProcess[fn];
     if (!orig) return;
     const check = (file, rest) => {
+      if (rest[0] == null && rest.length > 1) rest = [[], ...rest.slice(1)]; // spawn(f, undefined, { env })
       const argIndex = Array.isArray(rest[0]) ? 0 : -1;
       const options = (argIndex === 0 ? rest[1] : rest[0]) ?? {};
       let opts = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
@@ -208,6 +241,7 @@ export function installNoAiGuard({ owner = false } = {}) {
   const guardEnv = env => ({
     ...env,
     NODE_OPTIONS: String(env.NODE_OPTIONS ?? '').includes(PRELOAD) ? env.NODE_OPTIONS : `${env.NODE_OPTIONS ?? ''} --import=${PRELOAD}`.trim(),
+    PYTHONPATH: pythonPath(env.PYTHONPATH),
     NOAI_GUARD_LOGS: process.env.NOAI_GUARD_LOGS,
     NOAI_GUARD_PARENT: process.env.NOAI_GUARD_PARENT,
     NOAI_GUARD_FILE: process.env.NOAI_GUARD_FILE,
@@ -218,6 +252,7 @@ export function installNoAiGuard({ owner = false } = {}) {
   // fork: only the env (a node child; its module is no CLI).
   const fork = childProcess.fork;
   childProcess.fork = function (modulePath, args, options) {
+    if (args == null && options !== undefined) args = []; // fork(m, undefined, { env })
     const opts = Array.isArray(args) ? options : args;
     if (opts?.env && typeof opts.env === 'object') {
       const o = { ...opts, env: guardEnv(opts.env) };
@@ -231,7 +266,10 @@ export function installNoAiGuard({ owner = false } = {}) {
   const Worker = workerThreads.Worker;
   workerThreads.Worker = class extends Worker {
     constructor(filename, options = {}) {
-      if (options?.eval) {
+      const name = String(filename);
+      const nonFile = filename instanceof URL ? filename.protocol !== 'file:' : /^[a-z][a-z0-9+.-]*:/i.test(name) && !/^file:/i.test(name);
+      // Passed through as given: eval workers (the app has none), CommonJS files, SHARE_ENV, data: and other URLs.
+      if (options?.eval || options?.env === SHARE_ENV || nonFile || commonJs(filename instanceof URL ? fileURLToPath(filename) : /^file:/i.test(name) ? fileURLToPath(name) : resolve(name))) {
         super(filename, options);
         return;
       }

@@ -2,14 +2,14 @@
 // and refusing what it should, offline, while a test's own stubs and loopback servers still work.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync, execSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, execSync, fork, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { Worker } from 'node:worker_threads';
-import { blockedCli, blockedHost, noAiGuard } from './helpers/no-ai-core.mjs';
+import { SHARE_ENV, Worker } from 'node:worker_threads';
+import { blockedCli, blockedHost, blockedInShell, noAiGuard } from './helpers/no-ai-core.mjs';
 
 const guard = noAiGuard();
 // Without the guard only the first test runs (and fails): the others would reach the real CLIs and hosts.
@@ -113,4 +113,44 @@ test('the T3 ports are refused on any address (the tailnet one too), offline', {
   const lines = guard.take();
   assert.equal(lines.length, 2, lines.join('\n'));
   assert.match(lines[0], /T3 port 100\.83\.134\.33:3775/);
+});
+
+// Round 4 (review 9 Nov): Python children of node, args left undefined, ordinary shell lines, workers passed through.
+test('a Python child of a node test gets the Python guard and reports to the test, with its own env too', { skip: off }, () => {
+  const py = "import socket, sys\ntry: socket.create_connection(('127.0.0.1', 3774), timeout=1)\nexcept OSError: pass\nprint('no_ai_guard' in sys.modules)";
+  assert.equal(execFileSync('python3', ['-c', py], { encoding: 'utf8' }).trim(), 'True');
+  assert.equal(execFileSync('python3', ['-c', py], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', PYTHONPATH: '/x' } }).trim(), 'True');
+  const lines = guard.take();
+  assert.equal(lines.length, 2, lines.join('\n'));
+  for (const line of lines) assert.match(line, /refused connection to T3 port 127\.0\.0\.1:3774 \(test \S+no-ai-guard\.test\.mjs › a Python child/);
+});
+
+test('spawn and fork with args left undefined and their own env keep the guard', { skip: off }, async () => {
+  const probe = "process.stdout.write(String(!!globalThis[Symbol.for('ithomiini.noAiGuard')]))";
+  assert.equal(spawnSync(process.execPath, undefined, { env: { PATH: '/usr/bin:/bin' }, input: probe, encoding: 'utf8' }).stdout, 'true');
+  const file = join(mkdtempSync(join(tmpdir(), 'no-ai-fork-')), 'f.mjs');
+  writeFileSync(file, "process.send(!!globalThis[Symbol.for('ithomiini.noAiGuard')]); process.disconnect();");
+  const child = fork(file, undefined, { env: { PATH: '/usr/bin:/bin' } });
+  assert.equal(await new Promise(r => child.once('message', r)), true);
+});
+
+test('ordinary shell lines run; a shell script or an executable file named like a model CLI is refused', { skip: off }, () => {
+  for (const line of ['ls /etc/ssh', 'grep -c "claude" notes.txt', 'rg -c "codex" .', 'git log -- server/t3', 'cat docs/amp', 'mkdir -p "$HOME/.config/llm"', 'cd /usr/lib/ollama', 'awk -c "x"'])
+    assert.equal(blockedInShell(line), null, line);
+  assert.match(blockedInShell(`ls -l '${guard.shims}/claude'`), /no-ai-bin\/claude$/);
+  assert.match(blockedInShell(`bash -lc "claude -p hola"`), /claude$/);
+  assert.equal(blockedInShell('sh -c "/opt/elsewhere/codex exec"'), '/opt/elsewhere/codex');
+});
+
+test('CommonJS workers, SHARE_ENV workers and data: URL workers run as given', { skip: off }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'no-ai-workers-'));
+  const message = w => new Promise((res, rej) => { w.once('message', res); w.once('error', rej); });
+  writeFileSync(join(dir, 'w.cjs'), "require('node:worker_threads').parentPort.postMessage(require.main === module)");
+  assert.equal(await message(new Worker(join(dir, 'w.cjs'))), true);
+  writeFileSync(join(dir, 'e.mjs'), "import { parentPort } from 'node:worker_threads'; parentPort.postMessage(process.env.NOAI_GUARD_LOGS)");
+  const logs = process.env.NOAI_GUARD_LOGS;
+  assert.equal(await message(new Worker(join(dir, 'e.mjs'), { env: SHARE_ENV })), logs);
+  assert.equal(process.env.NOAI_GUARD_LOGS, logs);
+  const data = new URL(`data:text/javascript,${encodeURIComponent("import { parentPort } from 'node:worker_threads'; parentPort.postMessage('data ok')")}`);
+  assert.equal(await message(new Worker(data)), 'data ok');
 });
