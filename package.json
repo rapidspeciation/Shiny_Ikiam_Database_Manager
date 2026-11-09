@@ -9,9 +9,10 @@
   "scripts": {
     "start": "node server/index.mjs",
     "build": "node scripts/instructions-history.mjs && npm --prefix frontend run build",
-    "test": "node --test --import ./tests/helpers/no-ai.mjs tests/*.test.mjs && npm --prefix frontend test",
+    "test": "node scripts/test-server.mjs && npm --prefix frontend test",
     "check": "node scripts/check.mjs",
     "wikiloc": "node tools/wikiloc/fetch.mjs",
-    "test:slow": "node scripts/test-slow.mjs"
+    "test:slow": "node scripts/test-slow.mjs",
+    "test:nightly": "node scripts/test-slow.mjs && node scripts/test-server.mjs --isolated"
   }
 }
