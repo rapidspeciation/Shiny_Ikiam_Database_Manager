@@ -62,7 +62,8 @@ export function readView(given, sheets, old = null, leftOut = []) {
       }
       if (!keys.includes(hit.key)) keys.push(hit.key);
     }
-    out.columns = keys;
+    // Every column given left out: the view's columns stay as they were (none, or the old ones), not emptied.
+    if (keys.length || !given.columns.length) out.columns = keys;
   }
   for (const flag of ['onlyColumns', 'between']) {
     if (given[flag] === null) delete out[flag];

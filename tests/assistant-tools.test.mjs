@@ -376,6 +376,9 @@ test("match_notebook reads a notebook reader's file from the work/ folder of the
       ['work/link.json', /not in this workspace's work\/ folder/],
       // Where the server looked, and what to give instead (retro 8 Nov: 10 calls refused "not found", then retried with the full path).
       ['work/missing.json', new RegExp(`: not found in ${realpathSync(own)}/work/; give the page's \`lines\` in the call instead\\. Nothing was proposed\\.$`)],
+      // Missing and outside work/: said as outside, not as not found in work/ (critic F4).
+      ['nowhere/missing.json', /: not in this workspace's work\/ folder\. Nothing was proposed\.$/],
+      [join(workspaces, 'other', 'work', 'missing.json'), /: not in this workspace's work\/ folder\. Nothing was proposed\.$/],
       ['work/big.json', /larger than 512 KB/],
       ['work/bad.json', /not valid JSON/],
       ['work/empty.json', /no `lines`/],

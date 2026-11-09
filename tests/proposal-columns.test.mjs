@@ -156,6 +156,12 @@ test("the assistant's view: its columns first, or only them (and the changed one
     assert.deepEqual(JSON.parse(store.db.prepare('SELECT view_json FROM ai_proposals WHERE id = ?').get(racked.proposalId).view_json), { columns: ['CAM_ID'] });
     const revisedView = await call('update_proposal', { proposalId: racked.proposalId, view: { columns: ['Tube_2_rack'] } });
     assert.match(revisedView.viewLeftOut?.[0] ?? '', /^view\.columns: Tube_2_rack left out: proposals of Insectary_data show its columns from Insectary_ID to Notes_Insectary_data/);
+    // Every column given left out: the old columns stay, not an empty list (critic F6).
+    const viewOf = id => JSON.parse(store.db.prepare('SELECT view_json FROM ai_proposals WHERE id = ?').get(id).view_json ?? 'null');
+    assert.deepEqual(viewOf(racked.proposalId), { columns: ['CAM_ID'] });
+    const allHidden = await call('propose_changes', { reason: 'x', changes, view: { columns: ['Tube_1_rack'] } });
+    assert.ok(allHidden.proposalId && allHidden.viewLeftOut.length === 1, JSON.stringify(allHidden));
+    assert.equal(viewOf(allHidden.proposalId), null, 'no view stored, not columns: []');
     const rack = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { COLLECTED_BY: 'PAS' } }] });
     assert.match(rack.error, /COLLECTED_BY is not written in proposals of Insectary_data/);
     const photo = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Photo_dorsal: 'x' } }] });

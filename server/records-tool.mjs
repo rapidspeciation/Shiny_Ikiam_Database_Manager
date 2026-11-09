@@ -236,16 +236,14 @@ export function resolveRows(source, refs, { sheet = null } = {}) {
       else fail(index, ref, `${value} is the ID of ${pick.length} rows: ${pick.slice(0, 6).map(rowName).join('; ')}. Give {"sheet", "id"} or the recordId of the one meant.`, 'ambiguous');
     }
   }
-  // Not found: where the ID is instead (another sheet's row, or a row number given as an ID), so the next call finds it.
+  // Not found: where the ID is instead (another sheet's row), so the next call finds it. (A number is not taken
+  // for a row number: on a sheet of numeric IDs, clutches, that would point a draft at another row.)
   const elsewhere = missing.some(m => m.inSheet) ? rowsWithIds(source, missing.filter(m => m.inSheet).map(m => m.value)) : new Map();
   for (const { index, ref, value, inSheet } of missing) {
     const others = (elsewhere.get(idKey(value)) ?? []).filter(h => h.sheet !== inSheet);
-    const byRow = inSheet && /^\d+$/.test(value) ? cachedRows(source, inSheet).find(r => r.row === Number(value)) : null;
     const where = others.length
       ? `; it is the ID of ${others.slice(0, 3).map(rowName).join('; ')}: give that recordId`
-      : byRow
-        ? `; ${inSheet} row ${byRow.row} is ${byRow.label} (recordId ${byRow.id}): give that recordId if the row was meant`
-        : `; no sheet has that ID. find_records with filters {column: {"contains": part of it}} finds it written otherwise`;
+      : `; no sheet has that ID. find_records with filters {column: {"contains": part of it}} finds it written otherwise`;
     fail(index, ref, `No row with ID ${value}${inSheet ? ` in ${inSheet} (ID columns: ${moduleMap.get(inSheet).identityFields.join(', ') || 'none'})` : ''}${where}`, 'missing');
   }
   return { ids, problems: problems.sort((a, b) => a.index - b.index) };

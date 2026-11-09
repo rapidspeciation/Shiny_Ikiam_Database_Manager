@@ -450,7 +450,7 @@ export function createKnowledge(config = {}) {
     if (!folder)
       return {
         error:
-          'This server has no documents folder (KNOWLEDGE_DIR is not set), so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.',
+          `This server has no documents folder${roots.length ? '' : ' (KNOWLEDGE_DIR is not set)'}, so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.`,
       };
     const manifest = join(folder, 'drive', 'manifest.json');
     const syncedAt = async () => JSON.parse(await readFile(manifest, 'utf8').catch(() => '{}')).syncedAt ?? null;

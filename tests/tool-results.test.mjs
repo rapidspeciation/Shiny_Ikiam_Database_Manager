@@ -76,7 +76,7 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   assert.ok(notebook.length < 2000, String(notebook.length));
 });
 
-test('an ID not in the sheet given: the error names the row that has it, or the row of that number (retro 8 Nov: get_record 3FE)', async () => {
+test('an ID not in the sheet given: the error names the row that has it in another sheet (retro 8 Nov: get_record 3FE)', async () => {
   // 3FE is an Insectary_ID of F1/F2_MutationRate only; the chats asked for it in Insectary_data (8 calls, 8 Nov retro).
   const { store, call, row } = await setup({
     ...INSECTARY,
@@ -91,9 +91,14 @@ test('an ID not in the sheet given: the error names the row that has it, or the 
     );
     // Its recordId, as the error says, finds it.
     assert.equal((await call('get_record', { id: f1.id })).sheet, 'F1/F2_MutationRate');
-    // A row number given as an ID: the row of that number.
-    const byRow = await call('get_record', { id: '3', sheet: 'Insectary_data' });
-    assert.match(byRow.error, new RegExp(`^No row with ID 3 in Insectary_data \\(ID columns: Insectary_ID, CAM_ID\\); Insectary_data row 3 is W2B \\(recordId ${row('Insectary_data', 3).id}\\): give that recordId if the row was meant$`));
+    // A number is not taken for a row number (critic F3): on Insectary_stocks a missing clutch would point at another stock.
+    for (const [sheet, id] of [['Insectary_data', '3'], ['Insectary_stocks', '2']]) {
+      const byNumber = await call('get_record', { id, sheet });
+      assert.match(byNumber.error, new RegExp(`^No row with ID ${id} in ${sheet} .*; no sheet has that ID\\.`), sheet);
+      assert.doesNotMatch(byNumber.error, /recordId [0-9a-f]{8}-/, sheet);
+    }
+    const draft = await call('propose_changes', { reason: 'x', changes: [{ sheet: 'Insectary_stocks', id: '2', values: { SPECIES: 'Oleria onega' } }] });
+    assert.match(draft.error, /No row with ID 2 in Insectary_stocks .*; no sheet has that ID/);
     // find_records by recordId, as the sheets' copy names it (_id; retro 8 Nov: "Unknown column _id", 2 calls).
     const w2b = row('Insectary_data', 3).id;
     for (const field of ['_id', 'recordId']) {
