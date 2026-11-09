@@ -65,6 +65,8 @@ test('a body without the right signature is refused before anything is read', ()
   const { post, db } = fixture();
   assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: 'sha256=00' }).status, 403);
   assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: sign('other-secret-0000000', 'x') }).status, 403);
+  // The right secret, but the signature of another body.
+  assert.equal(post({ chat_jid: ANA, sender_jid: ANA, text: 'hola' }, { signature: sign(SECRET, '{"text":"otra cosa"}') }).status, 403);
   assert.equal(db.prepare('SELECT count(*) n FROM wa_inbox').get().n, 0);
 });
 
@@ -93,6 +95,24 @@ test('a disabled person and an unknown group are dropped; the group waits as pen
   const other = '120363000000000099@g.us';
   assert.equal(decision(post({ chat_jid: other, sender_jid: ANA, text: '@asistente hola' })), 'dropped');
   assert.equal(relay.groups().find(g => g.jid === other).enabled, 0);
+});
+
+test('an answer to a person or group taken off the list after their message is refused, even confirmed; nothing is queued', async () => {
+  const { post, decision, relay, db, clock } = fixture();
+  assert.equal(decision(post({ msg_id: 'dm', chat_jid: LUIS, sender_jid: LUIS, text: '¿cuántas hay?' })), 'waiting');
+  assert.equal(decision(post({ msg_id: 'gr', chat_jid: GROUP, sender_jid: LUIS, text: 'hey', mentions: [BOT] })), 'waiting');
+  clock.t += 120_000;
+  await relay.pump();
+  const outbox = () => db.prepare('SELECT count(*) n FROM wa_outbox').get().n;
+  const before = outbox();
+  relay.setPerson({ phone: '+593992222222', name: 'Luis', enabled: false });
+  relay.setGroup({ jid: GROUP, name: 'Insectario Ikiam', enabled: false });
+  const refused = 'That chat is not on the WhatsApp list (anymore). Nothing was sent.';
+  for (const replyTo of ['dm', 'gr']) {
+    assert.deepEqual(relay.reply({ replyTo, text: 'Siete.' }), { error: refused });
+    assert.deepEqual(relay.reply({ replyTo, text: 'Siete.', confirm: true }), { error: refused });
+  }
+  assert.equal(outbox(), before);
 });
 
 test('group messages wake only on a mention, a reply to the bot, its name or a command', () => {

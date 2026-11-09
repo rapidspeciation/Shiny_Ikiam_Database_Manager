@@ -235,15 +235,15 @@ test('the wait for the update is at most maxWaitMs while batches keep ending', a
   mockClock(t);
   const { readings, calls } = service(store, dir, { debounceMs: 2000, maxWaitMs: 500 });
   t.after(() => readings.close());
-  // Batches one after another (the same photo listed again, renamed, each time): each pushes the wait, but not
-  // past half a second after the first.
+  // Batches one after another, 100 ms apart (the same photo listed again, renamed, each time): each pushes the
+  // wait, but not past half a second after the first.
   let first = null;
   for (let i = 0; i < 40 && !calls.length; i++) {
     store.db.prepare("UPDATE records SET values_json = json_set(values_json, '$.\"Size KB\"', ?) WHERE sheet='Photo_links' AND json_extract(values_json, '$.Name') = 'CAM000203d.JPG'").run(900 + i);
     readings.run();
     await readings.idle();
     first ??= Date.now();
-    await advance(t, 20);
+    await advance(t, 100);
   }
   assert.deepEqual(calls, ['gallery']);
   // The first batch's update is due 500 ms after it ended (the batches take no time on the mocked clock).

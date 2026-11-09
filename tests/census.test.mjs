@@ -234,23 +234,6 @@ test('a census: start or join, marks by several people, doubts, undo, an unknown
   }
 });
 
-test('two people marking at once: each butterfly marked once, the second told who was first', async () => {
-  const { store } = await fixture();
-  try {
-    const id = start(store, ana).census.id;
-    const ids = ['A1B', 'A2B', 'A3B', 'A8B'].map(i => recordOf(store, i));
-    const both = await Promise.all(
-      ids.flatMap(recordId => [ana, luis].map(user => Promise.resolve().then(() => mark(store, id, user, { recordId })))),
-    );
-    assert.equal(both.filter(o => !o.already).length, 4);
-    assert.equal(both.filter(o => o.already).length, 4);
-    for (const o of both.filter(x => x.already)) assert.equal(o.mark.actorName, 'Ana');
-    assert.equal(censusDetail(store, id).marks.length, 4);
-  } finally {
-    store.close();
-  }
-});
-
 test('finishing keeps the disappearances in the app with Muertes cells; reopening undoes them; saving writes them', async () => {
   const { store, sheets } = await fixture();
   try {

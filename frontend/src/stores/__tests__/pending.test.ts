@@ -335,3 +335,58 @@ describe('the check and automatic-save timers after a sign-out or a disposed sto
     pending.clear()
   })
 })
+
+describe('a save on its way, or of unclear outcome', () => {
+  /** The mocked fetch, with the next records/batch answer held until `release()`, or answered with `status`. */
+  function hold({ status = 200 } = {}) {
+    const mocked = globalThis.fetch
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => (release = resolve))
+    let reached = false
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (!url.startsWith('api/records/batch')) return mocked(url, init)
+      reached = true
+      await gate
+      const out = await mocked(url, init)
+      vi.stubGlobal('fetch', mocked)
+      return status === 200 ? out : new Response(JSON.stringify({ error: { code: 'WRITE_UNCERTAIN', message: 'Google did not answer' } }), { status })
+    })
+    return { release, reached: () => reached }
+  }
+  const tick = async (until: () => boolean) => {
+    for (let i = 0; i < 50 && !until(); i++) await new Promise(resolve => setTimeout(resolve, 0))
+  }
+
+  it('keeps a cell typed again while its save was on its way; the next save expects the value saved', async () => {
+    const pending = usePending()
+    pending.setAutoSave(false)
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
+    const gate = hold()
+    const first = pending.save('')
+    await tick(gate.reached)
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Fungus')
+    gate.release()
+    await first
+    expect(pending.edits.r3?.values).toEqual({ Death_cause: 'Fungus' })
+    await pending.save('')
+    expect(sent()[1].edits).toEqual([{ id: 'r3', values: { Death_cause: 'Fungus' }, expected: { Death_cause: 'Unknown' } }])
+  })
+
+  it('a save of unclear outcome is sent again with the same request ID after a reload (never written twice)', async () => {
+    const pending = usePending()
+    pending.setAutoSave(false)
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
+    const gate = hold({ status: 503 })
+    gate.release()
+    await expect(pending.save('')).rejects.toMatchObject({ code: 'WRITE_UNCERTAIN' })
+    // The page reloaded: a new store reads what this device kept.
+    setActivePinia(createPinia())
+    const again = usePending()
+    again.setAutoSave(false)
+    again.restore()
+    await again.save('')
+    const [a, b] = calls.filter(c => c.url.startsWith('api/records/batch')).map(c => c.body as { requestId: string; edits: unknown })
+    expect(b.requestId).toBe(a.requestId)
+    expect(b.edits).toEqual(a.edits)
+  })
+})

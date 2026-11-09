@@ -89,7 +89,8 @@ export default defineConfig(({ command }) => ({
   // Components, views, composables, stores and the lib tests that use the page or
   // localStorage run in happy-dom, each file on its own.
   test: {
-    setupFiles: ['./src/test-setup.ts'],
+    // test-no-ai.mjs: no test may use a model CLI, an AI host or T3 (tests/helpers/no-ai-core.mjs).
+    setupFiles: ['./src/test-setup.ts', './src/test-no-ai.mjs'],
     // Images of /public that templates name by their site path (src="/logo.svg?v=1") load as an empty module.
     alias: [{ find: /^\/[\w-]+\.svg\?v=\d+$/, replacement: resolve(import.meta.dirname, 'src/test-asset.ts') }],
     projects: [

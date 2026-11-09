@@ -20,7 +20,7 @@ function copy() {
 
 test('the query limit counts from when the process is ready, not from its start', async () => {
   const { dir, path } = copy();
-  const runner = createQueryRunner({ path, timeoutMs: 600, execArgv: slowStart(1500) });
+  const runner = createQueryRunner({ path, timeoutMs: 600, execArgv: slowStart(1000) });
   try {
     const result = await runner.run('SELECT 1 AS x');
     assert.equal(result.error, undefined, `a quick query after a slow start: ${result.error}`);

@@ -240,6 +240,8 @@ describe("the clutch's row", () => {
   it('a count that would go below 0 is left as it is', () => {
     const p = stockPlan(tallies([draft({ kind: 'young', stage: 'Egg' })])[0], () => readCount(null), () => null, { today: 1, initials: 'X', subtractPreserved: true })
     expect(p.skipped).toEqual(['NUMBER OF EGGS'])
+    // Nothing written to the egg count.
+    expect(p.cells.filter(c => c.field === 'NUMBER OF EGGS')).toEqual([])
   })
 })
 

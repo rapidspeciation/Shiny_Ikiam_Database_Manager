@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -399,8 +399,18 @@ test('whatsapp text without intro, with the document link', () => {
   assert.doesNotMatch(t, /Other\/various:\*\n\s+◦ \n/); // the empty point is not sent
 });
 
-test('the sim backend keeps its files private and readable again', () => {
-  const { dir } = setup();
+test('the sim backend keeps its files private (owner only, 0600) and readable again', () => {
+  // A server's usual umask (022) would leave a plain new file world-readable.
+  const umask = process.umask(0o022);
+  let dir;
+  try {
+    ({ dir } = setup());
+  } finally {
+    process.umask(umask);
+  }
+  assert.equal(statSync(join(dir, 'files.json')).mode & 0o777, 0o600, 'files.json readable by its owner only');
   const files = JSON.parse(readFileSync(join(dir, 'files.json'), 'utf8'));
   assert.equal(files.tpl.name, TEMPLATE_TITLE);
+  // Opened again on the same folder: the same template, not a new one.
+  assert.equal(simBackend({ dir, templateId: 'tpl' }).get('tpl').createdTime, files.tpl.createdTime);
 });

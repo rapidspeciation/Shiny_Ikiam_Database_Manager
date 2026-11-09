@@ -127,11 +127,12 @@ test('get_proposal of a Photo_links reading: counts and a few examples, every ex
       .run(id, 't1', user.id, '2026-10-15T19:48:32.494Z', '2026-10-15T19:48:32.494Z', JSON.stringify(card));
     const plain = await call('get_proposal', { proposalId: id });
     assert.equal(plain.listedTwice.differentPhotosOfOneName.count, 25);
-    assert.equal(plain.listedTwice.differentPhotosOfOneName.examples.length, 6);
+    // The first six of the card's own examples, names and rows as they are.
+    assert.deepEqual(plain.listedTwice.differentPhotosOfOneName.examples, different.slice(0, 6));
     assert.match(plain.next, /sync_photo_links with scan/);
     assert.match(plain.more, /full: true/);
     const full = await call('get_proposal', { proposalId: id, full: true });
-    assert.equal(full.listedTwice.differentExamples.length, 20);
+    assert.deepEqual(full.listedTwice.differentExamples, different);
     assert.ok(JSON.stringify(full).length > JSON.stringify(plain).length);
   } finally {
     store.close();

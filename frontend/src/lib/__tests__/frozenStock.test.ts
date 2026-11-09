@@ -34,7 +34,15 @@ describe('frozen stock lines', () => {
     expect(genusStock(stock, 'Oleria onega')).toBeNull()
   })
   it('dates the inventory', () => {
-    expect(stockDate('2026-10-31T02:15:00Z')).toMatch(/^Inventario congelado al .*2026/)
+    // 02:15 UTC on 31 Oct is 21:15 on 30 Oct in Ecuador (the browser's zone there).
+    const zone = process.env.TZ
+    process.env.TZ = 'America/Guayaquil'
+    try {
+      expect(stockDate('2026-10-31T02:15:00Z')).toMatch(/^Inventario congelado al 30 oct 2026, 09:15\s?p\.\s?m\.$/)
+    } finally {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    }
     expect(stockDate('nope')).toBe('Inventario congelado: fecha desconocida')
   })
 })

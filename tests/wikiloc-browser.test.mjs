@@ -115,7 +115,12 @@ test('timeout stops browser descendants', { skip: process.platform !== 'linux' }
   let running = true;
   for (let i = 0; i < 200; i++) {
     const proc = `/proc/${pid}/stat`;
-    running = existsSync(proc) && !/\) Z /.test(readFileSync(proc, 'utf8'));
+    // Gone between the check and the read (ESRCH) is gone too.
+    let stat = null;
+    try {
+      stat = existsSync(proc) ? readFileSync(proc, 'utf8') : null;
+    } catch {}
+    running = stat !== null && !/\) Z /.test(stat);
     if (!running) break;
     await new Promise(resolve => setTimeout(resolve, 50));
   }

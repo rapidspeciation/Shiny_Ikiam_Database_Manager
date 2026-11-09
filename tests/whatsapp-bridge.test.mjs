@@ -31,9 +31,12 @@ test('commands', () => {
   assert.equal(command('hola /status'), null);
 });
 
-test('signature', () => {
+test('signature: the HMAC-SHA256 of the raw body, refused for another body or secret', () => {
   const raw = Buffer.from('{"a":1}');
+  // Worked out apart (Python hmac): HMAC-SHA256 with key "s"×32 of {"a":1}.
+  assert.equal(sign('s'.repeat(32), raw), 'sha256=88f0659297da0cf59f01f53a6a17ca54d361d2edbf24c29fe9e56b0228cdb292');
   assert.ok(verify('s'.repeat(32), raw, sign('s'.repeat(32), raw)));
+  assert.ok(!verify('s'.repeat(32), Buffer.from('{"a":2}'), sign('s'.repeat(32), raw)));
   assert.ok(!verify('s'.repeat(32), raw, sign('t'.repeat(32), raw)));
   assert.ok(!verify('s'.repeat(32), raw, undefined));
 });

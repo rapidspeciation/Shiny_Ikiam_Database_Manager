@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   calendarDays,
   dayLabel,
@@ -8,6 +8,7 @@ import {
   serialFromIso,
   serialToIso,
   shiftMonth,
+  todayIso,
 } from '../dates'
 
 const iso = (text: string, today?: string) => {
@@ -80,5 +81,19 @@ describe('a date box', () => {
     expect(october.filter(d => d.inMonth)).toHaveLength(31)
     expect(shiftMonth(2026, 1, -1)).toEqual({ year: 2025, month: 12 })
     expect(shiftMonth(2026, 12, 1)).toEqual({ year: 2027, month: 1 })
+  })
+})
+
+describe('today', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  it("is Ecuador's day (UTC−5): 22:30 on 5 Oct there is already 6 Oct in UTC", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-06T03:30:00Z'))
+    expect(todayIso()).toBe('2026-10-05')
+    // 5 hours later it is 6 Oct in Ecuador too.
+    vi.setSystemTime(new Date('2026-10-06T05:00:00Z'))
+    expect(todayIso()).toBe('2026-10-06')
   })
 })

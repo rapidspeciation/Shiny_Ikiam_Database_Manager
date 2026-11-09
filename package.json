@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server/index.mjs",
     "build": "node scripts/instructions-history.mjs && npm --prefix frontend run build",
-    "test": "node --test tests/*.test.mjs && npm --prefix frontend test",
+    "test": "node --test --import ./tests/helpers/no-ai.mjs tests/*.test.mjs && npm --prefix frontend test",
     "check": "node scripts/check.mjs",
     "wikiloc": "node tools/wikiloc/fetch.mjs"
   }

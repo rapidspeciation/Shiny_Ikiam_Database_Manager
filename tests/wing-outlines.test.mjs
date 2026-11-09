@@ -63,15 +63,23 @@ test('the iso-line keeps a notch the grid samples see', () => {
   assert.ok(inNotch.length >= 2, 'the notch bottom has points');
 });
 
-test('simplify keeps squares as 4 corners and caps the points', () => {
+/** A polygon's area by the shoelace formula (a self-crossing order gives less). */
+const area = pts => Math.abs(pts.reduce((a, [x, y], i) => a + x * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * y, 0)) / 2;
+
+test('simplify keeps squares as 4 corners in their order and caps the points', () => {
   const sq = [];
   for (let i = 0; i < 100; i++) sq.push([i, 0]);
   for (let i = 0; i < 100; i++) sq.push([100, i]);
   for (let i = 100; i > 0; i--) sq.push([i, 100]);
   for (let i = 100; i > 0; i--) sq.push([0, i]);
-  assert.equal(simplifyClosed(sq, 1).length, 4);
+  const corners = simplifyClosed(sq, 1);
+  assert.equal(corners.length, 4);
+  // Gone round in order, the corners enclose the whole 100 × 100 square.
+  assert.equal(area(corners), 10000);
   const circle = Array.from({ length: 1000 }, (_, n) => [Math.cos(n / 159.15) * 500, Math.sin(n / 159.15) * 500]);
-  assert.ok(simplifyClosed(circle, 0.01).length <= MAX_POINTS);
+  const round = simplifyClosed(circle, 0.01);
+  assert.ok(round.length <= MAX_POINTS);
+  assert.ok(area(round) > 0.95 * Math.PI * 500 ** 2, `area ${area(round)}`);
 });
 
 test('points of a photo checked upright go back to the photo as shown', () => {

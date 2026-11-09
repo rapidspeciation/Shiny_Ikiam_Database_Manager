@@ -12,6 +12,10 @@ import { RACK_TOOL_NAMES, createRackTools, reportFile, wellName } from '../serve
 
 const RACK_PHOTO = new URL('./fixtures/rack-bottom-fk00274230.jpg', import.meta.url).pathname;
 const TUBE_PHOTO = new URL('./fixtures/tube-bottom-fs50849233.jpg', import.meta.url).pathname;
+// The rack photo read once (ffmpeg and the barcode scan, seconds of CPU) for the two tests that look at that reading;
+// rack_read_photos still reads its own copy through the tools.
+let rackRead = null;
+const readRack = () => (rackRead ??= loadPhoto(RACK_PHOTO).then(readOne));
 // The rack photographed on 28 Oct: pre-loaded tubes FS50849233 (A1) … FS50849328 (H12), column by column.
 const expected = well => `FS${50849233 + (Number(well.slice(1)) - 1) * 8 + 'ABCDEFGH'.indexOf(well[0])}`;
 
@@ -54,11 +58,14 @@ const franz = { id: 'u1', username: 'franz', role: 'editor' };
 
 test('the rack tools are offered to the chats', () => {
   const names = new Set(mcpTools().map(t => t.name));
-  for (const n of RACK_TOOL_NAMES) assert.ok(names.has(n), n);
+  // The names the chats call, written out (a rename changes what the chats can call).
+  const rack = ['rack_read_photos', 'rack_deposit', 'rack_report', 'tubes_lookup'];
+  for (const n of rack) assert.ok(names.has(n), n);
+  assert.deepEqual([...RACK_TOOL_NAMES].sort(), [...rack].sort());
 });
 
 test("Franz's rack photo: at least 92 of 96 tubes, every one where its ID says, the rack code, A1 from the IDs", async () => {
-  const one = await readOne(await loadPhoto(RACK_PHOTO));
+  const one = await readRack();
   assert.equal(one.rack?.text, 'FK00274230');
   const m = mergeReadings([one]);
   assert.equal(m.orientation.mapping, 'm1');
@@ -184,7 +191,7 @@ test('a partly filled rack is placed from a named corner tube that was read', ()
 });
 
 test("Franz's rack FK00274230: A1 under glare does not block the IDs' proof; A12 agrees; H12 is not assumed", async () => {
-  const one = await readOne(await loadPhoto(RACK_PHOTO));
+  const one = await readRack();
   const a1 = expected('A1');
   const glare = mergeReadings([one], { a1Tube: a1 });
   const a1Read = [...glare.cells.values()].some(v => v.id === a1);

@@ -154,7 +154,15 @@ export function updateUser(store, id, body, currentUser) {
   if (body.active !== undefined) {
     if (id === currentUser.id && !body.active) throw bad('SELF_DEACTIVATION', 'You cannot deactivate yourself', 409);
     store.db.prepare('UPDATE users SET active=? WHERE id=?').run(body.active ? 1 : 0, id);
-    if (!body.active) store.db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+    if (!body.active) {
+      store.db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+      // Unused reset links end too, so reactivating the account does not bring them back.
+      // (password_resets is made by createPasswordResets in createApp, before any route runs.)
+      const now = new Date().toISOString();
+      store.db
+        .prepare('UPDATE password_resets SET expires_at=? WHERE user_id=? AND used_at IS NULL AND expires_at>?')
+        .run(now, id, now);
+    }
   }
   if (body.displayName !== undefined)
     store.db

@@ -42,10 +42,11 @@ fi
 # frontend tests side by side, at low priority (on the server the app keeps answering meanwhile); the
 # type check, the longest single step, a little ahead of the others. The build is made meanwhile, and
 # deployed only if they all pass. It also writes server/instructions-history.json (the AI instructions
-# page's history: the release has no .git); the types are checked beside it: vite only.
+# page's history: the release has no .git); the types are checked beside it: vite only. The server tests run with
+# the guard that refuses any model CLI, AI host or T3 (tests/helpers/no-ai.mjs; the frontend's is in its setupFiles).
 logs="$(mktemp -d)"
 nice -n 5 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
-nice -n 10 node --test --test-concurrency="$(nproc 2>/dev/null || echo 4)" tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
+nice -n 10 node --test --import ./tests/helpers/no-ai.mjs --test-concurrency="$(nproc 2>/dev/null || echo 4)" tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
 NO_COLOR=1 nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
 nice -n 10 bash -c 'node scripts/instructions-history.mjs && cd frontend && npx vite build' >"$logs/build" 2>&1 & build=$!
 failed=0

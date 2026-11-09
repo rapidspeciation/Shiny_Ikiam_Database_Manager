@@ -95,6 +95,9 @@ test('a save left unconfirmed is checked again after the next sync', async () =>
     await store.sync({ force: true });
     await store.recovering;
     assert.equal(store.unconfirmedCount(), 0, 'settled (nothing reached the sheet: failed)');
+    // Recorded as failed, not saved: the Historial must not show female as written, and the row still says male.
+    assert.deepEqual(store.db.prepare('SELECT status FROM actions').all().map(a => a.status), ['failed']);
+    assert.equal(JSON.parse(store.db.prepare('SELECT values_json FROM records WHERE id = ?').get(id).values_json).Sex, 'male');
   } finally {
     await app.close();
   }

@@ -624,7 +624,7 @@ test('the transfer sheet as Google gives it: its cells by their labels, its last
   assert.equal(sheet.url, 'https://docs.google.com/spreadsheets/d/sheet-id/edit');
 });
 
-test('Google Drive as the app calls it: pages, a file gone, a change, a busy answer tried again', async () => {
+test('Google Drive as the app calls it: pages, a file gone, a change, a busy answer tried again', async t => {
   const calls = [];
   const answers = [];
   const fetchFn = async (url, options = {}) => {
@@ -664,7 +664,23 @@ test('Google Drive as the app calls it: pages, a file gone, a change, a busy ans
 
   // Google busy: asked again; refused: said as Google says it.
   answers.push({ status: 503 }, { body: { id: 'd', name: 'x.JPG' } });
-  assert.equal((await google.get('d')).name, 'x.JPG');
+  // The 1 s wait before asking again, on a mocked setTimeout.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const busy = google.get('d');
+  let done = false;
+  busy.then(() => (done = true), () => (done = true));
+  // At most 30 s of real time (Date is not mocked), then the mocked timers go back in any case.
+  const until = Date.now() + 30_000;
+  try {
+    while (!done) {
+      if (Date.now() > until) throw new Error('the retry did not settle within 30 s of real time');
+      t.mock.timers.tick(1000);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  } finally {
+    t.mock.timers.reset();
+  }
+  assert.equal((await busy).name, 'x.JPG');
   answers.push({ status: 403, body: { error: { message: 'insufficientFilePermissions' } } });
   await assert.rejects(google.trash('d'), /Google Drive 403: .*insufficientFilePermissions/);
 });

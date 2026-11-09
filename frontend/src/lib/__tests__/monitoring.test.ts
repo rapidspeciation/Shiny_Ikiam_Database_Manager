@@ -141,6 +141,7 @@ describe('sheet values', () => {
     expect(v).toMatchObject({
       Release_Collect: 'Mark_Released',
       FieldMark_ID: 'B56',
+      Sex: 'female',
       SPECIES: 'Hyposcada illinissa',
       Subspecies_Form: 'ida',
       Transect_section: 4,
