@@ -76,6 +76,37 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   assert.ok(notebook.length < 2000, String(notebook.length));
 });
 
+test('an ID not in the sheet given: the error names the row that has it, or the row of that number (retro 8 Nov: get_record 3FE)', async () => {
+  // 3FE is an Insectary_ID of F1/F2_MutationRate only; the chats asked for it in Insectary_data (8 calls, 8 Nov retro).
+  const { store, call, row } = await setup({
+    ...INSECTARY,
+    'F1/F2_MutationRate': [{ row: 2, values: { Insectary_ID: '3FE', CAM_ID: 'CAM075255', SPECIES: 'Mechanitis polymnia proceriformis' } }],
+  });
+  try {
+    const f1 = row('F1/F2_MutationRate', 2);
+    const wrong = await call('get_record', { id: '3FE', sheet: 'Insectary_data' });
+    assert.equal(
+      wrong.error,
+      `No row with ID 3FE in Insectary_data (ID columns: Insectary_ID, CAM_ID); it is the ID of F1/F2_MutationRate row 2 (3FE, recordId ${f1.id}): give that recordId`,
+    );
+    // Its recordId, as the error says, finds it.
+    assert.equal((await call('get_record', { id: f1.id })).sheet, 'F1/F2_MutationRate');
+    // A row number given as an ID: the row of that number.
+    const byRow = await call('get_record', { id: '3', sheet: 'Insectary_data' });
+    assert.match(byRow.error, new RegExp(`^No row with ID 3 in Insectary_data \\(ID columns: Insectary_ID, CAM_ID\\); Insectary_data row 3 is W2B \\(recordId ${row('Insectary_data', 3).id}\\): give that recordId if the row was meant$`));
+    // find_records by recordId, as the sheets' copy names it (_id; retro 8 Nov: "Unknown column _id", 2 calls).
+    const w2b = row('Insectary_data', 3).id;
+    for (const field of ['_id', 'recordId']) {
+      const found = await call('find_records', { module: 'Insectary_data', field, values: [w2b, 'not-a-record'], fields: ['SPECIES'] });
+      assert.deepEqual([found.rows.map(r => r[0]), found.missing], [[w2b], ['not-a-record']], field);
+    }
+    // In no sheet: how to look for it written otherwise.
+    assert.match((await call('get_record', { id: '9ZZ', sheet: 'Insectary_data' })).error, /; no sheet has that ID\. find_records with filters \{column: \{"contains": part of it\}\} finds it written otherwise$/);
+  } finally {
+    store.close();
+  }
+});
+
 test('column names as people write them: one column, or the nearest ones named', () => {
   assert.deepEqual(columnOf('Insectary_stocks', 'pupa date'), { key: 'PUPA DATE' });
   assert.deepEqual(columnOf('Insectary_data', 'insectary id'), { key: 'Insectary_ID' });
@@ -97,7 +128,7 @@ test('rows by their ID: a bare ID, {sheet, id}, a key; the first ID column wins 
     const { problems } = resolveRows(store, ['X1X', 'NOPE', { id: 'W2B', sheet: 'Nowhere' }]);
     assert.deepEqual(problems.map(p => p.kind), ['ambiguous', 'missing', 'invalid']);
     assert.match(problems[0].error, /^X1X is the ID of 2 rows: Insectary_data row 4 .*Insectary_data row 5 .*Give \{"sheet", "id"\} or the recordId/);
-    assert.match(problems[1].error, /^No row with ID NOPE; give the row's recordId, or look it up with find_records/);
+    assert.match(problems[1].error, /^No row with ID NOPE; no sheet has that ID\. find_records with filters \{column: \{"contains": part of it\}\}/);
 
     // The production mistake: an Insectary_ID given as recordId now names its row.
     const proposed = await call('propose_changes', { reason: 'x', changes: [{ recordId: '4OO', values: { sex: 'male' } }] });

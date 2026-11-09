@@ -222,6 +222,7 @@ export function resolveRows(source, refs, { sheet = null } = {}) {
     const list = pending.get(inSheet ?? '') ?? pending.set(inSheet ?? '', []).get(inSheet ?? '');
     list.push({ index, ref, value: text });
   });
+  const missing = [];
   for (const [inSheet, items] of pending) {
     const found = rowsWithIds(source, items.map(i => i.value), inSheet || null);
     for (const { index, ref, value } of items) {
@@ -231,15 +232,21 @@ export function resolveRows(source, refs, { sheet = null } = {}) {
       // The IDs come round again: a filled row over an empty pre-made row of the same ID.
       if (pick.length > 1 && pick.filter(h => h.observed).length === 1) pick = pick.filter(h => h.observed);
       if (pick.length === 1) ids[index] = pick[0].id;
-      else if (!pick.length)
-        fail(
-          index,
-          ref,
-          `No row with ID ${value}${inSheet ? ` in ${inSheet} (ID columns: ${moduleMap.get(inSheet).identityFields.join(', ') || 'none'})` : ''}; give the row's recordId, or look it up with find_records`,
-          'missing',
-        );
+      else if (!pick.length) missing.push({ index, ref, value, inSheet });
       else fail(index, ref, `${value} is the ID of ${pick.length} rows: ${pick.slice(0, 6).map(rowName).join('; ')}. Give {"sheet", "id"} or the recordId of the one meant.`, 'ambiguous');
     }
+  }
+  // Not found: where the ID is instead (another sheet's row, or a row number given as an ID), so the next call finds it.
+  const elsewhere = missing.some(m => m.inSheet) ? rowsWithIds(source, missing.filter(m => m.inSheet).map(m => m.value)) : new Map();
+  for (const { index, ref, value, inSheet } of missing) {
+    const others = (elsewhere.get(idKey(value)) ?? []).filter(h => h.sheet !== inSheet);
+    const byRow = inSheet && /^\d+$/.test(value) ? cachedRows(source, inSheet).find(r => r.row === Number(value)) : null;
+    const where = others.length
+      ? `; it is the ID of ${others.slice(0, 3).map(rowName).join('; ')}: give that recordId`
+      : byRow
+        ? `; ${inSheet} row ${byRow.row} is ${byRow.label} (recordId ${byRow.id}): give that recordId if the row was meant`
+        : `; no sheet has that ID. find_records with filters {column: {"contains": part of it}} finds it written otherwise`;
+    fail(index, ref, `No row with ID ${value}${inSheet ? ` in ${inSheet} (ID columns: ${moduleMap.get(inSheet).identityFields.join(', ') || 'none'})` : ''}${where}`, 'missing');
   }
   return { ids, problems: problems.sort((a, b) => a.index - b.index) };
 }
@@ -418,7 +425,9 @@ export function selectRecords(db, args) {
   const hasValues = Array.isArray(args.values) && args.values.length;
   let rows, missing;
   if (hasValues || args.field) {
-    const column = columnOf(mod, args.field ?? '');
+    // The rows' recordIds as the sheets' copy names them (_id), or recordId: no sheet has such a column.
+    const byRecordId = /^(_id|record_?id)$/i.test(String(args.field ?? '').trim());
+    const column = byRecordId ? { key: null } : columnOf(mod, args.field ?? '');
     if (column.error) return { error: `field: ${column.error}` };
     if (!hasValues) return { error: 'Give at least one identifier in values (or leave field out and use filters)' };
     // One pass over the sheet's rows (pre-made rows included) for every identifier.
@@ -426,7 +435,7 @@ export function selectRecords(db, args) {
     const keys = new Set(wanted.map(idKey));
     const byValue = new Map();
     for (const r of cachedRows(db, mod)) {
-      const key = idKey(r.values[column.key]);
+      const key = idKey(byRecordId ? r.id : r.values[column.key]);
       if (keys.has(key)) (byValue.get(key) ?? byValue.set(key, []).get(key)).push(r);
     }
     const seen = new Set();
