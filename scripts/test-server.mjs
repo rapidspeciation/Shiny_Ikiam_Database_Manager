@@ -36,7 +36,11 @@ export const ALONE = [
   [/\bsyncBuiltinESMExports\b/, 'built-in modules changed'],
   [/\bset[A-Z][\w$]*Cost\s*\(|\bsetPasswordHashCost\b/, 'a module setting (setPasswordHashCost)'],
 ];
-/** Files kept alone by hand, with why (state the patterns cannot see). */
+/**
+ * Files kept alone by hand, with why (state the patterns cannot see). A test that changes a new module-level state in
+ * a server module (a cache, a setting, a list it edits through a function) needs an entry here; the nightly run
+ * (--isolated, every file alone) is the net for one that was missed.
+ */
 export const KEEP_ALONE = {
   'offline-id.test.mjs': "changes the models' hashes in server/offline-id.mjs (MODELS) for the run",
   'maps-render-checks.test.mjs': "imports tests/helpers/maps-render.mjs, whose test.after() checks that no render process survived",

@@ -7,7 +7,9 @@
 // Claude homes of T3's settings, the provision variables), the people (users, without password columns) and their
 // T3 tokens (hashes only), and every workspace: its folder name and each file the refresh reads or writes there
 // (brief, CLAUDE.md link, skills, subagents, settings, .mcp.json, Codex config, voice) and whether each Claude
-// config trusts it. The same paths and defaults as scripts/t3-provision.mjs.
+// config trusts it. The same paths and defaults as scripts/t3-provision.mjs. Keep the two in step: a new variable,
+// input file or workspace file t3-provision.mjs reads or writes goes into ENV, RELEASE_FILES or WORKSPACE_FILES here,
+// or a deploy skips a refresh it needed (these lists are a copy, nothing checks them).
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
