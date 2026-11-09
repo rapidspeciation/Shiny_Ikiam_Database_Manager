@@ -178,6 +178,32 @@ test('a reset link of an account deactivated since changes nothing; no new link 
   }
 });
 
+test('a reset link made before the account was deactivated stays dead after it is reactivated', async () => {
+  const { app, store, sent, call, as, anaId, signIn } = await start();
+  try {
+    await call('/auth/reset/request', { method: 'POST', body: { identifier: 'ana' } });
+    const token = tokenOf(sent[0]);
+    const patch = (active, requestId) =>
+      call(`/admin/users/${anaId}`, { method: 'PATCH', ...as, body: { active, requestId } });
+    assert.equal((await patch(false, 'req-ana-off-01')).status, 200);
+    assert.equal((await patch(true, 'req-ana-on-001')).status, 200);
+    const hash = () => store.db.prepare('SELECT password_hash FROM users WHERE id=?').get(anaId).password_hash;
+    const before = hash();
+    // Well within the link's 24 hours, but the deactivation ended it.
+    assert.equal((await call(`/auth/reset/lookup?t=${token}`)).body.reset.status, 'expired');
+    const used = await call('/auth/reset', { method: 'POST', body: { token, password: 'newpass1' } });
+    assert.deepEqual([used.status, used.body.error.code], [410, 'RESET_EXPIRED']);
+    assert.equal(hash(), before, 'the password is not changed');
+    assert.equal((await signIn('ana', 'oldpass1')).status, 200);
+    // A link made after the reactivation works.
+    await call('/auth/reset/request', { method: 'POST', body: { identifier: 'ana' } });
+    const fresh = await call('/auth/reset', { method: 'POST', body: { token: tokenOf(sent[1]), password: 'newpass1' } });
+    assert.equal(fresh.status, 200);
+  } finally {
+    await app.close();
+  }
+});
+
 test('an administrator makes a reset link: emailed when there is an address, and always shown to copy', async () => {
   const { app, store, sent, call, as, anaId, signIn } = await start();
   try {
