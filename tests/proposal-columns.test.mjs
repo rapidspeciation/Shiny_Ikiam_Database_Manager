@@ -147,10 +147,15 @@ test("the assistant's view: its columns first, or only them (and the changed one
     assert.match((await call('update_proposal', { proposalId: first.proposalId, view: { rows: 3 } })).problems[0], /^view: unknown key rows/);
     // Deprecated: never shown, never written; the photos are left to their formula.
     // The columns after Notes_Insectary_data: another workflow's, never shown or written; the photos are left to their formula.
-    assert.match(
-      (await call('propose_changes', { reason: 'x', changes, view: { columns: ['Tube_1_rack'] } })).error,
-      /^view\.columns: Tube_1_rack is not shown in proposals of Insectary_data: its columns end at Notes_Insectary_data/,
-    );
+    // A view column of theirs is left out, not refused (the view only arranges the table): the proposal is drafted and the answer says why.
+    const racked = await call('propose_changes', { reason: 'x', changes, view: { columns: ['Tube_1_rack', 'CAM_ID'] } });
+    assert.ok(racked.proposalId, JSON.stringify(racked));
+    assert.deepEqual(racked.viewLeftOut, [
+      "view.columns: Tube_1_rack left out: proposals of Insectary_data show its columns from Insectary_ID to Notes_Insectary_data (in the sheet's order); the ones after belong to another workflow. The table shows the others",
+    ]);
+    assert.deepEqual(JSON.parse(store.db.prepare('SELECT view_json FROM ai_proposals WHERE id = ?').get(racked.proposalId).view_json), { columns: ['CAM_ID'] });
+    const revisedView = await call('update_proposal', { proposalId: racked.proposalId, view: { columns: ['Tube_2_rack'] } });
+    assert.match(revisedView.viewLeftOut?.[0] ?? '', /^view\.columns: Tube_2_rack left out: proposals of Insectary_data show its columns from Insectary_ID to Notes_Insectary_data/);
     const rack = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { COLLECTED_BY: 'PAS' } }] });
     assert.match(rack.error, /COLLECTED_BY is not written in proposals of Insectary_data/);
     const photo = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Photo_dorsal: 'x' } }] });
@@ -198,8 +203,15 @@ test('a Collection_data proposal: its columns up to its notes, the ones after hi
     // The columns after Notes_Collection_data: not written, not shown.
     const rack = await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Tube_1_rack: 'R1' } }] });
     assert.match(rack.error, /Tube_1_rack is not written in proposals of Collection_data: its columns end at Notes_Collection_data/);
-    const tol = await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Sex: 'NA' } }], view: { columns: ['ToLID'] } });
-    assert.match(tol.error, /^view\.columns: ToLID is not shown in proposals of Collection_data/);
+    // The retro of 8 Nov: 16 species corrections refused for TAXON_ID in the view. Now drafted, TAXON_ID left out and said why.
+    const tol = await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Sex: 'NA' } }], view: { columns: ['SPECIES', 'TAXON_ID', 'ToLID'] } });
+    assert.ok(tol.proposalId, JSON.stringify(tol));
+    assert.deepEqual(tol.viewLeftOut, [
+      "view.columns: TAXON_ID left out: proposals of Collection_data show its columns from Data_entry_order to Notes_Collection_data (in the sheet's order); the ones after belong to another workflow. The table shows the others",
+      "view.columns: ToLID left out: proposals of Collection_data show its columns from Data_entry_order to Notes_Collection_data (in the sheet's order); the ones after belong to another workflow. The table shows the others",
+    ]);
+    // An unknown column is still refused: a typo is not left out.
+    assert.match((await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Sex: 'NA' } }], view: { columns: ['TAXON'] } })).error, /^view\.columns: Unknown column TAXON/);
   } finally {
     store.close?.();
   }

@@ -2374,7 +2374,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return {
         error: `${changes.length} rows to change. ${rowCap(changes) > PROPOSAL_ROWS ? `A proposal that only writes formulas takes at most ${FORMULA_ROWS} rows: split the rows (bulk rows: { from, to }).` : narrower()}`,
       };
-    const view = readView(input.view, [...new Set(changes.map(c => c.sheet))]);
+    const viewLeftOut = [];
+    const view = readView(input.view, [...new Set(changes.map(c => c.sheet))], null, viewLeftOut);
     if (view?.error) return view;
     // The photos the values were read from (T3 attachments), shown beside the table as a notebook page's.
     const shot = input.photo !== undefined && input.photo !== null && input.photo !== '' ? photosOf(config.t3?.home, input) : null;
@@ -2425,6 +2426,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(formulaCost ? { formulaCost } : {}),
       ...formulaAnswer(changes, dropped),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
+      ...(viewLeftOut.length ? { viewLeftOut } : {}),
       ...(listed
         ? { table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
         : bulk
@@ -4859,7 +4861,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const out = reviseChanges(changes, { set, check, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
     if (out.rejected.length) return { error: 'Nothing was changed', problems: out.rejected.slice(0, 20) };
     const oldView = parse(proposal.view_json ?? 'null');
-    const view = viewGiven ? readView(args.view, [...new Set(out.changes.map(c => c.sheet))], oldView) : oldView;
+    const viewLeftOut = [];
+    const view = viewGiven ? readView(args.view, [...new Set(out.changes.map(c => c.sheet))], oldView, viewLeftOut) : oldView;
     if (view?.error) return { error: 'Nothing was changed', problems: [view.error] };
     const reason = args.reason ? clip(args.reason, 500) : null;
     const viewChanged = json(view) !== json(oldView);
@@ -4893,6 +4896,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         revised.changed ? new Set(revised.changed.flatMap(v => v.indexes ?? [v.index])) : null,
       ),
       ...(formulaCost ? { formulaCost } : {}),
+      ...(viewLeftOut.length ? { viewLeftOut } : {}),
       ...(out.conflicts.length
         ? {
             conflicts: out.conflicts,
@@ -6680,7 +6684,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const overlaps = writes ? overlapsWith(matched.changes, [replaced?.id]).map(o => overlapState(o, context.user)) : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
     const sheets = [...new Set([review.sheet, ...matched.changes.map(c => c.sheet)])];
-    const view = readView(args.view, sheets, replaced ? parse(replaced.view_json ?? 'null') : null);
+    const viewLeftOut = [];
+    const view = readView(args.view, sheets, replaced ? parse(replaced.view_json ?? 'null') : null, viewLeftOut);
     if (view?.error) return { error: `${view.error}. Nothing was proposed.` };
     let proposal = null;
     let conflicts = [];
@@ -6745,6 +6750,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(replacedAiEdits.length ? { replacedAiEdits } : {}),
       ...(overlaps.length ? { overlaps } : {}),
       ...order,
+      ...(viewLeftOut.length ? { viewLeftOut } : {}),
       ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),
     };
   }

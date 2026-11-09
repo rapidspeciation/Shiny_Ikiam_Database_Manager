@@ -84,9 +84,9 @@ export const NOT_WRITTEN = {
 
 export const isHiddenColumn = (sheet, field) => !!HIDDEN_COLUMNS[sheet]?.has(field);
 export const isNotWritten = (sheet, field) => !!NOT_WRITTEN[sheet]?.has(field) || isHiddenColumn(sheet, field);
-/** Why a column is not shown, for the view's refusals. */
+/** Why a column is left out of the view: the columns its proposals show. */
 export const hiddenWhy = (sheet, field) =>
-  `${field} is not shown in proposals of ${sheet}: its columns end at ${DEFAULT_COLUMNS[sheet]?.at(-1) ?? 'its notes'}; the ones after belong to another workflow`;
+  `${field} left out: proposals of ${sheet} show its columns from ${DEFAULT_COLUMNS[sheet]?.[0] ?? 'the first'} to ${DEFAULT_COLUMNS[sheet]?.at(-1) ?? 'its notes'} (in the sheet's order); the ones after belong to another workflow. The table shows the others`;
 /** Why a column is not written, for the tools' refusals. */
 export const notWrittenWhy = (sheet, field) =>
   isHiddenColumn(sheet, field)

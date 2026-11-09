@@ -33,9 +33,11 @@ export const PEEK_ROWS = 50;
  * The `view` the assistant gives, checked against the proposal's sheets:
  * { columns?, onlyColumns?, between? } with the columns as the sheet names them,
  * null for none, or { error }. `old`: the view so far (update_proposal): the keys
- * given replace its own, null drops one.
+ * given replace its own, null drops one. A column the sheet's proposals never
+ * show is left out, not refused (the view only arranges the table): why goes
+ * into `leftOut`, for the answer.
  */
-export function readView(given, sheets, old = null) {
+export function readView(given, sheets, old = null, leftOut = []) {
   if (given === undefined || given === null) return old;
   if (typeof given !== 'object' || Array.isArray(given))
     return { error: 'view: give { columns, onlyColumns, between }' };
@@ -54,7 +56,10 @@ export function readView(given, sheets, old = null) {
       if (!hit) return { error: `view.columns: ${found[0]?.error ?? `Unknown column ${clip(name, 60)}`}` };
       // A column the sheet's proposals never show (server/proposal-columns.mjs).
       const hiddenIn = sheets.find(sheet => isHiddenColumn(sheet, hit.key));
-      if (hiddenIn) return { error: `view.columns: ${hiddenWhy(hiddenIn, hit.key)}` };
+      if (hiddenIn) {
+        leftOut.push(`view.columns: ${hiddenWhy(hiddenIn, hit.key)}`);
+        continue;
+      }
       if (!keys.includes(hit.key)) keys.push(hit.key);
     }
     out.columns = keys;
