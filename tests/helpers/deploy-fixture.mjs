@@ -78,6 +78,8 @@ export function deployFixture() {
     HOME: home,
     LANG: 'C.UTF-8',
     ITHOMIINI_DEPLOY_CACHE: join(dir, 'cache'),
+    // On claudeclaw the deploy puts the server's node first on PATH: here the stand-ins stay first.
+    ITHOMIINI_NODE_DIR: bin,
     ITHOMIINI_APP_ROOT: app,
     ITHOMIINI_SYSTEMD_DIR: join(dir, 'units'),
     ITHOMIINI_SERVICE: 'ithomiini-fixture.service',
