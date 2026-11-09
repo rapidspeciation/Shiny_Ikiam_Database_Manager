@@ -445,7 +445,14 @@ export function createKnowledge(config = {}) {
   async function sync({ waitMs = 90_000 } = {}) {
     const unit = config.driveSyncUnit ?? 'ithomiini-drive-sync.service';
     const systemctl = config.systemctl ?? 'systemctl';
-    const manifest = join(roots.find(r => !/\.(md|txt)$/i.test(r)) ?? roots[0], 'drive', 'manifest.json');
+    // The Drive mirror is the drive/ folder of the first folder among the roots; without one there is nothing to sync.
+    const folder = roots.find(r => !/\.(md|txt)$/i.test(r));
+    if (!folder)
+      return {
+        error:
+          'This server has no documents folder (KNOWLEDGE_DIR is not set), so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.',
+      };
+    const manifest = join(folder, 'drive', 'manifest.json');
     const syncedAt = async () => JSON.parse(await readFile(manifest, 'utf8').catch(() => '{}')).syncedAt ?? null;
     const busy = async () => ['active', 'activating'].includes((await exec(systemctl, ['--user', 'is-active', unit])).out);
     const before = await syncedAt();

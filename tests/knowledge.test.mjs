@@ -194,6 +194,18 @@ test('the document tools reach T3 Code and Claude through MCP, and /api/knowledg
   }
 });
 
+test('sync_documents on a server without a documents folder says so (retro 8 Nov: "path" undefined, 11 calls)', async () => {
+  // The app without KNOWLEDGE_DIR (server/index.mjs: knowledgeRoots []), or with only single files: nothing to bring from Drive.
+  for (const knowledgeRoots of [[], [join(tmpdir(), 'only-a-file.md')]]) {
+    const knowledge = createKnowledge({ knowledgeRoots, systemctl: '/nonexistent/systemctl' });
+    const out = await runKnowledgeTool(knowledge, 'sync_documents', {}, { sources: new Map() });
+    assert.deepEqual(out, {
+      error:
+        'This server has no documents folder (KNOWLEDGE_DIR is not set), so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.',
+    });
+  }
+});
+
 test('sync_documents starts the Drive sync unit on request and reports when the mirror is fresh', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ks-sync-'));
   try {
