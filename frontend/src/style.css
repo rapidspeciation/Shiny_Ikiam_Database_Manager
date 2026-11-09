@@ -86,6 +86,11 @@
   --range-head: #d6d6d6;
   --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.18);
+  /* Comments on the instructions: the quoted text's highlight, and Claude's tag and change bar (the AI's green). */
+  --doc-mark: #fdf3c9;
+  --doc-mark-active: #f8d978;
+  --doc-claude: #047857;
+  --doc-claude-soft: #e7f6ef;
 }
 [data-theme='dark'] {
   --canvas: #0e1210;
@@ -140,6 +145,10 @@
   --range-head: #2b332e;
   --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.5);
+  --doc-mark: #3d3410;
+  --doc-mark-active: #6b5714;
+  --doc-claude: #4fd1a1;
+  --doc-claude-soft: #123226;
   color-scheme: dark;
 }
 
@@ -1676,4 +1685,66 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   .md-table table { @apply w-full border-collapse text-sm; }
   .md-table th { @apply border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-left font-semibold text-stone-700; }
   .md-table td { @apply border-t border-stone-100 px-2 py-1.5 align-top; }
+}
+
+/* Comments on the instructions (components/instructions/DocReview.vue): marks put into the rendered text. */
+mark.doc-mark {
+  background: var(--doc-mark);
+  color: inherit;
+  border-radius: 2px;
+  cursor: pointer;
+}
+mark.doc-mark.is-active {
+  background: var(--doc-mark-active);
+}
+.doc-card {
+  box-shadow: 0 1px 2px var(--shadow);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.doc-card-active {
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.doc-quote {
+  border-color: var(--doc-mark-active);
+}
+.doc-claude-tag {
+  border-radius: 4px;
+  background: var(--doc-claude-soft);
+  color: var(--doc-claude);
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-change-edge {
+  border-left: 3px solid var(--doc-claude);
+}
+.doc-change-bar {
+  position: absolute;
+  left: -14px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--doc-claude);
+  cursor: pointer;
+}
+.doc-box {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+@media (min-width: 1024px) {
+  .doc-box {
+    font-size: 14px;
+  }
+}
+.doc-box:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
 }
