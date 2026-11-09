@@ -229,6 +229,8 @@ test('deploy.sh from a PC: a release the install refuses (changed on the way) is
     assert.equal(ok.status, 0, ok.stderr);
     const [r1] = releasesOf(f);
     assert.equal(current(f), `releases/${r1}`);
+    // The next second: a PC names a release by its UTC second and never uploads into an existing one.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1020 - (Date.now() % 1000));
     const refused = f.run([], { DEPLOY_TEST_SSH: 'local', DEPLOY_TEST_TAMPER: '1' });
     assert.equal(refused.status, 1, refused.stderr);
     assert.match(refused.stderr, /built frontend differs from the tested one/);
