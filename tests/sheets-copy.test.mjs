@@ -291,6 +291,12 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     // A wrong column: SQLite's message and the columns named like it.
     const wrong = await call('SELECT Sexo FROM Insectary_data');
     assert.match(wrong.error, /no such column: Sexo/);
+    assert.match(wrong.hint, /_columns/, 'a close column (Sex): the hint, not the list');
+    // Nothing like it (retro 8 Nov: Sampling_protocol, Transect_ID): the table's real columns, so the next query needs no look-up.
+    const none = await call("SELECT count(*) FROM Insectary_data WHERE Sampling_protocol = 'x'");
+    assert.match(none.error, /no such column: Sampling_protocol/);
+    assert.match(none.columns.Insectary_data, /^Insectary_ID, Wild_Reared, "CLUTCH NUMBER", Stock_of_origin, SPECIES, Sex, /);
+    assert.equal(none.hint, undefined);
 
     // The rows shown are capped; the total says how many there are.
     const many = (await call('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000) SELECT x FROM c', 10)).split('\n');
@@ -400,6 +406,29 @@ test('a column the query does not find: the closest of its own tables, else wher
       [['CLUTCH NUMBER']],
     );
     assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
+
+    // The 8 Nov retro (30 "no such column" in a week). A UNION's half that lacks the column is named.
+    const union = runQuery(db, "SELECT 'C', CAM_ID, Stock_of_origin FROM Collection_data UNION ALL SELECT 'I', Insectary_ID, Stock_of_origin FROM Insectary_data", 5);
+    assert.deepEqual(union.near, ['Insectary_data.Stock_of_origin (not in Collection_data)']);
+    assert.equal(union.tableColumns, undefined, 'the near says it all');
+    // A word in common, not the table's own: Transect_ID → Transect_section; the columns listed too, the match being weak.
+    const transect = runQuery(db, "SELECT count(*) FROM Collection_data WHERE Transect_ID LIKE '%T1%'", 5);
+    assert.deepEqual(transect.near, ['Collection_data.Transect_section']);
+    assert.match(transect.tableColumns.Collection_data, /^Data_entry_order, Release_Collect, FieldMark_ID, .*Transect_section, .*Notes_Collection_data, /);
+    assert.doesNotMatch(transect.tableColumns.Collection_data, /\b_row\b|\b_id\b|_premade/, 'the columns every table has are left out');
+    // Nothing close: no near, the columns of the query's table.
+    const sampling = runQuery(db, "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol, '')) LIKE '%monitor%') FROM Collection_data", 5);
+    assert.equal(sampling.near, undefined);
+    assert.deepEqual(Object.keys(sampling.tableColumns), ['Collection_data']);
+    assert.match(sampling.tableColumns.Collection_data, /\bPurpose\b/);
+    assert.ok(sampling.tableColumns.Collection_data.length <= 1500, String(sampling.tableColumns.Collection_data.length));
+    // The very name in a sheet it joins with: the near says how to join, no list.
+    const joined = runQuery(db, 'SELECT CAM_ID, Stock_of_origin FROM Collection_data', 5);
+    assert.match(joined.near[0], /^Insectary_data\.Stock_of_origin \(not in Collection_data; shares /);
+    assert.equal(joined.tableColumns, undefined);
+    // The very name only in sheets it shares no ID with (the logged Photo_links.CAM_ID): its own columns listed, where the CAM is.
+    const photos = runQuery(db, "SELECT * FROM MEIER_manifests_23Jun26 WHERE \"Tube/Well ID\" = 'x' AND Insectary_ID = 'A1A'", 5);
+    assert.match(photos.tableColumns.MEIER_manifests_23Jun26, /"STS Collector Sample ID"/);
   } finally {
     db.close();
     store.close();

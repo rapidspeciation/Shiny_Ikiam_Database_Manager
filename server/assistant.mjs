@@ -6213,7 +6213,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     if (out.timeout)
       return { error: out.error, hint: 'Narrow it: filter on an ID column (they are indexed) or a sheet, join fewer tables, or count instead of listing.' };
-    if (out.error) return { error: `SQLite: ${out.error}`, ...(out.near ? { near: out.near } : {}), hint: QUERY_HINT };
+    // With the query's tables' columns listed, the hint's look-up is not needed.
+    if (out.error)
+      return { error: `SQLite: ${out.error}`, ...(out.near ? { near: out.near } : {}), ...(out.tableColumns ? { columns: out.tableColumns } : { hint: QUERY_HINT }) };
     return withQueryNote(formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending }), sql, out.columns);
   }
 

@@ -96,7 +96,7 @@ const here = fileURLToPath(import.meta.url);
  * query still running after `timeoutMs` has its process killed. The limit
  * counts from when the process is ready: a new process gets `startTimeoutMs`
  * to start first. `execArgv` is for the process's Node options (tests).
- * run(sql, limit) → { columns, rows, total | more, builtAt } or { error, near?, missing?, timeout? }.
+ * run(sql, limit) → { columns, rows, total | more, builtAt } or { error, near?, tableColumns?, missing?, timeout? }.
  */
 export function createQueryRunner({ path, timeoutMs = QUERY_TIMEOUT_MS, startTimeoutMs = QUERY_START_TIMEOUT_MS, execArgv = [] }) {
   let child = null;
@@ -270,7 +270,7 @@ function editDistance(a, b) {
  * loosely, one inside the other (Date: Collection_date), all the asked one's
  * words in it (Field_ID: FieldMark_ID), or a few letters apart.
  */
-function closeness(asked, name) {
+function closeness(asked, name, tableWords = new Set()) {
   const a = loose(asked);
   const b = loose(name);
   if (!a || !b) return 0;
@@ -279,7 +279,10 @@ function closeness(asked, name) {
   const words = wordsOf(asked);
   if (words.length > 1 && words.every(w => b.includes(w))) return 0.7;
   const d = editDistance(a, b) / Math.max(a.length, b.length);
-  return d <= 0.34 ? 0.6 - d : 0;
+  if (d <= 0.34) return 0.6 - d;
+  // A word of 4 letters or more in both, not the table's own (Transect_ID: Transect_section; not Collection_* in Collection_data).
+  const theirs = new Set(wordsOf(name));
+  return words.some(w => w.length >= 4 && !tableWords.has(w) && theirs.has(w)) ? 0.2 : 0;
 }
 
 /**
@@ -358,13 +361,44 @@ function sameValues(db, asked, tables) {
   return out.sort((a, b) => b.shared / b.of - a.shared / a.of).slice(0, 4);
 }
 
+/** A sheet's columns listed in an error: as SQL takes them, at most this many characters per sheet. */
+const LISTED = 1500;
+const listColumns = (db, table) => {
+  let out = '';
+  // _row and _id: every table has them (the tool's description says so).
+  for (const column of columnsOf(db, table).filter(c => c !== '_row' && c !== '_id').map(sqlName)) {
+    if (out.length + column.length + 2 > LISTED) return `${out}, …`;
+    out += out ? `, ${column}` : column;
+  }
+  return out;
+};
+
 /**
  * For "no such column/table: x", the names the query most likely meant: the
  * closest columns of the tables it names; else their columns holding the
  * values x holds in other sheets; else the other sheets with a column like x,
- * with the columns they share with the query's tables (to join them).
+ * with the columns they share with the query's tables (to join them). A
+ * column found in some of the query's tables names those it is not in. When
+ * none of the query's tables has a close column and no sheet they join with
+ * has the very name, `tableColumns` lists the real columns of the query's tables (at
+ * most 3), so the next query needs no look-up first.
  */
 export function nearNames(db, message, sql = '') {
+  const out = nearOnly(db, message, sql);
+  const m = /no such column: (.+?)(?: - should this be a string literal|$)/.exec(message);
+  if (!m || out.settled) return out.near ? { near: out.near } : {};
+  try {
+    const tables = (out.tables ?? []).filter(t => t !== '_tables' && t !== '_columns').slice(0, 3);
+    if (!tables.length) return out.near ? { near: out.near } : {};
+    const columns = Object.fromEntries(tables.map(t => [t, listColumns(db, t)]));
+    return { ...(out.near ? { near: out.near } : {}), tableColumns: columns };
+  } catch {
+    return out.near ? { near: out.near } : {};
+  }
+}
+
+/** nearNames' matches: { near?, settled (a close column in the query's tables, or the very name in a sheet they join with), tables (the query's) }. */
+function nearOnly(db, message, sql) {
   const m = /no such (column|table): (.+?)(?: - should this be a string literal|$)/.exec(message);
   if (!m) return {};
   const parts = m[2].trim().match(/"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|[^.]+/g) ?? [];
@@ -392,11 +426,15 @@ export function nearNames(db, message, sql = '') {
     for (const table of tables) {
       const words = new Set(wordsOf(table.replace(/_all$/, '')));
       columnsOf(db, table).forEach((column, index) => {
-        const score = closeness(asked, column);
+        const score = closeness(asked, column, words);
         // Among equals, one sharing a word with its table first (Collection_date in Collection_data), then the sheet's order.
         if (score > 0) near.push({ table, column, score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0), index });
       });
     }
+    // The query's tables that have the column as named (loosely) and those that do not: a UNION's wrong half.
+    const having = new Set(near.filter(n => loose(n.column) === loose(asked)).map(n => n.table));
+    const lacking = tables.filter(t => !having.has(t) && !ownTable(t));
+    const notIn = having.size && lacking.length ? ` (not in ${lacking.map(sqlName).join(', ')})` : '';
     if (near.length) {
       // The manifest's DATE_OF_COLLECTION and DATE_OF_PRESERVATION after the dates recorded, marked (server/manifest-dates.mjs).
       const sheetOf = table => table.replace(/_all$/, '');
@@ -406,8 +444,10 @@ export function nearNames(db, message, sql = '') {
           .slice(0, 8)
           .map(
             n =>
-              `${sqlName(n.table)}.${sqlName(n.column)}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date${recordedDate(sheetOf(n.table), n.column) ? `: ${recordedDate(sheetOf(n.table), n.column)}` : ''})` : ''}`,
+              `${sqlName(n.table)}.${sqlName(n.column)}${having.has(n.table) ? notIn : ''}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date${recordedDate(sheetOf(n.table), n.column) ? `: ${recordedDate(sheetOf(n.table), n.column)}` : ''})` : ''}`,
           ),
+        settled: near.some(n => n.score >= 0.6),
+        tables,
       };
     }
 
@@ -417,6 +457,7 @@ export function nearNames(db, message, sql = '') {
         near: same.map(
           s => `${sqlName(s.table)}.${sqlName(s.column)} (holds ${sqlName(s.from.sheet)}.${sqlName(s.from.column)} values: ${s.shared} of ${s.of} looked at)`,
         ),
+        settled: true,
       };
 
     const elsewhere = db
@@ -426,7 +467,7 @@ export function nearNames(db, message, sql = '') {
       .filter(r => r.score >= 0.7 && !tables.includes(r.sheet))
       .sort((a, b) => b.score - a.score)
       .slice(0, 8);
-    if (!elsewhere.length) return {};
+    if (!elsewhere.length) return { tables };
     const own = tables.filter(t => !ownTable(t)).map(table => ({ table, columns: new Set(columnsOf(db, table).map(loose)) }));
     const shared = sheet => {
       const theirs = db.prepare('SELECT column FROM _columns WHERE sheet = ?').all(sheet).map(r => r.column);
@@ -438,7 +479,12 @@ export function nearNames(db, message, sql = '') {
       return out.length ? `; ${out.join('; ')}` : '';
     };
     const where = tables.length ? `not in ${tables.map(sqlName).join(', ')}` : 'in another sheet';
-    return { near: elsewhere.map((r, i) => `${sqlName(r.sheet)}.${sqlName(r.column)}${i < 3 ? ` (${where}${shared(r.sheet)})` : ''}`) };
+    return {
+      near: elsewhere.map((r, i) => `${sqlName(r.sheet)}.${sqlName(r.column)}${i < 3 ? ` (${where}${shared(r.sheet)})` : ''}`),
+      // The very name in a sheet it joins with: the near says how; else the query's own columns are listed.
+      settled: elsewhere[0].score === 1 && shared(elsewhere[0].sheet) !== '',
+      tables,
+    };
   } catch {
     return {};
   }
