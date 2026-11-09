@@ -244,6 +244,18 @@ export function runQuery(db, sql, limit) {
 
 /** A name compared loosely: no case, accents, spaces or signs ("Field ID" = field_id). */
 const loose = name => fold(String(name)).replace(/[^a-z0-9]/g, '');
+/** A loose name without a final plural s. */
+const stemOf = name => loose(name).replace(/(?<=..)s$/, '');
+
+/**
+ * For "no such table: x": the assistant's tools named like x (tubes: tubes_lookup), to call instead of SQL.
+ * `names`: the tools' names.
+ */
+export function toolsNamed(message, names) {
+  const asked = /no such table: ["`[]?([^"`\]\s]+)/.exec(String(message))?.[1];
+  if (!asked || stemOf(asked).length < 3) return [];
+  return names.filter(name => name.split('_').some(word => stemOf(word) === stemOf(asked))).slice(0, 3);
+}
 /** The words of a name: FieldMark_ID → field, mark, id. */
 const wordsOf = name =>
   String(name)
@@ -396,10 +408,41 @@ export function nearNames(db, message, sql = '') {
     const tables = (out.tables ?? []).filter(t => t !== '_tables' && t !== '_columns').slice(0, 3);
     if (!tables.length) return out.near ? { near: out.near } : {};
     const columns = Object.fromEntries(tables.map(t => [t, listColumns(db, t)]));
-    return { ...(out.near ? { near: out.near } : {}), tableColumns: columns };
+    // Nothing near, one sheet, the column unqualified: its 5 closest columns.
+    const sheets = tables.filter(t => !ownTable(t));
+    const near = out.near ?? (sheets.length === 1 && !m[1].includes('.') ? closestOf(db, sheets[0], m[1].replace(/^"|"$/g, ''), sql) : []);
+    return { ...(near.length ? { near } : {}), tableColumns: columns };
   } catch {
     return out.near ? { near: out.near } : {};
   }
+}
+
+/**
+ * A sheet's 5 columns closest to `asked` when no name is close: first those holding a text the query
+ * compares with (Sampling_protocol LIKE '%monitor%': Purpose holds Monitoring), then by spelling.
+ */
+function closestOf(db, table, asked, sql) {
+  const columns = columnsOf(db, table).filter(c => !c.startsWith('_'));
+  const texts = [...new Set([...String(sql).matchAll(/'((?:[^']|'')*)'/g)].map(t => fold(t[1].replaceAll("''", "'")).replace(/^[%_\s]+|[%_\s]+$/g, '')))]
+    .filter(t => t.length >= 3 && !/[%_]/.test(t))
+    .slice(0, 4);
+  const holding = [];
+  for (const column of columns) {
+    if (holding.length >= 5) break;
+    const text = texts.find(t =>
+      db.prepare(`SELECT 1 FROM ${sqlName(table)} WHERE instr(fold(CAST(${sqlName(column)} AS TEXT)), ?) > 0 LIMIT 1`).get(t),
+    );
+    if (text) holding.push({ column, text });
+  }
+  const a = loose(asked);
+  const spelled = columns
+    .filter(c => !holding.some(h => h.column === c))
+    .map((column, index) => ({ column, index, d: editDistance(a, loose(column)) / Math.max(a.length, loose(column).length) }))
+    .sort((x, y) => x.d - y.d || x.index - y.index);
+  return [
+    ...holding.map(h => `${sqlName(table)}.${sqlName(h.column)} (holds '${h.text}')`),
+    ...spelled.slice(0, 5 - holding.length).map(c => `${sqlName(table)}.${sqlName(c.column)}`),
+  ];
 }
 
 /** nearNames' matches: { near?, settled (a close column in the query's tables, or the very name in a sheet they join with), tables (the query's) }. */
@@ -417,7 +460,8 @@ function nearOnly(db, message, sql) {
       const near = db
         .prepare('SELECT name FROM _tables')
         .all()
-        .map(r => ({ name: r.name, score: closeness(asked, r.name) }))
+        // Also its singular inside a name (tubes: Ithomiini_tube_locations_18Jun26).
+        .map(r => ({ name: r.name, score: closeness(asked, r.name) || (stemOf(asked).length >= 4 && loose(r.name).includes(stemOf(asked)) ? 0.5 : 0) }))
         .filter(r => r.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, 8)

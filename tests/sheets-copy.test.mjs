@@ -10,7 +10,7 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { buildCopy, createSheetsCopy, isoOfText } from '../server/replica.mjs';
-import { GENERATE_SERIES, formatRows, openCopy, runQuery, sqlProblem } from '../server/query-tool.mjs';
+import { GENERATE_SERIES, formatRows, openCopy, runQuery, sqlProblem, toolsNamed } from '../server/query-tool.mjs';
 import { addToken, addUser, mcpClient } from './helpers/assistant.mjs';
 
 // The sheets' copy the assistant's `query` reads (server/replica.mjs) and the tool itself
@@ -297,6 +297,10 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     assert.match(none.error, /no such column: Sampling_protocol/);
     assert.match(none.columns.Insectary_data, /^Insectary_ID, Wild_Reared, "CLUTCH NUMBER", Stock_of_origin, SPECIES, Sex, /);
     assert.equal(none.hint, undefined);
+    // A table named like a tool (retro 9 Nov: SELECT * FROM tubes): the tool to call.
+    const tubes = await call('SELECT * FROM tubes');
+    assert.match(tubes.error, /^SQLite: no such table: tubes/);
+    assert.equal(tubes.tools, 'tubes_lookup: a tool to call, not a table of the copy');
     // A function this SQLite lacks: the tool's answer carries its own hint (critic N3).
     const series = await call('SELECT value FROM generate_series(1, 3)');
     assert.match(series.error, /^SQLite: no such table: generate_series/);
@@ -375,7 +379,7 @@ test('a column the query does not find: the closest of its own tables, else wher
   const sheets = new LocalSheets({
     Collection_data: cams.map((CAM_ID, i) => ({
       row: i + 2,
-      values: { CAM_ID, FieldMark_ID: `B${i}`, Collection_date: d('2026-10-14'), Death_date: d('2026-10-15'), DATE_OF_COLLECTION: d('2026-10-14') },
+      values: { CAM_ID, FieldMark_ID: `B${i}`, Purpose: 'Monitoring', Collection_date: d('2026-10-14'), Death_date: d('2026-10-15'), DATE_OF_COLLECTION: d('2026-10-14') },
     })),
     MEIER_manifests_23Jun26: cams.map((cam, i) => ({ row: i + 2, values: { 'Sampleset ID': 'MEIER_000002', 'Tube/Well ID': `FD3088045${i}`, 'STS Collector Sample ID': cam } })),
     Insectary_data: [{ row: 2, values: { Insectary_ID: 'A1A', 'CLUTCH NUMBER': 976, Stock_of_origin: 'deceptus' } }],
@@ -410,6 +414,8 @@ test('a column the query does not find: the closest of its own tables, else wher
       [['CLUTCH NUMBER']],
     );
     assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
+    // A table not there (retro 9 Nov: tubes, 6 calls): the tables with its singular in their name.
+    assert.deepEqual(near('SELECT * FROM tubes'), ['Ithomiini_tube_locations_18Jun26']);
     const series = runQuery(db, 'SELECT value FROM generate_series(1, 5)', 5);
     assert.equal(series.near, undefined);
     assert.equal(series.hint, GENERATE_SERIES);
@@ -441,9 +447,15 @@ test('a column the query does not find: the closest of its own tables, else wher
     // More than 2 edits from anything (Collection_ID: Collection_time is 4 away): not settled, the columns listed (critic N1).
     const collectionId = runQuery(db, 'SELECT Collection_ID FROM Collection_data', 5);
     assert.match(collectionId.tableColumns.Collection_data, /\bFieldMark_ID\b.*\bCAM_ID\b/);
-    // Nothing close: no near, the columns of the query's table.
+    // Nothing close, one sheet, unqualified (retro 9 Nov, 7331d8bc): its 5 closest columns, first the one holding the
+    // text the query compares with (Purpose holds Monitoring), then by spelling; and the columns of the query's table.
     const sampling = runQuery(db, "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol, '')) LIKE '%monitor%') FROM Collection_data", 5);
-    assert.equal(sampling.near, undefined);
+    assert.equal(sampling.near.length, 5);
+    assert.equal(sampling.near[0], "Collection_data.Purpose (holds 'monitor')");
+    assert.ok(sampling.near.slice(1).every(n => /^Collection_data\.[^ ]+$/.test(n)), sampling.near.join('; '));
+    // Without a text to compare: by spelling only. Qualified or over two sheets: no closest list.
+    assert.equal(runQuery(db, 'SELECT Sampling_protocol FROM Collection_data', 5).near.length, 5);
+    assert.equal(runQuery(db, 'SELECT c.Sampling_protocol FROM Collection_data c', 5).near, undefined);
     assert.deepEqual(Object.keys(sampling.tableColumns), ['Collection_data']);
     assert.match(sampling.tableColumns.Collection_data, /\bPurpose\b/);
     assert.ok(sampling.tableColumns.Collection_data.length <= 1500, String(sampling.tableColumns.Collection_data.length));
@@ -458,6 +470,21 @@ test('a column the query does not find: the closest of its own tables, else wher
     db.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a copy with a tubes table (origin/main's server/replica.mjs): it is queried; a name near it gives the table and the tool", () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec("CREATE TABLE _tables(name TEXT, rows INTEGER, premade INTEGER); INSERT INTO _tables VALUES ('tubes', 1, 0), ('Collection_data', 0, 0); CREATE TABLE tubes(tube TEXT); INSERT INTO tubes VALUES ('FS1')");
+  try {
+    assert.deepEqual(runQuery(db, 'SELECT tube FROM tubes', 5).rows, [['FS1']]);
+    const tube = runQuery(db, 'SELECT * FROM tube', 5);
+    assert.deepEqual(tube.near, ['tubes']);
+    assert.deepEqual(toolsNamed(tube.error, ['tubes_lookup', 'query', 'taxon_photos']), ['tubes_lookup']);
+    assert.deepEqual(toolsNamed('no such table: photo', ['taxon_photos', 'show_photos', 'query']), ['taxon_photos', 'show_photos']);
+    assert.deepEqual(toolsNamed('no such column: tubes', ['tubes_lookup']), [], 'tables only');
+  } finally {
+    db.close();
   }
 });
 

@@ -58,7 +58,7 @@ import { createIdentifier } from './identifier.mjs';
 import { headSides, identifyUpload } from './identify-photos.mjs';
 import { MODELS } from './offline-id.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
-import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
+import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem, toolsNamed } from './query-tool.mjs';
 import { withDateNote, withQueryNote } from './manifest-dates.mjs';
 import { createSheetsCopy } from './replica.mjs';
 import { createT3Chats } from './t3chats.mjs';
@@ -6203,6 +6203,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(u.partial?.length ? { partial: u.partial } : {}),
     }));
 
+  let toolNames = null;
   /** query: one read-only statement on the sheets' copy, its rows as text (server/query-tool.mjs). */
   async function queryCopy(args) {
     if (!queries) return { error: 'There is no copy of the sheets on this server: use find_records and count_records.' };
@@ -6217,9 +6218,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     if (out.timeout)
       return { error: out.error, hint: 'Narrow it: filter on an ID column (they are indexed) or a sheet, join fewer tables, or count instead of listing.' };
-    // With the query's tables' columns listed, the hint's look-up is not needed.
-    if (out.error)
-      return { error: `SQLite: ${out.error}`, ...(out.near ? { near: out.near } : {}), ...(out.tableColumns ? { columns: out.tableColumns } : { hint: out.hint ?? QUERY_HINT }) };
+    // With the query's tables' columns listed, the hint's look-up is not needed. A table named like a tool: the tool.
+    if (out.error) {
+      const tools = toolsNamed(out.error, (toolNames ??= mcpTools().map(t => t.name)));
+      return {
+        error: `SQLite: ${out.error}`,
+        ...(out.near ? { near: out.near } : {}),
+        ...(tools.length ? { tools: `${tools.join(', ')}: a tool to call, not a table of the copy` } : {}),
+        ...(out.tableColumns ? { columns: out.tableColumns } : { hint: out.hint ?? QUERY_HINT }),
+      };
+    }
     return withQueryNote(formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending }), sql, out.columns);
   }
 
