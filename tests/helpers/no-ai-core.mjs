@@ -13,11 +13,12 @@
 // (the server tests' own fakes listen on ephemeral ports).
 import childProcess from 'node:child_process';
 import net from 'node:net';
+import workerThreads from 'node:worker_threads';
 import { syncBuiltinESMExports } from 'node:module';
 import { accessSync, appendFileSync, constants, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const KEY = Symbol.for('ithomiini.noAiGuard');
@@ -26,6 +27,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TESTS = basename(HERE) === 'helpers' ? dirname(HERE) : HERE;
 const SHIMS = join(HERE, 'no-ai-bin');
 const PRELOAD = join(HERE, 'no-ai.mjs');
+const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'env'];
 
 export const CLIS = ['claude', 'codex', 't3', 'opencode', 'gemini', 'ollama', 'aider', 'cursor-agent', 'qwen', 'crush', 'goose', 'amp', 'llm', 'deepseek', 'wacli', 'ssh'];
 export const AI_HOSTS = [
@@ -75,9 +77,17 @@ export function blockedCli(file, options = {}) {
 
 /** The first blocked CLI a shell command line would start (commands at the start of each pipeline part). */
 export function blockedInShell(command, options) {
-  const re = /(?:^|[;&|(`\n]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:exec|env|nohup|command|nice)\s+(?:-\S+\s+)*)*([^\s;&|()`'"<>]+)/g;
-  for (const m of String(command ?? '').matchAll(re)) {
+  // A quoted `-c` script starts a command of its own (sh -c 'claude …', env -i PATH=… bash -c "…").
+  const line = String(command ?? '').replace(/(^|\s)-[a-z]*c\s+['"]/g, '$1-c ;');
+  const re = /(?:^|[;&|(`\n]|\$\()\s*(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|exec|env|nohup|command|nice|-\S+)\s+)*([^\s;&|()`'"<>]+)/g;
+  for (const m of line.matchAll(re)) {
     const hit = blockedCli(m[1], options);
+    if (hit) return hit;
+  }
+  // A path to one anywhere in the line (an absolute path in a script is not seen by the PATH shims).
+  const cli = CLIS.map(c => c.replace('-', '\\-')).join('|');
+  for (const m of line.matchAll(new RegExp(`[^\\s;&|()<>'"\`=]*/(?:${cli})(?=$|[\\s;&|()<>'"\`])`, 'g'))) {
+    const hit = blockedCli(m[0], options);
     if (hit) return hit;
   }
   return null;
@@ -87,7 +97,8 @@ export function blockedInShell(command, options) {
 export function blockedHost({ host, port, path } = {}) {
   if (path) return SOCKETS.test(String(path)) && !stub(String(path)) ? `unix socket ${path}` : null;
   const h = String(host ?? '').toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '');
-  if (LOOPBACK(h)) return T3_PORTS.includes(Number(port)) ? `T3 port ${h || 'localhost'}:${port}` : null;
+  if (T3_PORTS.includes(Number(port))) return `T3 port ${h || 'localhost'}:${port}`; // on loopback, the tailnet or any address
+  if (LOOPBACK(h)) return null;
   const suffix = list => list.find(d => h === d || h.endsWith(`.${d}`));
   if (suffix(AI_HOSTS)) return `AI host ${h}:${port ?? ''}`;
   if (suffix(T3_HOSTS)) return `T3 host ${h}:${port ?? ''}`;
@@ -123,12 +134,13 @@ export function installNoAiGuard({ owner = false } = {}) {
   const record = process.env.NOAI_GUARD_RECORD;
   let file = process.env.NOAI_GUARD_FILE ?? process.argv[1] ?? '?';
 
-  // In the test's own process only: what a node process it starts gets in its env, the test gave it on purpose.
-  if (!process.env.NOAI_GUARD_PARENT) for (const k of Object.keys(process.env)) if (SECRET_ENV.test(k)) delete process.env[k];
+  // In the test's own process only: what a node process it starts gets in its env (and its PATH), the test gave it on purpose.
+  const first = !process.env.NOAI_GUARD_PARENT;
+  if (first) for (const k of Object.keys(process.env)) if (SECRET_ENV.test(k)) delete process.env[k];
   process.env.NOAI_GUARD_LOGS = logs.join(delimiter);
   process.env.NOAI_GUARD_FILE = file;
   process.env.NOAI_GUARD_PARENT = String(process.pid);
-  if (!String(process.env.PATH ?? '').split(delimiter).includes(SHIMS)) process.env.PATH = `${SHIMS}${delimiter}${process.env.PATH ?? ''}`;
+  if (first && !String(process.env.PATH ?? '').split(delimiter).includes(SHIMS)) process.env.PATH = `${SHIMS}${delimiter}${process.env.PATH ?? ''}`;
   if (!String(process.env.NODE_OPTIONS ?? '').includes(PRELOAD))
     process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${PRELOAD}`.trim();
 
@@ -151,7 +163,23 @@ export function installNoAiGuard({ owner = false } = {}) {
     const check = (file, rest) => {
       const argIndex = Array.isArray(rest[0]) ? 0 : -1;
       const options = (argIndex === 0 ? rest[1] : rest[0]) ?? {};
-      const opts = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+      let opts = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+      // A child given its own env keeps the guard (preload and reporting); its PATH stays as the test set it.
+      if (opts.env && typeof opts.env === 'object') {
+        opts = { ...opts, env: guardEnv(opts.env) };
+        rest = [...rest];
+        rest[argIndex === 0 ? 1 : 0] = opts;
+      }
+      // A shell (or env) started directly: its script and arguments are checked like a shell line.
+      if (kind === 'file' && !opts.shell && SHELLS.includes(basename(String(file))) && argIndex === 0) {
+        const line = rest[0].map(String).join(' ');
+        const hit = blockedInShell(line, opts);
+        if (hit) {
+          block('CLI', `${hit} (${basename(String(file))} ${line.slice(0, 160)})`);
+          return ['/bin/sh', [['-c', refusal(hit)], { ...opts, shell: false }, ...rest.slice(2)]];
+        }
+        return [file, rest];
+      }
       if (kind === 'shell' || opts.shell) {
         const line = kind === 'shell' ? String(file) : [file, ...(argIndex === 0 ? rest[0] : [])].join(' ');
         const hit = blockedInShell(line, opts);
@@ -177,8 +205,41 @@ export function installNoAiGuard({ owner = false } = {}) {
       };
     childProcess[fn] = wrapped;
   };
+  const guardEnv = env => ({
+    ...env,
+    NODE_OPTIONS: String(env.NODE_OPTIONS ?? '').includes(PRELOAD) ? env.NODE_OPTIONS : `${env.NODE_OPTIONS ?? ''} --import=${PRELOAD}`.trim(),
+    NOAI_GUARD_LOGS: process.env.NOAI_GUARD_LOGS,
+    NOAI_GUARD_PARENT: process.env.NOAI_GUARD_PARENT,
+    NOAI_GUARD_FILE: process.env.NOAI_GUARD_FILE,
+    ...(record ? { NOAI_GUARD_RECORD: record } : {}),
+  });
   for (const fn of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) wrap(fn, 'file');
   for (const fn of ['exec', 'execSync']) wrap(fn, 'shell');
+  // fork: only the env (a node child; its module is no CLI).
+  const fork = childProcess.fork;
+  childProcess.fork = function (modulePath, args, options) {
+    const opts = Array.isArray(args) ? options : args;
+    if (opts?.env && typeof opts.env === 'object') {
+      const o = { ...opts, env: guardEnv(opts.env) };
+      return Array.isArray(args) ? fork.call(this, modulePath, args, o) : fork.call(this, modulePath, o);
+    }
+    return fork.apply(this, arguments);
+  };
+
+  // Worker threads: --import does not reach them, so each one loads the guard before its own module (workerData,
+  // argv and env as given; an env object gets the guard's settings). Eval workers are not used by the app.
+  const Worker = workerThreads.Worker;
+  workerThreads.Worker = class extends Worker {
+    constructor(filename, options = {}) {
+      if (options?.eval) {
+        super(filename, options);
+        return;
+      }
+      const url = filename instanceof URL || /^file:/.test(String(filename)) ? String(filename) : pathToFileURL(resolve(String(filename))).href;
+      const env = options?.env && typeof options.env === 'object' ? guardEnv(options.env) : options?.env;
+      super(`import(${JSON.stringify(pathToFileURL(PRELOAD).href)}).then(() => import(${JSON.stringify(url)}))`, { ...options, ...(env ? { env } : {}), eval: true });
+    }
+  };
 
   // Connections: refused before any name lookup, so it needs no network and is the same offline.
   const connect = net.Socket.prototype.connect;
