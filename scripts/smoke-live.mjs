@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Opt-in verification of the deployed app. Never logs credentials.
 // LIVE_WRITE_TEST=1 writes (and undoes) a note in a Collection_data row: only against a test workbook.
+// /health and direct API calls only: it never sends a chat or runs an AI model (Franz's rule, 9 Nov 2026).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -27,6 +28,9 @@ async function call(path, method = 'GET', body) {
   if (data.csrf) csrf = data.csrf;
   return data;
 }
+const health = await (await fetch(`${base}/health`)).json();
+assert.equal(health.status, 'ok');
+console.log(`Health ok: sync ${health.sync}, workbook ${health.google?.workbook?.state ?? '?'}`);
 const initial = await call('/api/auth/session');
 await call(initial.setupRequired ? '/api/auth/setup' : '/api/auth/login', 'POST', account);
 const boot = await call('/api/bootstrap');
@@ -73,19 +77,6 @@ for (const kind of ['overview', 'stages', 'crosses', 'samples', 'quality', 'week
   assert.ok(report.method && report.columns);
   assert.equal(Boolean(report.truncated), false);
   console.log(`Report ${kind}: ${report.rows.length} result rows, complete=${!report.truncated}`);
-}
-if (process.env.LIVE_AI_TEST === '1') {
-  const capabilities = await call('/api/ai/status');
-  assert.equal(capabilities.configured, true);
-  const thread = await call('/api/chat/threads', 'POST', { title: 'Deployment verification' });
-  const id = thread.thread?.id ?? thread.id;
-  const result = await call(`/api/chat/threads/${id}/messages`, 'POST', {
-    message:
-      'Use the data tools to report the number of collection records and explain what that count means. Cite the source. Do not propose edits.',
-  });
-  assert.ok(result.message);
-  console.log('Live AI answered with', result.sources?.length ?? result.message.sources?.length ?? 0, 'sources');
-  stats.ai = true;
 }
 if (process.env.SMOKE_RESULT_FILE)
   writeFileSync(
