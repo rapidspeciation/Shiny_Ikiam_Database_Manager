@@ -269,7 +269,7 @@ test('memory: low MemAvailable starts nothing; the RSS cap of the worker and its
 
 test('queue: one render at a time per thread (wait at most queueMs), and one per server process across threads', async () => {
   const fake = fakeModule({ hang: 'export' });
-  const r = createMapRenderer({ env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, deadlineMs: 3000, queueMs: 400, log: () => {} });
+  const r = createMapRenderer({ env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, deadlineMs: 1500, queueMs: 400, log: () => {} });
   await r.availability();
   const first = r.render(URL_OK);
   await new Promise(res => setTimeout(res, 50));
