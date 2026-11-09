@@ -23,12 +23,12 @@ exec 9>"$app/shared/.install.lock"
 flock -w 900 9 || { echo "An install still runs after 15 minutes." >&2; exit 1; }
 node="$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' "$target/deploy/ithomiini.service")"
 export PATH="$(dirname "$node"):$PATH" ITHOMIINI_SHARED="$app/shared"
-bash "$target/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}"
+bash "$target/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}" 9>&-
 echo "$from" >shared/previous-release
 ln -sfn "$target" current
 cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer "$units/"
-systemctl --user daemon-reload
-systemctl --user restart "$service"
+systemctl --user daemon-reload 9>&-
+systemctl --user restart "$service" 9>&-
 port="${APP_PORT:-$(sed -n 's/^APP_PORT=//p' "$service_env" 2>/dev/null | tail -n 1 || true)}"
 deadline=$(( $(date +%s) + ${DEPLOY_HEALTH_WAIT:-90} ))
 until curl -s --max-time 5 "http://127.0.0.1:${port:-8794}/health" | grep -q '"status":"ok"'; do
@@ -37,5 +37,5 @@ until curl -s --max-time 5 "http://127.0.0.1:${port:-8794}/health" | grep -q '"s
 done
 # The workspaces as that release makes them; the next deploy refreshes them again (its hash is forgotten).
 rm -f -- shared/.deploy-stamps/t3-provision
-(cd current && "$node" scripts/t3-provision.mjs --refresh-all)
+(cd current && "$node" scripts/t3-provision.mjs --refresh-all) 9>&-
 echo "Rolled back: current is $target (was $from); health ok."

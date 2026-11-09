@@ -38,7 +38,8 @@ ms() { echo $(( $(date +%s%N) / 1000000 )); }
 t0=$(ms)
 said() { printf '  %-22s %5d ms  %s\n' "$1" $(( $(ms) - $2 )) "${3:-}"; }
 
-# One install at a time (the deploy lock, deploy.lock*, is the people's; this is the script's own).
+# One install at a time (the deploy lock, deploy.lock*, is the people's; this is the script's own). No step gets the
+# lock's descriptor (9>&-): a process a step leaves running would hold the lock after the install.
 exec 9>"$app/shared/.install.lock"
 flock -w 900 9 || { echo "Another install still runs after 15 minutes: nothing changed." >&2; exit 1; }
 
@@ -53,7 +54,7 @@ logs="$(mktemp -d "$app/shared/.install-$release.XXXXXX")"
 trap 'rm -rf -- "$logs"' EXIT
 run() { # run <name> <command...> in the background, its output and time in $logs
   local name="$1"; shift
-  ( s=$(ms); set +e; "$@" >"$logs/$name" 2>&1; rc=$?; echo "$rc $(( $(ms) - s ))" >"$logs/$name.rc" ) &
+  ( s=$(ms); set +e; "$@" >"$logs/$name" 2>&1 9>&-; rc=$?; echo "$rc $(( $(ms) - s ))" >"$logs/$name.rc" ) &
 }
 base=$(sed -n 's/^APP_BASE_PATH=//p' "$service_env" 2>/dev/null | tail -n 1 || true)
 run rename-app env APP_BASE_PATH="${base:-/}" bash "$dir/scripts/build-rename-app.sh" "$app/shared/rename-app" "$app/shared/photo-reader"
@@ -86,7 +87,7 @@ report t3-stamp >/dev/null && stamp_now="$(tail -n 1 "$logs/t3-stamp")"
 
 # Never restart in the middle of a save (server /health `writing`); DEPLOY_FORCE=1 restarts anyway.
 s=$(ms)
-if ! bash "$dir/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}"; then
+if ! bash "$dir/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}" 9>&-; then
   echo "Not installed: a save is still in progress. Current is still $(readlink "$app/current" 2>/dev/null || echo none)." >&2
   exit 1
 fi
@@ -98,7 +99,7 @@ s=$(ms)
 stamp_file="$app/shared/.deploy-stamps/t3-provision"
 if [ -n "$stamp_now" ] && [ "$stamp_now" = "$(cat "$stamp_file" 2>/dev/null || true)" ]; then
   said t3-provision "$s" "workspaces unchanged: not refreshed"
-elif (cd "$dir" && "$node" scripts/t3-provision.mjs --refresh-all) >"$logs/t3-provision" 2>&1; then
+elif (cd "$dir" && "$node" scripts/t3-provision.mjs --refresh-all) >"$logs/t3-provision" 2>&1 9>&-; then
   # The hash after the refresh (it rewrites the files it is made of): the next deploy compares with this one.
   "$node" "$dir/scripts/deploy-stamp.mjs" t3-provision "$dir" >"$stamp_file.new" 2>/dev/null && mv "$stamp_file.new" "$stamp_file" || rm -f -- "$stamp_file" "$stamp_file.new"
   said t3-provision "$s" "$(grep -c '^Refreshed' "$logs/t3-provision" || true) workspaces refreshed"
@@ -117,11 +118,11 @@ changed=""
 for unit in current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer; do
   cmp -s "$unit" "$units/$(basename "$unit")" || { cp "$unit" "$units/"; changed=1; }
 done
-[ -z "$changed" ] || systemctl --user daemon-reload
-systemctl --user enable -q "$service"
+[ -z "$changed" ] || systemctl --user daemon-reload 9>&-
+systemctl --user enable -q "$service" 9>&-
 # shellcheck disable=SC2086
-systemctl --user enable -q --now $timers
-systemctl --user restart "$service"
+systemctl --user enable -q --now $timers 9>&-
+systemctl --user restart "$service" 9>&-
 said switch+restart "$s" "${changed:+units changed, daemon reloaded}"
 
 s=$(ms)
