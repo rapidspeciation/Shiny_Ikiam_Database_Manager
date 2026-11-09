@@ -105,7 +105,8 @@ test('deadline: a hung export is killed with everything started under it, the te
   const fake = fakeModule({ hang: 'export', grandchild: true, browserGroup: true });
   const running = createMapRenderer({ env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, deadlineMs: 2500, log: () => {} }).render(URL_OK);
   // A process that only names the run's temp folder (an `ls` of it, a log tail) is not the render's: it is left alone.
-  assert.ok(await waitFor(() => fake.get('tmpdir').length, 2000));
+  // Up to 10 s for the worker to start: deploy.sh runs four test jobs at once on claudeclaw's 4 cores (once over 2 s here).
+  assert.ok(await waitFor(() => fake.get('tmpdir').length, 10_000));
   const onlooker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', join(fake.get('tmpdir')[0], 'profile')], { stdio: 'ignore' });
   started.push(onlooker.pid);
   const out = await running;
