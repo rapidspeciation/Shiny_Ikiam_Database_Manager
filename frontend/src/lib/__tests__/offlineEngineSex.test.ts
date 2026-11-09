@@ -10,6 +10,9 @@ vi.mock('../sexModel', async orig => ({
   ...(await orig<typeof import('../sexModel')>()),
   SEX_FILE: { name: 'sex_test.onnx', role: 'sex', bytes: 8, sha256: 'x', parts: [sha(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))] },
 }))
+// The lib tests share loaded modules in a worker (vite.config.ts, isolate: false): offlineEngine loaded by another file
+// there (publicModels.test.ts) holds the real SEX_FILE, so it is loaded again here, with the mock.
+vi.resetModules()
 const { createEngine } = await import('../offlineEngine')
 
 function memoryCaches() {
