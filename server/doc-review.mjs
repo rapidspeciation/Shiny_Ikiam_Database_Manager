@@ -884,10 +884,12 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       });
   }
 
-  function apply(user, id, { anyway = false } = {}) {
+  /** `version`: the version on the person's screen; a newer one arrived meanwhile and nothing is applied. */
+  function apply(user, id, { anyway = false, version = null } = {}) {
     requireAdmin(user);
     const c = pendingChange(id);
     if (!['pending', 'undone'].includes(c.status)) throw fail('NOT_PENDING', 'The change is not pending', 409);
+    if (version !== null && Number(version) !== c.version) throw fail('NOT_LATEST', 'A newer version of the change arrived: look at it first', 409);
     const text = read(c.path);
     const section = findSection(text, c.heading, c.before_part);
     if (!section || hashText(section.text) !== hashText(c.before)) throw fail('STALE', 'The section changed since the proposal', 409);
@@ -921,6 +923,11 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const { revisionId, synced } = writeRevision({ path: c.path, text: changed, heading: c.heading, before: c.after, after: c.before, changeId: c.id, kind: 'undo', user, message: `${subject(c.path, c.heading)} (deshecho)` });
     db.prepare('UPDATE doc_revisions SET undone_by = ?, undone_at = ? WHERE id = ?').run(user.id, now(), c.revision_id);
     db.prepare("UPDATE doc_changes SET status = 'undone', decided_by = ?, decided_at = ?, revision_id = ? WHERE id = ?").run(user.id, now(), revisionId, c.id);
+    // The threads it resolved are open again: the text they comment on is back.
+    for (const t of db.prepare("SELECT id FROM doc_threads WHERE resolved_by_change = ? AND status = 'resolved'").all(c.series_id)) {
+      db.prepare("UPDATE doc_threads SET status = 'open', resolved_by = NULL, resolved_at = NULL, resolved_by_change = NULL WHERE id = ?").run(t.id);
+      addComment({ thread: t.id, author: 'system', kind: 'system', text: 'reopened_by_undo' });
+    }
     return { change: seriesView(c.series_id, user), synced };
   }
 

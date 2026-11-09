@@ -722,7 +722,7 @@ async function docReviewRoute({ docReview: d, method, path, body, user, config, 
   if (method === 'PATCH' && kind === 'comments' && id) return d.editComment(user, id, body?.body);
   if (method === 'DELETE' && kind === 'comments' && id) return d.deleteComment(user, id);
   if (method === 'POST' && kind === 'changes' && action === 'comments') return { change: d.commentChange(user, id, body?.body) };
-  if (method === 'POST' && kind === 'changes' && action === 'apply') return d.apply(user, id, { anyway: body?.anyway === true });
+  if (method === 'POST' && kind === 'changes' && action === 'apply') return d.apply(user, id, { anyway: body?.anyway === true, version: body?.version ?? null });
   if (method === 'POST' && kind === 'changes' && action === 'discard') return d.discard(user, id);
   if (method === 'POST' && kind === 'changes' && action === 'undo') return d.undo(user, id);
   if (method === 'POST' && kind === 'changes' && action === 'repropose') return d.repropose(user, id);

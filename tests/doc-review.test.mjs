@@ -226,6 +226,8 @@ test('a change whose section changed since is stale and cannot be applied; revis
   // Claude redoes it on the section now: v2 replaces v1 on the card, v1 one click away.
   const v2 = await d.runTool('revise_doc_change', { change_id: one.changeId, after: 'Tres fotos' }, { user: admin });
   assert.equal(v2.version, 2);
+  // Aplicar from a screen that still shows v1: refused, nothing applied.
+  assert.throws(() => d.apply(admin, one.changeId, { version: 1 }), e => e.code === 'NOT_LATEST');
   const card = d.state(admin).changes.find(c => c.seriesId === one.changeId);
   assert.equal(card.version, 2);
   assert.equal(card.stale, false);
@@ -233,21 +235,30 @@ test('a change whose section changed since is stale and cannot be applied; revis
     [1, 'superseded'],
     [2, 'pending'],
   ]);
-  d.apply(admin, one.changeId);
+  d.apply(admin, one.changeId, { version: 2 });
   assert.match(d.effectiveText(SKILL_PATH), /Tres fotos por cada lado/);
 });
 
 test('undo writes the section back, apply again redoes it; undo on a section changed since becomes a new proposal', async () => {
   const { root, db } = fixture();
   const d = createDocReview({ db, root });
-  const c = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NOT_COLLECTED' }, { user: admin });
+  const t = d.createThread(observer, { path: SKILL_PATH, quote: 'Usa NA', heading: 'Datos', body: 'NOT_COLLECTED' });
+  const c = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NOT_COLLECTED', thread_ids: [t.id] }, { user: admin });
   d.apply(admin, c.changeId);
+  const system = () => d.state(observer).threads[0].comments.filter(x => x.kind === 'system').map(x => x.body);
+  assert.equal(d.state(observer).threads[0].status, 'resolved');
   await assert.rejects(d.undo(editor, c.changeId), /Only administrators/);
   const undone = await d.undo(admin, c.changeId);
   assert.equal(undone.change.status, 'undone');
   assert.equal(d.effectiveText(SKILL_PATH), SKILL);
+  // Its thread is open again, with a line saying why; applying again resolves it again.
+  assert.equal(d.state(observer).threads[0].status, 'open');
+  assert.deepEqual(system(), ['resolved_by_change', 'reopened_by_undo']);
+  assert.deepEqual(d.openThreads(), [t.id]);
   d.apply(admin, c.changeId);
   assert.match(d.effectiveText(SKILL_PATH), /Usa NOT_COLLECTED/);
+  assert.equal(d.state(observer).threads[0].status, 'resolved');
+  assert.deepEqual(system(), ['resolved_by_change', 'reopened_by_undo', 'resolved_by_change']);
   assert.deepEqual(d.revisions(SKILL_PATH).map(r => [r.kind, r.author]), [
     ['apply', 'Franz Chandi'],
     ['undo', 'Franz Chandi'],
