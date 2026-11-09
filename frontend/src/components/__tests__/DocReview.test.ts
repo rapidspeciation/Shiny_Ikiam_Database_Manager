@@ -207,6 +207,11 @@ describe('DocChangeCard', () => {
     expect(button(host, 'Aplicar')!.disabled).toBe(true)
     expect(host.textContent).toContain('v2: el texto había cambiado')
   })
+  it('an outside proposer’s change waiting for its new version: «Esperando nueva versión», Aplicar disabled', () => {
+    const host = mount(DocChangeCard, { change: change({ external: true, awaiting: true }), admin: true })
+    expect(host.textContent).toContain('Esperando nueva versión')
+    expect(button(host, 'Aplicar')!.disabled).toBe(true)
+  })
   it('a double tap on the decision button never applies and then undoes', async () => {
     const live = reactive(change())
     const host = mount(DocChangeCard, { change: live, admin: true })

@@ -56,6 +56,8 @@ const partName = (part: string) =>
       : part.startsWith('mcp')
         ? t('las herramientas')
         : part
+/** A new version is on its way (Claude's chat, or an outside proposer): nothing is applied meanwhile. */
+const waiting = computed(() => props.change.revising || !!props.change.awaiting)
 const gitFailed = computed(() => props.change.revision?.gitState === 'failed')
 /** The commit, for admins, in the «Aplicado por…» line's tooltip only. */
 const commitTitle = computed(() => (props.admin && props.change.revision?.gitCommit ? props.change.revision.gitCommit.slice(0, 7) : undefined))
@@ -223,6 +225,7 @@ const askAgain = (why: 'comment' | 'stale') =>
       </li>
     </ol>
     <p v-if="change.revising && !viewingOld" class="mt-2 text-xs text-stone-600" role="status">{{ $t('Claude está respondiendo…') }}</p>
+    <p v-else-if="change.awaiting && !viewingOld" class="mt-2 text-xs text-stone-600" role="status">{{ $t('Esperando nueva versión') }}</p>
 
     <form v-if="active && pending && !viewingOld" class="mt-2" @submit.prevent="comment">
       <textarea v-model="draft" rows="2" class="doc-box" :placeholder="$t('Comentar el cambio')" />
@@ -242,10 +245,10 @@ const askAgain = (why: 'comment' | 'stale') =>
       </template>
       <template v-else-if="pending">
         <button type="button" class="doc-act btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
-        <button v-if="grows.length" type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0 || change.revising" @click="apply(true)">
+        <button v-if="grows.length" type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0 || waiting" @click="apply(true)">
           {{ $t('Aplicar igualmente') }}
         </button>
-        <button v-else type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0 || change.revising" @click="apply()">{{ $t('Aplicar') }}</button>
+        <button v-else type="button" class="doc-act btn-primary px-2 py-0.5 text-xs" :disabled="busy || checks.length > 0 || waiting" @click="apply()">{{ $t('Aplicar') }}</button>
       </template>
       <template v-else-if="change.lost">
         <span />

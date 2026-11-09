@@ -73,6 +73,10 @@ export interface DocChange {
   lost: boolean
   /** «Pedir versión nueva» sent: Claude is working on the next version. */
   revising: boolean
+  /** Proposed from outside T3 (tools/lab/doc-proposals.md). */
+  external?: boolean
+  /** A new version was asked of that outside proposer and has not come yet. */
+  awaiting?: boolean
   chat: string | null
   createdAt: string
   decidedAt: string | null

@@ -114,4 +114,5 @@ export default {
   "Claude: {what}": "Claude: {what}",
   "{n} cambio": "{n} change",
   "{n} cambios": "{n} changes",
+  "Esperando nueva versión": "Waiting for a new version",
 }
