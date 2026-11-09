@@ -25,6 +25,8 @@ test('a file that changes what other files in its process would see runs alone',
   ];
   for (const s of alone) assert.notDeepEqual(aloneReasons('tests/x.test.mjs', s), [], s);
   assert.match(aloneReasons('tests/offline-id.test.mjs', '').join(), /MODELS/);
+  // A helper's root hook (tests/helpers/maps-render.mjs: test.after() checks no render process survived).
+  assert.match(aloneReasons('tests/x.test.mjs', "import { renderTest } from './helpers/maps-render.mjs';").join(), /helpers\/maps-render\.mjs: a file's hooks/);
   const shareable = src([
     "import test from 'node:test';",
     "import assert from 'node:assert/strict';",

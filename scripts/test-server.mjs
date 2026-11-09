@@ -16,7 +16,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,13 +39,38 @@ export const ALONE = [
 /** Files kept alone by hand, with why (state the patterns cannot see). */
 export const KEEP_ALONE = {
   'offline-id.test.mjs': "changes the models' hashes in server/offline-id.mjs (MODELS) for the run",
+  'maps-render-checks.test.mjs': "imports tests/helpers/maps-render.mjs, whose test.after() checks that no render process survived",
+  'maps-render-process.test.mjs': "imports tests/helpers/maps-render.mjs, whose test.after() checks that no render process survived",
 };
+
+/** The helpers (tests/helpers/*.mjs) a source imports, and the helpers those import, as absolute paths. */
+function importedHelpers(file, src, seen = new Set()) {
+  const dir = dirname(isAbsolute(file) ? file : join(ROOT, file));
+  for (const m of src.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}\/[^'"]*helpers\/[^'"]+\.mjs)['"]/g)) {
+    const path = resolve(dir, m[1]);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    let helper;
+    try {
+      helper = readFileSync(path, 'utf8');
+    } catch {
+      continue;
+    }
+    importedHelpers(path, helper, seen);
+  }
+  return seen;
+}
 
 /** Why a test file must run alone ([] when it can share a process). */
 export function aloneReasons(file, src = readFileSync(file, 'utf8')) {
   const name = file.split('/').pop();
   const reasons = ALONE.filter(([re]) => re.test(src)).map(([, why]) => why);
   if (KEEP_ALONE[name]) reasons.push(KEEP_ALONE[name]);
+  // A helper's own hooks, handlers or globals act on every file in the process too.
+  for (const path of importedHelpers(file, src)) {
+    const helper = readFileSync(path, 'utf8');
+    for (const [re, why] of ALONE) if (re.test(helper)) reasons.push(`imports ${relative(join(ROOT, 'tests'), path)}: ${why}`);
+  }
   // A write to something imported (`x.y = `, `x.push(`, `delete x.y`), as a module's exported object would change.
   const names = new Set();
   for (const m of src.matchAll(/^import\s+([^'";]+?)\s+from\s+['"][^'"]+['"]/gm)) {
