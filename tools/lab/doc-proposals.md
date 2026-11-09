@@ -83,7 +83,12 @@ exit code is 1 if any line was refused. `--url` and `--token-file` override the 
 ```sh
 node tools/lab/doc-proposals-export.mjs                       # doc_threads as JSON: every outside change and open thread
 node tools/lab/doc-proposals-export.mjs --pending-revisions   # only the changes waiting for a new version
+node tools/lab/doc-proposals-export.mjs --status applied      # pending, applied, undone or discarded (--path <file> too)
 ```
+
+`doc_threads` answers in pages within the tool answer's size limit: `total` (after the filters), `offset`, and while
+there is more, `nextOffset`. Its filters (`status`, `revisionRequested`, `path`) run in the app before the page is
+cut, and the threads come with the first page. The export asks for every page and checks it read `total` changes.
 
 Each change has its `status`, its `comments`, and `revisionRequested`:
 - `status` is `pending`, `applied`, `undone` or `discarded`.

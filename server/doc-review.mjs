@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { RESULT_BUDGET, fitList } from './tool-budget.mjs';
 
 export const hashText = text => createHash('sha256').update(String(text)).digest('hex').slice(0, 20);
 /** The files that take changes: Markdown under assistant/, no way out of it. */
@@ -465,14 +466,24 @@ export function createGitSync({ worktree, push = false, remote = 'origin', branc
 
 const WRITING =
   'Write the rule or fact as it is now, the smallest change; no history ("we decided", "new rule"), nothing about past mistakes, no capitals or never/always for emphasis.';
+const CHANGE_STATUSES = ['pending', 'applied', 'undone', 'discarded'];
 export const DOC_TOOLS = [
   {
     type: 'function',
     function: {
       name: 'doc_threads',
       description:
-        "The team's open comments on the instructions (#/instrucciones), each with its quote and the section's current source, and the proposed changes with their comments.",
-      parameters: { type: 'object', properties: { path: { type: 'string', description: 'Only this file' } } },
+        "The team's open comments on the instructions (#/instrucciones), each with its quote and the section's current source, and the proposed changes with their comments. Long lists page: `nextOffset`.",
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Only this file' },
+          offset: { type: 'integer', description: 'Changes from this one (threads come with offset 0)' },
+          limit: { type: 'integer' },
+          status: { type: 'string', enum: CHANGE_STATUSES },
+          revisionRequested: { type: 'boolean' },
+        },
+      },
     },
   },
   {
@@ -1106,6 +1117,12 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   // ---------------------------------------------------------- MCP
   function toolThreads(args, user, external = false) {
     const only = args.path ? String(args.path) : null;
+    // Filters before the page is cut: `status`, `revisionRequested`; then `offset` and `limit` (at most what fits).
+    const status = args.status == null || args.status === '' ? null : String(args.status);
+    if (status && !CHANGE_STATUSES.includes(status)) return { error: `status is one of ${CHANGE_STATUSES.join(', ')}` };
+    const revisionRequested = typeof args.revisionRequested === 'boolean' ? args.revisionRequested : null;
+    const offset = Math.max(Math.trunc(Number(args.offset)) || 0, 0);
+    const limit = Number(args.limit) >= 1 ? Math.trunc(Number(args.limit)) : Infinity;
     // A thread Claude answered last waits for people (they reply or resolve it).
     const lastWord = db.prepare("SELECT kind FROM doc_comments WHERE thread_id = ? AND kind <> 'system' AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1");
     const threads = db
@@ -1132,6 +1149,10 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     const changes = rows
       .map(r => seriesView(r.series_id, user, { checks: false }))
       .filter(c => c && c.status !== 'superseded' && (!only || c.path === only))
+      .filter(c => (!status || c.status === status) && (revisionRequested === null || !!(external && c.awaiting) === revisionRequested));
+    const total = changes.length;
+    const page = changes
+      .slice(offset, offset + limit)
       .map(c => {
         const since = c.versions.at(-1)?.createdAt ?? '';
         return {
@@ -1147,7 +1168,20 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
           ...(external && c.awaiting ? { commentsSinceVersion: c.comments.filter(x => !x.deleted && x.kind === 'person' && x.createdAt >= since).map(comment) } : {}),
         };
       });
-    return { threads, changes };
+    // Within one answer's size (server/tool-budget.mjs), with room for its note; at least one change a page, so
+    // paging always moves on (the answer's last cut, fitResult, shortens the threads if they crowd it out).
+    const base = { ...(offset === 0 ? { threads } : {}), changes: page, total, offset };
+    const fitted = fitList(base, 'changes', RESULT_BUDGET - 600).out;
+    const kept = Math.min(Math.max(fitted.changes.length, 1), page.length);
+    const end = offset + kept;
+    if (end >= total) return { ...base, changes: page.slice(0, kept) };
+    return {
+      ...base,
+      changes: page.slice(0, kept),
+      truncated: true,
+      nextOffset: end,
+      next: `Changes ${offset + 1}–${end} of ${total} shown (offset ${offset}). For the rest: the same call with offset: ${end}.`,
+    };
   }
   function toolReply(args, user) {
     if (!isAdmin(user)) return { error: "Only an administrator's chat replies here." };
