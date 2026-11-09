@@ -12,6 +12,7 @@ import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { RESULT_BUDGET } from './tool-budget.mjs';
+import { isManifestDate, recordedDate } from './manifest-dates.mjs';
 
 export const QUERY_LIMIT = 200;
 export const QUERY_MAX = 500;
@@ -397,8 +398,17 @@ export function nearNames(db, message, sql = '') {
       });
     }
     if (near.length) {
-      near.sort((a, b) => b.score - a.score || a.index - b.index);
-      return { near: near.slice(0, 8).map(n => `${sqlName(n.table)}.${sqlName(n.column)}`) };
+      // The manifest's DATE_OF_COLLECTION and DATE_OF_PRESERVATION after the dates recorded, marked (server/manifest-dates.mjs).
+      const sheetOf = table => table.replace(/_all$/, '');
+      near.sort((a, b) => isManifestDate(a.column) - isManifestDate(b.column) || b.score - a.score || a.index - b.index);
+      return {
+        near: near
+          .slice(0, 8)
+          .map(
+            n =>
+              `${sqlName(n.table)}.${sqlName(n.column)}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date: ${recordedDate(sheetOf(n.table), n.column)})` : ''}`,
+          ),
+      };
     }
 
     const same = sameValues(db, asked, tables);

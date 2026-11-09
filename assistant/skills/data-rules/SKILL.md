@@ -17,6 +17,10 @@ the team's practice up to Sep 2026.
   ([samples-ids.md](reference/samples-ids.md)).
 - `match_notebook`, `get_walk` and the app's tabs already apply many of these
   rules (each file says which).
+- Dates: a field collection's is Collection_date, an insectary butterfly's
+  arrival Intro2Insectary_date, its death and preservation Death_date and
+  Preservation_date. DATE_OF_COLLECTION and DATE_OF_PRESERVATION are manifest
+  formulas that can differ from them by 451 days.
 
 ## Which file
 
