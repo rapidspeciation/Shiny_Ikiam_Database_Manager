@@ -435,7 +435,16 @@ function nearOnly(db, message, sql) {
       columnsOf(db, table).forEach((column, index) => {
         const score = closeness(asked, column, words);
         // Among equals, one sharing a word with its table first (Collection_date in Collection_data), then the sheet's order.
-        if (score > 0) near.push({ table, column, weak: score === WEAK, score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0), index });
+        if (score > 0)
+          near.push({
+            table,
+            column,
+            weak: score === WEAK,
+            // Settles the error (no column list): a close name, or a typo of at most 2 edits (Speceis, Colection_date; not Collection_ID → Collection_time).
+            settles: score >= 0.6 || editDistance(loose(asked), loose(column)) <= 2,
+            score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0),
+            index,
+          });
       });
     }
     // A shared word only (weak): left out beside a stronger match; with none, other sheets come first
@@ -458,7 +467,7 @@ function nearOnly(db, message, sql) {
             n =>
               `${sqlName(n.table)}.${sqlName(n.column)}${having.has(n.table) ? notIn : ''}${isManifestDate(n.column) ? ` (manifest formula, not the recorded date${recordedDate(sheetOf(n.table), n.column) ? `: ${recordedDate(sheetOf(n.table), n.column)}` : ''})` : ''}`,
           ),
-        settled: true,
+        settled: near.some(n => n.settles),
         tables,
       };
     }

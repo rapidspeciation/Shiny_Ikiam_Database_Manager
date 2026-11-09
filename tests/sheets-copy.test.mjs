@@ -297,6 +297,10 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     assert.match(none.error, /no such column: Sampling_protocol/);
     assert.match(none.columns.Insectary_data, /^Insectary_ID, Wild_Reared, "CLUTCH NUMBER", Stock_of_origin, SPECIES, Sex, /);
     assert.equal(none.hint, undefined);
+    // A function this SQLite lacks: the tool's answer carries its own hint (critic N3).
+    const series = await call('SELECT value FROM generate_series(1, 3)');
+    assert.match(series.error, /^SQLite: no such table: generate_series/);
+    assert.equal(series.hint, GENERATE_SERIES);
 
     // The rows shown are capped; the total says how many there are.
     const many = (await call('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000) SELECT x FROM c', 10)).split('\n');
@@ -434,6 +438,9 @@ test('a column the query does not find: the closest of its own tables, else wher
       assert.equal(typo.near[0], first, sql);
       assert.equal(typo.tableColumns, undefined, sql);
     }
+    // More than 2 edits from anything (Collection_ID: Collection_time is 4 away): not settled, the columns listed (critic N1).
+    const collectionId = runQuery(db, 'SELECT Collection_ID FROM Collection_data', 5);
+    assert.match(collectionId.tableColumns.Collection_data, /\bFieldMark_ID\b.*\bCAM_ID\b/);
     // Nothing close: no near, the columns of the query's table.
     const sampling = runQuery(db, "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol, '')) LIKE '%monitor%') FROM Collection_data", 5);
     assert.equal(sampling.near, undefined);

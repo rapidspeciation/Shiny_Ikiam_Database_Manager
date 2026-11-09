@@ -151,6 +151,8 @@ function workFile(given, { workspaces, username }, { create = false } = {}) {
   // The person's workspace is not on this server (another machine's chat, or not provisioned): no file of theirs is here.
   if (!exists(root)) return { why: `no workspace of yours (${name}) on this server (looked in ${root})`, none: true };
   let work = join(root, 'work');
+  // Outside work/: the folder it must be in, and (match_notebook) the lines instead.
+  const outside = () => ({ why: `not in this workspace's work/ folder (${work}/)`, none: true });
   // The path as given, resolved: whether a missing file would be in work/.
   let base = resolve(isAbsolute(given) ? given : join(root, given));
   try {
@@ -162,14 +164,14 @@ function workFile(given, { workspaces, username }, { create = false } = {}) {
       base = dirname(base);
     }
     const path = join(realpathSync(base), ...rest);
-    if (!path.startsWith(work + sep)) return { why: "not in this workspace's work/ folder" };
+    if (!path.startsWith(work + sep)) return outside();
     if (exists(path) && !statSync(path).isFile()) return { why: 'not a file' };
     return { path };
   } catch (e) {
     if (!create && e.code === 'ENOENT')
       return [work, join(root, 'work')].some(w => base.startsWith(w + sep))
         ? { why: `not found in ${work}/`, none: true }
-        : { why: "not in this workspace's work/ folder" };
+        : outside();
     return { why: create ? 'cannot be written there' : 'cannot be read' };
   }
 }
