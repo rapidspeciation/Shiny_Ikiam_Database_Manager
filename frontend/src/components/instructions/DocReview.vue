@@ -214,6 +214,21 @@ function activate(id: string | null, { scroll = false, fromList = false } = {}) 
   if (!target) return
   if (!wide.value) scrollToFraction(target, 0.15)
   else if (scroll) target.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  else if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => requestAnimationFrame(() => fitActive(id, target)))
+}
+/**
+ * Computers: an active card pushed below the fold (cards above it took its place) comes into view, as far as its
+ * highlight stays on screen too.
+ */
+function fitActive(id: string, target: Element) {
+  const card = margin.value?.querySelector(`[data-card="${id}"]`)
+  const pane = card && scroller(card)
+  if (!card || !pane) return
+  const view = pane.getBoundingClientRect()
+  const below = card.getBoundingClientRect().bottom - view.bottom + 16
+  const room = target.getBoundingClientRect().top - view.top - 16
+  const by = Math.min(below, room)
+  if (by > 0) pane.scrollBy?.({ top: by, behavior: 'smooth' })
 }
 /** «Ver cambio» on a thread: its change becomes the active card (on phones, the sheet shows it). */
 function showChange(seriesId: string) {
