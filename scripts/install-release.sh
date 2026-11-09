@@ -7,10 +7,10 @@
 # 2. side by side, each a no-op when its input did not change: the Rename Photos app (keyed by rename-app.commit),
 #    the Wikiloc worker (install-worker.sh's own content hash), the offline identifier parts (--if-needed), old
 #    releases and staged runs pruned, and the hash of what the T3 workspaces refresh reads (scripts/deploy-stamp.mjs);
-# 3. wait-writes (never restart in the middle of a save), then the T3 workspaces refresh when its hash changed or
-#    is not recorded;
-# 4. last: current → the release (shared/previous-release names the one before), the units, the restart, and the
-#    app's /health until "status":"ok".
+# 3. wait-writes (never restart in the middle of a save);
+# 4. current → the release (shared/previous-release names the one before), the units, the restart, and the app's
+#    /health until "status":"ok";
+# 5. last: the T3 workspaces refresh, when its hash changed or is not recorded.
 # The live install by default. A scratch install (tests) sets ITHOMIINI_APP_ROOT, ITHOMIINI_SYSTEMD_DIR,
 # ITHOMIINI_SERVICE (and ITHOMIINI_TIMERS, ITHOMIINI_SERVICE_ENV, APP_PORT); DEPLOY_SCRATCH_BIN goes first on the
 # PATH (its systemctl), DEPLOY_SCRATCH_HOME is the HOME of the steps. A scratch root never installs the live units.
@@ -94,23 +94,7 @@ if ! bash "$dir/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0
 fi
 said wait-writes "$s"
 
-# T3 workspaces (every person's brief, skills and subagents; tokens kept): refreshed when what they are made from
-# changed. A missing or unreadable hash means a refresh.
-s=$(ms)
-stamp_file="$app/shared/.deploy-stamps/t3-provision"
-if [ -n "$stamp_now" ] && [ "$stamp_now" = "$(cat "$stamp_file" 2>/dev/null || true)" ]; then
-  said t3-provision "$s" "workspaces unchanged: not refreshed"
-elif (cd "$dir" && "$node" scripts/t3-provision.mjs --refresh-all) >"$logs/t3-provision" 2>&1 9>&-; then
-  # The hash after the refresh (it rewrites the files it is made of): the next deploy compares with this one.
-  "$node" "$dir/scripts/deploy-stamp.mjs" t3-provision "$dir" >"$stamp_file.new" 2>/dev/null && mv "$stamp_file.new" "$stamp_file" || rm -f -- "$stamp_file" "$stamp_file.new"
-  said t3-provision "$s" "$(grep -c '^Refreshed' "$logs/t3-provision" || true) workspaces refreshed"
-else
-  rm -f -- "$stamp_file"
-  echo "== t3-provision failed:" >&2; tail -n 30 "$logs/t3-provision" >&2
-  problems="$problems t3-provision"
-fi
-
-# Last: the switch, the units, the restart and the health check.
+# The switch, the units, the restart and the health check.
 s=$(ms)
 cd "$app"
 if test -L current; then readlink current >shared/previous-release; fi
@@ -141,6 +125,22 @@ until printf '%s' "$health" | grep -q '"status":"ok"'; do
   health="$(curl -s --max-time 5 "http://127.0.0.1:$port/health" || true)"
 done
 said health "$s" "status ok"
+
+# Last, the app up: the T3 workspaces (every person's brief, skills and subagents; tokens kept), refreshed when what
+# they are made from changed. A missing or unreadable hash means a refresh.
+s=$(ms)
+stamp_file="$app/shared/.deploy-stamps/t3-provision"
+if [ -n "$stamp_now" ] && [ "$stamp_now" = "$(cat "$stamp_file" 2>/dev/null || true)" ]; then
+  said t3-provision "$s" "workspaces unchanged: not refreshed"
+elif (cd "$dir" && "$node" scripts/t3-provision.mjs --refresh-all) >"$logs/t3-provision" 2>&1 9>&-; then
+  # The hash after the refresh (it rewrites the files it is made of): the next deploy compares with this one.
+  "$node" "$dir/scripts/deploy-stamp.mjs" t3-provision "$dir" >"$stamp_file.new" 2>/dev/null && mv "$stamp_file.new" "$stamp_file" || rm -f -- "$stamp_file" "$stamp_file.new"
+  said t3-provision "$s" "$(grep -c '^Refreshed' "$logs/t3-provision" || true) workspaces refreshed"
+else
+  rm -f -- "$stamp_file"
+  echo "== t3-provision failed:" >&2; tail -n 30 "$logs/t3-provision" >&2
+  problems="$problems t3-provision"
+fi
 if [ -n "$problems" ]; then
   echo "Installed release $release ($commit) in $(( $(ms) - t0 )) ms, but these steps failed:$problems" >&2
   exit 1

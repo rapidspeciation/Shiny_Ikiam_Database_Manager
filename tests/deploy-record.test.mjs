@@ -168,6 +168,9 @@ test('deploy.sh on claudeclaw: the PC run of HEAD is installed without testing h
     const order = first.calls.map(c => (c.includes('restart') ? 'restart' : c.startsWith('curl') ? 'curl' : null)).filter(Boolean);
     assert.equal(order.at(-1), 'curl');
     assert.ok(order.indexOf('restart') < order.lastIndexOf('curl'));
+    // The workspaces refresh last, the app up (as before 9 Nov 2026).
+    const refresh = first.calls.findIndex(c => /node scripts\/t3-provision\.mjs --refresh-all$/.test(c));
+    assert.ok(refresh > first.calls.findLastIndex(c => c.startsWith('curl')), 'refreshed after the health check');
 
     // The same inputs again: no unit copied or reloaded, no workspace refresh; current → the new one (a release of
     // its own even within the same second), previous kept. Its restart leaves a process running (a stub's dummy app):
