@@ -4,10 +4,11 @@
 // throwaway checkout with stand-ins (tests/helpers/deploy-fixture.mjs) against a scratch app root.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashRelease, verifyRelease, writeRecord } from '../scripts/deploy-record.mjs';
+import { t3ProvisionStamp } from '../scripts/deploy-stamp.mjs';
 import { deployFixture } from './helpers/deploy-fixture.mjs';
 
 const COMMIT = '1'.repeat(40);
@@ -195,5 +196,30 @@ test('install-release.sh: a scratch root never installs the live units', () => {
     assert.equal(current(f), null);
   } finally {
     f.close();
+  }
+});
+
+test('the T3 workspaces hash: the same from a PC and from claudeclaw (file modes aside), another when an input changes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deploy-stamp-'));
+  try {
+    const release = join(dir, 'release');
+    const shared = join(dir, 'shared');
+    mkdirSync(join(release, 'assistant', 'skills', 'a'), { recursive: true });
+    mkdirSync(join(shared, 't3-workspaces', 'pato', '.claude'), { recursive: true });
+    writeFileSync(join(release, 'assistant', 'AGENTS.md'), 'brief');
+    writeFileSync(join(release, 'assistant', 'skills', 'a', 'SKILL.md'), 'skill');
+    const env = { HOME: join(dir, 'home'), ITHOMIINI_SHARED: shared };
+    chmodSync(join(release, 'assistant', 'AGENTS.md'), 0o664);
+    const first = await t3ProvisionStamp(release, env);
+    chmodSync(join(release, 'assistant', 'AGENTS.md'), 0o600);
+    assert.equal(await t3ProvisionStamp(release, env), first, 'a PC umask (600) and the claudeclaw one (664): one hash');
+    writeFileSync(join(release, 'assistant', 'skills', 'a', 'SKILL.md'), 'skill, changed');
+    const second = await t3ProvisionStamp(release, env);
+    assert.notEqual(second, first, 'a skill changed');
+    writeFileSync(join(shared, 't3-workspaces', 'pato', 'AGENTS.md'), 'edited by hand');
+    assert.notEqual(await t3ProvisionStamp(release, env), second, 'the brief of a workspace changed');
+    assert.notEqual(await t3ProvisionStamp(release, { ...env, ITHOMIINI_CLAUDE_LEAN: '0' }), await t3ProvisionStamp(release, env), 'a provision variable');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
