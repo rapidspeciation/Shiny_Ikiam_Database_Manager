@@ -28,7 +28,7 @@ paths=(server docs assistant package.json rename-app.commit deploy scripts licen
 if [ "$(hostname)" = claudeclaw ] || [ "${DEPLOY_LOCAL:-}" = 1 ]; then
   local_install=1
   [ -z "$stage_only" ] || { echo "--stage is for a PC: on claudeclaw, scripts/deploy.sh installs a staged run." >&2; exit 2; }
-  export PATH="/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin:$PATH"
+  export PATH="${ITHOMIINI_NODE_DIR:-/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin}:$PATH"
   # Deploy only what is on GitHub, so every checkout (PCs and the server) can pull it.
   git fetch -q origin main
   if [ -n "$(git status --porcelain --untracked-files=no)" ] || [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
