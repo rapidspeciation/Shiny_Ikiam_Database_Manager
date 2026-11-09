@@ -6346,7 +6346,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (INVITE_TOOL_NAMES.has(name)) {
       if (inWorker) return { error: 'Call it again in a moment.' };
-      // The person's role now (the chat's turn keeps the one it started with).
+      // The person's role at this moment (agentTurn reads it at the call's start; read again here too).
       const row = db.prepare('SELECT role, active FROM users WHERE id = ?').get(context.user.id);
       return runInviteTool(invites(), name, args, { ...context.user, role: row?.active ? row.role : null });
     }
@@ -6561,7 +6561,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
     const thread = { id: namedThread(user, 'T3 Code') };
     const cached = agents.get(hash);
-    if (cached?.context.threadId === thread.id) return cached;
+    // The person as they are now (role, name), not as at the chat's first call: someone lowered to observer
+    // mid-chat cannot apply from it. Each call copies the context, so it acts with this user.
+    if (cached?.context.threadId === thread.id) {
+      cached.context.user = user;
+      return cached;
+    }
     const turn = {
       context: {
         threadId: thread.id,
