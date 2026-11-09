@@ -306,6 +306,8 @@ describe('DocReview', () => {
     button(margin.querySelector('[data-card="t1"]')!, 'Ver cambio')!.click()
     await flush()
     expect(margin.querySelector('[data-card="s1"]')!.className).toContain('doc-card-active')
+    // The change card quotes the question it answers, by its author.
+    expect(margin.querySelector('[data-card="s1"] .doc-quote-btn')!.textContent).toContain('Ana Pérez: ¿NA o NOT_COLLECTED?')
     // A highlight clicked: its card is the active one, and the highlight darkens.
     ;(marks[0] as HTMLElement).click()
     await flush()

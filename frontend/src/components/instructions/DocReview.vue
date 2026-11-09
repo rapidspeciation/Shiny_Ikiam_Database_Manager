@@ -51,7 +51,11 @@ const quotesOf = (seriesId: string) =>
   (changeOf(seriesId)?.threadIds ?? [])
     .map(id => mine.value.threads.find(x => x.id === id) ?? review.state?.threads.find(x => x.id === id))
     .filter((x): x is NonNullable<typeof x> => !!x)
-    .map(x => ({ id: x.id, quote: x.quote }))
+    // The question it answers, as its first person wrote it (the highlighted words are already in the diff).
+    .map(x => {
+      const first = x.comments.find(c => c.kind === 'person' && !c.deleted)
+      return { id: x.id, quote: first ? `${first.author}: ${first.body}` : x.quote }
+    })
 /** The quote line on a change card: its thread becomes the active card (on phones, its sheet). */
 function showThread(id: string) {
   listMode.value = false
@@ -213,8 +217,28 @@ function activate(id: string | null, { scroll = false, fromList = false } = {}) 
   const target = targetOf(id)
   if (!target) return
   if (!wide.value) scrollToFraction(target, 0.15)
-  else if (scroll) target.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
-  else if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => requestAnimationFrame(() => fitActive(id, target)))
+  else if (scroll) {
+    target.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    afterScroll(target, () => fitActive(id, target))
+  } else if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => requestAnimationFrame(() => fitActive(id, target)))
+}
+/** Runs `done` once the pane's smooth scroll has stopped (scrollend, or no scroll event for 150 ms). */
+function afterScroll(target: Element, done: () => void) {
+  const pane = scroller(target)
+  if (!pane) return done()
+  let timer = setTimeout(finish, 400)
+  function finish() {
+    pane!.removeEventListener('scroll', moved)
+    pane!.removeEventListener('scrollend', finish)
+    clearTimeout(timer)
+    done()
+  }
+  function moved() {
+    clearTimeout(timer)
+    timer = setTimeout(finish, 150)
+  }
+  pane.addEventListener('scroll', moved)
+  pane.addEventListener('scrollend', finish, { once: true })
 }
 /**
  * Computers: an active card pushed below the fold (cards above it took its place) comes into view, as far as its

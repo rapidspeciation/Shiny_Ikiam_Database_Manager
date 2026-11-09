@@ -233,7 +233,7 @@ watch(
           <ul>
             <li v-for="item in group.items" :key="item.id">
               <button
-                class="flex w-full items-baseline gap-2 py-2.5 pr-3 text-left text-sm hover:bg-stone-100 md:py-1"
+                class="flex min-h-11 w-full items-center gap-2 py-2.5 pr-3 text-left text-sm hover:bg-stone-100 md:min-h-0 md:items-baseline md:py-1"
                 :class="[
                   isMain(item) ? 'pl-5' : 'pl-9 text-stone-600',
                   entry?.id === item.id ? 'bg-brand-50 font-medium text-brand-800' : '',
