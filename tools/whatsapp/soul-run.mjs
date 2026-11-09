@@ -139,6 +139,8 @@ export async function runScenario(s, { outDir, soulFile, round, tono, lab, creat
 }
 
 async function main(args) {
+  // Tests never start soul chats (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
+  if (process.env.NODE_TEST_CONTEXT) throw new Error('soul-run.mjs: refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions');
   const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
   const [scenFile, soulFile, outDir] = args;
   if (!outDir || existsSync(outDir)) throw new Error('Usage: soul-run.mjs <scenarios.json> <soul.md> <new output folder> [...]');

@@ -19,6 +19,11 @@ import { mcpFrom } from './mcp.mjs';
 import { grade } from './grade.mjs';
 import { fixedContext } from './fixed.mjs';
 
+// Tests never start eval chats (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
+if (process.env.NODE_TEST_CONTEXT) {
+  console.error('run.mjs: refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions');
+  process.exit(3);
+}
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const argv0 = process.argv.slice(2);

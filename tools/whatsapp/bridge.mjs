@@ -652,6 +652,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       ...(route.instanceId ? { instanceId: route.instanceId } : {}),
       create: { projectId: route.projectId, title: route.title, model: route.model, effort: route.effort },
     };
+    // A turn over ssh would run on claudeclaw's real T3, where NODE_TEST_CONTEXT does not reach t3-turn.mjs: refused here under node --test.
+    if (route.ssh && process.env.NODE_TEST_CONTEXT) return { ok: false, error: 'ssh turn refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions' };
     const [bin, args] = route.ssh
       ? ['ssh', ['-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=30', route.ssh, `${route.node} ${route.script}`]]
       : [route.node ?? process.execPath, [route.script ?? join(HERE, 't3-turn.mjs')]];

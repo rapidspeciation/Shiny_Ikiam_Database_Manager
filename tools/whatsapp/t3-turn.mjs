@@ -135,6 +135,12 @@ async function main() {
   return { ok: run.status === 'completed', threadId, status: run.status, text, ms: Date.now() - started };
 }
 
+// Tests never start or touch a real chat (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
+if (process.env.NODE_TEST_CONTEXT) {
+  process.stderr.write('t3-turn.mjs: refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions\n');
+  process.stdout.write(JSON.stringify({ ok: false, error: 'refused under node --test' }) + '\n');
+  process.exit(3);
+}
 main()
   .then(out => process.stdout.write(JSON.stringify(out) + '\n'))
   .catch(e => {

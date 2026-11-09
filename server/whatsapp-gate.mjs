@@ -72,6 +72,8 @@ export function haikuGate({ bin = 'claude', model = GATE_MODEL, effort = 'low', 
         clearTimeout(timer);
         resolve({ ...value, ms: Date.now() - started });
       };
+      // The real `claude -p` (no spawnImpl injected) never runs under node --test: tests never use the AI subscriptions.
+      if (spawnImpl === spawn && process.env.NODE_TEST_CONTEXT) return resolve({ ms: 0, error: 'gate refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions' });
       let proc;
       try {
         proc = spawnImpl(bin, args, { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
