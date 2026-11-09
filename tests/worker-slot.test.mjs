@@ -42,8 +42,11 @@ test('a worker kept busy does not stop; idleMs 0 never stops it', async t => {
 test("a pool's idle workers stop too, and its status counts them", async t => {
   const pool = workerPool({ role: 'test', url, data: () => ({}), timeoutMs: 5000, idleMs: 100, size: 2 });
   t.after(() => pool.close());
-  await Promise.all([pool.call({ n: 1 }), pool.call({ n: 2 })]);
-  assert.equal(pool.status().workers, '2 of 2');
+  const [a, b] = await Promise.all([pool.call({ n: 1 }), pool.call({ n: 2 })]);
+  // Two workers answered. Not "2 of 2 alive" now: on a busy machine the first can be idle for 100 ms (and stop)
+  // before the second has started and answered.
+  assert.notEqual(a.thread, b.thread);
+  assert.match(pool.status().workers, /^[12] of 2$/);
   await sleep(400);
   assert.equal(pool.alive, false);
   assert.equal(pool.status().idleStops, 2);
