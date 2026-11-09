@@ -29,6 +29,8 @@ fi
 cache="${ITHOMIINI_DEPLOY_CACHE:-$HOME/.cache/ithomiini-deploy}"
 mkdir -p "$cache"
 export NODE_COMPILE_CACHE="$cache/node-compile"
+# The test jobs keep theirs there too: the type check's incremental file, the server tests' durations, the slow tests' last green run.
+export ITHOMIINI_DEPLOY_CACHE="$cache"
 # The frontend's packages are installed again only when the lockfile, what is installed or node changed.
 installed() { cat frontend/package-lock.json frontend/node_modules/.package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; node --version; }
 if [ "$(installed)" = "$(cat frontend/node_modules/.deploy-installed 2>/dev/null)" ]; then
@@ -38,15 +40,16 @@ else
   installed > frontend/node_modules/.deploy-installed
 fi
 # The one full test run of a change (the app-dev skill runs only the quick checks while developing):
-# syntax and types (incremental: frontend/node_modules/.cache), server tests (a file per core) and
+# syntax and types (incremental: the cache above), server tests (scripts/test-server.mjs: a process per core) and
 # frontend tests side by side, at low priority (on the server the app keeps answering meanwhile); the
 # type check, the longest single step, a little ahead of the others. The build is made meanwhile, and
 # deployed only if they all pass. It also writes server/instructions-history.json (the AI instructions
 # page's history: the release has no .git); the types are checked beside it: vite only. The server tests run with
-# the guard that refuses any model CLI, AI host or T3 (tests/helpers/no-ai.mjs; the frontend's is in its setupFiles).
+# the guard that refuses any model CLI, AI host or T3 (tests/helpers/no-ai.mjs, loaded by scripts/test-server.mjs; the
+# frontend's is in its setupFiles).
 logs="$(mktemp -d)"
 nice -n 5 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
-nice -n 10 node --test --import ./tests/helpers/no-ai.mjs --test-concurrency="$(nproc 2>/dev/null || echo 4)" tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
+nice -n 10 node scripts/test-server.mjs >"$logs/server" 2>&1 & server=$!
 NO_COLOR=1 nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
 nice -n 10 bash -c 'node scripts/instructions-history.mjs && cd frontend && npx vite build' >"$logs/build" 2>&1 & build=$!
 failed=0

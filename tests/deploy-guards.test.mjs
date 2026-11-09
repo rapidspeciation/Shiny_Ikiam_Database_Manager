@@ -23,7 +23,7 @@ case "$name $*" in
   "node --version") echo v24.0.0-standin; exit 0 ;;
   "ssh "*) exit 97 ;;
   "node scripts/check.mjs"*) job=check ;;
-  "node --test"*) job=server ;;
+  "node scripts/test-server.mjs"*|"node --test"*) job=server ;;
   "npm --prefix frontend test"*) job=frontend ;;
   "npx vite build"*) job=build ;;
 esac
@@ -87,7 +87,7 @@ test('deploy.sh, every check passing: it gets as far as the server (a stand-in s
     assert.equal(run.status, 97, run.stderr);
     assert.equal(run.ssh.length, 1);
     assert.match(run.ssh[0], /^ssh claudeclaw mkdir -p \/home\/ubuntu\/ithomiini\/releases\/\d{8}T\d{6}Z /);
-    for (const check of ['node scripts/check.mjs', 'node --test', 'npm --prefix frontend test', 'npx vite build'])
+    for (const check of ['node scripts/check.mjs', 'node scripts/test-server.mjs', 'npm --prefix frontend test', 'npx vite build'])
       assert.ok(run.calls.some(c => c.startsWith(check)), `${check} ran`);
   } finally {
     f.close();
