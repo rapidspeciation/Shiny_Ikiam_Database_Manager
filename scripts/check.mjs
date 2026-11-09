@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-import { readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 function files(path) {
   return readdirSync(path, { withFileTypes: true }).flatMap(entry =>
@@ -21,8 +24,16 @@ const run = (command, args, options = {}) =>
   });
 
 // The frontend is TypeScript + Vue; its type check needs `npm --prefix frontend install` once.
-// It runs beside the syntax check, and is incremental (frontend/package.json).
-const typecheck = run('npm', ['--prefix', 'frontend', 'run', 'typecheck'], { stdio: ['ignore', 'inherit', 'inherit'] });
+// It runs beside the syntax check, and is incremental (as frontend/package.json's typecheck). Its incremental file is
+// kept in the deploy cache (ITHOMIINI_DEPLOY_CACHE, as scripts/deploy.sh), one per checkout: in frontend/node_modules
+// it went with every `npm ci` (a new lockfile or node) and every new checkout, and the check started cold (+10 to 30 s).
+const cache = process.env.ITHOMIINI_DEPLOY_CACHE || join(homedir(), '.cache', 'ithomiini-deploy');
+const buildInfo = join(cache, 'typecheck', `${createHash('sha256').update(resolve('frontend')).digest('hex').slice(0, 16)}.tsbuildinfo`);
+mkdirSync(dirname(buildInfo), { recursive: true });
+const typecheck = run(process.execPath, ['node_modules/vue-tsc/bin/vue-tsc.js', '--noEmit', '--incremental', '--tsBuildInfoFile', buildInfo], {
+  cwd: 'frontend',
+  stdio: ['ignore', 'inherit', 'inherit'],
+});
 
 // Syntax: every file compiled as an ES module (both packages are "type": "module") in one process,
 // instead of a node start per file; a file that fails is checked again with `node --check`, which
