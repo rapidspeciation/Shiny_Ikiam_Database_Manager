@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { HoldQueue, type HoldAnswer } from '../holds'
 import { nextId } from '../emerged'
 
@@ -133,7 +133,7 @@ describe('quick taps hold their IDs in tap order', () => {
     expect(card).toEqual({ key: 'a', id: 'B0E', state: '' })
     // B0E's own request says what holds.
     const second = queue.push('a')
-    for (let i = 0; i < 5 && asked.length < 2; i++) await Promise.resolve()
+    await vi.waitFor(() => expect(asked).toHaveLength(2))
     answer({ held: true, value: 'B0E' })
     await second
     expect(asked).toEqual(['A9E', 'B0E'])

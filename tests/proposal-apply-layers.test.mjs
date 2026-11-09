@@ -69,7 +69,8 @@ test("applyProposal: the assistant revises the proposal after it was read: the c
   try {
     const id = await propose();
     // The assistant's worker (another connection to the database) saves a revision between the apply's read of the
-    // proposal and its claim: here, just before the claim's statement is prepared.
+    // proposal and its claim: here, just before the claim's statement is prepared. The claim is found by its SQL text:
+    // if 'the claim was reached' fails, the statement in applyProposal (server/assistant.mjs) was reworded; match it here.
     const prepare = store.db.prepare.bind(store.db);
     let revised = false;
     store.db.prepare = sql => {

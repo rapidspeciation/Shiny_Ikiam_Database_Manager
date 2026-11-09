@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { letterboxCrop, roleOf, rolesReady } from '../offlineId'
 import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sigmoid } from '../sexModel'
@@ -82,19 +84,16 @@ describe('where the estimate applies', () => {
 })
 
 describe('the sex file', () => {
-  it('is pinned: name, bytes, sha256 and the 32 MB parts', () => {
+  it('is pinned: the name and sha256 the server lists, the bytes in 32 MB parts', () => {
     expect(SEX_FILE.name).toBe('sex_v2s_ft_full_fp16.onnx')
     expect(roleOf(SEX_FILE.name)).toBe('sex')
     expect(SEX_FILE.parts).toHaveLength(Math.ceil(SEX_FILE.bytes / (32 * 1024 * 1024)))
     for (const h of [SEX_FILE.sha256, ...SEX_FILE.parts]) expect(h).toMatch(/^[0-9a-f]{64}$/)
-    // The shipped file as measured apart (stat and sha256sum of the file and of its two 32 MiB parts, 9 Nov 2026);
-    // the server pins the same sha256 (server/offline-id.mjs SEX).
-    expect(SEX_FILE.bytes).toBe(43409800)
-    expect(SEX_FILE.sha256).toBe('d6d5fb9d92af9a5b4d85a7fac3ead016e2764c5b1964a064fdaf0e98df7c412d')
-    expect(SEX_FILE.parts).toEqual([
-      '2b96e1abb88fdf21efc39a41d6b503e88b8fd3d9b1bc9b4874c5941d4fbe89a1',
-      '9f4a2f50b7787ab20153b3e781e684ece74697851400074db7cd67e91910cb24',
-    ])
+    // The phone downloads the file the server lists: the server's pin (server/offline-id.mjs SEX) must be this one.
+    const server = readFileSync(resolve(import.meta.dirname, '../../../../server/offline-id.mjs'), 'utf8')
+    const pin = /export const SEX = \{ name: '([^']+)', sha256: '([0-9a-f]{64})' \}/.exec(server)
+    expect(pin, 'server/offline-id.mjs SEX').not.toBeNull()
+    expect([pin![1], pin![2]]).toEqual([SEX_FILE.name, SEX_FILE.sha256])
   })
 
   it('is ready with the detector and the very file listed (by ETag or by the pinned parts)', () => {

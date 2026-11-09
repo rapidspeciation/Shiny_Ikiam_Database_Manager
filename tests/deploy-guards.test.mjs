@@ -109,10 +109,10 @@ test('deploy.sh: the team repo has a commit this checkout lacks: exit 1, nothing
   }
 });
 
-test('deploy.sh: a failed check (the server tests, the build): "nothing was deployed", exit 1, nothing sent to the server', () => {
+test('deploy.sh: a failed check (the typecheck, the server or frontend tests, the build): "nothing was deployed", exit 1, nothing sent to the server', () => {
   const f = fixture();
   try {
-    for (const job of ['server', 'build']) {
+    for (const job of ['check', 'server', 'frontend', 'build']) {
       const run = f.deploy({ DEPLOY_TEST_FAIL: job });
       assert.equal(run.status, 1, `${job}: ${run.stderr}`);
       assert.match(run.stderr, new RegExp(`== ${job} failed:`));

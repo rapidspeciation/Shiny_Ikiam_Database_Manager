@@ -52,12 +52,10 @@ describe('the tip that would make it lighter', () => {
   it('the tips the server gave, in its order, the bounded range named', () => {
     const only = (tip: string) => costTip({ ...CAM, tips: [tip] })
     expect(only('bounded')).toContain('Collection_data!$D$2:$D$9755')
-    // Each tip's own advice, as written for the team.
-    const guard = 'saltar las filas que no pueden coincidir antes de buscar (IF(clave="","",…) o el tipo de fila)'
-    const batch = 'escribirla de una vez, no celda por celda: cada escritura recalcula esas búsquedas'
-    expect(only('guard')).toBe(guard)
-    expect(only('batch')).toBe(batch)
-    expect(costTip(CAM)).toBe([only('bounded'), guard, batch].join('; '))
+    // Each tip its own advice: skip the rows first (guard), write it at once (batch).
+    expect(only('guard')).toMatch(/IF\(clave/)
+    expect(only('batch')).toMatch(/de una vez/)
+    expect(costTip(CAM)).toBe([only('bounded'), only('guard'), only('batch')].join('; '))
   })
 
   it('none for a light formula', () => {

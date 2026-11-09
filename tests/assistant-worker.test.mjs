@@ -194,12 +194,19 @@ test("the assistant's revision racing a person's edit: neither is lost, the assi
 // The calls' deadline (callMs) is a setTimeout in the app's thread: mocked in the two tests that hang a call (Date
 // stays real), and moved past callMs until the call is answered, instead of waited for. The calls that must not be
 // held meanwhile cannot run out of time on a busy machine either.
+// At most 30 s of real time (Date is not mocked), then the mocked timers go back in any case.
 async function ticked(t, call, ms) {
   let done = false;
   call.then(() => (done = true), () => (done = true));
-  while (!done) {
-    t.mock.timers.tick(ms);
-    await new Promise(resolve => setImmediate(resolve));
+  const until = Date.now() + 30_000;
+  try {
+    while (!done) {
+      if (Date.now() > until) throw new Error('the call did not settle within 30 s of real time');
+      t.mock.timers.tick(ms);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  } finally {
+    t.mock.timers.reset();
   }
   return call;
 }
@@ -210,7 +217,6 @@ test('a call that hangs or a worker that dies: the call is answered "call again"
   const { host, rpc, call, record } = await fixture(t, { callMs: 6000, backoffMs: 0 });
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const hung = await ticked(t, rpc('__hang'), 6000);
-  t.mock.timers.reset();
   assert.match(hung.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);
   const found = await call('find_records', { sheet: 'Collection_data', filters: { FieldMark_ID: 'B2' } });
@@ -250,7 +256,6 @@ test("two people's calls at once: another worker answers the second, and one cal
   assert.equal(host.status().workers, '2 of 3');
   // The hanging call is answered "call again"; only its worker was replaced.
   const answered = await ticked(t, hung, 4000);
-  t.mock.timers.reset();
   assert.match(answered.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);
   assert.ok(!(await call('get_record', { id: record(4).id })).error);

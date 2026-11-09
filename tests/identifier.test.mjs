@@ -10,13 +10,22 @@ import { createIdentifier } from '../server/identifier.mjs';
 
 const FAKE = new URL('./fixtures/fake-identifier.mjs', import.meta.url).pathname;
 
-/** Moves a mocked setTimeout clock on by `ms` until `promise` settles (its timer fires as soon as it is set). */
+/**
+ * Moves a mocked setTimeout clock on by `ms` until `promise` settles (its timer fires as soon as it is set): at most
+ * 30 s of real time (Date is not mocked), then the mocked timers go back in any case.
+ */
 async function ticked(t, promise, ms) {
   let done = false;
   promise.then(() => (done = true), () => (done = true));
-  while (!done) {
-    t.mock.timers.tick(ms);
-    await new Promise(resolve => setImmediate(resolve));
+  const until = Date.now() + 30_000;
+  try {
+    while (!done) {
+      if (Date.now() > until) throw new Error('the call did not settle within 30 s of real time');
+      t.mock.timers.tick(ms);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  } finally {
+    t.mock.timers.reset();
   }
   return promise;
 }
@@ -88,7 +97,6 @@ test('a photo that takes too long: the process is stopped and the call says to c
   // The slow photo's limit on a mocked setTimeout (moved past 2 s at once); the next photo's limit is real.
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const out = await ticked(t, identifier.identify({ path: photo('slow.jpg', 'slow') }), 2000);
-  t.mock.timers.reset();
   assert.match(out.error, /took more than/);
   assert.deepEqual((await identifier.identify({ path: photo('ok.jpg', 'Oleria cyrene 0.4') })).species[0], ['Oleria cyrene', 0.4]);
 });

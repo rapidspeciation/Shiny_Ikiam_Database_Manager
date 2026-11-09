@@ -668,12 +668,18 @@ test('Google Drive as the app calls it: pages, a file gone, a change, a busy ans
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const busy = google.get('d');
   let done = false;
-  busy.finally(() => (done = true));
-  while (!done) {
-    t.mock.timers.tick(1000);
-    await new Promise(resolve => setImmediate(resolve));
+  busy.then(() => (done = true), () => (done = true));
+  // At most 30 s of real time (Date is not mocked), then the mocked timers go back in any case.
+  const until = Date.now() + 30_000;
+  try {
+    while (!done) {
+      if (Date.now() > until) throw new Error('the retry did not settle within 30 s of real time');
+      t.mock.timers.tick(1000);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  } finally {
+    t.mock.timers.reset();
   }
-  t.mock.timers.reset();
   assert.equal((await busy).name, 'x.JPG');
   answers.push({ status: 403, body: { error: { message: 'insufficientFilePermissions' } } });
   await assert.rejects(google.trash('d'), /Google Drive 403: .*insufficientFilePermissions/);
