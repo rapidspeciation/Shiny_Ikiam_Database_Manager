@@ -153,6 +153,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   const queueFile = join(stateDir, 'history-queue.jsonl');
   let flushing = false;
   let flushTimer = null;
+  let flushDue = 0; // when flushTimer fires (Date.now()), for settled()
   async function flushHistory() {
     if (flushing || !existsSync(queueFile)) return 0;
     flushing = true;
@@ -175,7 +176,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       const now2 = readFileSync(queueFile, 'utf8').split('\n').filter(Boolean);
       const left = now2.slice(entries.length);
       writeFileSync(queueFile, [...rest.map(e => JSON.stringify(e)), ...left].map(x => x + '\n').join(''), { mode: 0o600 });
-      if (rest.length) flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(() => {})), 60_000).unref();
+      if (rest.length) {
+        flushDue = Date.now() + 60_000;
+        flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(() => {})), 60_000).unref();
+      }
     } finally {
       flushing = false;
     }
@@ -183,7 +187,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   }
   const queueHistory = (chat, line) => {
     appendFileSync(queueFile, JSON.stringify({ chat: chat.key, line }) + '\n', { mode: 0o600 });
-    if (!flushTimer) flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(e => log.error?.('history:', e.message))), chat.dryRun && !config.routes[chat.route]?.ssh ? 0 : 3000).unref();
+    if (flushTimer) return;
+    const ms = chat.dryRun && !config.routes[chat.route]?.ssh ? 0 : 3000;
+    flushDue = Date.now() + ms;
+    flushTimer = setTimeout(() => ((flushTimer = null), flushHistory().catch(e => log.error?.('history:', e.message))), ms).unref();
   };
   function mirror(chat, msg) {
     if (!chat.history?.dir || msg.skip || (!msg.text && !msg.media)) return;
@@ -975,6 +982,18 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     sendFiles,
     state: () => state,
     idle: () => busy.size === 0 && [...queues.values()].every(q => !q.length),
+    /**
+     * Resolves true once nothing is left to do soon: no turn running or queued, no history flush running or due
+     * within a second (a dry-run chat's flush starts at once, a failed one's retry in a minute does not count); false
+     * after `maxMs`. For tests: they wait for this instead of a fixed time.
+     */
+    async settled(maxMs = 10_000) {
+      for (const until = Date.now() + maxMs; Date.now() < until; await sleep(5)) {
+        const flushSoon = flushTimer !== null && flushDue - Date.now() < 1000;
+        if (busy.size === 0 && [...queues.values()].every(q => !q.length) && !flushing && !flushSoon) return true;
+      }
+      return false;
+    },
   };
 }
 

@@ -388,6 +388,27 @@ test('the enabled group is mirrored to its history file (all its messages, nothi
   assert.equal(readFileSync(join(dir, 'state', 'history-queue.jsonl'), 'utf8'), ''); // sent, queue empty
 });
 
+test('settled(): true once the turns and the history flush a dry-run chat starts at once are done; a retry a minute away is not waited for', async () => {
+  const { bridge, post, rows, dir } = historySetup();
+  post('G@g.us', 'hola a todos');
+  post('G@g.us', '@claude cuántos hay?');
+  assert.equal(bridge.idle(), false);
+  assert.equal(await bridge.settled(1), false); // the turn still runs
+  assert.equal(await bridge.settled(), true);
+  assert.equal(bridge.idle(), true);
+  // No flushHistory() here: settled() waited for the flush the chat's own timer started.
+  assert.deepEqual(rows().slice(0, 2).map(r => r.text), ['hola a todos', '@claude cuántos hay?']);
+  assert.equal(readFileSync(join(dir, 'state', 'history-queue.jsonl'), 'utf8'), '');
+  // A history that cannot be written: its next try is a minute away; settled() does not wait for it.
+  const failing = historySetup({ failing: true });
+  failing.post('G@g.us', 'primero');
+  const t0 = Date.now();
+  assert.equal(await failing.bridge.settled(), true);
+  assert.ok(Date.now() - t0 < 5000, `${Date.now() - t0} ms`);
+  assert.equal(readFileSync(join(failing.dir, 'state', 'history-queue.jsonl'), 'utf8').trim().split('\n').length, 1);
+  assert.ok(readFileSync(join(failing.dir, 'state', 'bridge.log.jsonl'), 'utf8').includes('"dir":"history"'));
+});
+
 test('a history that cannot be written keeps its lines queued instead of losing them', async () => {
   const { post, settle, dir } = historySetup({ failing: true });
   post('G@g.us', 'primero');
