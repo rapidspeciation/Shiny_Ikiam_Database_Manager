@@ -75,15 +75,20 @@ and raise the limit when what remains is needed.
    `ok` and every number in `writing` is zero; otherwise wait and tell the
    person why. A deploy restarts the app for everyone, so changes from the
    same hour go out together: tell the person, then run `scripts/deploy.sh`
-   once in the background. It runs the full tests (a failure stops it
-   before anything changes), builds, restarts the app (T3 chats keep
-   running) and refreshes the T3 workspaces; saves waiting for Google are
-   kept and written by the new process.
+   once in the background. It installs only a commit Franz's PC has
+   tested and built (`scripts/deploy.sh --stage` there); without one it
+   stops before anything changes and says so: ask Franz to stage the
+   commit. Only when he says his PC is off and the change cannot wait:
+   `DEPLOY_LOCAL_TESTS=1 scripts/deploy.sh` (the full tests here, a few
+   minutes). It restarts the app (T3 chats keep running) and refreshes the
+   T3 workspaces when they changed; saves waiting for Google are kept and
+   written by the new process.
 6. Verify: `version.json` shows the new build; a minute later /health has
    `"status":"ok"` and an `eventLoop` p99 of a few ms; use the change once
    (e.g. the new option on this chat's proposal). Tell the person to reload
    and what to look at, and say what you could not see on a screen. If
-   something broke, or the person wants it undone, `git revert` the commit
-   and deploy again (`/home/ubuntu/ithomiini/shared/previous-release` names
-   the release before). Remove the
+   something broke, or the person wants it undone,
+   `bash /home/ubuntu/ithomiini/current/scripts/rollback-release.sh` goes
+   back to the release before at once (no tests needed); then `git revert`
+   the commit and deploy it as above. Remove the
    worktree when done (`git -C /home/ubuntu/ithomiini/src worktree remove /home/ubuntu/ithomiini/work/<topic>`).
