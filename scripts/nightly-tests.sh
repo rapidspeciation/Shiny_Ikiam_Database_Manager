@@ -39,9 +39,11 @@ git -C "$app/src" cat-file -e "$commit^{commit}" 2>/dev/null || finish failed "c
 mkdir -p "${NIGHTLY_SCRATCH_PARENT:-$HOME/.cache/ithomiini-nightly}"
 scratch="$(mktemp -d "${NIGHTLY_SCRATCH_PARENT:-$HOME/.cache/ithomiini-nightly}/nightly-tests-$stamp.XXXXXX")"
 trap 'rm -rf -- "$scratch"' EXIT
-git -C "$app/src" archive "$commit" | tar -xf - -C "$scratch/" || finish failed "git archive failed"
-cd "$scratch" || finish failed "no scratch copy"
-mkdir -p home tmp
+# The copy in src/, its HOME and temp folder beside it: a test's helper file in the temp folder must not fall under the
+# copy's package.json ("type": "module").
+mkdir -p "$scratch/src" "$scratch/home" "$scratch/tmp"
+git -C "$app/src" archive "$commit" | tar -xf - -C "$scratch/src/" || finish failed "git archive failed"
+cd "$scratch/src" || finish failed "no scratch copy"
 [ -f tests/helpers/no-ai.mjs ] || finish failed "tests/helpers/no-ai.mjs is missing: not run without the no-AI guard"
 grep -q 'test-no-ai' frontend/vite.config.ts || finish failed "the frontend's no-AI setup file is missing: not run"
 # Only what the tests need: their own HOME and temp folder, the npm cache kept between nights; nothing of the
@@ -62,7 +64,7 @@ job install npm --prefix frontend ci --no-audit --no-fund --prefer-offline
 job check node scripts/check.mjs
 # Two server test files at a time: the live app keeps the other cores.
 job server node --test --import ./tests/helpers/no-ai.mjs --test-concurrency=2 tests/*.test.mjs
-job frontend npm --prefix frontend test
+job frontend npm --prefix frontend test -- --maxWorkers=2
 # The slow suite (the deploy leaves it out), when the commit has one.
 if node -e 'process.exit(require("./package.json").scripts?.["test:slow"] ? 0 : 1)'; then
   job slow npm run test:slow
