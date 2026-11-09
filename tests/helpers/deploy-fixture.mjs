@@ -16,7 +16,8 @@ export const STANDINS = ['ssh', 'node', 'npm', 'npx', 'hostname', 'systemctl', '
 const REAL = ['scripts/deploy.sh', 'scripts/install-release.sh', 'scripts/deploy-record.mjs', 'scripts/deploy-stamp.mjs', 'scripts/wait-writes.sh', 'scripts/prune-releases.sh'];
 
 // One stand-in for all: records "<name> <args>"; `hostname` is a PC's, ssh fails at once, and the check named in
-// DEPLOY_TEST_FAIL (check, server, frontend, build) exits 1. The build writes web/ and the instructions history.
+// DEPLOY_TEST_FAIL (check, server, frontend, build, slow) exits 1. The build writes web/ and the instructions history;
+// the slow suite writes its --result: DEPLOY_TEST_SLOW (default pass; unchanged; none writes nothing).
 const STANDIN = `#!/bin/bash
 name="\${0##*/}"
 printf '%s %s\\n' "$name" "$*" >> "$DEPLOY_TEST_CALLS"
@@ -31,13 +32,24 @@ case "$name $*" in
   "npm --prefix frontend test"*) job=frontend ;;
   "node scripts/instructions-history.mjs"*) echo '[]' > server/instructions-history.json ;;
   "npx vite build"*) job=build ;;
+  "node scripts/test-slow.mjs"*) job=slow ;;
 esac
 if [ -n "\${job:-}" ] && [ "$job" = "\${DEPLOY_TEST_FAIL:-}" ]; then echo "$job failed (stand-in)"; exit 1; fi
+if [ "\${job:-}" = slow ] && [ "\${DEPLOY_TEST_SLOW:-pass}" != none ]; then
+  while [ $# -gt 0 ]; do
+    if [ "$1" = --result ]; then printf '{"slow":"%s","inputs":"%s","lastGreenAt":"2026-11-09T00:00:00.000Z"}\\n' "\${DEPLOY_TEST_SLOW:-pass}" "$SLOW_INPUTS" > "$2"; fi
+    shift
+  done
+fi
 # DEPLOY_TEST_LINGER: a restart leaves a process running (as a stub restarting a dummy app does).
 if [ "$name" = systemctl ] && [[ "$*" == *restart* ]] && [ -n "\${DEPLOY_TEST_LINGER:-}" ]; then (sleep 45 >/dev/null 2>&1 </dev/null &); fi
 if [ "\${job:-}" = build ]; then mkdir -p ../web && echo "<p>\${DEPLOY_TEST_BUILD:-built}</p>" > ../web/index.html; fi
 exit 0
 `;
+
+/** The slow suite's inputs hash in the stand-in's results and in staged records. */
+export const SLOW_INPUTS = '5'.repeat(64);
+export const SLOW_PASS = JSON.stringify({ slow: 'pass', inputs: SLOW_INPUTS, lastGreenAt: '2026-11-09T00:00:00.000Z' });
 
 export function deployFixture() {
   const dir = mkdtempSync(join(tmpdir(), 'deploy-fixture-'));
@@ -87,6 +99,7 @@ export function deployFixture() {
     DEPLOY_PUBLIC_URL: '',
     DEPLOY_TEST_CALLS: calls,
     DEPLOY_TEST_REAL_NODE: process.execPath,
+    SLOW_INPUTS: SLOW_INPUTS,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'test',
     GIT_AUTHOR_EMAIL: 'test@example.invalid',
@@ -110,14 +123,14 @@ export function deployFixture() {
     return { status: r.status, stdout: r.stdout, stderr: r.stderr, calls: made, ssh: made.filter(c => c.startsWith('ssh ')) };
   };
   /** A PC's staged run of HEAD on the "server" (app/staged/<commit>): the commit's files, a build and its record. */
-  const stage = ({ build = 'built', jobs = 'check=pass,server=pass,frontend=pass,build=pass', commit } = {}) => {
+  const stage = ({ build = 'built', jobs = 'check=pass,server=pass,frontend=pass,build=pass', slow = SLOW_PASS, commit } = {}) => {
     const head = sh('git rev-parse HEAD');
     const staged = join(app, 'staged', head);
     mkdirSync(join(staged, 'web'), { recursive: true });
     sh(`git archive HEAD -- server docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier | tar -xf - -C ${JSON.stringify(staged)}`);
     writeFileSync(join(staged, 'web', 'index.html'), `<p>${build}</p>\n`);
     writeFileSync(join(staged, 'server', 'instructions-history.json'), '[]\n');
-    const r = spawnSync(process.execPath, [join(repo, 'scripts', 'deploy-record.mjs'), 'write', staged, '--commit', commit ?? head, '--tree', sh('git rev-parse "HEAD^{tree}"'), '--jobs', jobs], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [join(repo, 'scripts', 'deploy-record.mjs'), 'write', staged, '--commit', commit ?? head, '--tree', sh('git rev-parse "HEAD^{tree}"'), '--jobs', jobs, '--slow', slow], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
     return staged;
   };

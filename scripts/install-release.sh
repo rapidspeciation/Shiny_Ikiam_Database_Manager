@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installs an uploaded release on claudeclaw (scripts/deploy.sh runs it over one ssh, or locally there):
 #   bash <app>/releases/<release>/scripts/install-release.sh <release> <commit>
-# 1. the release's test record (.deploy-record.json, scripts/deploy-record.mjs): a pass of every job for exactly
+# 1. the release's test record (.deploy-record.json, scripts/deploy-record.mjs): a pass of every job (the slow suite:
+#    a pass, or its inputs unchanged since its last green run) for exactly
 #    <commit>, and the built frontend and every file as tested; otherwise nothing changes;
 # 2. side by side, each a no-op when its input did not change: the Rename Photos app (keyed by rename-app.commit),
 #    the Wikiloc worker (install-worker.sh's own content hash), the offline identifier parts (--if-needed), old

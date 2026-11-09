@@ -4,13 +4,16 @@
 // its record is a pass for exactly the commit being installed and the files match the record's hashes
 // (scripts/install-release.sh).
 //   node scripts/deploy-record.mjs write <release dir> --commit <sha> --tree <tree> --jobs check=pass,server=pass,...
-//        [--source pc|claudeclaw-local]
+//        --slow '<scripts/test-slow.mjs --result JSON>' [--source pc|claudeclaw-local]
 //   node scripts/deploy-record.mjs verify <release dir> --commit <sha> [--tree <tree>]
 //   node scripts/deploy-record.mjs hash <release dir>     (prints both hashes)
 // `artifact` is the built part (web/, the frontend built by the run, and server/instructions-history.json); `release`
 // is every file shipped (the commit's files and the built part). Both are the sha256 of a sorted list of
 // "<kind> <sha256 or link target> <x or -> <path>" lines. The links the install adds (rename-app, photo-reader) and the
 // record itself are not part of them.
+// The slow suite (scripts/test-slow.mjs --if-changed) is the job `slow`: "pass" when it ran and passed, "unchanged" when
+// its inputs were byte for byte those of its last green run on that machine, so it was not run; `slowSuite` says which
+// inputs (their hash) and when they last passed.
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,6 +22,9 @@ import { pathToFileURL } from 'node:url';
 export const RECORD = '.deploy-record.json';
 export const BUILT = ['web', 'server/instructions-history.json'];
 export const JOBS = ['check', 'server', 'frontend', 'build'];
+/** What the slow suite's job may be in a record that installs: it ran and passed, or its inputs were as when it last did. */
+export const SLOW_OK = ['pass', 'unchanged'];
+const HASH = /^[0-9a-f]{64}$/;
 const ADDED_AT_INSTALL = new Set([RECORD, 'rename-app', 'photo-reader']);
 
 function sha256File(path) {
@@ -55,9 +61,11 @@ export function hashRelease(dir) {
 }
 
 /** Writes the record of a passing run into the release folder. */
-export function writeRecord(dir, { commit, tree, jobs, source = 'pc', now = new Date() }) {
+export function writeRecord(dir, { commit, tree, jobs, slow, source = 'pc', now = new Date() }) {
   if (!/^[0-9a-f]{40}$/.test(commit ?? '')) throw new Error(`Not a commit: ${commit}`);
   if (!/^[0-9a-f]{40}$/.test(tree ?? '')) throw new Error(`Not a tree: ${tree}`);
+  if (!SLOW_OK.includes(slow?.slow) || !HASH.test(slow?.inputs ?? ''))
+    throw new Error(`No result of the slow suite (scripts/test-slow.mjs --result): ${JSON.stringify(slow)}`);
   const { artifact, release, files } = hashRelease(dir);
   const record = {
     version: 1,
@@ -67,7 +75,8 @@ export function writeRecord(dir, { commit, tree, jobs, source = 'pc', now = new 
     node: process.version,
     platform: `${process.platform}-${process.arch}`,
     testedAt: now.toISOString(),
-    jobs,
+    jobs: { ...jobs, slow: slow.slow },
+    slowSuite: { ran: slow.slow === 'pass', inputs: slow.inputs, lastGreenAt: slow.lastGreenAt ?? null },
     artifact: { paths: BUILT, sha256: artifact },
     release: { sha256: release, files },
   };
@@ -91,6 +100,7 @@ export function verifyRelease(dir, { commit, tree } = {}) {
   if (record.commit !== commit) throw new Error(`The record is for commit ${record.commit}, not ${commit}`);
   if (tree && record.tree !== tree) throw new Error(`The record is for tree ${record.tree}, not ${tree}`);
   const failed = JOBS.filter(job => record.jobs?.[job] !== 'pass');
+  if (!SLOW_OK.includes(record.jobs?.slow) || !HASH.test(record.slowSuite?.inputs ?? '')) failed.push('slow');
   if (failed.length) throw new Error(`The record has no pass for: ${failed.join(', ')}`);
   const now = hashRelease(dir);
   if (now.artifact !== record.artifact?.sha256)
@@ -116,11 +126,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (!dir) throw new Error('usage: deploy-record.mjs write|verify|hash <release dir> [options]');
     if (command === 'write') {
       const jobs = Object.fromEntries(String(opts.jobs ?? '').split(',').filter(Boolean).map(j => j.split('=')));
-      const r = writeRecord(dir, { commit: opts.commit, tree: opts.tree, jobs, source: opts.source });
-      console.log(`Test record: ${r.commit.slice(0, 8)}, ${Object.entries(r.jobs).map(([k, v]) => `${k} ${v}`).join(', ')}, frontend ${r.artifact.sha256.slice(0, 12)}`);
+      let slow;
+      try {
+        slow = JSON.parse(opts.slow ?? '');
+      } catch {
+        slow = opts.slow;
+      }
+      const r = writeRecord(dir, { commit: opts.commit, tree: opts.tree, jobs, slow, source: opts.source });
+      console.log(`Test record: ${r.commit.slice(0, 8)}, ${Object.entries(r.jobs).map(([k, v]) => `${k} ${v}`).join(', ')} (slow suite inputs ${r.slowSuite.inputs.slice(0, 12)}), frontend ${r.artifact.sha256.slice(0, 12)}`);
     } else if (command === 'verify') {
       const r = verifyRelease(dir, { commit: opts.commit, tree: opts.tree });
-      console.log(`Test record ok: ${r.commit.slice(0, 8)} passed on ${r.source} (${r.node}, ${r.testedAt}), frontend ${r.artifact.sha256.slice(0, 12)}, ${r.release.files} files as tested.`);
+      console.log(`Test record ok: ${r.commit.slice(0, 8)} passed on ${r.source} (${r.node}, ${r.testedAt}), frontend ${r.artifact.sha256.slice(0, 12)}, ${r.release.files} files as tested; slow suite ${r.slowSuite.ran ? 'ran' : `unchanged since its last green run (${r.slowSuite.lastGreenAt})`}.`);
     } else if (command === 'hash') console.log(JSON.stringify(hashRelease(dir)));
     else throw new Error(`Unknown command ${command}`);
   } catch (e) {

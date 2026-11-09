@@ -91,21 +91,27 @@ fi
 # deployed only if they all pass. It also writes server/instructions-history.json (the AI instructions
 # page's history: the release has no .git); the types are checked beside it: vite only. The server tests run with
 # the guard that refuses any model CLI, AI host or T3 (tests/helpers/no-ai.mjs, loaded by scripts/test-server.mjs; the
-# frontend's is in its setupFiles).
+# frontend's is in its setupFiles). Beside them the slow suite (the real reads of the rack photo,
+# scripts/test-slow.mjs): only when one of its inputs differs, byte for byte, from its last green run on this machine;
+# the record says whether it ran ("pass") or was not needed ("unchanged"), with its inputs' hash.
 logs="$(mktemp -d)"
-# --- the four test jobs (one block) ---
+# --- the test jobs (one block) ---
 nice -n 5 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
 nice -n 10 node scripts/test-server.mjs >"$logs/server" 2>&1 & server=$!
 NO_COLOR=1 nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
 nice -n 10 bash -c 'node scripts/instructions-history.mjs && cd frontend && npx vite build' >"$logs/build" 2>&1 & build=$!
-# --- end of the four test jobs ---
+nice -n 10 node scripts/test-slow.mjs --if-changed --result "$logs/slow.json" >"$logs/slow" 2>&1 & slow=$!
+# --- end of the test jobs ---
 failed=0
 jobs_result=""
-for job in check:$check server:$server frontend:$frontend build:$build; do
+for job in check:$check server:$server frontend:$frontend build:$build slow:$slow; do
   if ! wait "${job#*:}"; then failed=1; echo "== ${job%%:*} failed:" >&2; tail -n 80 "$logs/${job%%:*}" >&2; fi
-  jobs_result="$jobs_result${jobs_result:+,}${job%%:*}=pass"
+  [ "${job%%:*}" = slow ] || jobs_result="$jobs_result${jobs_result:+,}${job%%:*}=pass"
 done
-grep -h -E '^ℹ (pass|fail) |Tests +[0-9]|^Type checked|^Instructions history|built in' "$logs"/* || true
+# The slow suite's result for the record: {"slow":"pass"|"unchanged","inputs":...}.
+slow_result="$(cat "$logs/slow.json" 2>/dev/null || true)"
+[ "$failed" = 1 ] || [ -n "$slow_result" ] || { failed=1; echo "== slow: no result from scripts/test-slow.mjs" >&2; }
+grep -h -E '^ℹ (pass|fail) |Tests +[0-9]|^Type checked|^Instructions history|built in|^Slow tests' "$logs"/* || true
 rm -rf "$logs"
 [ "$failed" = 0 ] || { echo "Checks failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
 # The run tested exactly HEAD: nothing may have changed meanwhile.
@@ -153,7 +159,7 @@ if [ -n "$local_install" ]; then
     echo "DEPLOY_LOCAL_TESTS=1: the full tests here, at low priority."
     run_tests
     assemble "$dir" .
-    node scripts/deploy-record.mjs write "$dir" --commit "$commit" --tree "$tree" --jobs "$jobs_result" --source claudeclaw-local
+    node scripts/deploy-record.mjs write "$dir" --commit "$commit" --tree "$tree" --jobs "$jobs_result" --slow "$slow_result" --source claudeclaw-local
   else
     echo "No passing PC test run of $commit here ($staged): nothing was installed." >&2
     echo "On the PC: pull this commit, then scripts/deploy.sh --stage (it tests, builds and uploads; it installs nothing), and run this again." >&2
@@ -175,7 +181,7 @@ ssh_opts="-o ControlMaster=auto -o ControlPath=$cache/ssh-%C -o ControlPersist=6
 # shellcheck disable=SC2086
 trap 'rm -rf -- "$stage"; ssh $ssh_opts -O exit "$host" 2>/dev/null || true' EXIT
 assemble "$stage" .
-node scripts/deploy-record.mjs write "$stage" --commit "$commit" --tree "$tree" --jobs "$jobs_result" --source pc
+node scripts/deploy-record.mjs write "$stage" --commit "$commit" --tree "$tree" --jobs "$jobs_result" --slow "$slow_result" --source pc
 if [ -n "$stage_only" ]; then dest="$app/staged/$commit"; fresh=""; else dest="$app/releases/$release"; fresh="test ! -e '$dest' && "; fi
 # Only what changed since the live release travels: the rest is hard-linked from it (rsync --link-dest).
 s=$(ms)

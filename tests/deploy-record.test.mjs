@@ -14,6 +14,7 @@ import { deployFixture } from './helpers/deploy-fixture.mjs';
 const COMMIT = '1'.repeat(40);
 const TREE = '2'.repeat(40);
 const PASS = { check: 'pass', server: 'pass', frontend: 'pass', build: 'pass' };
+const SLOW = { slow: 'pass', inputs: '5'.repeat(64), lastGreenAt: '2026-11-09T00:00:00.000Z' };
 
 function release() {
   const dir = mkdtempSync(join(tmpdir(), 'deploy-record-'));
@@ -25,7 +26,7 @@ function release() {
 test('deploy record: a pass for the commit, its build and files as tested: verified', () => {
   const dir = release();
   try {
-    const written = writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS });
+    const written = writeRecord(dir, { commit: COMMIT, tree: TREE, slow: SLOW, jobs: PASS });
     assert.equal(written.node, process.version);
     assert.equal(written.release.files, 5);
     const r = verifyRelease(dir, { commit: COMMIT, tree: TREE });
@@ -42,7 +43,7 @@ test('deploy record: another commit or tree, a job without a pass, no record, a 
   const dir = release();
   try {
     assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /No readable test record/);
-    writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS });
+    writeRecord(dir, { commit: COMMIT, tree: TREE, slow: SLOW, jobs: PASS });
     assert.throws(() => verifyRelease(dir, { commit: '3'.repeat(40) }), /record is for commit 1{40}, not 3{40}/);
     assert.throws(() => verifyRelease(dir, { commit: COMMIT, tree: '4'.repeat(40) }), /record is for tree/);
     assert.throws(() => verifyRelease(dir, {}), /commit to install is not given/);
@@ -56,12 +57,43 @@ test('deploy record: another commit or tree, a job without a pass, no record, a 
     writeFileSync(join(dir, 'server', 'extra.mjs'), 'not tested');
     assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /release files differ/);
     rmSync(join(dir, 'server', 'extra.mjs'));
-    writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: { ...PASS, server: 'fail' } });
+    writeRecord(dir, { commit: COMMIT, tree: TREE, slow: SLOW, jobs: { ...PASS, server: 'fail' } });
     assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /no pass for: server/);
-    writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: { check: 'pass' } });
+    writeRecord(dir, { commit: COMMIT, tree: TREE, slow: SLOW, jobs: { check: 'pass' } });
     assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /no pass for: server, frontend, build/);
     rmSync(join(dir, 'web'), { recursive: true });
-    assert.throws(() => writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS }), /built web is missing/);
+    assert.throws(() => writeRecord(dir, { commit: COMMIT, tree: TREE, slow: SLOW, jobs: PASS }), /built web is missing/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('deploy record: the slow suite ran, or was not needed (its inputs as at its last green run); anything else is refused', () => {
+  const dir = release();
+  const edited = change => {
+    const path = join(dir, '.deploy-record.json');
+    const record = JSON.parse(readFileSync(path, 'utf8'));
+    change(record);
+    writeFileSync(path, JSON.stringify(record));
+  };
+  try {
+    const unchanged = writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS, slow: { ...SLOW, slow: 'unchanged' } });
+    assert.equal(unchanged.jobs.slow, 'unchanged');
+    assert.equal(unchanged.slowSuite.ran, false);
+    assert.equal(unchanged.slowSuite.inputs, SLOW.inputs);
+    verifyRelease(dir, { commit: COMMIT });
+    // No result, a failed or unknown one, or one without its inputs: no record is written.
+    for (const slow of [undefined, { ...SLOW, slow: 'fail' }, { ...SLOW, slow: 'skipped' }, { slow: 'unchanged' }, { ...SLOW, inputs: 'abc' }])
+      assert.throws(() => writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS, slow }), /No result of the slow suite/, JSON.stringify(slow));
+    // A record changed afterwards: refused.
+    edited(r => delete r.jobs.slow);
+    assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /no pass for: slow/);
+    writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS, slow: SLOW });
+    edited(r => (r.jobs.slow = 'fail'));
+    assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /no pass for: slow/);
+    writeRecord(dir, { commit: COMMIT, tree: TREE, jobs: PASS, slow: SLOW });
+    edited(r => delete r.slowSuite);
+    assert.throws(() => verifyRelease(dir, { commit: COMMIT }), /no pass for: slow/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -173,6 +205,9 @@ test('deploy.sh on claudeclaw with DEPLOY_LOCAL_TESTS=1: the full tests here, th
     const [r] = releasesOf(f);
     const record = JSON.parse(readFileSync(join(f.app, 'releases', r, '.deploy-record.json'), 'utf8'));
     assert.equal(record.source, 'claudeclaw-local');
+    assert.ok(run.calls.some(c => c.startsWith('node scripts/test-slow.mjs --if-changed --result ')), 'the slow suite ran (if changed)');
+    assert.equal(record.jobs.slow, 'pass');
+    assert.deepEqual(record.slowSuite, { ran: true, inputs: '5'.repeat(64), lastGreenAt: '2026-11-09T00:00:00.000Z' });
     assert.equal(record.commit, f.sh('git rev-parse HEAD'));
     assert.equal(readFileSync(join(f.app, 'releases', r, 'web', 'index.html'), 'utf8'), '<p>local build</p>\n');
     // A failed job installs nothing.
