@@ -104,7 +104,9 @@ const items = computed(() => {
   return list
 })
 const detached = computed(() => open.value.filter(t => !placed.has(t.id)))
-const layout = computed(() => stackCards(items.value.map(i => ({ id: i.id, top: i.top, height: heights[i.id] ?? 120 })), active.value))
+/** Cards start below the margin's «Comentarios · n» line. */
+const FIRST = 32
+const layout = computed(() => stackCards(items.value.map(i => ({ id: i.id, top: Math.max(FIRST, i.top), height: heights[i.id] ?? 120 })), active.value))
 const marginHeight = computed(() => Math.max(0, ...items.value.map(i => (layout.value[i.id] ?? 0) + (heights[i.id] ?? 120))))
 const listMode = ref(false)
 const threadOf = (id: string) => mine.value.threads.find(t => t.id === id)!
@@ -243,7 +245,7 @@ defineExpose({ openList: () => (wide.value ? (listMode.value = true) : (sheet.mo
         </div>
       </template>
       <template v-else>
-        <div v-for="i in items" :key="i.id" class="absolute inset-x-0 transition-[top] duration-150" :style="{ top: `${(layout[i.id] ?? 0) + 32}px` }">
+        <div v-for="i in items" :key="i.id" class="absolute inset-x-0 transition-[top] duration-150" :style="{ top: `${Math.max(FIRST, layout[i.id] ?? 0)}px` }">
           <DocThreadCard v-if="i.kind === 'thread'" :thread="threadOf(i.id)" :active="active === i.id" @activate="activate(i.id)" @quote="activate(i.id, { scroll: true })" />
           <DocChangeCard
             v-else-if="i.kind === 'change'"

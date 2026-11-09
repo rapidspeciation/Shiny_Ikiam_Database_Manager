@@ -143,8 +143,11 @@ export function forEntry(state: DocReviewState | null, id: string) {
 }
 /** The quiet count beside a file in the list: its open threads and pending changes. */
 export const countFor = (state: DocReviewState | null, id: string) => sourcesOf(id).reduce((n, p) => n + (state?.counts?.[p] ?? 0), 0)
-/** Open threads across every file (the bar's «Pedir a Claude · n»). */
-export const openCount = (state: DocReviewState | null) => (state?.threads ?? []).filter(t => t.status === 'open').length
+/** Open threads no pending change answers yet, across every file (the bar's «Pedir a Claude · n»). */
+export function openCount(state: DocReviewState | null) {
+  const covered = new Set((state?.changes ?? []).filter(c => c.status === 'pending').flatMap(c => c.threadIds))
+  return (state?.threads ?? []).filter(t => t.status === 'open' && !covered.has(t.id)).length
+}
 
 /** A change still to decide on, or one decided in the last day (its card stays in the margin for Deshacer). */
 export function shownInMargin(c: DocChange, now = Date.now()) {

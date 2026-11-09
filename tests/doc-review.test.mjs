@@ -179,8 +179,10 @@ test('MCP: doc_threads gives the section source; propose refuses a before that i
   assert.match((await d.runTool('propose_doc_change', { path: 'server/x.md', heading: '', before: 'a', after: 'b' }, { user: admin })).error, /Not an instructions file/);
   assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Nada', before: 'a', after: 'b' }, { user: admin })).error, /No section/);
 
+  assert.deepEqual(d.openThreads(), [t.id]);
   const made = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA para el sexo', after: 'Usa NOT_COLLECTED para el sexo', thread_ids: [t.id] }, { user: admin, chat: 'chat-1' });
   assert.equal(made.version, 1);
+  assert.deepEqual(d.openThreads(), [], 'a thread a pending change answers is not asked again');
   const shown = d.state(observer).changes[0];
   assert.equal(shown.status, 'pending');
   assert.match(shown.diff, /^@@/);

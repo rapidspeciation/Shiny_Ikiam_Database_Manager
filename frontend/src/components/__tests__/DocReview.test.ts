@@ -137,6 +137,12 @@ describe('DocChangeCard', () => {
     await flush()
     expect(posts()[1].url).toBe('api/doc-review/changes/s1/discard')
   })
+  it('a click anywhere on the card, its diff included, makes it the active one', async () => {
+    let activated = 0
+    const host = mount(DocChangeCard, { change: change(), admin: true, onActivate: () => activated++ })
+    host.querySelector('del')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(activated).toBe(1)
+  })
   it('for others: Comentar, no Aplicar; a comment for admins can ask for a new version', async () => {
     let host = mount(DocChangeCard, { change: change(), admin: false, active: true })
     expect(button(host, 'Aplicar')).toBeUndefined()

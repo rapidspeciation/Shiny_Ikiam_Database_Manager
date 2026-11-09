@@ -916,7 +916,11 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
   function recordAsk(user, chat, kind, { threads = [], changes = [] } = {}) {
     db.prepare('INSERT INTO doc_asks (id, asked_by, asked_at, chat_id, kind, thread_ids, change_ids) VALUES (?,?,?,?,?,?,?)').run(randomUUID(), user.id, now(), chat, kind, JSON.stringify(threads), JSON.stringify(changes));
   }
-  const openThreads = () => db.prepare("SELECT id FROM doc_threads WHERE status = 'open'").all().map(t => t.id);
+  /** Open threads no pending change answers yet (what «Pedir a Claude» sends). */
+  function openThreads() {
+    const covered = new Set(db.prepare("SELECT thread_ids FROM doc_changes WHERE status = 'pending'").all().flatMap(c => parse(c.thread_ids, [])));
+    return db.prepare("SELECT id FROM doc_threads WHERE status = 'open'").all().map(t => t.id).filter(id => !covered.has(id));
+  }
 
   // ---------------------------------------------------------- MCP
   function toolThreads(args, user) {

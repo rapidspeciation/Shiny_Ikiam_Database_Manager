@@ -83,7 +83,7 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
             </span>
           </div>
           <p v-if="c.deleted" class="text-stone-400 italic">{{ $t('Comentario borrado') }}</p>
-          <form v-else-if="editing === c.id" class="mt-1" @submit.prevent="saveEdit(c)" @click.stop>
+          <form v-else-if="editing === c.id" class="mt-1" @submit.prevent="saveEdit(c)">
             <textarea v-model="editText" rows="3" class="doc-box" />
             <div class="mt-1 flex justify-end gap-2">
               <button type="button" class="btn-ghost px-2 py-0.5 text-xs" @click="editing = null">{{ $t('Cancelar') }}</button>
@@ -97,7 +97,7 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
     <p v-if="resolved" class="mt-2 text-xs text-stone-500">
       {{ thread.resolvedBy ? $t('Resuelto por {name}', { name: thread.resolvedBy }) : $t('Resuelto') }}
     </p>
-    <form v-if="active && !resolved" class="mt-2" @submit.prevent="reply" @click.stop>
+    <form v-if="active && !resolved" class="mt-2" @submit.prevent="reply">
       <textarea
         ref="box"
         v-model="draft"
@@ -112,7 +112,7 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
         <button class="btn-primary px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Responder') }}</button>
       </div>
     </form>
-    <div v-else-if="active && resolved" class="mt-2 flex justify-end" @click.stop>
+    <div v-else-if="active && resolved" class="mt-2 flex justify-end">
       <button type="button" class="btn-ghost px-2 py-0.5 text-xs" :disabled="busy" @click="setStatus('reopen')">{{ $t('Reabrir') }}</button>
     </div>
   </article>

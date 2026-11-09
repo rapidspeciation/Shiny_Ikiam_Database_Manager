@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { clearMarks, countFor, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
+import { clearMarks, countFor, openCount, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -85,6 +85,8 @@ describe('doc review: the margin', () => {
   it('counts per file (the brief counts its voice), and which changes stay in the margin', () => {
     const state = { counts: { 'assistant/AGENTS.md': 1, 'assistant/voice/app.md': 2 }, threads: [], changes: [{ path: 'assistant/voice/app.md' }] } as unknown as DocReviewState
     expect(countFor(state, 'assistant/AGENTS.md')).toBe(3)
+    const asked = { threads: [{ id: 'a', status: 'open' }, { id: 'b', status: 'open' }, { id: 'c', status: 'resolved' }], changes: [{ status: 'pending', threadIds: ['a'] }] } as unknown as DocReviewState
+    expect(openCount(asked)).toBe(1)
     expect(forEntry(state, 'assistant/AGENTS.md').changes.length).toBe(1)
     const now = Date.parse('2026-11-08T12:00:00Z')
     const c = (over: Partial<DocChange>) => ({ status: 'pending', lost: false, revision: null, decidedAt: null, ...over }) as DocChange

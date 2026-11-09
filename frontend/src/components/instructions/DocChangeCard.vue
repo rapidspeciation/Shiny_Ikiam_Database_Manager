@@ -100,7 +100,7 @@ const askAgain = (why: 'comment' | 'stale') =>
   >
     <header class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
       <span class="doc-claude-tag">Claude</span>
-      <button type="button" class="min-w-0 truncate text-left font-medium text-stone-800 hover:underline" @click.stop="emit('section')">
+      <button type="button" class="min-w-0 truncate text-left font-medium text-stone-800 hover:underline" @click="emit('section')">
         § {{ change.heading || $t('Inicio') }}
       </button>
       <span v-if="change.path.includes('/voice/')" class="font-mono text-xs text-stone-500">{{ file }}</span>
@@ -127,7 +127,7 @@ const askAgain = (why: 'comment' | 'stale') =>
     </p>
     <p v-else-if="change.status === 'undone'" class="mt-1 text-xs text-stone-500">{{ $t('Deshecho') }}</p>
 
-    <div class="mt-2 inline-flex rounded-md border border-stone-300 p-0.5 text-xs" role="tablist" @click.stop>
+    <div class="mt-2 inline-flex rounded-md border border-stone-300 p-0.5 text-xs" role="tablist">
       <button role="tab" type="button" class="rounded px-2 py-0.5" :class="view === 'diff' ? 'bg-stone-200 text-stone-900' : 'text-stone-600'" :aria-selected="view === 'diff'" @click="view = 'diff'">
         {{ $t('Cambios') }}
       </button>
@@ -135,7 +135,7 @@ const askAgain = (why: 'comment' | 'stale') =>
         {{ $t('Después') }}
       </button>
     </div>
-    <div class="mt-2 max-h-80 overflow-y-auto" @click.stop>
+    <div class="mt-2 max-h-80 overflow-y-auto">
       <DiffView v-if="view === 'diff' && diff" :diff="diff" />
       <!-- renderMarkdown escapes every text. -->
       <div v-else class="md md-small rounded-md border border-stone-200 px-3 py-2" v-html="after" />
@@ -157,7 +157,7 @@ const askAgain = (why: 'comment' | 'stale') =>
       </li>
     </ol>
 
-    <form v-if="active && pending" class="mt-2" @submit.prevent="comment" @click.stop>
+    <form v-if="active && pending" class="mt-2" @submit.prevent="comment">
       <textarea v-model="draft" rows="2" class="doc-box" :placeholder="$t('Comentar el cambio')" />
       <div class="mt-1 flex flex-wrap justify-end gap-2">
         <button class="btn px-2 py-0.5 text-xs" :disabled="busy || !draft.trim()">{{ $t('Comentar') }}</button>
@@ -167,7 +167,7 @@ const askAgain = (why: 'comment' | 'stale') =>
       </div>
     </form>
 
-    <div v-if="admin" class="mt-2 flex flex-wrap items-center justify-end gap-2" @click.stop>
+    <div v-if="admin" class="mt-2 flex flex-wrap items-center justify-end gap-2">
       <template v-if="pending && change.stale">
         <button type="button" class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="discard">{{ $t('Descartar') }}</button>
         <button type="button" class="btn-primary px-2 py-0.5 text-xs" :disabled="busy" @click="askAgain('stale')">{{ $t('Pedir a Claude que la rehaga') }}</button>
