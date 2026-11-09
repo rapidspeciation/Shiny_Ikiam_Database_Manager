@@ -29,6 +29,25 @@ const SHIMS = join(HERE, 'no-ai-bin');
 const PRELOAD = join(HERE, 'no-ai.mjs');
 // Python processes a test starts load the Python guard (no_ai_guard.py) through this folder's sitecustomize.py.
 const PYDIR = join(HERE, 'no-ai-py');
+const PYBOOT = join(PYDIR, 'boot.py');
+
+/**
+ * `python -I` / `-E` ignores PYTHONPATH: its args with boot.py put before the script (-c, -m or a file), which loads the
+ * Python guard and then runs the script as given. null: not such a call (or a script read from stdin).
+ */
+export function pythonBoot(file, args) {
+  if (!/^python[0-9.]*$/.test(basename(String(file))) || !Array.isArray(args) || args.includes(PYBOOT)) return null;
+  let isolated = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = String(args[i]);
+    if (a === '-c' || a === '-m') return isolated ? [...args.slice(0, i), PYBOOT, a, ...args.slice(i + 1)] : null;
+    if (a === '-' || a === '--') return isolated && a === '--' && i + 1 < args.length ? [...args.slice(0, i), PYBOOT, '--file', ...args.slice(i + 1)] : null;
+    if (!a.startsWith('-')) return isolated ? [...args.slice(0, i), PYBOOT, '--file', ...args.slice(i)] : null;
+    if (a === '-W' || a === '-X') i++;
+    else if (/^-(?![WX])[A-Za-z]+$/.test(a) && /[IE]/.test(a)) isolated = true;
+  }
+  return null;
+}
 const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'env'];
 
 export const CLIS = ['claude', 'codex', 't3', 'opencode', 'gemini', 'ollama', 'aider', 'cursor-agent', 'qwen', 'crush', 'goose', 'amp', 'llm', 'deepseek', 'wacli', 'ssh'];
@@ -203,6 +222,9 @@ export function installNoAiGuard({ owner = false } = {}) {
         rest = [...rest];
         rest[argIndex === 0 ? 1 : 0] = opts;
       }
+      // python -I / -E: the guard through boot.py (PYTHONPATH does not reach it).
+      const boot = kind === 'file' && argIndex === 0 && pythonBoot(file, rest[0]);
+      if (boot) rest = [boot, ...rest.slice(1)];
       // A shell (or env) started directly: its script and arguments are checked like a shell line.
       if (kind === 'file' && !opts.shell && SHELLS.includes(basename(String(file))) && argIndex === 0) {
         const line = rest[0].map(String).join(' ');
@@ -268,10 +290,25 @@ export function installNoAiGuard({ owner = false } = {}) {
     constructor(filename, options = {}) {
       const name = String(filename);
       const nonFile = filename instanceof URL ? filename.protocol !== 'file:' : /^[a-z][a-z0-9+.-]*:/i.test(name) && !/^file:/i.test(name);
-      // Passed through as given: eval workers (the app has none), CommonJS files, SHARE_ENV, data: and other URLs.
+      // Eval workers, CommonJS files, SHARE_ENV, data: and other URLs start as given, with the guard preloaded (execArgv:
+      // when it was loaded by vitest's setupFiles, the parent's execArgv has no --import) and, for an env object, its settings.
       if (options?.eval || options?.env === SHARE_ENV || nonFile || commonJs(filename instanceof URL ? fileURLToPath(filename) : /^file:/i.test(name) ? fileURLToPath(name) : resolve(name))) {
-        super(filename, options);
-        return;
+        const env = options?.env && typeof options.env === 'object' ? guardEnv(options.env) : options?.env;
+        const given = options?.execArgv ?? process.execArgv;
+        const opts = { ...options, ...(env ? { env } : {}) };
+        if (given.some(a => String(a).includes(PRELOAD))) {
+          super(filename, opts); // the preload is in the execArgv the worker gets already (node --test --import)
+          return;
+        }
+        let worker;
+        try {
+          worker = new Worker(filename, { ...opts, execArgv: [...given, `--import=${PRELOAD}`] });
+        } catch (error) {
+          // A parent flag a worker refuses (ERR_WORKER_INVALID_EXEC_ARGV): the worker's own flags and the preload.
+          if (error?.code !== 'ERR_WORKER_INVALID_EXEC_ARGV') throw error;
+          worker = new Worker(filename, { ...opts, execArgv: [...(options?.execArgv ?? []), `--import=${PRELOAD}`] });
+        }
+        return worker;
       }
       const url = filename instanceof URL || /^file:/.test(String(filename)) ? String(filename) : pathToFileURL(resolve(String(filename))).href;
       const env = options?.env && typeof options.env === 'object' ? guardEnv(options.env) : options?.env;

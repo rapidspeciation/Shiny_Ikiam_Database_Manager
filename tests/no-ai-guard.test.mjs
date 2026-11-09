@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { execFile, execFileSync, execSync, fork, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -153,4 +154,48 @@ test('CommonJS workers, SHARE_ENV workers and data: URL workers run as given', {
   assert.equal(process.env.NOAI_GUARD_LOGS, logs);
   const data = new URL(`data:text/javascript,${encodeURIComponent("import { parentPort } from 'node:worker_threads'; parentPort.postMessage('data ok')")}`);
   assert.equal(await message(new Worker(data)), 'data ok');
+});
+
+// Round 5 (review 9 Nov): python -I / -E children (boot.py), CommonJS and SHARE_ENV workers when execArgv has no --import.
+test('python -I and -E children get the Python guard through boot.py and run as given', { skip: off }, async () => {
+  const server = net.createServer(socket => { hits++; socket.destroy(); });
+  let hits = 0;
+  await new Promise(r => server.listen(3774, '127.0.0.77', r));
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'no-ai-pyI-'));
+    writeFileSync(join(dir, 'probe.py'), `import socket, sys
+try:
+    socket.create_connection(("127.0.0.77", 3774), timeout=2); r = "CONNECTED"
+except OSError:
+    r = "REFUSED"
+print(r, "no_ai_guard" in sys.modules, __name__, sys.argv[1:], sys.flags.isolated)`);
+    const out = execFileSync('python3', ['-I', '-B', join(dir, 'probe.py'), 'a', 'b'], { encoding: 'utf8' }).trim();
+    assert.equal(out, "REFUSED True __main__ ['a', 'b'] 1");
+    const e = execFileSync('python3', ['-E', '-c', "import sys, urllib.request\ntry: urllib.request.urlopen('http://127.0.0.77:3774/', timeout=2)\nexcept OSError: pass\nprint(sys.argv, 'no_ai_guard' in sys.modules)", 'x'], { encoding: 'utf8' }).trim();
+    assert.equal(e, "['-c', 'x'] True");
+  } finally {
+    server.close();
+  }
+  assert.equal(hits, 0, 'the listener on the T3 port got no connection');
+  const lines = guard.take();
+  assert.equal(lines.length, 2, lines.join('\n'));
+  for (const line of lines) assert.match(line, /T3 port 127\.0\.0\.77:3774/);
+});
+
+test('CommonJS and SHARE_ENV workers are guarded when the guard came in by import (as vitest setupFiles)', { skip: off }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'no-ai-wk-'));
+  writeFileSync(join(dir, 'w.cjs'), "const net = require('node:net'); const { parentPort } = require('node:worker_threads'); net.connect(3774, '127.0.0.77').on('error', e => parentPort.postMessage([e.code, !!globalThis[Symbol.for('ithomiini.noAiGuard')], require.main === module]))");
+  writeFileSync(join(dir, 's.mjs'), "import net from 'node:net'; import { parentPort } from 'node:worker_threads'; net.connect(3774, '127.0.0.77').on('error', e => parentPort.postMessage([e.code, !!globalThis[Symbol.for('ithomiini.noAiGuard')]]))");
+  writeFileSync(join(dir, 'main.mjs'), `await import(${JSON.stringify(new URL('./helpers/no-ai.mjs', import.meta.url).href)});
+const { SHARE_ENV, Worker } = await import('node:worker_threads');
+const run = (f, o) => new Promise(r => new Worker(f, o).once('message', r));
+const logs = process.env.NOAI_GUARD_LOGS;
+const out = [process.execArgv.length, await run(${JSON.stringify(join(dir, 'w.cjs'))}, { env: { PATH: '/usr/bin:/bin' } }), await run(${JSON.stringify(join(dir, 's.mjs'))}, { env: SHARE_ENV }), process.env.NOAI_GUARD_LOGS === logs];
+process.stdout.write(JSON.stringify(out)); process.exit(0);`);
+  // No NODE_OPTIONS preload: the guard is loaded only by the import in main.mjs, its execArgv has no --import.
+  const env = { ...process.env, NODE_OPTIONS: '' };
+  const out = JSON.parse(spawnSync(process.execPath, [join(dir, 'main.mjs')], { env: { ...env }, encoding: 'utf8' }).stdout);
+  assert.deepEqual(out, [0, ['ECONNREFUSED', true, true], ['ECONNREFUSED', true], true]);
+  const lines = guard.take();
+  assert.equal(lines.length, 2, lines.join('\n'));
 });
