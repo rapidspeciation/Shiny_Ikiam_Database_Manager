@@ -27,6 +27,8 @@ flock -w 900 9 || { echo "An install still runs after 15 minutes." >&2; exit 1; 
 node="$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' "$target/deploy/ithomiini.service")"
 export PATH="$(dirname "$node"):$PATH" ITHOMIINI_SHARED="$app/shared"
 if [ -f "$target/.deploy-record.json" ]; then
+  # The record's own commit: this checks the target still matches its record (no file changed, every job passed),
+  # not that it is some chosen commit.
   recorded="$(sed -n 's/^ *"commit": *"\([0-9a-f]\{40\}\)".*/\1/p' "$target/.deploy-record.json" | head -n 1)"
   if ! "$node" "$here/deploy-record.mjs" verify "$target" --commit "${recorded:-none}"; then
     echo "Not rolled back: $target does not match its test record. current is still $from." >&2

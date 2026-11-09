@@ -147,6 +147,14 @@ after_install() {
   fi
 }
 
+# A release the install refused or stopped before the switch is removed: never a rollback target, never one of the
+# releases the prune keeps. Under the install's own lock (no install runs meanwhile), and never the current release or
+# shared/previous-release (another deploy may have made it either since). Arguments: the app root, the release name.
+remove_failed='exec 9>"$1/shared/.install.lock"; flock -w 900 9 || { echo "Install lock busy: $1/releases/$2 left." >&2; exit 1; }
+  r="releases/$2"; [ "$(readlink "$1/current" 2>/dev/null)" = "$r" ] && exit 0
+  [ "$(cat "$1/shared/previous-release" 2>/dev/null)" = "$r" ] && exit 0
+  rm -rf -- "$1/$r"'
+
 if [ -n "$local_install" ]; then
   # On claudeclaw: a PC's passing run of exactly this commit (its build and record, staged/<commit>), or the full
   # tests here when asked.
@@ -169,7 +177,7 @@ if [ -n "$local_install" ]; then
     exit 1
   fi
   if ! bash "$dir/scripts/install-release.sh" "$release" "$commit"; then
-    [ -L "$app/current" ] && [ "$(readlink "$app/current")" = "releases/$release" ] || rm -rf -- "$dir"
+    bash -c "$remove_failed" _ "$app" "$release"
     exit 1
   fi
   after_install
@@ -206,8 +214,8 @@ if ! ssh $ssh_opts "$host" "env$forward bash $dest/scripts/install-release.sh $r
   # A release the install refused or stopped before the switch is removed (as on claudeclaw above): never a rollback
   # target, never one of the releases the prune keeps. One that became current stays (roll back from it).
   # shellcheck disable=SC2086
-  ssh $ssh_opts "$host" "[ \"\$(readlink '$app/current' 2>/dev/null)\" = 'releases/$release' ] || rm -rf -- '$dest'" ||
-    echo "Could not remove $host:$dest: remove it by hand unless it is current." >&2
+  ssh $ssh_opts "$host" "bash -c $(printf %q "$remove_failed") _ '$app' '$release'" ||
+    echo "Could not remove $host:$dest: remove it by hand unless it is current or shared/previous-release." >&2
   exit 1
 fi
 echo "Installed on $host in $(( $(ms) - s )) ms."

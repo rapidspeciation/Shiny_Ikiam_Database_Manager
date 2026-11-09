@@ -252,11 +252,34 @@ test('deploy.sh from a PC: a release the install refuses (changed on the way) is
     assert.equal(refused.status, 1, refused.stderr);
     assert.match(refused.stderr, /built frontend differs from the tested one/);
     assert.match(refused.stderr, /Not installed: release \S+ does not match a passing test run/);
-    assert.ok(refused.ssh.some(c => /\|\| rm -rf -- '[^']+\/app\/releases\/\d{8}T\d{6}Z'$/.test(c)), 'the removal ran');
+    assert.ok(refused.ssh.some(c => c.includes('.install.lock') && c.includes('rm -rf')), 'the removal ran, under the install lock');
     assert.deepEqual(releasesOf(f), [r1], 'the refused release is gone');
     assert.equal(current(f), `releases/${r1}`, 'current unchanged');
   } finally {
     f.close();
+  }
+});
+
+test('deploy.sh: a failed release is removed under the install lock, never when it is current or shared/previous-release', () => {
+  const src = readFileSync(join(import.meta.dirname, '..', 'scripts', 'deploy.sh'), 'utf8');
+  const snippet = src.match(/^remove_failed='([^']*)'$/m)?.[1];
+  assert.ok(snippet, 'deploy.sh defines remove_failed');
+  const app = mkdtempSync(join(tmpdir(), 'deploy-remove-'));
+  const remove = r => spawnSync('bash', ['-c', snippet, '_', app, r], { encoding: 'utf8', timeout: 30_000 });
+  try {
+    for (const r of ['A', 'B', 'C']) mkdirSync(join(app, 'releases', r), { recursive: true });
+    mkdirSync(join(app, 'shared'));
+    symlinkSync('releases/B', join(app, 'current'));
+    writeFileSync(join(app, 'shared', 'previous-release'), 'releases/A\n');
+    for (const r of ['A', 'B', 'C']) assert.equal(remove(r).status, 0);
+    assert.deepEqual(readdirSync(join(app, 'releases')).sort(), ['A', 'B'], 'only the unreferenced release went');
+    // While another install holds the lock, nothing is removed until it ends.
+    mkdirSync(join(app, 'releases', 'D'));
+    const holder = spawnSync('bash', ['-c', `exec 9>"${app}/shared/.install.lock"; flock 9; (exec 9>&-; bash -c "$0" _ "${app}" D) & sleep 0.5; echo held: $(ls "${app}/releases"); exec 9>&-; wait $!; echo rc=$? after: $(ls "${app}/releases")`, snippet], { encoding: 'utf8', timeout: 20_000 });
+    assert.match(holder.stdout, /^held: A B D$/m, 'D still there while another install holds the lock');
+    assert.match(holder.stdout, /^rc=0 after: A B$/m, 'removed once the lock is free');
+  } finally {
+    rmSync(app, { recursive: true, force: true });
   }
 });
 
