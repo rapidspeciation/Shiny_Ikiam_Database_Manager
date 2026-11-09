@@ -191,11 +191,26 @@ test("the assistant's revision racing a person's edit: neither is lost, the assi
   assert.equal(record(3).values.Sex, 'female', 'nothing written');
 });
 
+// The calls' deadline (callMs) is a setTimeout in the app's thread: mocked in the two tests that hang a call (Date
+// stays real), and moved past callMs until the call is answered, instead of waited for. The calls that must not be
+// held meanwhile cannot run out of time on a busy machine either.
+async function ticked(t, call, ms) {
+  let done = false;
+  call.then(() => (done = true), () => (done = true));
+  while (!done) {
+    t.mock.timers.tick(ms);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  return call;
+}
+
 test('a call that hangs or a worker that dies: the call is answered "call again", a new worker answers the next one', async t => {
   // callMs covers a worker's start, also on a busy machine (the call after the hang waits for a new one); no wait
   // before starting a worker again.
   const { host, rpc, call, record } = await fixture(t, { callMs: 6000, backoffMs: 0 });
-  const hung = await rpc('__hang');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const hung = await ticked(t, rpc('__hang'), 6000);
+  t.mock.timers.reset();
   assert.match(hung.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);
   const found = await call('find_records', { sheet: 'Collection_data', filters: { FieldMark_ID: 'B2' } });
@@ -222,6 +237,7 @@ test("two people's calls at once: another worker answers the second, and one cal
     .run(createHash('sha256').update('kim-token').digest('hex'), 'u1');
   // The first worker started, and busy for good with one person's call.
   await call('get_record', { id: record(2).id });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const hung = host.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: '__hang', arguments: {} } });
   // The other person's call is answered meanwhile, by another worker.
   const started = Date.now();
@@ -233,7 +249,9 @@ test("two people's calls at once: another worker answers the second, and one cal
   assert.ok(Date.now() - started < 3500, 'not held behind the hanging call');
   assert.equal(host.status().workers, '2 of 3');
   // The hanging call is answered "call again"; only its worker was replaced.
-  assert.match((await hung).body.error.message, /call again/);
+  const answered = await ticked(t, hung, 4000);
+  t.mock.timers.reset();
+  assert.match(answered.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);
   assert.ok(!(await call('get_record', { id: record(4).id })).error);
 });
