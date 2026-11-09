@@ -96,4 +96,6 @@ export default {
   "Abrir chat": "Open chat",
   "Pedir a Claude · {n}": "Ask Claude · {n}",
   "Comentarios abiertos": "Open comments",
+  "Aplicado en la app: § {heading}": "Applied in the app: § {heading}",
+  "Deshecho en la app: § {heading}": "Undone in the app: § {heading}",
 }

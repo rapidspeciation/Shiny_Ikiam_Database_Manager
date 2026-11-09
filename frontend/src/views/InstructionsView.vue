@@ -272,7 +272,7 @@ watch(
                     :aria-selected="tab === 'history'"
                     @click="setTab('history')"
                   >
-                    <History :size="13" /> {{ $t('Cambios ({n})', { n: entry.history?.length ?? 0 }) }}
+                    <History :size="13" /> {{ $t('Cambios ({n})', { n: (entry.history?.length ?? 0) + (entry.revisions?.length ?? 0) }) }}
                   </button>
                 </div>
                 <span v-if="entry.lastChanged" class="text-xs text-stone-500">
@@ -297,6 +297,22 @@ watch(
             </template>
 
             <div v-else class="mt-4">
+              <!-- Changes applied in the app, until a release has them (then they are commits below too). -->
+              <ol v-if="entry.revisions?.length" class="mb-2 space-y-2">
+                <li v-for="r in entry.revisions" :key="r.revision" class="doc-change-edge rounded-md border border-stone-200 bg-surface">
+                  <button class="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-stone-50" @click="toggle(`rev:${r.revision}`)">
+                    <component :is="opened.has(`${entry.id} rev:${r.revision}`) ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-stone-400" />
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-stone-900">{{ r.kind === 'undo' ? $t('Deshecho en la app: § {heading}', { heading: r.heading || $t('Inicio') }) : $t('Aplicado en la app: § {heading}', { heading: r.heading || $t('Inicio') }) }}</span>
+                      <span class="text-xs text-stone-500">{{ commitTime(r.date) }} · {{ r.author }}</span>
+                    </span>
+                  </button>
+                  <div v-if="opened.has(`${entry.id} rev:${r.revision}`)" class="border-t border-stone-100 p-2">
+                    <p v-if="diffs[`${entry.id} rev:${r.revision}`] === null" class="hint">{{ $t('Cargando…') }}</p>
+                    <DiffView v-else-if="typeof diffs[`${entry.id} rev:${r.revision}`] === 'string'" :diff="diffs[`${entry.id} rev:${r.revision}`] as string" />
+                  </div>
+                </li>
+              </ol>
               <p v-if="!entry.history" class="text-sm text-stone-600">
                 {{ $t('El historial de cambios no está disponible en esta instalación.') }}
               </p>
