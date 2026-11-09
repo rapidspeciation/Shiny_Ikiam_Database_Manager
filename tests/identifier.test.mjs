@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { createIdentifier } from '../server/identifier.mjs';
 
 // The AI Identifier's process (server/identifier.mjs), with a stand-in that speaks its lines
@@ -99,6 +100,32 @@ test('a photo that takes too long: the process is stopped and the call says to c
   const out = await ticked(t, identifier.identify({ path: photo('slow.jpg', 'slow') }), 2000);
   assert.match(out.error, /took more than/);
   assert.deepEqual((await identifier.identify({ path: photo('ok.jpg', 'Oleria cyrene 0.4') })).species[0], ['Oleria cyrene', 0.4]);
+});
+
+test('a photo that takes too long: its process is killed, not left running beside the next one', async t => {
+  // Each process the identifier starts, to see it end.
+  const procs = [];
+  const spawnImpl = (...a) => {
+    const p = spawn(...a);
+    procs.push(p);
+    return p;
+  };
+  const { photo, identifier } = setup(t, { firstMs: 2000, photoMs: 2000, spawnImpl });
+  t.after(() => procs.forEach(p => p.exitCode === null && p.signalCode === null && p.kill('SIGKILL')));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const out = await ticked(t, identifier.identify({ path: photo('slow.jpg', 'slow') }), 2000);
+  assert.match(out.error, /took more than/);
+  const [slow] = procs;
+  // The fake would stay up for its 60 s idle time: only the kill ends it now.
+  const ended = slow.exitCode !== null || slow.signalCode !== null ? slow.signalCode : await Promise.race([
+    new Promise(resolve => slow.once('exit', (code, signal) => resolve(signal))),
+    new Promise(resolve => setTimeout(resolve, 5000, 'still running after 5 s').unref()),
+  ]);
+  assert.equal(ended, 'SIGKILL');
+  assert.throws(() => process.kill(slow.pid, 0), { code: 'ESRCH' });
+  // The next photo: a new process.
+  assert.deepEqual((await identifier.identify({ path: photo('ok.jpg', 'Oleria cyrene 0.4') })).species[0], ['Oleria cyrene', 0.4]);
+  assert.equal(procs.length, 2);
 });
 
 test('a photo a person waits for (first) goes ahead of the queued background photos', async t => {
