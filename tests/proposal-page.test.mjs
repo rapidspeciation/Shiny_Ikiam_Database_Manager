@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
@@ -17,9 +18,9 @@ import { signIn } from './helpers/assistant.mjs';
 const d = text => parseDateText(text);
 const THREAD = '11111111-2222-4333-8444-555555555555';
 const OTHER = '99999999-2222-4333-8444-555555555555';
-// A 4×2 px photo (wider than tall).
+// A 4×2 px photo (wider than tall), its left half black and its right half white.
 const JPEG = Buffer.from(
-  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAACAAQDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDHooorhPqD/9k=',
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAACAAQBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/AP36/wCDXH/lBR+wz/3cz/62H+0FX//Z',
   'base64',
 );
 /** A JPEG's width and height (its SOF marker). */
@@ -32,6 +33,14 @@ function jpegSize(data) {
   }
   return null;
 }
+
+/** The grey level at the top left and the bottom left of a JPEG (Pillow, which makes the copies). */
+const leftEdge = data =>
+  execFileSync('python3', ['-c', 'import io,sys\nfrom PIL import Image\nim=Image.open(io.BytesIO(sys.stdin.buffer.read())).convert("L")\nprint(im.getpixel((0,0)), im.getpixel((0,im.height-1)))'], { input: data })
+    .toString()
+    .trim()
+    .split(' ')
+    .map(Number);
 
 async function setup() {
   const home = mkdtempSync(join(tmpdir(), 'ithomiini-t3-'));
@@ -175,7 +184,12 @@ test("a page's proposal shows every line in the sheet's order, with its photo, a
     assert.equal(thumb.status, 200);
     assert.equal(thumb.headers['content-type'], 'image/jpeg');
     assert.match(thumb.headers['cache-control'], /^private/);
-    if (!thumb.raw.equals(JPEG)) assert.deepEqual(jpegSize(thumb.raw), [2, 4], 'turned 90° clockwise');
+    if (!thumb.raw.equals(JPEG)) {
+      assert.deepEqual(jpegSize(thumb.raw), [2, 4], 'turned 90°');
+      // Clockwise: the black left half is now on top.
+      const [top, bottom] = leftEdge(thumb.raw);
+      assert.ok(top < 64 && bottom > 192, `turned clockwise (top ${top}, bottom ${bottom})`);
+    }
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, undefined, {}, { 'if-none-match': thumb.headers.etag })).status, 304);
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/1`, undefined, { size: 'view' })).status, 200);
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/2`)).status, 404);

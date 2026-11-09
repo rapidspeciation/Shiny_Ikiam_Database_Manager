@@ -72,7 +72,8 @@ test('a rack read goes at once into a deposit proposal: grid, defaults, the tube
   const [rack] = d.racks;
   assert.equal(rack.tubes.same, 1);
   assert.equal(rack.tubes.moved, 1);
-  assert.equal(rack.tubes.new, rack.tubes.same + rack.tubes.moved + rack.tubes.new - 2);
+  // Every tube read is new here but the one in place (B1) and the one moved (C1).
+  assert.equal(rack.tubes.new, read.tubes_read - 2);
   assert.deepEqual(rack.elsewhere, [{ tube: 'FS11111111', well: 'H12' }]);
   assert.deepEqual(d.racks.length, 1);
   // Tubes no sheet holds need their rows (one has its Collection_data row).

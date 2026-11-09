@@ -154,7 +154,7 @@ test('CAM_IDs renamed on more than a few rows come doubtful; photos in a folder 
 });
 
 test('tube IDs renamed on many rows without photos are doubtful too; filling empty ones is not renaming', async () => {
-  const rows = Array.from({ length: 5 }, (_, i) => ({
+  const rows = Array.from({ length: 9 }, (_, i) => ({
     row: 2 + i,
     values: { Insectary_ID: `A${i}A`, Wild_Reared: 'Reared', Tube_1_id: i < 4 ? `FD4100000${i}` : null },
   }));
@@ -169,11 +169,17 @@ test('tube IDs renamed on many rows without photos are doubtful too; filling emp
     const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
     assert.match(full.rows[0].doubtful.Tube_1_id.reason, /^Cambia el identificador FD41000000: mira una foto o el sobre/);
 
-    // Five empty tubes filled: no guard.
+    // Five empty tube IDs filled (rows 6-10): no guard, the IDs proposed as typed, none doubtful.
     const filled = await call('propose_changes', {
-      changes: [2, 3, 4, 5, 6].map((row, i) => ({ recordId: record('Insectary_data', row).id, values: { Notes_Insectary_data: `n${i}` } })),
+      changes: [6, 7, 8, 9, 10].map((row, i) => ({ recordId: record('Insectary_data', row).id, values: { Tube_1_id: `FD4300000${i}` } })),
     });
+    assert.ok(!filled.error, JSON.stringify(filled));
     assert.equal(filled.idChanges, undefined);
+    const shown = await call('get_proposal', { proposalId: filled.proposalId, full: true });
+    assert.deepEqual(
+      shown.rows.map(r => [r.row, r.values, r.doubtful]),
+      [6, 7, 8, 9, 10].map((row, i) => [row, { Tube_1_id: `FD4300000${i}` }, undefined]),
+    );
   } finally {
     store.close();
   }

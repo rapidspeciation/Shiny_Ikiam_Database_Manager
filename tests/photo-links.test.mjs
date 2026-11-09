@@ -604,8 +604,8 @@ test('the «Fotos» tab reads Photo_links without the assistant: the folders lis
   try {
     // The folders the sheet lists, with the files under each.
     const { folders } = (await http('GET', '/api/photo-links/folders')).body;
-    assert.ok(folders.length);
-    assert.ok(folders.every(f => typeof f.path === 'string' && typeof f.files === 'number'));
+    // The sheet lists one folder, Wild, and four files in it.
+    assert.deepEqual(folders, [{ path: 'Wild', link: folderUrl(2), files: 4 }]);
     assert.equal((await assistant.handle({ method: 'GET', path: '/api/photo-links/folders', user: { id: 'v', role: 'viewer' }, query: {}, body: {} })).status, 403);
 
     // A reading of a folder to start listing: the person's own card, in Cambios propuestos.
@@ -622,7 +622,9 @@ test('the «Fotos» tab reads Photo_links without the assistant: the folders lis
     assert.equal((await http('POST', `/api/chat/proposals/${card.id}/photo-links/apply`, {})).status, 202);
     for (let i = 0; i < 200 && anyApplying(store); i++) await new Promise(r => setTimeout(r, 10));
     assert.equal(store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(card.id).status, 'applied');
-    assert.ok(Object.keys(cellsOf(sheets, 6)).length);
+    // The Insectary folder the reading found is now listed in Photo_links.
+    const listed = sheets.rows.get('Photo_links').map(r => cellsOf(sheets, r.row)).filter(c => c['Full Path'] === 'Insectary');
+    assert.deepEqual(listed.map(c => [c.Name, c.Type, c.URL]), [['Insectary', 'Folder', folderUrl(3)]]);
     const again = await http('POST', '/api/photo-links/read', { add: ['Insectary'] });
     assert.deepEqual([again.body.proposalId, again.body.upToDate], [null, true]);
     // A folder Drive does not have.

@@ -200,7 +200,7 @@ test('stage report sums observed values and marks missingness', async () => {
   db.close();
 });
 
-test('voice and image calls use configured chat models and return reviewable drafts', async () => {
+test('voice and image calls use the configured transcription and vision models and return reviewable drafts', async () => {
   const { assistant, db } = fixture();
   const provider = fakeProvider([
     { content: 'Clutch 944 has four pupae.' },
@@ -215,6 +215,8 @@ test('voice and image calls use configured chat models and return reviewable dra
     });
     assert.equal(voice.status, 200);
     assert.equal(voice.body.requiresReview, true);
+    assert.equal(voice.body.text, 'Clutch 944 has four pupae.');
+    assert.equal(provider.requests[0].model, 'audio-model', 'the configured transcription model');
     assert.equal(provider.requests[0].messages[1].content[1].type, 'input_audio');
     const image = await assistant.handle({
       method: 'POST',
@@ -223,6 +225,7 @@ test('voice and image calls use configured chat models and return reviewable dra
       user: alice,
     });
     assert.equal(image.body.text, 'Tube A1');
+    assert.equal(provider.requests[1].model, 'vision-model', 'the configured vision model');
     assert.equal(provider.requests[1].messages[1].content[1].type, 'image_url');
   } finally {
     provider.restore();

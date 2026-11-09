@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { applyBatch } from '../server/batch.mjs';
 import { idSuggestions } from '../server/grid.mjs';
-import { HOLD_HOURS, dropStaleHolds, holdId, releaseHold } from '../server/holds.mjs';
+import { dropStaleHolds, holdId, releaseHold } from '../server/holds.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { Store } from '../server/store.mjs';
 
@@ -123,9 +123,10 @@ test('a hold nobody saved goes after a day and a half', async () => {
   const store = await fixture();
   try {
     holdId(store, { key: card(), value: 'A1E' }, ana);
-    dropStaleHolds(store.db, Date.now() + (HOLD_HOURS - 1) * 3_600_000);
+    // A day and a half is 36 hours: still held at 35, gone at 37.
+    dropStaleHolds(store.db, Date.now() + 35 * 3_600_000);
     assert.equal(free(store)[0], 'A2E');
-    dropStaleHolds(store.db, Date.now() + (HOLD_HOURS + 1) * 3_600_000);
+    dropStaleHolds(store.db, Date.now() + 37 * 3_600_000);
     assert.equal(free(store)[0], 'A1E');
   } finally {
     store.close();

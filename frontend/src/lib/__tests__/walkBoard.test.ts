@@ -140,6 +140,8 @@ describe('buildBoard', () => {
   })
   it('needs a date and a collector', () => {
     expect(buildBoard(sheet, walk([], { collector: null }), taxa, taxa)).toBeNull()
+    // No date: no board (its rows would take Collection_date from it).
+    expect(buildBoard(sheet, walk([], { date: null }), taxa, taxa)).toBeNull()
   })
   it('an imported walk starts from its stored links', () => {
     const w = walk([point('B10 9:12 hembra sol 1m', 4), point('Mech polymnia macho 9:40 sol', 2), point('Planta 9:50', 1)], {

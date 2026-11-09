@@ -54,7 +54,10 @@ const franz = { id: 'u1', username: 'franz', role: 'editor' };
 
 test('the rack tools are offered to the chats', () => {
   const names = new Set(mcpTools().map(t => t.name));
-  for (const n of RACK_TOOL_NAMES) assert.ok(names.has(n), n);
+  // The names the chats call, written out (a rename changes what the chats can call).
+  const rack = ['rack_read_photos', 'rack_deposit', 'rack_report', 'tubes_lookup'];
+  for (const n of rack) assert.ok(names.has(n), n);
+  assert.deepEqual([...RACK_TOOL_NAMES].sort(), [...rack].sort());
 });
 
 test("Franz's rack photo: at least 92 of 96 tubes, every one where its ID says, the rack code, A1 from the IDs", async () => {

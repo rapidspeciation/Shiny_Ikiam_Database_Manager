@@ -59,7 +59,7 @@ test('dates are read day first from titles', () => {
   assert.equal(fold('Eclosión ÁRBOL'), 'eclosion arbol');
 });
 
-test('chunks break at headings and slides and stay near 1500 characters', () => {
+test('chunks break at headings and slides, stay near 1500 characters and lose no text', () => {
   const text = Array.from({ length: 6 }, (_, i) => `## Diapositiva ${i + 1}\n\n${'palabra '.repeat(120)}`).join('\n\n');
   const chunks = chunkText(text);
   assert.ok(chunks.length >= 3);
@@ -68,7 +68,11 @@ test('chunks break at headings and slides and stay near 1500 characters', () => 
     assert.match(text.slice(c.start, c.end), /^## Diapositiva/);
   }
   const long = 'Una frase larga. '.repeat(400);
-  assert.ok(chunkText(long).every(c => c.end - c.start <= 1500));
+  const pieces = chunkText(long);
+  assert.ok(pieces.every(c => c.end - c.start <= 1500));
+  // Cut, not trimmed: the pieces put together give the whole text back.
+  assert.ok(pieces.length >= 5);
+  assert.equal(pieces.map(c => long.slice(c.start, c.end)).join(''), long);
 });
 
 test('search folds accents, filters by kind and date, and prefers the Drive copy of a document', async () => {
