@@ -152,6 +152,8 @@ async function main(argv) {
     '--import',
     './tests/helpers/no-ai.mjs',
     `--test-concurrency=${concurrency}`,
+    // A test that hangs fails after 3 min instead of holding the deploy forever (the longest take about 10 s).
+    '--test-timeout=180000',
     '--test-reporter=spec',
     '--test-reporter-destination=stdout',
     '--test-reporter=./tests/helpers/durations-reporter.mjs',
