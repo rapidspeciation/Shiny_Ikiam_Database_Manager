@@ -103,3 +103,55 @@ export function parseWordDiff(text: string, context = CONTEXT): DiffFile[] {
   if (segments.length) endLine()
   return files.map(f => ({ ...f, rows: fold(f.rows, context) }))
 }
+
+/** A block of a section's diff read as text (ProseDiff): a paragraph whose source lines are joined, or a code line. */
+export type ProseBlock =
+  | { type: 'para' | 'code'; segments: Segment[]; changed: boolean }
+  | { type: 'skip'; count: number }
+  | { type: 'note'; text: string }
+
+/** A line that starts a block of its own in Markdown: a heading, a list item, a table row, a quote. */
+const BLOCK_START = /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>)/
+const FENCE = /^\s*(?:```|~~~)/
+
+/**
+ * The rows of a word diff as prose: lines wrapped in the source join into one paragraph (with a space), blank
+ * lines and Markdown block starts begin a new one, fenced code stays line by line. Hunk headers are dropped.
+ */
+export function proseBlocks(rows: DiffRow[]): ProseBlock[] {
+  const out: ProseBlock[] = []
+  let para: { type: 'para'; segments: Segment[]; changed: boolean } | null = null
+  let fence = false
+  for (const row of rows) {
+    if (row.type === 'hunk') continue
+    if (row.type !== 'line') {
+      para = null
+      out.push(row)
+      continue
+    }
+    const text = row.segments.map(s => s.text).join('')
+    const changed = row.change !== 'ctx'
+    if (FENCE.test(text) || fence) {
+      if (FENCE.test(text)) fence = !fence
+      para = null
+      out.push({ type: 'code', segments: row.segments, changed })
+      continue
+    }
+    if (!text.trim()) {
+      para = null
+      continue
+    }
+    if (!para || BLOCK_START.test(text)) {
+      para = { type: 'para', segments: [...row.segments], changed }
+      out.push(para)
+      continue
+    }
+    para.segments.push({ kind: 'ctx', text: ' ' }, ...row.segments)
+    para.changed ||= changed
+  }
+  return out
+}
+
+/** A segment's text split into plain text and `code` spans. */
+export const codeSpans = (text: string) =>
+  text.split(/(`[^`\n]+`)/).filter(Boolean).map(part => ({ code: part.length > 2 && part.startsWith('`') && part.endsWith('`'), text: part }))

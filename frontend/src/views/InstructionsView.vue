@@ -7,9 +7,10 @@ import { errorText } from '../lib/notice'
 import { renderMarkdown } from '../lib/markdown'
 import { commitTime, entryHref, resolveLink, type Entry, type InstructionsPage } from '../lib/instructions'
 import DiffView from '../components/instructions/DiffView.vue'
+import ProseDiff from '../components/instructions/ProseDiff.vue'
 import ToolList from '../components/instructions/ToolList.vue'
 import DocReview from '../components/instructions/DocReview.vue'
-import { act, countFor, loadReview, openCount, review } from '../lib/docReview'
+import { act, countFor, hasPendingChange, loadReview, openCount, review } from '../lib/docReview'
 import { notify } from '../lib/notice'
 import { t3Host } from '../lib/t3Host'
 import { t, tn } from '../lib/i18n'
@@ -220,6 +221,7 @@ watch(
                   :title="$t('Comentarios abiertos')"
                 >
                   <MessageSquare :size="11" /> {{ countFor(review.state, item.id) }}
+                  <span v-if="hasPendingChange(review.state, item.id)" class="doc-change-dot" :title="$t('Cambio propuesto')" />
                 </span>
                 <span v-if="item.history?.length" class="shrink-0 text-xs text-stone-400">{{ item.history.length }}</span>
               </button>
@@ -309,7 +311,7 @@ watch(
                   </button>
                   <div v-if="opened.has(`${entry.id} rev:${r.revision}`)" class="border-t border-stone-100 p-2">
                     <p v-if="diffs[`${entry.id} rev:${r.revision}`] === null" class="hint">{{ $t('Cargando…') }}</p>
-                    <DiffView v-else-if="typeof diffs[`${entry.id} rev:${r.revision}`] === 'string'" :diff="diffs[`${entry.id} rev:${r.revision}`] as string" />
+                    <ProseDiff v-else-if="typeof diffs[`${entry.id} rev:${r.revision}`] === 'string'" :diff="diffs[`${entry.id} rev:${r.revision}`] as string" />
                   </div>
                 </li>
               </ol>

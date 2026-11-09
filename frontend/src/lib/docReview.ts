@@ -143,6 +143,15 @@ export function forEntry(state: DocReviewState | null, id: string) {
 }
 /** The quiet count beside a file in the list: its open threads and pending changes. */
 export const countFor = (state: DocReviewState | null, id: string) => sourcesOf(id).reduce((n, p) => n + (state?.counts?.[p] ?? 0), 0)
+/** Whether a file (the brief with its voice) has a change waiting for an admin: the file list's green mark. */
+export const hasPendingChange = (state: DocReviewState | null, id: string) =>
+  (state?.changes ?? []).some(c => c.status === 'pending' && sourcesOf(id).includes(c.path))
+/** The pending change that answers each thread: thread id → the change's series id. */
+export function answeredBy(state: DocReviewState | null): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const c of state?.changes ?? []) if (c.status === 'pending') for (const t of c.threadIds) out[t] ??= c.seriesId
+  return out
+}
 /** Open threads no pending change answers yet, across every file (the bar's «Pedir a Claude · n»). */
 export function openCount(state: DocReviewState | null) {
   const covered = new Set((state?.changes ?? []).filter(c => c.status === 'pending').flatMap(c => c.threadIds))

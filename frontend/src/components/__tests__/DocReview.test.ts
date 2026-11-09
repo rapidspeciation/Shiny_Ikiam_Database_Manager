@@ -3,6 +3,7 @@ import { createApp, h, nextTick } from 'vue'
 import DocThreadCard from '../instructions/DocThreadCard.vue'
 import DocChangeCard from '../instructions/DocChangeCard.vue'
 import DocReview from '../instructions/DocReview.vue'
+import ProseDiff from '../instructions/ProseDiff.vue'
 import { review, type DocChange, type DocReviewState, type DocThread } from '../../lib/docReview'
 import { renderMarkdown } from '../../lib/markdown'
 import { t, tn } from '../../lib/i18n'
@@ -110,12 +111,34 @@ describe('DocThreadCard', () => {
     await flush()
     expect(posts()[1].url).toBe('api/doc-review/threads/t1/resolve')
   })
+  it('a thread a pending change answers links to it with «Ver cambio»', async () => {
+    let shown = ''
+    const host = mount(DocThreadCard, { thread: thread(), answeredBy: 's1', onChange: (id: string) => (shown = id) })
+    button(host, 'Ver cambio')!.click()
+    expect(shown).toBe('s1')
+    unmount()
+    expect(button(mount(DocThreadCard, { thread: thread() }), 'Ver cambio')).toBeUndefined()
+  })
   it('a resolved thread offers Reabrir', async () => {
     const host = mount(DocThreadCard, { thread: thread({ status: 'resolved', resolvedBy: 'Luis' }), active: true })
     expect(host.textContent).toContain('Resuelto por Luis')
     button(host, 'Reabrir')!.click()
     await flush()
     expect(posts()[0].url).toBe('api/doc-review/threads/t1/reopen')
+  })
+})
+
+describe('ProseDiff', () => {
+  it('reads as text: wrapped source lines joined, a space between removed and added words, mono only for code', () => {
+    const diff = '@@ -1,4 +1,4 @@\n ## The site\n~\n \n~\n nombre y coordenadas.» \n-A partial\n+When the\n  name or a\n~\n nearby town with `place`.\n~\n \n~\n ```sh\n~\n-gog --readonly\n+gog\n~\n ```\n~'
+    const host = mount(ProseDiff, { diff })
+    const paras = [...host.querySelectorAll('p')]
+    expect(paras.map(p => p.textContent)).toEqual(['## The site', 'nombre y coordenadas.» A partial When the name or a nearby town with `place`.', '```sh', 'gog --readonly gog', '```'])
+    expect(paras[1].className).not.toContain('font-mono')
+    expect(paras[1].querySelector('code')?.textContent).toBe('`place`')
+    expect(paras[3].className).toContain('font-mono')
+    expect(paras[1].className).toContain('border-amber-400')
+    expect(host.firstElementChild!.className).not.toContain('font-mono')
   })
 })
 
@@ -211,6 +234,10 @@ describe('DocReview', () => {
     expect(margin.querySelector('[data-card="s1"]')).not.toBe(null)
     expect(margin.textContent).toContain('El texto cambió')
     expect(margin.textContent).toContain('Comentarios · 3')
+    // «Ver cambio» on the thread the change answers makes the change the active card.
+    button(margin.querySelector('[data-card="t1"]')!, 'Ver cambio')!.click()
+    await flush()
+    expect(margin.querySelector('[data-card="s1"]')!.className).toContain('doc-card-active')
     // A highlight clicked: its card is the active one, and the highlight darkens.
     ;(marks[0] as HTMLElement).click()
     await flush()

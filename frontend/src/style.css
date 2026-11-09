@@ -1748,3 +1748,12 @@ mark.doc-mark.is-active {
   border-color: var(--focus);
   box-shadow: 0 0 0 1px var(--focus);
 }
+/* The file list's mark for a file with a change waiting (the AI's green, as the change bar). */
+.doc-change-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: var(--doc-claude);
+}

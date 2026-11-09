@@ -6,8 +6,8 @@ import { errorText, notify } from '../../lib/notice'
 import { t } from '../../lib/i18n'
 
 /** One comment thread: its quote, the comments and replies, a reply box, resolve and reopen. */
-const props = defineProps<{ thread: DocThread; active?: boolean; detached?: boolean }>()
-const emit = defineEmits<{ activate: []; quote: [] }>()
+const props = defineProps<{ thread: DocThread; active?: boolean; detached?: boolean; answeredBy?: string | null }>()
+const emit = defineEmits<{ activate: []; quote: []; change: [seriesId: string] }>()
 
 const draft = ref('')
 const busy = ref(false)
@@ -94,6 +94,9 @@ defineExpose({ focus: () => nextTick(() => box.value?.focus()) })
         </template>
       </li>
     </ol>
+    <button v-if="answeredBy && !resolved" type="button" class="mt-2 text-xs font-medium text-brand-text hover:underline" @click.stop="emit('change', answeredBy)">
+      {{ $t('Ver cambio') }}
+    </button>
     <p v-if="resolved" class="mt-2 text-xs text-stone-500">
       {{ thread.resolvedBy ? $t('Resuelto por {name}', { name: thread.resolvedBy }) : $t('Resuelto') }}
     </p>

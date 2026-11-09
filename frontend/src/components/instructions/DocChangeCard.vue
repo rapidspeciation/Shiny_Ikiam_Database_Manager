@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import DiffView from './DiffView.vue'
+import ProseDiff from './ProseDiff.vue'
 import { act, type DocChange, type DocCheck } from '../../lib/docReview'
 import { commitTime } from '../../lib/instructions'
 import { renderMarkdown } from '../../lib/markdown'
@@ -23,7 +23,7 @@ watch(
 )
 const shownVersion = computed(() => props.change.versions.find(v => v.version === (picked.value ?? props.change.version)) ?? props.change.versions.at(-1)!)
 const older = computed(() => props.change.versions.length > 1)
-const diff = computed(() => (shownVersion.value.diff ?? '').split('\n').filter(l => !l.startsWith('@@')).join('\n'))
+const diff = computed(() => shownVersion.value.diff ?? '')
 const after = computed(() => renderMarkdown(shownVersion.value.after).html)
 const pending = computed(() => props.change.status === 'pending')
 const draft = ref('')
@@ -136,7 +136,7 @@ const askAgain = (why: 'comment' | 'stale') =>
       </button>
     </div>
     <div class="mt-2 max-h-80 overflow-y-auto">
-      <DiffView v-if="view === 'diff' && diff" :diff="diff" />
+      <ProseDiff v-if="view === 'diff' && diff" :diff="diff" />
       <!-- renderMarkdown escapes every text. -->
       <div v-else class="md md-small rounded-md border border-stone-200 px-3 py-2" v-html="after" />
     </div>

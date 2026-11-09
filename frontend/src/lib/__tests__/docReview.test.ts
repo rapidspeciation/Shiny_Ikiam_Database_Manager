@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { clearMarks, countFor, openCount, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
+import { answeredBy, clearMarks, countFor, hasPendingChange, openCount, forEntry, fullText, headingBefore, locate, markRange, sectionElements, selectionAnchor, shownInMargin, stackCards, type DocChange, type DocReviewState } from '../docReview'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -87,6 +87,10 @@ describe('doc review: the margin', () => {
     expect(countFor(state, 'assistant/AGENTS.md')).toBe(3)
     const asked = { threads: [{ id: 'a', status: 'open' }, { id: 'b', status: 'open' }, { id: 'c', status: 'resolved' }], changes: [{ status: 'pending', threadIds: ['a'] }] } as unknown as DocReviewState
     expect(openCount(asked)).toBe(1)
+    expect(answeredBy({ changes: [{ status: 'pending', seriesId: 's1', threadIds: ['a'] }, { status: 'applied', seriesId: 's2', threadIds: ['b'] }] } as unknown as DocReviewState)).toEqual({ a: 's1' })
+    const withChange = { changes: [{ status: 'pending', path: 'assistant/voice/app.md' }, { status: 'applied', path: 'assistant/skills/x/SKILL.md' }] } as unknown as DocReviewState
+    expect(hasPendingChange(withChange, 'assistant/AGENTS.md')).toBe(true)
+    expect(hasPendingChange(withChange, 'assistant/skills/x/SKILL.md')).toBe(false)
     expect(forEntry(state, 'assistant/AGENTS.md').changes.length).toBe(1)
     const now = Date.parse('2026-11-08T12:00:00Z')
     const c = (over: Partial<DocChange>) => ({ status: 'pending', lost: false, revision: null, decidedAt: null, ...over }) as DocChange

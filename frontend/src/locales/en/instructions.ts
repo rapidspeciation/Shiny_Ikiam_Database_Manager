@@ -98,4 +98,5 @@ export default {
   "Comentarios abiertos": "Open comments",
   "Aplicado en la app: § {heading}": "Applied in the app: § {heading}",
   "Deshecho en la app: § {heading}": "Undone in the app: § {heading}",
+  "Ver cambio": "See the change",
 }

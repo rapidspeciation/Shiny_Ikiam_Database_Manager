@@ -5,6 +5,7 @@ import DocThreadCard from './DocThreadCard.vue'
 import DocChangeCard from './DocChangeCard.vue'
 import {
   act,
+  answeredBy,
   clearMarks,
   forEntry,
   fullText,
@@ -35,6 +36,12 @@ const admin = computed(() => review.state?.admin ?? false)
 const mine = computed(() => forEntry(review.state, props.entryId))
 const open = computed(() => mine.value.threads.filter(t => t.status === 'open'))
 const changes = computed(() => mine.value.changes.filter(c => shownInMargin(c)))
+const answers = computed(() => answeredBy(review.state))
+/** «Ver cambio» on a thread: its change becomes the active card (on phones, the sheet shows it). */
+function showChange(seriesId: string) {
+  listMode.value = false
+  activate(seriesId, { scroll: true })
+}
 const total = computed(() => open.value.length + mine.value.changes.filter(c => c.status === 'pending').length)
 
 const active = ref<string | null>(null)
@@ -235,7 +242,7 @@ defineExpose({ openList: () => (wide.value ? (listMode.value = true) : (sheet.mo
       <template v-if="listMode">
         <div class="space-y-2">
           <DocChangeCard v-for="c in allChanges" :key="c.seriesId" :change="c" :admin="admin" @activate="pickFromList(c.seriesId)" @asked="chat => emit('asked', chat)" />
-          <DocThreadCard v-for="t in open" :key="t.id" :thread="t" :detached="!placed.has(t.id)" @activate="pickFromList(t.id)" @quote="pickFromList(t.id)" />
+          <DocThreadCard v-for="t in open" :key="t.id" :thread="t" :detached="!placed.has(t.id)" :answered-by="answers[t.id]" @activate="pickFromList(t.id)" @quote="pickFromList(t.id)" @change="showChange" />
           <details v-if="resolvedThreads.length" class="text-sm">
             <summary class="cursor-pointer py-1 text-xs text-stone-500">{{ $t('Resueltos ({n})', { n: resolvedThreads.length }) }}</summary>
             <div class="mt-2 space-y-2">
@@ -246,7 +253,15 @@ defineExpose({ openList: () => (wide.value ? (listMode.value = true) : (sheet.mo
       </template>
       <template v-else>
         <div v-for="i in items" :key="i.id" class="absolute inset-x-0 transition-[top] duration-150" :style="{ top: `${Math.max(FIRST, layout[i.id] ?? 0)}px` }">
-          <DocThreadCard v-if="i.kind === 'thread'" :thread="threadOf(i.id)" :active="active === i.id" @activate="activate(i.id)" @quote="activate(i.id, { scroll: true })" />
+          <DocThreadCard
+            v-if="i.kind === 'thread'"
+            :thread="threadOf(i.id)"
+            :active="active === i.id"
+            :answered-by="answers[i.id]"
+            @activate="activate(i.id)"
+            @quote="activate(i.id, { scroll: true })"
+            @change="showChange"
+          />
           <DocChangeCard
             v-else-if="i.kind === 'change'"
             :change="changeOf(i.id)"
@@ -267,7 +282,7 @@ defineExpose({ openList: () => (wide.value ? (listMode.value = true) : (sheet.mo
         </div>
         <div v-if="detached.length" class="absolute inset-x-0 space-y-2" :style="{ top: `${marginHeight + 48}px` }">
           <p class="text-xs text-stone-500">{{ $t('El texto cambió') }}</p>
-          <DocThreadCard v-for="t in detached" :key="t.id" :thread="t" detached :active="active === t.id" @activate="activate(t.id)" />
+          <DocThreadCard v-for="t in detached" :key="t.id" :thread="t" detached :active="active === t.id" :answered-by="answers[t.id]" @activate="activate(t.id)" @change="showChange" />
         </div>
       </template>
     </aside>
@@ -305,7 +320,7 @@ defineExpose({ openList: () => (wide.value ? (listMode.value = true) : (sheet.mo
           <button type="button" class="btn-ghost" :aria-label="$t('Cerrar')" @click="closeSheet"><X :size="16" /></button>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-          <DocThreadCard v-if="sheetThread" :thread="sheetThread" active />
+          <DocThreadCard v-if="sheetThread" :thread="sheetThread" active :answered-by="answers[sheetThread.id]" @change="showChange" />
           <DocChangeCard v-else-if="sheetChange" :change="sheetChange" :admin="admin" active @asked="chat => emit('asked', chat)" />
           <form v-else-if="sheet.mode === 'new'" @submit.prevent="saveComment">
             <p class="doc-quote mb-2 line-clamp-3 border-l-2 pl-2 text-xs text-stone-600">{{ composer.anchor?.quote }}</p>
