@@ -148,8 +148,11 @@ function workFile(given, { workspaces, username }, { create = false } = {}) {
   const name = String(username ?? '');
   if (!workspaces || !name || basename(name) !== name || name.startsWith('.')) return { why: 'no workspace of yours on this server', none: true };
   const root = join(workspaces, name);
+  // The person's workspace is not on this server (another machine's chat, or not provisioned): no file of theirs is here.
+  if (!exists(root)) return { why: `no workspace of yours (${name}) on this server (looked in ${root})`, none: true };
+  let work = join(root, 'work');
   try {
-    const work = exists(join(root, 'work')) ? realpathSync(join(root, 'work')) : join(realpathSync(root), 'work');
+    work = exists(work) ? realpathSync(work) : join(realpathSync(root), 'work');
     // The part of the path that is there, links followed (so a link out of work/ is refused), then the rest.
     let base = resolve(isAbsolute(given) ? given : join(root, given));
     const rest = [];
@@ -162,7 +165,8 @@ function workFile(given, { workspaces, username }, { create = false } = {}) {
     if (exists(path) && !statSync(path).isFile()) return { why: 'not a file' };
     return { path };
   } catch (e) {
-    return { why: create ? 'cannot be written there' : e.code === 'ENOENT' ? 'not found' : 'cannot be read' };
+    if (!create && e.code === 'ENOENT') return { why: `not found in ${work}/`, none: true };
+    return { why: create ? 'cannot be written there' : 'cannot be read' };
   }
 }
 
@@ -178,7 +182,7 @@ export function withLinesFile(args, workspace) {
   const fail = why => ({ error: `linesFile ${clip(given, 200)}: ${why}. Nothing was proposed.` });
   if (!/\.json$/i.test(given)) return fail('give the .json file the reader wrote in work/');
   const at = workFile(given, workspace);
-  if (at.why) return fail(at.none ? `${at.why}; give \`lines\`` : at.why);
+  if (at.why) return fail(at.none ? `${at.why}; give the page's \`lines\` in the call instead` : at.why);
   let data;
   try {
     if (statSync(at.path).size > LINES_FILE_BYTES) return fail(`larger than ${LINES_FILE_BYTES / 1024} KB`);

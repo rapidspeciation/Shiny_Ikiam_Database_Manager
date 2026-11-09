@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
@@ -374,7 +374,8 @@ test("match_notebook reads a notebook reader's file from the work/ folder of the
       ['work/../../other/work/p.json', /not in this workspace's work\/ folder/],
       [join(workspaces, 'other', 'work', 'p.json'), /not in this workspace's work\/ folder/],
       ['work/link.json', /not in this workspace's work\/ folder/],
-      ['work/missing.json', /not found/],
+      // Where the server looked, and what to give instead (retro 8 Nov: 10 calls refused "not found", then retried with the full path).
+      ['work/missing.json', new RegExp(`: not found in ${realpathSync(own)}/work/; give the page's \`lines\` in the call instead\\. Nothing was proposed\\.$`)],
       ['work/big.json', /larger than 512 KB/],
       ['work/bad.json', /not valid JSON/],
       ['work/empty.json', /no `lines`/],
@@ -393,6 +394,18 @@ test("match_notebook reads a notebook reader's file from the work/ folder of the
   const bare = await setup(NOTEBOOK_SHEETS);
   try {
     assert.match((await bare.call('match_notebook', { linesFile: 'work/p.json' })).error, /no workspace of yours/);
+    // A workspaces folder without this person's workspace (the eval app's user lab): where it looked, and `lines` instead.
+    const elsewhere = mkdtempSync(join(tmpdir(), 'ithomiini-workspaces-'));
+    const other = await setup(NOTEBOOK_SHEETS, [], { t3Workspaces: elsewhere });
+    try {
+      assert.equal(
+        (await other.call('match_notebook', { linesFile: 'work/2026-11-06-nb/page.json' })).error,
+        `linesFile work/2026-11-06-nb/page.json: no workspace of yours (franz) on this server (looked in ${join(elsewhere, 'franz')}); give the page's \`lines\` in the call instead. Nothing was proposed.`,
+      );
+    } finally {
+      other.store.close();
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
     assert.match((await bare.call('match_notebook', { kind: 'stocks' })).error, /Give `lines` or `linesFile`/);
   } finally {
     bare.store.close();
