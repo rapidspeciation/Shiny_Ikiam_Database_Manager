@@ -37,10 +37,12 @@ if [ "$(hostname)" = claudeclaw ] || [ "${DEPLOY_LOCAL:-}" = 1 ]; then
   fi
 else
   local_install=""
-  # The tests run on this checkout and the release is its commit: nothing changed or new beside it.
-  if [ -n "$(git status --porcelain)" ]; then
+  # The tests run on this checkout and the release is its commit: nothing changed or new beside it. Untracked notes in
+  # .work/ (work folders) are neither shipped nor read by a test.
+  dirty="$(git status --porcelain | grep -v '^?? \.work/' || true)"
+  if [ -n "$dirty" ]; then
     echo "Commit or remove these first (the release is exactly the commit HEAD, as tested):" >&2
-    git status --porcelain | head -n 20 >&2
+    printf '%s\n' "$dirty" | head -n 20 >&2
     exit 1
   fi
   # The server's assistant also commits to the team repo: never deploy over changes not pulled yet; and only a

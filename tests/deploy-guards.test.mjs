@@ -5,7 +5,7 @@
 // reach claudeclaw even if a guard is broken), and HOME is a temp folder.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deployFixture } from './helpers/deploy-fixture.mjs';
 
@@ -59,6 +59,21 @@ test('deploy.sh: a checkout that is not exactly a pushed commit (changed or new 
     run = f.run();
     assert.equal(run.status, 1, run.stderr);
     assert.match(run.stderr, /Commit or remove these first[\s\S]*server\/new\.mjs/);
+    f.sh('rm server/new.mjs');
+    // Untracked notes in .work/ do not count; an untracked test file does.
+    mkdirSync(join(f.repo, '.work', 'notes'), { recursive: true });
+    writeFileSync(join(f.repo, '.work', 'notes', 'NOTES.md'), 'a note\n');
+    run = f.run();
+    assert.doesNotMatch(run.stderr, /Commit or remove these first/);
+    assert.ok(run.calls.some(c => c.startsWith('node scripts/check.mjs')), 'tested with .work/ notes beside it');
+    mkdirSync(join(f.repo, 'tests'), { recursive: true });
+    writeFileSync(join(f.repo, 'tests', 'new.test.mjs'), 'untracked\n');
+    run = f.run();
+    assert.equal(run.status, 1, run.stderr);
+    assert.match(run.stderr, /Commit or remove these first[\s\S]*tests\//);
+    assert.doesNotMatch(run.stderr, /\.work/);
+    f.sh('rm -r tests .work');
+    writeFileSync(join(f.repo, 'server', 'new.mjs'), 'untracked\n');
     f.sh('git add -A && git commit -q -m two');
     run = f.run();
     assert.equal(run.status, 1, run.stderr);
