@@ -2,16 +2,19 @@
 // The live app's own state, for the nightly run (scripts/nightly-tests.sh): read from its /health, one line in the
 // night's log, and an exit code its `wikiloc` result is taken from. No login, no chat, no AI: /health is public.
 //   node scripts/nightly-app-checks.mjs [health URL]   (default http://127.0.0.1:8794/health, the app's port on claudeclaw)
-// Exit 0: ok. 3: a warning (a followed Wikiloc profile not looked at in 30 days). 1: failing (the latest Wikiloc import
-// failed, or its worker stopped asking for work), or /health did not answer. In Oct 2026 three imports failed and no
+// Exit 0: ok. 3: a warning (a followed Wikiloc profile not looked at in 30 days, or the daily check on but last run more
+// than 2 days ago). 1: failing (the latest Wikiloc import failed, a followed profile's latest check failed, or the worker
+// stopped asking for work), or /health did not answer. In Oct 2026 three imports failed and no
 // walk came in for six weeks while nothing outside Monitoreo → Importar said so (server/monitoring.mjs wikilocHealth).
 import { pathToFileURL } from 'node:url';
 
 const url = process.argv[2] || 'http://127.0.0.1:8794/health';
 const day = iso => (iso ? String(iso).slice(0, 10) : 'never');
+/** Days from an Ecuador day (YYYY-MM-DD) to today's in Ecuador (UTC-5). */
+const daysSince = (ecDay, at) => Math.floor((at - 5 * 3600_000 - Date.parse(`${ecDay}T00:00:00Z`)) / 864e5);
 
-/** The line and exit code for /health's `wikiloc` (exported for tests/nightly-app-checks.test.mjs). */
-export function wikilocLine(w) {
+/** The line and exit code for /health's `wikiloc` (exported for tests/nightly-app-checks.test.mjs; `at`: the clock). */
+export function wikilocLine(w, at = Date.now()) {
   if (!w) return { code: 1, line: 'Wikiloc imports: /health has no wikiloc section (an app older than 10 Nov 2026?)' };
   const detail = `last that worked ${day(w.lastOk)}, ${w.waiting} waiting, worker seen ${w.workerSeen || 'never'}, oldest profile check ${day(w.oldestProfileCheck)}`;
   if (w.status === 'failing')
@@ -20,11 +23,19 @@ export function wikilocLine(w) {
       line: `Wikiloc imports: FAILING: ${
         w.reason === 'worker'
           ? 'the worker has not asked for work in an hour'
-          : `${w.failedSinceOk} failed since the last that worked, ${w.profilesFailing ?? 0} followed profiles whose latest check failed (latest ${day(w.lastFailed)})`
+          : `${w.failedSinceOk} failed since the last that worked${
+              w.profilesFailing > 0 ? `, ${w.profilesFailing} followed profile${w.profilesFailing === 1 ? '' : 's'} whose latest check failed` : ''
+            } (latest ${day(w.lastFailed)})`
       }; ${detail}. See Monitoreo → Importar and journalctl --user -u ithomiini-wikiloc.`,
     };
   if (w.status === 'stale')
     return { code: 3, line: `Wikiloc imports: WARNING: a followed profile has not been looked at in 30 days; ${detail}. Importar → «Buscar nuevos».` };
+  // The daily check on but not run for over 2 days (the app's timer stopped): the profiles' «revisado» times in Importar.
+  if (w.daily === 'on' && w.dailyQueued && daysSince(w.dailyQueued, at) > 2)
+    return {
+      code: 3,
+      line: `Wikiloc imports: WARNING: the daily check is on but last ran ${w.dailyQueued}; ${detail}. Importar → each profile's «revisado».`,
+    };
   if (w.status === 'ok' || w.status === 'unused') return { code: 0, line: `Wikiloc imports: ${w.status}; ${detail}` };
   // `unknown`: the app could not work it out (its log says why).
   return { code: 1, line: `Wikiloc imports: ${w.status}: the app could not tell (journalctl --user -u ithomiini)` };

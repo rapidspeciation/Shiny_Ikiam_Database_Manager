@@ -25,7 +25,8 @@ export function initMonitoring(db) {
     CREATE TABLE IF NOT EXISTS wikiloc_profiles(id TEXT PRIMARY KEY, wikiloc_user TEXT UNIQUE NOT NULL, name TEXT, pattern TEXT NOT NULL,
       added_by TEXT NOT NULL, created_at TEXT NOT NULL, last_checked TEXT);
     CREATE TABLE IF NOT EXISTS wikiloc_jobs(id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
-      message TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
+      message TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS wikiloc_removed(wikiloc_id TEXT PRIMARY KEY, removed_by TEXT NOT NULL, removed_at TEXT NOT NULL);`);
   // Added later: the collector whose walks a followed profile holds (e.g. "AA - Alex Arias").
   if (!db.prepare('PRAGMA table_info(wikiloc_profiles)').all().some(c => c.name === 'collector'))
     db.exec('ALTER TABLE wikiloc_profiles ADD COLUMN collector TEXT');
@@ -926,6 +927,8 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
     return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(existing.id)), failed, updated: true };
   }
   const id = randomUUID();
+  // Removed from the list before and brought back (a pasted link): known again as a walk.
+  store.db.prepare('DELETE FROM wikiloc_removed WHERE wikiloc_id=?').run(wikilocId);
   store.db
     .prepare(
       "INSERT INTO wikiloc_walks(id,wikiloc_id,url,name,date,data_json,status,track_id,created_by,created_at) VALUES(?,?,?,?,?,?,'waiting',NULL,?,?)",
@@ -949,9 +952,14 @@ export function reopenWalk(store, id) {
 export function deleteWalk(store, id, user) {
   const row = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id);
   if (!row) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
-  if (row.created_by !== user.username && row.created_by !== DAILY_SYNC_USER.username && !['reviewer', 'admin'].includes(user.role))
+  const dailyFound = row.created_by === DAILY_SYNC_USER.username && row.status === 'waiting';
+  if (row.created_by !== user.username && !dailyFound && !['reviewer', 'admin'].includes(user.role))
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this walk', 403);
   store.db.prepare('DELETE FROM wikiloc_walks WHERE id=?').run(id);
+  // Profile checks (daily and «Buscar nuevos») leave it out from now on; its pasted link brings it back (saveWalk).
+  store.db
+    .prepare('INSERT INTO wikiloc_removed(wikiloc_id,removed_by,removed_at) VALUES(?,?,?) ON CONFLICT(wikiloc_id) DO UPDATE SET removed_by=excluded.removed_by, removed_at=excluded.removed_at')
+    .run(row.wikiloc_id, user.username, new Date().toISOString());
   return { ok: true };
 }
 
@@ -1076,7 +1084,7 @@ export function queueLink(store, body, user) {
  * (5 and 20 minutes) are over before the nightly reads /health. WIKILOC_DAILY_CHECK=0 in service.env turns it off.
  */
 export const DAILY_SYNC_HOUR_EC = 21;
-/** The requester of the daily jobs (Importar's job list); any editor can remove a walk it found (deleteWalk). */
+/** The requester of the daily jobs (`requestedBy` in the jobs API); any editor can remove a waiting walk it found (deleteWalk). */
 const DAILY_SYNC_USER = { username: 'wikiloc-daily' };
 
 /**
@@ -1146,6 +1154,8 @@ export function claimJob(store) {
     out.knownIds = [
       ...new Set([
         ...store.db.prepare('SELECT wikiloc_id FROM wikiloc_walks').all().map(r => r.wikiloc_id),
+        // Walks removed from Importar's list: not brought back by a profile check (a pasted link still does).
+        ...store.db.prepare('SELECT wikiloc_id FROM wikiloc_removed').all().map(r => r.wikiloc_id),
         ...store.db
           .prepare("SELECT json_extract(data_json,'$.wikiloc.id') AS id FROM monitoring_tracks WHERE id IS NOT NULL")
           .all()
@@ -1238,7 +1248,7 @@ export function wikilocHealth(store, at = Date.now()) {
     workerSeen,
     profiles: profiles.n,
     oldestProfileCheck: profiles.n ? profiles.t : null,
-    // The day (Ecuador) the daily look last queued the profiles; /health adds `daily`, on or off (WIKILOC_DAILY_CHECK).
+    // The day (Ecuador) the daily check last ran (it queues the profiles with no open job); /health adds `daily`, on or off.
     dailyQueued: store.getSetting('wikilocDailySync') || null,
   };
 }

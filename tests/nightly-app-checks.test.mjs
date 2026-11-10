@@ -25,12 +25,24 @@ const live = {
 test('the line and exit code for each state', () => {
   const failing = wikilocLine(live);
   assert.equal(failing.code, 1);
-  assert.match(failing.line, /FAILING: 3 failed since the last that worked, 0 followed profiles whose latest check failed \(latest 2026-10-16\); last that worked 2026-10-01/);
+  assert.match(failing.line, /FAILING: 3 failed since the last that worked \(latest 2026-10-16\); last that worked 2026-10-01/);
   assert.match(wikilocLine({ ...live, reason: 'worker', failedSinceOk: 0 }).line, /worker has not asked for work/);
   const stale = wikilocLine({ ...live, status: 'stale', reason: undefined, failedSinceOk: 0 });
   assert.equal(stale.code, 3);
   assert.match(stale.line, /WARNING: a followed profile has not been looked at in 30 days/);
   assert.equal(wikilocLine({ ...live, status: 'ok', failedSinceOk: 0 }).code, 0);
+  // A followed profile's latest check failed: said, with its count (singular and plural).
+  assert.match(wikilocLine({ ...live, failedSinceOk: 0, profilesFailing: 1 }).line, /0 failed since the last that worked, 1 followed profile whose latest check failed/);
+  assert.match(wikilocLine({ ...live, profilesFailing: 2 }).line, /2 followed profiles whose/);
+  // The daily check on: a warning once it has not run for over 2 days (Ecuador days), not before.
+  const at = Date.parse('2026-11-14T03:00:00Z'); // 13 Nov, 22:00 in Ecuador
+  const ok = { ...live, status: 'ok', failedSinceOk: 0, daily: 'on' };
+  assert.equal(wikilocLine({ ...ok, dailyQueued: '2026-11-11' }, at).code, 0);
+  const late = wikilocLine({ ...ok, dailyQueued: '2026-11-10' }, at);
+  assert.equal(late.code, 3);
+  assert.match(late.line, /the daily check is on but last ran 2026-11-10/);
+  assert.equal(wikilocLine({ ...ok, daily: 'off', dailyQueued: '2026-11-01' }, at).code, 0);
+  assert.equal(wikilocLine({ ...ok, dailyQueued: null }, at).code, 0);
   assert.equal(wikilocLine(undefined).code, 1);
   assert.equal(wikilocLine({ status: 'unknown' }).code, 1);
 });

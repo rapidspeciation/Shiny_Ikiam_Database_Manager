@@ -353,6 +353,44 @@ test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, ne
   assert.equal(wikilocHealth(s).status, 'ok');
 });
 
+test('a walk removed from the list stays out of profile checks, daily or by hand; its pasted link brings it back', async t => {
+  t.mock.method(console, 'log', () => {});
+  const s = store();
+  addProfile(s, { url: '13756119' }, editor);
+  dailySync(s, ec('2026-11-11', 21, 0));
+  const daily = claimJob(s).job;
+  const { walk } = await saveWalk(s, { ...walkBody(), jobId: daily.id }, editor, { fetchImage: fakeImage([]) });
+  finishJob(s, daily.id, { status: 'done', message: '1 rutas nuevas de 1' });
+  // Removed by an editor who did not bring it in (the daily check did).
+  deleteWalk(s, walk.id, other);
+  // The next profile check, daily or «Buscar nuevos», counts it as known: the worker does not fetch it again.
+  dailySync(s, ec('2026-11-12', 21, 0));
+  assert.ok(claimJob(s).job.knownIds.includes(walk.wikilocId));
+  s.db.prepare("UPDATE wikiloc_jobs SET status='done' WHERE status IN ('queued','running')").run();
+  queueSync(s, editor);
+  assert.ok(claimJob(s).job.knownIds.includes(walk.wikilocId));
+  s.db.prepare("UPDATE wikiloc_jobs SET status='done' WHERE status IN ('queued','running')").run();
+  // Its link pasted: a trail job, which brings it back (and it is known as a walk again, not as removed).
+  const link = queueLink(s, { url: walk.url }, editor).job;
+  assert.equal(claimJob(s).job.id, link.id);
+  const back = await saveWalk(s, { ...walkBody(), jobId: link.id }, { id: 'w', username: 'wikiloc-worker', role: 'editor' }, { fetchImage: fakeImage([]) });
+  assert.equal(back.walk.status, 'waiting');
+  assert.equal(back.walk.createdBy, 'editor');
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM wikiloc_removed').get().n, 0);
+});
+
+test('an editor removes a waiting walk the daily check found, not one already imported', async t => {
+  t.mock.method(console, 'log', () => {});
+  const s = store();
+  addProfile(s, { url: '13756119' }, editor);
+  dailySync(s, ec('2026-11-11', 21, 0));
+  const daily = claimJob(s).job;
+  const { walk } = await saveWalk(s, { ...walkBody(), jobId: daily.id }, editor, { fetchImage: fakeImage([]) });
+  s.db.prepare("UPDATE wikiloc_walks SET status='imported' WHERE id=?").run(walk.id);
+  assert.throws(() => deleteWalk(s, walk.id, other), { code: 'FORBIDDEN' });
+  assert.deepEqual(deleteWalk(s, walk.id, reviewer), { ok: true });
+});
+
 test('the daily check looks every 10 minutes on its timer and stops on close', t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   t.mock.method(console, 'log', () => {});

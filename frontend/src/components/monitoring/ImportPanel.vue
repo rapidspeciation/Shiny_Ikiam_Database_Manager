@@ -270,7 +270,7 @@ function walkState(w: WikilocWalk): { text: string; tone: 'done' | 'todo' | 'wai
 }
 const photosIn = (w: WikilocWalk) => w.waypoints.reduce((n, p) => n + p.photos.length, 0)
 async function removeWalk(w: WikilocWalk) {
-  if (!confirm(t('¿Quitar "{name}" de la lista? Se puede volver a traer desde Wikiloc.', { name: w.name }))) return
+  if (!confirm(t('¿Quitar "{name}" de la lista? La búsqueda en los perfiles ya no lo trae; pegar su enlace lo vuelve a traer.', { name: w.name }))) return
   try {
     await api(`monitoring/wikiloc/${encodeURIComponent(w.id)}`, { method: 'DELETE', body: {} })
     if (file.value?.walk?.id === w.id) file.value = null

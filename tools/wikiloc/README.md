@@ -45,17 +45,20 @@ journalctl --user -u ithomiini-wikiloc -n 60 --no-pager
 ```
 
 Once a day at 21:00 Ecuador the app queues the followed profiles' checks by itself, the same jobs as Importar's
-«Buscar nuevos» (requested by `wikiloc-daily`, so any editor can remove a walk it found; never a second check of a
-profile while one waits or runs, and its retry wait is kept). The hour is when the home computer's tunnel is usually up
+«Buscar nuevos» (requested by `wikiloc-daily`, so any editor can remove a waiting walk it found; never a second
+check of a profile while one waits or runs, and its retry wait is kept). A walk removed with «Quitar de la lista» stays
+out of profile checks, daily or by hand; pasting its link in Importar brings it back. The hour is when the home computer's tunnel is usually up
 (below) and the server's night jobs have not started. `WIKILOC_DAILY_CHECK=0` in
 `~/.config/ithomiini/service.env` turns it off (then restart the app); it is on by default, off in LOCAL_MODE.
 
 The Importar screen shows the worker's latest heartbeat. Whether imports work is also in the app's
 `/health` (`wikiloc`: `ok`, `stale` when a followed profile has not been looked at in 30 days, `failing` when the
-latest job failed or the worker has not asked for work in an hour; counts and times only), a failed job is a line
+latest job failed, a followed profile's latest check failed, or the worker has not asked for work in an hour; `daily`
+on or off and `dailyQueued`, the day the daily check last ran; counts and times only), a failed job is a line
 `Wikiloc import failed: …` in the app's log (`journalctl --user -u ithomiini`), and the nightly run on the server
 (scripts/nightly-tests.sh → scripts/nightly-app-checks.mjs) keeps it as its `wikiloc` result in
-`shared/nightly-tests/last-result.json` (failing fails the night, stale is `warn`). In October 2026 three imports
+`shared/nightly-tests/last-result.json` (failing fails the night; stale, or the daily check on but not run for over 2
+days, is `warn`). In October 2026 three imports
 failed on Cloudflare and no walk came in for six weeks with nothing saying so outside Importar. Queued jobs remain in
 the app database if the service is unavailable; jobs left running after an
 interruption become eligible for another attempt after 15 minutes.

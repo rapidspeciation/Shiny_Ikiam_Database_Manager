@@ -369,8 +369,8 @@ export default {
   'El archivo no tiene puntos ni recorrido': 'The file has no points or track',
   'La app aún no estaba lista; vuelve a compartir desde Wikiloc.': 'The app was not ready yet; share again from Wikiloc.',
   'Lo compartido no es un GPX ni un enlace de Wikiloc': 'What was shared is not a GPX or a Wikiloc link',
-  '¿Quitar "{name}" de la lista? Se puede volver a traer desde Wikiloc.':
-    'Remove "{name}" from the list? It can be brought again from Wikiloc.',
+  '¿Quitar "{name}" de la lista? La búsqueda en los perfiles ya no lo trae; pegar su enlace lo vuelve a traer.':
+    'Remove "{name}" from the list? The profile checks will no longer bring it; pasting its link brings it back.',
   '¿Quitar del mapa el recorrido "{name}" ({date})? Las filas de la hoja no cambian.':
     'Remove the walk "{name}" ({date}) from the map? The rows of the sheet do not change.',
   'Fotos añadidas a {n} puntos del recorrido del {date}': 'Photos added to {n} points of the walk of {date}',
