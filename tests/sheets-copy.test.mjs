@@ -297,9 +297,10 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     assert.match(none.error, /no such column: Sampling_protocol/);
     assert.match(none.columns.Insectary_data, /^Insectary_ID, Wild_Reared, "CLUTCH NUMBER", Stock_of_origin, SPECIES, Sex, /);
     assert.equal(none.hint, undefined);
-    // A table named like a tool (retro 9 Nov: SELECT * FROM tubes): the tool to call.
-    const tubes = await call('SELECT * FROM tubes');
-    assert.match(tubes.error, /^SQLite: no such table: tubes/);
+    // A table named like a tool (retro 9 Nov: SELECT * FROM tubes, on a copy without main's tubes table): the tool to
+    // call. This copy has the tubes table, so a name near it gets the tool too.
+    const tubes = await call('SELECT * FROM tube');
+    assert.match(tubes.error, /^SQLite: no such table: tube\b/);
     assert.equal(tubes.tools, 'tubes_lookup: a tool to call, not a table of the copy');
     // A function this SQLite lacks: the tool's answer carries its own hint (critic N3).
     const series = await call('SELECT value FROM generate_series(1, 3)');
@@ -414,8 +415,11 @@ test('a column the query does not find: the closest of its own tables, else wher
       [['CLUTCH NUMBER']],
     );
     assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
-    // A table not there (retro 9 Nov: tubes, 6 calls): the tables with its singular in their name.
-    assert.deepEqual(near('SELECT * FROM tubes'), ['Ithomiini_tube_locations_18Jun26']);
+    // A table not there (retro 9 Nov: tubes, 6 calls, on a copy without main's tubes table): the tables with its
+    // singular in their name. This copy has the tubes table (not listed in _tables): it answers, and `tube` gets the
+    // sheet here and tubes_lookup in the tool's answer (the query test above).
+    assert.ok(runQuery(db, 'SELECT count(*) FROM tubes', 5).rows, 'the tubes table');
+    assert.deepEqual(near('SELECT * FROM tube'), ['Ithomiini_tube_locations_18Jun26']);
     const series = runQuery(db, 'SELECT value FROM generate_series(1, 5)', 5);
     assert.equal(series.near, undefined);
     assert.equal(series.hint, GENERATE_SERIES);
