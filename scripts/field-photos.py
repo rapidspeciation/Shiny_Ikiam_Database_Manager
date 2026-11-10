@@ -23,16 +23,23 @@ Network: api.inaturalist.org (about 1 request a second), api.gbif.org, inaturali
 import argparse
 import json
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
 
-GENERA = set(
-    "Aeria Athesis Brevioleria Callithomia Ceratinia Dircenna Elzunia Episcada Epityches Eutresis Forbestra Godyris "
-    "Greta Heterosais Hyalenna Hyalyris Hypoleria Hypomenitis Hyposcada Hypothyris Ithomia Mcclungia Mechanitis "
-    "Megoleria Melinaea Methona Napeogenes Oleria Olyras Pagyris Patricia Pseudoscada Pteronymia Sais Scada Thyridia "
-    "Tithorea Veladyris Velamysta".split()
-)  # frontend/src/lib/publicModels.ts ITHOMIINI_GENERA
+
+def ithomiini_genera():
+    """The app's one list of Ithomiini genera, read from frontend/src/lib/ithomiiniGenera.ts (not a copy)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "src", "lib", "ithomiiniGenera.ts")
+    with open(path, encoding="utf-8") as f:
+        body = re.search(r"ITHOMIINI_GENERA[^=]*=\s*Object\.freeze\(\[([^\]]*)\]", f.read()).group(1)
+    names = set(re.findall(r"'([A-Za-z]+)'", body))
+    assert len(names) >= 40, f"{path}: only {len(names)} genera read"
+    return names
+
+
+GENERA = ithomiini_genera()
 UA = {"User-Agent": "ithomiini-field-photos/1.0 (Ikiam Ithomiini project)"}
 CC = "cc0,cc-by,cc-by-nc,cc-by-sa,cc-by-nc-sa,cc-by-nd,cc-by-nc-nd"
 

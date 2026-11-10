@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { letterboxCrop, roleOf, rolesReady } from '../offlineId'
 import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sigmoid } from '../sexModel'
-import { ITHOMIINI_GENERA } from '../publicModels'
+import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 
 // The sex estimate's preprocessing and decision (lib/sexModel.ts; PLAN.md Amendment 8 in WingsClassificator).
 

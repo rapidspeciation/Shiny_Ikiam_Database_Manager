@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MODEL_ROLES, modelReady, sameFile, type ListedFile, type StoredFile } from '../offlineId'
-import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../publicModels'
+import { PUBLIC_FILES } from '../publicModels'
+import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 import { PART, publicListing } from '../offlineEngine'
 
 describe('the public (Hugging Face) models', () => {

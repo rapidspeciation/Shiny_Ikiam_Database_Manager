@@ -45,6 +45,7 @@ import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
 import { fieldPhotos, ithomiiniSpecies, sendRefPhoto } from './identify-photos.mjs';
+import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -1316,8 +1317,7 @@ export async function createApp(config = {}, options = {}) {
       if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') return sendRefPhoto(req, res, query.u);
       if (method === 'GET' && path === '/api/identify/field-photos') {
         if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
-        const stock = await frozenStock(store, config.identifierDir);
-        const names = ithomiiniSpecies(await headSpecies(config.identifierDir), stock.ithomiiniGenera);
+        const names = ithomiiniSpecies(await headSpecies(config.identifierDir), ITHOMIINI_GENERA);
         return json(res, 200, fieldPhotos(speciesPhotos.photosOf, names), { 'cache-control': 'no-store' });
       }
       if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {

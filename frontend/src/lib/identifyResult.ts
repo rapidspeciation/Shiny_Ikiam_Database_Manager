@@ -94,8 +94,8 @@ export const epithet = (name: string) => (name.split(' ')[2] ?? '').toLowerCase(
 /** «78 %», «<1 %». */
 export const percent = (p: number) => (p < 0.005 ? '<1 %' : `${Math.round(p * 100)} %`)
 
-/** true / false when the workbook's Ithomiini genera are known (the team's snapshot), else null. */
-export function isIthomiini(name: string, genera: string[] | undefined | null): boolean | null {
+/** true / false when a list of Ithomiini genera is given (lib/ithomiiniGenera.ts), else null. */
+export function isIthomiini(name: string, genera: readonly string[] | undefined | null): boolean | null {
   if (!genera?.length) return null
   return genera.includes(name.split(' ')[0])
 }

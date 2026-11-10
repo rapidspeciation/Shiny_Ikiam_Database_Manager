@@ -38,9 +38,3 @@ export const MODEL_PAGES = {
   small: 'https://huggingface.co/fr4nzzch/butterfly-id-small-onnx',
   head: 'https://huggingface.co/fr4nzzch/butterfly-id-classifier',
 }
-
-/**
- * The head's genera the workbook files under Tribe Ithomiini (server/frozen-stock.mjs ithomiiniGenera, 3 Nov 2026),
- * plus Elzunia (Ithomiini, no workbook row): the «Ithomiini» badge without the team's inventory.
- */
-export const ITHOMIINI_GENERA = ["Aeria", "Athesis", "Brevioleria", "Callithomia", "Ceratinia", "Dircenna", "Elzunia", "Episcada", "Epityches", "Eutresis", "Forbestra", "Godyris", "Greta", "Heterosais", "Hyalenna", "Hyalyris", "Hypoleria", "Hypomenitis", "Hyposcada", "Hypothyris", "Ithomia", "Mcclungia", "Mechanitis", "Megoleria", "Melinaea", "Methona", "Napeogenes", "Oleria", "Olyras", "Pagyris", "Patricia", "Pseudoscada", "Pteronymia", "Sais", "Scada", "Thyridia", "Tithorea", "Veladyris", "Velamysta"]
