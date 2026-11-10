@@ -4,9 +4,9 @@
 // On the PC that has the curation (images are not needed, only the JSONL/CSV/JSON):
 //   node scripts/import-envelope-curation.mjs --bundle envelope-bundle.json.gz <curation-dir> <manifest.csv> [--gallery <dir|url>]
 // makes one small file to copy to the server; there:
-//   DATABASE_PATH=… node scripts/import-envelope-curation.mjs envelope-bundle.json.gz
+//   DATABASE_PATH=… COLLECTION_SEX_SKIP_FILE=… node scripts/import-envelope-curation.mjs envelope-bundle.json.gz
 // Or straight into a database (local tests):
-//   DATABASE_PATH=… node scripts/import-envelope-curation.mjs <curation-dir> <manifest.csv> [--gallery <dir|url>]
+//   DATABASE_PATH=… COLLECTION_SEX_SKIP_FILE=… node scripts/import-envelope-curation.mjs <curation-dir> <manifest.csv> [--gallery <dir|url>]
 // --gallery: a clone's public/data folder or the gallery's URL (default: the published gallery);
 // --no-gallery leaves wing boxes and predictions out. Running it again replaces the earlier import.
 

@@ -535,9 +535,17 @@ export function createReadings({
       } else if (!result.errors) break;
       // Photos that could not be read wait RETRY_MS: the next batch has others.
     }
-    // Files out of date with the tables (an import since) or with the locked list (server/sex-skip.mjs): made again.
-    if (!closed && publicDir && filesStamp() !== db.prepare("SELECT value FROM review_meta WHERE key='gallery_files'").get()?.value)
-      await rebuild().catch(e => console.error('Readings:', e.message));
+    // Files out of date with the tables (an import since) or with the locked list (server/sex-skip.mjs): made again;
+    // another list also starts the gallery's update, so the site drops what the list now closes.
+    const made = !closed && publicDir ? db.prepare("SELECT value FROM review_meta WHERE key='gallery_files'").get()?.value : undefined;
+    if (!closed && publicDir && filesStamp() !== made) {
+      const listChanged = String(made ?? '').split('|')[1] !== sexSkipStamp();
+      const ok = await rebuild().then(
+        () => true,
+        e => (console.error('Readings:', e.message), false),
+      );
+      if (ok && listChanged) scheduleUpdate();
+    }
   }
 
   /** Reads what is not read yet, one batch after another; a call while it runs makes it look again at the end. */

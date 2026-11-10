@@ -204,18 +204,25 @@ test('a batch: read by the worker, written to the tables butterfly by butterfly,
   assert.equal(jobs().length, 3);
 });
 
-test("the gallery's files are made again with another locked list, without new readings", async t => {
+test("the gallery's files are made again with another locked list, without new readings, and the gallery updated", async t => {
   const { store, dir } = await storeOf(t);
   let builds = 0;
-  const { readings, jobs } = service(store, dir, { siteUpdates: { ready: () => false }, build: async (db, out) => (builds++, writeGalleryFiles(out, galleryData(db))) });
+  const { readings, jobs, calls } = service(store, dir, { build: async (db, out) => (builds++, writeGalleryFiles(out, galleryData(db))) });
   t.after(() => readings.close());
+  const updates = async n => {
+    for (let i = 0; i < 100 && calls.length < n; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(calls.length, n);
+  };
   readings.run();
   await readings.idle();
   const made = builds;
   assert.ok(made >= 1);
+  await updates(1);
   readings.run();
   await readings.idle();
   assert.equal(builds, made, 'nothing new: not made again');
+  await updates(1);
   // The app started with another list (or with the first valid one): made again, with no batch.
   const before = process.env.COLLECTION_SEX_SKIP_FILE;
   const list = join(dir, 'another-list.txt');
@@ -227,6 +234,7 @@ test("the gallery's files are made again with another locked list, without new r
   await readings.idle();
   assert.equal(builds, made + 1);
   assert.equal(jobs().length, asked);
+  await updates(2);
   const sex = JSON.parse(readFileSync(join(dir, 'public', 'sex_predictions_app.json'), 'utf8'));
   assert.equal(sex.CAM000201, undefined, 'the newly locked CAM is left out');
   assert.ok(sex.CAM000202);

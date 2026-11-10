@@ -3,7 +3,8 @@
 // Sanger run, e.g. photo-predictions.json.gz: {version, source, predictions: [one per CAM], photoPredictions:
 // [one per photo]}) → the app's database (photo_predictions, photo_file_predictions). They replace the Wings
 // Gallery's predictions (scripts/import-envelope-curation.mjs); importing again replaces the earlier import.
-//   DATABASE_PATH=… node scripts/import-photo-predictions.mjs photo-predictions.json.gz
+//   DATABASE_PATH=… COLLECTION_SEX_SKIP_FILE=… node scripts/import-photo-predictions.mjs photo-predictions.json.gz
+// Without a valid COLLECTION_SEX_SKIP_FILE (server/sex-skip.mjs) every CAM is stored with no sex.
 
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';

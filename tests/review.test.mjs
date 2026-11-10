@@ -1,3 +1,5 @@
+// The collection sex is read only with a valid locked list (server/sex-skip.mjs): a made-up one.
+import './helpers/sex-skip.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

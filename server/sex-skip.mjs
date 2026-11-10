@@ -11,12 +11,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const CAM = /^CAM\d{6}$/i;
-let kept = { file: undefined, set: null };
+let kept = null;
 
 /** The locked CAMs (upper case), or null when the list is missing, empty or not CAM IDs only. */
 export function sexSkipList() {
   const file = process.env.COLLECTION_SEX_SKIP_FILE;
-  if (kept.file === file) return kept.set;
+  if (kept && kept.file === file) return kept.set;
   let set = null;
   try {
     const list = file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean) : [];
