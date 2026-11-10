@@ -311,8 +311,9 @@ const rowInfo = row =>
 
 /**
  * CAMs whose collection sex score is never shown (COLLECTION_SEX_SKIP_FILE, one CAM per line or space): the
- * collection sex model's locked test portion stays closed. Fails closed: without a readable, non-empty list no
- * collection sex is shown at all (null). Read once per file name.
+ * collection sex model's locked test portion stays closed. Fails closed: without a readable, non-empty list of
+ * CAM IDs only (a CSV, commas or quotes would match no CAM and open it) no collection sex is shown at all (null).
+ * Read once per file name.
  */
 let skipped = { file: undefined, set: null };
 function sexSkipped() {
@@ -321,9 +322,9 @@ function sexSkipped() {
   let set = null;
   try {
     const list = file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean) : [];
-    set = list.length ? new Set(list.map(c => c.toUpperCase())) : null;
+    set = list.length && list.every(c => /^CAM\d{6}$/i.test(c)) ? new Set(list.map(c => c.toUpperCase())) : null;
   } catch {}
-  if (!set) console.error('Dudas: COLLECTION_SEX_SKIP_FILE is not set or not readable: no collection sex is shown.');
+  if (!set) console.error('Dudas: COLLECTION_SEX_SKIP_FILE is not set, not readable or not only CAM IDs: no collection sex is shown.');
   skipped = { file, set };
   return set;
 }

@@ -565,6 +565,25 @@ test("a row's project photos (dorsal, ventral, wing box) and its collection sex 
   assert.equal(projectInfo(s, new Set(['CAM000001'])).CAM000001.sex, null);
   process.env.COLLECTION_SEX_SKIP_FILE = join(dir, 'missing.txt');
   assert.equal(projectInfo(s, new Set(['CAM000001'])).CAM000001.sex, null);
+  // A list that is not CAM IDs only (the split CSV, commas, quotes, empty) matches no CAM: closed too.
+  const lists = {
+    'split.csv': 'cam_id,split\nCAM000003,locked\n',
+    'commas.txt': 'CAM000003,CAM000004\n',
+    'quoted.txt': '"CAM000003"\n',
+    'mixed.txt': 'CAM000003\nCAM00004\n',
+    'empty.txt': '\n',
+  };
+  for (const [name, text] of Object.entries(lists)) {
+    writeFileSync(join(dir, name), text);
+    process.env.COLLECTION_SEX_SKIP_FILE = join(dir, name);
+    assert.equal(projectInfo(s, new Set(['CAM000001'])).CAM000001.sex, null, name);
+  }
+  // CAM IDs in any case, one per line or space: open.
+  writeFileSync(join(dir, 'spaced.txt'), 'cam000003  CAM000004\n');
+  process.env.COLLECTION_SEX_SKIP_FILE = join(dir, 'spaced.txt');
+  const spaced = projectInfo(s, new Set(['CAM000001', 'CAM000003']));
+  assert.equal(spaced.CAM000001.sex.pMale, 0.93);
+  assert.equal(spaced.CAM000003.sex, null);
   delete process.env.COLLECTION_SEX_SKIP_FILE;
   assert.deepEqual(got.CAM000003, { photos: [], sex: null });
   assert.deepEqual(got.CAM000001, {
