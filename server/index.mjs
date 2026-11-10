@@ -789,7 +789,13 @@ export async function createApp(config = {}, options = {}) {
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
           // The Wikiloc imports: ok, stale (a followed profile not looked at in 30 days) or failing (server/monitoring.mjs wikilocHealth).
-          wikiloc: wikilocHealth(store),
+          wikiloc: (() => {
+            try {
+              return wikilocHealth(store);
+            } catch (e) {
+              return { status: 'unknown', error: String(e.message).slice(0, 120) };
+            }
+          })(),
           ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),
           // The lab (LOCAL_MODE): whether the start's work (the first sync, the checks' warm-up) is done;
           // tools/lab/dev-app.sh lets the next copy start then.

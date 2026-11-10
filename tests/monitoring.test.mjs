@@ -196,7 +196,7 @@ test('links and profile checks become jobs for the home computer, which claims a
   assert.ok(workerSeen);
 });
 
-test("a job Cloudflare's check stopped waits and is tried again, then fails saying why", () => {
+test("a job Cloudflare's check stopped waits and is tried again, then fails saying why", t => {
   const s = store();
   const link = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112' }, editor).job;
   assert.equal(claimJob(s).job.id, link.id);
@@ -213,8 +213,11 @@ test("a job Cloudflare's check stopped waits and is tried again, then fails sayi
   finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' });
   queueLink(s, { url: link.target }, editor);
   assert.equal(claimJob(s).job.id, link.id);
-  // The last try: then it fails, saying why.
+  // The last try: then it fails, saying why (in the app's log too, as its third try).
+  const logged = [];
+  t.mock.method(console, 'error', line => logged.push(line));
   const last = finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' }).job;
+  assert.match(logged.join('\n'), /\(try 3\): Cloudflare challenge did not clear/);
   assert.equal(last.status, 'failed');
   assert.equal(last.attempts, 3);
   // Any other error fails at once.
@@ -279,6 +282,11 @@ test("/health's wikiloc: failing after a failed import until one works, stale pr
   const silent = wikilocHealth(s, Date.now() + 2 * 3600_000);
   assert.equal(silent.status, 'failing');
   assert.equal(silent.reason, 'worker');
+  // A worker cut in the middle of a job: busy for the hour, then silent (only its next claim requeues the job).
+  queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/tercera-291000003' }, editor);
+  claimJob(s);
+  assert.equal(wikilocHealth(s, Date.now() + 30 * 60_000).status, 'ok');
+  assert.equal(wikilocHealth(s, Date.now() + 2 * 3600_000).reason, 'worker');
 });
 
 test('a walk takes its collector from the followed profile of its author', async () => {

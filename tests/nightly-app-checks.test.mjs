@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { wikilocLine } from '../scripts/nightly-app-checks.mjs';
 
 const script = fileURLToPath(new URL('../scripts/nightly-app-checks.mjs', import.meta.url));
-// /health's wikiloc as the live app had it on 10 Nov 2026 (three failed on 16 Oct, the last that worked on 1 Oct).
+// /health's wikiloc as it would read for the live facts of 10 Nov 2026 (three failed on 16 Oct, the last that worked on 1 Oct).
 const live = {
   status: 'failing',
   reason: 'failed',

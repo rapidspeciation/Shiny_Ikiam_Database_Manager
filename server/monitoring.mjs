@@ -1135,8 +1135,9 @@ export function finishJob(store, id, body) {
   store.db
     .prepare('UPDATE wikiloc_jobs SET status=?, message=?, attempts=?, updated_at=? WHERE id=?')
     .run(status, text(body.message, 1000), attempts, now(), id);
-  // In the app's log (journalctl -u ithomiini) as well as on Importar; /health's `wikiloc` and the nightly check flag it.
-  if (status === 'failed') console.error(`Wikiloc import failed: ${job.kind} job ${id} (try ${attempts + 1}): ${text(body.message, 300) || 'no message'}`);
+  // In the app's log (journalctl --user -u ithomiini) as well as on Importar; /health's `wikiloc` and the nightly flag it.
+  if (status === 'failed')
+    console.error(`Wikiloc import failed: ${job.kind} job ${id} (try ${(job.attempts ?? 0) + 1}): ${text(body.message, 300) || 'no message'}`);
   if (job.kind === 'profile' && status === 'done')
     store.db.prepare('UPDATE wikiloc_profiles SET last_checked=?, name=COALESCE(?, name) WHERE wikiloc_user=?').run(now(), text(body.profileName, 120), job.target);
   return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };
@@ -1163,7 +1164,10 @@ export function wikilocHealth(store, at = Date.now()) {
     .prepare("SELECT count(*) AS n, max(updated_at) AS t FROM wikiloc_jobs WHERE status='failed' AND (? IS NULL OR updated_at > ?)")
     .get(lastOk, lastOk);
   const waiting = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n;
-  const running = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='running'").get().n;
+  // A job claimed within the hour: the worker is busy with it. One left `running` longer was cut (only a claim requeues it).
+  const running = db
+    .prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='running' AND updated_at > ?")
+    .get(new Date(at - WORKER_SILENT_MS).toISOString()).n;
   const profiles = db.prepare('SELECT count(*) AS n, min(COALESCE(last_checked, created_at)) AS t FROM wikiloc_profiles').get();
   const jobs = db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n;
   const workerSeen = store.getSetting('wikilocWorkerSeen') || null;

@@ -1,12 +1,35 @@
 {
   "about": "Errors the Wikiloc worker on the app server reported (its journal and wikiloc_jobs.message), copied as they were. retry: tried again later; failed: at once.",
   "retry": [
-    { "seen": "2026-10-16, three jobs", "message": "Wikiloc browser: TimeoutError: Cloudflare challenge did not clear" },
-    { "seen": "2026-11-10, a walk's page from the server (loaded on the next try)", "message": "Wikiloc browser: TimeoutError: Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112\", waiting until \"domcontentloaded\"" },
-    { "seen": "browser.mjs, its own limit", "message": "Wikiloc browser goto timed out" }
+    {
+      "seen": "2026-10-16, three jobs",
+      "message": "Wikiloc browser: TimeoutError: Cloudflare challenge did not clear"
+    },
+    {
+      "seen": "2026-11-10, a walk's page from the server (loaded on the next try)",
+      "message": "Wikiloc browser: TimeoutError: Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112\", waiting until \"domcontentloaded\""
+    },
+    {
+      "seen": "browser.mjs, its own limit",
+      "message": "Wikiloc browser goto timed out"
+    },
+    {
+      "seen": "not seen live: Camoufox's (Firefox's) error when the home tunnel drops mid-job",
+      "message": "Wikiloc browser: Error: Page.goto: NS_ERROR_PROXY_CONNECTION_REFUSED"
+    },
+    {
+      "seen": "not seen live: browser.mjs when the browser process dies",
+      "message": "Wikiloc browser exited (1)"
+    }
   ],
   "failed": [
-    { "seen": "2026-11-04 and 2026-11-08, during deploys", "message": "App answered 502" },
-    { "seen": "server/monitoring.mjs saveWalk", "message": "Photos must come from wklcdn.com" }
+    {
+      "seen": "2026-11-04 and 2026-11-08, during deploys",
+      "message": "App answered 502"
+    },
+    {
+      "seen": "server/monitoring.mjs saveWalk",
+      "message": "Photos must come from wklcdn.com"
+    }
   ]
 }

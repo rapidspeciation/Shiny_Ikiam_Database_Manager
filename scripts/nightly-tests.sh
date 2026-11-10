@@ -3,10 +3,11 @@
 # deploy/ithomiini-nightly-tests.timer at nice 19. A deploy is tested on a PC; this checks the same commit on the
 # server's own node and cores. It writes a dated log and last-result.json in shared/nightly-tests/ and nothing else:
 # no AI (the server tests run with tests/helpers/no-ai.mjs, the frontend's guard is in its setupFiles), no WhatsApp,
-# no team chat, no live data (a fresh copy of the commit, its own HOME, none of the service's settings).
+# no team chat, no live data (a fresh copy of the commit, its own HOME, none of the service's settings); of the live app
+# it reads only its public /health (the wikiloc job, scripts/nightly-app-checks.mjs).
 #   bash /home/ubuntu/ithomiini/current/scripts/nightly-tests.sh
 # ITHOMIINI_APP_ROOT (default /home/ubuntu/ithomiini), NIGHTLY_SCRATCH_PARENT (default ~/.cache/ithomiini-nightly) and
-# NIGHTLY_HEALTH_URL (default http://127.0.0.1:8794/health, the live app's) for tests.
+# NIGHTLY_HEALTH_URL (default http://127.0.0.1:8794/health, the live app's) for other setups.
 set -uo pipefail
 app="${ITHOMIINI_APP_ROOT:-/home/ubuntu/ithomiini}"
 out="$app/shared/nightly-tests"
@@ -58,7 +59,7 @@ job() { # job <name> <command...>: one at a time, at the lowest priority
   nice -n 19 "${clean[@]}" "$@"
   rc=$?
   # 3: a warning (scripts/nightly-app-checks.mjs), kept in the result without failing the night.
-  if [ "$rc" = 0 ]; then result[$name]=pass; elif [ "$rc" = 3 ]; then result[$name]=warn; else result[$name]=fail; fi
+  if [ "$rc" = 0 ]; then result[$name]=pass; elif [ "$rc" = 3 ] && [ "$name" = wikiloc ]; then result[$name]=warn; else result[$name]=fail; fi
   echo "== $name: ${result[$name]} in $(( $(date +%s) - s )) s"
 }
 job install npm --prefix frontend ci --no-audit --no-fund --prefer-offline
@@ -74,5 +75,10 @@ job frontend npm --prefix frontend test -- --maxWorkers=2
 # The live app's own state, from its /health (no login, no AI): the latest Wikiloc import failed or its worker stopped
 # (fail), or a followed profile went 30 days unchecked (warn). One line in this log says which.
 job wikiloc node scripts/nightly-app-checks.mjs "${NIGHTLY_HEALTH_URL:-http://127.0.0.1:8794/health}"
-for k in "${!result[@]}"; do [ "${result[$k]}" != fail ] || finish failed "$k failed"; done
-finish ok "all suites passed"
+failed="" warned=""
+for k in "${!result[@]}"; do
+  [ "${result[$k]}" = fail ] && failed="$failed${failed:+, }$k"
+  [ "${result[$k]}" = warn ] && warned="$warned${warned:+, }$k"
+done
+[ -z "$failed" ] || finish failed "failed: $failed${warned:+; warning: $warned}"
+finish ok "all suites passed${warned:+; warning: $warned}"
