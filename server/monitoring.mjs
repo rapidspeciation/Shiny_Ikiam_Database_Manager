@@ -949,7 +949,7 @@ export function reopenWalk(store, id) {
 export function deleteWalk(store, id, user) {
   const row = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id);
   if (!row) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
-  if (row.created_by !== user.username && !['reviewer', 'admin'].includes(user.role))
+  if (row.created_by !== user.username && row.created_by !== DAILY_SYNC_USER.username && !['reviewer', 'admin'].includes(user.role))
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this walk', 403);
   store.db.prepare('DELETE FROM wikiloc_walks WHERE id=?').run(id);
   return { ok: true };
@@ -1076,39 +1076,41 @@ export function queueLink(store, body, user) {
  * (5 and 20 minutes) are over before the nightly reads /health. WIKILOC_DAILY_CHECK=0 in service.env turns it off.
  */
 export const DAILY_SYNC_HOUR_EC = 21;
-/** The requester of the daily jobs (Importar's job list; the walks found are this name's, as a person's would be theirs). */
-export const DAILY_SYNC_USER = { username: 'wikiloc-daily' };
+/** The requester of the daily jobs (Importar's job list); any editor can remove a walk it found (deleteWalk). */
+const DAILY_SYNC_USER = { username: 'wikiloc-daily' };
 
 /**
- * Queues the day's look once its hour has come (`at`: the clock, for tests): null when not yet, done today already, no
- * profile followed, or every profile looked at in the last 12 hours (someone pressed «Buscar nuevos»). Never a second
- * look while one is waiting or running: the open job of a profile is kept (addJob).
+ * Queues the day's look once its hour has come (`at`: the clock, for tests): one job per followed profile, as
+ * «Buscar nuevos». Null when not yet, done today already, or no profile followed. A profile whose job still waits or
+ * runs gets no second one, and its retry wait is kept (Buscar nuevos would clear it).
  */
 export function dailySync(store, at = Date.now()) {
   const ec = new Date(at - 5 * 3600_000);
   const day = ec.toISOString().slice(0, 10);
   if (ec.getUTCHours() < DAILY_SYNC_HOUR_EC || store.getSetting('wikilocDailySync') === day) return null;
-  const profiles = store.db.prepare('SELECT min(COALESCE(last_checked, \'\')) AS oldest, count(*) AS n FROM wikiloc_profiles').get();
-  if (!profiles.n) return null;
+  const profiles = store.db
+    .prepare(
+      "SELECT wikiloc_user FROM wikiloc_profiles p WHERE NOT EXISTS (SELECT 1 FROM wikiloc_jobs j WHERE j.kind='profile' AND j.target=p.wikiloc_user AND j.status IN ('queued','running')) ORDER BY created_at",
+    )
+    .all();
+  if (!store.db.prepare('SELECT 1 FROM wikiloc_profiles LIMIT 1').get()) return null;
   store.setSetting('wikilocDailySync', day);
-  if (profiles.oldest && Date.parse(profiles.oldest) > at - 12 * 3600_000) return null;
-  const { jobs } = queueSync(store, DAILY_SYNC_USER);
+  const jobs = profiles.map(p => addJob(store, 'profile', p.wikiloc_user, DAILY_SYNC_USER));
   console.log(`Wikiloc daily check ${day}: ${jobs.length} followed profiles queued`);
   return { day, jobs };
 }
 
 /** Looks every 10 minutes whether the day's look is due (createApp; stop() on close). */
-export function startDailySync(store, { everyMs = 10 * 60_000, now = Date.now } = {}) {
-  const tick = () => {
+export function startDailySync(store, { now = Date.now } = {}) {
+  const timer = setInterval(() => {
     try {
       dailySync(store, now());
     } catch (e) {
       console.error('Wikiloc daily check:', e.message);
     }
-  };
-  const timer = setInterval(tick, everyMs);
+  }, 10 * 60_000);
   timer.unref?.();
-  return { tick, stop: () => clearInterval(timer) };
+  return { stop: () => clearInterval(timer) };
 }
 
 /** One job per followed profile, to look for monitoring trails not yet in the app. */
@@ -1195,7 +1197,8 @@ const WORKER_SILENT_MS = 60 * 60_000;
  * Whether the Wikiloc imports work, for /health (public: counts and times only, no links, names or messages) and the
  * nightly check (scripts/nightly-app-checks.mjs). In Oct 2026 three imports failed and no walk came in for six weeks
  * with nothing saying so outside Importar. `status`:
- * - `failing`: the latest finished job failed (`failedSinceOk` jobs since the last that worked), or the worker
+ * - `failing`: the latest finished job failed (`failedSinceOk` jobs since the last that worked), a followed profile's
+ *   latest check failed (`profilesFailing`), or the worker
  *   has not asked for work in an hour;
  * - `stale`: a followed profile has not been looked at in PROFILE_STALE_DAYS days (Importar's «Buscar nuevos»);
  * - `ok`, or `unused` before any job or profile.
@@ -1206,6 +1209,13 @@ export function wikilocHealth(store, at = Date.now()) {
   const failed = db
     .prepare("SELECT count(*) AS n, max(updated_at) AS t FROM wikiloc_jobs WHERE status='failed' AND (? IS NULL OR updated_at > ?)")
     .get(lastOk, lastOk);
+  // A followed profile whose latest finished check failed (a profile failing each night would hide behind the others).
+  const profileFailed = db
+    .prepare(
+      `SELECT count(*) AS n, max(j.updated_at) AS t FROM wikiloc_profiles p JOIN wikiloc_jobs j ON j.kind='profile' AND j.target=p.wikiloc_user
+       WHERE j.status='failed' AND j.updated_at = (SELECT max(updated_at) FROM wikiloc_jobs k WHERE k.kind='profile' AND k.target=p.wikiloc_user AND k.status IN ('done','failed'))`,
+    )
+    .get();
   const waiting = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n;
   const profiles = db.prepare('SELECT count(*) AS n, min(COALESCE(last_checked, created_at)) AS t FROM wikiloc_profiles').get();
   const jobs = db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n;
@@ -1213,19 +1223,21 @@ export function wikilocHealth(store, at = Date.now()) {
   // A job of its own claimed within the hour means it was seen then too; one left `running` longer was cut.
   const silent = jobs > 0 && (!workerSeen || at - Date.parse(workerSeen) > WORKER_SILENT_MS);
   const stale = profiles.n > 0 && at - Date.parse(profiles.t) > PROFILE_STALE_DAYS * 864e5;
-  const status = failed.n > 0 || silent ? 'failing' : stale ? 'stale' : jobs || profiles.n ? 'ok' : 'unused';
+  const status = failed.n > 0 || profileFailed.n > 0 || silent ? 'failing' : stale ? 'stale' : jobs || profiles.n ? 'ok' : 'unused';
   return {
     status,
     // Why it is failing: the latest import failed, or the worker went silent.
-    ...(status === 'failing' ? { reason: failed.n > 0 ? 'failed' : 'worker' } : {}),
+    ...(status === 'failing' ? { reason: failed.n > 0 || profileFailed.n > 0 ? 'failed' : 'worker' } : {}),
     lastOk,
     failedSinceOk: failed.n,
-    lastFailed: failed.t ?? null,
+    // Followed profiles whose latest check failed.
+    profilesFailing: profileFailed.n,
+    lastFailed: [failed.t, profileFailed.t].filter(Boolean).sort().at(-1) ?? null,
     waiting,
     workerSeen,
     profiles: profiles.n,
     oldestProfileCheck: profiles.n ? profiles.t : null,
-    // The day (Ecuador) of the last daily look; /health adds `daily`, on or off (WIKILOC_DAILY_CHECK).
+    // The day (Ecuador) the daily look last queued the profiles; /health adds `daily`, on or off (WIKILOC_DAILY_CHECK).
     dailyQueued: store.getSetting('wikilocDailySync') || null,
   };
 }

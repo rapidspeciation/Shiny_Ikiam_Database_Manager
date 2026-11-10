@@ -14,6 +14,7 @@ const live = {
   reason: 'failed',
   lastOk: '2026-10-01T00:00:11.999Z',
   failedSinceOk: 3,
+  profilesFailing: 0,
   lastFailed: '2026-10-16T18:09:20.890Z',
   waiting: 0,
   workerSeen: '2026-11-10T22:50:01.000Z',
@@ -24,7 +25,7 @@ const live = {
 test('the line and exit code for each state', () => {
   const failing = wikilocLine(live);
   assert.equal(failing.code, 1);
-  assert.match(failing.line, /FAILING: 3 failed since the last that worked \(latest 2026-10-16\); last that worked 2026-10-01/);
+  assert.match(failing.line, /FAILING: 3 failed since the last that worked, 0 followed profiles whose latest check failed \(latest 2026-10-16\); last that worked 2026-10-01/);
   assert.match(wikilocLine({ ...live, reason: 'worker', failedSinceOk: 0 }).line, /worker has not asked for work/);
   const stale = wikilocLine({ ...live, status: 'stale', reason: undefined, failedSinceOk: 0 });
   assert.equal(stale.code, 3);

@@ -15,6 +15,7 @@ import {
   queueSync,
   trailUrl,
   deleteTrack,
+  deleteWalk,
   getPhoto,
   listTracks,
   listWalks,
@@ -295,7 +296,7 @@ test("/health's wikiloc: failing after a failed import until one works, stale pr
 // Ecuador's clock (UTC-5) as the server's: `ec('2026-11-11', 21, 0)` is 02:00 UTC on 12 Nov.
 const ec = (day, h, m = 0) => Date.parse(`${day}T00:00:00Z`) + (h + 5) * 3600_000 + m * 60_000;
 
-test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, never twice at once; a fake worker runs it', t => {
+test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, never twice at once; a fake worker runs it', async t => {
   assert.equal(DAILY_SYNC_HOUR_EC, 21);
   const s = store();
   t.mock.method(console, 'log', () => {});
@@ -312,9 +313,8 @@ test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, ne
   // Once that day, also after midnight UTC.
   assert.equal(dailySync(s, ec('2026-11-11', 23, 50)), null);
   assert.equal(dailySync(s, ec('2026-11-12', 20)), null);
-  // The next day while the first look still waits: the same jobs, no second look of a profile.
-  const second = dailySync(s, ec('2026-11-12', 21, 10));
-  assert.deepEqual(second.jobs.map(j => j.id), first.jobs.map(j => j.id));
+  // The next day while the first look still waits: no second look of a profile.
+  assert.deepEqual(dailySync(s, ec('2026-11-12', 21, 10)).jobs, []);
   assert.equal(s.db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n, 2);
   assert.equal(wikilocHealth(s).dailyQueued, '2026-11-12');
   // The worker (fake): Cloudflare stops the first profile once, so it waits for its retry like any job; then both work.
@@ -324,22 +324,33 @@ test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, ne
   assert.equal(job2.target, '23021371');
   assert.equal(claimJob(s).job, null, 'the retry waits its 5 minutes');
   finishJob(s, job2.id, { status: 'done', message: 'Sin rutas nuevas (6 rutas revisadas)' });
+  // The next day's look while that retry waits: only the other profile is queued, the retry keeps its wait.
+  const wait = s.db.prepare('SELECT not_before FROM wikiloc_jobs WHERE id=?').get(job1.id).not_before;
+  assert.deepEqual(dailySync(s, ec('2026-11-13', 21, 0)).jobs.map(j => j.target), ['23021371']);
+  assert.equal(s.db.prepare('SELECT not_before FROM wikiloc_jobs WHERE id=?').get(job1.id).not_before, wait);
   s.db.prepare('UPDATE wikiloc_jobs SET not_before=NULL').run();
-  finishJob(s, claimJob(s).job.id, { status: 'done', message: '1 rutas nuevas de 37' });
+  for (let job; (job = claimJob(s).job); ) finishJob(s, job.id, { status: 'done', message: '1 rutas nuevas de 37' });
   const health = wikilocHealth(s);
   assert.equal(health.status, 'ok');
   assert.equal(health.failedSinceOk, 0);
-  // Every profile looked at in the last 12 hours (someone pressed «Buscar nuevos» at 20:30): the day's look is skipped.
-  s.db.prepare('UPDATE wikiloc_profiles SET last_checked=?').run(new Date(ec('2026-11-13', 20, 30)).toISOString());
-  assert.equal(dailySync(s, ec('2026-11-13', 21, 0)), null);
-  assert.equal(s.db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='queued'").get().n, 0);
-  assert.equal(wikilocHealth(s).dailyQueued, '2026-11-13');
-  // A failed daily look shows up like any failed import.
-  s.db.prepare("UPDATE wikiloc_profiles SET last_checked='2026-11-01T00:00:00Z'").run();
-  dailySync(s, ec('2026-11-14', 21, 0));
-  for (let job; (job = claimJob(s).job); ) finishJob(s, job.id, { status: 'failed', message: 'App answered 502' });
+  assert.equal(health.dailyQueued, '2026-11-13');
+  // A walk the daily look found can be removed from the list by any editor, as one they brought in.
+  const { walk } = await saveWalk(s, { ...walkBody(), jobId: job2.id }, editor, { fetchImage: fakeImage([]) });
+  assert.equal(walk.createdBy, 'wikiloc-daily');
+  assert.deepEqual(deleteWalk(s, walk.id, other), { ok: true });
+  // A profile whose check fails early in the night, before others that work, still shows: failing.
   t.mock.method(console, 'error', () => {});
-  assert.equal(wikilocHealth(s).status, 'failing');
+  dailySync(s, ec('2026-11-14', 21, 0));
+  finishJob(s, claimJob(s).job.id, { status: 'failed', message: 'App answered 502' });
+  finishJob(s, claimJob(s).job.id, { status: 'done', message: 'Sin rutas nuevas (6 rutas revisadas)' });
+  const failing = wikilocHealth(s);
+  assert.equal(failing.status, 'failing');
+  assert.equal(failing.failedSinceOk, 0);
+  assert.equal(failing.profilesFailing, 1);
+  // That profile's next check works: ok again.
+  dailySync(s, ec('2026-11-15', 21, 0));
+  for (let job; (job = claimJob(s).job); ) finishJob(s, job.id, { status: 'done', message: 'ok' });
+  assert.equal(wikilocHealth(s).status, 'ok');
 });
 
 test('the daily check looks every 10 minutes on its timer and stops on close', t => {

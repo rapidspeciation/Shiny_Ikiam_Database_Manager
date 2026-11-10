@@ -316,10 +316,10 @@ export function configFromEnv(env = process.env) {
     // The background photo readings (server/readings.mjs): on where the photo reader and the identifier are
     // installed, except in LOCAL_MODE (the lab: READINGS=1 turns them on); READINGS=0 turns them off. READINGS_THREADS (2).
     readings: env.READINGS === '0' ? false : env.READINGS === '1' ? true : 'auto',
+    readingsThreads: env.READINGS_THREADS ? Number(env.READINGS_THREADS) : undefined,
     // The daily look at the followed Wikiloc profiles (server/monitoring.mjs dailySync): on, except in LOCAL_MODE (the lab:
     // WIKILOC_DAILY_CHECK=1 turns it on); WIKILOC_DAILY_CHECK=0 turns it off.
     wikilocDaily: env.WIKILOC_DAILY_CHECK === '0' ? false : env.WIKILOC_DAILY_CHECK === '1' ? true : 'auto',
-    readingsThreads: env.READINGS_THREADS ? Number(env.READINGS_THREADS) : undefined,
     // The Wings Gallery's files made from the photo readings (server/gallery-public.mjs): beside the database by default.
     publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
     identifierOptions: {

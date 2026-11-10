@@ -18,7 +18,9 @@ export function wikilocLine(w) {
     return {
       code: 1,
       line: `Wikiloc imports: FAILING: ${
-        w.reason === 'worker' ? 'the worker has not asked for work in an hour' : `${w.failedSinceOk} failed since the last that worked (latest ${day(w.lastFailed)})`
+        w.reason === 'worker'
+          ? 'the worker has not asked for work in an hour'
+          : `${w.failedSinceOk} failed since the last that worked, ${w.profilesFailing ?? 0} followed profiles whose latest check failed (latest ${day(w.lastFailed)})`
       }; ${detail}. See Monitoreo → Importar and journalctl --user -u ithomiini-wikiloc.`,
     };
   if (w.status === 'stale')

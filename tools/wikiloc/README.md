@@ -45,8 +45,8 @@ journalctl --user -u ithomiini-wikiloc -n 60 --no-pager
 ```
 
 Once a day at 21:00 Ecuador the app queues the followed profiles' checks by itself, the same jobs as Importar's
-«Buscar nuevos» (requested by `wikiloc-daily`; skipped when every profile was looked at in the last 12 hours, and
-never a second check of a profile while one waits or runs). The hour is when the home computer's tunnel is usually up
+«Buscar nuevos» (requested by `wikiloc-daily`, so any editor can remove a walk it found; never a second check of a
+profile while one waits or runs, and its retry wait is kept). The hour is when the home computer's tunnel is usually up
 (below) and the server's night jobs have not started. `WIKILOC_DAILY_CHECK=0` in
 `~/.config/ithomiini/service.env` turns it off (then restart the app); it is on by default, off in LOCAL_MODE.
 
