@@ -6,6 +6,8 @@
 // scripts/import-envelope-curation.mjs; the checks (server/checks.mjs) and the
 // Revisión tab read them here.
 
+import { sexClosedStatus } from './sex-skip.mjs';
+
 const ready = new WeakSet();
 
 export function initPhotoTables(db) {
@@ -114,6 +116,15 @@ const parse = text => {
   }
 };
 
+/**
+ * A photo_predictions row as the app shows it: a CAM of the collection sex model's locked test portion, or every CAM
+ * without a valid list (server/sex-skip.mjs), has no sex, only why.
+ */
+const withoutClosedSex = p => {
+  const closed = sexClosedStatus(p.cam);
+  return closed ? { ...p, sex: null, sex_conf: null, sex_supported: 0, sex_species: null, sex_p_male: null, sex_status: closed } : p;
+};
+
 const indexCache = new WeakMap();
 /**
  * CAM → its dorsal and ventral photos (Drive file IDs), from the synced
@@ -217,6 +228,7 @@ export function reviewData(store) {
     db
       .prepare('SELECT * FROM photo_predictions')
       .all()
+      .map(withoutClosedSex)
       .map(p => [
         p.cam,
         {

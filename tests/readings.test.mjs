@@ -2,6 +2,8 @@
 // (tests/fixtures/fake-readings-worker.mjs) and for the identifier's Python worker (tests/fixtures/fake-specimen.mjs):
 // which photos wait, a batch written to the tables, a restart going on where it was, one gallery update per batch
 // (debounced), and the Wings Gallery's files in the formats agreed with it (/tmp/gallery-readings-spec.md).
+// The collection sex is read only with a valid locked list (server/sex-skip.mjs): a made-up one.
+import './helpers/sex-skip.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -200,6 +202,34 @@ test('a batch: read by the worker, written to the tables butterfly by butterfly,
   await advance(t, 5000);
   assert.deepEqual(calls, ['gallery']);
   assert.equal(jobs().length, 3);
+});
+
+test("the gallery's files are made again with another locked list, without new readings", async t => {
+  const { store, dir } = await storeOf(t);
+  let builds = 0;
+  const { readings, jobs } = service(store, dir, { siteUpdates: { ready: () => false }, build: async (db, out) => (builds++, writeGalleryFiles(out, galleryData(db))) });
+  t.after(() => readings.close());
+  readings.run();
+  await readings.idle();
+  const made = builds;
+  assert.ok(made >= 1);
+  readings.run();
+  await readings.idle();
+  assert.equal(builds, made, 'nothing new: not made again');
+  // The app started with another list (or with the first valid one): made again, with no batch.
+  const before = process.env.COLLECTION_SEX_SKIP_FILE;
+  const list = join(dir, 'another-list.txt');
+  writeFileSync(list, 'CAM000201\n');
+  process.env.COLLECTION_SEX_SKIP_FILE = list;
+  t.after(() => (before === undefined ? delete process.env.COLLECTION_SEX_SKIP_FILE : (process.env.COLLECTION_SEX_SKIP_FILE = before)));
+  const asked = jobs().length;
+  readings.run();
+  await readings.idle();
+  assert.equal(builds, made + 1);
+  assert.equal(jobs().length, asked);
+  const sex = JSON.parse(readFileSync(join(dir, 'public', 'sex_predictions_app.json'), 'utf8'));
+  assert.equal(sex.CAM000201, undefined, 'the newly locked CAM is left out');
+  assert.ok(sex.CAM000202);
 });
 
 test('batches ending within the wait start one update; one already running is started again later', async t => {

@@ -1,6 +1,8 @@
 // The nano wing model's and the identifier/sex model's readings of every Photo_links photo (18 Oct 2026 bundles):
 // imported into photo_wing_sides / photo_wing_boxes / photo_predictions / photo_file_predictions with their new
 // columns, again the same, and read back by the app's indexes. An older database gets the new columns.
+// The collection sex is read only with a valid locked list (server/sex-skip.mjs): a made-up one.
+import './helpers/sex-skip.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';

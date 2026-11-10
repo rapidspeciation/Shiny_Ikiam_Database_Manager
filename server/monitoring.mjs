@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { photoIndex } from './photodata.mjs';
+import { sexOpen } from './sex-skip.mjs';
 import { unreliableFor } from './sex-check.mjs';
 // The pairing of walk points with sheet rows is shared with the browser (Node strips the types).
 import * as lib from '../frontend/src/lib/monitoring.ts';
@@ -310,26 +310,6 @@ const rowInfo = row =>
   };
 
 /**
- * CAMs whose collection sex score is never shown (COLLECTION_SEX_SKIP_FILE, one CAM per line or space): the
- * collection sex model's locked test portion stays closed. Fails closed: without a readable, non-empty list of
- * CAM IDs only (a CSV, commas or quotes would match no CAM and open it) no collection sex is shown at all (null).
- * Read once per file name.
- */
-let skipped = { file: undefined, set: null };
-function sexSkipped() {
-  const file = process.env.COLLECTION_SEX_SKIP_FILE;
-  if (skipped.file === file) return skipped.set;
-  let set = null;
-  try {
-    const list = file ? readFileSync(file, 'utf8').split(/\s+/).filter(Boolean) : [];
-    set = list.length && list.every(c => /^CAM\d{6}$/i.test(c)) ? new Set(list.map(c => c.toUpperCase())) : null;
-  } catch {}
-  if (!set) console.error('Dudas: COLLECTION_SEX_SKIP_FILE is not set, not readable or not only CAM IDs: no collection sex is shown.');
-  skipped = { file, set };
-  return set;
-}
-
-/**
  * The project photos and the collection sex model's call of each CAM, for Dudas: the CAM's first dorsal and ventral
  * photo (Photo_links; served by /api/photo) with the wing box of the photo readings (photo_wing_boxes, fractions), and
  * the sex of photo_predictions. That sex is out of fold: the readings score each CAM with the fold model trained
@@ -346,7 +326,6 @@ export function projectInfo(store, cams) {
       .map(b => [String(b.name).toUpperCase(), b.box_json]),
   );
   const prediction = store.db.prepare('SELECT sex_p_male, sex_supported, sex_species, sex_status FROM photo_predictions WHERE cam=?');
-  const skip = sexSkipped();
   for (const cam of cams) {
     const entry = index.byCam.get(cam);
     const photos = ['dorsal', 'ventral'].flatMap(view => {
@@ -358,7 +337,8 @@ export function projectInfo(store, cams) {
       } catch {}
       return [{ id, view, box: Array.isArray(box) && box.length === 4 ? box : null }];
     });
-    const p = !skip || skip.has(cam) ? null : prediction.get(cam);
+    // The collection sex model's locked test portion, or no valid list: no sex (server/sex-skip.mjs).
+    const p = sexOpen(cam) ? prediction.get(cam) : null;
     const scored = p && p.sex_p_male !== null && p.sex_p_male !== undefined && !String(p.sex_status ?? '').startsWith('not_scored');
     out[cam] = {
       photos,

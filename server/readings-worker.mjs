@@ -32,6 +32,7 @@ import { pathToFileURL } from 'node:url';
 import { driveUrls } from './photos.mjs';
 import { wingShapes } from './wing-masks.mjs';
 import { nextBatch } from './readings.mjs';
+import { sexClosedStatus } from './sex-skip.mjs';
 
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -225,14 +226,17 @@ async function butterfly(job) {
   try {
     // The sex model's wing boxes: the nano chain's readings of its d and v photos, read now or before (the plan's).
     const wingOf = key => (wings[key] && !wings[key].error ? wings[key] : (job.sex?.wings?.[key] ?? null));
+    // The collection sex model's locked test portion, or no valid list (server/sex-skip.mjs): its sex is not scored;
+    // the Python worker never gets it.
+    const closed = job.sex ? sexClosedStatus(job.cam) : null;
     const sex =
-      job.sex && paths.has(job.sex.d) && paths.has(job.sex.v)
+      job.sex && !closed && paths.has(job.sex.d) && paths.has(job.sex.v)
         ? { cam: job.cam, d: job.sex.d, v: job.sex.v, species: job.species ?? null, wings: { d: wingOf(job.sex.d), v: wingOf(job.sex.v) } }
         : null;
     // only: 'sex': the sex model alone, without the species (the Python worker's op "sex": no image encoder)
-    if (job.only === 'sex') ident = sex ? await specimen({ op: 'sex', photos, sex }) : { sex: { status: 'not_scored:photo_not_downloaded' } };
+    if (job.only === 'sex') ident = sex ? await specimen({ op: 'sex', photos, sex }) : { sex: { status: closed ?? 'not_scored:photo_not_downloaded' } };
     else ident = photos.length ? await specimen({ photos, side: job.side ?? null, ecuador: job.ecuador ?? null, sex }) : { error: 'no photo downloaded' };
-    if (job.sex && !sex && !ident.error) ident.sex = { status: 'not_scored:photo_not_downloaded' };
+    if (job.sex && !sex && !ident.error) ident.sex = { status: closed ?? 'not_scored:photo_not_downloaded' };
   } catch (e) {
     ident = { error: String(e.message || e).slice(0, 300) };
   }

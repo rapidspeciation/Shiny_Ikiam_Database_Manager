@@ -15,6 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { oofSource } from './oof.mjs';
 import { initPhotoTables, photoIndex } from './photodata.mjs';
+import { sexOpen } from './sex-skip.mjs';
 import { outlinePath, zoomBox } from './wing-outlines.mjs';
 
 export const FILES = ['predictions_app.json', 'sex_predictions_app.json', 'wing_boxes_app.json', 'wing_outlines.json'];
@@ -61,7 +62,8 @@ export function galleryData(db) {
         model_meta: { source: p.source ?? null, model: p.model, oof: true, oof_source: oof, photos },
       };
     }
-    if (p.sex_p_male !== null && p.sex_p_male !== undefined && p.sex && !String(p.sex_status ?? '').startsWith('not_scored')) {
+    // The collection sex model's locked test portion is never published; without a valid list no sex is (server/sex-skip.mjs).
+    if (sexOpen(cam) && p.sex_p_male !== null && p.sex_p_male !== undefined && p.sex && !String(p.sex_status ?? '').startsWith('not_scored')) {
       sex[cam] = {
         sex: p.sex,
         confidence: r4(p.sex_conf ?? Math.max(p.sex_p_male, 1 - p.sex_p_male)),

@@ -19,6 +19,7 @@ import { writeCacheFile } from './cache-write.mjs';
 import { driveIdOf, specimenName } from './photo-links.mjs';
 import { COAST_TOLERANCE_DEG, countryOfPoint, inBox, lngPadAt } from './country-outlines.mjs';
 import { unreliableFor } from './sex-check.mjs';
+import { sexClosedStatus } from './sex-skip.mjs';
 import { PALETTE, createSnapshots } from './map-snapshot.mjs';
 import { COLOR_BY, EXPORT as RENDER_EXPORT, OFFICIAL_MAPS_URL, PILLOW_NOT_KEPT, STYLES, appPictureName, checkExport, createMapRenderer, unsupportedFilter } from './maps-render.mjs';
 import { cantonOf, createAdminAreas } from './admin-areas.mjs';
@@ -620,7 +621,10 @@ export function photoReadings(db, wanted) {
   const box = tables.has('photo_wing_boxes') ? db.prepare('SELECT box_json, conf FROM photo_wing_boxes WHERE name=?') : null;
   const sideSize = columns('photo_wing_sides').has('size_json') ? db.prepare('SELECT size_json FROM photo_wing_sides WHERE file_id=? AND size_json IS NOT NULL LIMIT 1') : null;
   for (const { cam, photos } of wanted) {
-    const p = prediction?.get(cam);
+    // The collection sex model's locked test portion, or every CAM without a valid list (server/sex-skip.mjs): no sex.
+    const row = prediction?.get(cam);
+    const closed = row ? sexClosedStatus(cam) : null;
+    const p = closed ? { ...row, sex: null, sex_conf: null, sex_supported: 0, sex_species: null, sex_status: closed } : row;
     const env = (envelopes?.all(cam) ?? []).map(r => ({
       name: r.name,
       file: r.file_id,

@@ -22,6 +22,7 @@ import { galleryData, writeGalleryFiles } from './gallery-public.mjs';
 import { bumpReviewRevision, driveId, initPhotoTables, reviewRevision } from './photodata.mjs';
 import { nameParts, readingOfRow, wingRows } from './wing-reasons.mjs';
 import { trainingCams } from './oof.mjs';
+import { sexSkipStamp } from './sex-skip.mjs';
 
 const WORKER = new URL('./readings-worker.mjs', import.meta.url).pathname;
 const BUILDER = new URL('./gallery-public.mjs', import.meta.url).pathname;
@@ -440,10 +441,12 @@ export function createReadings({
     return result;
   }
 
+  /** What the gallery's files were made from: the tables' revision and the locked list of the collection sex model. */
+  const filesStamp = () => `${reviewRevision(db)}|${sexSkipStamp()}`;
   /** The gallery's files made again (a child process reading the database; in the app's thread for tests). */
   function rebuild() {
     building ??= (async () => {
-      const revision = reviewRevision(db);
+      const revision = filesStamp();
       const path = db.location?.() ?? null;
       if (build) await build(db, publicDir);
       else if (!path || !publicDir) {
@@ -532,8 +535,8 @@ export function createReadings({
       } else if (!result.errors) break;
       // Photos that could not be read wait RETRY_MS: the next batch has others.
     }
-    // Files out of date with the tables (an import since): made again.
-    if (!closed && publicDir && reviewRevision(db) !== db.prepare("SELECT value FROM review_meta WHERE key='gallery_files'").get()?.value)
+    // Files out of date with the tables (an import since) or with the locked list (server/sex-skip.mjs): made again.
+    if (!closed && publicDir && filesStamp() !== db.prepare("SELECT value FROM review_meta WHERE key='gallery_files'").get()?.value)
       await rebuild().catch(e => console.error('Readings:', e.message));
   }
 

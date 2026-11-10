@@ -8,6 +8,7 @@
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { bumpReviewRevision, initPhotoTables, photoName } from './photodata.mjs';
+import { sexClosedStatus } from './sex-skip.mjs';
 
 export const GALLERY_URL = 'https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/data/';
 const round = (n, d = 4) => (typeof n === 'number' ? Math.round(n * 10 ** d) / 10 ** d : null);
@@ -306,24 +307,30 @@ const WRITERS = {
   },
   predictions: {
     sql: 'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at,andes,model,photos_json,sex_status,sex_p_male,sex_model) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    values: (p, bundle, at) => [
-      p.cam,
-      json(p.species),
-      json(p.genus),
-      json(p.subspecies),
-      p.sex ?? null,
-      p.sexConf ?? null,
-      p.sexSupported ? 1 : 0,
-      p.sexSpecies ?? null,
-      p.source ?? bundle.gallery ?? null,
-      at,
-      p.andes ?? null,
-      p.model ?? null,
-      json(p.photos),
-      p.sexStatus ?? null,
-      p.sexPMale ?? null,
-      p.sexModel ?? null,
-    ],
+    // The store step of the photo readings and the backfill's import: a CAM of the collection sex model's locked test
+    // portion, or every CAM without a valid list (server/sex-skip.mjs), is stored with no sex, only why.
+    values: (row, bundle, at) => {
+      const closed = sexClosedStatus(row.cam);
+      const p = closed ? { ...row, sex: null, sexConf: null, sexSupported: false, sexSpecies: null, sexPMale: null, sexStatus: closed } : row;
+      return [
+        p.cam,
+        json(p.species),
+        json(p.genus),
+        json(p.subspecies),
+        p.sex ?? null,
+        p.sexConf ?? null,
+        p.sexSupported ? 1 : 0,
+        p.sexSpecies ?? null,
+        p.source ?? bundle.gallery ?? null,
+        at,
+        p.andes ?? null,
+        p.model ?? null,
+        json(p.photos),
+        p.sexStatus ?? null,
+        p.sexPMale ?? null,
+        p.sexModel ?? null,
+      ];
+    },
   },
   photoPredictions: {
     sql: 'INSERT OR REPLACE INTO photo_file_predictions(file_id,name,cam,view,species_json,genus_json,subspecies_json,andes,crop_status,crop_box_json,model,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
