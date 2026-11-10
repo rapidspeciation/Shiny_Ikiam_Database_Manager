@@ -344,8 +344,9 @@ export default {
   'Fotos del proyecto': 'Project photos',
   'Sin fotos del proyecto (marcada y liberada)': 'No project photos (marked and released)',
   'estimado, experimental': 'estimate, experimental',
-  'Modelo de sexo de la colección en las fotos del proyecto, fuera de su entrenamiento':
-    "The collection's sex model on the project photos, outside its training",
+  'Modelo de sexo de la colección en las fotos del proyecto, fuera de su entrenamiento; su % es el del modelo, sin calibrar':
+    "The collection's sex model on the project photos, outside its training; its % is the model's own, not calibrated",
+  '% del modelo de la colección, sin calibrar': "The collection model's %, not calibrated",
   'modelo de la colección': 'collection model',
   'foto de campo': 'field photo',
   'Coincide con la fila': 'Agrees with the row',

@@ -524,14 +524,17 @@ function projectEvidence(r: RowInfo | null): SexEvidence | null {
   const leans = sex.pMale >= 0.5 ? 'macho' : 'hembra'
   const sign = leans === 'macho' ? '♂' : '♀'
   const p = Math.max(sex.pMale, 1 - sex.pMale)
+  // The collection model's own P, not calibrated like the field photo's %.
+  const note = t('% del modelo de la colección, sin calibrar')
   // Below the model's own confidence screen: not sure, no mark against the row.
-  if (!sex.sure) return { kind: 'call', call: 'no seguro', sign, p, agree: null }
+  if (!sex.sure) return { kind: 'call', call: 'no seguro', sign, p, agree: null, note }
   return {
     kind: 'call',
     call: leans,
     sign,
     p,
     agree: agreeWith(leans, r),
+    note,
     ...(sex.supported ? {} : { weak: t('Llamada sin respaldo de la especie: solo una tendencia') }),
   }
 }
@@ -616,6 +619,8 @@ function keyRows(d: Doubt): RowInfo[] {
   return d.candidates
 }
 function onKey(event: KeyboardEvent) {
+  // A held key repeats: one decision per press, never the next card's too.
+  if (event.repeat) return
   if (event.ctrlKey || event.metaKey || event.altKey || viewer.value || boardWalk.value) return
   const el = event.target as HTMLElement | null
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
@@ -871,7 +876,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     </th>
                     <th
                       class="hidden py-0.5 font-normal sm:table-cell"
-                      :title="$t('Modelo de sexo de la colección en las fotos del proyecto, fuera de su entrenamiento')"
+                      :title="$t('Modelo de sexo de la colección en las fotos del proyecto, fuera de su entrenamiento; su % es el del modelo, sin calibrar')"
                     >
                       {{ $t('Fotos del proyecto') }}<span class="block text-[0.7rem]">{{ $t('modelo de la colección') }}</span>
                     </th>

@@ -2,10 +2,10 @@
 /**
  * One sex estimate beside the sheet's sex in Dudas (the field photo's model, or the collection model on the project
  * photos): the call with the % of the sex called, «no seguro (♀ 62 %)» in a neutral colour, and ✓ or ✗ against the
- * row's sex; or why there is none.
+ * row's sex; or why there is none. `note`: said on hover only (the collection model's % is not calibrated).
  */
 export type SexEvidence =
-  | { kind: 'call'; call: 'hembra' | 'macho' | 'no seguro'; sign: '♀' | '♂'; p: number; agree: boolean | null; weak?: string }
+  | { kind: 'call'; call: 'hembra' | 'macho' | 'no seguro'; sign: '♀' | '♂'; p: number; agree: boolean | null; weak?: string; note?: string }
   | { kind: 'reason'; text: string }
   | { kind: 'running' }
 
@@ -14,7 +14,7 @@ const pct = (p: number) => (p >= 0.995 ? '> 99 %' : `${Math.round(p * 100)} %`)
 </script>
 
 <template>
-  <span v-if="evidence.kind === 'call'" class="inline-flex items-baseline gap-1 whitespace-nowrap" :title="evidence.weak">
+  <span v-if="evidence.kind === 'call'" class="inline-flex items-baseline gap-1 whitespace-nowrap" :title="[evidence.weak, evidence.note].filter(Boolean).join('. ') || undefined">
     <span
       class="tabular-nums"
       :class="evidence.call === 'no seguro' || evidence.weak ? 'text-stone-600' : evidence.call === 'hembra' ? 'sex-f' : 'sex-m'"
