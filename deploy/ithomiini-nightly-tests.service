@@ -1,0 +1,24 @@
+[Unit]
+Description=Ithomiini: the full tests of the live release's commit on this server (nightly, no AI)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/ithomiini/current
+# No EnvironmentFile: the tests get none of the service's settings or secrets (scripts/nightly-tests.sh).
+ExecStart=/bin/bash /home/ubuntu/ithomiini/current/scripts/nightly-tests.sh
+Environment=NIGHTLY_SCRATCH_PARENT=/home/ubuntu/.cache/ithomiini-nightly
+ExecStartPre=/bin/mkdir -p /home/ubuntu/.cache/ithomiini-nightly /home/ubuntu/ithomiini/shared/nightly-tests
+# The live app keeps the server: lowest CPU and disk priority, and a memory ceiling.
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=1
+MemoryHigh=3G
+MemoryMax=4G
+TimeoutStartSec=1h
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Its scratch copies and npm cache, its logs, and the checkout's objects (a fetch when it lacks the commit).
+ReadWritePaths=/home/ubuntu/.cache/ithomiini-nightly /home/ubuntu/ithomiini/shared/nightly-tests /home/ubuntu/ithomiini/src/.git
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

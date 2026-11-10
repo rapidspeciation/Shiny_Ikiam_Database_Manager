@@ -212,7 +212,11 @@ export function voiceLanguage(text) {
 /** Times in `list` within the last hour of `now`. Pure. */
 export const lastHour = (list, now) => (list ?? []).filter(t => now - t < 3_600_000);
 
-/** The genera (and words) the voice transcription is told to expect. */
+/**
+ * The genera (and words) the voice transcription is told to expect: a hint for the speech model, not a list of what
+ * is an Ithomiini (that is frontend/src/lib/ithomiiniGenera.ts; this file is copied alone by `install`, so it keeps
+ * its own words). tests/ithomiini-genera.test.mjs checks that every genus here other than Heliconius is in that list.
+ */
 export const KEYTERMS = [
   'Ithomiini', 'Aeria', 'Athesis', 'Athyrtis', 'Brevioleria', 'Callithomia', 'Ceratinia', 'Dircenna', 'Elzunia', 'Episcada',
   'Epityches', 'Forbestra', 'Godyris', 'Greta', 'Heterosais', 'Hyalenna', 'Hyalyris', 'Hypoleria', 'Hyposcada', 'Hypothyris',

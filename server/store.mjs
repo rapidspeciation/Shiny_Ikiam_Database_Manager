@@ -173,6 +173,7 @@ export class Store {
     this.sheets.health?.stop();
     this.outbox.stop();
     for (const wake of this.liveWaiters) wake();
+    this.sheets.close?.();
     this.db.close();
   }
   /** Something open pages show changed (the workbook's state, the outbox, the staged entries): they are told. */

@@ -1,0 +1,127 @@
+{
+ "label": "before-1",
+ "env": [
+  "LOCAL_SHEETS=memory"
+ ],
+ "copies": [
+  {
+   "port": 8821,
+   "unit": "ithomiini-dev-8821.service",
+   "pid": 1720458,
+   "ready_s": 50.5,
+   "started_mono": 899865.993791,
+   "mem_available_before_mb": 5654,
+   "samples": [
+    {
+     "VmHWM": 1633,
+     "VmRSS": 1520,
+     "VmSwap": 136,
+     "t": 50.4,
+     "mem_current_mb": 1901
+    },
+    {
+     "VmHWM": 1694,
+     "VmRSS": 1679,
+     "VmSwap": 279,
+     "t": 55.4,
+     "mem_current_mb": 2389
+    },
+    {
+     "VmHWM": 1975,
+     "VmRSS": 1975,
+     "VmSwap": 342,
+     "t": 60.4,
+     "mem_current_mb": 2171
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1775,
+     "VmSwap": 566,
+     "t": 65.5,
+     "mem_current_mb": 1982
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1311,
+     "VmSwap": 1023,
+     "t": 70.5,
+     "mem_current_mb": 1379
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1293,
+     "VmSwap": 1023,
+     "t": 75.5,
+     "mem_current_mb": 1349
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1294,
+     "VmSwap": 1022,
+     "t": 80.5,
+     "mem_current_mb": 1541
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1293,
+     "VmSwap": 1023,
+     "t": 85.5,
+     "mem_current_mb": 1600
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1291,
+     "VmSwap": 1023,
+     "t": 90.5,
+     "mem_current_mb": 1421
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1290,
+     "VmSwap": 1023,
+     "t": 95.5,
+     "mem_current_mb": 1354
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1286,
+     "VmSwap": 1023,
+     "t": 100.6,
+     "mem_current_mb": 1364
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1285,
+     "VmSwap": 1023,
+     "t": 105.6,
+     "mem_current_mb": 1359
+    },
+    {
+     "VmHWM": 1990,
+     "VmRSS": 1283,
+     "VmSwap": 1023,
+     "t": 110.6,
+     "mem_current_mb": 1356
+    }
+   ],
+   "at_60s": {
+    "VmHWM": 1975,
+    "VmRSS": 1975,
+    "VmSwap": 342,
+    "t": 60.4,
+    "mem_current_mb": 2171
+   },
+   "at_60s_rss_plus_swap_mb": 2317,
+   "at_end": {
+    "VmHWM": 1990,
+    "VmRSS": 1283,
+    "VmSwap": 1023,
+    "t": 110.6,
+    "mem_current_mb": 1356
+   },
+   "at_end_rss_plus_swap_mb": 2306,
+   "log_tail": ""
+  }
+ ],
+ "when": "2026-11-09T20:57:37"
+}

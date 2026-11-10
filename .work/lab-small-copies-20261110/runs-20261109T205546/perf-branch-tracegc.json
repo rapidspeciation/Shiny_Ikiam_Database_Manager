@@ -1,0 +1,169 @@
+{
+ "label": "perf-branch-tracegc",
+ "env": [
+  "NODE_OPTIONS=--max-old-space-size=2048 --import /home/franz/.t3-orchestrator-v2/worktrees/ithomiini_database/lab-small-copies-20261110/.work/lab-small-copies-20261110/tracegc.mjs"
+ ],
+ "copies": [
+  {
+   "port": 8821,
+   "unit": "ithomiini-dev-8821.service",
+   "pid": 1737534,
+   "ready_s": 32.8,
+   "started_mono": 900199.907811,
+   "mem_available_before_mb": 4913,
+   "samples": [
+    {
+     "VmHWM": 1291,
+     "VmRSS": 561,
+     "VmSwap": 832,
+     "t": 32.6,
+     "mem_current_mb": 841
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 932,
+     "VmSwap": 465,
+     "t": 37.7,
+     "mem_current_mb": 1327
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 1145,
+     "VmSwap": 297,
+     "t": 42.7,
+     "mem_current_mb": 1411
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 1066,
+     "VmSwap": 361,
+     "t": 47.8,
+     "mem_current_mb": 1154
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 934,
+     "VmSwap": 488,
+     "t": 52.8,
+     "mem_current_mb": 955
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 794,
+     "VmSwap": 626,
+     "t": 57.9,
+     "mem_current_mb": 822
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 398,
+     "VmSwap": 1024,
+     "t": 62.9,
+     "mem_current_mb": 477
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 397,
+     "VmSwap": 1023,
+     "t": 67.9,
+     "mem_current_mb": 713
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 396,
+     "VmSwap": 1023,
+     "t": 73.0,
+     "mem_current_mb": 549
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 396,
+     "VmSwap": 1023,
+     "t": 78.0,
+     "mem_current_mb": 462
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 395,
+     "VmSwap": 1023,
+     "t": 83.0,
+     "mem_current_mb": 439
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 394,
+     "VmSwap": 1023,
+     "t": 88.1,
+     "mem_current_mb": 423
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 394,
+     "VmSwap": 1023,
+     "t": 93.2,
+     "mem_current_mb": 423
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 394,
+     "VmSwap": 1023,
+     "t": 98.2,
+     "mem_current_mb": 423
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 395,
+     "VmSwap": 1023,
+     "t": 103.2,
+     "mem_current_mb": 423
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 394,
+     "VmSwap": 1023,
+     "t": 108.3,
+     "mem_current_mb": 422
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 392,
+     "VmSwap": 1023,
+     "t": 113.3,
+     "mem_current_mb": 425
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 392,
+     "VmSwap": 1023,
+     "t": 118.4,
+     "mem_current_mb": 425
+    },
+    {
+     "VmHWM": 1291,
+     "VmRSS": 392,
+     "VmSwap": 1023,
+     "t": 123.4,
+     "mem_current_mb": 425
+    }
+   ],
+   "at_60s": {
+    "VmHWM": 1291,
+    "VmRSS": 794,
+    "VmSwap": 626,
+    "t": 57.9,
+    "mem_current_mb": 822
+   },
+   "at_60s_rss_plus_swap_mb": 1420,
+   "at_end": {
+    "VmHWM": 1291,
+    "VmRSS": 392,
+    "VmSwap": 1023,
+    "t": 123.4,
+    "mem_current_mb": 425
+   },
+   "at_end_rss_plus_swap_mb": 1415,
+   "log_tail": ""
+  }
+ ],
+ "when": "2026-11-09T21:03:24"
+}

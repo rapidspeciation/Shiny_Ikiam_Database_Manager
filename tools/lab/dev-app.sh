@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # A short-lived copy of the lab app for one chat's work (screenshots, UI checks, a quick try), from this checkout:
 # LOCAL_MODE on the lab's snapshot, its own folder and port, light settings (one tools worker, one search worker, no photo readings,
-# idle workers and identifier stopped soon), no T3. It runs as its own user unit with a time limit (default 90 min)
-# and a memory ceiling (default 3 GB: a lab app needs about 2), and is stopped as soon as the chat that started it
-# ends (tools/lab/reap.mjs, every 5 minutes). Memory on this PC: tools/lab/README.md, «Memory».
-#   tools/lab/dev-app.sh --port 8821 [--dir <folder>] [--ttl 90m] [--max 3G] [--env K=V …]   start; waits until it answers
+# idle workers and identifier stopped soon), no T3. It runs as its own user unit with a time limit (default 90 min) and a
+# memory ceiling (default 3 GB: a start peaks near 1.5 GB, an idle copy holds about 0.2 GB), and is stopped as soon as the
+# chat that started it ends (tools/lab/reap.mjs, every 5 minutes).
+# Memory: tools/lab/INSTANCES.md.
+#   tools/lab/dev-app.sh [--port 8821] [--fresh] [--dir <folder>] [--ttl 90m] [--max 3G] [--env K=V …]   start; waits until it answers
+# Without --port, the first free port from 8821; --fresh: a new folder (<lab>/dev/<port>-<time>) instead of <lab>/dev/<port>.
+# Several can run side by side, as many as memory allows, each on its own copy of the workbook's rows
+# (server/file-sheets.mjs) and its own database; none reaches the team's workbook. Agents: tools/lab/INSTANCES.md.
 # --env (repeatable) adds or overrides one of the app's settings (the benchmark, tools/perf/app-bench, gives it the
 # identifier's folder, its database copy's photos and T3's addresses this way).
 #   tools/lab/dev-app.sh --stop --port 8821
-#   tools/lab/dev-app.sh --list
+#   tools/lab/dev-app.sh --list          each one's port, folder and memory
 # The admin `lab` is made at the first start of a folder; its password is in <folder>/credentials.json (600).
-# Refuses to start with less than 2.5 GB available (MemAvailable) or with two of these running already.
+# Refuses to start with less than 2.5 GB available (MemAvailable), or with DEV_APP_LIMIT of these running already when
+# that is set (no limit by default).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
-PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start
+PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start FRESH=0
+LIMIT="${DEV_APP_LIMIT:-}"
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -23,16 +29,37 @@ while [ $# -gt 0 ]; do
     --ttl) TTL="$2"; shift 2 ;;
     --max) MAX="$2"; shift 2 ;;
     --env) [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }; EXTRA+=(-E "$2"); shift 2 ;;
+    --fresh) FRESH=1; shift ;;
     --stop) ACTION=stop; shift ;;
     --list) ACTION=list; shift ;;
     *) echo "Unknown option $1 (see the top of $0)" >&2; exit 2 ;;
   esac
 done
 if [ "$ACTION" = list ]; then
-  systemctl --user list-units 'ithomiini-dev-*' --plain --no-legend --all || true
+  for unit in $(systemctl --user list-units 'ithomiini-dev-*' --plain --no-legend --state=active | awk '{print $1}'); do
+    mem=$(systemctl --user show -p MemoryCurrent --value "$unit")
+    [[ "$mem" =~ ^[0-9]+$ ]] && mem="$((mem / 1048576)) MB" || mem="?"
+    echo "$unit  memory $mem  $(systemctl --user show -p Description --value "$unit")"
+  done
   exit 0
 fi
-[[ "$PORT" =~ ^[0-9]+$ ]] || { echo "--port <number> is needed" >&2; exit 2; }
+if [ "$ACTION" = start ]; then
+  [ "$FRESH" = 1 ] && [ -n "$DIR" ] && { echo "--fresh makes its own folder: give --fresh or --dir, not both" >&2; exit 2; }
+  # One start at a time, from choosing the port until it has settled (its first sync and warm-up done, see the end):
+  # two starts together could take the same port, pass the limit together, or both pass the memory check before
+  # either has grown.
+  mkdir -p "$LAB"
+  exec 9>"$LAB/.start.lock"
+  flock -n 9 || { echo "Waiting for another dev-app start to finish…" >&2; flock -w 1800 9 || { echo "Gave up after 30 min waiting for other starts ($LAB/.start.lock)." >&2; exit 1; }; }
+fi
+if [ -z "$PORT" ] && [ "$ACTION" = start ]; then
+  # The first port from 8821 that no app listens on and no dev app's unit holds.
+  for p in $(seq 8821 8899); do
+    systemctl --user is-active --quiet "ithomiini-dev-$p.service" && continue
+    [ "$(ss -Hltn "sport = :$p" | wc -l)" -eq 0 ] && { PORT=$p; break; }
+  done
+fi
+[[ "$PORT" =~ ^[0-9]+$ ]] || { echo "--port <number> is needed (or no free port in 8821-8899)" >&2; exit 2; }
 UNIT="ithomiini-dev-$PORT"
 if [ "$ACTION" = stop ]; then
   systemctl --user stop "$UNIT.service" 2>/dev/null && echo "Stopped $UNIT" || echo "$UNIT was not running"
@@ -40,10 +67,11 @@ if [ "$ACTION" = stop ]; then
 fi
 systemctl --user is-active --quiet "$UNIT.service" && { echo "$UNIT is running already (http://127.0.0.1:$PORT)"; exit 0; }
 running=$(systemctl --user list-units 'ithomiini-dev-*' --plain --no-legend --state=active | wc -l)
-[ "$running" -lt 2 ] || { echo "Two dev apps run already (tools/lab/dev-app.sh --list): stop one first." >&2; exit 1; }
+[ -z "$LIMIT" ] || [ "$running" -lt "$LIMIT" ] || { echo "$running dev apps run already (DEV_APP_LIMIT=$LIMIT; tools/lab/dev-app.sh --list): stop one first." >&2; exit 1; }
 avail=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
 [ "$avail" -ge 2560 ] || { echo "Only ${avail} MB of memory available (2.5 GB needed): not started." >&2; exit 1; }
 [ -f "$LAB/snapshot.json" ] || { echo "No $LAB/snapshot.json: run tools/lab/snapshot.sh first" >&2; exit 1; }
+[ "$FRESH" = 1 ] && [ -z "$DIR" ] && DIR="$LAB/dev/$PORT-$(date +%Y%m%dT%H%M%S)"
 DIR="${DIR:-$LAB/dev/$PORT}"
 mkdir -p "$DIR"
 chmod 700 "$DIR"
@@ -57,6 +85,10 @@ while [ "$pid" -gt 1 ]; do
   pid="$(awk '/^PPid:/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 1)"
 done
 [ -f "$HERE/web/index.html" ] || npm --prefix "$HERE" run build
+# The workbook's rows file (server/file-sheets.mjs), one per snapshot and version of the code that shapes the rows,
+# made here (under the start lock) so the app only copies it.
+systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
+  || echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
 systemd-run --user --unit="$UNIT" --collect --quiet \
   --description="Ithomiini dev app :$PORT ($DIR), for pid $owner, $TTL at most" \
   -p WorkingDirectory="$HERE" -p RuntimeMaxSec="$TTL" -p MemoryMax="$MAX" -p MemorySwapMax=1G \
@@ -68,15 +100,25 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
   -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
-  -E NODE_OPTIONS=--max-old-space-size=2048 -E PATH="$PATH" -E HOME="$HOME" \
+  -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
   "${EXTRA[@]}" \
   node server/index.mjs
 URL="http://127.0.0.1:$PORT"
-for _ in $(seq 120); do
-  curl -fs -o /dev/null -m 2 "$URL/health" && break
+# Ready once it answers and its first sync of the snapshot is done (the sync starts before it listens, so an answer
+# that is not "syncing" comes after it).
+state=""
+deadline=$((SECONDS + 300))
+while [ "$SECONDS" -lt "$deadline" ]; do
+  health="$(curl -fs -m 5 "$URL/health" || true)"
+  if [ -n "$health" ] && ! grep -q '"sync":"syncing"' <<<"$health"; then
+    state="$(grep -o '"sync":"[^"]*"' <<<"$health" | head -n 1 | cut -d'"' -f4)"
+    break
+  fi
   systemctl --user is-active --quiet "$UNIT.service" || { echo "$UNIT stopped while starting: $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
   sleep 2
 done
+[ -n "$state" ] || { echo "$UNIT did not finish its first sync within 5 min (it still runs; $DIR/app.log; --stop it)" >&2; exit 1; }
+[ "$state" != error ] || { echo "$UNIT: its first sync failed (it still runs; --stop it): $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
 if [ ! -s "$DIR/credentials.json" ]; then
   PASS="$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 14)"
   node -e '
@@ -88,4 +130,15 @@ if [ ! -s "$DIR/credentials.json" ]; then
       .catch(e => { console.error(e.message); process.exit(1); });
   ' "$URL" "$(cat "$DIR/setup-token")" "$PASS" "$DIR/credentials.json"
 fi
-echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; log $DIR/app.log; login $DIR/credentials.json)"
+# The next start waits until this copy has settled too (/health "settled": its checks' warm-up done, its start's
+# memory given back, some 10-30 s after the first sync), so no two copies' starts overlap: each one's heavy part
+# has the PC to itself and is small again within about a minute. A holder in the background keeps the lock until
+# then (3 min at most), and this script answers now.
+setsid bash -c '
+  until=$((SECONDS + 180))
+  while [ "$SECONDS" -lt "$until" ] && systemctl --user is-active --quiet "$1.service"; do
+    curl -fs -m 5 "$2/health" | grep -q "\"settled\":true" && break
+    sleep 2
+  done' dev-app-settle "$UNIT" "$URL" </dev/null >/dev/null 2>&1 &
+exec 9>&-
+echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; first sync: $state; log $DIR/app.log; login $DIR/credentials.json)"

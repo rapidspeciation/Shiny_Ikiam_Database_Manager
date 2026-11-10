@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Goes back to the release before (shared/previous-release) on claudeclaw: waits for saves in progress, points
+# current at it, installs its units, restarts, checks /health and refreshes the T3 workspaces from it.
+#   bash /home/ubuntu/ithomiini/current/scripts/rollback-release.sh [release name, default the previous one]
+# The same scratch variables as scripts/install-release.sh. A release with a test record (.deploy-record.json) must
+# still match it (scripts/deploy-record.mjs verify); one without (deployed before 9 Nov 2026) goes back as it is.
+set -euo pipefail
+# The physical path: node runs a script reached through the current link only when given its real path.
+here="$(cd "$(dirname "$0")" && pwd -P)"
+app="${ITHOMIINI_APP_ROOT:-/home/ubuntu/ithomiini}"
+units="${ITHOMIINI_SYSTEMD_DIR:-$HOME/.config/systemd/user}"
+service="${ITHOMIINI_SERVICE:-ithomiini.service}"
+service_env="${ITHOMIINI_SERVICE_ENV:-$HOME/.config/ithomiini/service.env}"
+if [ "$app" != /home/ubuntu/ithomiini ] && { [ -z "${ITHOMIINI_SYSTEMD_DIR:-}" ] || [ "$service" = ithomiini.service ]; }; then
+  echo "A scratch root ($app) needs ITHOMIINI_SYSTEMD_DIR and ITHOMIINI_SERVICE of its own." >&2
+  exit 1
+fi
+[ -n "${DEPLOY_SCRATCH_BIN:-}" ] && export PATH="$DEPLOY_SCRATCH_BIN:$PATH"
+[ -n "${DEPLOY_SCRATCH_HOME:-}" ] && export HOME="$DEPLOY_SCRATCH_HOME"
+cd "$app"
+target="releases/${1:-$(basename "$(cat shared/previous-release)")}"
+[ -d "$target" ] || { echo "No release $target" >&2; exit 1; }
+from="$(readlink current)"
+[ "$from" != "$target" ] || { echo "current is already $target" >&2; exit 1; }
+exec 9>"$app/shared/.install.lock"
+flock -w 900 9 || { echo "An install still runs after 15 minutes." >&2; exit 1; }
+node="$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' "$target/deploy/ithomiini.service")"
+export PATH="$(dirname "$node"):$PATH" ITHOMIINI_SHARED="$app/shared"
+if [ -f "$target/.deploy-record.json" ]; then
+  # The record's own commit: this checks the target still matches its record (no file changed, every job passed),
+  # not that it is some chosen commit.
+  recorded="$(sed -n 's/^ *"commit": *"\([0-9a-f]\{40\}\)".*/\1/p' "$target/.deploy-record.json" | head -n 1)"
+  if ! "$node" "$here/deploy-record.mjs" verify "$target" --commit "${recorded:-none}"; then
+    echo "Not rolled back: $target does not match its test record. current is still $from." >&2
+    exit 1
+  fi
+fi
+bash "$target/scripts/wait-writes.sh" "${DEPLOY_WAIT:-600}" "${DEPLOY_FORCE:-0}" 9>&-
+echo "$from" >shared/previous-release
+ln -sfn "$target" current
+cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer "$units/"
+systemctl --user daemon-reload 9>&-
+systemctl --user restart "$service" 9>&-
+port="${APP_PORT:-$(sed -n 's/^APP_PORT=//p' "$service_env" 2>/dev/null | tail -n 1 || true)}"
+deadline=$(( $(date +%s) + ${DEPLOY_HEALTH_WAIT:-90} ))
+until curl -s --max-time 5 "http://127.0.0.1:${port:-8794}/health" | grep -q '"status":"ok"'; do
+  [ "$(date +%s)" -lt "$deadline" ] || { echo "Health not ok after rolling back to $target." >&2; exit 1; }
+  sleep 0.5
+done
+# The workspaces as that release makes them; the next deploy refreshes them again (its hash is forgotten).
+rm -f -- shared/.deploy-stamps/t3-provision
+(cd current && "$node" scripts/t3-provision.mjs --refresh-all) 9>&-
+echo "Rolled back: current is $target (was $from); health ok."

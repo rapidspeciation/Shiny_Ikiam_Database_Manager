@@ -275,9 +275,13 @@ over 90 % full (on 31 Oct 2026 it took the whole T3). What things take, measured
 
 So:
 
-- A copy of the app for your own checks: `tools/lab/dev-app.sh --port <port>`. It has a time limit (90 min), a
-  memory ceiling (3 GB) and light settings, and stops when your chat ends. One per chat; `--stop` it when done. It
-  refuses to start with less than 2.5 GB available.
+- Copies of the app for your own checks, tests or a feature branch: `tools/lab/dev-app.sh --fresh` (the first free
+  port from 8821), several side by side, each on its own copy of the workbook (tools/lab/INSTANCES.md). Each has a
+  time limit (90 min), a memory ceiling (3 GB) and light settings, and stops when your chat ends; `--stop` it when
+  done. As many as memory allows (no limit unless `DEV_APP_LIMIT` is set), each refused with less than 2.5 GB
+  available. Since 10 Nov 2026 an idle copy holds about 0.2 GB within a minute of its start (2.3 GB before): the
+  workbook's rows are in a shared SQLite file, and once the start's work is done its garbage is collected and the
+  checks' worker stops (measured numbers in INSTANCES.md).
 - Scenario runs: at most 4 chats at once, each archived as soon as its answer is collected. `tools/lab/reap.mjs`
   (a user timer every 5 minutes: `node tools/lab/reap.mjs --install`) archives scenario chats of the lab T3 left
   idle 5 minutes (titles `WA soul lab`/`WA soul critic`; `--chats` for others), stops dev apps whose chat ended and

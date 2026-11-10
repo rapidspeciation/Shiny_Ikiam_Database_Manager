@@ -20,6 +20,8 @@
 //   the brief names), ITHOMIINI_CONFIG_DIR (the service's secrets), ITHOMIINI_DOCS, T3_BIN, and
 //   ITHOMIINI_DENY_READ (more folders, files or file patterns Claude threads may not read, separated by ":"), and
 //   ITHOMIINI_LAB_URL (the lab app's address: changes to the app stay local, no push or deploy).
+// Keep scripts/deploy-stamp.mjs in step: a deploy refreshes the workspaces only when its hash of what this script
+// reads and writes changed. A new variable, input file or workspace file here goes into its lists too.
 
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';

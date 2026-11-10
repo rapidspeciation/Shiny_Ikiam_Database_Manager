@@ -1,0 +1,626 @@
+{
+ "label": "final-3",
+ "env": [],
+ "copies": [
+  {
+   "port": 8821,
+   "unit": "ithomiini-dev-8821.service",
+   "pid": 1973203,
+   "ready_s": 29.9,
+   "started_mono": 903370.047614,
+   "waited_for_lock_s": 0.3,
+   "unit_start_to_ready_s": 29.5,
+   "mem_available_before_mb": 7771,
+   "samples": [
+    {
+     "VmHWM": 572,
+     "VmRSS": 572,
+     "VmSwap": 0,
+     "t": 4.7,
+     "mem_current_mb": 667
+    },
+    {
+     "VmHWM": 1051,
+     "VmRSS": 1051,
+     "VmSwap": 2,
+     "t": 9.8,
+     "mem_current_mb": 1170
+    },
+    {
+     "VmHWM": 1161,
+     "VmRSS": 1126,
+     "VmSwap": 13,
+     "t": 14.8,
+     "mem_current_mb": 1219
+    },
+    {
+     "VmHWM": 1161,
+     "VmRSS": 1096,
+     "VmSwap": 38,
+     "t": 19.8,
+     "mem_current_mb": 1143
+    },
+    {
+     "VmHWM": 1161,
+     "VmRSS": 1147,
+     "VmSwap": 23,
+     "t": 24.9,
+     "mem_current_mb": 1204
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 380,
+     "VmSwap": 14,
+     "t": 29.9,
+     "mem_current_mb": 669
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 918,
+     "VmSwap": 14,
+     "t": 34.9,
+     "mem_current_mb": 1048
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 918,
+     "VmSwap": 68,
+     "t": 40.0,
+     "mem_current_mb": 992
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 713,
+     "VmSwap": 273,
+     "t": 45.0,
+     "mem_current_mb": 771
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 84,
+     "VmSwap": 117,
+     "t": 50.1,
+     "mem_current_mb": 118
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 59,
+     "VmSwap": 139,
+     "t": 55.1,
+     "mem_current_mb": 92
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 55,
+     "VmSwap": 143,
+     "t": 60.2,
+     "mem_current_mb": 305
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 56,
+     "VmSwap": 142,
+     "t": 65.3,
+     "mem_current_mb": 216
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 51,
+     "VmSwap": 147,
+     "t": 70.3,
+     "mem_current_mb": 97
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 50,
+     "VmSwap": 147,
+     "t": 75.3,
+     "mem_current_mb": 89
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 47,
+     "VmSwap": 147,
+     "t": 80.4,
+     "mem_current_mb": 49
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 42,
+     "VmSwap": 152,
+     "t": 85.5,
+     "mem_current_mb": 43
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 33,
+     "VmSwap": 152,
+     "t": 90.6,
+     "mem_current_mb": 34
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 18,
+     "VmSwap": 152,
+     "t": 95.7,
+     "mem_current_mb": 10
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 18,
+     "VmSwap": 152,
+     "t": 100.7,
+     "mem_current_mb": 10
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 18,
+     "VmSwap": 152,
+     "t": 105.8,
+     "mem_current_mb": 9
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 18,
+     "VmSwap": 152,
+     "t": 110.9,
+     "mem_current_mb": 9
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 17,
+     "VmSwap": 153,
+     "t": 116.0,
+     "mem_current_mb": 8
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 17,
+     "VmSwap": 153,
+     "t": 121.0,
+     "mem_current_mb": 9
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 17,
+     "VmSwap": 152,
+     "t": 126.1,
+     "mem_current_mb": 9
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 21,
+     "VmSwap": 147,
+     "t": 131.2,
+     "mem_current_mb": 22
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 19,
+     "VmSwap": 147,
+     "t": 136.2,
+     "mem_current_mb": 21
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 46,
+     "VmSwap": 121,
+     "t": 141.3,
+     "mem_current_mb": 40
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 42,
+     "VmSwap": 121,
+     "t": 146.3,
+     "mem_current_mb": 36
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 40,
+     "VmSwap": 121,
+     "t": 151.4,
+     "mem_current_mb": 37
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 41,
+     "VmSwap": 122,
+     "t": 156.4,
+     "mem_current_mb": 34
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 42,
+     "VmSwap": 121,
+     "t": 161.5,
+     "mem_current_mb": 35
+    },
+    {
+     "VmHWM": 1308,
+     "VmRSS": 42,
+     "VmSwap": 121,
+     "t": 166.5,
+     "mem_current_mb": 36
+    }
+   ],
+   "at_60s": {
+    "VmHWM": 1308,
+    "VmRSS": 55,
+    "VmSwap": 143,
+    "t": 60.2,
+    "mem_current_mb": 305
+   },
+   "at_60s_rss_plus_swap_mb": 198,
+   "at_end": {
+    "VmHWM": 1308,
+    "VmRSS": 42,
+    "VmSwap": 121,
+    "t": 166.5,
+    "mem_current_mb": 36
+   },
+   "at_end_rss_plus_swap_mb": 163,
+   "log_tail": ""
+  },
+  {
+   "port": 8822,
+   "unit": "ithomiini-dev-8822.service",
+   "pid": 1973762,
+   "ready_s": 39.5,
+   "started_mono": 903410.418656,
+   "waited_for_lock_s": 10.7,
+   "unit_start_to_ready_s": 28.8,
+   "mem_available_before_mb": 7756,
+   "samples": [
+    {
+     "VmHWM": 595,
+     "VmRSS": 595,
+     "VmSwap": 0,
+     "t": 4.7,
+     "mem_current_mb": 658
+    },
+    {
+     "VmHWM": 1015,
+     "VmRSS": 1015,
+     "VmSwap": 0,
+     "t": 9.7,
+     "mem_current_mb": 1025
+    },
+    {
+     "VmHWM": 1164,
+     "VmRSS": 1147,
+     "VmSwap": 16,
+     "t": 14.7,
+     "mem_current_mb": 1186
+    },
+    {
+     "VmHWM": 1164,
+     "VmRSS": 1142,
+     "VmSwap": 16,
+     "t": 19.8,
+     "mem_current_mb": 1141
+    },
+    {
+     "VmHWM": 1193,
+     "VmRSS": 1193,
+     "VmSwap": 27,
+     "t": 24.9,
+     "mem_current_mb": 1301
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 436,
+     "VmSwap": 34,
+     "t": 29.9,
+     "mem_current_mb": 868
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 962,
+     "VmSwap": 37,
+     "t": 35.0,
+     "mem_current_mb": 1277
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 909,
+     "VmSwap": 84,
+     "t": 40.1,
+     "mem_current_mb": 903
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 747,
+     "VmSwap": 246,
+     "t": 45.2,
+     "mem_current_mb": 740
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 62,
+     "VmSwap": 150,
+     "t": 50.3,
+     "mem_current_mb": 27
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 34,
+     "VmSwap": 155,
+     "t": 55.3,
+     "mem_current_mb": 23
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 28,
+     "VmSwap": 160,
+     "t": 60.4,
+     "mem_current_mb": 323
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 26,
+     "VmSwap": 162,
+     "t": 65.4,
+     "mem_current_mb": 168
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 21,
+     "VmSwap": 167,
+     "t": 70.5,
+     "mem_current_mb": 38
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 19,
+     "VmSwap": 168,
+     "t": 75.6,
+     "mem_current_mb": 36
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 18,
+     "VmSwap": 169,
+     "t": 80.7,
+     "mem_current_mb": 19
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 18,
+     "VmSwap": 169,
+     "t": 85.7,
+     "mem_current_mb": 19
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 15,
+     "VmSwap": 169,
+     "t": 90.8,
+     "mem_current_mb": 14
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 14,
+     "VmSwap": 169,
+     "t": 95.9,
+     "mem_current_mb": 7
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 13,
+     "VmSwap": 168,
+     "t": 100.9,
+     "mem_current_mb": 5
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 10,
+     "VmSwap": 169,
+     "t": 106.0,
+     "mem_current_mb": 4
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 9,
+     "VmSwap": 169,
+     "t": 111.0,
+     "mem_current_mb": 3
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 8,
+     "VmSwap": 169,
+     "t": 116.1,
+     "mem_current_mb": 4
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 8,
+     "VmSwap": 169,
+     "t": 121.1,
+     "mem_current_mb": 4
+    },
+    {
+     "VmHWM": 1219,
+     "VmRSS": 9,
+     "VmSwap": 168,
+     "t": 126.2,
+     "mem_current_mb": 4
+    }
+   ],
+   "at_60s": {
+    "VmHWM": 1219,
+    "VmRSS": 28,
+    "VmSwap": 160,
+    "t": 60.4,
+    "mem_current_mb": 323
+   },
+   "at_60s_rss_plus_swap_mb": 188,
+   "at_end": {
+    "VmHWM": 1219,
+    "VmRSS": 9,
+    "VmSwap": 168,
+    "t": 126.2,
+    "mem_current_mb": 4
+   },
+   "at_end_rss_plus_swap_mb": 177,
+   "log_tail": ""
+  },
+  {
+   "port": 8823,
+   "unit": "ithomiini-dev-8823.service",
+   "pid": 1974425,
+   "ready_s": 39.5,
+   "started_mono": 903449.984227,
+   "waited_for_lock_s": 10.7,
+   "unit_start_to_ready_s": 28.8,
+   "mem_available_before_mb": 7130,
+   "samples": [
+    {
+     "VmHWM": 107,
+     "VmRSS": 107,
+     "VmSwap": 0,
+     "t": 0.6,
+     "mem_current_mb": 59
+    },
+    {
+     "VmHWM": 655,
+     "VmRSS": 655,
+     "VmSwap": 0,
+     "t": 5.6,
+     "mem_current_mb": 770
+    },
+    {
+     "VmHWM": 873,
+     "VmRSS": 867,
+     "VmSwap": 0,
+     "t": 10.7,
+     "mem_current_mb": 879
+    },
+    {
+     "VmHWM": 873,
+     "VmRSS": 838,
+     "VmSwap": 22,
+     "t": 15.8,
+     "mem_current_mb": 865
+    },
+    {
+     "VmHWM": 888,
+     "VmRSS": 885,
+     "VmSwap": 18,
+     "t": 20.8,
+     "mem_current_mb": 912
+    },
+    {
+     "VmHWM": 888,
+     "VmRSS": 879,
+     "VmSwap": 15,
+     "t": 25.9,
+     "mem_current_mb": 1032
+    },
+    {
+     "VmHWM": 905,
+     "VmRSS": 613,
+     "VmSwap": 29,
+     "t": 31.0,
+     "mem_current_mb": 1224
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 916,
+     "VmSwap": 36,
+     "t": 36.1,
+     "mem_current_mb": 1043
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 764,
+     "VmSwap": 151,
+     "t": 41.1,
+     "mem_current_mb": 805
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 107,
+     "VmSwap": 103,
+     "t": 46.2,
+     "mem_current_mb": 120
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 47,
+     "VmSwap": 155,
+     "t": 51.3,
+     "mem_current_mb": 65
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 25,
+     "VmSwap": 162,
+     "t": 56.3,
+     "mem_current_mb": 47
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 29,
+     "VmSwap": 154,
+     "t": 61.4,
+     "mem_current_mb": 510
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 24,
+     "VmSwap": 156,
+     "t": 66.4,
+     "mem_current_mb": 71
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 23,
+     "VmSwap": 156,
+     "t": 71.5,
+     "mem_current_mb": 55
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 17,
+     "VmSwap": 161,
+     "t": 76.5,
+     "mem_current_mb": 50
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 15,
+     "VmSwap": 162,
+     "t": 81.6,
+     "mem_current_mb": 27
+    },
+    {
+     "VmHWM": 934,
+     "VmRSS": 15,
+     "VmSwap": 162,
+     "t": 86.6,
+     "mem_current_mb": 27
+    }
+   ],
+   "at_60s": {
+    "VmHWM": 934,
+    "VmRSS": 29,
+    "VmSwap": 154,
+    "t": 61.4,
+    "mem_current_mb": 510
+   },
+   "at_60s_rss_plus_swap_mb": 183,
+   "at_end": {
+    "VmHWM": 934,
+    "VmRSS": 15,
+    "VmSwap": 162,
+    "t": 86.6,
+    "mem_current_mb": 27
+   },
+   "at_end_rss_plus_swap_mb": 177,
+   "log_tail": ""
+  }
+ ],
+ "when": "2026-11-09T21:56:59"
+}

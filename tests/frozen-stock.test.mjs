@@ -101,12 +101,12 @@ test('subspeciesOf, sideOf: the subspecies and side of the Andes a row counts fo
   assert.equal(sideOf('Insectary_data', { Collection_location: 'Tie' }, sides), 'other');
 });
 
-test('countFrozen: detail per subspecies, side and sex; the genera the workbook files under Ithomiini', () => {
+test('countFrozen: detail per subspecies, side and sex', () => {
   const rows = [
     C({ CAM_ID: 'CAM101', SPECIES: 'Mechanitis polymnia', Subspecies_Form: 'proceriformis', Side_Andes: 'East', Sex: 'male', Tribe: 'Ithomiini', Collection_location: 'Jaimito' }),
     C({ CAM_ID: 'CAM102', SPECIES: 'Mechanitis polymnia', Side_Andes: 'NA', Sex: 'female', Tribe: 'Ithomiini' }),
     I({ CAM_ID: 'CAM103', SPECIES: 'Mechanitis polymnia proceriformis', Sex: 'female', Collection_location: 'Jaimito' }),
-    // Not frozen, still names the tribe of its genus.
+    // Not frozen: not in the detail.
     C({ CAM_ID: 'CAM104', SPECIES: 'Oleria onega', Tribe: 'Ithomiini', Preservation_medium: 'Ethanol' }),
     C({ CAM_ID: 'CAM105', SPECIES: 'Heliconius erato', Tribe: 'Heliconiini' }),
   ];
@@ -117,7 +117,8 @@ test('countFrozen: detail per subspecies, side and sex; the genera the workbook 
       '': { other: { M: 0, F: 1, unknown: 0 } },
     },
   });
-  assert.deepEqual(out.ithomiiniGenera, ['Mechanitis', 'Oleria']);
+  // Which genera are Ithomiini is frontend/src/lib/ithomiiniGenera.ts, not the workbook's Tribe column.
+  assert.equal(out.ithomiiniGenera, undefined);
 });
 
 test('countFrozen: workbook names the head knows under another name', () => {

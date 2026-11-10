@@ -55,7 +55,7 @@ export function sexCall(z: number, cut = SEX_CUT): SexCall {
  * Whether the estimate applies to the identifier's top species: 'yes' (a trained genus), 'genus' (an Ithomiini
  * outside them: «no aplica»), 'no' (not an Ithomiini, or unknown: nothing shown).
  */
-export function sexApplies(species: string | undefined, ithomiiniGenera: string[]): 'yes' | 'genus' | 'no' {
+export function sexApplies(species: string | undefined, ithomiiniGenera: readonly string[]): 'yes' | 'genus' | 'no' {
   const g = (species ?? '').split(' ')[0]
   if (!g) return 'no'
   if (SEX_GENERA.includes(g)) return 'yes'

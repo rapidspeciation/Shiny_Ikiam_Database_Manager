@@ -141,11 +141,10 @@ const add = (map, key, sex) => {
 
 /**
  * The snapshot from rows of Collection_data and Insectary_data ({ sheet, values }) and the head's species list:
- * { species: { name: {M,F,unknown,total} }, genus: {...}, detail, ithomiiniGenera, counted, gone,
+ * { species: { name: {M,F,unknown,total} }, genus: {...}, detail, counted, gone,
  *   unmapped: { rows, names: {name: n} } }.
  * `detail`: per species, per subspecies ('' for none) and side (East, West, other), {M, F, unknown}: what the
  * identifier tab sets against the reference-genome target (3 males and 3 females per subspecies and side).
- * `ithomiiniGenera`: the head's genera the workbook files under Tribe Ithomiini (any row, frozen or not).
  */
 export function countFrozen(rows, headSpecies) {
   const known = new Map(headSpecies.map(s => [s.toLowerCase(), s]));
@@ -167,15 +166,10 @@ export function countFrozen(rows, headSpecies) {
     detail = {},
     unmapped = { rows: 0, names: {} };
   const sides = locationSides(rows);
-  const tribes = new Set();
   const seen = new Set();
   let counted = 0,
     gone = 0;
   rows.forEach(({ sheet, values }, i) => {
-    if (/^ithomiini$/i.test(text(values.Tribe))) {
-      const g = genusOf(values.SPECIES);
-      if (g && genera.has(g)) tribes.add(g);
-    }
     const cam = camOf(values);
     if (why[i] === 'gone' || (!why[i] && cam && goneCams.has(cam))) {
       if (!cam || !seen.has(cam)) gone++;
@@ -209,7 +203,6 @@ export function countFrozen(rows, headSpecies) {
     species: sorted(species),
     genus: sorted(genus),
     detail: sorted(detail),
-    ithomiiniGenera: [...tribes].sort(),
     counted,
     gone,
     unmapped: { rows: unmapped.rows, names: sorted(unmapped.names) },
@@ -256,7 +249,6 @@ export async function frozenStock(store, identifierDir) {
       species: counts.species,
       genus: counts.genus,
       detail: counts.detail,
-      ithomiiniGenera: counts.ithomiiniGenera,
       counted: counts.counted,
       gone: counts.gone,
       unmapped: { rows: counts.unmapped.rows },

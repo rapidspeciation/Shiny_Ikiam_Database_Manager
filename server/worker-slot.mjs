@@ -224,6 +224,16 @@ export function workerSlot({
         }
       });
     },
+    /**
+     * Stops the worker now, as its idle time would, when it has nothing to do: its memory (what it read and
+     * kept) is given back at once, and the next call starts another. False when none runs or it is busy.
+     */
+    release() {
+      if (!worker || pending.size) return false;
+      idleStops++;
+      stop(fail('WORKER_IDLE', `${name} worker stopped while idle`));
+      return true;
+    },
     close() {
       closed = true;
       stop(fail('WORKER_CLOSED', 'The app is stopping: call again in a minute.'));

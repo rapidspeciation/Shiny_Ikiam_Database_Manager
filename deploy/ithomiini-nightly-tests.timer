@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly full tests of the live Ithomiini release on this server
+
+[Timer]
+# 01:30 in Ecuador (UTC-5): after the 05:00 UTC backup, before the 08:00 UTC Drive mirror.
+OnCalendar=*-*-* 01:30:00 America/Guayaquil
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

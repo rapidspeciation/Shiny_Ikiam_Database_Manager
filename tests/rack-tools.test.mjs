@@ -9,13 +9,15 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { mcpTools } from '../server/assistant.mjs';
 import { loadPhoto, mergeReadings, readOne, wellOf } from '../server/rack-reader.mjs';
 import { RACK_TOOL_NAMES, createRackTools, reportFile, wellName } from '../server/rack-tools.mjs';
+import { RACK_PHOTO, REAL, photoSha256, rackReading, savedReading } from './helpers/rack-reading.mjs';
 
-const RACK_PHOTO = new URL('./fixtures/rack-bottom-fk00274230.jpg', import.meta.url).pathname;
 const TUBE_PHOTO = new URL('./fixtures/tube-bottom-fs50849233.jpg', import.meta.url).pathname;
-// The rack photo read once (ffmpeg and the barcode scan, seconds of CPU) for the two tests that look at that reading;
-// rack_read_photos still reads its own copy through the tools.
+// The rack photo's reading (tests/helpers/rack-reading.mjs): the one saved from the real read, or in the slow suite
+// (ITHOMIINI_TEST_REAL_RACK=1) the photo read for real, once for the two tests that look at that reading; there
+// rack_read_photos reads its own copy through the tools' own reader.
 let rackRead = null;
-const readRack = () => (rackRead ??= loadPhoto(RACK_PHOTO).then(readOne));
+const readRack = () => (rackRead ??= rackReading());
+const slow = !REAL && 'reads a photo for real: the slow suite (npm run test:slow)';
 // The rack photographed on 28 Oct: pre-loaded tubes FS50849233 (A1) … FS50849328 (H12), column by column.
 const expected = well => `FS${50849233 + (Number(well.slice(1)) - 1) * 8 + 'ABCDEFGH'.indexOf(well[0])}`;
 
@@ -83,14 +85,19 @@ test("Franz's rack photo: at least 92 of 96 tubes, every one where its ID says, 
   for (const [well, id] of wells) assert.equal(id, expected(well), well);
 });
 
-test('a photo of one tube: its code, without a grid', async () => {
+test('the saved reading is of this photo', () => {
+  assert.equal(savedReading().photo_sha256, photoSha256(), 'the photo changed: node tests/slow/make-rack-reading.mjs');
+});
+
+test('a photo of one tube: its code, without a grid', { skip: slow }, async () => {
   const one = await readOne(await loadPhoto(TUBE_PHOTO));
   assert.equal(one.lattice, false);
   assert.ok(one.loose.includes('FS50849233'));
 });
 
 test('rack_read_photos → rack_report: the Anexo1 sheet, refused while a well is open, served to its maker', async () => {
-  const { tools, rackReportsDir } = await setup();
+  // The slow suite: through the tools' own photo reader.
+  const { tools, rackReportsDir } = await setup(REAL ? {} : { readPhoto: () => rackReading() });
   const read = await tools.run('rack_read_photos', { photos: ['/somewhere/thread-1-rack.jpg'] }, franz);
   assert.equal(read.rack_id, 'FK00274230');
   assert.match(read.orientation.a1, /^assumed: the rack code beside A12/);

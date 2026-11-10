@@ -14,6 +14,7 @@ import { brotliCompress, brotliCompressSync, constants as zlib, gzip, gzipSync }
 import { promisify } from 'node:util';
 import { Store } from './store.mjs';
 import { copyBeside } from './replica.mjs';
+import { openFileSheets } from './file-sheets.mjs';
 import { applyBatch } from './batch.mjs';
 import { cellHistory, historyGroup, historyGroups, previewEdits, sheetAsOf, undoEdits } from './history.mjs';
 import {
@@ -46,6 +47,7 @@ import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
 import { fieldPhotos, ithomiiniSpecies, sendRefPhoto } from './identify-photos.mjs';
+import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
@@ -348,6 +350,8 @@ export function configFromEnv(env = process.env) {
     // as do a census's disappearances; STAGED_SAVING=0 saves those tabs and the census straight to the sheet.
     stagedSaving: env.STAGED_SAVING !== '0',
     seedFile: env.SEED_FILE,
+    // LOCAL_MODE with SEED_FILE: the snapshot's rows in a SQLite file beside DATABASE_PATH ("file"), or in memory ("memory").
+    localSheets: env.LOCAL_SHEETS || 'file',
     secureCookies: env.SECURE_COOKIES !== '0',
     // The Google Sheets workbook (WORKBOOK_ID, the team's workbook by default).
     spreadsheetId: workbook.id,
@@ -779,11 +783,18 @@ export async function createApp(config = {}, options = {}) {
   config.basePath = normalizeBase(config.basePath || '/ithomiini');
   config.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
   let seed = options.seed;
-  if (!seed && config.localMode && config.seedFile) {
-    seed = JSON.parse(readFileSync(config.seedFile, 'utf8'));
-    seed = seed.sheets || seed;
+  let sheets = options.sheets;
+  if (!seed && !sheets && !options.store && config.localMode && config.seedFile) {
+    // The lab: the snapshot's rows in a SQLite file of their own (server/file-sheets.mjs) rather than some 700 MB
+    // of memory; LOCAL_SHEETS=memory keeps them in memory, as before.
+    if (config.localSheets !== 'memory')
+      sheets = await openFileSheets({ seedFile: config.seedFile, databasePath: config.databasePath, health: config.health });
+    if (!sheets) {
+      seed = JSON.parse(readFileSync(config.seedFile, 'utf8'));
+      seed = seed.sheets || seed;
+    }
   }
-  const store = options.store || new Store(config, { sheets: options.sheets, seed });
+  const store = options.store || new Store(config, { sheets, seed });
   if (config.localBusy && store.localMode && store.sheets.simulateBusy) {
     const [mode, minutes] = String(config.localBusy).split(':');
     store.sheets.simulateBusy({ mode: mode || 'unavailable', minutes: Number(minutes) || 5 });
@@ -889,6 +900,9 @@ export async function createApp(config = {}, options = {}) {
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
           ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),
+          // The lab (LOCAL_MODE): whether the start's work (the first sync, the checks' warm-up) is done;
+          // tools/lab/dev-app.sh lets the next copy start then.
+          ...(config.localMode ? { settled: startSettled } : {}),
         });
       // The Wings Gallery's files of the photo readings, for its update_data.yml: public (the collection's
       // predictions, on the gallery already), gzip when accepted, an ETag and Last-Modified.
@@ -1428,8 +1442,7 @@ export async function createApp(config = {}, options = {}) {
       if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') return sendRefPhoto(req, res, query.u);
       if (method === 'GET' && path === '/api/identify/field-photos') {
         if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
-        const stock = await frozenStock(store, config.identifierDir);
-        const names = ithomiiniSpecies(await headSpecies(config.identifierDir), stock.ithomiiniGenera);
+        const names = ithomiiniSpecies(await headSpecies(config.identifierDir), ITHOMIINI_GENERA);
         return json(res, 200, fieldPhotos(speciesPhotos.photosOf, names), { 'cache-control': 'no-store' });
       }
       if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
@@ -1977,15 +1990,38 @@ export async function createApp(config = {}, options = {}) {
         .finally(() => store.outbox.kick());
   // After a restart the first pages find Inicio's summaries and alerts, the issues and the suggested
   // edits done already (in the worker: nobody waits for them).
-  if (checks.mode === 'worker')
-    ready.then(() => {
+  const warmed =
+    checks.mode === 'worker'
+      ? ready.then(() => {
+          if (store.closed) return;
+          const said = e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message);
+          return Promise.all([
+            freshSummary(store, { signedIn: true }).catch(said),
+            freshAlerts(store).catch(said),
+            freshIssues(store).catch(said),
+            allSuggestions(store).catch(said),
+          ]);
+        })
+      : ready;
+  let startSettled = false;
+  // The lab's copies (LOCAL_MODE, started with --expose-gc: tools/lab/dev-app.sh): the start's garbage (the
+  // first sync's whole-sheet copies, some 1 GB, and the copies of the warm-up's answers) is collected as soon as
+  // that work is done, instead of whenever V8 gets to it, so an idle copy is small within a minute of its start.
+  // "last-resort": a full collection that also hands the freed pages back at once (a plain one keeps them pooled
+  // for a while); some 0.1–0.3 s, twice per start. The checks' worker, which kept what the warm-up read (some
+  // 0.5 GB), stops at once too; the next check starts another.
+  const gc = config.localMode && typeof globalThis.gc === 'function' ? globalThis.gc : null;
+  if (gc) {
+    const collect = () => store.closed || gc({ type: 'major', execution: 'sync', flavor: 'last-resort' });
+    ready.then(collect);
+    const settle = () => {
       if (store.closed) return;
-      const said = e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message);
-      freshSummary(store, { signedIn: true }).catch(said);
-      freshAlerts(store).catch(said);
-      freshIssues(store).catch(said);
-      allSuggestions(store).catch(said);
-    });
+      checks.release?.();
+      collect();
+    };
+    warmed.then(settle, settle);
+  }
+  warmed.finally(() => (startSettled = true)).catch(() => {});
   // Saves kept while Google did not answer (before a restart too): written once it does.
   store.outbox.start(config.outboxCheckMs ?? undefined);
   const interval =

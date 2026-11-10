@@ -362,6 +362,17 @@ async function startApp(run, { profileDir = null } = {}) {
   const busy = spawnSync('ss', ['-ltn', `sport = :${PORT}`], { encoding: 'utf8' }).stdout.split('\n').length > 2;
   if (busy) throw new Error(`port ${PORT} is in use`);
   const args = ['--port', String(PORT), '--dir', run.app, '--ttl', TTL, '--max', MEMORY_MAX];
+  // The workbook's rows file (server/file-sheets.mjs, where the arm has it) made before the clock starts, as
+  // dev-app.sh makes it: one start at a time (its start lock), under a memory ceiling.
+  const fileSheets = join(APP, 'server/file-sheets.mjs');
+  if (existsSync(fileSheets)) {
+    const made = spawnSync(
+      'flock',
+      ['-w', '600', join(LAB, '.start.lock'), 'systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=3G', process.execPath, fileSheets, 'ensure', join(LAB, 'snapshot.json')],
+      { encoding: 'utf8' },
+    );
+    if (made.status !== 0) log(`  rows file not made before the start (${(made.stderr || '').trim().slice(0, 200)}): the app makes it, inside the measured start`);
+  }
   for (const [k, v] of Object.entries(extraEnv(run, profileDir))) args.push('--env', `${k}=${v}`);
   const t0 = performance.now();
   const launcher = spawn(devApp(), args, { cwd: APP, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -372,7 +383,11 @@ async function startApp(run, { profileDir = null } = {}) {
   let pid = 0;
   while (!(pid = mainPid())) {
     if (launcher.exitCode !== null) throw new Error(`dev-app.sh: ${Buffer.concat(out).toString().trim()}`);
-    if (performance.now() - t0 > 30_000) throw new Error('dev-app.sh: no process after 30 s');
+    // dev-app.sh waits its turn behind another start (its start lock) before it starts the unit.
+    if (performance.now() - t0 > 300_000) {
+      launcher.kill();
+      throw new Error('dev-app.sh: no process after 5 min');
+    }
     await sleep(50);
   }
   // On the server (--cpu-weight 20): the live app first when both want the cores.
@@ -658,12 +673,12 @@ async function waitMemory() {
   const t0 = performance.now();
   // Another heavy job's processes (default: the memory audit's harness, which starts its own app instances).
   const other = () => (WAIT_ABSENT ? spawnSync('pgrep', ['-f', WAIT_ABSENT]).status === 0 : false);
-  // tools/lab/dev-app.sh runs at most two at once on this PC.
+  // tools/lab/dev-app.sh has no limit of its own since 10 Nov 2026 (DEV_APP_LIMIT when set); the bench keeps 4.
   const slots = () =>
     spawnSync('systemctl', ['--user', 'list-units', 'ithomiini-dev-*', '--plain', '--no-legend', '--state=active'], { encoding: 'utf8' })
       .stdout.split('\n')
       .filter(l => l.trim() && !l.startsWith(`${UNIT}.service`)).length;
-  while (memAvailableGb() < WAIT_GB || other() || slots() >= 2) {
+  while (memAvailableGb() < WAIT_GB || other() || slots() >= (Number(process.env.DEV_APP_LIMIT) || 4)) {
     if (performance.now() - t0 > 120 * 60_000) throw new Error(`gave up waiting for memory after 2 h`);
     if (Math.round((performance.now() - t0) / 1000) % 120 < 10) log(`waiting: ${memAvailableGb().toFixed(1)} of ${WAIT_GB} GB available${other() ? `, ${WAIT_ABSENT} running` : ''}, ${slots()} other dev apps`);
     await sleep(10_000);
@@ -682,7 +697,7 @@ async function repeat(name, { profileDir = null } = {}) {
       app = await startApp(run, { profileDir });
     } catch (e) {
       // Another chat took the last dev-app slot meanwhile: wait for one again.
-      if (!/Two dev apps run already/.test(e.message) || tries >= 30) throw e;
+      if (!/dev apps run already/.test(e.message) || tries >= 30) throw e;
       log(`  ${e.message.trim()}; waiting`);
       await sleep(30_000);
       await waitMemory();

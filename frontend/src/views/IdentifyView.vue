@@ -18,7 +18,8 @@ import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
-import { ITHOMIINI_GENERA, PUBLIC_FILES } from '../lib/publicModels'
+import { PUBLIC_FILES } from '../lib/publicModels'
+import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { MODEL_ROLES, sameFile } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { t } from '../lib/i18n'
@@ -615,7 +616,7 @@ const sexState = computed<SexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
   const name = said.value?.kind === 'genus' ? (said.value as { genus: string }).genus : top.value?.name
-  const applies = sexApplies(name, ithomiiniGenera.value)
+  const applies = sexApplies(name, ithomiiniGenera)
   if (applies === 'no') return null
   if (applies === 'genus') return { kind: 'genus', genus: name!.split(' ')[0] }
   if (r.sex) return 'na' in r.sex ? { kind: 'nowings' } : { kind: 'ready', z: r.sex.z }
@@ -729,8 +730,8 @@ watch(
 // ---------------------------------------------------------------- the team's frozen stock
 
 const stock = ref<{ stock: FrozenStock; asOf: string } | null>(null)
-// The team's list from the workbook when signed in; else the static one shipped with the models.
-const ithomiiniGenera = computed(() => (session.user && stock.value?.stock.ithomiiniGenera) || ITHOMIINI_GENERA)
+// One list signed in or not (lib/ithomiiniGenera.ts): the workbook's Tribe column misses genera with no row.
+const ithomiiniGenera = ITHOMIINI_GENERA
 const detailOf = (name: string) => stock.value?.stock.detail?.[name] as StockDetail | undefined
 
 // ---------------------------------------------------------------- log, start
