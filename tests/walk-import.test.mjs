@@ -315,6 +315,19 @@ test('the walk photos queue: one photo at a time, a restart reads again what was
   assert.equal(most, 1);
   assert.deepEqual(seen, [w.id, w.id]);
   assert.equal(bestReading(ids.status(w.id).photos).species[0][0], 'Oleria gunilla');
+  // A walk with nothing left to read (all read here; a walk with no photos is the same) does not stop the queue: the
+  // next walk's photos are still read (10 Nov 2026: such a start left every later walk's photos queued until a restart).
+  ids.start(w.id);
+  await ids.idle();
+  const { walk: w2 } = await saveWalk(
+    store,
+    { url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-2-291000002', name: 'Monitoreo 2', track: [], waypoints: [{ ...T4, text: 'y', photos: [photo(3)] }] },
+    user,
+    { fetchImage },
+  );
+  ids.start(w2.id);
+  await ids.idle();
+  assert.deepEqual(ids.status(w2.id).photos.map(p => p.status), ['done']);
   // Without an identifier: said, nothing queued.
   const none = createWalkIds({ store, identifier: null });
   assert.match(none.start(w.id).unavailable, /not set up/);

@@ -105,6 +105,9 @@ export function createWalkIds({ store, identifier, onRead = () => {}, scratch = 
   /** Reads the queued photos one after the other, in the background. */
   function drain() {
     running ??= (async () => {
+      // Waits a turn first: with nothing queued the body would otherwise end, and `finally` clear `running`, before
+      // `??=` stores this promise, which then stays settled in `running` and every later drain() does nothing.
+      await null;
       try {
         for (;;) {
           const job = db.prepare("SELECT * FROM walk_photo_ids WHERE status='queued' ORDER BY updated_at, rowid LIMIT 1").get();
