@@ -352,8 +352,9 @@ test("linesFile and saveLines in the calling chat's own workspace: the eval's an
   writeFileSync(join(evalRoot, 'work', '2026-11-09-nb', 'page.json'), JSON.stringify(PAGE));
   writeFileSync(join(anaOwn, 'work', 'p.json'), JSON.stringify(PAGE));
   const chats = { toolu_eval_0001: ['t-eval', evalRoot], toolu_ana_0001: ['t-ana', anaOwn], toolu_ana_0002: ['t-ana-eval', evalRoot] };
+  let asked = 0;
   const t3Chats = {
-    threadOfToolUse: id => chats[id]?.[0] ?? null,
+    threadOfToolUse: id => (asked++, chats[id]?.[0] ?? null),
     workspaceOf: thread => Object.values(chats).find(([t]) => t === thread)?.[1] ?? null,
     threads: () => new Map(),
     onlyRunning: () => null,
@@ -386,6 +387,13 @@ test("linesFile and saveLines in the calling chat's own workspace: the eval's an
     assert.ok((await ana.call('match_notebook', { linesFile: 'work/p.json' })).proposalId);
     const anaInEval = await ana.call('match_notebook', { linesFile: 'work/2026-11-09-nb/page.json' }, { 'claudecode/toolUseId': 'toolu_ana_0002' });
     assert.equal(anaInEval.error, `linesFile work/2026-11-09-nb/page.json: no workspace of yours (ana) on this server (looked in ${join(workspaces, 'ana')}); or pass \`lines\` inline. Nothing was proposed.`);
+    // With a workspace of their own, saveLines writes there and T3 is not asked (review 10 Nov, F3: it waited up to 2 s).
+    mkdirSync(join(workspaces, 'lab', 'work'), { recursive: true });
+    asked = 0;
+    const own = await lab.call('get_proposal', { proposalId: out.proposalId, saveLines: 'work/own.json' });
+    assert.ok(!own.error, JSON.stringify(own));
+    assert.ok(existsSync(join(workspaces, 'lab', 'work', 'own.json')));
+    assert.equal(asked, 0);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

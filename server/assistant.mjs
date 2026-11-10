@@ -3245,8 +3245,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (args.saveLines) {
       const page = proposalPage(proposal, id => store.getRecord(id));
       if (page.error) return { error: `saveLines: ${page.error}` };
-      const chatRoot = await chatRootOf(context);
-      const saved = writeLinesFile(String(args.saveLines).trim(), page.file, { workspaces, username: context.user?.username, chatRoot });
+      // The person's own workspace first; T3 is asked for the calling chat's folder only when that fails (as matchNotebook).
+      const workspace = { workspaces, username: context.user?.username };
+      let saved = writeLinesFile(String(args.saveLines).trim(), page.file, workspace);
+      if (saved.error) {
+        const chatRoot = await chatRootOf(context);
+        if (chatRoot) saved = writeLinesFile(String(args.saveLines).trim(), page.file, { ...workspace, chatRoot });
+      }
       if (saved.error) return saved;
       return {
         proposalId: proposal.id,
