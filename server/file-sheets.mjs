@@ -12,7 +12,7 @@
 // (commitRows), with no await in between, as LocalSheets does.
 
 import { spawn } from 'node:child_process';
-import { constants, copyFileSync, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, accessSync, linkSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, accessSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -304,69 +304,34 @@ const alive = pid => {
 };
 /** How long a start waits for another one making the rows file (it takes 15–60 s). */
 const LOCK_WAIT_MS = 10 * 60_000;
-/** A lock older than this is left over (a build takes about a minute), whoever its pid is now. */
-const LOCK_STALE_MS = 10 * 60_000;
 /**
- * `fn()` while holding `<file>.lock` (the holder's pid in it), so copies starting together make the rows file
- * once: the others wait, then find it made. A lock whose process has ended, or older than LOCK_STALE_MS, is
- * taken over.
+ * `fn()` while holding `<file>.lock`, so copies starting together make the rows file once: the others wait, then
+ * find it made. The lock is an exclusive transaction on that (empty) SQLite file: the system's file lock, let go
+ * when the holder ends however it ends, so a lock is never left behind. The file itself stays.
  */
-export async function withBuildLock(file, fn, { waitMs = LOCK_WAIT_MS, staleMs = LOCK_STALE_MS } = {}) {
-  const lock = `${file}.lock`;
-  const mine = `${lock}.${process.pid}`;
-  const until = Date.now() + waitMs;
-  for (;;) {
-    // Made whole, then linked in place: a lock is never seen without its pid.
-    writeFileSync(mine, String(process.pid), { mode: 0o600 });
+export async function withBuildLock(file, fn, { waitMs = LOCK_WAIT_MS } = {}) {
+  const lock = new DatabaseSync(`${file}.lock`);
+  try {
+    const until = Date.now() + waitMs;
+    // Asked again every 250 ms rather than with busy_timeout, which would block this thread (and a holder in it).
+    for (;;) {
+      try {
+        lock.exec('BEGIN EXCLUSIVE');
+        break;
+      } catch (error) {
+        if (!/locked|busy/i.test(error.message)) throw error;
+        if (Date.now() > until) throw new Error(`waited ${Math.round(waitMs / 1000)} s for ${file}.lock`);
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    }
     try {
-      linkSync(mine, lock);
-      break;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
+      return await fn();
     } finally {
-      rmSync(mine, { force: true });
+      lock.exec('ROLLBACK');
     }
-    if (takeOverStale(lock, staleMs)) continue;
-    if (Date.now() > until) throw new Error(`waited ${Math.round(waitMs / 1000)} s for ${lock}`);
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  try {
-    return await fn();
   } finally {
-    rmSync(lock, { force: true });
+    lock.close();
   }
-}
-
-/**
- * Removes `lock` when its holder has ended or it is older than `staleMs`. Moved aside first and looked at
- * there, so a waiter that saw the old lock cannot remove the new one another waiter has just taken.
- */
-function takeOverStale(lock, staleMs) {
-  const dead = at => {
-    try {
-      const holder = Number(readFileSync(at, 'utf8'));
-      return !holder || !alive(holder) || Date.now() - statSync(at).mtimeMs > staleMs;
-    } catch {
-      return false;
-    }
-  };
-  if (!dead(lock)) return false;
-  const aside = `${lock}.stale.${process.pid}`;
-  try {
-    renameSync(lock, aside);
-  } catch {
-    return true; // Gone meanwhile: try again.
-  }
-  if (!dead(aside)) {
-    // Another waiter's new lock: put back (unless a third took the place meanwhile).
-    try {
-      linkSync(aside, lock);
-    } catch {
-      /* Taken: that one holds it. */
-    }
-  }
-  rmSync(aside, { force: true });
-  return true;
 }
 
 /**

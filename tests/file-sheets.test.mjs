@@ -282,29 +282,49 @@ test('copies side by side share the rows file, made once, and each keeps its own
   }
 });
 
-test('the build lock: a holder that has ended is taken over, a live one is waited for, and it is gone after', async () => {
+test('the build lock: callbacks never overlap, a holder in another process is waited for, and one that is killed lets go', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'file-sheets-lock-'));
   dirs.push(dir);
   const file = join(dir, 'rows.sqlite');
-  const { spawnSync } = await import('node:child_process');
-  const { readFileSync } = await import('node:fs');
-  const ended = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
-  writeFileSync(`${file}.lock`, ended.stdout);
-  assert.equal(await withBuildLock(file, () => readFileSync(`${file}.lock`, 'utf8')), String(process.pid));
-  assert.equal(existsSync(`${file}.lock`), false);
-  // Held by a live process (this one): waited for, until the holder lets go or the wait ends.
-  writeFileSync(`${file}.lock`, String(process.pid));
-  await assert.rejects(withBuildLock(file, () => 'never', { waitMs: 300 }), /waited 0 s/);
-  setTimeout(() => rmSync(`${file}.lock`, { force: true }), 300);
-  assert.equal(await withBuildLock(file, () => 'after', { waitMs: 5000 }), 'after');
-  // Held by a live pid but older than staleMs (a pid reused after a restart): taken over.
-  writeFileSync(`${file}.lock`, String(process.pid));
-  utimesSync(`${file}.lock`, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
-  assert.equal(await withBuildLock(file, () => 'old', { waitMs: 300, staleMs: 30_000 }), 'old');
-  // Empty (killed while writing it, before this change): taken over.
-  writeFileSync(`${file}.lock`, '');
-  assert.equal(await withBuildLock(file, () => 'empty', { waitMs: 300 }), 'empty');
+  const { spawn } = await import('node:child_process');
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // In one process: one at a time.
+  let inside = 0;
+  let most = 0;
+  const order = [];
+  await Promise.all(
+    [1, 2, 3].map(n =>
+      withBuildLock(file, async () => {
+        most = Math.max(most, ++inside);
+        await sleep(100);
+        order.push(n);
+        inside--;
+      }),
+    ),
+  );
+  assert.equal(most, 1);
+  assert.equal(order.length, 3);
+  // Another process holds it: waited for, until the wait ends.
+  const holder = code =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['-e', code, file], { stdio: ['ignore', 'pipe', 'inherit'] });
+      child.stdout.once('data', () => resolve(child));
+      child.on('error', reject);
+    });
+  const hold = `const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(process.argv[1] + '.lock'); db.exec('BEGIN EXCLUSIVE'); console.log('held'); setInterval(() => {}, 1000);`;
+  let child = await holder(hold);
+  await assert.rejects(withBuildLock(file, () => 'never', { waitMs: 400 }), /waited 0 s/);
+  // Killed while holding it (out of memory, a hard stop): the system lets go at once.
+  child.kill('SIGKILL');
+  await new Promise(resolve => child.once('exit', resolve));
+  assert.equal(await withBuildLock(file, () => 'after a kill', { waitMs: 2000 }), 'after a kill');
+  // Waited for while held, taken when the holder lets go.
+  child = await holder(hold);
+  setTimeout(() => child.kill('SIGTERM'), 500);
+  const started = Date.now();
+  assert.equal(await withBuildLock(file, () => 'after', { waitMs: 10_000 }), 'after');
+  assert.ok(Date.now() - started >= 400);
   // A failing fn still lets go.
   await assert.rejects(withBuildLock(file, () => { throw new Error('boom'); }), /boom/);
-  assert.equal(existsSync(`${file}.lock`), false);
+  assert.equal(await withBuildLock(file, () => 'again', { waitMs: 300 }), 'again');
 });

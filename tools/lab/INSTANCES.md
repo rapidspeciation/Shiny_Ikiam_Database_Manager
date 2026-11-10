@@ -47,9 +47,9 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 
 | VmRSS + VmSwap of the server, 60 s after its unit started | before (rows in memory) | now |
 |---|---:|---:|
-| one copy | 2317 MB (start 50 s) | 195-217 MB (start 15-24 s) |
-| 3 copies started together (they take turns) | not run: about 3 × 2.3 GB, too close to systemd-oomd's swap limit | 219, 226, 201 MB (own starts 25-37 s; ready 38, 36 and 45 s after each call) |
-| peak during a start (VmHWM) | 1975 MB+ | 1.0-1.4 GB |
+| one copy | 2317 MB (start 50 s) | 187 MB (start 24 s) |
+| 3 copies started back to back (they take turns) | not run: about 3 × 2.3 GB, too close to systemd-oomd's swap limit | 198, 188, 183 MB (own starts 29-30 s; ready 30, 40 and 40 s after each call) |
+| peak during a start (VmHWM) | 1975 MB+ | 0.9-1.3 GB |
 
 How a copy stays small:
 - The workbook's rows live in a SQLite file, not in memory (see below).
@@ -66,7 +66,8 @@ ran the assistant's tools held 2.6-2.8 GB, and the identifier added about 1.5 GB
 - **The rows file:** the first start after a new snapshot, or with a version of the code that shapes the rows not
   seen before (`server/sheets.mjs`, `server/schema.mjs`, `docs/workbook-schema.json`, `server/file-sheets.mjs`),
   makes `~/.cache/ithomiini-lab/snapshot.json.<code>.rows.sqlite` once: about 15-60 s and 1.9 GB, in a child
-  process. Copies starting together make it once (a lock file beside it); the others wait and use it. Later
+  process. Copies starting together make it once (an exclusive lock on `<rows file>.lock` beside it, let go by the
+  system when its holder ends); the others wait and use it. Later
   starts copy it to their folder (`workbook-rows.sqlite`) and write only there, so the shared file never changes
   and a restart undoes every write. Each code version keeps its own file (442 MB), so two branches run side by side
   without making each other's again; delete the ones of finished branches.
