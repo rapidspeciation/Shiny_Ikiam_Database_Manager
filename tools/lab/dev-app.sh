@@ -11,6 +11,7 @@
 # (server/file-sheets.mjs) and its own database; none reaches the team's workbook. Agents: tools/lab/INSTANCES.md.
 # --env (repeatable) adds or overrides one of the app's settings (the benchmark, tools/perf/app-bench, gives it the
 # identifier's folder, its database copy's photos and T3's addresses this way).
+# KNOWLEDGE_DIR in the caller's environment is passed on (no documents folder without it).
 #   tools/lab/dev-app.sh --stop --port 8821
 #   tools/lab/dev-app.sh --list          each one's port, folder and memory
 # The admin `lab` is made at the first start of a folder; its password is in <folder>/credentials.json (600).
@@ -85,6 +86,9 @@ while [ "$pid" -gt 1 ]; do
   pid="$(awk '/^PPid:/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 1)"
 done
 [ -f "$HERE/web/index.html" ] || npm --prefix "$HERE" run build
+# The documents folder (sync_documents, search of the team's documents) only when the caller sets KNOWLEDGE_DIR, as
+# tools/assistant-eval/eval-app.mjs passes its environment on; by default none, and the tool says so. --env still wins.
+[ -z "${KNOWLEDGE_DIR:-}" ] || EXTRA=(-E "KNOWLEDGE_DIR=$KNOWLEDGE_DIR" "${EXTRA[@]}")
 # The workbook's rows file (server/file-sheets.mjs), one per snapshot and version of the code that shapes the rows,
 # made here (under the start lock) so the app only copies it.
 systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
