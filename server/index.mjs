@@ -421,7 +421,8 @@ export function configFromEnv(env = process.env) {
         }
       : null,
     // Changes to the instructions applied in #/instrucciones (server/doc-review.mjs): committed in this worktree
-    // of the source (DOC_SYNC_WORKTREE; none: no commits), pushed only with DOC_SYNC_PUSH=1; the workspaces
+    // of the source (DOC_SYNC_WORKTREE; none: no commits), pushed only with DOC_SYNC_PUSH=1 (the live server: to
+    // main; a LOCAL_MODE lab only to a repository on this disk, server/doc-review.mjs isLocalRemote); the workspaces
     // refreshed after each one (DOC_REFRESH: direct, systemd or off; as ITHOMIINI_T3_PROVISION by default).
     docSync: {
       worktree: env.DOC_SYNC_WORKTREE || null,
@@ -705,7 +706,7 @@ async function makeDocReview(store, config, options) {
   const review = createDocReview({
     db: store.db,
     root,
-    git: options.docGit ?? createGitSync({ worktree: ds.worktree, push: ds.push, remote: ds.remote, branch: ds.branch }),
+    git: options.docGit ?? createGitSync({ worktree: ds.worktree, push: ds.push, remote: ds.remote, branch: ds.branch, localOnly: !!config.localMode }),
     refresh,
     measure: options.docMeasure ?? (modules ? read => measureWith(modules, root, read) : null),
     budget: () => readBudget(join(root, 'assistant', 'context-budget.json')).parts,

@@ -354,6 +354,9 @@ function measureIn(worktree, node = process.execPath) {
   );
 }
 
+/** A git remote on this disk: an absolute path or a file:// URL (not https://, ssh:// or git@host:). */
+export const isLocalRemote = url => !!url && (url.startsWith('file://') || (url.startsWith('/') && !url.includes('://')));
+
 /**
  * The budget file with only the parts that differ between `before` and `after` moved by that difference: a growth
  * takes `reason`, a shrink keeps the part's reason. null when no part changed.
@@ -374,9 +377,11 @@ export function budgetChanges(budget, before, after, reason) {
 /**
  * Commits revisions in a worktree of the source (docSync): fetch and fast-forward first, then the file, the
  * budget file when a size changed, one commit; a push only when `push`, with up to 3 rebases.
+ * `localOnly` (the lab, LOCAL_MODE): a push only to a remote on this disk (a path or file://), never to GitHub;
+ * any other remote fails before anything is written.
  * commit({ path, text, parentHash, sectionBefore, sectionAfter, message, budgetReason }) → { state, commit, error }.
  */
-export function createGitSync({ worktree, push = false, remote = 'origin', branch = 'main', node = process.execPath, author = null } = {}) {
+export function createGitSync({ worktree, push = false, remote = 'origin', branch = 'main', node = process.execPath, author = null, localOnly = false } = {}) {
   if (!worktree) return null;
   let queue = Promise.resolve();
   const identity = async () => {
@@ -387,6 +392,9 @@ export function createGitSync({ worktree, push = false, remote = 'origin', branc
   async function once(job) {
     if (!okPath(job.path)) return { state: 'failed', error: 'path' };
     if (!existsSync(worktree)) return { state: 'failed', error: 'no worktree' };
+    if (push && localOnly && !isLocalRemote((await git(worktree, ['remote', 'get-url', remote]).catch(() => '')).trim())) {
+      return { state: 'failed', error: 'lab: push only to a repository on this disk' };
+    }
     if (push) {
       await git(worktree, ['fetch', '-q', remote, branch]);
       await git(worktree, ['merge', '-q', '--ff-only', `${remote}/${branch}`]).catch(async () => {

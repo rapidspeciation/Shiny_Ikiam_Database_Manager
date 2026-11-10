@@ -15,6 +15,7 @@ import {
   effectiveFrom,
   findSection,
   hashText,
+  isLocalRemote,
   locate,
   overlaidFiles,
   overlayReader,
@@ -435,6 +436,52 @@ test('git: each revision is one commit in the worktree; pushed only when enabled
   assert.equal(conflict.error, 'conflict');
   assert.equal((await pushing.commit({ path: 'server/index.mjs', text: 'x' })).state, 'failed');
   assert.equal((await pushing.commit({ path: 'assistant/x.json', text: 'x' })).state, 'failed');
+});
+
+test('every active admin, not only the first one, asks Claude, proposes, applies, discards and undoes; an inactive admin and the other roles do not', async () => {
+  const { root, db } = fixture();
+  db.prepare("INSERT INTO users VALUES ('u-admin2','marta','Marta','admin',1,'marta@example.org')").run();
+  db.prepare("INSERT INTO users VALUES ('u-old','pedro','Pedro','admin',0,'pedro@example.org')").run();
+  const second = { id: 'u-admin2', username: 'marta', role: 'admin' };
+  const gone = { id: 'u-old', username: 'pedro', role: 'admin' };
+  const d = createDocReview({ db, root });
+  assert.equal(d.isAdmin(second), true);
+  assert.equal(d.isAdmin(gone), false, 'an admin who was deactivated');
+  assert.equal(d.isAdmin(editor), false);
+  assert.equal(d.state(second).admin, true);
+  assert.equal(d.state(gone).admin, false);
+  const t = d.createThread(observer, { path: SKILL_PATH, quote: 'Usa NA', heading: 'Datos', body: '¿NA?' });
+  assert.match((await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'x' }, { user: gone })).error, /administrator/);
+  const made = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Datos', before: 'Usa NA', after: 'Usa NOT_COLLECTED', thread_ids: [t.id] }, { user: second });
+  assert.ok(made.changeId);
+  assert.throws(() => d.apply(gone, made.changeId), /Only administrators/);
+  assert.equal(d.apply(second, made.changeId).change.status, 'applied');
+  assert.equal((await d.undo(second, made.changeId)).change.status, 'undone');
+  const other = await d.runTool('propose_doc_change', { path: SKILL_PATH, heading: 'Fotos', before: 'Dos fotos', after: 'Tres fotos' }, { user: admin });
+  assert.throws(() => d.discard(gone, other.changeId), /Only administrators/);
+  assert.equal(d.discard(second, other.changeId).ok, true);
+  assert.equal(d.change(other.changeId).status, 'discarded');
+});
+
+test('a lab (localOnly) pushes only to a repository on this disk; a GitHub remote fails before anything is written', async () => {
+  assert.equal(isLocalRemote('/home/x/doc-sync-remote.git'), true);
+  assert.equal(isLocalRemote('file:///home/x/r.git'), true);
+  assert.equal(isLocalRemote('https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager.git'), false);
+  assert.equal(isLocalRemote('git@github.com:Fr4nzz/ithomiini_database.git'), false);
+  assert.equal(isLocalRemote('ssh://git@github.com/x.git'), false);
+  assert.equal(isLocalRemote(''), false);
+  const { remote, work, g } = repoPair();
+  const job = { path: SKILL_PATH, text: SKILL.replace('Dos', 'Tres'), parentHash: hashText(SKILL), sectionBefore: '', sectionAfter: '', message: 'Instrucciones: lab' };
+  g(work, 'remote', 'add', 'team', 'https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager.git');
+  const toGithub = createGitSync({ worktree: work, push: true, remote: 'team', localOnly: true, author: { name: 'App', email: 'app@example.invalid' } });
+  const refused = await toGithub.commit(job);
+  assert.equal(refused.state, 'failed');
+  assert.match(refused.error, /on this disk/);
+  assert.equal(g(work, 'log', '-1', '--format=%s').trim(), 'seed', 'no commit');
+  assert.equal(g(work, 'status', '--porcelain').trim(), '', 'nothing written');
+  const toDisk = createGitSync({ worktree: work, push: true, localOnly: true, author: { name: 'App', email: 'app@example.invalid' } });
+  assert.equal((await toDisk.commit(job)).state, 'pushed');
+  assert.equal(g(remote, 'log', '-1', '--format=%s', 'main').trim(), 'Instrucciones: lab');
 });
 
 test("Claude's answer without a change leaves the thread open for people; «Pedir a Claude» and doc_threads skip it until someone replies", async () => {
