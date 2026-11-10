@@ -2,7 +2,8 @@
 // imports it as PLAYWRIGHT_MODULE. The scenario is a JSON file named in the import URL (`?s=<path>`):
 // { result | app: {records, png, geometry} (an app that answers from the URL, with picture geometry unless geometry: false), launchFail, hang: 'launch'|'export',
 //   noInterface, grandchild (a process left in the worker's group), browserGroup (tests/fixtures/fake-browser.mjs: a
-//   browser-like process in a group of its own, its profile in TMPDIR, with a helper child in another group), log (a
+//   browser-like process in a group of its own, its profile in TMPDIR, with a helper child in another group; launch
+//   returns once both run), log (a
 //   file: the URL opened, the code evaluated, TMPDIR, the pids started) }.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -82,6 +83,8 @@ export const chromium = {
       // As Playwright starts Chromium: a process group of its own, the profile in TMPDIR, a child of its own.
       // (It and its helper log their own pids.)
       spawn(process.execPath, [fileURLToPath(new URL('./fake-browser.mjs', import.meta.url)), scenario.log, 'browser', `--user-data-dir=${join(process.env.TMPDIR, 'profile')}`], { detached: true, stdio: 'ignore' });
+      // As Playwright's launch, which returns once Chromium is up: here once the browser and its helper run.
+      while (!/"renderer":/.test(readFileSync(scenario.log, 'utf8'))) await new Promise(r => setTimeout(r, 20));
     }
     if (scenario.launchFail) throw new Error(scenario.launchFail);
     if (scenario.hang === 'launch') await forever();

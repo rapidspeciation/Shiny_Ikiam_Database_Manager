@@ -497,8 +497,12 @@ export function checkExport(result, expect) {
   };
 }
 
-/** The process table from /proc: Map pid → { ppid, rss (bytes), start (clock ticks), cmd }. */
-export function procTable(root = '/proc') {
+/**
+ * The process table from /proc: Map pid → { ppid, rss (bytes), start (clock ticks), cmd }. `cmd: false`: without the
+ * command lines (cmd ''), for the render's memory watch, which needs only ppid and rss: reading every process's
+ * command line was most of its cost (on a loaded machine 400–600 ms of a 600–900 ms look, twice a second).
+ */
+export function procTable(root = '/proc', { cmd: withCmd = true } = {}) {
   const out = new Map();
   const page = 4096;
   for (const name of readdirSync(root)) {
@@ -509,7 +513,7 @@ export function procTable(root = '/proc') {
       // After the name: state(0) ppid(1) … starttime(19) vsize(20) rss(21, pages).
       let cmd = '';
       try {
-        cmd = readFileSync(join(root, name, 'cmdline'), 'utf8').replace(/\0/g, ' ');
+        if (withCmd) cmd = readFileSync(join(root, name, 'cmdline'), 'utf8').replace(/\0/g, ' ');
       } catch {
         // gone
       }
@@ -664,7 +668,7 @@ export function createMapRenderer({
   workerPath = WORKER,
   workerArgs = [],
   memAvailable: memOf = memAvailable,
-  procTable: procOf = () => procTable(),
+  procTable: procOf = options => procTable('/proc', options),
   deadlineMs = DEADLINE_MS,
   queueMs = QUEUE_MS,
   minAvailable = MIN_AVAILABLE,
@@ -734,7 +738,8 @@ export function createMapRenderer({
     let peak = 0;
     let killedFor = null;
     let reaping = Promise.resolve();
-    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true })).catch(() => {}));
+    let reaped = null; // what the last kill left: { killed, left }
+    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true })).then(r => (reaped = r ?? null)).catch(() => {}));
     let giveUp = null;
     /** Kill the run (once); its 'close' then answers, or, if its pipes stay open, CLOSE_MS later the run gives up. */
     const stop = reason => {
@@ -808,7 +813,7 @@ export function createMapRenderer({
         poll = setInterval(() => {
           tree.observe();
           try {
-            const rss = treeRss(procOf(), child.pid);
+            const rss = treeRss(procOf({ cmd: false }), child.pid);
             peak = Math.max(peak, rss);
             if (rss > rssCap) stop('memory_cap');
           } catch {
@@ -821,8 +826,12 @@ export function createMapRenderer({
       clearTimeout(timer);
       clearInterval(poll);
       clearTimeout(grace);
-      // Whatever is left: the worker if it still runs, and anything seen under it that is still the same process.
-      await reap();
+      // Whatever is left: the worker if it still runs, and anything seen under it that is still the same process. Not
+      // again when a kill (stop) left none of them running and the worker has exited: nothing of the tree is left that
+      // could have started another, so a new look (a full read of /proc, up to half a second on a loaded machine)
+      // would find nothing.
+      await reaping;
+      if (!(reaped && !reaped.left.length && child && (child.exitCode !== null || child.signalCode !== null))) await reap();
       child?.stdin?.destroy();
       rmSync(tmp, { recursive: true, force: true });
     }
