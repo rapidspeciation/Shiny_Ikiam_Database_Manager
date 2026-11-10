@@ -28,6 +28,9 @@ import {
   storeReviewedWalk,
   wikilocHealth,
   PROFILE_STALE_DAYS,
+  dailySync,
+  startDailySync,
+  DAILY_SYNC_HOUR_EC,
 } from '../server/monitoring.mjs';
 import { retryable } from '../tools/wikiloc/lib.mjs';
 import { createWalkIds } from '../server/walk-ids.mjs';
@@ -287,6 +290,74 @@ test("/health's wikiloc: failing after a failed import until one works, stale pr
   claimJob(s);
   assert.equal(wikilocHealth(s, Date.now() + 30 * 60_000).status, 'ok');
   assert.equal(wikilocHealth(s, Date.now() + 2 * 3600_000).reason, 'worker');
+});
+
+// Ecuador's clock (UTC-5) as the server's: `ec('2026-11-11', 21, 0)` is 02:00 UTC on 12 Nov.
+const ec = (day, h, m = 0) => Date.parse(`${day}T00:00:00Z`) + (h + 5) * 3600_000 + m * 60_000;
+
+test('the daily check queues «Buscar nuevos» once a day from 21:00 Ecuador, never twice at once; a fake worker runs it', t => {
+  assert.equal(DAILY_SYNC_HOUR_EC, 21);
+  const s = store();
+  t.mock.method(console, 'log', () => {});
+  // No profile followed: nothing to do.
+  assert.equal(dailySync(s, ec('2026-11-11', 21)), null);
+  addProfile(s, { url: '13756119' }, editor);
+  addProfile(s, { url: '23021371', collector: 'AO - Ángel Ojeda' }, editor);
+  assert.equal(dailySync(s, ec('2026-11-11', 20, 59)), null);
+  const first = dailySync(s, ec('2026-11-11', 21, 0));
+  assert.deepEqual(first.jobs.map(j => [j.kind, j.target, j.requestedBy]), [
+    ['profile', '13756119', 'wikiloc-daily'],
+    ['profile', '23021371', 'wikiloc-daily'],
+  ]);
+  // Once that day, also after midnight UTC.
+  assert.equal(dailySync(s, ec('2026-11-11', 23, 50)), null);
+  assert.equal(dailySync(s, ec('2026-11-12', 20)), null);
+  // The next day while the first look still waits: the same jobs, no second look of a profile.
+  const second = dailySync(s, ec('2026-11-12', 21, 10));
+  assert.deepEqual(second.jobs.map(j => j.id), first.jobs.map(j => j.id));
+  assert.equal(s.db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n, 2);
+  assert.equal(wikilocHealth(s).dailyQueued, '2026-11-12');
+  // The worker (fake): Cloudflare stops the first profile once, so it waits for its retry like any job; then both work.
+  const job1 = claimJob(s).job;
+  finishJob(s, job1.id, { status: 'retry', message: 'Wikiloc browser: TimeoutError: Cloudflare challenge did not clear' });
+  const job2 = claimJob(s).job;
+  assert.equal(job2.target, '23021371');
+  assert.equal(claimJob(s).job, null, 'the retry waits its 5 minutes');
+  finishJob(s, job2.id, { status: 'done', message: 'Sin rutas nuevas (6 rutas revisadas)' });
+  s.db.prepare('UPDATE wikiloc_jobs SET not_before=NULL').run();
+  finishJob(s, claimJob(s).job.id, { status: 'done', message: '1 rutas nuevas de 37' });
+  const health = wikilocHealth(s);
+  assert.equal(health.status, 'ok');
+  assert.equal(health.failedSinceOk, 0);
+  // Every profile looked at in the last 12 hours (someone pressed «Buscar nuevos» at 20:30): the day's look is skipped.
+  s.db.prepare('UPDATE wikiloc_profiles SET last_checked=?').run(new Date(ec('2026-11-13', 20, 30)).toISOString());
+  assert.equal(dailySync(s, ec('2026-11-13', 21, 0)), null);
+  assert.equal(s.db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='queued'").get().n, 0);
+  assert.equal(wikilocHealth(s).dailyQueued, '2026-11-13');
+  // A failed daily look shows up like any failed import.
+  s.db.prepare("UPDATE wikiloc_profiles SET last_checked='2026-11-01T00:00:00Z'").run();
+  dailySync(s, ec('2026-11-14', 21, 0));
+  for (let job; (job = claimJob(s).job); ) finishJob(s, job.id, { status: 'failed', message: 'App answered 502' });
+  t.mock.method(console, 'error', () => {});
+  assert.equal(wikilocHealth(s).status, 'failing');
+});
+
+test('the daily check looks every 10 minutes on its timer and stops on close', t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  t.mock.method(console, 'log', () => {});
+  const s = store();
+  addProfile(s, { url: '13756119' }, editor);
+  let clock = ec('2026-11-11', 20, 55);
+  const daily = startDailySync(s, { now: () => clock });
+  t.mock.timers.tick(10 * 60_000);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n, 0, 'still 20:55');
+  clock = ec('2026-11-11', 21, 5);
+  t.mock.timers.tick(10 * 60_000);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n, 1);
+  daily.stop();
+  clock = ec('2026-11-12', 21, 5);
+  t.mock.timers.tick(30 * 60_000);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n, 1, 'stopped');
 });
 
 test('a walk takes its collector from the followed profile of its author', async () => {

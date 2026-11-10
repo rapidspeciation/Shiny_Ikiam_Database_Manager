@@ -44,6 +44,12 @@ systemctl --user status ithomiini-wikiloc
 journalctl --user -u ithomiini-wikiloc -n 60 --no-pager
 ```
 
+Once a day at 21:00 Ecuador the app queues the followed profiles' checks by itself, the same jobs as Importar's
+«Buscar nuevos» (requested by `wikiloc-daily`; skipped when every profile was looked at in the last 12 hours, and
+never a second check of a profile while one waits or runs). The hour is when the home computer's tunnel is usually up
+(below) and the server's night jobs have not started. `WIKILOC_DAILY_CHECK=0` in
+`~/.config/ithomiini/service.env` turns it off (then restart the app); it is on by default, off in LOCAL_MODE.
+
 The Importar screen shows the worker's latest heartbeat. Whether imports work is also in the app's
 `/health` (`wikiloc`: `ok`, `stale` when a followed profile has not been looked at in 30 days, `failing` when the
 latest job failed or the worker has not asked for work in an hour; counts and times only), a failed job is a line

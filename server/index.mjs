@@ -35,6 +35,7 @@ import {
   saveTrack,
   saveWalk,
   wikilocHealth,
+  startDailySync,
   rematchTracks,
   applyRematch,
   linkCapture,
@@ -315,6 +316,9 @@ export function configFromEnv(env = process.env) {
     // The background photo readings (server/readings.mjs): on where the photo reader and the identifier are
     // installed, except in LOCAL_MODE (the lab: READINGS=1 turns them on); READINGS=0 turns them off. READINGS_THREADS (2).
     readings: env.READINGS === '0' ? false : env.READINGS === '1' ? true : 'auto',
+    // The daily look at the followed Wikiloc profiles (server/monitoring.mjs dailySync): on, except in LOCAL_MODE (the lab:
+    // WIKILOC_DAILY_CHECK=1 turns it on); WIKILOC_DAILY_CHECK=0 turns it off.
+    wikilocDaily: env.WIKILOC_DAILY_CHECK === '0' ? false : env.WIKILOC_DAILY_CHECK === '1' ? true : 'auto',
     readingsThreads: env.READINGS_THREADS ? Number(env.READINGS_THREADS) : undefined,
     // The Wings Gallery's files made from the photo readings (server/gallery-public.mjs): beside the database by default.
     publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
@@ -733,6 +737,9 @@ export async function createApp(config = {}, options = {}) {
   // A first look a minute after the start (photos listed while the app was stopped), then after each sync.
   const readingsStart = setTimeout(() => readings.afterSync?.(), 60_000);
   readingsStart.unref?.();
+  // The followed Wikiloc profiles looked at once a day (21:00 Ecuador), the jobs «Buscar nuevos» queues.
+  const wikilocDaily = config.wikilocDaily === true || (config.wikilocDaily !== false && !config.localMode);
+  const dailyWikiloc = wikilocDaily ? startDailySync(store) : null;
   // How late the server answers (/health): one long piece of work holds up every request.
   const eventLoop = watchEventLoop();
   const tableCache = new Map();
@@ -791,7 +798,7 @@ export async function createApp(config = {}, options = {}) {
           // The Wikiloc imports: ok, stale (a followed profile not looked at in 30 days) or failing (server/monitoring.mjs wikilocHealth).
           wikiloc: (() => {
             try {
-              return wikilocHealth(store);
+              return { ...wikilocHealth(store), daily: wikilocDaily ? 'on' : 'off' };
             } catch (e) {
               console.error('Wikiloc health:', e.message);
               return { status: 'unknown' };
@@ -1953,6 +1960,7 @@ export async function createApp(config = {}, options = {}) {
       checks.close();
       search.close();
       clearTimeout(readingsStart);
+      dailyWikiloc?.stop();
       readings.close?.();
       sexCheck.close?.();
       // A page's wait for news (wait=1, up to 25 s) would hold the stop until the 5 s limit: what is

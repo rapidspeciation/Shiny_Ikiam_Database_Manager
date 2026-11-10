@@ -36,7 +36,7 @@ Health confirms the process is running. The authenticated synchronization view s
 
 ### Wikiloc imports
 
-Links and followed-profile scans are processed by `ithomiini-wikiloc.service` on claudeclaw. Its Camoufox browser runs on a private Xvfb display and reads the public trail pages, with Cloudflare challenge handling. The app stores each walk and downloads its photos for review. This runs independently of any PC. GPX uploads retain their direct import path and supply GPS timestamps.
+Links and followed-profile scans are processed by `ithomiini-wikiloc.service` on claudeclaw. The app queues a scan of every followed profile by itself once a day at 21:00 Ecuador (the jobs of Importar's «Buscar nuevos», `wikiloc-daily` in the job list); `WIKILOC_DAILY_CHECK=0` in `service.env` turns that off. Whether imports work is in `/health` → `wikiloc` (`daily`: on or off, `dailyQueued`: the last day) and in the nightly's `wikiloc` result. Its Camoufox browser runs on a private Xvfb display and reads the public trail pages, with Cloudflare challenge handling. The app stores each walk and downloads its photos for review. This runs independently of any PC. GPX uploads retain their direct import path and supply GPS timestamps.
 
 The worker is installed in `/home/ubuntu/.local/share/ithomiini-wikiloc`, including its Python virtual environment. Its editor-account credentials are in `/home/ubuntu/.config/ithomiini-wikiloc/worker.json`, mode 600. Keep that file across releases. The host needs `python3-venv`, `xvfb`, and GTK libraries; the installer pins its Python packages and fetches the Camoufox browser. See [Wikiloc importer](../tools/wikiloc/README.md).
 

@@ -260,4 +260,6 @@ test('/health reports the event loop of the last minute', async () => {
   assert.equal(health.eventLoop.windowS, 60);
   // The Wikiloc imports (server/monitoring.mjs wikilocHealth; the nightly reads it, scripts/nightly-app-checks.mjs).
   assert.equal(health.wikiloc.status, 'unused');
+  // The daily check is off in LOCAL_MODE (the lab, these tests): WIKILOC_DAILY_CHECK=1 turns it on there.
+  assert.equal(health.wikiloc.daily, 'off');
 });

@@ -1068,6 +1068,49 @@ export function queueLink(store, body, user) {
   };
 }
 
+/**
+ * The daily look at the followed profiles: «Buscar nuevos» (queueSync) by itself, once a day from this hour in
+ * Ecuador (UTC-5 all year). 21:00: the server's browser passes Cloudflare's check through the home computer's tunnel,
+ * which is up in the evening (the computer was off from 23:34 to 16:24 on 9-10 Nov 2026); the day's work at Ikiam is
+ * over; the server's night jobs come later (backup 00:01, nightly tests 01:30, Drive sync 03:00), and the retries
+ * (5 and 20 minutes) are over before the nightly reads /health. WIKILOC_DAILY_CHECK=0 in service.env turns it off.
+ */
+export const DAILY_SYNC_HOUR_EC = 21;
+/** The requester of the daily jobs (Importar's job list; the walks found are this name's, as a person's would be theirs). */
+export const DAILY_SYNC_USER = { username: 'wikiloc-daily' };
+
+/**
+ * Queues the day's look once its hour has come (`at`: the clock, for tests): null when not yet, done today already, no
+ * profile followed, or every profile looked at in the last 12 hours (someone pressed «Buscar nuevos»). Never a second
+ * look while one is waiting or running: the open job of a profile is kept (addJob).
+ */
+export function dailySync(store, at = Date.now()) {
+  const ec = new Date(at - 5 * 3600_000);
+  const day = ec.toISOString().slice(0, 10);
+  if (ec.getUTCHours() < DAILY_SYNC_HOUR_EC || store.getSetting('wikilocDailySync') === day) return null;
+  const profiles = store.db.prepare('SELECT min(COALESCE(last_checked, \'\')) AS oldest, count(*) AS n FROM wikiloc_profiles').get();
+  if (!profiles.n) return null;
+  store.setSetting('wikilocDailySync', day);
+  if (profiles.oldest && Date.parse(profiles.oldest) > at - 12 * 3600_000) return null;
+  const { jobs } = queueSync(store, DAILY_SYNC_USER);
+  console.log(`Wikiloc daily check ${day}: ${jobs.length} followed profiles queued`);
+  return { day, jobs };
+}
+
+/** Looks every 10 minutes whether the day's look is due (createApp; stop() on close). */
+export function startDailySync(store, { everyMs = 10 * 60_000, now = Date.now } = {}) {
+  const tick = () => {
+    try {
+      dailySync(store, now());
+    } catch (e) {
+      console.error('Wikiloc daily check:', e.message);
+    }
+  };
+  const timer = setInterval(tick, everyMs);
+  timer.unref?.();
+  return { tick, stop: () => clearInterval(timer) };
+}
+
 /** One job per followed profile, to look for monitoring trails not yet in the app. */
 export function queueSync(store, user) {
   const profiles = store.db.prepare('SELECT * FROM wikiloc_profiles ORDER BY created_at').all();
@@ -1182,6 +1225,8 @@ export function wikilocHealth(store, at = Date.now()) {
     workerSeen,
     profiles: profiles.n,
     oldestProfileCheck: profiles.n ? profiles.t : null,
+    // The day (Ecuador) of the last daily look; /health adds `daily`, on or off (WIKILOC_DAILY_CHECK).
+    dailyQueued: store.getSetting('wikilocDailySync') || null,
   };
 }
 
