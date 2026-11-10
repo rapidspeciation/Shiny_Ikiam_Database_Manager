@@ -1135,9 +1135,53 @@ export function finishJob(store, id, body) {
   store.db
     .prepare('UPDATE wikiloc_jobs SET status=?, message=?, attempts=?, updated_at=? WHERE id=?')
     .run(status, text(body.message, 1000), attempts, now(), id);
+  // In the app's log (journalctl -u ithomiini) as well as on Importar; /health's `wikiloc` and the nightly check flag it.
+  if (status === 'failed') console.error(`Wikiloc import failed: ${job.kind} job ${id} (try ${attempts + 1}): ${text(body.message, 300) || 'no message'}`);
   if (job.kind === 'profile' && status === 'done')
     store.db.prepare('UPDATE wikiloc_profiles SET last_checked=?, name=COALESCE(?, name) WHERE wikiloc_user=?').run(now(), text(body.profileName, 120), job.target);
   return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };
+}
+
+/** A followed profile not looked at for this long (or never since it was followed): flagged as `stale`. */
+export const PROFILE_STALE_DAYS = 30;
+/** The worker asks for work every 30 s, a minute after an error; a job of its own may run for half an hour. */
+const WORKER_SILENT_MS = 60 * 60_000;
+
+/**
+ * Whether the Wikiloc imports work, for /health (public: counts and times only, no links, names or messages) and the
+ * nightly check (scripts/nightly-app-checks.mjs). In Oct 2026 three imports failed and no walk came in for six weeks
+ * with nothing saying so outside Importar. `status`:
+ * - `failing`: the latest finished job failed (`failedSinceOk` jobs since the last that worked), or the worker
+ *   has not asked for work in an hour with nothing running;
+ * - `stale`: a followed profile has not been looked at in PROFILE_STALE_DAYS days (Importar's «Buscar nuevos»);
+ * - `ok`, or `unused` before any job or profile.
+ */
+export function wikilocHealth(store, at = Date.now()) {
+  const db = store.db;
+  const lastOk = db.prepare("SELECT max(updated_at) AS t FROM wikiloc_jobs WHERE status='done'").get().t ?? null;
+  const failed = db
+    .prepare("SELECT count(*) AS n, max(updated_at) AS t FROM wikiloc_jobs WHERE status='failed' AND (? IS NULL OR updated_at > ?)")
+    .get(lastOk, lastOk);
+  const waiting = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n;
+  const running = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='running'").get().n;
+  const profiles = db.prepare('SELECT count(*) AS n, min(COALESCE(last_checked, created_at)) AS t FROM wikiloc_profiles').get();
+  const jobs = db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n;
+  const workerSeen = store.getSetting('wikilocWorkerSeen') || null;
+  const silent = jobs > 0 && !running && (!workerSeen || at - Date.parse(workerSeen) > WORKER_SILENT_MS);
+  const stale = profiles.n > 0 && at - Date.parse(profiles.t) > PROFILE_STALE_DAYS * 864e5;
+  const status = failed.n > 0 || silent ? 'failing' : stale ? 'stale' : jobs || profiles.n ? 'ok' : 'unused';
+  return {
+    status,
+    // Why it is failing: the latest import failed, or the worker went silent.
+    ...(status === 'failing' ? { reason: failed.n > 0 ? 'failed' : 'worker' } : {}),
+    lastOk,
+    failedSinceOk: failed.n,
+    lastFailed: failed.t ?? null,
+    waiting,
+    workerSeen,
+    profiles: profiles.n,
+    oldestProfileCheck: profiles.n ? profiles.t : null,
+  };
 }
 
 /** Who requested the job a walk comes from: the walk is theirs, not the worker's. */

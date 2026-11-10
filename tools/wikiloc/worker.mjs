@@ -9,8 +9,8 @@
  * yet. Walks are sent to the app for review. The browser only starts when
  * there is work.
  *
- * A page Cloudflare's check stopped is not a failure at once: the job goes
- * back to the queue and is tried again later (server/monitoring.mjs finishJob).
+ * A page Cloudflare's check stopped, or one that did not load in time, is not a failure at once: the job goes
+ * back to the queue and is tried again later (lib.mjs retryable, server/monitoring.mjs finishJob).
  * The browser goes out through the home computer's address when its tunnel is
  * up (browser.py); the route each job took is in the log and the job's message.
  *
@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_APP, appClient, openBrowser, photoCount, readProfile, readTrail, signIn } from './lib.mjs';
+import { DEFAULT_APP, appClient, openBrowser, photoCount, readProfile, readTrail, retryable, signIn } from './lib.mjs';
 
 const config = JSON.parse(
   readFileSync(process.env.ITHOMIINI_WORKER_CONFIG || join(homedir(), '.config', 'ithomiini-wikiloc', 'worker.json'), 'utf8'),
@@ -30,8 +30,6 @@ const app = (config.app || DEFAULT_APP).replace(/\/?$/, '/');
 const client = appClient(app, () => signIn(app, config.username, config.password));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString(), ...a);
-/** Cloudflare's check (or its page) stopped the browser: worth another try later. */
-const blocked = error => /cloudflare|challenge|un momento|just a moment/i.test(String(error?.message || error));
 
 async function sendWalk(page, url, jobId, collector) {
   const walk = await readTrail(page, url);
@@ -99,7 +97,7 @@ for (;;) {
         .request(`monitoring/wikiloc/jobs/${job.id}`, {
           method: 'POST',
           // Tried again later, a few times at most.
-          body: { status: blocked(e) ? 'retry' : 'failed', message: e.message.slice(0, 500) },
+          body: { status: retryable(e) ? 'retry' : 'failed', message: e.message.slice(0, 500) },
         })
         .catch(() => {});
     await sleep(60_000);

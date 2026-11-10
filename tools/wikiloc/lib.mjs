@@ -7,6 +7,18 @@ export { openBrowser } from './browser.mjs';
 
 export const DEFAULT_APP = 'https://ithomiini-ikiam.com/';
 
+/**
+ * Whether a job's error is worth another try later (the worker reports `retry`, the app queues it again after
+ * 5 and 20 minutes, server/monitoring.mjs finishJob) rather than a failure at once: Cloudflare's check, and a page or
+ * the browser that did not answer in time. On 10 Nov 2026 a walk's page timed out once from the server
+ * («Page.goto: Timeout 60000ms exceeded») and loaded on the next try; before, that failed the job for good.
+ * The app's own answers (a 502 during a deploy, a refused walk) are failures: trying the page again changes nothing.
+ */
+export const retryable = error =>
+  /cloudflare|challenge|un momento|just a moment|timeout|timed out|NS_ERROR_NET|NS_ERROR_PROXY|NS_ERROR_CONNECTION|net::ERR_|browser exited/i.test(
+    String(error?.message || error),
+  );
+
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const monthOf = word => {

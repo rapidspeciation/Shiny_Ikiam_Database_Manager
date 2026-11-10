@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -26,7 +26,10 @@ import {
   applyRematch,
   linkCapture,
   storeReviewedWalk,
+  wikilocHealth,
+  PROFILE_STALE_DAYS,
 } from '../server/monitoring.mjs';
+import { retryable } from '../tools/wikiloc/lib.mjs';
 import { createWalkIds } from '../server/walk-ids.mjs';
 import { initPhotoTables } from '../server/photodata.mjs';
 
@@ -218,6 +221,64 @@ test("a job Cloudflare's check stopped waits and is tried again, then fails sayi
   const other = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/otra-291000002' }, editor).job;
   claimJob(s);
   assert.equal(finishJob(s, other.id, { status: 'failed', message: 'App answered 502' }).job.status, 'failed');
+});
+
+// The worker's errors as it reported them on the live server (tests/fixtures/wikiloc-job-errors.json).
+const jobErrors = JSON.parse(readFileSync(new URL('./fixtures/wikiloc-job-errors.json', import.meta.url), 'utf8'));
+
+test('a walk page that did not load in time is tried again like a Cloudflare check; the app\'s own errors fail at once', t => {
+  for (const e of jobErrors.retry) assert.equal(retryable(new Error(e.message)), true, e.seen);
+  for (const e of jobErrors.failed) assert.equal(retryable(new Error(e.message)), false, e.seen);
+  // What the app then does with the worker's answer: queued again for later (10 Nov 2026: this one failed for good).
+  const s = store();
+  const job = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112' }, editor).job;
+  claimJob(s);
+  const timeout = new Error(jobErrors.retry[1].message);
+  const out = finishJob(s, job.id, { status: retryable(timeout) ? 'retry' : 'failed', message: timeout.message }).job;
+  assert.equal(out.status, 'queued');
+  assert.equal(out.attempts, 1);
+});
+
+test("/health's wikiloc: failing after a failed import until one works, stale profiles, a silent worker; failures logged", t => {
+  const s = store();
+  const logged = [];
+  t.mock.method(console, 'error', line => logged.push(line));
+  const day = 864e5;
+  assert.equal(wikilocHealth(s).status, 'unused');
+  addProfile(s, { url: '13756119' }, editor);
+  assert.equal(wikilocHealth(s).status, 'ok');
+  // Followed a month ago and never looked at: stale.
+  assert.equal(wikilocHealth(s, Date.now() + (PROFILE_STALE_DAYS + 1) * day).status, 'stale');
+  // A link that fails: failing, and said in the app's log.
+  const a = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112' }, editor).job;
+  claimJob(s);
+  finishJob(s, a.id, { status: 'failed', message: 'Wikiloc browser: TimeoutError: Cloudflare challenge did not clear' });
+  const failing = wikilocHealth(s);
+  assert.equal(failing.status, 'failing');
+  assert.equal(failing.reason, 'failed');
+  assert.equal(failing.failedSinceOk, 1);
+  assert.equal(failing.lastOk, null);
+  assert.match(logged.join('\n'), /Wikiloc import failed: trail job .+ \(try 1\): Wikiloc browser: TimeoutError: Cloudflare challenge did not clear/);
+  // Public: counts and times, no links, names or messages.
+  assert.doesNotMatch(JSON.stringify(failing), /wikiloc\.com|Cloudflare|editor|13756119/);
+  // A retry waiting is not a failure yet.
+  const b = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/otra-291000002' }, editor).job;
+  claimJob(s);
+  finishJob(s, b.id, { status: 'retry', message: 'Cloudflare challenge did not clear' });
+  assert.equal(wikilocHealth(s).failedSinceOk, 1);
+  assert.equal(wikilocHealth(s).waiting, 1);
+  // One that works afterwards clears it (the profile check also counts as looked at).
+  queueSync(s, editor);
+  s.db.prepare("UPDATE wikiloc_jobs SET not_before=NULL").run();
+  for (let job; (job = claimJob(s).job); ) finishJob(s, job.id, { status: 'done', message: 'ok' });
+  const ok = wikilocHealth(s);
+  assert.equal(ok.status, 'ok');
+  assert.equal(ok.failedSinceOk, 0);
+  assert.ok(ok.lastOk);
+  // The worker silent for over an hour with nothing running: failing.
+  const silent = wikilocHealth(s, Date.now() + 2 * 3600_000);
+  assert.equal(silent.status, 'failing');
+  assert.equal(silent.reason, 'worker');
 });
 
 test('a walk takes its collector from the followed profile of its author', async () => {

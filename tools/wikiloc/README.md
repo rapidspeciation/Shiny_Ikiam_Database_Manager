@@ -44,7 +44,13 @@ systemctl --user status ithomiini-wikiloc
 journalctl --user -u ithomiini-wikiloc -n 60 --no-pager
 ```
 
-The Importar screen shows the worker's latest heartbeat. Queued jobs remain in
+The Importar screen shows the worker's latest heartbeat. Whether imports work is also in the app's
+`/health` (`wikiloc`: `ok`, `stale` when a followed profile has not been looked at in 30 days, `failing` when the
+latest job failed or the worker has not asked for work in an hour; counts and times only), a failed job is a line
+`Wikiloc import failed: …` in the app's log (`journalctl --user -u ithomiini`), and the nightly run on the server
+(scripts/nightly-tests.sh → scripts/nightly-app-checks.mjs) keeps it as its `wikiloc` result in
+`shared/nightly-tests/last-result.json` (failing fails the night, stale is `warn`). In October 2026 three imports
+failed on Cloudflare and no walk came in for six weeks with nothing saying so outside Importar. Queued jobs remain in
 the app database if the service is unavailable; jobs left running after an
 interruption become eligible for another attempt after 15 minutes.
 
@@ -86,8 +92,9 @@ of 5; with Ecuador's zone and es-EC it passed every time. Hence:
   fresh load. What it saw goes to the worker's log (`browser: check on …`, `checkbox clicked (X
   input), click 2`, `check cleared in 23 s`), and a screenshot of a page that did not clear is kept
   in `~/.cache/ithomiini-wikiloc/failures/` (the latest five).
-- A job Cloudflare stopped goes back to the queue and is tried again after 5 and 20 minutes
-  (`retry`, server/monitoring.mjs `RETRY_WAITS_MIN`), then fails. Importar shows when.
+- A job Cloudflare stopped, or whose page or browser did not answer in time (lib.mjs `retryable`; on 10 Nov 2026
+  a walk's page timed out once from the server and loaded on the next try), goes back to the queue and is tried
+  again after 5 and 20 minutes (`retry`, server/monitoring.mjs `RETRY_WAITS_MIN`), then fails. Importar shows when.
 - When the home computer's tunnel is up (below), the browser goes out through its home address:
   the route is chosen per job (`browser: route: home computer (SOCKS tunnel)` or `this server,
   direct`) and said in the job's message («vía el PC de casa» / «directo desde el servidor»).

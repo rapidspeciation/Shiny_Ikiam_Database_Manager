@@ -258,4 +258,6 @@ test('/health reports the event loop of the last minute', async () => {
   assert.equal(typeof health.eventLoop.p99Ms, 'number');
   assert.equal(typeof health.eventLoop.maxMs, 'number');
   assert.equal(health.eventLoop.windowS, 60);
+  // The Wikiloc imports (server/monitoring.mjs wikilocHealth; the nightly reads it, scripts/nightly-app-checks.mjs).
+  assert.equal(health.wikiloc.status, 'unused');
 });
