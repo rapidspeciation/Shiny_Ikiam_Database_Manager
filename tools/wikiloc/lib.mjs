@@ -13,7 +13,8 @@ export const DEFAULT_APP = 'https://ithomiini-ikiam.com/';
  * the browser that did not answer in time. On 10 Nov 2026 a walk's page timed out once from the server
  * («Page.goto: Timeout 60000ms exceeded») and loaded on the next try; before, that failed the job for good.
  * Anything else fails at once: the app's own answers (a refused walk; a 502 during a deploy, which another try would
- * often pass, but the walk is still on Wikiloc to ask again), and a page with no walk on it.
+ * often pass, but the walk is still on Wikiloc to ask again). A link with no walk on it times out waiting for the
+ * page's data, so it is tried three times before it fails.
  */
 export const retryable = error =>
   /cloudflare|challenge|un momento|just a moment|timeout|timed out|NS_ERROR_NET|NS_ERROR_PROXY|NS_ERROR_CONNECTION|NS_ERROR_UNKNOWN_HOST|browser exited/i.test(

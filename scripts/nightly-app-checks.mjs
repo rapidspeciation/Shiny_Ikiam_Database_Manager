@@ -23,7 +23,9 @@ export function wikilocLine(w) {
     };
   if (w.status === 'stale')
     return { code: 3, line: `Wikiloc imports: WARNING: a followed profile has not been looked at in 30 days; ${detail}. Importar → «Buscar nuevos».` };
-  return { code: 0, line: `Wikiloc imports: ${w.status}; ${detail}` };
+  if (w.status === 'ok' || w.status === 'unused') return { code: 0, line: `Wikiloc imports: ${w.status}; ${detail}` };
+  // `unknown`: the app could not work it out (its log says why).
+  return { code: 1, line: `Wikiloc imports: ${w.status}: the app could not tell (journalctl --user -u ithomiini)` };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

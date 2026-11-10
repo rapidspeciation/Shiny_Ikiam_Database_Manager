@@ -31,6 +31,7 @@ test('the line and exit code for each state', () => {
   assert.match(stale.line, /WARNING: a followed profile has not been looked at in 30 days/);
   assert.equal(wikilocLine({ ...live, status: 'ok', failedSinceOk: 0 }).code, 0);
   assert.equal(wikilocLine(undefined).code, 1);
+  assert.equal(wikilocLine({ status: 'unknown' }).code, 1);
 });
 
 function run(url) {

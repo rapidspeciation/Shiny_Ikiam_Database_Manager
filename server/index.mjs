@@ -793,7 +793,8 @@ export async function createApp(config = {}, options = {}) {
             try {
               return wikilocHealth(store);
             } catch (e) {
-              return { status: 'unknown', error: String(e.message).slice(0, 120) };
+              console.error('Wikiloc health:', e.message);
+              return { status: 'unknown' };
             }
           })(),
           ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),

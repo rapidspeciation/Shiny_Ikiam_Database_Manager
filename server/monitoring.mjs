@@ -1145,7 +1145,7 @@ export function finishJob(store, id, body) {
 
 /** A followed profile not looked at for this long (or never since it was followed): flagged as `stale`. */
 export const PROFILE_STALE_DAYS = 30;
-/** The worker asks for work every 30 s, a minute after an error; a job of its own may run for half an hour. */
+/** The worker asks for work every 30 s, a minute after an error, and after each job (a profile's took 9 minutes). */
 const WORKER_SILENT_MS = 60 * 60_000;
 
 /**
@@ -1153,7 +1153,7 @@ const WORKER_SILENT_MS = 60 * 60_000;
  * nightly check (scripts/nightly-app-checks.mjs). In Oct 2026 three imports failed and no walk came in for six weeks
  * with nothing saying so outside Importar. `status`:
  * - `failing`: the latest finished job failed (`failedSinceOk` jobs since the last that worked), or the worker
- *   has not asked for work in an hour with nothing running;
+ *   has not asked for work in an hour;
  * - `stale`: a followed profile has not been looked at in PROFILE_STALE_DAYS days (Importar's «Buscar nuevos»);
  * - `ok`, or `unused` before any job or profile.
  */
@@ -1164,14 +1164,11 @@ export function wikilocHealth(store, at = Date.now()) {
     .prepare("SELECT count(*) AS n, max(updated_at) AS t FROM wikiloc_jobs WHERE status='failed' AND (? IS NULL OR updated_at > ?)")
     .get(lastOk, lastOk);
   const waiting = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n;
-  // A job claimed within the hour: the worker is busy with it. One left `running` longer was cut (only a claim requeues it).
-  const running = db
-    .prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status='running' AND updated_at > ?")
-    .get(new Date(at - WORKER_SILENT_MS).toISOString()).n;
   const profiles = db.prepare('SELECT count(*) AS n, min(COALESCE(last_checked, created_at)) AS t FROM wikiloc_profiles').get();
   const jobs = db.prepare('SELECT count(*) AS n FROM wikiloc_jobs').get().n;
   const workerSeen = store.getSetting('wikilocWorkerSeen') || null;
-  const silent = jobs > 0 && !running && (!workerSeen || at - Date.parse(workerSeen) > WORKER_SILENT_MS);
+  // A job of its own claimed within the hour means it was seen then too; one left `running` longer was cut.
+  const silent = jobs > 0 && (!workerSeen || at - Date.parse(workerSeen) > WORKER_SILENT_MS);
   const stale = profiles.n > 0 && at - Date.parse(profiles.t) > PROFILE_STALE_DAYS * 864e5;
   const status = failed.n > 0 || silent ? 'failing' : stale ? 'stale' : jobs || profiles.n ? 'ok' : 'unused';
   return {

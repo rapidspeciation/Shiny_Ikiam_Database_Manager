@@ -20,6 +20,18 @@
     {
       "seen": "not seen live: browser.mjs when the browser process dies",
       "message": "Wikiloc browser exited (1)"
+    },
+    {
+      "seen": "not seen live: Firefox's error names for a dropped, refused or unresolved connection",
+      "message": "Wikiloc browser: Error: Page.goto: NS_ERROR_NET_RESET"
+    },
+    {
+      "seen": "not seen live",
+      "message": "Wikiloc browser: Error: Page.goto: NS_ERROR_CONNECTION_REFUSED"
+    },
+    {
+      "seen": "not seen live",
+      "message": "Wikiloc browser: Error: Page.goto: NS_ERROR_UNKNOWN_HOST"
     }
   ],
   "failed": [
