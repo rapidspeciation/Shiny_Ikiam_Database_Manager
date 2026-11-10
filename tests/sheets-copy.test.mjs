@@ -457,8 +457,15 @@ test('a column the query does not find: the closest of its own tables, else wher
     assert.equal(sampling.near.length, 5);
     assert.equal(sampling.near[0], "Collection_data.Purpose (holds 'monitor')");
     assert.ok(sampling.near.slice(1).every(n => /^Collection_data\.[^ ]+$/.test(n)), sampling.near.join('; '));
-    // Without a text to compare: by spelling only. Qualified or over two sheets: no closest list.
-    assert.equal(runQuery(db, 'SELECT Sampling_protocol FROM Collection_data', 5).near.length, 5);
+    // Without a text to compare, spelled names only when close (review 10 Nov, F5): none is, so the columns alone.
+    const spelledOnly = runQuery(db, 'SELECT Sampling_protocol FROM Collection_data', 5);
+    assert.equal(spelledOnly.near, undefined);
+    assert.match(spelledOnly.tableColumns.Collection_data, /\bPurpose\b/);
+    // Only the query's first 2 texts are looked for (F4: the look runs inside the time limit): monitor third, not found.
+    const third = runQuery(db, "SELECT count(*) FROM Collection_data WHERE Sampling_protocol IN ('zzzq', 'yyyq', 'monitor')", 5);
+    assert.equal(third.near, undefined);
+    assert.match(third.tableColumns.Collection_data, /\bPurpose\b/);
+    // Qualified or over two sheets: no closest list.
     assert.equal(runQuery(db, 'SELECT c.Sampling_protocol FROM Collection_data c', 5).near, undefined);
     assert.deepEqual(Object.keys(sampling.tableColumns), ['Collection_data']);
     assert.match(sampling.tableColumns.Collection_data, /\bPurpose\b/);

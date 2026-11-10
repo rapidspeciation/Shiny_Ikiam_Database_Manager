@@ -417,18 +417,25 @@ export function nearNames(db, message, sql = '') {
   }
 }
 
+/** closestOf's look for the query's texts in the sheet: at most this long (it runs inside the query's time limit). */
+const CLOSEST_MS = 1000;
+/** Spelled names alone are given only this close to the one asked (edits / length); else the column list alone. */
+const SPELLED_MAX = 0.5;
 /**
  * A sheet's 5 columns closest to `asked` when no name is close: first those holding a text the query
- * compares with (Sampling_protocol LIKE '%monitor%': Purpose holds Monitoring), then by spelling.
+ * compares with (Sampling_protocol LIKE '%monitor%': Purpose holds Monitoring; its first 2 texts), then by
+ * spelling. Past CLOSEST_MS, none: the column list alone.
  */
 function closestOf(db, table, asked, sql) {
   const columns = columnsOf(db, table).filter(c => !c.startsWith('_'));
   const texts = [...new Set([...String(sql).matchAll(/'((?:[^']|'')*)'/g)].map(t => fold(t[1].replaceAll("''", "'")).replace(/^[%_\s]+|[%_\s]+$/g, '')))]
     .filter(t => t.length >= 3 && !/[%_]/.test(t))
-    .slice(0, 4);
+    .slice(0, 2);
+  const end = Date.now() + CLOSEST_MS;
   const holding = [];
   for (const column of columns) {
     if (holding.length >= 5) break;
+    if (texts.length && Date.now() > end) return [];
     const text = texts.find(t =>
       db.prepare(`SELECT 1 FROM ${sqlName(table)} WHERE instr(fold(CAST(${sqlName(column)} AS TEXT)), ?) > 0 LIMIT 1`).get(t),
     );
@@ -438,7 +445,9 @@ function closestOf(db, table, asked, sql) {
   const spelled = columns
     .filter(c => !holding.some(h => h.column === c))
     .map((column, index) => ({ column, index, d: editDistance(a, loose(column)) / Math.max(a.length, loose(column).length) }))
-    .sort((x, y) => x.d - y.d || x.index - y.index);
+    .sort((x, y) => x.d - y.d || x.index - y.index)
+    // No column holds a text of the query: spelled names only when close, else the column list alone.
+    .filter(c => holding.length || c.d <= SPELLED_MAX);
   return [
     ...holding.map(h => `${sqlName(table)}.${sqlName(h.column)} (holds '${h.text}')`),
     ...spelled.slice(0, 5 - holding.length).map(c => `${sqlName(table)}.${sqlName(c.column)}`),
