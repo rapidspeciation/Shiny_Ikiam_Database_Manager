@@ -307,7 +307,9 @@ const LOCK_WAIT_MS = 10 * 60_000;
 /**
  * `fn()` while holding `<file>.lock`, so copies starting together make the rows file once: the others wait, then
  * find it made. The lock is an exclusive transaction on that (empty) SQLite file: the system's file lock, let go
- * when the holder ends however it ends, so a lock is never left behind. The file itself stays.
+ * when the holder ends however it ends, so a lock is never left behind. The file itself stays (and a small
+ * `-journal` beside it while held, or after a kill until the next one takes it). Only open `<file>.lock` through
+ * SQLite: a plain open and close of it in this process would drop the lock (POSIX record locks).
  */
 export async function withBuildLock(file, fn, { waitMs = LOCK_WAIT_MS } = {}) {
   const lock = new DatabaseSync(`${file}.lock`);

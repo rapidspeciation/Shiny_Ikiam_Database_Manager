@@ -282,7 +282,7 @@ test('copies side by side share the rows file, made once, and each keeps its own
   }
 });
 
-test('the build lock: callbacks never overlap, a holder in another process is waited for, and one that is killed lets go', async () => {
+test('the build lock: callbacks never overlap, a holder in another process is waited for, and one that is killed lets go', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'file-sheets-lock-'));
   dirs.push(dir);
   const file = join(dir, 'rows.sqlite');
@@ -308,6 +308,7 @@ test('the build lock: callbacks never overlap, a holder in another process is wa
   const holder = code =>
     new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ['-e', code, file], { stdio: ['ignore', 'pipe', 'inherit'] });
+      t.after(() => child.kill('SIGKILL'));
       child.stdout.once('data', () => resolve(child));
       child.on('error', reject);
     });

@@ -70,7 +70,7 @@ ran the assistant's tools held 2.6-2.8 GB, and the identifier added about 1.5 GB
   system when its holder ends); the others wait and use it. Later
   starts copy it to their folder (`workbook-rows.sqlite`) and write only there, so the shared file never changes
   and a restart undoes every write. Each code version keeps its own file (442 MB), so two branches run side by side
-  without making each other's again; delete the ones of finished branches.
+  without making each other's again; delete the ones of finished branches, with their `.lock` (and `-journal`).
 - **Disk per instance:** on btrfs (this PC) the copy shares the file and costs nothing until it is written. On ext4
   (claudeclaw) it is a real 442 MB copy in the instance's folder. Old `dev/<port>-<time>` folders can be deleted
   when their instance has stopped.
