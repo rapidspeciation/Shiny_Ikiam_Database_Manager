@@ -29,7 +29,7 @@ import { shiftFormula } from './sheets.mjs';
 import { parseFormula, relativeFormula } from './formula.mjs';
 import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
-import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
+import { BETWEEN_ROWS, PEEK_ROWS, VIEW_LEFT_OUT_NOTE, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { briefLookAt, issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
 import { compareWithSheet, currentRecord } from './needs-review.mjs';
@@ -2426,7 +2426,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(formulaCost ? { formulaCost } : {}),
       ...formulaAnswer(changes, dropped),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
-      ...(viewLeftOut.length ? { viewLeftOut } : {}),
+      ...(viewLeftOut.length ? { viewLeftOut, viewLeftOutNote: VIEW_LEFT_OUT_NOTE } : {}),
       ...(listed
         ? { table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
         : bulk
@@ -4915,7 +4915,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         revised.changed ? new Set(revised.changed.flatMap(v => v.indexes ?? [v.index])) : null,
       ),
       ...(formulaCost ? { formulaCost } : {}),
-      ...(viewLeftOut.length ? { viewLeftOut } : {}),
+      ...(viewLeftOut.length ? { viewLeftOut, viewLeftOutNote: VIEW_LEFT_OUT_NOTE } : {}),
       ...(out.conflicts.length
         ? {
             conflicts: out.conflicts,
@@ -6781,7 +6781,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(replacedAiEdits.length ? { replacedAiEdits } : {}),
       ...(overlaps.length ? { overlaps } : {}),
       ...order,
-      ...(viewLeftOut.length ? { viewLeftOut } : {}),
+      ...(viewLeftOut.length ? { viewLeftOut, viewLeftOutNote: VIEW_LEFT_OUT_NOTE } : {}),
       ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),
     };
   }

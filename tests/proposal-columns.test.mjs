@@ -156,6 +156,7 @@ test("the assistant's view: its columns first, or only them (and the changed one
     assert.deepEqual(JSON.parse(store.db.prepare('SELECT view_json FROM ai_proposals WHERE id = ?').get(racked.proposalId).view_json), { columns: ['CAM_ID'] });
     const revisedView = await call('update_proposal', { proposalId: racked.proposalId, view: { columns: ['Tube_2_rack'] } });
     assert.match(revisedView.viewLeftOut?.[0] ?? '', /^view\.columns: Tube_2_rack left out: proposals of Insectary_data show its columns from Insectary_ID to Notes_Insectary_data/);
+    assert.equal(revisedView.viewLeftOutNote, racked.viewLeftOutNote);
     // Every column given left out: the old columns stay, not an empty list (critic F6).
     const viewOf = id => JSON.parse(store.db.prepare('SELECT view_json FROM ai_proposals WHERE id = ?').get(id).view_json ?? 'null');
     assert.deepEqual(viewOf(racked.proposalId), { columns: ['CAM_ID'] });
@@ -216,6 +217,8 @@ test('a Collection_data proposal: its columns up to its notes, the ones after hi
       "view.columns: TAXON_ID left out: proposals of Collection_data show its columns from Data_entry_order to Notes_Collection_data (in the sheet's order); the ones after belong to another workflow. The table shows the others",
       "view.columns: ToLID left out: proposals of Collection_data show its columns from Data_entry_order to Notes_Collection_data (in the sheet's order); the ones after belong to another workflow. The table shows the others",
     ]);
+    // Franz (10 Nov): left out and the person told: the answer asks the chat to say which columns and why.
+    assert.match(tol.viewLeftOutNote, /Tell the person which ones and why/);
     // An unknown column is still refused: a typo is not left out.
     assert.match((await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Sex: 'NA' } }], view: { columns: ['TAXON'] } })).error, /^view\.columns: Unknown column TAXON/);
   } finally {
