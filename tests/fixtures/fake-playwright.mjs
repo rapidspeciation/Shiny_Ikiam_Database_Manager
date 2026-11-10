@@ -3,8 +3,7 @@
 // { result | app: {records, png, geometry} (an app that answers from the URL, with picture geometry unless geometry: false), launchFail, hang: 'launch'|'export',
 //   noInterface, grandchild (a process left in the worker's group), browserGroup (tests/fixtures/fake-browser.mjs: a
 //   browser-like process in a group of its own, its profile in TMPDIR, with a helper child in another group; launch
-//   returns once both run), log (a
-//   file: the URL opened, the code evaluated, TMPDIR, the pids started) }.
+//   returns once both run), log (a file: the URL opened, the code evaluated, TMPDIR, the pids started) }.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';

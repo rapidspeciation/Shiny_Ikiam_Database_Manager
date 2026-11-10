@@ -18,14 +18,15 @@ import { LEGEND_BOTTOM_LEFT, OVERLAYS, withGeometry } from './fixtures/export-ge
 import { BBOX, EXPECT, GREEN, PNG_OK, REC, S, URL_OK, alive, answer, chunk, crc, dirOf, drawPng, encodePng, fakeModule, fakes, made, mapPng, started, waitFor } from './helpers/maps-render.mjs';
 
 /**
- * Renders of a fixture that hangs, each stopped by its deadline: { fake, out, ms } of the first whose deadline came only
+ * Renders of a fixture that hangs, each stopped by its deadline: the fake of the first whose deadline came only
  * once `ready(fake, extra)` held. The deadline counts from the worker's spawn, and before the hang the fixture starts
  * its processes one after the other (the worker, the browser, its helper: a Node start each). On a loaded machine
  * (deploy.sh's test jobs side by side, other work beside them) that can take longer than the deadline. Such a run is
  * checked all the same (stopped for the deadline, within 1.5 s of it, every process it had started killed, its temp
  * dir removed), but it says nothing about the processes that had not started yet: it runs again with twice the
  * deadline, at most 4 times. `during(fake, running)` runs while the render does; what it returns goes to `check`
- * (after every run) and `ready`. `settleMs`: how long after the render's answer its processes may still be ending.
+ * (on every run, as soon as the render answered) and `ready`. `settleMs`: how long after the render's answer its
+ * processes may still be ending.
  */
 async function untilDeadline(t, scenario, deadlineMs, { ready, during = async () => null, check = () => {}, settleMs = 0 }) {
   for (let ms = deadlineMs, n = 1; ; ms *= 2, n++) {
@@ -33,15 +34,15 @@ async function untilDeadline(t, scenario, deadlineMs, { ready, during = async ()
     const running = createMapRenderer({ env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, deadlineMs: ms, log: () => {} }).render(URL_OK);
     const extra = await during(fake, running);
     const out = await running;
+    check(extra);
     t.diagnostic(`${scenario.hang}: deadline ${ms} ms, killed ${out.timing.render} ms after spawn; started: ${['grandchild', 'browser', 'renderer'].filter(k => fake.get(k).length).join(', ') || 'none'}`);
     assert.equal(out.reason, 'deadline');
     assert.ok(out.timing.render < ms + 1500, `killed ${out.timing.render} ms after spawn (deadline ${ms} ms)`);
     if (settleMs) await new Promise(r => setTimeout(r, settleMs));
     for (const k of ['grandchild', 'browser', 'renderer']) for (const pid of fake.get(k)) assert.ok(!alive(pid), `${k} ${pid} killed`);
     for (const tmp of fake.get('tmpdir')) assert.ok(!existsSync(tmp), `${tmp} removed`);
-    check(extra);
-    if (ready(fake, extra)) return { fake, out, ms, extra };
-    assert.ok(n < 4, `the fixture's processes were not all up by a ${ms} ms deadline: ${JSON.stringify(fake.log().map(e => Object.keys(e)[0]))}`);
+    if (ready(fake, extra)) return fake;
+    assert.ok(n < 4, `not ready by a ${ms} ms deadline: ${JSON.stringify(fake.log().map(e => Object.keys(e)[0]))}`);
   }
 }
 
@@ -49,7 +50,10 @@ test('deadline: a hung export is killed with everything started under it, the te
   // A process that only names the run's temp folder (an `ls` of it, a log tail) is not the render's: it is left alone.
   // Started as soon as the temp folder is there; it counts only if it ran before the export hung.
   const onlookerOf = async (fake, running) => {
-    if (!(await Promise.race([waitFor(() => fake.get('tmpdir').length, 60_000, 10), running.then(() => false)]))) return null;
+    let over = false;
+    running.then(() => (over = true));
+    await waitFor(() => over || fake.get('tmpdir').length, 60_000, 10);
+    if (!fake.get('tmpdir').length) return null;
     const pid = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', join(fake.get('tmpdir')[0], 'profile')], { stdio: 'ignore' }).pid;
     started.push(pid);
     return { pid, beforeExport: !fake.get('evaluate').length };
@@ -61,7 +65,7 @@ test('deadline: a hung export is killed with everything started under it, the te
     assert.ok(alive(onlooker.pid), 'a process naming the temp folder, not started by the render, still runs');
     process.kill(onlooker.pid, 'SIGKILL');
   };
-  const { fake } = await untilDeadline(t, { hang: 'export', grandchild: true, browserGroup: true }, 2500, { ready: exported, during: onlookerOf, check: survives });
+  const fake = await untilDeadline(t, { hang: 'export', grandchild: true, browserGroup: true }, 2500, { ready: exported, during: onlookerOf, check: survives });
   // The browser in its own process group, and its helper in another, found as descendants of the worker and killed.
   assert.equal(fake.get('grandchild').length, 1);
   assert.equal(fake.get('browser').length, 1);

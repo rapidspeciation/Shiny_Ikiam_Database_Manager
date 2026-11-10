@@ -499,8 +499,9 @@ export function checkExport(result, expect) {
 
 /**
  * The process table from /proc: Map pid → { ppid, rss (bytes), start (clock ticks), cmd }. `cmd: false`: without the
- * command lines (cmd ''), for the render's memory watch, which needs only ppid and rss: reading every process's
- * command line was most of its cost (on a loaded machine 400–600 ms of a 600–900 ms look, twice a second).
+ * command lines (cmd ''), for the render's memory watch, which needs only ppid and rss. With them, this read took
+ * 420–570 ms of each half-second watch on a loaded PC (the watch's other, stat-only read: 90–310 ms); the command
+ * lines are about 40 % of it (21–36 ms with them, 13–21 ms without, at a lighter moment).
  */
 export function procTable(root = '/proc', { cmd: withCmd = true } = {}) {
   const out = new Map();
@@ -659,7 +660,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
  * The renderer of one maps tools (one per thread). Options for tests: env, workerPath, workerArgs, memAvailable,
- * procTable, deadlineMs, queueMs, minAvailable, rssCap, pollMs, stdoutMax (bytes), dir (where PNGs go), log.
+ * procTable (called with { cmd: false } by the memory watch, with nothing when the command lines are needed),
+ * deadlineMs, queueMs, minAvailable, rssCap, pollMs, stdoutMax (bytes), dir (where PNGs go), log.
  * status() → { enabled, reason }; render(url) → { ok, result, timing } | { ok: false, reason, detail, timing }.
  */
 export function createMapRenderer({
@@ -828,10 +830,11 @@ export function createMapRenderer({
       clearTimeout(grace);
       // Whatever is left: the worker if it still runs, and anything seen under it that is still the same process. Not
       // again when a kill (stop) left none of them running and the worker has exited: nothing of the tree is left that
-      // could have started another, so a new look (a full read of /proc, up to half a second on a loaded machine)
-      // would find nothing.
+      // could have started another, so a new look (two full reads of /proc, 240–530 ms on a loaded machine) would
+      // find nothing.
       await reaping;
-      if (!(reaped && !reaped.left.length && child && (child.exitCode !== null || child.signalCode !== null))) await reap();
+      const gone = reaped?.left.length === 0 && child && (child.exitCode !== null || child.signalCode !== null);
+      if (!gone) await reap();
       child?.stdin?.destroy();
       rmSync(tmp, { recursive: true, force: true });
     }
