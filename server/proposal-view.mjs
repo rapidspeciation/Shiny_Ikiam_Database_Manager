@@ -29,7 +29,7 @@ export const FEW_BETWEEN = 30;
 /** The sheet's rows a click on a marker of the table opens (a gap, a jump of the notebook's lines), at most at once. */
 export const PEEK_ROWS = 50;
 /** Beside `viewLeftOut` in an answer: the person asked to see those columns, so they hear why they are not there. */
-export const VIEW_LEFT_OUT_NOTE = 'The draft was made; its table does not show these columns. Tell the person which ones and why.';
+export const VIEW_LEFT_OUT_NOTE = 'Its table does not show these columns. Tell the person which ones and why.';
 
 /**
  * The `view` the assistant gives, checked against the proposal's sheets:
