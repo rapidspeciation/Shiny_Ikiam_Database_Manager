@@ -747,6 +747,9 @@ export function createMapRenderer({
     const stop = reason => {
       if (killedFor) return;
       killedFor = reason;
+      // The memory watch ends here: the kill looks at the tree itself, and the watch's reads of /proc (hundreds of
+      // ms each on a loaded machine) would only hold up the kill and the answer.
+      clearInterval(poll);
       reap();
       grace = setTimeout(() => giveUp?.(), CLOSE_MS);
     };
