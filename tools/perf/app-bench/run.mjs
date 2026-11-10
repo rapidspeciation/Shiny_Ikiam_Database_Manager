@@ -673,7 +673,7 @@ async function waitMemory() {
   const t0 = performance.now();
   // Another heavy job's processes (default: the memory audit's harness, which starts its own app instances).
   const other = () => (WAIT_ABSENT ? spawnSync('pgrep', ['-f', WAIT_ABSENT]).status === 0 : false);
-  // tools/lab/dev-app.sh runs at most DEV_APP_LIMIT (4) at once.
+  // tools/lab/dev-app.sh has no limit of its own since 10 Nov 2026 (DEV_APP_LIMIT when set); the bench keeps 4.
   const slots = () =>
     spawnSync('systemctl', ['--user', 'list-units', 'ithomiini-dev-*', '--plain', '--no-legend', '--state=active'], { encoding: 'utf8' })
       .stdout.split('\n')

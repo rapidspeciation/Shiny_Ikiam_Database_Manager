@@ -179,3 +179,43 @@ test('the workers get each sheet’s columns at their start, and those a sync ch
   feed.stop();
   assert.equal(synced, null);
 });
+
+test('a lab copy (LOCAL_MODE, gc exposed) collects its garbage and stops the checks worker once its start is done; without gc nothing changes', async t => {
+  const started = async gc => {
+    const dir = mkdtempSync(join(tmpdir(), 'checks-settle-'));
+    const had = Object.getOwnPropertyDescriptor(globalThis, 'gc');
+    if (gc) globalThis.gc = gc;
+    else delete globalThis.gc;
+    const app = await createApp(
+      { databasePath: join(dir, 'app.sqlite'), localMode: true, secureCookies: false, syncIntervalMs: 0, workerIdleMs: 0 },
+      { sheets: sheets() },
+    );
+    if (had) Object.defineProperty(globalThis, 'gc', had);
+    else delete globalThis.gc;
+    t.after(async () => {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await app.ready;
+    return app;
+  };
+  const until = async (check, ms = 10_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise(resolve => setTimeout(resolve, 50))) if (check()) return true;
+    return check();
+  };
+  const calls = [];
+  const lab = await started(options => calls.push(options));
+  assert.ok(await until(() => calls.length >= 2), `gc called ${calls.length} times`);
+  assert.deepEqual(calls[0], { type: 'major', execution: 'sync', flavor: 'last-resort' });
+  const health = async app => (await (await fetch(`http://127.0.0.1:${(await app.listen(0, '127.0.0.1')).port}/health`)).json()).checks;
+  const labChecks = await health(lab);
+  assert.equal(labChecks.running, false, 'the checks worker stopped after the warm-up');
+  assert.ok(labChecks.idleStops >= 1);
+  assert.ok(labChecks.summary.runs >= 1 && labChecks.alerts.runs >= 1, 'the warm-up ran');
+  // No gc (production, tests): the worker keeps running after the warm-up, as before (idleMs 0: never stops).
+  const plain = await started(null);
+  await until(() => false, 1500);
+  const plainChecks = await health(plain);
+  assert.equal(plainChecks.running, true);
+  assert.equal(plainChecks.idleStops, 0);
+});

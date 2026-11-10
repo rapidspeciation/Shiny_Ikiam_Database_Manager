@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 # A short-lived copy of the lab app for one chat's work (screenshots, UI checks, a quick try), from this checkout:
 # LOCAL_MODE on the lab's snapshot, its own folder and port, light settings (one tools worker, one search worker, no photo readings,
-# idle workers and identifier stopped soon), no T3. It runs as its own user unit with a time limit (default 90 min)
-# and a memory ceiling (default 3 GB: a lab app needs about 2), and is stopped as soon as the chat that started it
-# ends (tools/lab/reap.mjs, every 5 minutes). Memory on this PC: tools/lab/README.md, «Memory».
+# idle workers stopped after 15 s (DEV_APP_WORKER_IDLE, in minutes), the identifier after 2 min), no T3. It runs as its own user
+# unit with a time limit (default 90 min) and a memory ceiling (default 3 GB: the start peaks near 1.5 GB, an idle copy holds
+# about 0.25 GB), and is stopped as soon as the chat that started it ends (tools/lab/reap.mjs, every 5 minutes).
+# Memory: tools/lab/INSTANCES.md.
 #   tools/lab/dev-app.sh [--port 8821] [--fresh] [--dir <folder>] [--ttl 90m] [--max 3G] [--env K=V …]   start; waits until it answers
 # Without --port, the first free port from 8821; --fresh: a new folder (<lab>/dev/<port>-<time>) instead of <lab>/dev/<port>.
-# Several can run side by side (DEV_APP_LIMIT, 4 by default), each on its own copy of the workbook's rows
+# Several can run side by side, as many as memory allows, each on its own copy of the workbook's rows
 # (server/file-sheets.mjs) and its own database; none reaches the team's workbook. Agents: tools/lab/INSTANCES.md.
 # --env (repeatable) adds or overrides one of the app's settings (the benchmark, tools/perf/app-bench, gives it the
 # identifier's folder, its database copy's photos and T3's addresses this way).
 #   tools/lab/dev-app.sh --stop --port 8821
 #   tools/lab/dev-app.sh --list          each one's port, folder and memory
 # The admin `lab` is made at the first start of a folder; its password is in <folder>/credentials.json (600).
-# Refuses to start with less than 2.5 GB available (MemAvailable) or with DEV_APP_LIMIT of these running already.
+# Refuses to start with less than 2.5 GB available (MemAvailable), or with DEV_APP_LIMIT of these running already when
+# that is set (no limit by default).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
 PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start FRESH=0
-LIMIT="${DEV_APP_LIMIT:-4}"
+LIMIT="${DEV_APP_LIMIT:-}"
+WORKER_IDLE="${DEV_APP_WORKER_IDLE:-0.25}"
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,8 +46,9 @@ if [ "$ACTION" = list ]; then
 fi
 if [ "$ACTION" = start ]; then
   [ "$FRESH" = 1 ] && [ -n "$DIR" ] && { echo "--fresh makes its own folder: give --fresh or --dir, not both" >&2; exit 2; }
-  # One start at a time, from choosing the port until its first sync is done: two starts together could take the
-  # same port, pass the limit together, or both pass the memory check before either has grown.
+  # One start at a time, from choosing the port until it has settled (its first sync and warm-up done, see the end):
+  # two starts together could take the same port, pass the limit together, or both pass the memory check before
+  # either has grown.
   mkdir -p "$LAB"
   exec 9>"$LAB/.start.lock"
   flock -n 9 || { echo "Waiting for another dev-app start to finish…" >&2; flock -w 600 9 || { echo "Gave up after 10 min waiting for another start ($LAB/.start.lock)." >&2; exit 1; }; }
@@ -64,7 +68,7 @@ if [ "$ACTION" = stop ]; then
 fi
 systemctl --user is-active --quiet "$UNIT.service" && { echo "$UNIT is running already (http://127.0.0.1:$PORT)"; exit 0; }
 running=$(systemctl --user list-units 'ithomiini-dev-*' --plain --no-legend --state=active | wc -l)
-[ "$running" -lt "$LIMIT" ] || { echo "$running dev apps run already (DEV_APP_LIMIT=$LIMIT; tools/lab/dev-app.sh --list): stop one first." >&2; exit 1; }
+[ -z "$LIMIT" ] || [ "$running" -lt "$LIMIT" ] || { echo "$running dev apps run already (DEV_APP_LIMIT=$LIMIT; tools/lab/dev-app.sh --list): stop one first." >&2; exit 1; }
 avail=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
 [ "$avail" -ge 2560 ] || { echo "Only ${avail} MB of memory available (2.5 GB needed): not started." >&2; exit 1; }
 [ -f "$LAB/snapshot.json" ] || { echo "No $LAB/snapshot.json: run tools/lab/snapshot.sh first" >&2; exit 1; }
@@ -96,8 +100,8 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
   -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
-  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
-  -E NODE_OPTIONS=--max-old-space-size=2048 -E PATH="$PATH" -E HOME="$HOME" \
+  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES="$WORKER_IDLE" -E IDENTIFIER_IDLE_MINUTES=2 \
+  -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
   "${EXTRA[@]}" \
   node server/index.mjs
 URL="http://127.0.0.1:$PORT"
@@ -127,5 +131,15 @@ if [ ! -s "$DIR/credentials.json" ]; then
       .catch(e => { console.error(e.message); process.exit(1); });
   ' "$URL" "$(cat "$DIR/setup-token")" "$PASS" "$DIR/credentials.json"
 fi
-flock -u 9 2>/dev/null || true
+# The next start waits until this copy has settled too (/health "settled": its checks' warm-up done, its start's
+# memory given back, some 10-30 s after the first sync), so no two copies' starts overlap: each one's heavy part
+# has the PC to itself and is small again within about a minute. A holder in the background keeps the lock until
+# then (3 min at most), and this script answers now.
+setsid bash -c '
+  until=$((SECONDS + 180))
+  while [ "$SECONDS" -lt "$until" ] && systemctl --user is-active --quiet "$1.service"; do
+    curl -fs -m 5 "$2/health" | grep -q "\"settled\":true" && break
+    sleep 2
+  done' dev-app-settle "$UNIT" "$URL" </dev/null >/dev/null 2>&1 &
+exec 9>&-
 echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; first sync: $state; log $DIR/app.log; login $DIR/credentials.json)"

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, utimesSync, existsSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSheets } from '../server/sheets.mjs';
-import { FileSheets, buildRowsFile, openFileSheets, rowsFileFresh, rowsFileName } from '../server/file-sheets.mjs';
+import { FileSheets, buildRowsFile, openFileSheets, rowsFileFresh, rowsFileName, withBuildLock } from '../server/file-sheets.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
 // FileSheets (the lab's rows in a SQLite file) must answer as LocalSheets (rows in memory) does: every test runs
@@ -234,4 +234,70 @@ test('openFileSheets makes the rows file once, again when the snapshot changes, 
   assert.equal(await openFileSheets({ seedFile, databasePath, log }), null);
   assert.match(logs.at(-1), /kept in memory .*row 2 twice/);
   assert.equal(existsSync(join(dir, 'app', 'workbook-rows.sqlite')), true);
+});
+
+test('copies side by side share the rows file, made once, and each keeps its own writes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'file-sheets-copies-'));
+  dirs.push(dir);
+  const seedFile = join(dir, 'snapshot.json');
+  writeFileSync(seedFile, JSON.stringify(seed()));
+  const { mkdirSync, statSync } = await import('node:fs');
+  const logs = [];
+  const log = line => logs.push(line);
+  const open = name => {
+    mkdirSync(join(dir, name));
+    return openFileSheets({ seedFile, databasePath: join(dir, name, 'app.sqlite'), log });
+  };
+  // Two copies starting together: one rows file, made by one of them, used by both.
+  const [a, b] = await Promise.all([open('a'), open('b')]);
+  assert.ok(a instanceof FileSheets && b instanceof FileSheets);
+  assert.equal(logs.filter(l => l.startsWith('Workbook rows file made')).length, 1, logs.join('\n'));
+  const shared = rowsFileName(seedFile);
+  const sharedBefore = statSync(shared);
+  // A third copy later: not made again.
+  const c = await open('c');
+  assert.equal(logs.filter(l => l.startsWith('Workbook rows file made')).length, 1);
+  const species = col(SHEET, 'SPECIES');
+  const speciesOf = async (s, row) => (await s.readRow(SHEET, row)).cells[species]?.userEnteredValue?.stringValue;
+  await a.externalEdit(SHEET, 2, { SPECIES: 'only in a' });
+  await b.externalEdit(SHEET, 3, { SPECIES: 'only in b' });
+  await b.batchUpdate([{ insertDimension: { range: { sheetId: sheetId(SHEET), dimension: 'ROWS', startIndex: 4, endIndex: 5 } } }]);
+  assert.equal(await speciesOf(a, 2), 'only in a');
+  assert.equal(await speciesOf(b, 2), 'Mechanitis polymnia');
+  assert.equal(await speciesOf(c, 2), 'Mechanitis polymnia');
+  assert.equal(await speciesOf(a, 3), 'Oleria onega');
+  assert.equal(await speciesOf(b, 3), 'only in b');
+  // b's inserted row moved its rows below; a's and c's did not move.
+  assert.equal((await a.readSheet(SHEET)).length, (await c.readSheet(SHEET)).length);
+  assert.equal((await b.readSheet(SHEET)).at(-1).row, (await a.readSheet(SHEET)).at(-1).row + 1);
+  for (const s of [a, b, c]) s.close();
+  // The shared file is as it was made: no copy wrote to it.
+  assert.equal(statSync(shared).mtimeMs, sharedBefore.mtimeMs);
+  assert.ok(rowsFileFresh(shared, seedFile));
+  const fresh = new FileSheets(join(dir, 'c', 'workbook-rows.sqlite'));
+  try {
+    assert.equal(await speciesOf(fresh, 2), 'Mechanitis polymnia');
+  } finally {
+    fresh.close();
+  }
+});
+
+test('the build lock: a holder that has ended is taken over, a live one is waited for, and it is gone after', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'file-sheets-lock-'));
+  dirs.push(dir);
+  const file = join(dir, 'rows.sqlite');
+  const { spawnSync } = await import('node:child_process');
+  const { readFileSync } = await import('node:fs');
+  const ended = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+  writeFileSync(`${file}.lock`, ended.stdout);
+  assert.equal(await withBuildLock(file, () => readFileSync(`${file}.lock`, 'utf8')), String(process.pid));
+  assert.equal(existsSync(`${file}.lock`), false);
+  // Held by a live process (this one): waited for, until the holder lets go or the wait ends.
+  writeFileSync(`${file}.lock`, String(process.pid));
+  await assert.rejects(withBuildLock(file, () => 'never', { waitMs: 300 }), /waited 0 s/);
+  setTimeout(() => rmSync(`${file}.lock`, { force: true }), 300);
+  assert.equal(await withBuildLock(file, () => 'after', { waitMs: 5000 }), 'after');
+  // A failing fn still lets go.
+  await assert.rejects(withBuildLock(file, () => { throw new Error('boom'); }), /boom/);
+  assert.equal(existsSync(`${file}.lock`), false);
 });

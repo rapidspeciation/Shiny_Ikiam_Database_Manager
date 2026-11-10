@@ -12,7 +12,7 @@
 // (commitRows), with no await in between, as LocalSheets does.
 
 import { spawn } from 'node:child_process';
-import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, accessSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, accessSync, openSync, writeSync, closeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -294,6 +294,55 @@ const writable = dir => {
   }
 };
 
+const alive = pid => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+};
+/** How long a start waits for another one making the rows file (it takes 15–60 s). */
+const LOCK_WAIT_MS = 10 * 60_000;
+/**
+ * `fn()` while holding `<file>.lock` (the holder's pid in it), so copies starting together make the rows file
+ * once: the others wait, then find it made. A lock whose process has ended is taken over.
+ */
+export async function withBuildLock(file, fn, { waitMs = LOCK_WAIT_MS } = {}) {
+  const lock = `${file}.lock`;
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try {
+      const fd = openSync(lock, 'wx', 0o600);
+      try {
+        writeSync(fd, String(process.pid));
+      } finally {
+        closeSync(fd);
+      }
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      let holder = 0;
+      try {
+        holder = Number(readFileSync(lock, 'utf8'));
+      } catch {
+        /* Gone meanwhile: try again. */
+      }
+      if (holder && !alive(holder)) {
+        rmSync(lock, { force: true });
+        continue;
+      }
+      if (Date.now() > until) throw new Error(`waited ${Math.round(waitMs / 1000)} s for ${lock}`);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
 /**
  * The rows file of `seedFile`, made (in a child process, so the snapshot's parse never sits in the app's
  * memory) when missing or out of date: beside the snapshot, else in `workDir`.
@@ -303,6 +352,14 @@ async function rowsFileOf(seedFile, workDir, log) {
   const name = `${basename(seedFile)}-${createHash('sha256').update(seedFile).digest('hex').slice(0, 8)}.${codeHash}.rows.sqlite`;
   const file = writable(dirname(seedFile)) ? beside : join(workDir, name);
   if (rowsFileFresh(file, seedFile)) return file;
+  return withBuildLock(file, async () => {
+    // Made by another start while this one waited.
+    if (rowsFileFresh(file, seedFile)) return file;
+    return makeRowsFile(seedFile, file, log);
+  });
+}
+
+async function makeRowsFile(seedFile, file, log) {
   const started = Date.now();
   const script = fileURLToPath(import.meta.url);
   await new Promise((resolve, reject) => {
@@ -357,10 +414,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(2);
   }
   if (command === 'ensure' && rowsFileFresh(out, seedFile)) process.exit(0);
-  const started = Date.now();
-  try {
+  const build = () => {
+    const started = Date.now();
     const done = buildRowsFile(seedFile, out);
     console.error(`${done.rows} rows of ${done.sheets} sheets in ${((Date.now() - started) / 1000).toFixed(1)} s: ${out}`);
+  };
+  try {
+    // build: the caller holds the lock (rowsFileOf). ensure: under the lock, as an app's start would.
+    if (command === 'build') build();
+    else await withBuildLock(out, () => rowsFileFresh(out, seedFile) || build());
   } catch (error) {
     console.error(error.message);
     process.exit(1);

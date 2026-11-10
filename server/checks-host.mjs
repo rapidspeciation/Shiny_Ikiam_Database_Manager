@@ -197,6 +197,8 @@ export function createChecksHost({
         notebookFacts: facts.status(),
       };
     },
+    /** Stops the worker now if it has nothing to do (the lab, after the start's warm-up): see workerSlot.release. */
+    release: () => worker.release(),
     close() {
       useChecksRunner(store, null);
       useSuggestionsRunner(store, null);

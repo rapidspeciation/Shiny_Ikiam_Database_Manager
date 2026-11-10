@@ -788,6 +788,9 @@ export async function createApp(config = {}, options = {}) {
           // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
           readings: readings.status(),
           ...(whatsapp ? { whatsapp: whatsapp.relay.status() } : {}),
+          // The lab (LOCAL_MODE): whether the start's work (the first sync, the checks' warm-up) is done;
+          // tools/lab/dev-app.sh lets the next copy start then.
+          ...(config.localMode ? { settled: startSettled } : {}),
         });
       // The Wings Gallery's files of the photo readings, for its update_data.yml: public (the collection's
       // predictions, on the gallery already), gzip when accepted, an ETag and Last-Modified.
@@ -1870,15 +1873,38 @@ export async function createApp(config = {}, options = {}) {
         .finally(() => store.outbox.kick());
   // After a restart the first pages find Inicio's summaries and alerts, the issues and the suggested
   // edits done already (in the worker: nobody waits for them).
-  if (checks.mode === 'worker')
-    ready.then(() => {
+  const warmed =
+    checks.mode === 'worker'
+      ? ready.then(() => {
+          if (store.closed) return;
+          const said = e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message);
+          return Promise.all([
+            freshSummary(store, { signedIn: true }).catch(said),
+            freshAlerts(store).catch(said),
+            freshIssues(store).catch(said),
+            allSuggestions(store).catch(said),
+          ]);
+        })
+      : ready;
+  let startSettled = false;
+  // The lab's copies (LOCAL_MODE, started with --expose-gc: tools/lab/dev-app.sh): the start's garbage (the
+  // first sync's whole-sheet copies, some 1 GB, and the copies of the warm-up's answers) is collected as soon as
+  // that work is done, instead of whenever V8 gets to it, so an idle copy is small within a minute of its start.
+  // "last-resort": a full collection that also hands the freed pages back at once (a plain one keeps them pooled
+  // for a while); some 0.1–0.3 s, twice per start. The checks' worker, which kept what the warm-up read (some
+  // 0.5 GB), stops at once too; the next check starts another.
+  const gc = config.localMode && typeof globalThis.gc === 'function' ? globalThis.gc : null;
+  if (gc) {
+    const collect = () => store.closed || gc({ type: 'major', execution: 'sync', flavor: 'last-resort' });
+    ready.then(collect);
+    const settle = () => {
       if (store.closed) return;
-      const said = e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message);
-      freshSummary(store, { signedIn: true }).catch(said);
-      freshAlerts(store).catch(said);
-      freshIssues(store).catch(said);
-      allSuggestions(store).catch(said);
-    });
+      checks.release?.();
+      collect();
+    };
+    warmed.then(settle, settle);
+  }
+  warmed.finally(() => (startSettled = true)).catch(() => {});
   // Saves kept while Google did not answer (before a restart too): written once it does.
   store.outbox.start(config.outboxCheckMs ?? undefined);
   const interval =
