@@ -1213,7 +1213,8 @@ export function wikilocHealth(store, at = Date.now()) {
   const profileFailed = db
     .prepare(
       `SELECT count(*) AS n, max(j.updated_at) AS t FROM wikiloc_profiles p JOIN wikiloc_jobs j ON j.kind='profile' AND j.target=p.wikiloc_user
-       WHERE j.status='failed' AND j.updated_at = (SELECT max(updated_at) FROM wikiloc_jobs k WHERE k.kind='profile' AND k.target=p.wikiloc_user AND k.status IN ('done','failed'))`,
+       WHERE j.status='failed' AND j.id = (SELECT id FROM wikiloc_jobs k WHERE k.kind='profile' AND k.target=p.wikiloc_user
+         AND k.status IN ('done','failed') ORDER BY k.updated_at DESC, k.rowid DESC LIMIT 1)`,
     )
     .get();
   const waiting = db.prepare("SELECT count(*) AS n FROM wikiloc_jobs WHERE status IN ('queued','running')").get().n;
