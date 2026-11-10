@@ -1,5 +1,10 @@
 # Deploy note: the lab's workbook rows in a SQLite file (perf E5, 7–8 Nov 2026)
 
+> Superseded on 10 Nov 2026 by `.work/lab-small-copies-20261110/RESULTS.md`: merged with branch
+> lab-small-copies-20261110, which also collects the start's garbage, stops the checks' worker after the warm-up, holds
+> dev-app.sh's start lock until a copy has settled and has no count limit. Lines below about DEV_APP_LIMIT (4) and
+> the lock ending at the first sync are out of date.
+
 Not deployed, not pushed. Branch `perf/e5-workbook-sqlite-20261107`, based on the live commit 7048d726. Bench and
 review: `/home/franz/Documents/CodeProjs/WingsClassificator/reports/pending_scout_20261107/perf-e5/REPORT.md`.
 

@@ -207,15 +207,19 @@ test('a lab copy (LOCAL_MODE, gc exposed) collects its garbage and stops the che
   const lab = await started(options => calls.push(options));
   assert.ok(await until(() => calls.length >= 2), `gc called ${calls.length} times`);
   assert.deepEqual(calls[0], { type: 'major', execution: 'sync', flavor: 'last-resort' });
-  const health = async app => (await (await fetch(`http://127.0.0.1:${(await app.listen(0, '127.0.0.1')).port}/health`)).json()).checks;
-  const labChecks = await health(lab);
+  const health = async app => await (await fetch(`http://127.0.0.1:${(await app.listen(0, '127.0.0.1')).port}/health`)).json();
+  // dev-app.sh lets the next copy start once /health says settled.
+  assert.ok(await until(() => calls.length >= 2));
+  const labHealth = await health(lab);
+  assert.equal(labHealth.settled, true);
+  const labChecks = labHealth.checks;
   assert.equal(labChecks.running, false, 'the checks worker stopped after the warm-up');
   assert.ok(labChecks.idleStops >= 1);
   assert.ok(labChecks.summary.runs >= 1 && labChecks.alerts.runs >= 1, 'the warm-up ran');
   // No gc (production, tests): the worker keeps running after the warm-up, as before (idleMs 0: never stops).
   const plain = await started(null);
   await until(() => false, 1500);
-  const plainChecks = await health(plain);
+  const plainChecks = (await health(plain)).checks;
   assert.equal(plainChecks.running, true);
   assert.equal(plainChecks.idleStops, 0);
 });

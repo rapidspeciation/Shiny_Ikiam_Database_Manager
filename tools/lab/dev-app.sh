@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # A short-lived copy of the lab app for one chat's work (screenshots, UI checks, a quick try), from this checkout:
 # LOCAL_MODE on the lab's snapshot, its own folder and port, light settings (one tools worker, one search worker, no photo readings,
-# idle workers stopped after 15 s (DEV_APP_WORKER_IDLE, in minutes), the identifier after 2 min), no T3. It runs as its own user
-# unit with a time limit (default 90 min) and a memory ceiling (default 3 GB: the start peaks near 1.5 GB, an idle copy holds
-# about 0.25 GB), and is stopped as soon as the chat that started it ends (tools/lab/reap.mjs, every 5 minutes).
+# idle workers and identifier stopped soon), no T3. It runs as its own user unit with a time limit (default 90 min) and a
+# memory ceiling (default 3 GB: a start peaks near 1.5 GB, an idle copy holds about 0.2 GB), and is stopped as soon as the
+# chat that started it ends (tools/lab/reap.mjs, every 5 minutes).
 # Memory: tools/lab/INSTANCES.md.
 #   tools/lab/dev-app.sh [--port 8821] [--fresh] [--dir <folder>] [--ttl 90m] [--max 3G] [--env K=V …]   start; waits until it answers
 # Without --port, the first free port from 8821; --fresh: a new folder (<lab>/dev/<port>-<time>) instead of <lab>/dev/<port>.
@@ -21,7 +21,6 @@ HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
 PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start FRESH=0
 LIMIT="${DEV_APP_LIMIT:-}"
-WORKER_IDLE="${DEV_APP_WORKER_IDLE:-0.25}"
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -51,7 +50,7 @@ if [ "$ACTION" = start ]; then
   # either has grown.
   mkdir -p "$LAB"
   exec 9>"$LAB/.start.lock"
-  flock -n 9 || { echo "Waiting for another dev-app start to finish…" >&2; flock -w 600 9 || { echo "Gave up after 10 min waiting for another start ($LAB/.start.lock)." >&2; exit 1; }; }
+  flock -n 9 || { echo "Waiting for another dev-app start to finish…" >&2; flock -w 1800 9 || { echo "Gave up after 30 min waiting for other starts ($LAB/.start.lock)." >&2; exit 1; }; }
 fi
 if [ -z "$PORT" ] && [ "$ACTION" = start ]; then
   # The first port from 8821 that no app listens on and no dev app's unit holds.
@@ -100,7 +99,7 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
   -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
-  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES="$WORKER_IDLE" -E IDENTIFIER_IDLE_MINUTES=2 \
+  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
   -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
   "${EXTRA[@]}" \
   node server/index.mjs

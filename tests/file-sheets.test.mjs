@@ -297,6 +297,13 @@ test('the build lock: a holder that has ended is taken over, a live one is waite
   await assert.rejects(withBuildLock(file, () => 'never', { waitMs: 300 }), /waited 0 s/);
   setTimeout(() => rmSync(`${file}.lock`, { force: true }), 300);
   assert.equal(await withBuildLock(file, () => 'after', { waitMs: 5000 }), 'after');
+  // Held by a live pid but older than staleMs (a pid reused after a restart): taken over.
+  writeFileSync(`${file}.lock`, String(process.pid));
+  utimesSync(`${file}.lock`, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  assert.equal(await withBuildLock(file, () => 'old', { waitMs: 300, staleMs: 30_000 }), 'old');
+  // Empty (killed while writing it, before this change): taken over.
+  writeFileSync(`${file}.lock`, '');
+  assert.equal(await withBuildLock(file, () => 'empty', { waitMs: 300 }), 'empty');
   // A failing fn still lets go.
   await assert.rejects(withBuildLock(file, () => { throw new Error('boom'); }), /boom/);
   assert.equal(existsSync(`${file}.lock`), false);
