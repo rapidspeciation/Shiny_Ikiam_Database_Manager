@@ -16,7 +16,7 @@ import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
 import { createEngine, type ModelFile } from '../../lib/offlineEngine'
-import { SEX_FILE, SEX_GENERA, sexShown } from '../../lib/sexModel'
+import { SEX_DEFAULT, sexShown, type SexCalibration } from '../../lib/sexModel'
 import { estimatedSection, sectionDiffers } from '../../lib/transects'
 import { CONFLICT } from '../../lib/walkBoard'
 import { useSession } from '../../stores/session'
@@ -480,6 +480,8 @@ const sectionOff = (d: Doubt) => {
  * Only once the model is on this device (downloaded here or on Identificar); shown in the Sexo line as «Estimado».
  */
 const engine = createEngine(new URL('prueba-offline/', appRoot()).href, () => [], { signedIn: () => !!session.user })
+/** The installed sex model's calibration (cutoff, band, display, genera); model B's until it is known. */
+const sexCal = ref<SexCalibration>(SEX_DEFAULT)
 const sexModel = ref<{ state: 'download'; mb: number; files: ModelFile[] } | { state: 'downloading'; done: number; total: number } | { state: 'ready' } | null>(null)
 /** Logit per photo; null: no wings found. */
 const sexZ = ref<Record<string, number | null | 'error'>>({})
@@ -492,7 +494,7 @@ function sexGenus(d: Doubt, r: RowInfo | null) {
   const [top, p] = readingOf(d)?.species[0] ?? ['', 0]
   const named = [genus(d.note?.species), genus(r?.species)].filter(Boolean)
   const names = p >= 0.9 && !named.includes(genus(top)) ? [genus(top)] : [...named, genus(top)]
-  return names.find(g => SEX_GENERA.includes(g)) ?? null
+  return names.find(g => sexCal.value.genera.includes(g)) ?? null
 }
 const agreeWith = (call: string, r: RowInfo | null) =>
   call === 'no seguro' || !r?.sex ? null : (call === 'hembra') === (r.sex === 'female')
@@ -500,7 +502,7 @@ const agreeWith = (call: string, r: RowInfo | null) =>
 function fieldEvidence(d: Doubt, r: RowInfo | null): SexEvidence | null {
   const id = d.photos[0]
   if (!id) return { kind: 'reason', text: t('sin foto') }
-  if (!sexGenus(d, r)) return { kind: 'reason', text: t('género fuera de los 13') }
+  if (!sexGenus(d, r)) return { kind: 'reason', text: t('género fuera del modelo') }
   const m = sexModel.value
   if (!m) return null
   // Not on this device yet: the one download link is in the bar above the cards.
@@ -509,7 +511,7 @@ function fieldEvidence(d: Doubt, r: RowInfo | null): SexEvidence | null {
   if (z === undefined) return { kind: 'running' }
   if (z === 'error') return { kind: 'reason', text: t('no se pudo calcular') }
   if (z === null) return { kind: 'reason', text: t('no se ven las alas') }
-  const shown = sexShown(z)
+  const shown = sexShown(z, sexCal.value)
   return { kind: 'call', ...shown, agree: agreeWith(shown.call, r) }
 }
 /** The collection sex model's call on the row's project photos (out of fold), or why there is none. */
@@ -542,11 +544,12 @@ async function checkSexModel() {
   if (!session.canEdit) return
   const listing = await engine.list().catch(() => null)
   if (!listing || 'error' in listing || listing.source !== 'server') return
-  if (!listing.files.some(f => f.role === 'sex' && f.name === SEX_FILE.name)) return
-  if (await engine.sexReady(listing.files)) {
+  // The model on this device, whatever its version (Identificar → Descargas offers its update); else the listed one.
+  if (await engine.sexReady()) {
+    sexCal.value = (await engine.sexInfo())?.calibration ?? SEX_DEFAULT
     sexModel.value = { state: 'ready' }
     estimateAll()
-  } else
+  } else if (engine.offer('sex', listing.files, await engine.stored()).state !== 'none')
     sexModel.value = {
       state: 'download',
       mb: Math.max(1, Math.round(engine.sexToDownload(listing.files, await engine.stored()).plain / 1e6)),
@@ -559,6 +562,7 @@ async function downloadSexModel() {
   sexModel.value = { state: 'downloading', done: 0, total: 1 }
   try {
     await engine.downloadSex(m.files, (done, total) => (sexModel.value = { state: 'downloading', done, total }))
+    sexCal.value = (await engine.sexInfo())?.calibration ?? SEX_DEFAULT
     sexModel.value = { state: 'ready' }
     estimateAll()
   } catch (e) {

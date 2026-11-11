@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue'
 import { locale, t } from '../../lib/i18n'
-import { SEX_CUT, sexShown, sexShownFemale } from '../../lib/sexModel'
+import { SEX_DEFAULT, sexShown, sexShownFemale, type SexCalibration } from '../../lib/sexModel'
 
 export type SexState =
   | { kind: 'download'; mb: number }
@@ -15,27 +15,32 @@ export type SexState =
   | { kind: 'error'; message: string }
   | { kind: 'genus'; genus: string }
   | { kind: 'nowings' }
-  | { kind: 'ready'; z: number }
+  /** `calibration`: the model's that gave the score (lib/sexModel.ts; model B's when not given). */
+  | { kind: 'ready'; z: number; calibration?: SexCalibration }
 
 const props = defineProps<{ state: SexState }>()
 defineEmits<{ download: [] }>()
 
-/** The scale: logit -1 to 7 (P 27 % to 99.9 %), where the cutoff and the band sit apart. */
-const LO = -1, HI = 7
-const at = (z: number) => `${(100 * (Math.min(HI, Math.max(LO, z)) - LO)) / (HI - LO)}%`
+/** The model's calibration: its cutoff and band (logits) and display. */
+const cal = computed(() => (props.state.kind === 'ready' && props.state.calibration) || SEX_DEFAULT)
+const CUT = computed(() => cal.value.cut)
+/**
+ * The scale, from the model's own band: 2.6 logit below lo to 2.1 above hi (model B: -0.98 to 6.97, as its -1 to 7
+ * before; model C: -2.79 to 3.30, where its team scores lie). No fixed floor or ceiling: a model whose scores sit
+ * lower would otherwise leave part of the bar empty.
+ */
+const LO = computed(() => CUT.value.lo - 2.6)
+const HI = computed(() => CUT.value.hi + 2.1)
+const at = (z: number) => `${(100 * (Math.min(HI.value, Math.max(LO.value, z)) - LO.value)) / (HI.value - LO.value)}%`
 const fmt = (v: number, digits: number) => new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)
 /** The calibrated % (lib/sexModel.ts SEX_DISPLAY): whole numbers, never a sure-looking 100 %. */
 const pct = (p: number) => (p >= 0.995 ? `> ${fmt(99, 0)} %` : `${fmt(p * 100, 0)} %`)
 /** The scale's marks in calibrated P(hembra), one decimal (the band edges are 39.7 and 71.8 %), marked ♀. */
-const tick = (z: number) => `♀ ${fmt(100 * sexShownFemale(z), 1)} %`
+const tick = (z: number) => `♀ ${fmt(100 * sexShownFemale(z, cal.value.display), 1)} %`
 const z = computed(() => (props.state.kind === 'ready' ? props.state.z : null))
-const shown = computed(() => (z.value == null ? null : sexShown(z.value)))
+const shown = computed(() => (z.value == null ? null : sexShown(z.value, cal.value)))
 const call = computed(() => shown.value?.call ?? null)
-const ticks = computed(() => [
-  { z: SEX_CUT.lo, label: tick(SEX_CUT.lo) },
-  { z: SEX_CUT.t, label: `${t('corte')} ${tick(SEX_CUT.t)}` },
-  { z: SEX_CUT.hi, label: tick(SEX_CUT.hi) },
-])
+const ticks = computed(() => ({ lo: tick(CUT.value.lo), t: `${t('corte')} ${tick(CUT.value.t)}`, hi: tick(CUT.value.hi) }))
 </script>
 
 <template>
@@ -59,26 +64,34 @@ const ticks = computed(() => [
         </p>
       </div>
       <div class="mt-2" aria-hidden="true">
+        <!--
+          The labels never overlap, however close the marks (model C: the cutoff and hi are 0.2 logit apart): the
+          cutoff's label has its own row above the bar; below it, lo's label ends at lo and hi's starts at hi.
+        -->
+        <div class="relative h-4 text-[0.7rem] leading-4 text-fg-muted tabular-nums">
+          <span class="absolute -translate-x-1/2 whitespace-nowrap" data-testid="sex-tick-t" :style="{ left: at(CUT.t) }">{{ ticks.t }}</span>
+        </div>
         <div class="relative h-3 overflow-hidden rounded-sm">
-          <div class="absolute inset-y-0 left-0 bg-fill-sky/30" :style="{ width: at(SEX_CUT.lo) }" />
-          <div class="sex-band absolute inset-y-0" :style="{ left: at(SEX_CUT.lo), right: `calc(100% - ${at(SEX_CUT.hi)})` }" />
-          <div class="absolute inset-y-0 right-0 bg-fill-pink/30" :style="{ left: at(SEX_CUT.hi) }" />
-          <div class="absolute inset-y-0 w-px bg-fg-muted" :style="{ left: at(SEX_CUT.t) }" />
+          <div class="absolute inset-y-0 left-0 bg-fill-sky/30" :style="{ width: at(CUT.lo) }" />
+          <div class="sex-band absolute inset-y-0" :style="{ left: at(CUT.lo), right: `calc(100% - ${at(CUT.hi)})` }" />
+          <div class="absolute inset-y-0 right-0 bg-fill-pink/30" :style="{ left: at(CUT.hi) }" />
+          <div class="absolute inset-y-0 w-px bg-fg-muted" :style="{ left: at(CUT.t) }" />
         </div>
         <div class="relative h-3">
           <div class="sex-marker absolute top-0 -translate-x-1/2" :style="{ left: at(z) }" />
         </div>
         <div class="relative h-4 text-[0.7rem] leading-4 text-fg-muted tabular-nums">
-          <span v-for="(tk, i) in ticks" :key="i" class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: at(tk.z) }">{{ tk.label }}</span>
+          <span class="absolute -translate-x-full whitespace-nowrap pr-0.5" data-testid="sex-tick-lo" :style="{ left: at(CUT.lo) }">{{ ticks.lo }}</span>
+          <span class="absolute whitespace-nowrap pl-0.5" data-testid="sex-tick-hi" :style="{ left: at(CUT.hi) }">{{ ticks.hi }}</span>
         </div>
         <div class="relative mt-0.5 h-4 text-xs leading-4 text-fg-muted">
           <span class="absolute left-0">♂ {{ $t('macho') }}</span>
-          <span class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: `calc((${at(SEX_CUT.lo)} + ${at(SEX_CUT.hi)}) / 2)` }">{{ $t('no seguro') }}</span>
+          <span class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: `calc((${at(CUT.lo)} + ${at(CUT.hi)}) / 2)` }">{{ $t('no seguro') }}</span>
           <span class="absolute right-0">♀ {{ $t('hembra') }}</span>
         </div>
       </div>
       <p class="sr-only">
-        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: tick(SEX_CUT.t), lo: ticks[0].label, hi: ticks[2].label }) }}
+        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: tick(CUT.t), lo: ticks.lo, hi: ticks.hi }) }}
       </p>
     </template>
 

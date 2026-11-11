@@ -17,7 +17,7 @@ import {
   roleOf,
   storedName,
   studentInput,
-  STUDENT_SIZE,
+  studentSizeOf,
   detectorInput,
   encoderInput,
   exifOrientation,
@@ -33,12 +33,13 @@ import {
   type Rgba,
   type Side,
   type StoredFile,
+  partKey,
 } from '../lib/offlineId'
 import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { genusStock, speciesStock, stockDate, type FrozenStock } from '../lib/frozenStock'
 
 type OrtModule = typeof Ort
-interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null }
+interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null; version?: string; sha256?: string; input?: { size: number } }
 interface Stored { files: Record<string, StoredFile>; at: string }
 
 const CACHE = 'ithomiini-prueba-offline'
@@ -202,7 +203,7 @@ function toDownload(kind: ModelKind, s: Stored | null) {
 
 async function listFiles() {
   if (!navigator.onLine) return
-  const r = await fetch(url('./models/list.json'), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null)
+  const r = await fetch(url('./models/list.json?caps=versions') /* the versioned list, as lib/offlineEngine.ts LIST_PATH */, { credentials: 'same-origin', cache: 'no-store' }).catch(() => null)
   if (!r) return
   if (r.status === 401) {
     $('login').hidden = false
@@ -228,6 +229,8 @@ async function listFiles() {
   show('smallMissing', hasSmall ? null : 'El modelo pequeño no está en el servidor por ahora.')
   await refreshReady()
   await showSizes()
+  // Models are on the phone (downloaded in Descargas): this page and its runtime too, for airplane mode.
+  if (ready.full || ready.small) await keepPage(await caches.open(CACHE)).catch(() => {})
 }
 
 /** Each option's download: the files it still needs (the detector and the head are shared). */
@@ -306,103 +309,13 @@ async function keepPage(cache: Cache) {
   }
 }
 
-async function download(kind: ModelKind) {
-  show('dlErr', null)
-  const buttons = [$<HTMLButtonElement>('download'), $<HTMLButtonElement>('downloadSmall')]
-  const wasDisabled = buttons.map(b => b.disabled)
-  buttons.forEach(b => (b.disabled = true))
-  // Asked first, still inside the click (Chrome weighs the gesture and the installed app); shown again after the download.
-  const persist = navigator.storage?.persist?.().catch(() => null) ?? Promise.resolve(null)
-  try {
-    diag.persistRequest = await persist
-    await storageInfo()
-    if (!files) await listFiles()
-    if (!files) throw new Error(signedIn ? 'No se pudo leer la lista de modelos.' : 'Inicie sesión primero.')
-    const wanted = files.filter(f => MODEL_ROLES[kind].includes(f.role))
-    if (wanted.length !== MODEL_ROLES[kind].length) throw new Error(`El ${MODEL_LABEL[kind]} no está en el servidor.`)
-    const cache = await caches.open(CACHE)
-    $('progressBox').hidden = false
-    const t0 = performance.now()
-    show('progressText', 'La página y el motor…')
-    await keepPage(cache)
-    await refreshStock()
-    // Counted in plain bytes: the browser decompresses the parts (Content-Encoding) and hands over plain bytes.
-    const total = wanted.reduce((a, f) => a + f.bytes, 0)
-    let done = 0
-    const encodings: Record<string, number> = {}
-    const progress = () => {
-      $<HTMLProgressElement>('progress').value = done / total
-      $('progressText').textContent = `${mb(done)} de ${mb(total)} MB`
-    }
-    // The other model's files stay; files the server no longer lists (an older small model) go, with their parts.
-    const before = await stored()
-    const keep: Stored = { files: {}, at: new Date().toISOString() }
-    for (const [name, f] of Object.entries(before?.files ?? {})) {
-      if (files.some(l => l.name === name)) keep.files[name] = { ...f, role: roleOf(name, f.role) }
-      else for (let i = 0; i * PART < f.bytes; i++) await cache.delete(url(`./models/${name}?part=${i}`))
-    }
-    for (const f of wanted) {
-      const parts = Math.ceil(f.bytes / PART)
-      for (let i = 0; i < parts; i++) {
-        const key = url(`./models/${f.name}?part=${i}`)
-        const start = i * PART, end = Math.min(f.bytes, start + PART) - 1
-        const have = await cache.match(key)
-        if (have && have.headers.get('x-etag') === f.etag && Number(have.headers.get('x-bytes')) === end - start + 1) {
-          done += end - start + 1
-          progress()
-          continue
-        }
-        let chunks: Uint8Array[] = []
-        for (let attempt = 1; ; attempt++) {
-          chunks = []
-          let got = 0
-          try {
-            // One part per request: the server sends it precompressed (zstd or gzip) when it can.
-            const r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
-            if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
-            // The part's ETag is the listed file's (W/"<file etag>-p<i>"): a model changed since the list is not mixed in.
-            if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1) {
-              r.body?.cancel().catch(() => {})
-              throw Object.assign(new Error('el modelo cambió en el servidor: recargue la página'), { final: true })
-            }
-            const enc = r.headers.get('content-encoding') || 'none'
-            encodings[enc] = (encodings[enc] ?? 0) + 1
-            const reader = r.body!.getReader()
-            for (;;) {
-              const { done: end_, value } = await reader.read()
-              if (end_) break
-              chunks.push(value)
-              got += value.length
-              done += value.length
-              progress()
-            }
-            if (got !== end - start + 1) throw new Error('parte incompleta')
-            break
-          } catch (err) {
-            done -= got
-            if (attempt >= 4 || (err as { final?: boolean }).final) throw new Error(`${f.name} parte ${i + 1}/${parts}: ${(err as Error).message}`)
-            show('progressText', `Reintentando (${(err as Error).message})…`)
-            await new Promise(r => setTimeout(r, 2000 * attempt))
-          }
-        }
-        await cache.put(key, new Response(new Blob(chunks as BlobPart[]), { headers: { 'x-etag': f.etag, 'x-bytes': String(end - start + 1) } }))
-      }
-      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role }
-    }
-    await cache.put(url('./models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
-    diag.downloadSeconds = Math.round((performance.now() - t0) / 1000)
-    diag.downloadEncodings = encodings
-    diag.downloadModel = kind
-    localStorage.setItem(CHOSEN, kind)
-    show('progressText', `Descargado en ${diag.downloadSeconds} s.`)
-  } catch (err) {
-    show('dlErr', `La descarga falló: ${(err as Error).message}`)
-    diag.downloadError = String((err as Error).message)
-  } finally {
-    buttons.forEach((b, i) => (b.disabled = wasDisabled[i]))
-    await refreshReady()
-    await showSizes()
-  }
+/**
+ * Downloads happen in Identificar → Descargas only (lib/offlineEngine.ts download: each new file beside the old one,
+ * its SHA-256 checked, one swap of stored.json), never here: this page's own downloader deleted files before their
+ * replacement was in and checked no hash. Both pages share the cache, so what Descargas keeps runs here too.
+ */
+function download() {
+  location.href = new URL('../identificar/#/identificar?vista=descargas', location.href).href
 }
 
 async function readModel(name: string): Promise<Uint8Array> {
@@ -412,7 +325,8 @@ async function readModel(name: string): Promise<Uint8Array> {
   const cache = await caches.open(CACHE)
   const out = new Uint8Array(f.bytes)
   for (let i = 0, off = 0; off < f.bytes; i++) {
-    const r = await cache.match(url(`./models/${name}?part=${i}`))
+    // Identificar keeps a newer version of a file under its own keys (lib/offlineEngine.ts download: `slot`).
+    const r = await cache.match(url(`./${partKey(name, i, f.slot)}`))
     if (!r) throw new Error(`Falta la parte ${i + 1} de ${name}: descargue de nuevo.`)
     const part = new Uint8Array(await r.arrayBuffer())
     out.set(part, off)
@@ -421,8 +335,8 @@ async function readModel(name: string): Promise<Uint8Array> {
   return out
 }
 
-$('download').addEventListener('click', () => download('full'))
-$('downloadSmall').addEventListener('click', () => download('small'))
+$('download').addEventListener('click', download)
+$('downloadSmall').addEventListener('click', download)
 for (const k of KINDS) $(`model-${k}`).addEventListener('change', () => localStorage.setItem(CHOSEN, k))
 $('remove').addEventListener('click', async () => {
   if (!confirm('¿Borrar los modelos guardados en este teléfono?')) return
@@ -444,6 +358,8 @@ interface Loaded {
   detectorBackend: string
 }
 let loaded: Loaded | null = null
+/** The small model's input size in memory (lib/offlineId.ts studentSizeOf). */
+let smallSize = 192
 const loadTimes: Record<string, number> = {}
 
 function dropSessions() {
@@ -504,6 +420,7 @@ async function load(useGpu: boolean, kind: ModelKind): Promise<Loaded> {
       loadTimes[`${key}_read_ms`] = Math.round(performance.now() - t)
       const t1 = performance.now()
       const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      if (kind === 'small') smallSize = studentSizeOf(s.files[file], file)
       bytes = null
       loadTimes[`${key}_session_ms`] = Math.round(performance.now() - t1)
       return session
@@ -582,8 +499,9 @@ async function identify(photo: Photo) {
       const square = letterboxCrop(img, box)
       tick('crop_ms', t)
       t = performance.now()
-      // The small model: the same crop at 192 px (studentInput); the same 1024-D feature.
-      const x = kind === 'small' ? new m.ort.Tensor('float32', studentInput(square), [1, 3, STUDENT_SIZE, STUDENT_SIZE]) : new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
+      // The small model: the same crop at its own size (studentInput; 192 for L1, kept with the file); the same 1024-D feature.
+      const n = smallSize
+      const x = kind === 'small' ? new m.ort.Tensor('float32', studentInput(square, 224, n), [1, 3, n, n]) : new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
       const enc = await encoder.run({ [encoder.inputNames[0]]: x })
       const feature = enc[encoder.outputNames[0]].data as Float32Array
       tick('encoder_run_ms', t)

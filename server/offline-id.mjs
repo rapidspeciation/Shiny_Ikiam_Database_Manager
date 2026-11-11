@@ -29,28 +29,66 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  */
 
 /**
- * The small model («modelo pequeño»): a ViT-S/16 distilled from the encoder, the same 1024-D feature (so the same
- * detector, crop and head), 192 px input. Kept in offline/ beside the head. To swap it: copy the new file there and
- * change this one constant (name and sha256); the page offers it again under its new name. A file whose sha256 is
- * not this one is not offered (checked once per file version), and a missing one only hides the option.
+ * The small model («Rápido y liviano», «modelo pequeño»): distilled from the encoder, the same 1024-D feature (so the
+ * same detector, crop and head). Kept in offline/ beside the head. Which file it is, its version, SHA-256 and input
+ * size come from the manifest offline/student-model.json (STUDENT_MANIFEST, checkPhoneManifest), so a new small model
+ * is a data change even when its input size differs (the phone keeps the size with the file). Without a manifest,
+ * model S_B (STUDENT: DINOv2-S/14 reg4 at 182 px, int8, 11 Nov 2026; WingsClassificator
+ * reports/model_autoresearch_20261109/taxonomic EXPORT.md, B12 fresh-set check passed). A file whose SHA-256 is not
+ * the expected one is not offered (checked once per file version), and a missing one only hides the option.
+ * Rollback without a code change: a manifest naming L1 (STUDENT_L1; model-versions HANDOFF.md).
  */
-export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb' };
+export const STUDENT_SB = {
+  name: 'student_SB_int8.onnx',
+  sha256: '200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762',
+  version: 'small-SB-20261111',
+  input: { size: 182, values: 'clip' },
+  // Shown with the update in Descargas: B12, 1,156 iNaturalist photos never seen in training, species top-1.
+  notes: { es: 'Mejor en fotos nuevas de iNaturalist: acierta la especie en el 81,8\u00a0% frente al 79,4\u00a0% de la versión anterior.', en: 'Better on new iNaturalist photos: the species right in 81.8\u00a0% against 79.4\u00a0% for the previous version.' },
+};
+/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the previous small model, kept in offline/ for older pages and the rollback. */
+export const STUDENT_L1 = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb', bytes: 23565423, version: 'small-L1-20261031', input: { size: 192, values: 'clip' } };
+/**
+ * The small model this server offers to current pages. Rollback by code (model-versions HANDOFF.md 0b): STUDENT_L1
+ * here and SMALL_L1 in frontend/src/lib/publicModels.ts, nothing else (the phone keeps reading stored sizes).
+ */
+export const STUDENT = STUDENT_SB;
+export const STUDENT_MANIFEST = 'offline/student-model.json';
 
 /**
- * The team's experimental sex model (Identificar, signed in only: frontend/src/lib/sexModel.ts pins the same bytes).
- * Never public: it is sent only on this signed-in route. Kept in offline/ beside the head; a file whose sha256 is not
- * this one is not offered. Sent plain (`packed: false`): fp16 weights barely compress, and adding it must not make
- * every deploy compress the other models' parts again.
+ * The team's experimental sex model (Identificar, signed in only). Never public: it is sent only on this signed-in
+ * route. Kept in offline/ beside the head. Which file it is, its version, SHA-256 and calibration come from the
+ * manifest offline/sex-model.json (SEX_MANIFEST, checked by checkSexManifest; model-versions HANDOFF.md says what it
+ * holds), so a new sex model is a data change: its .onnx and a new manifest in offline/. Without a manifest, model B
+ * (SEX, SEX_B: the file and numbers shipped on 8 Nov 2026). A file whose size or SHA-256 is not the manifest's is not
+ * offered, nor is anything when the manifest is invalid (logged once per version of it). Sent plain (`packed: false`):
+ * fp16 weights barely compress, and adding it must not make every deploy compress the other models' parts again.
+ * The phone (frontend/src/lib/offlineEngine.ts) checks the whole file against the SHA-256 listed before it replaces
+ * the model it has, and keeps the calibration with it.
  */
 export const SEX = { name: 'sex_v2s_ft_full_fp16.onnx', sha256: 'd6d5fb9d92af9a5b4d85a7fac3ead016e2764c5b1964a064fdaf0e98df7c412d' };
+/** Model B's version and calibration (frontend/src/lib/sexModel.ts SEX_DEFAULT: the same numbers). */
+export const SEX_B = {
+  version: 'B 2026-11-08',
+  bytes: 43409800,
+  calibration: {
+    cut: { t: 2.9805, lo: 1.6157, hi: 4.8722 },
+    display: { a: 0.415, b: -1.0887 },
+    genera: ['Dircenna', 'Forbestra', 'Godyris', 'Hyposcada', 'Hypothyris', 'Ithomia', 'Mechanitis', 'Methona', 'Napeogenes', 'Oleria', 'Pteronymia', 'Scada', 'Tithorea'],
+  },
+};
+export const SEX_MANIFEST = 'offline/sex-model.json';
+export const MANIFEST_SCHEMA = 'phone-model/1';
+/** The roles a manifest in offline/ may define, and its file. */
+export const MANIFESTS = { sex: SEX_MANIFEST, student: STUDENT_MANIFEST };
 
 export const MODELS = [
   { name: 'wing_seg_s2.onnx', path: 'app/assets/wing_seg_s2.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
   { name: 'head_6fa6ab78.json', path: 'offline/head_6fa6ab78.json', role: 'head-meta' },
   { name: 'head_6fa6ab78_fp16.bin', path: 'offline/head_6fa6ab78_fp16.bin', role: 'head' },
-  { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true },
-  { name: SEX.name, path: `offline/${SEX.name}`, role: 'sex', sha256: SEX.sha256, optional: true, packed: false },
+  { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true, version: STUDENT.version, input: STUDENT.input, notes: STUDENT.notes },
+  { name: SEX.name, path: `offline/${SEX.name}`, role: 'sex', sha256: SEX.sha256, optional: true, packed: false, version: SEX_B.version, calibration: SEX_B.calibration },
 ];
 /** The models whose parts are precompressed. */
 const PACKED = MODELS.filter(m => m.packed !== false);
@@ -78,11 +116,131 @@ const isolated = {
 
 const etagOf = s => `"${s.size.toString(36)}-${Math.floor(s.mtimeMs).toString(36)}"`;
 
-/** A model with a sha256 in MODELS is offered only when its bytes are those: hashed once per file version (ETag). */
+/**
+ * A phone-model manifest checked: { ok: true, entry } (the MODELS-style entry the list uses) or { ok: false, why }.
+ * Common to both roles:
+ *   schema 'phone-model/1', role 'sex' or 'student', version (1 to 80 characters: letters, digits, space . _ : + ( ) -),
+ *   file (a bare *.onnx name in offline/), bytes (> 0), sha256 (64 lowercase hex),
+ *   notes (optional): { es, en }, one plain sentence or two each (at most 300 characters) shown with the download in
+ *                 Descargas: what was measured about the model (cost, tests). Only measured facts.
+ * role 'sex' (offline/sex-model.json):
+ *   input (optional; only { size: 224, values: 'raw' }: the 224 px square as raw 0 to 255 RGB, channels first),
+ *   calibration { cut: { t, lo, hi } logits with lo < t < hi, display: { a > 0, b } (P(female) = sigmoid(a z + b)),
+ *                 genera: [Genus, …] }.
+ * role 'student' (offline/student-model.json, «Rápido y liviano»):
+ *   input { size: n, values: 'clip' } (required): the 224 px crop with the CLIP mean and std, resized to n x n
+ *                 (bilinear, no antialias: frontend/src/lib/offlineId.ts studentInput); n 32 to 512. The output stays
+ *                 the 1024-D feature for the identifier's head. The phone keeps n with the file.
+ */
+export function checkPhoneManifest(m) {
+  const fail = why => ({ ok: false, why });
+  if (!m || typeof m !== 'object') return fail('not a JSON object');
+  if (m.schema !== MANIFEST_SCHEMA) return fail(`schema must be "${MANIFEST_SCHEMA}"`);
+  if (!Object.hasOwn(MANIFESTS, m.role)) return fail('role must be "sex" or "student"');
+  if (typeof m.version !== 'string' || !/^[\w .:+()-]{1,80}$/.test(m.version) || !m.version.trim()) return fail('version: 1 to 80 letters, digits, spaces or . _ : + ( ) -');
+  if (typeof m.file !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.onnx$/.test(m.file) || m.file.includes('..')) return fail('file: a bare .onnx file name (in offline/)');
+  if (MODELS.some(x => x.role !== m.role && x.name === m.file)) return fail('file: the name of an identifier model');
+  if (!Number.isSafeInteger(m.bytes) || m.bytes <= 0) return fail('bytes: the file size, a positive integer');
+  if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) return fail('sha256: 64 lowercase hex characters');
+  const n = m.notes;
+  const text = v => typeof v === 'string' && v.trim().length > 0 && v.length <= 300 && !/[<>\u0000-\u001f]/.test(v);
+  if (n !== undefined && !(n && typeof n === 'object' && !Array.isArray(n) && Object.keys(n).length && Object.entries(n).every(([k, v]) => (k === 'es' || k === 'en') && text(v))))
+    return fail('notes: { "es": "…", "en": "…" }, plain text of at most 300 characters each');
+  const entry = {
+    name: m.file,
+    path: `offline/${m.file}`,
+    role: m.role,
+    sha256: m.sha256,
+    bytes: m.bytes,
+    optional: true,
+    // Sent plain: the precompressed parts (precompressParts) cover the built-in files only.
+    packed: false,
+    version: m.version.trim(),
+    ...(n ? { notes: { ...n } } : {}),
+  };
+  if (m.role === 'student') {
+    const i = m.input;
+    if (!(i && Number.isInteger(i.size) && i.size >= 32 && i.size <= 512 && i.values === 'clip' && Object.keys(i).length === 2))
+      return fail('input: { "size": <32 to 512>, "values": "clip" } (the 224 px crop, CLIP mean and std, resized to size)');
+    if (m.calibration !== undefined) return fail('calibration: only for the sex model');
+    return { ok: true, entry: { ...entry, input: { size: i.size, values: 'clip' } } };
+  }
+  if (m.input !== undefined && !(m.input && m.input.size === 224 && m.input.values === 'raw' && Object.keys(m.input).length === 2))
+    return fail('input: only { "size": 224, "values": "raw" } is supported (another input needs a code change)');
+  const c = m.calibration, num = v => typeof v === 'number' && Number.isFinite(v);
+  if (!c || typeof c !== 'object' || !c.cut || !c.display) return fail('calibration: { cut, display, genera }');
+  const { t, lo, hi } = c.cut, { a, b } = c.display;
+  if (![t, lo, hi].every(num) || !(lo < t && t < hi)) return fail('calibration.cut: numbers with lo < t < hi');
+  if (!num(a) || !num(b) || !(a > 0)) return fail('calibration.display: numbers a > 0 and b');
+  if (!Array.isArray(c.genera) || !c.genera.length || !c.genera.every(g => typeof g === 'string' && /^[A-Z][a-z]+$/.test(g))) return fail('calibration.genera: a list of genus names');
+  return { ok: true, entry: { ...entry, calibration: { cut: { t, lo, hi }, display: { a, b }, genera: [...c.genera] } } };
+}
+
+/** checkPhoneManifest for the sex model's manifest only. */
+export const checkSexManifest = m => (m && typeof m === 'object' && m.role !== 'sex' ? { ok: false, why: 'role must be "sex"' } : checkPhoneManifest(m));
+
+/** Each manifest read once per version of it (ETag): { entry } from it, { entry: null, why } invalid, null without one. */
+const manifestMemo = new Map();
+async function fromManifest(identifierDir, role) {
+  const rel = MANIFESTS[role];
+  const file = join(identifierDir, rel);
+  const s = await stat(file).catch(() => null);
+  const key = s ? etagOf(s) : '-';
+  if (manifestMemo.get(file)?.key === key) return manifestMemo.get(file).value;
+  let value = null;
+  if (s) {
+    const json = await readFile(file, 'utf8')
+      .then(JSON.parse)
+      .catch(e => ({ __error: e.message }));
+    const checked = json?.__error ? { ok: false, why: `not JSON (${json.__error})` } : json?.role !== role ? { ok: false, why: `role must be "${role}"` } : checkPhoneManifest(json);
+    value = checked.ok ? { entry: checked.entry } : { entry: null, why: `${rel}: ${checked.why}` };
+    if (!checked.ok) console.error(`offline-id: the ${role === 'sex' ? 'sex' : 'small'} model is not offered: ${value.why}`);
+  }
+  manifestMemo.set(file, { key, value });
+  return value;
+}
+
+/**
+ * The phone's models on this server: MODELS, with the sex model and the small model from their manifests when there
+ * are any (left out when a manifest is invalid). `problems`: why something is not offered (a manifest), for
+ * tools/identifier/check_phone_models.mjs.
+ */
+export async function phoneModels(identifierDir, { versioned = true } = {}) {
+  if (!versioned) return { models: COMPAT_MODELS, problems: [] };
+  const manifests = Object.fromEntries(await Promise.all(Object.keys(MANIFESTS).map(async role => [role, await fromManifest(identifierDir, role)])));
+  const models = MODELS.flatMap(m => {
+    const man = manifests[m.role];
+    return !man ? [m] : man.entry ? [man.entry] : [];
+  });
+  return { models, problems: Object.values(manifests).flatMap(v => (v?.why ? [v.why] : [])) };
+}
+
+/**
+ * The capability a client names to get the versioned listing (list.json?caps=versions; frontend/src/lib/offlineEngine.ts
+ * and src/offline/main.ts send it). A client that does not name it is a build from before model versions (production
+ * up to 11 Nov 2026): it feeds any small model 192 px and takes the sex model only under model B's name, and a page
+ * left open keeps running that code. It gets COMPAT_MODELS: L1 and B, never S_B or a manifest's model.
+ */
+export const LIST_CAPS = 'versions';
+const L1_ENTRY = { name: STUDENT_L1.name, path: `offline/${STUDENT_L1.name}`, role: 'student', sha256: STUDENT_L1.sha256, optional: true, packed: false, version: STUDENT_L1.version, input: STUDENT_L1.input };
+export const COMPAT_MODELS = MODELS.map(m => (m.role === 'student' ? L1_ENTRY : m));
+const namesCaps = req => (new URL(req.url, 'http://x').searchParams.get('caps') ?? '').split(',').includes(LIST_CAPS);
+
+/** A file's version when its metadata names none: its content (frontend/src/lib/offlineEngine.ts contentVersion). */
+export const contentVersion = sha256 => `sha256-${sha256.slice(0, 12)}`;
+
+/**
+ * The SHA-256 of a model file, hashed once per file version (ETag); '' when it cannot be read. A model with a sha256
+ * (and bytes) in its entry is offered only when its bytes are those (usable).
+ */
 const hashMemo = new Map();
 async function usable(identifierDir, m, s) {
   if (!s?.isFile()) return false;
+  if (m.bytes && s.size !== m.bytes) return false;
   if (!m.sha256) return true;
+  return (await fileSha256(identifierDir, m, s)) === m.sha256;
+}
+async function fileSha256(identifierDir, m, s) {
   const file = join(identifierDir, m.path);
   const key = `${file}|${etagOf(s)}`;
   if (!hashMemo.has(key)) {
@@ -97,7 +255,7 @@ async function usable(identifierDir, m, s) {
       ),
     );
   }
-  return (await hashMemo.get(key)) === m.sha256;
+  return hashMemo.get(key);
 }
 
 /** The page's part size (frontend/src/offline/main.ts PART). */
@@ -187,7 +345,7 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
         const files = [];
         const encoding = pickEncoding(req.headers['accept-encoding']);
         const packed = await compressedParts(identifierDir);
-        for (const m of MODELS) {
+        for (const m of (await phoneModels(identifierDir, { versioned: namesCaps(req) })).models) {
           const s = await stat(join(identifierDir, m.path)).catch(() => null);
           if (!(await usable(identifierDir, m, s))) {
             if (m.optional) continue; // the small model or the sex model: not offered
@@ -198,13 +356,32 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
           const wire = parts && encoding ? parts.reduce((a, p) => a + wireBytes(p, encoding), 0) : s.size;
           // `parts`: each part's SHA-256 (the parts manifest's): the page then knows the public copy on Hugging Face
           // (frontend/src/lib/publicModels.ts, the same bytes) for the same model.
-          files.push({ name: m.name, bytes: s.size, etag: etagOf(s), role: m.role, wire, encoding: parts ? encoding : null, ...(m.sha256 ? { sha256: m.sha256 } : {}), ...(parts ? { parts: parts.map(p => p.sha256) } : {}) });
+          // `version` and `sha256`: the model folder's metadata for the sex model (its manifest, or model B's), the
+          // content for the others; the phone compares them with what it has (Descargas offers the update).
+          const sha256 = m.sha256 ?? (await fileSha256(identifierDir, m, s));
+          if (!sha256) throw new Error(`${m.name}: could not be read`);
+          files.push({
+            name: m.name,
+            bytes: s.size,
+            etag: etagOf(s),
+            role: m.role,
+            wire,
+            encoding: parts ? encoding : null,
+            version: m.version ?? contentVersion(sha256),
+            sha256,
+            ...(m.calibration ? { calibration: m.calibration } : {}),
+            ...(m.notes ? { notes: m.notes } : {}),
+            // The small model's input size (the phone resizes the crop to it): L1 192, a manifest's own.
+            ...(m.role === 'student' && m.input ? { input: m.input } : {}),
+            ...(parts ? { parts: parts.map(p => p.sha256) } : {}),
+          });
         }
         const body = JSON.stringify({ files, partBytes: PART_BYTES });
         res.writeHead(200, { ...isolated, 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'accept-encoding', 'content-length': Buffer.byteLength(body) });
         return res.end(req.method === 'HEAD' ? undefined : body);
       }
-      const model = MODELS.find(m => m.name === name);
+      // Either listing's files: a page from before model versions still downloads L1 and B by name.
+      const model = (await phoneModels(identifierDir)).models.find(m => m.name === name) ?? COMPAT_MODELS.find(m => m.name === name);
       if (!model) throw new HttpError(404, 'File not found');
       if (model.sha256 && !(await usable(identifierDir, model, await stat(join(identifierDir, model.path)).catch(() => null)))) throw new HttpError(404, 'File not found');
       const query = new URL(req.url, 'http://x').searchParams;

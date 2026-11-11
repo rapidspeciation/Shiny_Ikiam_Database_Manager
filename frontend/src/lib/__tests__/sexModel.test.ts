@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { letterboxCrop, roleOf, rolesReady } from '../offlineId'
-import { SEX_CUT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sexShown, sexShownFemale, sigmoid } from '../sexModel'
+import { parseCalibration, SEX_CUT, SEX_DEFAULT, SEX_FILE, SEX_GENERA, sexApplies, sexCall, sexInput, sexShown, sexShownFemale, sigmoid } from '../sexModel'
 import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 
 // The sex estimate's preprocessing and decision (lib/sexModel.ts; PLAN.md Amendment 8 in WingsClassificator).
@@ -124,5 +124,41 @@ describe('the sex file', () => {
     expect(rolesReady(['detector', 'sex'], stored, [det])).toBe(false) // not listed (another server, or signed out)
     expect(rolesReady(['detector', 'sex'], { [det.name]: stored[det.name] }, [det, sex])).toBe(false)
     expect(rolesReady(['detector', 'sex'], stored, null)).toBe(true) // offline: what is stored
+  })
+})
+
+describe('a sex model\'s calibration (the server lists it with the model; model-versions HANDOFF.md)', () => {
+  const C = { cut: { t: 0.5, lo: -0.5, hi: 1.5 }, display: { a: 1, b: 0 }, genera: ['Mechanitis', 'Oleria'] }
+  it('is taken when complete and consistent, refused otherwise', () => {
+    expect(parseCalibration(C)).toEqual(C)
+    expect(parseCalibration(SEX_DEFAULT)).toEqual(SEX_DEFAULT)
+    for (const bad of [
+      null,
+      {},
+      { ...C, cut: { t: 1, lo: 2, hi: 3 } },
+      { ...C, cut: { t: 0.5, lo: -0.5 } },
+      { ...C, display: { a: 0, b: 0 } },
+      { ...C, display: { a: 1, b: Number.NaN } },
+      { ...C, genera: [] },
+      { ...C, genera: ['Oleria', 3] },
+      { ...C, genera: ['oleria'] },
+    ])
+      expect(parseCalibration(bad), JSON.stringify(bad)).toBeNull()
+  })
+  it('decides the call, the % and the genera of another model', () => {
+    expect(sexShown(2, C)).toMatchObject({ call: 'hembra', sign: '♀' })
+    expect(sexShown(2)).toMatchObject({ call: 'no seguro' }) // model B's band
+    expect(sexShown(0, C)).toMatchObject({ call: 'no seguro', sign: '♀', p: 0.5 })
+    expect(sexShownFemale(0, C.display)).toBe(0.5)
+    expect(sexApplies('Oleria aegle', ITHOMIINI_GENERA, C.genera)).toBe('yes')
+    expect(sexApplies('Ithomia salapia', ITHOMIINI_GENERA, C.genera)).toBe('genus')
+  })
+  it('model B\'s numbers are the server\'s default (server/offline-id.mjs SEX_B, listed without a manifest)', async () => {
+    // A path in a variable: the server module has no types (plain JavaScript).
+    const url = new URL('../../../../server/offline-id.mjs', import.meta.url).href
+    const server = await import(/* @vite-ignore */ url)
+    expect(server.SEX_B.calibration).toEqual(SEX_DEFAULT)
+    expect(server.SEX_B.bytes).toBe(SEX_FILE.bytes)
+    expect(server.SEX.sha256).toBe(SEX_FILE.sha256)
   })
 })
