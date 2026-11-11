@@ -72,6 +72,7 @@ test('field sex: the % shown never exceeds the table\'s cap nor 99, rounded down
   assert.ok(out.real['Papilio polyxenes|male'].max_pct <= 92);
   // under the 90 % floor: no call, whatever the row says
   assert.deepEqual(out.low_map, { '0.85': null, '0.9': null, '0.94': null, '0.95': 90, '1.0': 99 });
+  assert.deepEqual(out.low_map_floor_05, { '0.85': null, '0.94': null, '0.95': 90 }, 'a table floor under 90 % does not lower it');
 });
 
 test('field sex: ADAPT + kNN equal the training code\'s formulas; a changed file is refused', { skip }, () => {

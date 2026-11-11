@@ -71,14 +71,9 @@ describe('the Ithomiini keep the in-hand line exactly as it was', () => {
   })
 })
 
-describe('«Sí, viva» is asked again for each new photo and after a restore', () => {
+// A new photo asking again is checked on the mounted page (views/__tests__/IdentifyView.fieldSex.test.ts).
+describe('«Sí, viva» is asked again after a restore', () => {
   const view = readFileSync(new URL('../../views/IdentifyView.vue', import.meta.url), 'utf8')
-  it('a new online photo builds a fresh result (no spread of the old one, so no answer carried over)', () => {
-    const body = /async function identifyOnline\(photo: Photo\) \{.*?\n\}\n/s.exec(view)?.[0] ?? ''
-    expect(body).toContain('result.value = {\n      at,\n      source: \'online\',')
-    expect(body).not.toMatch(/\.\.\.(r|result\.value|old)\b/)
-    expect(body).not.toContain('live')
-  })
   it('a restored result drops the answer', () => {
     expect(view).toContain('result.value = { ...v, live: undefined }')
   })

@@ -639,7 +639,9 @@ const sexState = computed<SexState | null>(() => {
 const fieldSexState = computed<FieldSexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
-  return fieldSexOf({ mode: mode.value, source: r.source, headline: said.value, answer: r.server?.fieldSex, live: r.live, ithomiiniGenera })
+  // Hidden when the person picked «En este teléfono»; a signal drop (effective mode phone, choice still online)
+  // leaves a shown answer in place.
+  return fieldSexOf({ mode: modeChoice.value === 'phone' ? 'phone' : 'online', source: r.source, headline: said.value, answer: r.server?.fieldSex, live: r.live, ithomiiniGenera })
 })
 function answerLive(live: LiveAnswer | undefined) {
   if (!result.value) return

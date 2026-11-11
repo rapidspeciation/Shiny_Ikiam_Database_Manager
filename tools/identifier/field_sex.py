@@ -66,7 +66,7 @@ class FieldSex:
         d = json.load(open(os.path.join(folder, meta.get("display") or "display.json")))
         self.maps = {sx: (np.array([p[0] for p in m["points"]], np.float64), np.array([p[1] for p in m["points"]], np.float64)) for sx, m in d["maps"].items()}
         self.cap_max = float(d["cap_max"])
-        self.floor = float(d.get("floor", 0.90))
+        self.floor = max(0.90, float(d.get("floor", 0.90)))  # never below 90 %, whatever the table says
         self.table = {(r["species"], r["called"]): r for r in d["table"]}
         self.display_version = d["version"]
 
@@ -145,7 +145,7 @@ class FieldSex:
         conf = max(p, 1 - p)
         called = "female" if p >= 0.5 else "male"
         out.update(pFemale=round(p, 6), conf=round(conf, 6))
-        supported = top_p >= self.gate and conf >= self.t  # all passing species are in the evidence table
+        supported = conf >= self.t  # the gate passed above; all passing species are in the evidence table
         out["supported"] = bool(supported)
         if not supported:
             out["status"] = "not_supported"

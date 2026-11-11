@@ -6,15 +6,17 @@ import { locale, t, tn } from '../../lib/i18n'
 import { SEX_FILE } from '../../lib/sexModel'
 import { useSession } from '../../stores/session'
 
-// Identificar with a server result restored from this browser session (the page's own restore path): the in-hand
-// line for an Ithomiini, the general sex line for a Monarch (asked again after the restore), and the general line
-// gone once the page is switched to «En este teléfono». The phone's models and the server are stand-ins. No AI.
+// Identificar with a server result restored from this browser session (the page's own restore path), then new photos
+// read through a stand-in server: the in-hand line for an Ithomiini; the general sex line for a Monarch, asked again
+// after a restore and for each new photo; kept through a signal drop, gone once the person picks «En este teléfono»
+// (the phone has the small model here, so the result stays on screen). The phone's models and the server are
+// stand-ins. No AI.
 
 vi.mock('../../lib/offlineEngine', async orig => {
   const real = await orig<typeof import('../../lib/offlineEngine')>()
   const engine = {
     list: async () => ({ files: [{ name: SEX_FILE.name, role: 'sex', bytes: SEX_FILE.bytes, sha256: SEX_FILE.sha256, parts: SEX_FILE.parts }] }),
-    ready: async () => ({ small: false, full: false }),
+    ready: async () => ({ small: true, full: false }),
     stored: async () => null,
     toDownload: () => ({ plain: 1, wire: 1, total: 1 }),
     sexReady: async () => false,
@@ -33,6 +35,22 @@ vi.mock('../../lib/offlineEngine', async orig => {
 vi.mock('../../lib/identifyRefs', async orig => {
   const real = await orig<typeof import('../../lib/identifyRefs')>()
   return { ...real, referencePhotos: async () => ({ refs: {}, pending: [] }), fieldIndex: async () => ({ species: [], subspecies: [] }) }
+})
+
+const server = vi.hoisted(() => ({ answers: [] as unknown[] }))
+vi.mock('../../lib/identifyOnline', async orig => {
+  const real = await orig<typeof import('../../lib/identifyOnline')>()
+  return {
+    ...real,
+    identifyOnServer: async () => server.answers.shift(),
+    photoCanvas: async () => Object.assign(document.createElement('canvas'), { width: 400, height: 300 }),
+    jpegBase64: () => 'AA==',
+    squareCrop: () => 'data:image/jpeg;base64,AA==',
+  }
+})
+vi.mock('../../lib/offlinePhoto', async orig => {
+  const real = await orig<typeof import('../../lib/offlinePhoto')>()
+  return { ...real, takePhoto: async (input: { value: string }, identify: (p: unknown) => unknown) => identify({ blob: new Blob(['x'], { type: 'image/jpeg' }) }) }
 })
 
 let unmount = () => {}
@@ -124,6 +142,40 @@ describe('IdentifyView: the two sex lines', () => {
     const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
     phone.click()
     await settle()
+    // the result is still on screen (the phone has a model), only the general line is gone
+    expect(host.querySelector('[data-testid=result-source]')).not.toBeNull()
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
+  })
+
+  it('a signal drop does not hide a shown answer (the person did not pick «En este teléfono»)', async () => {
+    const call = { species: 'Danaus plexippus', status: 'call', sex: 'female', pct: 97, version: 'field-sex/1' }
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, call)))
+    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
+    await settle()
+    dispatchEvent(new Event('offline'))
+    await settle()
+    const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
+    expect(phone.getAttribute('aria-checked')).toBe('true') // the page now reads on the phone ...
+    expect(host.querySelector('[data-testid=result-source]')).not.toBeNull()
+    expect(host.querySelector('[data-testid=field-sex-call]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('♀ Hembra 97 %') // ... the answer stays
+    dispatchEvent(new Event('online'))
+  })
+
+  it('a new photo asks «¿viva?» again', async () => {
+    const call = (sex: string, pct: number) => ({ species: 'Danaus plexippus', status: 'call', sex, pct, version: 'field-sex/1' })
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, call('male', 96))))
+    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
+    await settle()
+    expect(host.querySelector('[data-testid=field-sex-call]')).not.toBeNull()
+    server.answers.push(answer('Danaus plexippus', 0.96, call('female', 97)))
+    const input = host.querySelector<HTMLInputElement>('input[type=file]:not([capture])')!
+    input.dispatchEvent(new Event('change'))
+    await settle()
+    expect(server.answers).toHaveLength(0)
+    expect(host.querySelector('[data-testid=field-sex-ask]')).not.toBeNull()
+    expect(host.querySelector('[data-testid=field-sex-call]')).toBeNull()
+    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
+    await settle()
+    expect(host.querySelector('[data-testid=field-sex-call]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('♀ Hembra 97 %')
   })
 })

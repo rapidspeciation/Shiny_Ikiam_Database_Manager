@@ -100,6 +100,10 @@ try:
     make(L, {"Aa bb": (0.9, unit(20), [1] * 20)}, low)
     fl = FieldSex(L)
     out["low_map"] = {str(c): fl.shown_pct("Aa bb", "female", c) for c in (0.85, 0.9, 0.94, 0.95, 1.0)}
+    # a table floor under 90 % does not lower it
+    L2 = os.path.join(tmp, "low2")
+    make(L2, {"Aa bb": (0.9, unit(20), [1] * 20)}, dict(low, floor=0.5))
+    out["low_map_floor_05"] = {str(c): FieldSex(L2).shown_pct("Aa bb", "female", c) for c in (0.85, 0.94, 0.95)}
 
     # a changed file is refused
     B = os.path.join(tmp, "b")
