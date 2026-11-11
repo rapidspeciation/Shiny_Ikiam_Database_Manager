@@ -4,6 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wikilocLine } from '../scripts/nightly-app-checks.mjs';
 
@@ -70,4 +73,28 @@ test('run against /health: its exit code, and 1 when /health does not answer', a
   const gone = await run(`${base}/nothing`);
   assert.equal(gone.code, 1);
   assert.match(gone.stdout, /did not answer \(answered 404\)/);
+});
+
+test('run through a symlinked release path (the nightly runs current/scripts/…): it runs and says so; an unknown option fails', async t => {
+  // /home/ubuntu/ithomiini/current → releases/<stamp>: here a link to this checkout. On 11 Nov 2026 the run did nothing
+  // and passed, as Node gives import.meta.url the real path.
+  const dir = mkdtempSync(join(tmpdir(), 'nightly-link-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const current = join(dir, 'current');
+  symlinkSync(fileURLToPath(new URL('..', import.meta.url)), current, 'dir');
+  const linked = join(current, 'scripts', 'nightly-app-checks.mjs');
+  const env = { PATH: '/usr/bin:/bin', HOME: dir, NODE_OPTIONS: '' };
+  const run = args =>
+    new Promise(resolve => execFile(process.execPath, [linked, ...args], { env }, (error, stdout) => resolve({ code: error ? error.code : 0, stdout })));
+  // No credential: it reached the run (and sent nothing).
+  const ranges = await run(['--sheet-ranges', '--log', join(dir, 'sheet-ranges.jsonl')]);
+  assert.equal(ranges.code, 1);
+  assert.match(ranges.stdout, /^Sheet ranges: FAILING: GOOGLE_CREDENTIALS_FILE is required/);
+  const unknown = await run(['--sheet-range']);
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.stdout, /^Unknown option --sheet-range/);
+  // The health check too (nothing listens there).
+  const health = await run(['http://127.0.0.1:9/health']);
+  assert.equal(health.code, 1);
+  assert.match(health.stdout, /^Wikiloc imports: http:\/\/127\.0\.0\.1:9\/health did not answer/);
 });

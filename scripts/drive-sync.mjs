@@ -9,7 +9,7 @@
 // GOG_KEYRING_PASSWORD (gog.env); ITHOMIINI_DRIVE_SYNC_CONFIG (default deploy/drive-sync.json);
 // ITHOMIINI_PDFTOTEXT (default: pdftotext if installed).
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -493,7 +493,8 @@ export async function syncDrive({ env = process.env, configPath, log = () => {},
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Run as a script, also through a symlink (/home/ubuntu/ithomiini/current: Node gives import.meta.url the real path).
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   syncDrive({ log: line => console.error(line) }).then(
     s => {
       const kinds = Object.entries(s.kinds)

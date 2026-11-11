@@ -12,7 +12,7 @@
 // left for its owner and kept in sheet-ranges-state.json beside the log: told once, again only when it changes (the
 // app's alerts list it too, server/alerts.mjs). Exit 0: nothing near, or moved and read back, or only ranges already
 // told; 3: a protected range told for the first time or changed; 1: an error or a rule not read back as sent.
-import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -87,7 +87,18 @@ export async function sheetRangesRun(request, log, options = {}) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === '--sheet-ranges') {
+// Run as a script, also through a symlink: the nightly runs /home/ubuntu/ithomiini/current/scripts/…, and Node gives
+// import.meta.url the real path (releases/<stamp>/…). Comparing the path as typed, the run did nothing and passed (the
+// night of 11 Nov 2026).
+const isMain = (() => {
+  try {
+    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+})();
+const mode = process.argv[2];
+if (isMain && mode === '--sheet-ranges') {
   const i = process.argv.indexOf('--log');
   let out;
   try {
@@ -97,9 +108,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
   } catch (e) {
     out = { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
   }
+  // A run always says what it did; one that says nothing has not run.
+  if (!out.lines?.length) out = { code: 1, lines: ['Sheet ranges: FAILING: the run said nothing'] };
   console.log(out.lines.join('\n'));
   process.exitCode = out.code;
-} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+} else if (isMain && mode?.startsWith('--')) {
+  console.log(`Unknown option ${mode}: node scripts/nightly-app-checks.mjs [health URL] | --sheet-ranges --log <file>`);
+  process.exitCode = 1;
+} else if (isMain) {
   let out;
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });
