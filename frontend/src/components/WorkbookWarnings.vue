@@ -15,7 +15,7 @@ const panel = ref<HTMLDetailsElement>()
     <summary class="flex cursor-pointer items-center gap-1.5 font-medium">
       <TriangleAlert :size="14" class="flex-none text-amber-700" />
       <span class="min-w-0 max-sm:hidden">
-        {{ $t('Avisos del libro de Google Sheets ({n}) — fórmulas por corregir en la hoja', { n: WORKBOOK_WARNINGS.length }) }}
+        {{ $t('Avisos del libro de Google Sheets ({n}): fórmulas por corregir en la hoja', { n: WORKBOOK_WARNINGS.length }) }}
         <template v-if="sheet && WORKBOOK_WARNINGS.some(w => w.sheet === sheet)">{{ $t('· incluye {sheet}', { sheet }) }}</template>
       </span>
       <span class="min-w-0 sm:hidden">{{ $t('Avisos del libro ({n})', { n: WORKBOOK_WARNINGS.length }) }}</span>

@@ -171,8 +171,8 @@ export default {
   'Creando…': 'Creating…',
   'Crear filas preasignadas': 'Create pre-made rows',
   'Avisa a un administrador para que cree más.': 'Ask an administrator to create more.',
-  'Avisos del libro de Google Sheets ({n}) — fórmulas por corregir en la hoja':
-    'Google Sheets workbook warnings ({n}) — formulas to fix in the sheet',
+  'Avisos del libro de Google Sheets ({n}): fórmulas por corregir en la hoja':
+    'Google Sheets workbook warnings ({n}): formulas to fix in the sheet',
   '· incluye {sheet}': '· includes {sheet}',
   '(visto {date})': '(seen {date})',
   'Tube_n_rack busca el tubo en la columna A ("Sort") de Ithomiini_tube_locations en vez de la B: las 438 filas dicen "Not in TOL704", aunque 1.925 de sus tubos sí están en racks.':
@@ -299,12 +299,13 @@ export default {
   '{n} celdas escritas; revisa y guarda': '{n} cells written; review and save',
   'Nada que escribir: esas filas ya tienen fecha y causa': 'Nothing to write: those rows already have a date and cause',
   'Fecha de muerte': 'Death date',
+  'Causa de muerte': 'Cause of death',
   'Elige la fecha': 'Choose the date',
   'Causa por defecto': 'Default cause',
   'p. ej. {example}': 'e.g. {example}',
   'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; tejidos y medios en NOT_COLLECTED. Sin marcar, solo fecha y causa: el CAM y el tubo van en Tubos o en las tarjetas.':
     'For causes other than Killed_Preserved and rows without a CAM or tube: CAM, tubes, Preservation_date, Location_body and Preserved_Dead_Alive set to NA; tissues and media set to NOT_COLLECTED. Unticked, only the date and cause: the CAM and tube go in Tubos or in the cards.',
-  'Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED': 'Not preserved: CAM and tubes NA, tissues and media NOT_COLLECTED',
+  'Sin preservar: sin CAM ni tubos': 'Not preserved: no CAM or tubes',
   '{ids} tiene un clip de ala (cruces o feromonas): su cuerpo se suele preservar.':
     '{ids} has a wing clip (crosses or pheromones): its body is usually preserved.',
   '{ids} tienen un clip de ala (cruces o feromonas): su cuerpo se suele preservar.':
@@ -508,4 +509,6 @@ export default {
   // EntryModeToggle: a data-entry tab as cards (touch) or as the table.
   Vista: 'View',
   Tarjetas: 'Cards',
+  // RowDrawer: an empty date field's placeholder (the note's label «Nota» is in assistant.ts).
+  'd-mmm-aa': 'd-mmm-yy',
 } as Record<string, string>

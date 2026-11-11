@@ -45,6 +45,7 @@ const files = computed(() => parseWordDiff(props.diff))
           }"
         >
           <template v-for="(s, k) in row.segments" :key="k"
+            ><template v-if="s.kind === 'add' && row.segments[k - 1]?.kind === 'del'">{{ ' ' }}</template
             ><span v-if="s.kind === 'ctx'">{{ s.text }}</span
             ><del v-else-if="s.kind === 'del'" class="bg-red-100 text-red-800 decoration-red-400">{{ s.text }}</del
             ><ins v-else class="bg-emerald-100 text-emerald-900 no-underline">{{ s.text }}</ins></template

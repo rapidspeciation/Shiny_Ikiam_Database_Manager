@@ -2,6 +2,8 @@
 export default {
   // Toolbar and help.
   'Más herramientas': 'More tools',
+  // TablesView: the help's one line on a phone.
+  'Cómo editar': 'How to edit',
   'Volver a cargar': 'Reload',
   'Descargar CSV': 'Download CSV',
   'Cómo usar la tabla': 'How to use the table',

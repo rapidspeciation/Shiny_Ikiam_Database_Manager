@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowDown, ArrowUp, Loader2, Pencil, RefreshCw, Undo2 } from 'lucide-vue-next'
+import { Loader2, Pencil, RefreshCw, Undo2 } from 'lucide-vue-next'
 import SexBadge from '../SexBadge.vue'
+import PaperOrder from '../PaperOrder.vue'
 import { isBlank } from '../../lib/cells'
 import { formatSerial } from '../../lib/dates'
 import { sortRecorded, type RecordedOrder, type RecordedSort } from '../../lib/deathsCart'
@@ -52,8 +53,6 @@ const sorts = computed<{ by: RecordedSort; label: string }[]>(() => [
   { by: 'emergence', label: t('Emergencia') },
   { by: 'row', label: t('Fila') },
 ])
-const sortBy = (by: RecordedSort) => (order.value = { ...order.value, by })
-const flip = () => (order.value = { ...order.value, desc: !order.value.desc })
 
 function line(item: RecordedItem) {
   const death = value(item.row, 'Death_date')
@@ -115,26 +114,7 @@ const undoTitle = (item: RecordedItem) =>
             {{ $t('Mías') }}
           </button>
         </div>
-        <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="group" :aria-label="$t('Ordenar por')">
-          <button
-            v-for="(s, i) in sorts"
-            :key="s.by"
-            class="h-9 px-2.5"
-            :class="[order.by === s.by ? 'bg-brand text-white' : 'bg-surface', i ? 'border-l border-stone-300' : '']"
-            :aria-pressed="order.by === s.by"
-            @click="sortBy(s.by)"
-          >
-            {{ s.label }}
-          </button>
-          <button
-            class="grid h-9 w-9 place-items-center border-l border-stone-300 bg-surface"
-            :aria-label="order.desc ? $t('Descendente: cambiar a ascendente') : $t('Ascendente: cambiar a descendente')"
-            :title="order.desc ? $t('Descendente') : $t('Ascendente')"
-            @click="flip"
-          >
-            <ArrowDown v-if="order.desc" :size="16" /><ArrowUp v-else :size="16" />
-          </button>
-        </div>
+        <PaperOrder v-model="order" :options="sorts" />
       </div>
     </div>
     <p v-if="items.length" class="mt-1 text-xs text-stone-500">

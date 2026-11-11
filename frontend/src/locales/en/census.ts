@@ -176,7 +176,7 @@ export default {
   'viva (desaparición deshecha)': 'alive (disappearance undone)',
   viva: 'alive',
   'desapareció {day}': 'disappeared {day}',
-  'muerta {what} — resaltar': 'dead {what} — highlight',
+  'muerta {what} · resaltar': 'dead {what} · highlight',
   'Se deshacen sus desapariciones aún no guardadas en Google Sheets y el censo vuelve a estar abierto. ¿Seguir?':
     'Its disappearances not yet saved to Google Sheets are undone and the census is open again. Continue?',
   '{ids} tiene un clip de ala (cruces o feromonas). Su Research_purpose:': '{ids} has a wing clip (crosses or pheromones). Its Research_purpose:',

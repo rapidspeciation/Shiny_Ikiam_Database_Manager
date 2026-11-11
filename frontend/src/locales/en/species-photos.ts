@@ -2,6 +2,8 @@
 export default {
   'Ver fotos de {name}': 'See photos of {name}',
   'Buscando fotos…': 'Looking for photos…',
+  // RefCompare: a reference photo still loading.
+  'Cargando foto…': 'Loading photo…',
   ejemplar: 'specimen',
   'preserv.': 'preserved',
   'recapt.': 'recapt.',

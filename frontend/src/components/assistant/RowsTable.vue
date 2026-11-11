@@ -289,7 +289,7 @@ watch(() => [props.table, locale.value], sync)
       <Table2 :size="13" class="shrink-0 text-sky-700" />
       <span>
         {{ $t('Tabla') }} · {{ sheet }} · {{ $tn(counts.rows, '{n} fila', '{n} filas') }}
-        <span class="font-normal text-stone-500">— {{ table.reason }}</span>
+        <span class="font-normal text-stone-500"> · {{ table.reason }}</span>
       </span>
       <span
         class="flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 font-normal text-sky-900"

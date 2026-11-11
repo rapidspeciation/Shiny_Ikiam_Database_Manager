@@ -7,6 +7,7 @@ export default {
   Registrados: 'Recorded',
   'Pupas desde {date}': 'Pupae since {date}',
   'emergen hacia {date}': 'emerging around {date}',
+  'debían emerger hacia {date}': 'should have emerged around {date}',
   'Último emergido {date}': 'Last emerged {date}',
   'Ningún clutch en curso: busca el clutch por su número.': 'No clutch going: search for the clutch by its number.',
   // A card

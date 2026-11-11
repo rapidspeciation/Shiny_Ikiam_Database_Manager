@@ -7,7 +7,7 @@
 import { api, ApiError } from './api'
 import { t } from './i18n'
 import type { FieldSexAnswer } from './fieldSex'
-import type { Candidate } from './identifyResult'
+import type { Candidate, Higher } from './identifyResult'
 
 export type Mode = 'online' | 'phone'
 
@@ -16,6 +16,9 @@ export interface ServerAnswer {
   species: [string, number][]
   subspecies: [string, number][]
   genus: [string, number][]
+  /** The most probable tribes and subfamilies with their totals (placeholders left out); missing from an older server. */
+  tribe?: [string, number][]
+  subfamily?: [string, number][]
   /** Where the head records each listed species in Ecuador (null: not known on this server). */
   recorded?: Record<string, { East: boolean; West: boolean }> | null
   crop: string | null
@@ -36,7 +39,7 @@ export function effectiveMode(choice: Mode | null, signedIn: boolean, online: bo
 }
 
 /** The answer as the tab's ranking: the species, every listed genus's total, and the subspecies per species. */
-export function serverRanking(a: ServerAnswer): { species: Candidate[]; genus: Map<string, number>; ssp: Map<string, Candidate[]> } {
+export function serverRanking(a: ServerAnswer): { species: Candidate[]; genus: Map<string, number>; ssp: Map<string, Candidate[]>; higher: Higher } {
   const species = a.species.map(([name, p]) => ({ name, p }))
   const genus = new Map<string, number>(a.genus)
   // A species outside the genus list (rare: the genus list has 3) counts at least its own score.
@@ -50,7 +53,7 @@ export function serverRanking(a: ServerAnswer): { species: Candidate[]; genus: M
     if (!species.some(c => c.name === sp)) continue
     ssp.set(sp, [...(ssp.get(sp) ?? []), { name, p }])
   }
-  return { species, genus, ssp }
+  return { species, genus, ssp, higher: { tribe: new Map(a.tribe ?? []), subfamily: new Map(a.subfamily ?? []) } }
 }
 
 /** The photo at most `max` px on its longest side, upright (the browser applies the EXIF tag), as a canvas. */

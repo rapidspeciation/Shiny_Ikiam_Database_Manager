@@ -112,12 +112,16 @@ test('a CAM range not used for six months is information with its date, not a ca
   assert.equal(pool.level, 'ok');
   const cam = data.alerts.find(a => a.id === 'cam:CRISPRonly_CAMid:CAM078500');
   assert.equal(cam.level, 'info');
-  assert.equal(cam.text, 'CRISPRonly_CAMid: queda 1 CAM en CAM078500–CAM078549, sin uso desde 19/11/2025 (último CAM078548).');
+  // The pool in the team's words; the range behind «detail».
+  assert.equal(cam.text, 'CAM de CRISPR: queda 1 CAM, sin uso desde 19/11/2025.');
+  assert.equal(cam.detail, 'Rango CAM078500–CAM078549, último CAM078548.');
+  assert.doesNotMatch(cam.text, /CAMid/);
   assert.doesNotMatch(cam.text, /Pidan/);
   // The insectary pool, used last week, still warns.
   const used = data.alerts.find(a => a.id === 'cam:InsectaryWild&Reared_CAMid:CAM078000');
   assert.equal(used.level, 'warn');
-  assert.match(used.text, /quedan 39 CAM .*Pidan a PAS o AA un rango nuevo\./);
+  assert.equal(used.text, 'CAM de insectario (silvestres y criadas): quedan 39 CAM. Pidan a PAS o AA un rango nuevo.');
+  assert.match(used.detail, /^Rango CAM078000–CAM078099, último CAM078060 /);
   store.close();
 });
 

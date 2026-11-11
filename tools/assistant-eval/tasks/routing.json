@@ -1,0 +1,462 @@
+{
+ "about": "Routing cases (8 Nov 2026, lessons L1/L3 from T3's tool-description hill-climb): cheap cases graded only on the chat's first tool calls (which tool, its arguments, which skill it loads, what it must not call). run.mjs interrupts the run after `stopAfter` calls (default 3), so a case costs a few model calls instead of a full answer. Seeded from logged failures (HILLCLIMB_R15_plus.md, MINED_PATTERNS.md); prompts are new, in the style of the logged ones, on species and records not used by the dev or held-out sets. Ground truth (columns, CAMs) read from the eval app (frozen lab copy of 19 Oct) with direct query calls. Controls are ordinary work: they catch a fix that over-routes (maps-gallery, a draft or a ToolSearch where none belongs). S01–S17 (lesson L2, 8 Nov): one guard per project skill whose listing had no routing case, so a cut to a skill description or to the brief's skills table shows up as a skill no longer loaded; the held-out set files were not opened, so overlap with them was not checked.",
+ "tasks": [
+  {
+   "id": "R01",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "R15 photo routing (HILLCLIMB_R15_plus §3: G01/M02/N02 0 of 6 with cuts 1-4; fixed by cade3351)",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "living photos of a species: maps-gallery, then taxon_photos (not gallery_specimens, not Bash)",
+   "prompt": "¿tienes fotos de Godyris zavaleta viva, en el campo? quiero ver cómo se ve",
+   "checks": [
+    { "skill": "maps-gallery", "w": 2, "why": "the photo skill is loaded" },
+    { "toolArgs": { "tool": "taxon_photos", "match": { "taxon": "godyris zavaleta" } }, "w": 2, "why": "wild photos come from taxon_photos" },
+    { "noTool": "gallery_specimens", "why": "our pinned specimens are not field photos" },
+    { "noTool": "Bash" }
+   ]
+  },
+  {
+   "id": "R02",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "R15 photo routing (HILLCLIMB_R15_plus §3, M02 took gallery_specimens with the cuts); M02's real request of 31 Oct",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "photos of one species and sex: maps-gallery, taxon_photos with the sex",
+   "prompt": "mándame fotos de machos de Ithomia salapia",
+   "checks": [
+    { "skill": "maps-gallery", "w": 2, "why": "the photo skill is loaded" },
+    { "toolArgs": { "tool": "taxon_photos", "match": { "taxon": "ithomia salapia" } }, "w": 2, "why": "taxon_photos is the photo tool for a species" },
+    { "toolArgs": { "tool": ["taxon_photos", "gallery_specimens"], "match": { "sex": "^\"?male" } }, "why": "the sex is passed" },
+    { "noTool": "Bash" }
+   ]
+  },
+  {
+   "id": "R03",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P2; Wild_Reared guessed on Collection_data in 4 of 9 runs with the cuts (HILLCLIMB_R15_plus §3, e32c38b9)",
+   "stopAfter": 3,
+   "about": "wild-caught vs reared lives in Insectary_data (Wild_Reared), not in Collection_data",
+   "prompt": "De las Ithomia salapia que tenemos registradas, ¿cuántas fueron capturadas silvestres y cuántas criadas en el insectario?",
+   "checks": [
+    { "noToolErrors": true, "w": 2, "why": "no guessed column (a query on Collection_data.Wild_Reared fails)" },
+    { "toolAny": ["query", "describe_sheet", "find_records", "count_records"], "why": "answers from the database" },
+    { "noTool": ["Bash", "ToolSearch"], "why": "query is always loaded" }
+   ]
+  },
+  {
+   "id": "R04",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P2; LIFESTAGE is in Insectary_data, not Collection_data (e32c38b9 query line)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "larvae: LIFESTAGE in Insectary_data",
+   "prompt": "cuántas larvas de Mechanitis lysimnia hay registradas?",
+   "checks": [
+    { "noToolErrors": true, "w": 2, "why": "no guessed column" },
+    { "toolAny": ["query", "describe_sheet", "find_records", "count_records"] },
+    { "noTool": ["Bash", "ToolSearch"] }
+   ]
+  },
+  {
+   "id": "R05",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "D08's propose_changes view column TAXON_ID refused (HILLCLIMB_R15_plus §3: 7 of 9 runs on 6-7 Nov, baseline included; §5.2)",
+   "stopAfter": 8,
+   "about": "a species correction drafted without a view column outside the proposal view (TAXON_ID)",
+   "prompt": "El CAM074663 está como Oleria baizana pero es Oleria gunilla. Prepara la corrección para revisar, no apliques nada.",
+   "checks": [
+    { "toolArgs": { "tool": "propose_changes", "match": { "changes": "Oleria gunilla" } }, "w": 2, "why": "the correction is drafted" },
+    { "noToolErrors": true, "w": 2, "why": "no refused call (view.columns: TAXON_ID)" },
+    { "noTool": ["apply_proposal", "Bash"] }
+   ]
+  },
+  {
+   "id": "R06",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P5 (9 Bash calls to build a maps/Atlas URL in production; D10)",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "a maps link comes from the maps tools, not a URL built in the shell",
+   "prompt": "pásame el link del mapa de Napeogenes inachia, solo con los registros de Ecuador",
+   "checks": [
+    { "noTool": "Bash", "w": 2, "why": "no link built in the shell" },
+    { "toolAny": ["maps_localities", "maps_snapshot", "maps_species"], "w": 2 },
+    { "skill": "maps-gallery" }
+   ]
+  },
+  {
+   "id": "R07",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P6 (13 ToolSearch round trips in real chats; host plants re-sent ×4 by Franz, MINED_PATTERNS §3)",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "host plants with photos: one ToolSearch loads host_plants and send_sheet_photos together",
+   "prompt": "¿qué plantas hospederas usa Scada zibia? mándame fotos de las plantas",
+   "checks": [
+    { "tool": "host_plants", "w": 2 },
+    { "maxCalls": { "tool": "ToolSearch", "max": 1 }, "w": 2, "why": "one round trip for the deferred tools" },
+    { "toolArgs": { "tool": "ToolSearch", "match": { "query": "host_plants[\\s\\S]*send_sheet_photos|send_sheet_photos[\\s\\S]*host_plants" } }, "why": "both tools in the one ToolSearch" },
+    { "noTool": "Bash" }
+   ]
+  },
+  {
+   "id": "R08",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "G02 routing sentinel (4 Nov critic round): a CAM's photos stay with our specimens",
+   "channel": "wa",
+   "stopAfter": 6,
+   "about": "the photos of one CAM: gallery_specimens or show_photos, not taxon_photos",
+   "prompt": "mándame las fotos del CAM070602",
+   "checks": [
+    { "toolAny": ["gallery_specimens", "show_photos"], "w": 2 },
+    { "noTool": ["taxon_photos", "Bash"] }
+   ]
+  },
+  {
+   "id": "R09",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "WhatsApp personal chat, 9 Nov 2026: a locality's collection dates read from DATE_OF_COLLECTION, the Sanger manifest formula (Collection_date + 451 days for rows before 14 Apr 2023 whose genus is not in Lists' Genera_0176; Wildsumaco has 77 such rows). Tool fix: server/manifest-dates.mjs (fix/collection-date-column-20261109). A first call on DATE_OF_COLLECTION fails the case even when the chat then corrects itself from the tools' note",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "the dates a locality was sampled: Collection_date, not the manifest's DATE_OF_COLLECTION",
+   "prompt": "¿qué días se ha ido a colectar a Wildsumaco?",
+   "checks": [
+    { "anyOf": [
+      { "toolArgs": { "tool": "query", "match": { "sql": "\\bCollection_date\\b" } } },
+      { "toolArgs": { "tool": "find_records", "match": { "fields": "Collection_date" } } },
+      { "toolArgs": { "tool": "find_records", "match": { "filters": "wildsumaco" } } },
+      { "toolArgs": { "tool": "count_records", "match": { "groupBy": "Collection_date" } } }
+     ], "w": 2, "why": "the dates come from Collection_date (find_records' default columns hold it)" },
+    { "noToolArgs": { "tool": "query", "match": { "sql": "DATE_OF_COLLECTION" } }, "w": 2, "why": "not from the manifest formula" },
+    { "noToolArgs": { "tool": "find_records", "match": { "fields": "DATE_OF_COLLECTION" } }, "w": 2, "why": "not from the manifest formula" },
+    { "noToolArgs": { "tool": "count_records", "match": { "groupBy": "DATE_OF_COLLECTION" } }, "w": 2, "why": "not from the manifest formula" },
+    { "noToolArgs": { "tool": "count_records", "match": { "filters": "DATE_OF_COLLECTION" } }, "w": 2, "why": "not from the manifest formula" },
+    { "noTool": "Bash" }
+   ]
+  },
+  {
+   "id": "C01",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "control",
+   "source": "MINED_PATTERNS §1 (an app 'hi', the WhatsApp 'pong' smoke test)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "a greeting: no photo skill, no ToolSearch, no draft",
+   "prompt": "hola",
+   "checks": [
+    { "noSkill": "maps-gallery" },
+    { "noTool": ["ToolSearch", "propose_changes", "update_proposal", "Bash"] }
+   ]
+  },
+  {
+   "id": "C02",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "control",
+   "source": "MINED_PATTERNS §1 data questions (41 real runs: counts, CAM lookups)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "a plain count of a species that R01 asks photos of: query only",
+   "prompt": "cuántos registros de Godyris zavaleta hay en Collection_data?",
+   "checks": [
+    { "toolAny": ["query", "count_records", "find_records"], "w": 2 },
+    { "noSkill": "maps-gallery" },
+    { "noTool": ["ToolSearch", "propose_changes", "taxon_photos", "Bash"] }
+   ]
+  },
+  {
+   "id": "C03",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "control",
+   "source": "MINED_PATTERNS §1 data questions (CAM lookups; D02's real request style)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "a CAM lookup: get_record or query, no photos, no draft",
+   "prompt": "de qué especie es el CAM070776 y dónde se colectó?",
+   "checks": [
+    { "toolAny": ["get_record", "query", "find_records"], "w": 2 },
+    { "noSkill": "maps-gallery" },
+    { "noTool": ["ToolSearch", "propose_changes", "taxon_photos", "gallery_specimens", "Bash"] }
+   ]
+  },
+  {
+   "id": "C04",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "control",
+   "source": "MINED_PATTERNS §1 data questions (insectary counts, app chat)",
+   "stopAfter": 3,
+   "about": "an insectary count in an app chat: query only",
+   "prompt": "¿Cuántas mariposas hay vivas ahora en el insectario?",
+   "checks": [
+    { "toolAny": ["query", "count_records", "find_records"], "w": 2 },
+    { "noSkill": "maps-gallery" },
+    { "noTool": ["ToolSearch", "propose_changes", "update_proposal", "Bash"] }
+   ]
+  },
+  {
+   "id": "S01",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the app-dev skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "how a part of the app is built: app-dev (read-only question, no edits)",
+   "prompt": "¿Cómo está hecha la tabla de Cambios propuestos? Quiero saber qué parte del código la dibuja.",
+   "checks": [
+    { "skill": "app-dev", "w": 2, "why": "the app-dev skill is loaded" },
+    { "noTool": ["Edit", "Write"] }
+   ]
+  },
+  {
+   "id": "S02",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the app-guide skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "where to do something in the app: app-guide",
+   "prompt": "¿Dónde registro en la app una mariposa que encontré muerta en la jaula?",
+   "checks": [
+    { "skill": "app-guide", "w": 2, "why": "the app-guide skill is loaded" },
+    { "noTool": ["propose_changes", "Bash"] }
+   ]
+  },
+  {
+   "id": "S03",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the data-review skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 3,
+   "about": "checking a sheet for inconsistencies: data-review",
+   "prompt": "Revisa si hay algo raro en los registros de Collection_data de octubre.",
+   "checks": [
+    { "skill": "data-review", "w": 2, "why": "the data-review skill is loaded" },
+    { "noTool": ["apply_proposal", "Bash"] }
+   ]
+  },
+  {
+   "id": "S04",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the data-rules skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "how a kind of record is written: data-rules",
+   "prompt": "¿Qué se pone en Death_cause y en Preserved_Dead_Alive cuando una mariposa del insectario se preserva viva?",
+   "checks": [
+    { "skill": "data-rules", "w": 2, "why": "the data-rules skill is loaded" },
+    { "noTool": ["propose_changes", "Bash"] }
+   ]
+  },
+  {
+   "id": "S05",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the digitalizar-cuaderno skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "channel": "wa",
+   "attachments": ["eval-nb-v2-03.jpeg"],
+   "stopAfter": 3,
+   "about": "a notebook page photo: digitalizar-cuaderno, not species identification",
+   "prompt": "pasa esta página a la hoja porfa",
+   "checks": [
+    { "skill": "digitalizar-cuaderno", "w": 2, "why": "the digitalizar-cuaderno skill is loaded" },
+    { "noTool": ["propose_changes", "identify_species", "Bash"] }
+   ]
+  },
+  {
+   "id": "S06",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the edit-instructions skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 3,
+   "about": "a lasting change to how the team records something: edit-instructions, no edit or draft yet",
+   "prompt": "De ahora en adelante, a las larvas que se mueren ponles Sex NOT_COLLECTED en vez de NA.",
+   "checks": [
+    { "skill": "edit-instructions", "w": 2, "why": "the edit-instructions skill is loaded" },
+    { "noTool": ["propose_changes", "Edit", "Write", "Bash"] }
+   ]
+  },
+  {
+   "id": "S07",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the google-account skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "an email of the project: google-account",
+   "prompt": "¿Llegó algún correo de la LBI sobre el depósito de tubos de esta semana?",
+   "checks": [
+    { "skill": "google-account", "w": 2, "why": "the google-account skill is loaded" }
+   ]
+  },
+  {
+   "id": "S08",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the historial skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 3,
+   "about": "who changed a value: historial",
+   "prompt": "¿Quién le cambió la especie al CAM071530 la semana pasada?",
+   "checks": [
+    { "skill": "historial", "w": 2, "why": "the historial skill is loaded" },
+    { "noTool": ["propose_changes", "Bash"] }
+   ]
+  },
+  {
+   "id": "S09",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the invitar skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "how the invitations stand: invitar (read-only)",
+   "prompt": "¿Quiénes de los que invitamos todavía no han creado su cuenta?",
+   "checks": [
+    { "skill": "invitar", "w": 2, "why": "the invitar skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S10",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the meeting-agenda skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "topics for the weekly meeting: meeting-agenda",
+   "prompt": "¿Qué temas tenemos para la reunión del jueves?",
+   "checks": [
+    { "skill": "meeting-agenda", "w": 2, "why": "the meeting-agenda skill is loaded" },
+    { "noTool": ["propose_changes"] }
+   ]
+  },
+  {
+   "id": "S11",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the monitoring skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "a monitoring capture, mark or preserve: monitoring",
+   "prompt": "vi una Melinaea marginata en el T3 del monitoreo, ¿la marco o la preservo?",
+   "checks": [
+    { "skill": "monitoring", "w": 2, "why": "the monitoring skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S12",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the photos skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "wing photos showing Not Found: photos, not maps-gallery",
+   "prompt": "Subí ayer las fotos de alas a Drive pero en la hoja Photo_dorsal sale Not Found.",
+   "checks": [
+    { "skill": "photos", "w": 2, "why": "the photos skill is loaded" },
+    { "noSkill": "maps-gallery", "why": "our wing photos, not photos of a species" },
+    { "noTool": ["taxon_photos", "Bash"] }
+   ]
+  },
+  {
+   "id": "S13",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the rack-reader skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "the LBI deposit Excel of a rack: rack-reader",
+   "prompt": "Necesito el Excel de depósito (Anexo1) del rack que dejamos ayer en el congelador de -80.",
+   "checks": [
+    { "skill": "rack-reader", "w": 2, "why": "the rack-reader skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S14",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the weather skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "channel": "wa",
+   "stopAfter": 2,
+   "about": "a forecast for a collecting trip: weather",
+   "prompt": "conviene salir a colectar a Pano el sábado o mejor el domingo? por la lluvia",
+   "checks": [
+    { "skill": "weather", "w": 2, "why": "the weather skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S15",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the whatsapp skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "stopAfter": 2,
+   "about": "a relay envelope in the «WhatsApp» chat: the whatsapp skill",
+   "prompt": "[WA] 1 new\n#m90 grp \"Insectario Ikiam\" Luis (+593990000001) 10:02: @asistente cuántas Melinaea marginata hay vivas en el insectario?",
+   "checks": [
+    { "skill": "whatsapp", "w": 2, "why": "the whatsapp skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S16",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 coverage (8 Nov 2026): the whatsapp-bridge skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
+   "channel": "wa",
+   "stopAfter": 3,
+   "about": "a voice-note request on the bridge: whatsapp-bridge",
+   "prompt": "mándame un audio con cuántos registros de Hyposcada anchiala tenemos en Collection_data",
+   "checks": [
+    { "skill": "whatsapp-bridge", "w": 2, "why": "the whatsapp-bridge skill is loaded" },
+    { "noTool": ["Bash"] }
+   ]
+  },
+  {
+   "id": "S17",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "guard",
+   "source": "L2 batch 4 (8 Nov 2026): the brief's «summary of the week» paragraph moves into meeting-agenda; this case shows whether such a request reaches it. Expected to fail before batch 4 (the brief answers it), so it is informational until then",
+   "stopAfter": 2,
+   "about": "a summary of the week before the meeting: meeting-agenda (the brief's meeting paragraph moves there in L2 batch 4)",
+   "prompt": "hazme un resumen de lo que cambió esta semana y lo que sigue pendiente para el jueves",
+   "checks": [
+    { "skill": "meeting-agenda", "w": 2, "why": "the meeting-agenda skill is loaded" },
+    { "noTool": ["propose_changes"] }
+   ]
+  }
+ ]
+}

@@ -258,6 +258,7 @@ function crosses(store) {
 
 /** How far ahead (and behind) the coming hatchings, pupations and emergences are listed. */
 const AHEAD_DAYS = 7;
+// The same in frontend/src/lib/emerged.ts (Emergidos marks a group late with it).
 const LATE_DAYS = 3;
 
 /**

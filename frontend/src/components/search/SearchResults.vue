@@ -23,12 +23,31 @@ const round = ref(0)
 /** Each answer's grids are new ones. */
 const answers = ref(0)
 let controller: AbortController | null = null
+/**
+ * Sheets whose row form is open. A newer answer (the search box's delayed search, or the refresh button) would
+ * rebuild the grids and close that form while the person types in it: it waits until the form is closed.
+ */
+const formsOpen = new Set<string>()
+let held: SearchReply | null = null
+function show(answer: SearchReply) {
+  held = null
+  formsOpen.clear()
+  reply.value = answer
+  answers.value++
+}
+function onForm(module: string, open: boolean) {
+  if (open) formsOpen.add(module)
+  else formsOpen.delete(module)
+  if (!formsOpen.size && held) show(held)
+}
 
 async function run() {
   controller?.abort()
   const q = props.query.trim()
   error.value = ''
   if (q.length < MIN_QUERY) {
+    held = null
+    formsOpen.clear()
     reply.value = null
     searching.value = false
     return
@@ -38,8 +57,8 @@ async function run() {
   try {
     const answer = await searchSheets(q, props.pin, mine.signal)
     if (controller === mine) {
-      reply.value = answer
-      answers.value++
+      if (formsOpen.size) held = answer
+      else show(answer)
     }
   } catch (e) {
     // A search replaced by a newer one (typing on) is dropped quietly.
@@ -113,6 +132,7 @@ function jump(module: string) {
         :pinned="s.module === pin"
         @open="(module, row) => emit('open', module, row)"
         @history="target => emit('history', target)"
+        @form="open => onForm(s.module, open)"
       />
     </template>
   </div>

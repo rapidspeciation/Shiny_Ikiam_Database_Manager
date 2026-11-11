@@ -1054,7 +1054,7 @@ watch(
             </p>
             <p v-else-if="shownKind === 'clip'" class="mt-1 text-xs text-stone-600">{{ $t('La mariposa sigue viva; el día del corte va en la nota.') }}</p>
             <p v-else-if="shownKind === 'none'" class="mt-1 text-xs text-stone-600">
-              {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
+              {{ $t('Sin preservar: sin CAM ni tubos') }}
             </p>
             <p v-if="ownOf('kind').length" class="mt-1 text-xs text-violet-800">{{ $t('Con tipo propio: {ids}', { ids: ownOf('kind').join(', ') }) }}</p>
             <!-- A body in parts: one tube per part, in order. -->
@@ -1304,7 +1304,7 @@ watch(
               <p v-if="n.choice.kind === 'none'" class="text-sm text-stone-600">
                 {{
                   untouched(get(n.row))
-                    ? $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED')
+                    ? $t('Sin preservar: sin CAM ni tubos')
                     : $t('Ya tiene CAM o tubo: no se cambia')
                 }}
               </p>

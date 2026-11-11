@@ -56,7 +56,7 @@ function base() {
   return dir;
 }
 
-function workspace() {
+async function workspace() {
   const b = base();
   mkdirSync(join(WS, '.claude'), { recursive: true });
   // Brief: the lab's composed brief (same person, same paths), with the checkout's assistant/AGENTS.md body when it differs.
@@ -82,6 +82,12 @@ function workspace() {
   settings.sandbox.filesystem ??= {};
   settings.sandbox.filesystem.denyRead = [...new Set([...(settings.sandbox.filesystem.denyRead ?? []), '/home/franz/.config/gogcli', '/home/franz/.config/gcloud', '/home/franz/.local/bin/gog'])];
   settings.disableClaudeAiConnectors = true;
+  // The eval folder is under /home/franz, so Claude Code also loads /home/franz/.claude/CLAUDE.md (Franz's own notes,
+  // about 1.0k tokens) as a parent folder's CLAUDE.md. Production's /home/ubuntu has none (checked 6 Nov 2026).
+  settings.claudeMdExcludes = ['/home/franz/.claude/CLAUDE.md', '/home/franz/CLAUDE.md'];
+  // The checkout's own Claude Code trims, when it has them, as scripts/t3-provision.mjs applies them in production.
+  const lean = join(CHECKOUT, 'scripts', 'claude-lean.mjs');
+  if (existsSync(lean)) (await import(lean)).leanClaude(settings);
   writeFileSync(join(WS, '.claude', 'settings.json'), JSON.stringify(settings, null, 2));
   for (const f of ['t3-skills.json']) if (existsSync(join(LAB_WS, '.claude', f))) cpSync(join(LAB_WS, '.claude', f), join(WS, '.claude', f));
   const token = readFileSync(join(b, 'token'), 'utf8').trim();
@@ -111,7 +117,7 @@ function project() {
   return row.project_id;
 }
 
-function start() {
+async function start() {
   const b = base();
   rmSync(RUN, { recursive: true, force: true });
   mkdirSync(RUN, { recursive: true });
@@ -140,7 +146,7 @@ function start() {
   ].flatMap(e => ['--env', e]);
   const r = spawnSync(join(CHECKOUT, 'tools/lab/dev-app.sh'), ['--port', String(PORT), '--dir', RUN, '--ttl', opt('ttl', '360m'), '--max', opt('max', '4G'), ...env], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0) throw new Error(`dev-app.sh: ${r.stderr || r.stdout}`);
-  workspace();
+  await workspace();
   const pid = project();
   console.log(JSON.stringify({ app: `http://127.0.0.1:${PORT}`, workspace: WS, projectId: pid, db: join(RUN, 'app.sqlite') }));
 }
@@ -158,9 +164,9 @@ function reset(since = '1970') {
   console.log(JSON.stringify({ discarded: n, appliedSince: applied }));
 }
 
-if (cmd === 'start') start();
+if (cmd === 'start') await start();
 else if (cmd === 'stop') spawnSync(join(CHECKOUT, 'tools/lab/dev-app.sh'), ['--stop', '--port', String(PORT)], { stdio: 'inherit' });
-else if (cmd === 'workspace') console.log(workspace());
+else if (cmd === 'workspace') console.log(await workspace());
 else if (cmd === 'reset') reset(opt('since'));
 else {
   console.error('usage: eval-app.mjs start|stop|workspace|reset');

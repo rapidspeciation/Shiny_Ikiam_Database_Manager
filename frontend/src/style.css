@@ -86,6 +86,11 @@
   --range-head: #d6d6d6;
   --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.18);
+  /* Comments on the instructions: the quoted text's highlight, and Claude's tag and change bar (the AI's green). */
+  --doc-mark: #fdf3c9;
+  --doc-mark-active: #f8d978;
+  --doc-claude: #047857;
+  --doc-claude-soft: #e7f6ef;
 }
 [data-theme='dark'] {
   --canvas: #0e1210;
@@ -140,6 +145,10 @@
   --range-head: #2b332e;
   --range-head-picked: #3876ca;
   --shadow: rgb(0 0 0 / 0.5);
+  --doc-mark: #3d3410;
+  --doc-mark-active: #6b5714;
+  --doc-claude: #4fd1a1;
+  --doc-claude-soft: #123226;
   color-scheme: dark;
 }
 
@@ -451,6 +460,16 @@ body {
   }
   .hint {
     @apply text-xs text-fg-subtle;
+  }
+  /*
+   * A keyboard way past a grid (whose Tab moves cell to cell, as in Google Sheets): out of sight until Tab reaches
+   * it, then a button over the top of its box.
+   */
+  .skip-link {
+    @apply sr-only;
+  }
+  .skip-link:focus-visible {
+    @apply not-sr-only absolute top-1 left-1 z-30 rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand shadow-lg outline-2 outline-offset-2 outline-focus;
   }
   /* A small control with a finger-sized target on touch screens (44 px), without growing what is drawn. */
   .hit-target {
@@ -1572,6 +1591,8 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
 .legend {
   border-radius: 3px;
   padding: 0 5px;
+  /* A chip never breaks inside: the legend wraps between chips. */
+  white-space: nowrap;
 }
 
 /* Tube labels: hidden on screen, the only thing printed while present. */
@@ -1667,6 +1688,8 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   .md li > ol { @apply mt-1; }
   .md a { @apply text-brand-700 underline decoration-brand-100 underline-offset-2 hover:decoration-brand-600; }
   .md code { @apply rounded bg-stone-100 px-[3px] py-px font-mono text-[0.85em] text-stone-800; }
+  /* A code span in a change's diff, as the doc shows it (its colour follows the struck or added word). */
+  .doc-code { @apply rounded bg-stone-100/70 px-[3px] py-px font-mono text-[0.85em]; }
   .md pre,
   .md-code { @apply overflow-x-auto rounded-md border border-stone-200 bg-surface p-3 font-mono text-xs leading-5 text-stone-800; }
   .md pre code { @apply bg-transparent p-0 text-xs; }
@@ -1676,4 +1699,155 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   .md-table table { @apply w-full border-collapse text-sm; }
   .md-table th { @apply border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-left font-semibold text-stone-700; }
   .md-table td { @apply border-t border-stone-100 px-2 py-1.5 align-top; }
+}
+
+/* Comments on the instructions (components/instructions/DocReview.vue): marks put into the rendered text. */
+mark.doc-mark {
+  background: var(--doc-mark);
+  color: inherit;
+  border-radius: 2px;
+  cursor: pointer;
+}
+mark.doc-mark.is-active {
+  background: var(--doc-mark-active);
+}
+.doc-card {
+  box-shadow: 0 1px 2px var(--shadow);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+/* Cards beside the text lift under the pointer and press on a click (not in the phone's sheet). */
+@media (hover: hover) and (pointer: fine) {
+  .doc-margin .doc-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--shadow);
+  }
+  .doc-margin .doc-card:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px var(--shadow);
+  }
+}
+/* A changed paragraph in a change's diff: Claude's green (yellow is for comments). */
+.doc-prose-block.is-changed {
+  border-color: var(--doc-claude);
+}
+.doc-card-active {
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.doc-quote {
+  border-color: var(--doc-mark-active);
+}
+.doc-claude-tag {
+  border-radius: 4px;
+  background: var(--doc-claude-soft);
+  color: var(--doc-claude);
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-change-edge {
+  border-left: 3px solid var(--doc-claude);
+}
+.doc-change-bar {
+  position: absolute;
+  left: -14px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--doc-claude);
+  cursor: pointer;
+}
+/* A finger-sized target around the thin bar. */
+.doc-change-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+}
+.doc-change-bar:focus-visible,
+mark.doc-mark:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Phones: the small tag beside a section's heading that opens its change (the file list's green mark). */
+.doc-change-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+  background: var(--doc-claude-soft);
+  color: var(--doc-claude);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 22px;
+  position: relative;
+}
+.doc-change-tag::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--doc-claude);
+}
+.doc-change-tag::after {
+  content: '';
+  position: absolute;
+  inset: -11px -4px;
+}
+/* Below 1024 px every action of a card and of the sheet is a finger-sized target with a 14 px label. */
+@media (max-width: 1023.98px) {
+  .doc-act,
+  .doc-sheet-btn {
+    min-height: 44px;
+    font-size: 14px;
+    padding-inline: 12px;
+  }
+  .doc-act.underline,
+  .doc-act.hover\:underline {
+    padding-inline: 4px;
+  }
+  .doc-sheet-close,
+  .doc-ver {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .doc-quote-btn {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .doc-decide {
+    column-gap: 32px;
+  }
+}
+.doc-box {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+@media (min-width: 1024px) {
+  .doc-box {
+    font-size: 14px;
+  }
+}
+.doc-box:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+/* The file list's mark for a file with a change waiting (the AI's green, as the change bar). */
+.doc-change-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: var(--doc-claude);
 }

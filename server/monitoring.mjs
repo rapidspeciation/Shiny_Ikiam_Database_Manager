@@ -1180,7 +1180,7 @@ export function finishJob(store, id, body) {
       .run(
         attempts,
         at.toISOString(),
-        `${text(body.message, 300) || 'Cloudflare'} — se intenta de nuevo hacia las ${hour} (intento ${attempts + 1} de ${RETRY_WAITS_MIN.length + 1})`,
+        `${text(body.message, 300) || 'Cloudflare'}: se intenta de nuevo hacia las ${hour} (intento ${attempts + 1} de ${RETRY_WAITS_MIN.length + 1})`,
         now(),
         id,
       );

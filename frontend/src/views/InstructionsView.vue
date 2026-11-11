@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Bot, ChevronDown, ChevronRight, FileCode2, FileText, History, ListTree, Wrench } from 'lucide-vue-next'
+import { ArrowLeft, Bot, ChevronDown, ChevronRight, FileCode2, FileText, History, ListTree, MessageSquare, Wrench, X } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { renderMarkdown } from '../lib/markdown'
 import { commitTime, entryHref, resolveLink, type Entry, type InstructionsPage } from '../lib/instructions'
 import DiffView from '../components/instructions/DiffView.vue'
+import ProseDiff from '../components/instructions/ProseDiff.vue'
 import ToolList from '../components/instructions/ToolList.vue'
+import DocReview from '../components/instructions/DocReview.vue'
+import { act, countFor, hasPendingChange, loadReview, openCount, review } from '../lib/docReview'
+import { notify } from '../lib/notice'
+import { t3Host } from '../lib/t3Host'
 import { t, tn } from '../lib/i18n'
 
 /**
@@ -20,13 +25,81 @@ const route = useRoute()
 const router = useRouter()
 const page = ref<InstructionsPage | null>(null)
 const failed = ref('')
-onMounted(async () => {
+async function loadPage() {
   try {
     page.value = await api<InstructionsPage>('instructions')
   } catch (e) {
     failed.value = errorText(e)
   }
+}
+onMounted(loadPage)
+
+// ------------------------------------------------------------------ comments and «Pedir a Claude»
+// The comments are read again every 20 s, every 4 s while Claude works on them; the text when a change is applied.
+let timer: ReturnType<typeof setTimeout> | undefined
+async function poll() {
+  await loadReview()
+  timer = setTimeout(poll, review.state?.ask.state === 'running' ? 4000 : 20_000)
+}
+onMounted(poll)
+onUnmounted(() => clearTimeout(timer))
+watch(
+  () => review.state?.changes.map(c => `${c.seriesId}:${c.status}`).join(),
+  (now, was) => {
+    if (was !== undefined && now !== was) void loadPage()
+  },
+)
+const asking = ref(false)
+/** «Claude: 1 cambio · 1 respuesta» once the last ask ended, until opened or dismissed. */
+const outcome = computed(() => {
+  const ask = review.state?.ask
+  if (!ask?.result || ask.seen || ask.state === 'running') return ''
+  const parts = [
+    ask.result.changes ? tn(ask.result.changes, '{n} cambio', '{n} cambios') : '',
+    ask.result.replies ? tn(ask.result.replies, '{n} respuesta', '{n} respuestas') : '',
+  ].filter(Boolean)
+  return parts.length ? t('Claude: {what}', { what: parts.join(' · ') }) : ''
 })
+async function markSeen() {
+  const id = review.state?.ask.id
+  if (id) await act(`asks/${id}/seen`).catch(() => {})
+}
+async function openOutcome() {
+  const path = review.state?.ask.result?.path
+  await markSeen()
+  if (path) open(path)
+}
+const dismissOutcome = () => markSeen()
+const running = computed(() => review.state?.ask.state === 'running')
+/** Claude's line or button is in the bar (on phones the title gives way). */
+const barBusy = computed(() => !!review.state?.admin && (running.value || !!outcome.value || openThreads.value > 0))
+const openThreads = computed(() => openCount(review.state))
+async function askClaude() {
+  asking.value = true
+  try {
+    const out = await act<{ chat: string | null; prompt?: string | null }>('ask')
+    if (!out.chat && out.prompt) {
+      await navigator.clipboard?.writeText(out.prompt).catch(() => {})
+      notify(t('T3 no está disponible: el pedido está copiado para pegarlo en un chat.'))
+    }
+    clearTimeout(timer)
+    timer = setTimeout(poll, 3000)
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    asking.value = false
+  }
+}
+function openChat(chat: string | null) {
+  if (!chat) return
+  t3Host.open = { thread: chat }
+  void router.push('/asistente')
+}
+function asked() {
+  clearTimeout(timer)
+  timer = setTimeout(poll, 3000)
+}
+
 
 const entries = computed(() => page.value?.entries ?? [])
 const ids = computed(() => new Set(entries.value.map(e => e.id)))
@@ -117,10 +190,32 @@ watch(
       <RouterLink to="/asistente" class="btn-ghost gap-1 px-2 py-0.5 text-stone-700">
         <ArrowLeft :size="14" /> {{ $t('Asistente') }}
       </RouterLink>
-      <h1 class="font-semibold text-stone-800">{{ $t('Instrucciones de la IA') }}</h1>
+      <!-- On phones the bar stays one line: the title gives way to Claude's line or button. -->
+      <h1 class="font-semibold text-stone-800" :class="{ 'hidden sm:block': barBusy }">{{ $t('Instrucciones de la IA') }}</h1>
       <span v-if="page && !page.historySource" class="ml-auto hidden text-xs text-stone-500 sm:inline">
         {{ $t('El historial de cambios no está disponible en esta instalación.') }}
       </span>
+      <span v-if="review.state?.admin && running" class="ml-auto flex items-center gap-1 text-xs text-stone-600" role="status">
+        <span class="sm:hidden">{{ $t('Revisando…') }}</span><span class="hidden sm:inline">{{ $t('Claude está revisando') }}</span> ·
+        <button type="button" class="doc-act font-medium text-brand-text underline" @click="openChat(review.state.ask.chat)">{{ $t('Abrir chat') }}</button>
+      </span>
+      <template v-else-if="review.state?.admin">
+        <!-- What the last ask produced, until it is opened or dismissed. -->
+        <span v-if="outcome" class="ml-auto flex items-center text-xs text-stone-600">
+          <button type="button" class="doc-act font-medium text-brand-text underline" @click="openOutcome">{{ outcome }}</button>
+          <button type="button" class="doc-act btn-ghost" :aria-label="$t('Cerrar')" @click="dismissOutcome"><X :size="13" /></button>
+        </span>
+        <button
+          v-if="openThreads"
+          type="button"
+          class="doc-act btn-primary gap-1 px-2 py-0.5 text-xs"
+          :class="[outcome ? 'hidden sm:ml-2 sm:inline-flex' : 'ml-auto', { 'sm:ml-3': page && !page.historySource && !outcome }]"
+          :disabled="asking"
+          @click="askClaude"
+        >
+          {{ $t('Pedir a Claude · {n}', { n: openThreads }) }}
+        </button>
+      </template>
     </div>
     <p v-if="failed" class="p-4 text-sm text-red-700">{{ failed }}</p>
     <p v-else-if="!page" class="p-4 text-sm text-stone-500">{{ $t('Cargando…') }}</p>
@@ -138,7 +233,7 @@ watch(
           <ul>
             <li v-for="item in group.items" :key="item.id">
               <button
-                class="flex w-full items-baseline gap-2 py-1.5 pr-3 text-left text-sm hover:bg-stone-100 md:py-1"
+                class="flex min-h-11 w-full items-center gap-2 py-2.5 pr-3 text-left text-sm hover:bg-stone-100 md:min-h-0 md:items-baseline md:py-1"
                 :class="[
                   isMain(item) ? 'pl-5' : 'pl-9 text-stone-600',
                   entry?.id === item.id ? 'bg-brand-50 font-medium text-brand-800' : '',
@@ -150,6 +245,14 @@ watch(
                 <span class="min-w-0 flex-1 truncate" :class="{ 'font-mono text-[13px]': item.kind === 'markdown' || item.kind === 'code' }">{{
                   label(item)
                 }}</span>
+                <span
+                  v-if="countFor(review.state, item.id)"
+                  class="flex shrink-0 items-center gap-0.5 self-center text-xs text-stone-500"
+                  :title="$t('Comentarios abiertos')"
+                >
+                  <MessageSquare :size="11" /> {{ countFor(review.state, item.id) }}
+                  <span v-if="hasPendingChange(review.state, item.id)" class="doc-change-dot" :title="$t('Cambio propuesto')" />
+                </span>
                 <span v-if="item.history?.length" class="shrink-0 text-xs text-stone-400">{{ item.history.length }}</span>
               </button>
             </li>
@@ -160,7 +263,7 @@ watch(
       <!-- The chosen file. -->
       <section ref="pane" class="min-w-0 flex-1 overflow-y-auto bg-stone-50" :class="chosenId ? 'block' : 'hidden md:block'">
         <p v-if="!entry" class="p-4 text-sm text-stone-600">{{ $t('No hay ningún archivo con ese nombre.') }}</p>
-        <div v-else class="mx-auto flex max-w-6xl gap-8 px-4 py-4 sm:px-6">
+        <div v-else class="mx-auto flex max-w-[90rem] gap-8 px-4 py-4 sm:px-6">
           <article class="min-w-0 flex-1">
             <button class="btn-ghost mb-2 gap-1 px-2 text-sm md:hidden" @click="router.replace({ query: {} })">
               <ArrowLeft :size="14" /> {{ $t('Todos los archivos') }}
@@ -201,7 +304,7 @@ watch(
                     :aria-selected="tab === 'history'"
                     @click="setTab('history')"
                   >
-                    <History :size="13" /> {{ $t('Cambios ({n})', { n: entry.history?.length ?? 0 }) }}
+                    <History :size="13" /> {{ $t('Cambios ({n})', { n: (entry.history?.length ?? 0) + (entry.revisions?.length ?? 0) }) }}
                   </button>
                 </div>
                 <span v-if="entry.lastChanged" class="text-xs text-stone-500">
@@ -212,7 +315,7 @@ watch(
 
             <template v-if="tab === 'text'">
               <!-- On narrow screens the contents fold above the text. -->
-              <details v-if="toc.length" class="mt-3 rounded-md border border-stone-200 bg-surface px-3 py-2 text-sm xl:hidden">
+              <details v-if="toc.length" class="mt-3 rounded-md border border-stone-200 bg-surface px-3 py-2 text-sm" :class="entry.kind === 'markdown' ? '2xl:hidden' : 'xl:hidden'">
                 <summary class="cursor-pointer font-medium text-stone-700">{{ $t('En esta página') }}</summary>
                 <ul class="mt-1 space-y-0.5">
                   <li v-for="h in toc" :key="h.id" :class="{ 'pl-3': h.level === 3 }">
@@ -222,11 +325,26 @@ watch(
               </details>
               <ToolList v-if="entry.kind === 'tools'" :tools="entry.tools ?? []" class="mt-4" />
               <pre v-else-if="entry.kind === 'code'" class="md-code mt-4">{{ entry.content }}</pre>
-              <!-- renderMarkdown escapes every text. -->
-              <div v-else class="md mt-4" v-html="rendered?.html" />
+              <DocReview v-else :key="entry.id" class="mt-4" :entry-id="entry.id" :html="rendered?.html ?? ''" @asked="asked" />
             </template>
 
             <div v-else class="mt-4">
+              <!-- Changes applied in the app, until a release has them (then they are commits below too). -->
+              <ol v-if="entry.revisions?.length" class="mb-2 space-y-2">
+                <li v-for="r in entry.revisions" :key="r.revision" class="doc-change-edge rounded-md border border-stone-200 bg-surface">
+                  <button class="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-stone-50" @click="toggle(`rev:${r.revision}`)">
+                    <component :is="opened.has(`${entry.id} rev:${r.revision}`) ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-stone-400" />
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-stone-900">{{ r.kind === 'undo' ? $t('Deshecho en la app: § {heading}', { heading: r.heading || $t('Inicio') }) : $t('Aplicado en la app: § {heading}', { heading: r.heading || $t('Inicio') }) }}</span>
+                      <span class="text-xs text-stone-500">{{ commitTime(r.date) }} · {{ r.author }}</span>
+                    </span>
+                  </button>
+                  <div v-if="opened.has(`${entry.id} rev:${r.revision}`)" class="border-t border-stone-100 p-2">
+                    <p v-if="diffs[`${entry.id} rev:${r.revision}`] === null" class="hint">{{ $t('Cargando…') }}</p>
+                    <ProseDiff v-else-if="typeof diffs[`${entry.id} rev:${r.revision}`] === 'string'" :diff="diffs[`${entry.id} rev:${r.revision}`] as string" />
+                  </div>
+                </li>
+              </ol>
               <p v-if="!entry.history" class="text-sm text-stone-600">
                 {{ $t('El historial de cambios no está disponible en esta instalación.') }}
               </p>
@@ -263,7 +381,7 @@ watch(
           </article>
 
           <!-- The contents beside the text on wide screens. -->
-          <aside v-if="tab === 'text' && toc.length" class="sticky top-4 hidden w-56 shrink-0 self-start xl:block">
+          <aside v-if="tab === 'text' && toc.length" class="sticky top-4 hidden w-56 shrink-0 self-start" :class="entry.kind === 'markdown' ? '2xl:block' : 'xl:block'">
             <h2 class="mb-1 text-xs font-semibold tracking-wide text-stone-500 uppercase">{{ $t('En esta página') }}</h2>
             <ul class="max-h-[80vh] space-y-0.5 overflow-y-auto border-l border-stone-200 text-sm">
               <li v-for="h in toc" :key="h.id">

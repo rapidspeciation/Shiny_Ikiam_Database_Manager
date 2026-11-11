@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   X,
   ClipboardList,
+  ChevronDown,
 } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import SearchResults from '../components/search/SearchResults.vue'
@@ -199,13 +200,48 @@ const toolbar = ref<HTMLElement>()
 // Closed by a tap outside it, Escape (focus back on ⋯), focus moving away or a change of page (composables/useDismiss.ts).
 useDismiss(menuOpen, toolbar, { closeOn: () => route.fullPath })
 
+/** This browser's storage, read and written without failing where it is blocked (a private window). */
+function stored(key: string) {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+function store(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    /* not kept: shown as on a first visit next time */
+  }
+}
 /** How to use the grid: shown until hidden, then behind the ⓘ button. */
 const HINT_KEY = 'buscador.hint-hidden'
-const hintHidden = ref(localStorage.getItem(HINT_KEY) === '1')
+const hintHidden = ref(stored(HINT_KEY) === '1')
 function setHint(hidden: boolean) {
   hintHidden.value = hidden
-  if (hidden) localStorage.setItem(HINT_KEY, '1')
-  else localStorage.removeItem(HINT_KEY)
+  store(HINT_KEY, hidden ? '1' : null)
+}
+/** The grid's help: touch or keyboard and mouse. */
+const hintText = computed(() =>
+  [
+    touch
+      ? t(
+          'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.',
+        )
+      : t(
+          'Escribe sobre una celda, o pulsa Enter o doble clic para editarla · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
+        ),
+    t('Historial: los cambios de la celda elegida.'),
+  ].join(' '),
+)
+/** On a phone the help is one line, «Cómo editar», opened with a tap (closed at first, then as last left). */
+const PHONE_HINT_KEY = 'buscador.hint-open-phone'
+const phoneHintOpen = ref(stored(PHONE_HINT_KEY) === '1')
+function togglePhoneHint() {
+  phoneHintOpen.value = !phoneHintOpen.value
+  store(PHONE_HINT_KEY, phoneHintOpen.value ? '1' : null)
 }
 /** A changed header's warning: one line on a phone until tapped. */
 const noticeOpen = ref(false)
@@ -359,7 +395,7 @@ const headerNotice = computed(() => {
             <a v-if="sheetLink" :href="sheetLink" target="_blank" rel="noopener" class="btn" :title="$t('Abrir en Google Sheets')">
               <ExternalLink :size="15" /> <span class="sm:hidden">{{ $t('Abrir en Google Sheets') }}</span>
             </a>
-            <button v-if="hintHidden && !formView" class="btn" :title="$t('Cómo usar la tabla')" @click="setHint(false)">
+            <button v-if="hintHidden && !formView && !phone" class="btn" :title="$t('Cómo usar la tabla')" @click="setHint(false)">
               <Info :size="15" /> <span class="sm:hidden">{{ $t('Cómo usar la tabla') }}</span>
             </button>
           </div>
@@ -408,19 +444,26 @@ const headerNotice = computed(() => {
               $t('Esas columnas se muestran con su último valor y no se pueden editar.')
             }}</template>
           </p>
-          <p v-if="!hintHidden && !formView" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
+          <!-- A phone: the help behind one line, so the grid starts higher. -->
+          <div v-if="phone && !formView" class="hint px-3">
+            <button
+              type="button"
+              class="hit-target flex min-h-8 items-center gap-1 font-medium text-fg-muted"
+              :aria-expanded="phoneHintOpen"
+              aria-controls="buscador-help"
+              data-phone-hint
+              @click="togglePhoneHint"
+            >
+              <Info :size="14" aria-hidden="true" /> {{ $t('Cómo editar') }}
+              <ChevronDown :size="14" aria-hidden="true" :class="{ 'rotate-180': phoneHintOpen }" />
+            </button>
+            <p v-if="phoneHintOpen" id="buscador-help" class="pb-1.5">
+              {{ hintText }}
+            </p>
+          </div>
+          <p v-else-if="!hintHidden && !formView" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
             <span class="min-w-0 flex-1">
-              <template v-if="touch">{{
-                $t(
-                  'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.',
-                )
-              }}</template>
-              <template v-else>{{
-                $t(
-                  'Escribe sobre una celda, o pulsa Enter o doble clic para editarla · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
-                )
-              }}</template>
-              {{ $t('Historial: los cambios de la celda elegida.') }}
+              {{ hintText }}
             </span>
             <button
               type="button"

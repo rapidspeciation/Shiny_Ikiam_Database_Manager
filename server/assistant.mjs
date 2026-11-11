@@ -45,6 +45,7 @@ import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './r
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { RACK_TOOLS, RACK_TOOL_NAMES, createRackTools } from './rack-tools.mjs';
 import { tokenFrom as driveToken } from './drive.mjs';
+import { DOC_TOOLS, DOC_TOOL_NAMES } from './doc-review.mjs';
 import { MEETING_DOC_TOOLS, MEETING_DOC_TOOL_NAMES, createMeetingDocs, googleBackend as meetingGoogle, simBackend as meetingSim } from './meeting-doc.mjs';
 import { RACK_FIELDS, RACK_ROW_FIELDS, changesProblems, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
@@ -474,6 +475,8 @@ const TOOLS = [
   ...RACK_TOOLS,
   // The weekly meeting's minutes document proposed with its agenda, made when a person applies it (server/meeting-doc.mjs).
   ...MEETING_DOC_TOOLS,
+  // Comments on the instructions (#/instrucciones) and the changes proposed for them (server/doc-review.mjs).
+  ...DOC_TOOLS,
   // Read-only: the maps' occurrence records and host plants, and the Wings Gallery's specimens with links and thumbnails (server/maps-tools.mjs).
   ...MAPS_TOOLS,
   // Read-only: the weather forecast for a collecting site, from Open-Meteo (server/weather-tool.mjs).
@@ -693,6 +696,13 @@ export const mcpTools = () =>
     ...(ALWAYS_LOADED.has(t.function.name) ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
   }));
 
+/** MCP's `initialize` answer. It has no `instructions`: they would go into every chat's fixed context (assistant/context-budget.json). */
+export const mcpInitialize = protocolVersion => ({
+  protocolVersion: protocolVersion ?? '2025-06-18',
+  capabilities: { tools: { listChanged: false } },
+  serverInfo: { name: 'ithomiini', version: '1.0.0' },
+});
+
 function init(db) {
   // New tables are made in one transaction (one write to disk, not one per column: server/store.mjs).
   const fresh = !db.isTransaction && !db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'ai_proposals'").get();
@@ -876,7 +886,7 @@ function recordSource(record) {
  * proposals as Cambios propuestos shows them (listedViews). The workers leave the database's
  * set-up, the watchers of syncs and saves, and the sheets' copy to the app.
  */
-export function createAssistant({ store, config = {}, role = 'main', onChanged = null, invitations = null }) {
+export function createAssistant({ store, config = {}, role = 'main', onChanged = null, invitations = null, docReview = null }) {
   if (!store?.db) throw new Error('Assistant requires store.db');
   const db = store.db;
   const inWorker = role !== 'main';
@@ -6417,6 +6427,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
+    // The instructions' comments and changes live in the app's thread (server/doc-review.mjs).
+    if (DOC_TOOL_NAMES.has(name)) return docReview && !inWorker ? docReview.runTool(name, args, { user: context.user, external: !!context.external, chat: context.t3 && !context.external ? (chatOfCall(context)?.id ?? null) : null }) : { error: 'Call it again in a moment.' };
     if (MEETING_DOC_TOOL_NAMES.has(name)) return meetingDocs ? meetingDocs.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     // A rack read goes at once into this chat's deposit (its proposal): the grid, the fields, the tube-locations rows.
@@ -6618,11 +6630,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const hash = createHash('sha256').update(token).digest('hex');
     const row = db
       .prepare(
-        'SELECT u.* FROM ai_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.active = 1',
+        'SELECT u.*, t.label AS token_label FROM ai_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.active = 1',
       )
       .get(hash);
     if (!row) return null;
     const user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
+    // A token labelled «external»: a proposer outside T3 (tools/lab/doc-proposals.md); its doc changes have no chat.
+    const external = row.token_label === 'external';
     const thread = { id: namedThread(user, 'T3 Code') };
     const cached = agents.get(hash);
     // The person as they are now (role, name), not as at the chat's first call: someone lowered to observer
@@ -6640,6 +6654,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         results: [],
         proposals: [],
         applied: [],
+        external,
       },
     };
     agents.set(hash, turn);
@@ -6656,12 +6671,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const result = value => ({ status: 200, body: { jsonrpc: '2.0', id, result: value } });
     const method = String(body?.method ?? '');
     if (method.startsWith('notifications/')) return { status: 202, body: null };
-    if (method === 'initialize')
-      return result({
-        protocolVersion: body.params?.protocolVersion ?? '2025-06-18',
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'ithomiini', version: '1.0.0' },
-      });
+    if (method === 'initialize') return result(mcpInitialize(body.params?.protocolVersion));
     if (method === 'ping') return result({});
     if (method === 'tools/list') return result({ tools: mcpTools() });
     if (method === 'tools/call') {

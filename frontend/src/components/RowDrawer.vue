@@ -9,7 +9,7 @@ import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
 import { intlLocale, t } from '../lib/i18n'
-import { formSections } from '../lib/rowForm'
+import { formSections, isNoteField, noteGroups } from '../lib/rowForm'
 import { persistentRef } from '../lib/persist'
 import { useKeyboard } from '../composables/usePhone'
 
@@ -82,11 +82,12 @@ function jumpFirst() {
   if (first && jumpText.value.trim()) jump(first.id)
 }
 
-// The form's sections (a phone's form view), each folded or open as last left on this device, per sheet.
+// The form's sections (a phone's form view), each folded or open as last left on this device, per sheet. The side
+// form: the ID and the note first (the field people open a row to write), then the rest in the sheet's order.
 const sections = computed(() =>
   props.inline
     ? formSections(props.columns, session.module(props.module)?.identityFields ?? [])
-    : [{ key: 'all', title: '', folded: false, fields: props.columns }],
+    : noteGroups(props.columns, session.module(props.module)?.identityFields ?? []),
 )
 const folds = persistentRef<Record<string, Record<string, boolean>>>('form-sections', {}, { lasting: true })
 const isOpen = (key: string, folded: boolean) => !(folds.value[props.module]?.[key] ?? folded)
@@ -124,6 +125,18 @@ const sourceUrl = computed(() => {
 function current(field: Field): CellValue {
   if (created.value) return created.value.values[field.key] ?? null
   return row.value ? pending.value(row.value, field.key) : null
+}
+/**
+ * Why this cell will not be saved (a value the sheet refuses, or a save it answered no to), as the save bar says it.
+ * Shown under the field: on a phone the form covers the grid and the bar, so it would otherwise look like a normal edit.
+ */
+function issue(field: Field): string {
+  const id = created.value?.clientId ?? row.value?.id
+  if (!id) return ''
+  const key = `${id}:${field.key}`
+  const text = pending.problems[key] || pending.errors[key] || ''
+  // The field's name is just above: not said twice.
+  return text.startsWith(`${field.key}: `) ? text.slice(field.key.length + 2) : text
 }
 function editable(field: Field) {
   return (
@@ -205,7 +218,11 @@ function change(field: Field, text: string) {
       <p v-if="message" class="bg-red-50 px-4 py-2 text-sm text-red-800">{{ message }}</p>
       <InsectaryIdFix v-if="insectaryId" :key="insectaryId" :id="insectaryId" @done="emit('close')" />
       <div ref="fieldsBox" class="rowform-fields flex-1 overflow-y-auto" :class="inline ? 'pb-2' : 'px-4 py-2'">
-        <section v-for="section in sections" :key="`${rowId}/${section.key}`" :class="{ 'rowform-section': section.title }">
+        <section
+          v-for="section in sections"
+          :key="`${rowId}/${section.key}`"
+          :class="{ 'rowform-section': section.title, 'rowform-first mb-2 border-b-2 border-border-strong': section.key === 'first' }"
+        >
           <button
             v-if="section.title"
             type="button"
@@ -229,8 +246,12 @@ function change(field: Field, text: string) {
           </button>
           <div v-show="isOpen(section.key, section.folded)" :class="{ 'px-3': inline }">
             <label v-for="field in section.fields" :key="field.key" class="block border-b border-stone-100 py-2">
-              <span class="flex items-center gap-1 text-xs font-medium text-stone-600">
-                {{ field.key }}
+              <span class="flex items-center gap-1 text-xs font-medium text-fg-muted">
+                <template v-if="isNoteField(field.key)">
+                  <span class="text-sm font-semibold text-fg">{{ $t('Nota') }}</span>
+                  <span class="font-normal text-fg-subtle">{{ field.key }}</span>
+                </template>
+                <template v-else>{{ field.key }}</template>
                 <Lock v-if="!editable(field)" :size="12" class="text-stone-400" />
                 <span v-if="row && pending.isDirty(row.id, field.key)" class="ml-auto text-amber-700">
                   {{ $t('antes: {value}', { value: displayValue(row.values[field.key], field) || $t('vacío') }) }}
@@ -248,13 +269,18 @@ function change(field: Field, text: string) {
               </div>
               <input
                 v-else-if="editable(field)"
-                class="field-input mt-1"
+                class="field-input mt-1 placeholder:italic"
                 :class="{ 'is-dirty': row && pending.isDirty(row.id, field.key) }"
                 :value="displayValue(current(field), field)"
-                :placeholder="field.type === 'date' ? '14-Aug-25' : ''"
+                :placeholder="field.type === 'date' ? $t('d-mmm-aa') : ''"
                 @change="change(field, ($event.target as HTMLInputElement).value)"
               />
-              <p v-else class="mt-1 min-h-6 text-sm text-stone-500">{{ displayValue(current(field), field) || '—' }}</p>
+              <!-- Locked values in the text colour, darker than an empty field's placeholder: they are the row's data; empty: a light «vacío». -->
+              <p v-else class="mt-1 min-h-6 text-sm text-fg">
+                {{ displayValue(current(field), field)
+                }}<span v-if="!displayValue(current(field), field)" class="text-fg-subtle italic">{{ $t('vacío') }}</span>
+              </p>
+              <p v-if="editable(field) && issue(field)" class="mt-1 text-sm text-red-800" role="alert">{{ issue(field) }}</p>
             </label>
           </div>
         </section>

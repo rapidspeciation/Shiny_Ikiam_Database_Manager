@@ -131,6 +131,8 @@ export default {
   'De quién': 'Whose',
   Mías: 'Mine',
   'Ordenar por': 'Sort by',
+  // PaperOrder: the label before the sort buttons.
+  'Ordenar:': 'Sort:',
   Emergencia: 'Emergence',
   Ascendente: 'Ascending',
   Descendente: 'Descending',

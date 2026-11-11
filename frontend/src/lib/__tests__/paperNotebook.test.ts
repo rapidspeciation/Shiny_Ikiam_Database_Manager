@@ -88,18 +88,18 @@ describe('«Actualizar el cuaderno»', () => {
         'Mechanitis polymnia · 2/10/26',
         'P4D ✗ desapareció 2/10',
         'P5D ☺ vista',
-        'P6D ▬ muerta 29/9 Unknown — resaltar',
+        'P6D ▬ muerta 29/9 Unknown · resaltar',
         'P7D no contada: Other cage',
         'P8D viva',
         'Q1E ☺ vista',
       ].join('\n'),
     )
     expect(copyLine(line('X1A', 1, 1, { death: { date: null, cause: 'Eaten', staged: false }, todo: 'highlight' }), DAY)).toBe(
-      'X1A ▬ muerta Eaten — resaltar',
+      'X1A ▬ muerta Eaten · resaltar',
     )
     locale.value = 'en'
     expect(copyLine(lines[1], DAY)).toBe('P4D ✗ disappeared 2/10')
-    expect(copyLine(lines[0], DAY)).toBe('P6D ▬ dead 29/9 Unknown — highlight')
+    expect(copyLine(lines[0], DAY)).toBe('P6D ▬ dead 29/9 Unknown · highlight')
   })
 })
 
@@ -127,7 +127,7 @@ describe('«Filas para resaltar»', () => {
       by: [],
     })
     expect(highlightsCopy([item('P6D', 46294, 'Unknown'), item('P7D', DAY, 'Disappearance')], 'Muertes')).toBe(
-      'Muertes\nP6D ▬ muerta 29/9 Unknown — resaltar\nP7D ▬ muerta 2/10 Disappearance — resaltar',
+      'Muertes\nP6D ▬ muerta 29/9 Unknown · resaltar\nP7D ▬ muerta 2/10 Disappearance · resaltar',
     )
   })
 })

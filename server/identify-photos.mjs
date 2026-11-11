@@ -92,7 +92,7 @@ export function fieldPhotos(photosOf, names, { batch = 300 } = {}) {
  * the page made smaller (JPEG as base64, at most MAX_UPLOAD bytes) read by the team's AI Identifier
  * (server/identifier.mjs, the same process as identify_species), with the side of the Andes. The photo is written to
  * a file of its own for the identifier and removed after, whatever the answer: nothing is kept.
- * Returns { status, body }: 200 { species, subspecies, genus, recorded, crop, wingBox, prior, ms } (the worker's lists),
+ * Returns { status, body }: 200 { species, subspecies, genus, tribe, subfamily, recorded, crop, wingBox, prior, ms } (the worker's lists),
  * plus fieldSex (fieldSexBlock) only when the worker gave one; 400 a bad photo, 503 no identifier here or it failed.
  */
 export const MAX_UPLOAD = 6 * 1024 * 1024;
@@ -140,6 +140,10 @@ export async function identifyUpload({ identifier, body, scratch, sides = async 
         recorded: known ? Object.fromEntries(species.filter(([n]) => known.has(n)).map(([n]) => [n, known.get(n)])) : null,
         subspecies: pairs(out.subspecies),
         genus: pairs(out.genus),
+        // Each tribe's and subfamily's total (worker.py, placeholders left out): the page's tribe / subfamily
+        // answer (frontend/src/lib/identifyResult.ts TRIBE_RUNG).
+        tribe: pairs(out.tribe),
+        subfamily: pairs(out.subfamily),
         crop: typeof out.crop === 'string' ? out.crop : null,
         wingBox: Array.isArray(out.wingBox) && out.wingBox.length === 4 ? out.wingBox.map(Number) : null,
         prior: out.prior ?? null,

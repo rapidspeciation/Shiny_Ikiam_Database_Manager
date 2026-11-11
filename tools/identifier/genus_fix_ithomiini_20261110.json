@@ -1,0 +1,185 @@
+{
+ "source": "ithomiini_maps scripts/genus_taxonomy/genus_taxonomy_norm.ithomiini_only_20261110.json (lab taxonomy Taxonomy_v07Sep26): the genera whose tribe or subfamily it changes from the head's training table",
+ "genera": {
+  "Aeria": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Athesis": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Athyrtis": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Brevioleria": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Callithomia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Ceratinia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Dircenna": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Elzunia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Episcada": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Epityches": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Eutresis": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Forbestra": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Godyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Greta": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Heterosais": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hyalenna": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hyalyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hypoleria": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hypomenitis": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hyposcada": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Hypothyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Ithomia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Leucothyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Macrosoma": {
+   "tribe": "",
+   "subfamily": "Hedylinae"
+  },
+  "Mcclungia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Mechanitis": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Megoleria": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Melinaea": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Methona": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Napeogenes": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Oleria": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Ollantaya": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Olyras": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Pachacutia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Pagyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Patricia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Pseudoscada": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Pteronymia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Sais": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Scada": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Thyridia": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Tithorea": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Unknown": {
+   "tribe": "",
+   "subfamily": ""
+  },
+  "Veladyris": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  },
+  "Velamysta": {
+   "tribe": "Ithomiini",
+   "subfamily": "Danainae"
+  }
+ }
+}

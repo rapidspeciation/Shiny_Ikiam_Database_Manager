@@ -33,6 +33,7 @@ import {
 } from '../../lib/proposalChats'
 import { afterMove, seenChat, type T3Seen } from '../../lib/t3Bridge'
 import { useTables } from '../../stores/tables'
+import { useSession } from '../../stores/session'
 import { intlLocale, t, tn } from '../../lib/i18n'
 
 // The tables (Tabulator) load apart, so the Asistente tab and T3 start without waiting for them.
@@ -122,6 +123,7 @@ const emit = defineEmits<{
   photo: [open: boolean]
 }>()
 const tables = useTables()
+const session = useSession()
 const router = useRouter()
 const proposals = ref<Proposal[]>([])
 const revision = ref('')
@@ -486,10 +488,13 @@ watch(
     if (!open && reviewing.value && props.layout === 'page') reviewing.value = null
   },
 )
+/** Where a proposal came from and when («T3 Code · 06:18»): for admins only, the team does not need the machinery. */
 const origin = (p: Proposal) =>
-  [mixed.value ? p.source : '', p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
-    .filter(Boolean)
-    .join(' · ')
+  session.isAdmin
+    ? [mixed.value ? p.source : '', p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
+        .filter(Boolean)
+        .join(' · ')
+    : ''
 </script>
 
 <template>

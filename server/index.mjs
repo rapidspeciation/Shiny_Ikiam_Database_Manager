@@ -4,6 +4,7 @@ import { chatStarter, createT3Projects, projectKey, provisioner } from './t3proj
 import { REVIEW_PROMPT } from './rename-photos.mjs';
 import { meetingDocsConfig } from './meeting-doc.mjs';
 import http from 'node:http';
+import { execFile } from 'node:child_process';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,7 +95,9 @@ import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './revie
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
 import { freshAlerts } from './alerts.mjs';
-import { createInstructions } from './instructions.mjs';
+import { REPO_ROOT, createInstructions } from './instructions.mjs';
+import { ASK_TEXT, REVISE_TEXT, createDocReview, createGitSync } from './doc-review.mjs';
+import { measureModules, measureWith, readBudget } from '../scripts/context-budget.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { createSpeciesPhotos } from './species-photos.mjs';
 import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.mjs';
@@ -431,6 +434,17 @@ export function configFromEnv(env = process.env) {
           claudeInstance: env.ITHOMIINI_T3_CLAUDE_INSTANCE || 'claudeAgent',
         }
       : null,
+    // Changes to the instructions applied in #/instrucciones (server/doc-review.mjs): committed in this worktree
+    // of the source (DOC_SYNC_WORKTREE; none: no commits), pushed only with DOC_SYNC_PUSH=1 (the live server: to
+    // main; a LOCAL_MODE lab only to a repository on this disk, server/doc-review.mjs isLocalRemote); the workspaces
+    // refreshed after each one (DOC_REFRESH: direct, systemd or off; as ITHOMIINI_T3_PROVISION by default).
+    docSync: {
+      worktree: env.DOC_SYNC_WORKTREE || null,
+      push: env.DOC_SYNC_PUSH === '1',
+      remote: env.DOC_SYNC_REMOTE || 'origin',
+      branch: env.DOC_SYNC_BRANCH || 'main',
+      refresh: env.DOC_REFRESH || null,
+    },
     // The people's T3 workspaces (scripts/t3-provision.mjs), where match_notebook reads a reader's linesFile;
     // beside the database by default (<shared>/t3-workspaces on the server).
     t3Workspaces: env.ITHOMIINI_T3_WORKSPACES || undefined,
@@ -682,6 +696,102 @@ async function whatsappRoute(req, res, whatsapp, path, url, method) {
   throw fail('NOT_FOUND', 'Not found', 404);
 }
 
+/** The doc review with its git worktree, the workspaces' refresh and the context-size ratchet. */
+async function makeDocReview(store, config, options) {
+  const root = options.instructions?.root ?? REPO_ROOT;
+  const ds = { ...(config.docSync ?? {}), ...(options.docSync ?? {}) };
+  const mode = ds.refresh ?? (config.t3?.provision === 'direct' ? 'direct' : config.t3?.provision === 'systemd' ? 'systemd' : 'off');
+  const script = join(here, '..', 'scripts', 't3-provision.mjs');
+  const run = (bin, args) =>
+    new Promise((ok, no) => execFile(bin, args, { timeout: 300_000 }, (e, _out, err) => (e ? no(new Error(String(err || e.message).trim().slice(-300))) : ok())));
+  const refresh =
+    options.docRefresh ??
+    (mode === 'direct' ? () => run(process.execPath, [script, '--refresh-all'])
+      : mode === 'systemd' ? () => run('systemctl', ['--user', 'start', '--', 'ithomiini-t3-provision@--refresh-all.service'])
+      : null);
+  // The ratchet's modules once (the brief and the tool list), then measured in this thread on each change.
+  let modules = null;
+  try {
+    if (options.docMeasure === undefined && existsSync(join(root, 'server', 'assistant.mjs'))) modules = await measureModules(root);
+  } catch (e) {
+    console.error('Context budget for doc changes off:', e.message);
+  }
+  let chatsOf = () => null;
+  const review = createDocReview({
+    db: store.db,
+    root,
+    git: options.docGit ?? createGitSync({ worktree: ds.worktree, push: ds.push, remote: ds.remote, branch: ds.branch, localOnly: !!config.localMode }),
+    refresh,
+    measure: options.docMeasure ?? (modules ? read => measureWith(modules, root, read) : null),
+    budget: () => readBudget(join(root, 'assistant', 'context-budget.json')).parts,
+    chats: { session: id => chatsOf()?.session?.(id) ?? null },
+  });
+  return { ...review, useChats: f => (chatsOf = f) };
+}
+
+/** /api/doc-review…: the page's state, threads, comments, changes, and «Pedir a Claude». */
+async function docReviewRoute({ docReview: d, method, path, body, user, config, t3Projects, chats }) {
+  const parts = path.split('/').slice(3); // after /api/doc-review
+  const [kind, id, action] = parts;
+  if (method === 'GET' && !kind) return d.state(user);
+  if (method === 'POST' && kind === 'threads' && !id) return { thread: d.createThread(user, body) };
+  if (method === 'POST' && kind === 'threads' && action === 'comments') return { thread: d.reply(user, id, body?.body) };
+  if (method === 'POST' && kind === 'threads' && action === 'resolve') return { thread: d.resolve(user, id) };
+  if (method === 'POST' && kind === 'threads' && action === 'reopen') return { thread: d.reopen(user, id) };
+  if (method === 'PATCH' && kind === 'comments' && id) return d.editComment(user, id, body?.body);
+  if (method === 'DELETE' && kind === 'comments' && id) return d.deleteComment(user, id);
+  if (method === 'POST' && kind === 'changes' && action === 'comments') return { change: d.commentChange(user, id, body?.body) };
+  if (method === 'POST' && kind === 'changes' && action === 'apply') return d.apply(user, id, { anyway: body?.anyway === true, version: body?.version ?? null });
+  if (method === 'POST' && kind === 'changes' && action === 'discard') return d.discard(user, id);
+  if (method === 'POST' && kind === 'changes' && action === 'undo') return d.undo(user, id);
+  if (method === 'POST' && kind === 'changes' && action === 'repropose') return d.repropose(user, id);
+  if (method === 'POST' && kind === 'revisions' && action === 'retry') return d.retryGit(user, id);
+  if (method === 'POST' && kind === 'asks' && action === 'seen') return d.seenAsk(user, id);
+  // «Pedir versión nueva» (a comment on a change) and «Pedir a Claude que la rehaga» (a stale one): to the change's chat.
+  if (method === 'POST' && kind === 'changes' && action === 'revise') {
+    if (!d.isAdmin(user)) throw fail('FORBIDDEN', 'Only administrators', 403);
+    const c = d.change(id);
+    if (!c) throw fail('NOT_FOUND', 'No such change', 404);
+    // An outside proposer's change: the request waits for it (doc_threads), no T3 chat is started.
+    if (c.source === 'external') return { chat: null, sent: false, waiting: true, change: d.requestRevision(user, c.id, { body: body?.body }) };
+    if (String(body?.body ?? '').trim()) d.commentChange(user, c.id, body.body);
+    const text = REVISE_TEXT(c, body?.why === 'stale' ? 'stale' : 'comment');
+    const chat = c.chat_id ?? d.lastAskChat();
+    const told = chat ? await tellChat({ t3: config.t3, chats, threadId: chat, username: user.username, text }) : { sent: false, reason: 'no_chat' };
+    if (told.sent) {
+      d.recordAsk(user, chat, 'revise', { changes: [c.series_id] });
+      return { chat, sent: true, change: d.view(c.id, user) };
+    }
+    const started = await startDocChat({ config, t3Projects, user, text: `${text} Respuestas cortas.` });
+    if (started) d.recordAsk(user, started, 'revise', { changes: [c.series_id] });
+    return { chat: started, sent: !!started, prompt: started ? null : text, change: d.view(c.id, user) };
+  }
+  if (method === 'POST' && kind === 'ask') {
+    if (!d.isAdmin(user)) throw fail('FORBIDDEN', 'Only administrators', 403);
+    const open = d.openThreads();
+    if (!open.length) throw fail('NOTHING_OPEN', 'No open comments', 409);
+    const now = d.askState(user);
+    if (now.state === 'running') return { chat: now.chat, running: true };
+    const text = ASK_TEXT(open.length, config.publicUrl);
+    const chat = await startDocChat({ config, t3Projects, user, text });
+    if (chat) d.recordAsk(user, chat, 'ask', { threads: open });
+    return { chat, prompt: chat ? null : text };
+  }
+  throw fail('NOT_FOUND', 'Not found', 404);
+}
+/** A chat in the person's own T3 project, titled for the instructions' comments; null without T3. */
+async function startDocChat({ config, t3Projects, user, text }) {
+  const start = chatStarter(config.t3 ?? {});
+  const own = config.t3 && start ? await t3Projects.ensure(user) : null;
+  if (!own?.project) return null;
+  try {
+    return await start(own.project, { title: 'Comentarios de las instrucciones', text });
+  } catch (e) {
+    console.error(`Doc review chat for ${user.username}:`, e.message);
+    return null;
+  }
+}
+
 export async function createApp(config = {}, options = {}) {
   const given = config;
   config = { ...configFromEnv({}), ...config };
@@ -709,12 +819,14 @@ export async function createApp(config = {}, options = {}) {
   const mailer = options.mailer ?? mailerFromEnv();
   // Invitations: from Usuarios, and from an administrator's chat (the assistant's invite_person).
   const invitations = createInvitations(store, mailer, options.mail ? { send: options.mail } : {});
+  // Comments on the instructions and the changes proposed for them (server/doc-review.mjs).
+  const docReview = options.docReview === false ? null : await makeDocReview(store, config, options);
   const assistantFile = new URL('./assistant.mjs', import.meta.url);
   let assistant = null;
   if (existsSync(fileURLToPath(assistantFile))) {
     // The AI's tool calls and the proposals' views in worker threads where it can (server/assistant-host.mjs).
     const { createAssistantHost } = await import(new URL('./assistant-host.mjs', import.meta.url).href);
-    assistant = createAssistantHost({ store, config, invitations });
+    assistant = createAssistantHost({ store, config, invitations, docReview });
   }
   // The Revisión checks' whole scan, the suggested edits, the alerts, Inicio's summaries and the Wikiloc corrections in a worker thread where it can (server/checks-host.mjs).
   const checks = createChecksHost({ store, config });
@@ -755,7 +867,8 @@ export async function createApp(config = {}, options = {}) {
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
   const whatsapp = createWhatsApp(store, config, assistant);
   // The AI instructions page: the assistant's brief, skills, subagents and tools with their history.
-  const instructions = createInstructions({ tools: () => assistant?.tools?.() ?? [], ...options.instructions });
+  const instructions = createInstructions({ tools: () => assistant?.tools?.() ?? [], docReview, ...options.instructions });
+  docReview?.useChats(() => assistant?.t3 ?? null);
   const photos = createPhotoService(store, {
     // Next to the database file the store really opened; in memory for an in-memory database.
     dir: config.photoCacheDir || photoCacheDir({}, store.db.location?.() ?? null),
@@ -1779,6 +1892,11 @@ export async function createApp(config = {}, options = {}) {
         const found = await instructions.diff(String(query.id ?? ''), String(query.commit ?? ''));
         if (!found) throw fail('NOT_FOUND', 'No such change', 404);
         return json(res, 200, found);
+      }
+      // Comments on the instructions and Claude's changes to them (server/doc-review.mjs).
+      if (path === '/api/doc-review' || path.startsWith('/api/doc-review/')) {
+        if (!docReview) throw fail('NOT_FOUND', 'Not found', 404);
+        return json(res, 200, await docReviewRoute({ docReview, method, path, body, user, config, t3Projects, chats: assistant?.t3 ?? null }));
       }
       // Admins update T3 Code from the Asistente tab (server/t3admin.mjs): what an update would do and how
       // the last one went (GET), the update to a version (POST { version }), and the checks of what the app needs.
