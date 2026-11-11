@@ -8,6 +8,9 @@
  * inventory, no species-photos), and the inventory a team session left on the phone is removed.
  * The team also sees an experimental sex estimate for in-hand photos (SexEstimate, lib/sexModel.ts); its model is
  * the team's (signed in only) and is removed from the phone when signed out.
+ * Compare and the search show the photos of the person's country first (lib/photoCountry.ts): the photo's GPS
+ * position when it has one, else the side of the Andes (Ecuador) or Descargas' country; then the neighbours, then the
+ * rest; a subspecies the model names puts its range first.
  * Behind VITE_CONTRIB=1, the team can also send the photo with their labels to train the AI (ContributeCard,
  * lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them).
  */
@@ -37,7 +40,8 @@ import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, t
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, TRIBE_RUNG, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { loadTaxonomy } from '../lib/taxonomy'
-import { referencePhotos, savedPhotos, type Refs } from '../lib/identifyRefs'
+import { orderRefs, referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
+import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -322,6 +326,8 @@ interface Result {
   side?: Side
   /** The sex estimate (team only): the model's logit and the model that gave it (its calibration reads it), or why it does not apply. */
   sex?: { z: number; m?: SexModelInfo } | { na: 'nowings' }
+  /** The country of the photo's GPS position (ISO2), when it has one in the Neotropics. */
+  country?: string | null
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
@@ -357,6 +363,7 @@ async function identify(photo: Photo) {
   runError.value = null
   if (!kind) return
   try {
+    const country = await photoCountry(photo.bytes).catch(() => null)
     if (!engine.loaded(kind)) {
       busy.value = 'loading'
       await engine.load(kind)
@@ -367,7 +374,7 @@ async function identify(photo: Photo) {
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status } }
-    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
+    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country }
     compared.value = null
     pick.value = null
     keepLast()
@@ -394,6 +401,7 @@ async function identifyOnline(photo: Photo) {
       return
     }
     const sent = jpegBase64(canvas)
+    const country = await photoCountry(photo.bytes).catch(() => null)
     const side = sideValue.value
     const started = performance.now()
     const out = await identifyOnServer(sent, side)
@@ -409,6 +417,7 @@ async function identifyOnline(photo: Photo) {
       server: out,
       photo: sent,
       side,
+      country,
     }
     compared.value = null
     pick.value = null
@@ -979,18 +988,19 @@ watch(
     if (names) loadRefs(names.split('|'))
   },
 )
-/** The photos of the species compared, its subspecies' photos in the model's order (the closest first). */
+/**
+ * The photos of the species compared in the order of their countries (photoPlace); in the same rank its own photos
+ * first, then its subspecies' in the model's order (the closest first).
+ */
 const refsShown = computed<Refs | undefined>(() => {
   const r = refs.value[showing.value]
   if (!r) return r
   const order = (subspecies.value.get(showing.value) ?? []).map(c => c.name)
-  const at = (p: { taxon?: string }) => {
-    const i = p.taxon ? order.indexOf(p.taxon) : -1
+  const at = (taxon: string) => {
+    const i = order.indexOf(taxon)
     return i < 0 ? order.length : i
   }
-  const own = r.photos.filter(p => p.level !== 'subspecies')
-  const ssp = r.photos.filter(p => p.level === 'subspecies').sort((a, b) => at(a) - at(b))
-  return { ...r, photos: [...own, ...ssp] }
+  return { ...r, photos: orderRefs(r.photos, photoPlace.value, at) }
 })
 const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !== 'genus')?.src
 
@@ -999,6 +1009,41 @@ const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !==
 // Mechanitis in airplane mode; 11 Nov 2026). A model downloaded in Descargas never starts a pack by itself.
 const packs = usePacks()
 packs.loadInstalled()
+/** The person's country from the settings: the side of the Andes means Ecuador, else Descargas' countries. */
+const settingHome = computed<string[]>(() => {
+  if (side.value !== 'none') return ['EC']
+  const r = packs.pack.value?.installed.scope.region ?? packs.scope.value.region
+  return r === 'neotropics' ? [] : r
+})
+/** The subspecies the model names for the species compared (as the frozen panel takes it), and its range. */
+const sspNamed = computed(() => {
+  const c = ranked.value?.species.find(x => x.name === showing.value)
+  const s = c && subspecies.value.get(c.name)?.[0]
+  return s && s.p >= SSP_MIN && s.p >= SSP_SHARE * c.p ? s.name : null
+})
+const sspRange = ref<string[] | null>(null)
+watch(
+  [sspNamed, () => packs.pack.value],
+  async ([name]) => {
+    sspRange.value = null
+    const range = name ? await taxonRange(name) : null
+    if (sspNamed.value === name) sspRange.value = range
+  },
+  { immediate: true },
+)
+/**
+ * Whose photos first. A subspecies the model merely names puts its range first only when the person's country is in
+ * it (Fable r4-F4: a named Brazilian subspecies must not put Brazil before the photo's own Ecuador); without a
+ * country, its range. The search, where the person picks the subspecies, always takes the range.
+ */
+const photoPlace = computed<PhotoPlace>(() => comparePlace(result.value?.country ? [result.value.country] : settingHome.value, sspRange.value))
+/** The line under Compare's photo saying whose photos come first (short: Fable r4-F11). */
+const firstLine = computed(() => {
+  const p = photoPlace.value
+  if (p.home.length) return t('Primero fotos de {country}', { country: regionLabel(p.home) })
+  if (p.range?.length && sspNamed.value) return t('Primero fotos del área de la subespecie {ssp}', { ssp: sspNamed.value.split(' ').slice(2).join(' ') })
+  return null
+})
 /** What the first download brings with it (the chosen pack, saved after the model). */
 const firstPack = computed(() => {
   if (!packs.index.value || packs.pack.value || packs.autoDone()) return null
@@ -1081,6 +1126,8 @@ const goOnline = () => {
 }
 const goOffline = () => (online.value = false)
 onMounted(async () => {
+  // The countries' outlines, for a photo's GPS position later without signal (the service worker keeps them).
+  if (navigator.onLine) warmShapes()
   addEventListener('online', goOnline)
   addEventListener('offline', goOffline)
   addEventListener('paste', onPaste)
@@ -1153,7 +1200,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       </button>
     </nav>
 
-    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" @downloads="go('downloads')" />
+    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" :home="settingHome" @downloads="go('downloads')" />
 
     <DownloadsPanel
       v-else-if="place === 'downloads'"
@@ -1346,7 +1393,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
                 <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
               </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" @hint="fixGap" />
+              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :first="firstLine" @hint="fixGap" />
               <div class="mt-3 flex flex-wrap gap-2">
                 <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
                   {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}

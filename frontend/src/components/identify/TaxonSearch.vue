@@ -3,7 +3,9 @@
 // its species with photos; a species its photo, more photos of it and its subspecies' photos; a subspecies its photo
 // and the rest of its species (taxonView). What the phone has comes first (the installed pack's names and photos, no
 // network), then with signal the server's whole list and, signed in, the team's photo search are merged in. A photo
-// opens full screen with the name large (PhotoViewer).
+// opens full screen with the name large (PhotoViewer). Photos from the person's country come first (`home`: the side of
+// the Andes or Descargas' country, lib/photoCountry.ts), then its neighbours', then the rest; a subspecies chosen puts
+// the photos from its range first. Each photo names its country with its credit.
 // The address holds the state: the taxon (?taxon=, a taxon chosen from another is a new history entry, so Back returns
 // to the genus) and the full-screen photo (?foto=, so the phone's Back closes it).
 import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
@@ -11,11 +13,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { Search, WifiOff, X } from 'lucide-vue-next'
 import { t } from '../../lib/i18n'
 import { installedPack, numText, onlineIndex } from '../../lib/photoPacks'
-import { referencePhotos, savedPhotos, type Refs } from '../../lib/identifyRefs'
+import { orderRefs, referencePhotos, savedPhotos, type Refs } from '../../lib/identifyRefs'
+import { countryName } from '../../lib/usePacks'
+import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 
-const props = defineProps<{ signedIn: boolean; online: boolean }>()
+const props = withDefaults(defineProps<{ signedIn: boolean; online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
 const route = useRoute()
 const router = useRouter()
@@ -145,7 +149,19 @@ watch([names, () => props.online], loadPhotos)
 
 const broken = ref(new Set<string>())
 const fail = (src: string) => (broken.value = new Set([...broken.value, src]))
-const shownRefs = computed(() => Object.fromEntries(Object.entries(refs.value).map(([n, r]) => [n, { photos: r.photos.filter(p => !broken.value.has(p.src)) }])))
+/** The person's countries, and a subspecies' range when one is chosen. */
+const place = computed<Place>(() => ({
+  home: props.home,
+  range: chosen.value?.rank === 'subspecies' ? (cat.value?.taxa.get(chosen.value.name)?.countries ?? null) : null,
+}))
+const shownRefs = computed(() =>
+  Object.fromEntries(Object.entries(refs.value).map(([n, r]) => [n, { photos: orderRefs(r.photos.filter(p => !broken.value.has(p.src)), place.value) }])),
+)
+/** «© Ana · CC-BY · Ecuador»: the credit line of a photo (a preserved specimen named first, with its ID). */
+const creditLine = (p: Card['photo'], license = true) =>
+  [p.kind === 'preserved' ? [t('Ejemplar preservado'), p.specimen].filter(Boolean).join(' ') : null, p.kind === 'preserved' ? t('Foto: {who}', { who: p.credit }) : p.credit, license ? p.license : null, p.country ? countryName(p.country) : null]
+    .filter(Boolean)
+    .join(' · ')
 const view = computed(() => (chosen.value && cat.value ? taxonView(cat.value, chosen.value, shownRefs.value) : null))
 const lead = computed(() => view.value?.lead ?? null)
 const sections = computed(() => view.value?.sections ?? [])
@@ -161,7 +177,16 @@ const kickerText = (c: Card) =>
 const viewerStart = ref<number | null>(null)
 const viewerOpen = computed(() => route.query.foto != null && viewerStart.value != null)
 const viewerPhotos = computed<ViewerPhoto[]>(() =>
-  cards.value.map(c => ({ src: c.photo.src, name: c.name, kicker: c.kicker === 'specimen' || c.kicker === 'subspecies' ? kickerText(c) : undefined, credit: c.photo.credit, license: c.photo.license, source: c.photo.source ?? null })),
+  cards.value.map(c => ({
+    src: c.photo.src,
+    name: c.name,
+    kicker: c.kicker === 'specimen' || c.kicker === 'subspecies' ? kickerText(c) : undefined,
+    credit: c.photo.credit,
+    license: c.photo.license,
+    source: c.photo.source ?? null,
+    country: c.photo.country ?? null,
+    preserved: c.photo.kind === 'preserved' ? (c.photo.specimen ?? '') : null,
+  })),
 )
 function openCard(c: Card) {
   viewerStart.value = cards.value.indexOf(c)
@@ -270,11 +295,11 @@ watch(
 
       <!-- A species or subspecies: its photo large -->
       <button v-if="lead" class="photo-card mt-3 block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left lg:max-w-xl" data-testid="lead-photo" @click="openCard(lead)">
-        <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat object-cover" @error="fail(lead.photo.src)" />
+        <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat" :class="lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(lead.photo.src)" />
         <span class="block px-3 py-2">
           <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
           <i class="block text-lg font-semibold">{{ lead.name }}</i>
-          <span class="block truncate text-xs text-fg-muted">{{ lead.photo.credit }}<template v-if="lead.photo.license"> · {{ lead.photo.license }}</template></span>
+          <span class="block text-xs text-fg-muted" :class="lead.photo.kind === 'preserved' ? 'break-words' : 'truncate'" data-testid="lead-credit">{{ creditLine(lead.photo) }}</span>
         </span>
       </button>
 
@@ -283,12 +308,15 @@ watch(
         <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3" :data-testid="`photo-grid-${s.id}`" data-grid="photos">
           <li v-for="c in s.cards" :key="c.key">
             <button class="photo-card block w-full overflow-hidden rounded-lg border border-border-strong bg-surface text-left" @click="openCard(c)">
-              <img :src="c.photo.src" alt="" loading="lazy" class="aspect-square w-full bg-photo-mat object-cover" @error="fail(c.photo.src)" />
+              <img :src="c.photo.src" alt="" loading="lazy" class="aspect-square w-full bg-photo-mat" :class="c.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(c.photo.src)" />
               <span class="block px-2 py-1.5">
                 <i v-if="c.label" class="block text-[0.95rem] leading-snug font-medium break-words">{{ c.label }}</i>
                 <span v-if="c.viaSsp" class="block text-xs text-fg-muted">{{ $t('Foto de la subespecie') }} <i>{{ c.viaSsp }}</i></span>
                 <span v-if="!c.label && c.kicker === 'specimen'" class="block text-xs text-fg-muted">{{ kickerText(c) }}</span>
-                <span v-else-if="!c.label" class="block truncate text-xs text-fg-muted">{{ c.photo.credit }}</span>
+                <span v-else-if="!c.label" class="block truncate text-xs text-fg-muted">{{ creditLine(c.photo, false) }}</span>
+                <span v-else-if="c.photo.country || c.photo.kind === 'preserved'" class="block truncate text-xs text-fg-muted">{{
+                  [c.photo.kind === 'preserved' ? $t('Ejemplar preservado') : null, c.photo.country ? countryName(c.photo.country) : null].filter(Boolean).join(' · ')
+                }}</span>
               </span>
             </button>
           </li>

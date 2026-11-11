@@ -402,10 +402,15 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
       if (plain?.isFile() && gz?.isFile() && gz.mtimeMs >= plain.mtimeMs)
         return await sendFile(req, res, `${file}.gz`, { 'content-type': 'application/json', 'content-encoding': 'gzip', vary: 'accept-encoding', 'cache-control': 'no-cache' });
     }
+    // The pack lists are checked every time (a list replaced on the server reaches phones at once: 11 Nov 2026, a phone
+    // still showed the old sizes); a pack's photos and bundles are named by their bytes, so never change under a name.
+    const packList = clean.includes('packs/') && file.endsWith('.json');
+    const named = inPacks && /^packs\/(photos|bundles)\//.test(clean);
     return await sendFile(req, res, file, {
       'content-security-policy':
         "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' https://huggingface.co https://*.hf.co; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
-      'cache-control': html || file.endsWith('.webmanifest') ? 'no-cache' : 'public, max-age=3600',
+      'cache-control': html || packList || file.endsWith('.webmanifest') ? 'no-cache' : named ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+      ...(packList ? { vary: 'accept-encoding' } : {}),
     });
   } catch (e) {
     const status = e.status || 500;

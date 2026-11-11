@@ -21,7 +21,7 @@ export interface Catalog {
   speciesOf: Map<string, string[]>
   /** A species' subspecies, sorted. */
   sspOf: Map<string, string[]>
-  taxa: Map<string, Pick<PackTaxon, 'name' | 'rank' | 'genus' | 'species' | 'family' | 'group'>>
+  taxa: Map<string, Named>
 }
 
 /** Lower case, no accents, a dot or hyphen as a space. */
@@ -34,7 +34,7 @@ export const norm = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim()
 
-type Named = Pick<PackTaxon, 'name' | 'rank' | 'genus' | 'species' | 'family' | 'group'>
+type Named = Pick<PackTaxon, 'name' | 'rank' | 'genus' | 'species' | 'family' | 'group'> & Partial<Pick<PackTaxon, 'countries'>>
 /** The catalog of several lists' taxa (the first list's entry wins for a name). */
 export function catalog(...lists: Named[][]): Catalog {
   const taxa = new Map<string, Named>()
@@ -117,6 +117,9 @@ export interface ShownPhoto {
   taxon?: string
   sex?: string | null
   source?: string | null
+  country?: string | null
+  kind?: 'live' | 'preserved'
+  specimen?: string | null
 }
 export interface Card {
   key: string
@@ -144,7 +147,8 @@ const epithetOf = (name: string, words: number) => name.split(' ').slice(words).
  * The photos of a chosen genus, species or subspecies, from `refs` (species name → its photos, as referencePhotos
  * gives them: the species' own, its subspecies' with `taxon`, the team's specimens). A genus card falls back to a
  * saved subspecies photo and names it; a species' extra photos are not called subspecies; subspecies cards carry
- * their epithet alone.
+ * their epithet alone, one card per other subspecies (its first photo: `refs` come in the order to show), every photo
+ * of the subspecies chosen.
  */
 export function taxonView(cat: Catalog, hit: Hit, refs: Record<string, { photos: ShownPhoto[] } | undefined>): TaxonView {
   const all = (sp: string) => (refs[sp]?.photos ?? []).filter(p => p.level !== 'genus')
@@ -158,7 +162,9 @@ export function taxonView(cat: Catalog, hit: Hit, refs: Record<string, { photos:
     kicker: p.level === 'specimen' ? 'specimen' : 'species',
     photo: p,
   })
-  const sspCard = (p: ShownPhoto): Card => ({ key: p.taxon!, name: p.taxon!, label: epithetOf(p.taxon!, 2), viaSsp: null, kicker: 'subspecies', photo: p })
+  const sspCard = (p: ShownPhoto, i: number): Card => ({ key: `${p.taxon!}#${i}`, name: p.taxon!, label: epithetOf(p.taxon!, 2), viaSsp: null, kicker: 'subspecies', photo: p })
+  /** One card per subspecies: its first photo. */
+  const firstEach = (cards: Card[]) => cards.filter((c, i) => cards.findIndex(x => x.name === c.name) === i)
   if (hit.rank === 'genus') {
     const cards: Card[] = []
     const noPhoto: string[] = []
@@ -181,12 +187,12 @@ export function taxonView(cat: Catalog, hit: Hit, refs: Record<string, { photos:
   if (hit.rank === 'species') {
     lead = mine[0] ?? subs[0] ?? null
     more = mine.slice(1)
-    rest = subs.filter(c => c !== lead)
+    rest = firstEach(subs.filter(c => c !== lead && c.name !== (lead?.kicker === 'subspecies' ? lead.name : null)))
   } else {
     const self = subs.filter(c => c.name === hit.name)
     lead = self[0] ?? mine[0] ?? null
     more = [...self.slice(1), ...mine].filter(c => c !== lead)
-    rest = subs.filter(c => c.name !== hit.name)
+    rest = firstEach(subs.filter(c => c.name !== hit.name))
   }
   const noPhoto = (cat.sspOf.get(sp) ?? []).filter(n => !withPhoto.has(n) && n !== hit.name)
   return {

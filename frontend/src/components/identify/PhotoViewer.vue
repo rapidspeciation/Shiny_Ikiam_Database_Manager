@@ -6,6 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { licenseUrl } from '../../lib/identifyRefs'
+import { countryName } from '../../lib/usePacks'
 
 export interface ViewerPhoto {
   src: string
@@ -15,6 +16,10 @@ export interface ViewerPhoto {
   credit: string
   license: string
   source: string | null
+  /** Where it was taken (ISO2), when known. */
+  country?: string | null
+  /** A preserved specimen: «Preserved specimen» and its ID before the credit. */
+  preserved?: string | null
 }
 const props = defineProps<{ photos: ViewerPhoto[]; start: number }>()
 const emit = defineEmits<{ close: [] }>()
@@ -78,13 +83,14 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
           <i>{{ genusOf(photo.name) }}</i> <i>{{ restOf(photo.name) }}</i>
         </p>
         <p class="mt-1 text-sm text-white/75">
+          <template v-if="photo.preserved != null">{{ $t('Ejemplar preservado') }}<template v-if="photo.preserved"> {{ photo.preserved }}</template> · </template>
           <a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
-          ><template v-else>{{ photo.credit }}</template
+          ><template v-else>{{ photo.preserved != null ? $t('Foto: {who}', { who: photo.credit }) : photo.credit }}</template
           ><template v-if="photo.license">
             ·
             <a v-if="licenseUrl(photo.license)" :href="licenseUrl(photo.license)!" target="_blank" rel="noopener license" class="underline-offset-2 hover:underline">{{ photo.license }}</a
             ><template v-else>{{ photo.license }}</template></template
-          >
+          ><template v-if="photo.country"> · {{ countryName(photo.country) }}</template>
         </p>
       </div>
     </div>

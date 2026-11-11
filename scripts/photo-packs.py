@@ -1,9 +1,36 @@
 #!/usr/bin/env python3
 """Photo packs (Identificar tab, Descargas): the list identificar/packs/index.json the page chooses packs from
-(frontend/src/lib/photoPacks.ts). One entry per taxon: name, rank, species, genus, family, group
-('ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'), countries (ISO2), photo {file, attribution, license, taxonUrl,
-source} (or null) and bytes (the photo file's size). `version` is a hash of the entries: a phone whose pack has
-another version is offered an update.
+(frontend/src/lib/photoPacks.ts). Schema 2: one entry per taxon: name, rank, species, genus, family, group
+('ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'), countries (ISO2, where it is recorded) and photos, its best
+first, each {file, attribution, license, taxonUrl, source, bytes, country (ISO2 where it was taken, or null), kind
+('live' or 'preserved'), specimen (a preserved specimen's ID)}. The page keeps up to 2 photos of a taxon in a pack
+(PER_TAXON): the region's first, then one from a neighbouring country or else from elsewhere (lib/photoCountry.ts
+choosePhotos); with signal it shows them all.
+`version` is a hash of the entries: a phone whose pack has another version is offered an update. Each entry also keeps
+schema 1's `photo` and `bytes` (its first photo), so pages still running the first schema's code read the same list
+(write(), legacy()).
+
+Country photos (--obs ISO2=<file>): the observations of a country that photo-packs-obs.py saved (research grade,
+reusable licence). For each taxon (its iNaturalist id, same rank) the best one (most faves, then the newest) gives a
+photo from that country; a taxon photo that is also an observation photo there takes that country. --young
+(photo-packs-obs.py --young) leaves out the observations annotated larva, pupa or egg. The taxon photo is marked
+`curated`: a pack keeps it second, after the region's own photo (Fable r4-F5).
+
+Preserved specimens (--preserved <manifest.json>): {"schema": "ithomiini-preserved/1", "photos": [{"name", "file"
+(an image, relative to the manifest), "specimen" (its ID), "country" (or null), "attribution", "license", "source"
+(or null)}]}, or the Sanger wing crops' manifest ({"items": [{"taxon", "specimen_id", "file", "poor", ...}]}: entries
+flagged poor are left out; credit "Ikiam / Wellcome Sanger Institute", shown as «Foto: …», no licence line). Each becomes a photo of kind 'preserved' of a taxon
+that has no live photo (with --preserved-all, of every taxon named). A WebP no larger than --size is kept byte for
+byte (the crops are made at the pack's settings already); anything else is made like the other photos.
+
+Bundles (taxa mode): the photos made are also written as a few files of about --bundle-mb MB each
+(bundles/b<NN>-<sha256, 10 hex>.bin, the WebP files back to back, uncompressed: WebP gains nothing from gzip), and
+each photo in the list gets "at": [bundle number, byte offset]; the list names the files in "bundles" [{file, bytes}].
+A phone then saves a pack with a few tens of range requests instead of one request per photo
+(frontend/src/lib/photoPacks.ts). Order inside: the photos an Ecuador pack keeps first, then those a Neotropics pack
+keeps, then the rest; inside each by group (Ithomiini, other Nymphalidae, other butterflies, moths), species before
+subspecies, by name; so the common choices are a few long runs. A bundle's name changes with its bytes (served as immutable). The single photos stay in photos/ for the
+online view of one taxon.
 
 From the Ithomiini «Fotos para el campo» set (scripts/field-photos.py), its photos left where they are (base ../field/):
 
@@ -62,18 +89,40 @@ def check(taxa):
         else:
             assert t["name"].startswith(t["species"] + " "), t
         assert t["genus"] == t["name"].split()[0], t
-        if t["photo"]:
-            for k in ("file", "attribution", "license", "taxonUrl", "source"):
-                assert k in t["photo"], (k, t)
-            assert t["bytes"] > 0 or t["photo"].get("missing"), t
+        assert isinstance(t["photos"], list), t
+        for ph in t["photos"]:
+            for k in ("file", "attribution", "license", "taxonUrl", "source", "bytes"):
+                assert k in ph, (k, t)
+            assert ph["bytes"] > 0 or ph.get("missing"), t
+            assert ph.get("country") is None or (len(ph["country"]) == 2 and ph["country"].isupper()), t
+            assert ph.get("kind", "live") in ("live", "preserved"), t
+            assert ph.get("curated") in (None, True), t
+            assert ph.get("kind") != "preserved" or ph.get("specimen"), t
 
 
-def write(out, taxa, base, source, sample=None):
+LEGACY = ("file", "attribution", "license", "taxonUrl", "source")
+
+
+def legacy(t):
+    """Schema 1's fields beside schema 2's (`photo` and `bytes`: the taxon's first photo), so a page still running the
+    first schema's code (release 1, 642d9251, open in a tab or offline on a phone) reads the new list as before: its
+    installer takes `photo`, which is in photos/, and never sees an empty list (it would record a pack with no photos
+    and delete the photos it had: review r4-sol-F1)."""
+    first = t["photos"][0] if t["photos"] else None
+    t["photo"] = {**{k: first.get(k) for k in LEGACY}, **({"missing": True} if first.get("missing") else {})} if first else None
+    t["bytes"] = first["bytes"] if first else 0
+    return t
+
+
+def write(out, taxa, base, source, sample=None, bundles=None):
+    taxa = [legacy(t) for t in taxa]
     check(taxa)
     taxa = sorted(taxa, key=lambda t: t["name"])
-    index = {"schema": "ithomiini-photo-packs/1", "version": version_of(taxa), "built": time.strftime("%Y-%m-%d"), "base": base, "source": source}
+    index = {"schema": "ithomiini-photo-packs/2", "version": version_of(taxa), "built": time.strftime("%Y-%m-%d"), "base": base, "source": source}
     if sample:
         index["sample"] = sample
+    if bundles:
+        index["bundles"] = bundles
     index["taxa"] = taxa
     os.makedirs(out, exist_ok=True)
     path = os.path.join(out, "index.json")
@@ -84,9 +133,90 @@ def write(out, taxa, base, source, sample=None):
     with open(path, "rb") as f, open(path + ".gz.part", "wb") as g:
         g.write(gzip.compress(f.read(), compresslevel=9, mtime=0))
     os.replace(path + ".gz.part", path + ".gz")
-    with_photo = [t for t in taxa if t["photo"] and not t["photo"].get("missing")]
+    made = {ph["file"]: ph for t in taxa for ph in t["photos"] if not ph.get("missing")}
+    with_photo = [t for t in taxa if any(not ph.get("missing") for ph in t["photos"])]
+    assert all((t["photo"] or {}).get("file") == (t["photos"][0]["file"] if t["photos"] else None) for t in taxa)
     by_group = {g: sum(1 for t in with_photo if t["group"] == g) for g in GROUPS}
-    print(f"{path}: {len(taxa)} taxa, {len(with_photo)} with a photo, {sum(t['bytes'] for t in with_photo) / 1048576:.1f} MB; by group {by_group}; version {index['version']}; index {os.path.getsize(path) / 1024:.0f} KB")
+    known = sum(1 for ph in made.values() if ph.get("country"))
+    print(f"{path}: {len(taxa)} taxa, {len(with_photo)} with a photo, {len(made)} photo files ({known} with their country), {sum(ph['bytes'] for ph in made.values()) / 1048576:.1f} MB; by group {by_group}; version {index['version']}; index {os.path.getsize(path) / 1024:.0f} KB")
+
+
+LICENCES = {"cc0", "cc-by", "cc-by-nc", "cc-by-sa", "cc-by-nc-sa", "cc-by-nd", "cc-by-nc-nd"}
+
+
+def read_young(paths):
+    """--young <young-ISO2.json> (photo-packs-obs.py --young): observation ids annotated larva, pupa or egg."""
+    out = set()
+    for path in paths or []:
+        out.update(json.load(open(path, encoding="utf-8")))
+    return out
+
+
+def read_obs(specs, young=frozenset()):
+    """--obs ISO2=<obs-ISO2.jsonl.gz>: (best[(iNaturalist taxon id, ISO2)] = photo, country of a photo id). An
+    observation in `young` (larva, pupa, egg) gives no country photo."""
+    best, country_of = {}, {}
+    for spec in specs or []:
+        iso, _, path = spec.partition("=")
+        assert len(iso) == 2 and iso.isupper() and path, f"--obs ISO2=<file>: {spec}"
+        rows = {}
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue  # a line cut short by a stop
+                rows[o["id"]] = o  # a page asked twice after a stop: once
+        for o in rows.values():
+            ph = next((p for p in o.get("photos") or [] if p.get("url") and (p.get("license") or "").lower() in LICENCES), None)
+            if not ph:
+                continue
+            country_of.setdefault(ph["id"], iso)
+            if o["id"] in young:
+                continue
+            key = (o["taxon"]["id"], iso)
+            rank = (o.get("faves") or 0, o["id"])
+            if key not in best or rank > best[key][0]:
+                best[key] = (rank, {
+                    "pid": str(ph["id"]),
+                    "url": ph["url"].replace("/square.", "/medium."),
+                    "attribution": ph.get("attribution") or "",
+                    "license": ph["license"].upper(),
+                    "source": f"https://www.inaturalist.org/photos/{ph['id']}",
+                    "country": iso,
+                })
+        print(f"{iso}: {len(rows)} observations, {sum(1 for k in best if k[1] == iso)} taxa with a photo", flush=True)
+    return {k: v[1] for k, v in best.items()}, country_of
+
+
+def read_preserved(path):
+    """The preserved specimens' manifest: name -> its photos (file made absolute)."""
+    if not path:
+        return {}
+    doc = json.load(open(path, encoding="utf-8"))
+    base = os.path.dirname(os.path.abspath(path))
+    out = {}
+    if doc.get("schema") != "ithomiini-preserved/1" and isinstance(doc.get("items"), list):
+        # The Sanger wing crops (offline-packs research, sanger-crops/crops-*/manifest.json).
+        doc = {"photos": [{"name": e["taxon"], "file": e["file"], "specimen": e["specimen_id"], "country": e.get("country"),
+                           "attribution": "Ikiam / Wellcome Sanger Institute", "license": "", "source": None}
+                          for e in doc["items"] if not e.get("poor") and e.get("taxon") and e.get("file") and e.get("specimen_id")]}
+    else:
+        assert doc.get("schema") == "ithomiini-preserved/1", f"{path}: schema ithomiini-preserved/1 or a crops manifest with items"
+    for e in doc.get("photos") or []:
+        assert e.get("name") and e.get("file") and e.get("specimen"), e
+        file = os.path.join(base, e["file"])
+        out.setdefault(e["name"], []).append({
+            "pid": "p" + hashlib.sha256(f"{e['specimen']}|{e['file']}".encode()).hexdigest()[:12],
+            "url": file,
+            "attribution": e.get("attribution") or "",
+            "license": e.get("license") or "",
+            "source": e.get("source"),
+            "country": e.get("country"),
+            "kind": "preserved",
+            "specimen": str(e["specimen"]),
+        })
+    return out
 
 
 def from_field(a):
@@ -95,6 +225,7 @@ def from_field(a):
     if a.countries:
         for e in json.load(open(a.countries, encoding="utf-8")):
             countries[e["name"]] = sorted(set(e.get("appCountries") or []))
+    _, country_of = read_obs(a.obs)
     taxa = []
     for rank, key in (("species", "species"), ("subspecies", "subspecies")):
         for e in field.get(key, []):
@@ -107,12 +238,85 @@ def from_field(a):
             taxa.append({
                 "name": e["name"], "rank": rank, "species": " ".join(parts[:2]), "genus": parts[0], "family": "Nymphalidae",
                 "group": "ithomiini", "countries": cs,
-                "photo": {"file": e["file"], "attribution": e["attribution"], "license": e["license"], "taxonUrl": e.get("taxonUrl"), "source": e.get("source")},
-                "bytes": e["bytes"],
+                "photos": [{"file": e["file"], "attribution": e["attribution"], "license": e["license"], "taxonUrl": e.get("taxonUrl"), "source": e.get("source"),
+                            "bytes": e["bytes"], "country": country_of.get(photo_id(e.get("source"))), "curated": True}],
             })
     rel = os.path.relpath(os.path.dirname(os.path.abspath(a.field)), os.path.abspath(a.out)).replace(os.sep, "/") + "/"
     # Only Ithomiini have photos in this list: the page says so beside the other groups.
     write(a.out, taxa, rel, field.get("source") or "iNaturalist photos under Creative Commons licences", sample="ithomiini-only")
+
+
+def photo_id(source):
+    """The iNaturalist photo id of a photo page URL (…/photos/<id>), or None."""
+    tail = (source or "").rstrip("/").rsplit("/", 1)[-1]
+    return int(tail) if tail.isdigit() else None
+
+
+NEAR_EC = {"CO", "PE"}
+
+
+def chosen_for_ec(photos, k=2):
+    """The photos an Ecuador pack keeps of a taxon (frontend/src/lib/photoCountry.ts choosePhotos with region EC):
+    Ecuador's, the curated taxon photo, a neighbour's, another's, then the rest by place."""
+    rank = lambda p: 0 if p.get("country") == "EC" else 1 if p.get("country") in NEAR_EC else 2 if p.get("country") else 3
+    tier = lambda p: min(rank(p), 2)
+    firsts = []
+    for pick in (next((p for p in photos if tier(p) == 0), None), next((p for p in photos if p.get("curated")), None),
+                 next((p for p in photos if tier(p) == 1), None), next((p for p in photos if tier(p) == 2), None)):
+        if pick is not None and all(pick is not q for q in firsts):
+            firsts.append(pick)
+    rest = sorted((p for p in photos if all(p is not q for q in firsts)), key=rank)
+    return (firsts + rest)[:k]
+
+
+def make_bundles(out_dir, taxa, photos_dir, bundle_mb):
+    """The made photos back to back in bundles/ (about bundle_mb MB each); each photo gets "at": [bundle, offset]."""
+    order = {}
+    for t in taxa:
+        made = [p for p in t["photos"] if not p.get("missing")]
+        ec = {p["file"] for p in chosen_for_ec(made)} if "EC" in t["countries"] else set()
+        # A Neotropics pack keeps the list's first two (the taxon photo, then Ecuador's).
+        nt = {p["file"] for p in made[:2]} if t["countries"] else set()
+        for i, p in enumerate(made):
+            key = (0 if p["file"] in ec else 1, 0 if p["file"] in nt else 1, GROUPS.index(t["group"]), 0 if t["rank"] == "species" else 1, t["name"], i)
+            order[p["file"]] = min(order.get(p["file"], key), key)
+    files = sorted(order, key=order.get)
+    bdir = os.path.join(out_dir, "bundles")
+    os.makedirs(bdir, exist_ok=True)
+    bundles, at, chunk, offset = [], {}, [], 0
+
+    def flush():
+        nonlocal chunk, offset
+        if not chunk:
+            return
+        body = b"".join(chunk)
+        name = f"b{len(bundles):03d}-{hashlib.sha256(body).hexdigest()[:10]}.bin"
+        path = os.path.join(bdir, name)
+        if not os.path.exists(path):
+            with open(path + ".part", "wb") as fh:
+                fh.write(body)
+            os.replace(path + ".part", path)
+        bundles.append({"file": f"bundles/{name}", "bytes": len(body)})
+        chunk, offset = [], 0
+
+    limit = int(bundle_mb * 1048576)
+    for f in files:
+        body = open(os.path.join(photos_dir, f), "rb").read()
+        if offset and offset + len(body) > limit:
+            flush()
+        at[f] = [len(bundles), offset]
+        chunk.append(body)
+        offset += len(body)
+    flush()
+    for t in taxa:
+        for p in t["photos"]:
+            if p["file"] in at:
+                p["at"] = at[p["file"]]
+    names = {b["file"].split("/")[-1] for b in bundles}
+    for f in sorted(set(os.listdir(bdir)) - names):
+        print("  bundle not named by the list:", os.path.join(bdir, f))
+    print(f"bundles: {len(bundles)} files, {sum(b['bytes'] for b in bundles) / 1048576:.1f} MB, {len(files)} photos", flush=True)
+    return bundles
 
 
 SCOPE_GROUPS = {
@@ -184,15 +388,19 @@ def taxa_mode(a):
                     stats["failed"] += 1
                 return None
         try:
-            im = ImageOps.exif_transpose(Image.open(BytesIO(body))).convert("RGB")
+            src_im = Image.open(BytesIO(body))
+            im = ImageOps.exif_transpose(src_im).convert("RGB")
         except Exception:  # noqa: BLE001 - not an image
             with lock:
                 stats["failed"] += 1
             return None
-        im.thumbnail((a.size, a.size), Image.LANCZOS)
-        buf = BytesIO()
-        im.save(buf, "WEBP", quality=a.quality, method=6)
-        webp = buf.getvalue()
+        if src_im.format == "WEBP" and max(src_im.size) <= a.size:
+            webp = body  # made at these settings already (the Sanger crops): not encoded twice
+        else:
+            im.thumbnail((a.size, a.size), Image.LANCZOS)
+            buf = BytesIO()
+            im.save(buf, "WEBP", quality=a.quality, method=6)
+            webp = buf.getvalue()
         name = f"{pid}-{hashlib.sha256(webp).hexdigest()[:8]}.webp"
         path = os.path.join(photos_dir, name)
         with open(path + ".part", "wb") as f:
@@ -206,12 +414,34 @@ def taxa_mode(a):
                 print(f"  {done} photos ({stats})", flush=True)
         return name
 
+    best, country_of = read_obs(a.obs, read_young(a.young))
+    preserved = read_preserved(a.preserved)
+
+    def listed(e):
+        """The taxon's photos to list, best first: its taxon photo, then one from each --obs country, then preserved."""
+        out = []
+        ph = e.get("photo") or None
+        if ph and ph.get("url"):
+            pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
+            out.append({"pid": pid, "url": ph["url"], "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
+                        "source": ph.get("source"), "taxonUrl": ph.get("taxonUrl"), "country": country_of.get(ph.get("inatPhotoId")), "curated": True})
+        tid = e.get("inatId")
+        taxon_url = (ph or {}).get("taxonUrl") or (f"https://www.inaturalist.org/taxa/{tid}" if tid else None)
+        for spec in a.obs or []:
+            iso = spec.partition("=")[0]
+            o = best.get((tid, iso)) if tid else None
+            if o and all(o["pid"] != x["pid"] for x in out):
+                out.append({**o, "taxonUrl": taxon_url})
+        if a.preserved_all or not out:
+            out += [{**x, "taxonUrl": taxon_url} for x in preserved.get(e["name"], [])]
+        return out
+
+    lists = {e["name"]: listed(e) for e in src}
     todo = {}
     for e in src:
-        ph = e.get("photo")
-        if ph and ph.get("url") and wanted(e):
-            pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
-            todo.setdefault(pid, ph["url"])
+        if wanted(e):
+            for x in lists[e["name"]]:
+                todo.setdefault(x["pid"], x["url"])
     if a.limit is not None:
         todo = dict(list(todo.items())[: a.limit])
     print(f"{len(todo)} photos to have ({len([p for p in todo if p in have])} already made)", flush=True)
@@ -221,37 +451,42 @@ def taxa_mode(a):
     out, by_group, unavailable = [], {}, []
     for e in src:
         parts = e["name"].split()
-        ph = e.get("photo") or None
         entry = {"name": e["name"], "rank": e["rank"], "species": e.get("species") or " ".join(parts[:2]), "genus": e.get("genus") or parts[0],
-                 "family": e.get("family") or "", "group": e["group"], "countries": sorted(set(e.get("countries") or [])), "photo": None, "bytes": 0}
-        if ph and ph.get("url"):
-            pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
-            file = made.get(pid) or have.get(pid)
-            if not file and pid in todo:
-                # Inside the cells but not fetched (gone from iNaturalist, not an image): listed without a photo.
-                out.append(entry)
+                 "family": e.get("family") or "", "group": e["group"], "countries": sorted(set(e.get("countries") or [])), "photos": []}
+        for x in lists[e["name"]]:
+            file = made.get(x["pid"]) or have.get(x["pid"])
+            if not file and x["pid"] in todo:
+                # Inside the cells but not fetched (gone from iNaturalist, not an image): not listed.
                 unavailable.append(e["name"])
                 continue
-            entry["photo"] = {"file": file or f"{pid}.webp", "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
-                              "taxonUrl": ph.get("taxonUrl"), "source": ph.get("source")}
+            photo = {"file": file or f"{x['pid']}.webp", "attribution": x["attribution"], "license": x["license"], "taxonUrl": x.get("taxonUrl"),
+                     "source": x.get("source"), "bytes": 0, "country": x.get("country")}
+            if x.get("curated"):
+                photo["curated"] = True
+            if x.get("kind") == "preserved":
+                photo["kind"] = "preserved"
+                photo["specimen"] = x["specimen"]
             if file:
-                entry["bytes"] = os.path.getsize(os.path.join(photos_dir, file))
-                by_group.setdefault(e["group"], []).append(entry["bytes"])
+                photo["bytes"] = os.path.getsize(os.path.join(photos_dir, file))
+                by_group.setdefault(e["group"], []).append(photo["bytes"])
             else:
-                # Not made on this server (outside the --cell choices, or not fetched): listed, with its size estimated
-                # from the photos made of its group; the page says so and does not ask for it.
-                entry["photo"]["missing"] = True
+                # Not made on this server (outside the --cell choices): listed, with its size estimated from the photos
+                # made of its group; the page says so and does not ask for it.
+                photo["missing"] = True
+            entry["photos"].append(photo)
         out.append(entry)
     mean = {g: round(sum(v) / len(v)) for g, v in by_group.items() if v}
     fallback = round(sum(sum(v) for v in by_group.values()) / max(1, sum(len(v) for v in by_group.values())))
     for entry in out:
-        if entry["photo"] and entry["photo"].get("missing"):
-            entry["bytes"] = mean.get(entry["group"], fallback)
-    print(f"photos: {stats}; mean bytes by group {mean}; listed without a photo (not fetched): {len(unavailable)} {unavailable[:12]}", flush=True)
+        for photo in entry["photos"]:
+            if photo.get("missing"):
+                photo["bytes"] = mean.get(entry["group"], fallback)
+    print(f"photos: {stats}; mean bytes by group {mean}; photos not fetched: {len(unavailable)} {unavailable[:12]}", flush=True)
     stale = sorted(set(os.listdir(photos_dir)) - {f for f in made.values() if f} - set(have.values()))
     for f in stale[:20]:
         print("  not named by the list:", os.path.join(photos_dir, f))
-    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences (taxon photos; 400 px WebP)", sample=a.sample)
+    bundles = make_bundles(a.out, out, photos_dir, a.bundle_mb) if a.bundle_mb > 0 else None
+    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences (taxon photos and research-grade observations by country; 400 px WebP)", sample=a.sample, bundles=bundles)
 
 
 def main():
@@ -260,6 +495,7 @@ def main():
     f = sub.add_parser("field", help="the list from the Ithomiini field set")
     f.add_argument("--field", required=True)
     f.add_argument("--countries")
+    f.add_argument("--obs", action="append", help="ISO2=<obs file>: the country of field photos that are observation photos there")
     f.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "public", "identificar", "packs"))
     tx = sub.add_parser("taxa", help="the list and its WebP photos from the per-taxon taxa.json")
     tx.add_argument("--taxa", required=True)
@@ -271,6 +507,11 @@ def main():
     tx.add_argument("--pause", type=float, default=0.4, help="seconds each worker waits after a download")
     tx.add_argument("--fallback", help="a folder of photos by iNaturalist id (the field set) for URLs that no longer answer")
     tx.add_argument("--sample")
+    tx.add_argument("--obs", action="append", help="ISO2=<obs-ISO2.jsonl.gz> (photo-packs-obs.py): a photo from that country per taxon")
+    tx.add_argument("--young", action="append", help="young-ISO2.json (photo-packs-obs.py --young): observations to leave out")
+    tx.add_argument("--preserved", help="the preserved specimens' manifest (ithomiini-preserved/1)")
+    tx.add_argument("--preserved-all", action="store_true", help="a preserved photo also for taxa with a live photo")
+    tx.add_argument("--bundle-mb", type=float, default=8, help="bundle size in MB (0: no bundles)")
     tx.add_argument("--limit", type=int)
     a = ap.parse_args()
     if a.cmd == "taxa":

@@ -10,10 +10,10 @@ import type { PackIndex, PackTaxon } from '../../lib/photoPacks'
 
 const tx = (name: string, file: string, bytes = 100): PackTaxon => {
   const p = name.split(' ')
-  return { name, rank: p.length > 2 ? 'subspecies' : 'species', species: p.slice(0, 2).join(' '), genus: p[0], family: 'Nymphalidae', group: 'ithomiini', countries: ['EC'], photo: { file, attribution: '(c) A', license: 'CC-BY', taxonUrl: null, source: null }, bytes }
+  return { name, rank: p.length > 2 ? 'subspecies' : 'species', species: p.slice(0, 2).join(' '), genus: p[0], family: 'Nymphalidae', group: 'ithomiini', countries: ['EC'], photos: [{ file, attribution: '(c) A', license: 'CC-BY', taxonUrl: null, source: null, bytes }] }
 }
 const index = (version: string): PackIndex => ({
-  schema: 'ithomiini-photo-packs/1',
+  schema: 'ithomiini-photo-packs/2',
   version,
   built: '2026-11-11',
   taxa: [tx('Mechanitis polymnia', '1.webp'), tx('Mechanitis lysimnia', '2.webp'), tx('Mechanitis polymnia casabranca', '3.webp'), tx('Melinaea menophilus', '4.webp')],

@@ -11,8 +11,9 @@ import { fieldSet } from '../../lib/identifyRefs'
 import { countryName, regionLabel, taxaLabel, usePacks } from '../../lib/usePacks'
 
 const props = defineProps<{ online: boolean }>()
-const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, install, remove, removeLegacy: dropLegacy } = usePacks()
-onMounted(() => load())
+const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, open, install, remove, removeLegacy: dropLegacy } = usePacks()
+// Opened: the list checked again, so a list the server replaced shows its new sizes (11 Nov 2026, «≈ 131 MB»).
+onMounted(() => open())
 watch(
   () => props.online,
   on => on && !index.value && load(true),
@@ -71,6 +72,8 @@ const cost = computed(() => (index.value ? toDownload(index.value, scope.value, 
 const installed = computed(() => pack.value?.installed ?? null)
 const current = computed(() => !!installed.value && sameScope(installed.value.scope, scope.value))
 const newer = computed(() => updateAvailable(installed.value, index.value))
+/** What «Actualizar fotos» downloads: the installed choice's photos not on the phone yet (Fable r4-F7). */
+const updateCost = computed(() => (index.value && installed.value ? toDownload(index.value, installed.value.scope, pack.value?.index) : 0))
 const legacy = ref(fieldSet())
 const when = (iso: string) => new Date(iso).toLocaleDateString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short' })
 /** The list is a sample (the lab's): said plainly. */
@@ -99,7 +102,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <Images :size="22" class="mt-0.5 shrink-0 text-fill-emerald" />
       <div class="min-w-0 flex-1">
         <h2 class="text-lg font-semibold">{{ $t('Fotos para comparar') }}</h2>
-        <p class="text-sm text-fg-muted">{{ $t('Una foto por taxón, para comparar y buscar sin internet.') }}</p>
+        <p class="text-sm text-fg-muted">{{ $t('Hasta 2 fotos por taxón, primero las del país elegido. Para comparar y buscar sin internet.') }}</p>
       </div>
     </div>
 
@@ -114,7 +117,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </p>
       <p v-if="newer" class="mt-2 text-sm font-medium text-pending-text">{{ $t('Hay fotos nuevas en el servidor.') }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        <button v-if="newer || installed.failed" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" data-testid="pack-update" @click="install(installed.scope)">{{ $t('Actualizar fotos') }}</button>
+        <button v-if="newer || installed.failed" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" data-testid="pack-update" @click="install(installed.scope)">{{ $t('Actualizar fotos') }}<template v-if="updateCost"> · {{ mbText(updateCost) }} MB</template></button>
         <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar del teléfono') }}</button>
       </div>
     </div>
