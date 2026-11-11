@@ -8,9 +8,12 @@
 // walk came in for six weeks while nothing outside Monitoreo → Importar said so (server/monitoring.mjs wikilocHealth).
 //   node scripts/nightly-app-checks.mjs --sheet-ranges [--log <file>]   (GOOGLE_CREDENTIALS_FILE, WORKBOOK_ID)
 // The workbook's fixed end rows kept ahead of its rows (server/sheet-ranges.mjs): one line per rule moved, each change
-// with the rule as it was appended to the --log file (JSON lines, for the way back). Exit 0: nothing near or moved and
-// read back; 3: a rule on a range protected from the app, left for its owner; 1: an error or a rule not read back as sent.
-import { appendFileSync } from 'node:fs';
+// with the rule as it was appended to the --log file (JSON lines, for the way back). A range protected from the app is
+// left for its owner and kept in sheet-ranges-state.json beside the log: told once, again only when it changes (the
+// app's alerts list it too, server/alerts.mjs). Exit 0: nothing near, or moved and read back, or only ranges already
+// told; 3: a protected range told for the first time or changed; 1: an error or a rule not read back as sent.
+import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const url = process.argv[2] || 'http://127.0.0.1:8794/health';
@@ -57,10 +60,17 @@ export async function sheetRangesRun(request, log, options = {}) {
     if (!log) throw new Error('no --log file: nothing sent');
     appendFileSync(log, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
   };
+  const stateFile = log ? join(dirname(log), 'sheet-ranges-state.json') : null;
   try {
-    const out = await keepRangesAhead(request, { ...options, beforeWrite: keep });
-    const r = out.record;
-    if (r.changes.length || r.leftOut.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : 'sent' });
+    const known = stateFile && existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')).leftOut || {} : {};
+    const out = await keepRangesAhead(request, { ...options, known, beforeWrite: keep });
+    const { state, toldLeftOut, ...r } = out.record;
+    if (r.changes.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : 'sent' });
+    else if (toldLeftOut) keep({ ...r, status: 'left out' });
+    if (stateFile) {
+      writeFileSync(`${stateFile}.new`, `${JSON.stringify({ at: r.at, leftOut: state }, null, 1)}\n`, { mode: 0o600 });
+      renameSync(`${stateFile}.new`, stateFile);
+    }
     return out;
   } catch (e) {
     return { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };

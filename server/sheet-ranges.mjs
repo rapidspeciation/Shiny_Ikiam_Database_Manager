@@ -133,16 +133,70 @@ const lastFilled = values => {
   return 0;
 };
 
+/** The cells a change writes: a dropdown's run, or a conditional format's covered ranges. */
+const rangesOf = c => (c.request.setDataValidation ? [c.request.setDataValidation.range] : c.request.updateConditionalFormatRule.rule.ranges || []);
+const overlaps = (a, b) =>
+  (a.startRowIndex ?? 0) < (b.endRowIndex ?? Infinity) && (b.startRowIndex ?? 0) < (a.endRowIndex ?? Infinity) &&
+  (a.startColumnIndex ?? 0) < (b.endColumnIndex ?? Infinity) && (b.startColumnIndex ?? 0) < (a.endColumnIndex ?? Infinity);
+/**
+ * The protections that keep the credential from a change: protected ranges of its sheet it cannot edit
+ * (requestingUserCanEdit false) over its cells. One with exceptions (unprotectedRanges) is not counted: the write is
+ * tried, and Google's refusal says.
+ */
+export function blockingProtections(sheet, change) {
+  return (sheet?.protectedRanges || [])
+    .filter(p => p.requestingUserCanEdit === false && !p.unprotectedRanges?.length && rangesOf(change).some(r => overlaps(p.range || {}, r)))
+    .map(p => p.protectedRangeId)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * What the night says about the changes left to their owners (`leftOut`, protected from the app), against `known`
+ * (the state file of the nights before: key → entry). A range is told once, then again only when its situation
+ * changes: its rule (before) or its protections changed, or its rows grew another margin since it was last told.
+ * One that is no longer left out (moved, changed by hand, or writable again) is told once and forgotten.
+ * Returns { state, lines, warn } (warn: something told as new or changed).
+ */
+export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at } = {}) {
+  const state = {};
+  const lines = [];
+  let warn = false;
+  for (const c of leftOut) {
+    const key = `${c.kind}:${c.label}`;
+    const was = known[key];
+    const protections = c.protections || [];
+    const changed = !was || was.before !== c.before || String(was.protections) !== String(protections) || c.rows - was.toldRows >= margin;
+    state[key] = { kind: c.kind, sheet: c.sheet, label: c.label, before: c.before, after: c.after, rows: c.rows, protections, since: was?.since || at, toldAt: changed ? at : was.toldAt, toldRows: changed ? c.rows : was.toldRows };
+    if (!changed) continue;
+    warn = true;
+    lines.push(
+      `Sheet ranges: WARNING: ${c.kind} ${c.label} is protected from the app: its owner moves ${c.before} to ${c.after} by hand${
+        was ? ` (known since ${String(was.since).slice(0, 10)}; changed since told on ${String(was.toldAt).slice(0, 10)})` : ''
+      }`,
+    );
+  }
+  for (const [key, was] of Object.entries(known))
+    if (!state[key]) lines.push(`Sheet ranges: ${was.kind} ${was.label} is no longer left out (moved, or changed by hand)`);
+  const quiet = Object.values(state).filter(e => e.toldAt !== at);
+  if (quiet.length)
+    lines.push(`Sheet ranges: ${quiet.length} known range${quiet.length === 1 ? '' : 's'} still left for ${quiet.length === 1 ? 'its owner' : 'their owners'} (told before: sheet-ranges-state.json)`);
+  return { state, lines, warn };
+}
+
 /**
  * One nightly pass: reads the rules, moves the ends that came near, reads them back. `request(path, options)` is a
  * GoogleSheets request (a fake in tests). Returns { code, lines, record }: code 0 (nothing near, or moved and checked),
- * 3 (a rule left out because the credential cannot edit its protected range: the owner moves it), 1 (not as expected).
- * `record` holds every change with the rule as it was (`inverse`: the requests that put them back).
+ * 3 (a rule left out because the credential cannot edit its protected range, told for the first time or changed: the
+ * owner moves it), 1 (not as expected). `record` holds every change with the rule as it was (`inverse`: the requests
+ * that put them back) and `state`, the ranges left out for the next night (`options.known`: the last night's).
+ * A change on a range the sheet's protections keep from the app is not sent.
  */
 export async function keepRangesAhead(request, options = {}) {
   const lines = [];
   const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount)),conditionalFormats)';
-  const meta = await request(`?fields=${enc(fields)}`);
+  const meta = await request(
+    `?fields=${enc('sheets(properties(sheetId,title,gridProperties(rowCount)),conditionalFormats,protectedRanges(protectedRangeId,range,requestingUserCanEdit,unprotectedRanges))')}`,
+  );
   const sheets = meta.sheets || [];
   const byTitle = new Map(sheets.map(s => [s.properties.title, s.properties]));
   const cf = conditionalFormatPlan(sheets, options);
@@ -193,6 +247,7 @@ export async function keepRangesAhead(request, options = {}) {
       before: c.before,
       after: c.after,
       note: `the grid has ${c.grid} rows`,
+      rows: c.grid,
       request: { updateConditionalFormatRule: { sheetId: c.sheetId, index: c.index, rule: c.next } },
       inverse: { updateConditionalFormatRule: { sheetId: c.sheetId, index: c.index, rule: c.rule } },
       check: c,
@@ -200,26 +255,41 @@ export async function keepRangesAhead(request, options = {}) {
     ...dv.map(d => {
       const source = listSource(d.before);
       const list = lists.get(source.key);
-      return { kind: 'dropdown', sheet: d.sheet, label: `${d.sheet} ${d.cells}`, before: d.before, after: d.after, note: `${source.key} has ${list.last} rows of ${list.grid}`, request: d.request, inverse: d.inverse };
+      return { kind: 'dropdown', sheet: d.sheet, label: `${d.sheet} ${d.cells}`, before: d.before, after: d.after, note: `${source.key} has ${list.last} rows of ${list.grid}`, rows: list.last, request: d.request, inverse: d.inverse };
     }),
   ];
   const record = { at: new Date(options.at ?? Date.now()).toISOString(), changes: [], leftOut: [] };
+  const strip = ({ check, ...c }) => c;
+  // Protected from the app, as the sheet's protections say: left out unsent.
+  const bySheet = new Map(sheets.map(s => [s.properties.title, s]));
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const protections = blockingProtections(bySheet.get(changes[i].sheet), changes[i]);
+    if (protections.length) record.leftOut.unshift({ ...strip(changes.splice(i, 1)[0]), protections });
+  }
+  let code = 0;
+  const report = () => {
+    const r = leftOutReport(record.leftOut, options.known || {}, { margin: options.margin, at: record.at });
+    record.state = r.state;
+    record.toldLeftOut = r.warn;
+    lines.push(...r.lines);
+    if (r.warn && code === 0) code = 3;
+  };
   for (const b of cf.behind)
     lines.push(`Sheet ranges: left as it is: ${b.sheet} rule ${b.index + 1} counts to row ${b.end}, over ${options.margin ?? MARGIN} rows short of the grid (${b.grid}): taken as meant`);
   if (!changes.length) {
     const nearest = cf.watched.sort((a, b) => a.end - a.grid - (b.end - b.grid))[0];
     lines.push(
-      `Sheet ranges: ok, nothing within ${options.margin ?? MARGIN} rows of its end${
+      `Sheet ranges: ok, nothing ${record.leftOut.length ? 'else ' : ''}within ${options.margin ?? MARGIN} rows of its end${
         nearest ? ` (nearest: ${nearest.sheet} rule ${nearest.index + 1} counts to row ${nearest.end}, the grid has ${nearest.grid})` : ''
       }`,
     );
-    return { code: 0, lines, record };
+    report();
+    return { code, lines, record };
   }
 
   // Before anything is sent, every planned change with the rule as it was, and each sheet's conditional formats as
   // read (an index shifted by an edit meanwhile would overwrite another rule): `beforeWrite` keeps them (the log file);
   // when it fails, nothing is sent. A write that may have landed is never without its way back.
-  const strip = ({ check, ...c }) => c;
   const firstRead = Object.fromEntries(
     sheets.filter(s => changes.some(c => c.check?.sheet === s.properties.title)).map(s => [s.properties.title, s.conditionalFormats]),
   );
@@ -228,7 +298,6 @@ export async function keepRangesAhead(request, options = {}) {
   // One atomic batchUpdate; a request on a range the credential cannot edit (protected: Google's 400 "Invalid
   // requests[i]") is left out and the rest sent.
   let pending = [...changes];
-  let code = 0;
   try {
     for (;;) {
       if (!pending.length) break;
@@ -243,15 +312,12 @@ export async function keepRangesAhead(request, options = {}) {
     }
   } catch (e) {
     // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it.
-    for (const c of record.leftOut)
-      lines.push(`Sheet ranges: WARNING: ${c.kind} ${c.label} is protected from the app: its owner moves ${c.before} to ${c.after} by hand`);
+    report();
     record.unconfirmed = pending.map(strip);
     lines.push(`Sheet ranges: FAILING: the write did not confirm (${String(e.message).slice(0, 200)}): check the planned changes in the log`);
     return { code: 1, lines, record };
   }
-  for (const c of record.leftOut)
-    lines.push(`Sheet ranges: WARNING: ${c.kind} ${c.label} is protected from the app: its owner moves ${c.before} to ${c.after} by hand`);
-  if (record.leftOut.length) code = 3;
+  report();
 
   for (const c of pending) {
     record.changes.push(strip(c));

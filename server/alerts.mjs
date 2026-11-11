@@ -42,7 +42,13 @@
 // would overwrite newer data: the alert says to redo those disappearances from
 // the notebook, not to apply them. Each alert leads with the outcome in the
 // base and keeps who opened the census or the chat.
+//
+// Workbook ranges left for their owners (scripts/nightly-app-checks.mjs --sheet-ranges): a dropdown or a conditional
+// format whose fixed end the nightly could not move because the range is protected from the app. Read from the
+// nightly's state file; information at the end of the list, gone once the nightly no longer leaves it out.
 
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { msg, msgn } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
@@ -68,6 +74,28 @@ export const CENSUS_COVER_DAYS = 7;
 export const CENSUS_PROPOSAL_DAYS = 14;
 /** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
 export const SAMPLE_DAYS = 180;
+
+/** The nightly's state file of ranges left for their owners: SHEET_RANGES_STATE, else beside the database. */
+export function sheetRangesStateFile(env = process.env) {
+  if (env.SHEET_RANGES_STATE) return resolve(env.SHEET_RANGES_STATE);
+  return env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'nightly-tests', 'sheet-ranges-state.json') : null;
+}
+/** The ranges in that file ([] when there is none or it does not read). */
+export function leftOutRanges(file = sheetRangesStateFile()) {
+  if (!file) return [];
+  try {
+    return Object.values(JSON.parse(readFileSync(file, 'utf8')).leftOut || {});
+  } catch {
+    return [];
+  }
+}
+const fileStamp = file => {
+  try {
+    return String(statSync(file).mtimeMs);
+  } catch {
+    return '-';
+  }
+};
 
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const isDate = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -412,7 +440,7 @@ const rowLink = (sheet, search) => `#/tablas?${new URLSearchParams({ hoja: sheet
  * The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link, action? }.
  * `action` { kind: 'cancel-census', census }: the app offers to cancel that census session.
  */
-function alertList(cams, rule, samples, today, censuses = [], censusProposals = []) {
+export function alertList(cams, rule, samples, today, censuses = [], censusProposals = [], ranges = []) {
   const out = [];
   const add = (id, level, m, link, action) => out.push({ id, level, text: m.text, textMsg: m.msg, link, ...(action ? { action } : {}) });
   const day = date => (date ? date.split('-').reverse().join('/') : '—');
@@ -568,6 +596,24 @@ function alertList(cams, rule, samples, today, censuses = [], censusProposals = 
       }),
       LINK,
     );
+  for (const r of ranges) {
+    // The label: «Sheet A2:A226» (a dropdown's cells) or «Sheet rule 3» (a conditional format's place in the list).
+    const where = String(r.label).slice(String(r.sheet).length + 1);
+    const vars = { sheet: r.sheet, cells: where, rule: where.replace(/^rule /, ''), before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
+    add(
+      `sheet-range:${r.kind}:${r.label}`,
+      'info',
+      r.kind === 'dropdown'
+        ? msg(
+            '{sheet} {cells}: el desplegable toma sus opciones de {before}, que ya no llega al final de la lista; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
+            vars,
+          )
+        : msg(
+            '{sheet}, regla {rule} del formato condicional: cuenta hasta {before}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.',
+            vars,
+          ),
+    );
+  }
   return out;
 }
 
@@ -583,7 +629,7 @@ function appStamp(store) {
     : '-';
   return `${census}:${proposals}`;
 }
-export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}:${appStamp(store)}`;
+export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}:${appStamp(store)}:${fileStamp(sheetRangesStateFile())}`;
 /**
  * Everything the alerts know, computed again only when the local copy or the day changed, here
  * in this thread. The app's requests ask freshAlerts instead (in the Revisión worker thread,
@@ -609,7 +655,7 @@ export function alertsEntry(store) {
     computedAt: new Date().toISOString(),
     ms: Date.now() - started,
     thresholds: { camLeft: CAM_LOW_LEFT, camShare: CAM_LOW_SHARE },
-    alerts: alertList(cams, rule, samples, today, censuses, censusProposals),
+    alerts: alertList(cams, rule, samples, today, censuses, censusProposals, leftOutRanges()),
     camPools: cams,
     preserveRule: rule,
     missingSamples: samples,

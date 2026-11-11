@@ -7,7 +7,8 @@ import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { conditionalFormatPlan, listSource, listTarget, validationPlan, validationCells, keepRangesAhead } from '../server/sheet-ranges.mjs';
+import { conditionalFormatPlan, listSource, listTarget, validationPlan, validationCells, keepRangesAhead, leftOutReport, blockingProtections } from '../server/sheet-ranges.mjs';
+import { alertList, leftOutRanges } from '../server/alerts.mjs';
 import { sheetRangesRun } from '../scripts/nightly-app-checks.mjs';
 
 const red = { backgroundColor: { red: 0.96, green: 0.8, blue: 0.8 }, backgroundColorStyle: { rgbColor: { red: 0.96, green: 0.8, blue: 0.8 } } };
@@ -177,7 +178,8 @@ function fakeWorkbook(sheets, { protectedSheets = [], ignoreWrites = false } = {
       };
     }
     const ranges = url.searchParams.getAll('ranges');
-    if (!ranges.length) return { sheets: structuredClone(sheets.map(({ properties, conditionalFormats }) => ({ properties, conditionalFormats }))) };
+    if (!ranges.length)
+      return { sheets: structuredClone(sheets.map(({ properties, conditionalFormats, protectedRanges }) => ({ properties, conditionalFormats, ...(protectedRanges ? { protectedRanges } : {}) }))) };
     const out = new Map();
     for (const a1 of ranges) {
       const { title, r0, r1, c0, c1 } = parseA1(a1);
@@ -352,4 +354,96 @@ test('the command without a credential: exit 1, nothing sent', async () => {
   );
   assert.equal(code, 1);
   assert.match(stdout, /^Sheet ranges: FAILING: GOOGLE_CREDENTIALS_FILE is required/);
+});
+
+// Barcoding_DNA A2:A226 on 11 Nov 2026: protected from the app's account, its list Lists!T with 7,732 rows.
+const barcoding = (rows = 7732, protections = [42]) => ({
+  kind: 'dropdown',
+  sheet: 'Barcoding_DNA',
+  label: 'Barcoding_DNA A2:A226',
+  before: '=Lists!$T$2:$T$3507',
+  after: `=Lists!$T$2:$T$${rows + 10000}`,
+  rows,
+  protections,
+});
+
+test('a protected range is told once, then again only when its situation changes', () => {
+  const first = leftOutReport([barcoding()], {}, { at: '2026-11-12T06:30:00.000Z' });
+  assert.equal(first.warn, true);
+  assert.deepEqual(first.lines, [
+    'Sheet ranges: WARNING: dropdown Barcoding_DNA A2:A226 is protected from the app: its owner moves =Lists!$T$2:$T$3507 to =Lists!$T$2:$T$17732 by hand',
+  ]);
+  // The nights after: the same, or the list 999 rows longer: one quiet line, no warning.
+  for (const rows of [7732, 8731]) {
+    const again = leftOutReport([barcoding(rows)], first.state, { at: '2026-11-13T06:30:00.000Z' });
+    assert.equal(again.warn, false);
+    assert.deepEqual(again.lines, ['Sheet ranges: 1 known range still left for its owner (told before: sheet-ranges-state.json)']);
+    assert.equal(again.state['dropdown:Barcoding_DNA A2:A226'].since, '2026-11-12T06:30:00.000Z');
+  }
+  // Told again: the list 1,000 rows longer than when told, another protection, or another rule.
+  for (const c of [barcoding(8732), barcoding(7732, [42, 43]), { ...barcoding(), before: '=Lists!$T$2:$T$5000' }]) {
+    const changed = leftOutReport([c], first.state, { at: '2026-11-20T06:30:00.000Z' });
+    assert.equal(changed.warn, true);
+    assert.match(changed.lines[0], /WARNING: .* by hand \(known since 2026-11-12; changed since told on 2026-11-12\)$/);
+  }
+  // Moved by its owner, or writable again (the nightly moved it): told once and forgotten.
+  const gone = leftOutReport([], first.state, { at: '2026-11-21T06:30:00.000Z' });
+  assert.deepEqual(gone, { state: {}, lines: ['Sheet ranges: dropdown Barcoding_DNA A2:A226 is no longer left out (moved, or changed by hand)'], warn: false });
+});
+
+test('the protections that keep the app from a change', () => {
+  const change = { request: { setDataValidation: { range: range(9, 1, 226, 0, 1), rule: {} } } };
+  const sheet = protectedRanges => ({ protectedRanges });
+  assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 0, 2), requestingUserCanEdit: false }]), change), [42]);
+  // A whole sheet protected (a range with only its sheet).
+  assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 7, range: { sheetId: 9 }, requestingUserCanEdit: false }]), change), [7]);
+  assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 0, 2), requestingUserCanEdit: true }]), change), []);
+  assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 3, 4), requestingUserCanEdit: false }]), change), []);
+  const withException = { protectedRangeId: 7, range: { sheetId: 9 }, requestingUserCanEdit: false, unprotectedRanges: [range(9, 0, 226, 0, 1)] };
+  assert.deepEqual(blockingProtections(sheet([withException]), change), []);
+  assert.deepEqual(blockingProtections(undefined, change), []);
+  // A conditional format: its covered ranges.
+  const cf = { request: { updateConditionalFormatRule: { rule: { ranges: [range(9, 1, 226, 5, 6)] } } } };
+  assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 3, range: range(9, 0, 10, 5, 6), requestingUserCanEdit: false }]), cf), [3]);
+});
+
+const toEnd = (dv, end) => ({ ...dv, condition: { ...dv.condition, values: [{ userEnteredValue: `=Lists!$T$2:$T$${end}` }] } });
+
+test('nights with a protected dropdown: never sent, told the first night only, kept in the state file the alerts read', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sheet-ranges-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, 'sheet-ranges.jsonl');
+  const state = join(dir, 'sheet-ranges-state.json');
+  const sheets = workbook({ end: 30846, zEnd: 13775 });
+  sheets[2].protectedRanges = [{ protectedRangeId: 42, range: range(9, 0, 20, 0, 1), requestingUserCanEdit: false }];
+  const fake = fakeWorkbook(sheets);
+  const first = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-12T06:30:00Z') });
+  assert.equal(first.code, 3);
+  assert.match(first.lines[0], /^Sheet ranges: ok, nothing else within 1000 rows/);
+  assert.deepEqual(first.lines.slice(1), [
+    'Sheet ranges: WARNING: dropdown Barcoding_DNA A2:A20 is protected from the app: its owner moves =Lists!$T$2:$T$3507 to =Lists!$T$2:$T$17732 by hand',
+  ]);
+  const second = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-13T06:30:00Z') });
+  assert.equal(second.code, 0);
+  assert.deepEqual(second.lines.slice(1), ['Sheet ranges: 1 known range still left for its owner (told before: sheet-ranges-state.json)']);
+  // Never sent; one record in the log (the first night's), the state beside it.
+  assert.equal(fake.calls.filter(c => c.method === 'POST').length, 0);
+  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l).status), ['left out']);
+  const ranges = leftOutRanges(state);
+  assert.equal(ranges.length, 1);
+  assert.equal(ranges[0].since, '2026-11-12T06:30:00.000Z');
+  // The app's alerts: one piece of information, after the others.
+  const list = alertList([], { reached: [], close: [], limit: 30 }, [], 46000, [], [], ranges);
+  assert.deepEqual(list.map(a => [a.id, a.level]), [['sheet-range:dropdown:Barcoding_DNA A2:A20', 'info']]);
+  assert.equal(
+    list[0].text,
+    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507, que ya no llega al final de la lista; debería ser =Lists!$T$2:$T$17732. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
+  );
+  assert.deepEqual(leftOutRanges(join(dir, 'none.json')), []);
+  // Its owner moves it by hand: the next night forgets it, and the alert goes.
+  sheets[2].dv = new Map([...sheets[2].dv].map(([k, v]) => [k, toEnd(v, 17732)]));
+  const third = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-14T06:30:00Z') });
+  assert.equal(third.code, 0);
+  assert.ok(third.lines.includes('Sheet ranges: dropdown Barcoding_DNA A2:A20 is no longer left out (moved, or changed by hand)'));
+  assert.deepEqual(leftOutRanges(state), []);
 });
