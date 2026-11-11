@@ -1,23 +1,36 @@
 #!/usr/bin/env node
 // Assistant eval runner (Phase A pilot, 4 Nov 2026). Lab only.
 //
-//   node tools/assistant-eval/run.mjs <tasks.json> <new out dir> [--only E01,E02] [--parallel 3]
-//        [--model claude-opus-5-5] [--effort medium] [--instance claude-ithomiini] [--variant label] [--keep]
+//   node tools/assistant-eval/run.mjs <tasks.json> <new out dir> [--only E01,E02] [--parallel 3] [--samples 2]
+//        [--model claude-opus-5-5] [--effort medium] [--instance claude-eval-main] [--variant label] [--keep]
+//
+// Samples (samples.mjs): each chat task runs --samples times (default 2; unit tasks once), one results.jsonl row
+// per sample (`sample`, `pass`); when exactly half pass (1 of 2), one more sample runs. A sample passes when its
+// score ≥ the task's `passAt` (default 1.0); a case fails when half or more of its samples fail. Samples of one task
+// run one after another (fixtures and the photo-sheet switch are per task); tasks run --parallel at a time.
+// Every sample of a task that applies a draft (betweenTurns applyLatest: D12, D14, D16) starts on a fresh eval app
+// (eval-app.mjs stop + start, about 6 s), so samples and tasks do not see each other's applied rows.
+// Routing tasks (tier 'routing'): one prompt, the run interrupted after its first `stopAfter` tool calls (default 3)
+// and graded on those calls only (grade.mjs).
 //
 // Per task:
 //  - unit: direct MCP calls to the lab app (no model): ms, answer size, error, checks.
 //  - e2e / multi: a new chat in the lab T3 "Lab" project (tools/whatsapp/t3-turn.mjs), one turn per prompt,
 //    then metrics read (read-only) from the lab T3 state DB (tokens, tool calls, failed calls, wall time) and
 //    the proposals the chat drafted from the lab app DB; graded by the task's checks; the chat is archived.
-// Writes <out>/results.jsonl (one line per task) and <out>/summary.md. Never applies a proposal itself.
+// Writes <out>/results.jsonl (one line per sample) and <out>/summary.md. Never applies a proposal itself.
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mcpFrom } from './mcp.mjs';
-import { grade } from './grade.mjs';
+import { cutGraded, grade, regradeRouting } from './grade.mjs';
 import { fixedContext } from './fixed.mjs';
+import { setCells } from './fixtures.mjs';
+import { idleAfterStop, needsRetry, needsTieBreak, passRate, rateText, samplePass, byCase, verdict } from './samples.mjs';
 
 // Tests never start eval chats (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
 if (process.env.NODE_TEST_CONTEXT) {
@@ -61,7 +74,7 @@ const opt = (name, dflt) => {
 };
 const [tasksFile, outDir] = argv.filter((a, i) => !a.startsWith('--') && !(argv[i - 1]?.startsWith('--') && !['--keep', '--regrade'].includes(argv[i - 1])));
 if (!tasksFile || !outDir) {
-  console.error('usage: run.mjs <tasks.json> <new out dir> [--only ids] [--parallel n] [--model m] [--effort e] [--instance i] [--variant v]');
+  console.error('usage: run.mjs <tasks.json> <new out dir> [--only ids] [--parallel n] [--samples n] [--model m] [--effort e] [--instance i] [--variant v]');
   process.exit(2);
 }
 if (existsSync(outDir)) throw new Error(`out dir exists (use a fresh one): ${outDir}`);
@@ -70,12 +83,17 @@ const only = opt('only') ? new Set(opt('only').split(',')) : null;
 const RUN = {
   model: opt('model', 'claude-opus-5-5'),
   effort: opt('effort', 'medium'),
-  instance: opt('instance', 'claude-ithomiini'),
+  // claude-eval-main: Franz's main login on the lab T3. claude-ithomiini and claude-eval use the team's account.
+  instance: opt('instance', 'claude-eval-main'),
+  samples: Number(opt('samples', 2)),
+  turnTimeoutMs: Number(opt('turn-timeout', 1200)) * 1000,
   variant: opt('variant', 'baseline'),
   parallel: Number(opt('parallel', 3)),
   keep: argv.includes('--keep'),
   tag: new Date().toISOString().replace(/[-:]/g, '').slice(0, 13),
 };
+if (!Number.isInteger(RUN.samples) || RUN.samples < 1) throw new Error(`--samples must be a whole number ≥ 1, not ${opt('samples')}`);
+if (!(RUN.turnTimeoutMs > 0)) throw new Error(`--turn-timeout must be seconds > 0, not ${opt('turn-timeout')}`);
 const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
 const tasks = JSON.parse(readFileSync(tasksFile, 'utf8')).tasks.filter(t => !only || only.has(t.id));
 
@@ -108,8 +126,55 @@ function envelope(task, text, first) {
 
 const DRAFTING = /(propose_changes|update_proposal|match_notebook)$/;
 
+/** The Claude home of a lab T3 provider instance (its settings' homePath; empty = ~/.claude). */
+function claudeHome(instance) {
+  let home = '';
+  try {
+    home = JSON.parse(readFileSync(join(LAB.home, 'userdata', 'settings.json'), 'utf8')).providerInstances?.[instance]?.config?.homePath ?? '';
+  } catch {}
+  return home ? home.replace(/^~(?=\/|$)/, homedir()) : join(homedir(), '.claude');
+}
+
+/**
+ * A chat's token usage from its Claude transcript(s): each API response once (by message id), summed. T3 has no
+ * usage for an interrupted run (usageStatus 'unavailable'): the routing cases' runs. On completed runs this sums
+ * to T3's own figures (checked 8 Nov: 75,243 / 35,759 / 39,478 / 197 on both). A request the interrupt cut while
+ * it streamed is not in the transcript, so for a stopped run this is a lower bound by at most that one request.
+ */
+function transcriptUsage(db, threadId, instance) {
+  const sessions = db
+    .prepare("SELECT json_extract(payload_json, '$.nativeThreadRef.nativeId') sid FROM orchestration_v2_projection_provider_threads WHERE thread_id = ?")
+    .all(threadId)
+    .map(r => r.sid)
+    .filter(Boolean);
+  const projects = join(claudeHome(instance), 'projects');
+  if (!sessions.length || !existsSync(projects)) return null;
+  const byId = new Map();
+  for (const sid of sessions)
+    for (const d of readdirSync(projects)) {
+      const f = join(projects, d, `${sid}.jsonl`);
+      if (!existsSync(f)) continue;
+      for (const line of readFileSync(f, 'utf8').split('\n')) {
+        if (!line.includes('"usage"')) continue;
+        try {
+          const e = JSON.parse(line);
+          if (e.type === 'assistant' && e.message?.id && e.message.usage) byId.set(e.message.id, e.message.usage);
+        } catch {}
+      }
+    }
+  if (!byId.size) return null;
+  const u = { input: 0, cachedInput: 0, cacheCreation: 0, output: 0, requests: byId.size };
+  for (const x of byId.values()) {
+    u.cachedInput += x.cache_read_input_tokens ?? 0;
+    u.cacheCreation += x.cache_creation_input_tokens ?? 0;
+    u.input += (x.input_tokens ?? 0) + (x.cache_read_input_tokens ?? 0) + (x.cache_creation_input_tokens ?? 0);
+    u.output += x.output_tokens ?? 0;
+  }
+  return u;
+}
+
 /** Metrics of one chat, read-only from the lab T3 state DB. */
-function chatMetrics(threadId) {
+function chatMetrics(threadId, instance = RUN.instance) {
   const db = new DatabaseSync(join(LAB.home, 'userdata', 'statev2.sqlite'), { readOnly: true, timeout: 5000 });
   try {
     const runs = db.prepare('SELECT run_id, ordinal, status, requested_at, completed_at FROM orchestration_v2_projection_runs WHERE thread_id = ? ORDER BY ordinal').all(threadId);
@@ -127,7 +192,7 @@ function chatMetrics(threadId) {
     for (const it of items) {
       const p = JSON.parse(it.payload_json);
       if (it.type === 'dynamic_tool') {
-        tools.push({ name: String(p.toolName ?? '?').replace(/^mcp__db__/, ''), failed: it.status === 'failed', input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined });
+        tools.push({ name: String(p.toolName ?? '?').replace(/^mcp__db__/, ''), failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined });
         // Proposals are attributed only to this chat's drafting calls (never to ids seen in list/get answers).
         if (DRAFTING.test(String(p.toolName ?? ''))) {
           if (p.nativeItemRef?.nativeId) toolUseIds.push(p.nativeItemRef.nativeId);
@@ -136,7 +201,7 @@ function chatMetrics(threadId) {
       }
       else if (it.type === 'command_execution' && p.title !== 'Workspace ready') {
         commands++;
-        tools.push({ name: 'Bash', failed: it.status === 'failed', input: String(p.input ?? '').slice(0, 200) });
+        tools.push({ name: 'Bash', failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: String(p.input ?? '').slice(0, 200) });
       } else if (it.type === 'subagent') subagents++;
       else if (it.type === 'error') errors++;
       else if (it.type === 'assistant_message') {
@@ -160,6 +225,12 @@ function chatMetrics(threadId) {
       // T3 records only the main agent's tokens: a run with sub-agents is under-counted.
       if (u.hasSubagents || subagents > 0) usage.subagentUsageMissing = true;
     }
+    // An interrupted run (a routing case) has no usage in T3: the transcript has it.
+    if (turns.some(t => t.turnTokenUsage?.usageStatus === 'unavailable')) {
+      const tu = transcriptUsage(db, threadId, instance);
+      if (tu) Object.assign(usage, tu, { source: 'transcript', lowerBound: runs.some(r => r.status === 'interrupted') });
+      else usage.unavailable = true;
+    }
     const ms = runs.reduce((s, r) => s + (r.completed_at ? Date.parse(r.completed_at) - Date.parse(r.requested_at) : 0), 0);
     return { toolUseIds, uuids: [...uuids], runs: runs.length, runStatus: runs.map(r => r.status), ms, usage, tools, toolCalls: tools.length, toolErrors: tools.filter(t => t.failed).length, commands, subagents, errors, finalText, turnTexts, allText: assistantTexts.join('\n\n') };
   } finally {
@@ -181,25 +252,24 @@ function proposalsOf(threadId, toolUseIds = [], ids = [], since = '1970') {
   }
 }
 
-/** A seeded fixture: one cell of the eval app's in-memory sheet set through its local sheet-edit API (LOCAL_MODE only). */
-async function fixture({ sheet, row, field, value }) {
+/** Seeded fixtures: cells of the eval app's in-memory sheets set through its local sheet-edit API (LOCAL_MODE only),
+ * all written first and then waited for together in the replica `query` reads (fixtures.mjs). */
+async function fixtures(cells, label) {
+  if (!cells.length) return;
   if (TARGET !== 'eval') throw new Error('fixtures need the eval app');
-  // sheet-edit.mjs reads the login from $ITHOMIINI_LAB_DIR/credentials.json: the eval app's run folder.
-  const r = spawnSync(process.execPath, [join(ROOT, 'tools/lab/sheet-edit.mjs'), sheet, String(row), `${field}=${value ?? ''}`, '--app', 'http://127.0.0.1:8805'], {
-    encoding: 'utf8',
-    env: { ...process.env, ITHOMIINI_LAB_DIR: '/home/franz/.cache/ithomiini-lab/assistant-eval/evalapp/run-8805' },
-  });
-  if (r.status !== 0 || !/^200\b/.test(r.stdout.trim())) throw new Error(`fixture ${sheet}:${row} ${field}: ${r.stderr || r.stdout}`);
-  // `query` reads a replica that catches up within about a minute: wait until it shows the value.
   const m = mcpFrom(LAB.workspace);
-  const want = String(value ?? '');
-  for (let i = 0; i < 40; i++) {
-    const out = await m.call('query', { sql: `SELECT "${field}" v FROM "${sheet}" WHERE _row = ${Number(row)}` });
-    const got = out.text.split('\n')[1] ?? '';
-    if (got.trim() === want.trim()) return;
-    await new Promise(r => setTimeout(r, 5000));
-  }
-  throw new Error(`fixture ${sheet}:${row} ${field}: the replica never showed ${want}`);
+  const r = await setCells(cells, {
+    edit: ({ sheet, row, field, value }) => {
+      // sheet-edit.mjs reads the login from $ITHOMIINI_LAB_DIR/credentials.json: the eval app's run folder.
+      const e = spawnSync(process.execPath, [join(ROOT, 'tools/lab/sheet-edit.mjs'), sheet, String(row), `${field}=${value ?? ''}`, '--app', 'http://127.0.0.1:8805'], {
+        encoding: 'utf8',
+        env: { ...process.env, ITHOMIINI_LAB_DIR: '/home/franz/.cache/ithomiini-lab/assistant-eval/evalapp/run-8805' },
+      });
+      if (e.status !== 0 || !/^200\b/.test(e.stdout.trim())) throw new Error(e.stderr || e.stdout);
+    },
+    read: async ({ sheet, row, field }) => (await m.call('query', { sql: `SELECT "${field}" v FROM "${sheet}" WHERE _row = ${Number(row)}` })).text.split('\n')[1] ?? '',
+  });
+  console.error(`${new Date().toISOString()} ${label}: ${cells.length} fixture cells shown after ${(r.ms / 1000).toFixed(0)} s`);
 }
 
 async function runUnit(task) {
@@ -229,71 +299,120 @@ function photoSheets(on) {
   }
 }
 
-async function runChat(task) {
+async function runChat(task, sample = 1) {
   const prompts = task.turns ?? [task.prompt];
-  const before = resetState({ self: task.id });
-  running.set(task.id, new Date().toISOString());
-  for (const f of task.fixtures ?? []) await fixture(f);
-  if (task.breakPhotoSheets) photoSheets(false);
-  let threadId = null;
+  const self = `${task.id}#${sample}`;
+  const routing = task.tier === 'routing';
+  if (routing && prompts.length !== 1) throw new Error('a routing task has one prompt');
+  const before = resetState({ self });
+  running.set(self, new Date().toISOString());
+  // The chat's id is chosen here, so a sample whose turn fails can still be stopped, archived and cleaned up.
+  const threadId = randomUUID();
   const turnResults = [];
   const t0 = Date.now();
-  for (let i = 0; i < prompts.length; i++) {
-    const r = await t3turn({
-      op: 'turn',
-      threadId: threadId ?? undefined,
-      text: envelope(task, prompts[i], i === 0),
-      timeoutMs: 1_200_000,
-      instanceId: RUN.instance,
-      create: { projectId: LAB.projectId, title: `EVAL ${RUN.tag} ${RUN.variant} ${task.id}`, model: RUN.model, effort: RUN.effort },
-    });
-    if (!r.ok) throw new Error(`turn ${i + 1}: ${JSON.stringify(r).slice(0, 300)}`);
-    threadId = r.threadId;
-    // The person acts in the app between turns (e.g. applies the draft in Cambios propuestos).
-    for (const a of (task.betweenTurns ?? []).filter(a => a.after === i + 1)) {
-      if (a.action !== 'applyLatest') throw new Error(`unknown betweenTurns action ${a.action}`);
-      const met = chatMetrics(threadId);
-      const live = proposalsOf(threadId, met.toolUseIds, met.uuids, new Date(t0).toISOString()).filter(p => !['discarded', 'applied'].includes(p.status));
-      if (!live.length) throw new Error('applyLatest: the chat drafted no proposal');
-      const out = await mcpFrom(LAB.workspace).call('apply_proposal', { proposalId: live.at(-1).id });
-      turnResults.push({ applied: live.at(-1).id, isError: out.isError, text: out.text.slice(0, 300) });
+  let result = null;
+  try {
+    await fixtures(task.fixtures ?? [], `${self} set`);
+    if (task.breakPhotoSheets) photoSheets(false);
+    for (let i = 0; i < prompts.length; i++) {
+      const r = await t3turn({
+        op: 'turn',
+        threadId: i ? threadId : undefined,
+        newThreadId: threadId,
+        text: envelope(task, prompts[i], i === 0),
+        timeoutMs: RUN.turnTimeoutMs,
+        instanceId: RUN.instance,
+        ...(routing ? { stopAfterTools: task.stopAfter ?? 3 } : {}),
+        create: { projectId: LAB.projectId, title: `EVAL ${RUN.tag} ${RUN.variant} ${task.id} s${sample}`, model: RUN.model, effort: RUN.effort },
+      });
+      if (!r.ok) throw new Error(`turn ${i + 1}: ${JSON.stringify(r).slice(0, 300)}`);
+      // The person acts in the app between turns (e.g. applies the draft in Cambios propuestos).
+      for (const a of (task.betweenTurns ?? []).filter(a => a.after === i + 1)) {
+        if (a.action !== 'applyLatest') throw new Error(`unknown betweenTurns action ${a.action}`);
+        const met = chatMetrics(threadId);
+        const live = proposalsOf(threadId, met.toolUseIds, met.uuids, new Date(t0).toISOString()).filter(p => !['discarded', 'applied'].includes(p.status));
+        if (!live.length) throw new Error('applyLatest: the chat drafted no proposal');
+        const out = await mcpFrom(LAB.workspace).call('apply_proposal', { proposalId: live.at(-1).id });
+        turnResults.push({ applied: live.at(-1).id, isError: out.isError, text: out.text.slice(0, 300) });
+      }
+      turnResults.push({ ms: r.ms, status: r.status, ...(r.stopped ? { stopped: true } : {}), text: String(r.text ?? '').slice(0, 1500) });
     }
-    turnResults.push({ ms: r.ms, status: r.status, text: String(r.text ?? '').slice(0, 1500) });
+    const metrics = chatMetrics(threadId);
+    const proposals = proposalsOf(threadId, metrics.toolUseIds, metrics.uuids, new Date(t0).toISOString());
+    const g = grade(task, { ...metrics, proposals }, { today: TODAY });
+    const cut = routing ? cutGraded(task, metrics.tools) : [];
+    result = {
+      id: task.id,
+      tier: task.tier,
+      split: task.split,
+      threadId,
+      ...(routing ? { stopAfter: task.stopAfter ?? 3, stopped: turnResults.some(t => t.stopped) } : {}),
+      // A graded call the interrupt cut has no settled result: the sample does not count (t3-turn waits for them).
+      ...(cut.length ? { invalid: `graded call cut by the interrupt: ${cut.map(t => t.name).join(', ')}` } : {}),
+      score: g.score,
+      checks: g.results,
+      wallMs: Date.now() - t0,
+      runMs: metrics.ms,
+      usage: metrics.usage,
+      toolCalls: metrics.toolCalls,
+      toolErrors: metrics.toolErrors,
+      commands: metrics.commands,
+      subagents: metrics.subagents,
+      errors: metrics.errors,
+      tools: metrics.tools,
+      reset: { before },
+      turns: turnResults,
+      proposals: proposals.map(p => ({ id: p.id, status: p.status, revision: p.revision, changes: p.changes.map(c => ({ sheet: c.sheet, row: c.row, label: c.label, values: c.values })) })),
+      finalText: metrics.finalText.slice(0, 3000),
+      turnTexts: metrics.turnTexts.map(t => t.slice(0, 3000)),
+      startedAt: new Date(t0).toISOString(),
+      today: TODAY,
+    };
+    return result;
+  } finally {
+    // Also when the turn failed or timed out: stop the chat (so it drafts nothing more), archive it, put the
+    // fixtures back, and discard the drafts this chat made (attributed by thread and its drafting calls).
+    let busyChat = null;
+    if (!result) {
+      const st = await t3turn({ op: 'stop', threadId, graceMs: 60_000 }).catch(e => ({ ok: false, error: String(e.message ?? e) }));
+      if (!idleAfterStop(st)) {
+        busyChat = `chat ${threadId} not confirmed idle after stop (${JSON.stringify(st).slice(0, 160)})`;
+        // Latched before any cleanup that can throw: no new sample starts, and the samples running beside this
+        // chat may have seen its drafts, so they do not count.
+        notIdle.set(self, busyChat);
+        aborted ??= `run stopped: ${busyChat} (after ${self})`;
+        for (const other of running.keys()) if (other !== self) exposed.add(other);
+      }
+    }
+    if (!RUN.keep) await t3turn({ op: 'archive', threadId }).catch(() => {});
+    // Restoring a fixture writes its `restore` value whatever the cell holds, so it is safe when the setup failed
+    // half way or ran twice.
+    await fixtures((task.fixtures ?? []).slice().reverse().map(f => ({ ...f, value: f.restore })), `${self} restore`).catch(e => console.error(`${self}: fixture restore failed: ${e.message}`));
+    if (task.breakPhotoSheets) photoSheets(true);
+    let ids = [];
+    try {
+      const met = chatMetrics(threadId);
+      ids = proposalsOf(threadId, met.toolUseIds, met.uuids, new Date(t0).toISOString()).map(p => p.id);
+    } catch {}
+    // This chat's own drafts go now; anything older than every running task too.
+    running.delete(self);
+    const after = resetState({ self, ids });
+    if (result) result.reset.after = after;
+    if (busyChat) {
+      // A chat still answering could draft into later samples: its drafts go once more after the archive, and
+      // the run stops here (runOne reads `notIdle`; the remaining samples and tasks are skipped).
+      await new Promise(r => setTimeout(r, 10_000));
+      try {
+        const met = chatMetrics(threadId);
+        resetState({ self, ids: proposalsOf(threadId, met.toolUseIds, met.uuids, new Date(t0).toISOString()).map(p => p.id) });
+      } catch {}
+    }
   }
-  const metrics = chatMetrics(threadId);
-  const proposals = proposalsOf(threadId, metrics.toolUseIds, metrics.uuids, new Date(t0).toISOString());
-  const g = grade(task, { ...metrics, proposals }, { today: TODAY });
-  if (!RUN.keep) await t3turn({ op: 'archive', threadId }).catch(() => {});
-  for (const f of (task.fixtures ?? []).slice().reverse()) await fixture({ ...f, value: f.restore });
-  if (task.breakPhotoSheets) photoSheets(true);
-  // This chat's own drafts go now; anything older than every running task too.
-  running.delete(task.id);
-  const after = resetState({ self: task.id, ids: proposals.map(p => p.id) });
-  return {
-    id: task.id,
-    tier: task.tier,
-    split: task.split,
-    threadId,
-    score: g.score,
-    checks: g.results,
-    wallMs: Date.now() - t0,
-    runMs: metrics.ms,
-    usage: metrics.usage,
-    toolCalls: metrics.toolCalls,
-    toolErrors: metrics.toolErrors,
-    commands: metrics.commands,
-    subagents: metrics.subagents,
-    errors: metrics.errors,
-    tools: metrics.tools,
-    reset: { before, after },
-    turns: turnResults,
-    proposals: proposals.map(p => ({ id: p.id, status: p.status, revision: p.revision, changes: p.changes.map(c => ({ sheet: c.sheet, row: c.row, label: c.label, values: c.values })) })),
-    finalText: metrics.finalText.slice(0, 3000),
-    turnTexts: metrics.turnTexts.map(t => t.slice(0, 3000)),
-    startedAt: new Date(t0).toISOString(),
-    today: TODAY,
-  };
 }
+/** Samples (task#sample) whose failed chat was not confirmed idle → why. */
+const notIdle = new Map();
+/** Samples (task#sample) that were running beside such a chat: invalid, it could draft into theirs. */
+const exposed = new Set();
 
 async function pool(items, n, fn) {
   const out = [];
@@ -321,13 +440,18 @@ if (argv.includes('--regrade')) {
   const runDay = new Date(runStarted).toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
   const fresh = old.map(r => {
     if (!r.threadId) return r;
-    const metrics = chatMetrics(r.threadId);
+    const metrics = chatMetrics(r.threadId, r.instance ?? RUN.instance);
     const proposals = proposalsOf(r.threadId, metrics.toolUseIds, metrics.uuids, r.startedAt ?? runStarted);
-    const g = grade(byId[r.id], { ...metrics, proposals }, { today: r.today ?? runDay });
-    return { ...r, today: r.today ?? runDay, startedAt: r.startedAt ?? runStarted, score: g.score, checks: g.results, proposals: proposals.map(p => ({ id: p.id, status: p.status, revision: p.revision, changes: p.changes.map(c => ({ sheet: c.sheet, row: c.row, label: c.label, values: c.values })) })) };
+    // A routing row is graded on the calls it was stopped after; a task whose k grew since cannot be re-graded.
+    const { task: gradeTask, invalid } = regradeRouting(byId[r.id], r, metrics.tools);
+    const g = grade(gradeTask, { ...metrics, proposals }, { today: r.today ?? runDay });
+    // Routing reasons (cut call, stopped too early) are recomputed for the task's current k; others (app down) stay.
+    const { invalid: stored, ...rest } = r;
+    const keep = stored && !/^(graded call cut|stopped after)/.test(stored) ? stored : null;
+    return { ...rest, ...(invalid || keep ? { invalid: invalid || keep } : {}), ...(metrics.usage.source === 'transcript' ? { usage: metrics.usage } : {}), today: r.today ?? runDay, startedAt: r.startedAt ?? runStarted, score: g.score, pass: samplePass({ score: g.score }, byId[r.id]?.passAt ?? r.passAt ?? 1), checks: g.results, proposals: proposals.map(p => ({ id: p.id, status: p.status, revision: p.revision, changes: p.changes.map(c => ({ sheet: c.sheet, row: c.row, label: c.label, values: c.values })) })) };
   });
   writeFileSync(join(outDir, 'results.jsonl'), fresh.map(r => JSON.stringify(r)).join('\n') + '\n');
-  for (const r of fresh) console.log(r.id, r.score?.toFixed?.(2), (r.checks ?? []).filter(c => !c.pass).map(c => JSON.stringify(c.check) + ' ' + (c.detail ?? '')).join(' | '));
+  for (const r of fresh) console.log(r.id, r.sample ? `s${r.sample}` : '', r.score?.toFixed?.(2), r.invalid ? `INVALID: ${r.invalid}` : '', (r.checks ?? []).filter(c => !c.pass).map(c => JSON.stringify(c.check) + ' ' + (c.detail ?? '')).join(' | '));
   process.exit(0);
 }
 const fixed = TARGET === 'eval' ? await fixedContext(LAB.workspace).catch(() => null) : null;
@@ -342,18 +466,36 @@ async function appUp() {
     return false;
   }
 }
+const appliesDrafts = t => (t.betweenTurns ?? []).some(a => a.action === 'applyLatest');
+/** A fresh eval app from the frozen copy, before each sample of a task that applies a draft. */
+async function restartApp() {
+  spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'stop'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'start'], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`eval app restart: ${(r.stderr || r.stdout).slice(-300)}`);
+  for (let i = 0; i < 60 && !(await appUp()); i++) await new Promise(res => setTimeout(res, 3000));
+  if (!(await appUp())) throw new Error('eval app restart: no /health after 3 min');
+}
 let aborted = null;
-const runOne = async task => {
-  if (aborted) return { id: task.id, tier: task.tier, split: task.split, skipped: aborted };
+const runOne = async (task, sample = 1) => {
+  const meta = { id: task.id, sample, tier: task.tier, split: task.split, kind: task.kind, source: task.source, passAt: task.passAt ?? 1, instance: RUN.instance };
+  if (aborted) return { ...meta, skipped: aborted };
   const started = Date.now();
   let res;
   try {
-    res = task.tier === 'unit' ? await runUnit(task) : await runChat(task);
+    if (appliesDrafts(task) && TARGET === 'eval') await restartApp();
+    res = { ...meta, ...(task.tier === 'unit' ? await runUnit(task) : await runChat(task, sample)) };
   } catch (e) {
-    running.delete(task.id);
+    running.delete(`${task.id}#${sample}`);
     // A crash counts as 0 in the set mean, so a variant cannot look cheaper by failing tasks.
-    res = { id: task.id, tier: task.tier, split: task.split, score: 0, failed: String(e.message ?? e).slice(0, 500) };
+    res = { ...meta, score: 0, failed: String(e.message ?? e).slice(0, 500) };
   }
+  if (exposed.has(`${task.id}#${sample}`)) res.invalid = 'ran beside a chat not confirmed idle after stop';
+  const busyChat = notIdle.get(`${task.id}#${sample}`);
+  if (busyChat) {
+    res.notIdle = busyChat;
+    aborted ??= `run stopped: ${busyChat} (after ${task.id} s${sample})`;
+  }
+  res.pass = samplePass(res);
   res.elapsedMs = Date.now() - started;
   if (task.tier !== 'unit' && !(await appUp())) {
     // Not a model failure: the run stops, and this task's result does not count.
@@ -361,25 +503,53 @@ const runOne = async task => {
     aborted = `eval app down (after ${task.id})`;
   }
   appendFileSync(join(outDir, 'results.jsonl'), JSON.stringify(res) + '\n');
-  console.log(`${task.id} score=${res.score?.toFixed?.(2) ?? '-'} ${res.failed ? 'FAILED ' + res.failed.slice(0, 120) : ''} in=${res.usage?.input ?? '-'} out=${res.usage?.output ?? '-'} tools=${res.toolCalls ?? '-'} ms=${res.runMs ?? res.ms ?? '-'}`);
+  console.log(`${task.id} s${sample} score=${res.score?.toFixed?.(2) ?? '-'} pass=${res.pass} ${res.stopped ? 'stopped ' : ''}${res.failed ? 'FAILED ' + res.failed.slice(0, 120) : ''} in=${res.usage?.input ?? '-'} out=${res.usage?.output ?? '-'} tools=${res.toolCalls ?? '-'} ms=${res.runMs ?? res.ms ?? '-'}`);
   return res;
 };
-const results = [...(await pool(tasks.filter(t => !t.mutates), RUN.parallel, runOne)), ...(await pool(tasks.filter(t => t.mutates), 1, runOne))];
+/** All samples of one task, one after another: the planned ones (an invalid one gets one more try, so a case is not
+ * decided on fewer samples than planned), then one more on an exact tie. Sample numbers count every try. */
+async function runTask(task) {
+  const planned = task.tier === 'unit' ? 1 : RUN.samples;
+  const rows = [];
+  const next = () => runOne(task, rows.length + 1);
+  for (let s = 1; s <= planned; s++) {
+    const r = await next();
+    rows.push(r);
+    if (needsRetry(r)) rows.push(await next());
+  }
+  if (needsTieBreak(rows, planned)) {
+    const r = await next();
+    rows.push(r);
+    if (needsRetry(r)) rows.push(await next());
+  }
+  return rows;
+}
+const results = [...(await pool(tasks.filter(t => !t.mutates), RUN.parallel, runTask)), ...(await pool(tasks.filter(t => t.mutates), 1, runTask))].flat();
 
 // Summary table.
 const k = n => (n == null ? '-' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n));
-const rows = results.sort((a, b) => a.id.localeCompare(b.id));
+const rows = results.sort((a, b) => a.id.localeCompare(b.id) || a.sample - b.sample);
+const cases = [...byCase(rows).entries()].map(([id, rs]) => ({ id, rs, v: verdict(rs) }));
 const lines = [
-  `# Assistant eval ${RUN.tag} (${RUN.variant}, ${RUN.model}/${RUN.effort}, instance ${RUN.instance})`,
+  `# Assistant eval ${RUN.tag} (${RUN.variant}, ${RUN.model}/${RUN.effort}, instance ${RUN.instance}, samples ${RUN.samples})`,
   '',
-  '| task | tier | split | score | input tok | cache-write tok | output tok | tool calls | tool errors | Bash | subagents | run time s |',
-  '|---|---|---|---|---|---|---|---|---|---|---|---|',
+  `**Pass rate:** ${rateText(passRate(rows))}. A sample passes at score ≥ passAt (default 1.0); a case fails when half or more of its samples fail.`,
+  ...rows.filter(r => r.notIdle).map(r => `\n**Run stopped:** ${r.id} s${r.sample}: ${r.notIdle}. The samples after it were skipped.`),
+  '',
+  '| case | kind | samples passed | case | mean score |',
+  '|---|---|---|---|---|',
+  ...cases.map(c => `| ${c.id} | ${c.rs[0].kind ?? '-'} | ${c.v.label} | ${c.v.n ? (c.v.pass ? 'pass' : 'FAIL') : 'no counted sample'} | ${c.v.meanScore == null ? '-' : c.v.meanScore.toFixed(2)} |`),
+  '',
+  '| task | sample | tier | split | score | input tok | cache-write tok | output tok | tool calls | tool errors | Bash | subagents | run time s |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ...rows.map(r =>
     r.failed || r.skipped
-      ? `| ${r.id} | ${r.tier} | ${r.split} | ${r.failed ? 'FAILED: ' + r.failed.slice(0, 80) : 'SKIPPED: ' + r.skipped} |||||||||`
+      ? `| ${r.id} | ${r.sample} | ${r.tier} | ${r.split} | ${r.failed ? 'FAILED: ' + r.failed.slice(0, 80) : 'SKIPPED: ' + r.skipped} |||||||||`
+      : r.invalid
+      ? `| ${r.id} | ${r.sample} | ${r.tier} | ${r.split} | INVALID: ${r.invalid.slice(0, 80)} |||||||||`
       : r.tier === 'unit'
-        ? `| ${r.id} | unit | ${r.split} | ${r.score.toFixed(2)} | - | - | - | ${r.calls.length} | ${r.calls.filter(c => c.isError).length} | - | - | ${(r.ms / 1000).toFixed(1)} |`
-        : `| ${r.id} | ${r.tier} | ${r.split} | ${r.score.toFixed(2)} | ${k(r.usage.input)} | ${k(r.usage.cacheCreation)} | ${k(r.usage.output)} | ${r.toolCalls} | ${r.toolErrors} | ${r.commands} | ${r.subagents} | ${(r.runMs / 1000).toFixed(0)} |`,
+        ? `| ${r.id} | ${r.sample} | unit | ${r.split} | ${r.score.toFixed(2)} | - | - | - | ${r.calls.length} | ${r.calls.filter(c => c.isError).length} | - | - | ${(r.ms / 1000).toFixed(1)} |`
+        : `| ${r.id} | ${r.sample} | ${r.tier}${r.stopped ? ' (stopped)' : ''} | ${r.split} | ${r.score.toFixed(2)} | ${k(r.usage.input)} | ${k(r.usage.cacheCreation)} | ${k(r.usage.output)} | ${r.toolCalls} | ${r.toolErrors} | ${r.commands} | ${r.subagents} | ${(r.runMs / 1000).toFixed(0)} |`,
   ),
 ];
 writeFileSync(join(outDir, 'summary.md'), lines.join('\n') + '\n');

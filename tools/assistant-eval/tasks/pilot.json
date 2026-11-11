@@ -1,0 +1,448 @@
+{
+ "about": "Pilot task set, 4 Nov 2026. Ground truth read from the lab copy of the workbook (copy of 2026-10-31 00:40 UTC) with direct tool calls before any model run. WA = the WhatsApp self-chat envelope Franz's personal lab thread uses.",
+ "tasks": [
+  {
+   "id": "U01",
+   "tier": "unit",
+   "split": "dev",
+   "kind": "guard",
+   "source": "pilot 4 Nov unit tier",
+   "calls": [
+    {
+     "tool": "query",
+     "args": {
+      "sql": "SELECT SPECIES, count(*) n FROM Collection_data WHERE Genus='Mechanitis' GROUP BY 1 ORDER BY n DESC"
+     },
+     "checks": [
+      {
+       "includes": [
+        "messenoides\t834",
+        "polymnia\t712"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "query",
+     "args": {
+      "sql": "SELECT CAM_ID, SPECIES, Sex FROM Collection_data WHERE CAM_ID='CAM070903'"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Mechanitis messenoides",
+        "female"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "host_plants",
+     "args": {
+      "butterfly": "Tithorea harmonia",
+      "area": "Napo"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Prestonia",
+        "Apocynaceae"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "host_plants",
+     "args": {
+      "species": "Tithorea harmonia",
+      "area": "Napo"
+     },
+     "expectError": true,
+     "checks": [
+      {
+       "includes": [
+        "butterfly"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "identify_species",
+     "args": {
+      "files": [
+       "wa-EVAL20261104-P1.jpg"
+      ],
+      "side": "East"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Hypothyris euclea"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "review_issues",
+     "args": {
+      "limit": 5
+     },
+     "checks": [
+      {
+       "includes": [
+        "counts"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "E00",
+   "tier": "e2e",
+   "split": "probe",
+   "kind": "control",
+   "source": "fixed-context probe (MINED_PATTERNS §1 app \"hi\")",
+   "prompt": "Responde solo: ok",
+   "checks": [
+    {
+     "includes": [
+      "ok"
+     ]
+    },
+    {
+     "maxTools": 0
+    }
+   ]
+  },
+  {
+   "id": "E01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 data questions",
+   "prompt": "¿Cuántas especies de Mechanitis hay en Collection_data y cuántos registros tiene cada una?",
+   "checks": [
+    {
+     "includes": [
+      "messenoides",
+      "polymnia",
+      "lysimnia",
+      "menapis",
+      "mazaeus"
+     ],
+     "w": 2
+    },
+    {
+     "includes": [
+      "834",
+      "712",
+      "309"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "E02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 CAM lookups",
+   "channel": "wa",
+   "prompt": "¿qué especie es el CAM070903 y cuántos registros de esa especie hay en Collection_data?",
+   "checks": [
+    {
+     "includes": [
+      "messenoides"
+     ],
+     "w": 2
+    },
+    {
+     "includes": [
+      "834"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "E03",
+   "tier": "e2e",
+   "split": "heldout",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 insectary counts",
+   "channel": "wa",
+   "prompt": "¿cuántas Methona confusa hay vivas en el insectario?",
+   "checks": [
+    {
+     "includes": [
+      "A7E.1",
+      "O3F"
+     ],
+     "w": 2
+    },
+    {
+     "regex": "\\b(2|dos)\\b"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "E04",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 (Franz's WhatsApp)",
+   "channel": "wa",
+   "prompt": "cual es el mejor sitio para colectar hembras de tithorea harmonia",
+   "checks": [
+    {
+     "includes": [
+      "Cavernas"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ],
+   "note": "Maps data (maps_localities) and the workbook give different female counts for Cavernas (4 of 8 vs 6); both are valid sources, so only the site is checked."
+  },
+  {
+   "id": "E05",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 host plants with photos (MINED_PATTERNS §3); P6",
+   "channel": "wa",
+   "prompt": "¿Qué especies de plantas hospederas esperaría encontrar de Tithorea harmonia en la provincia de Napo? Muéstrame fotos de las especies potenciales.",
+   "checks": [
+    {
+     "includes": [
+      "Apocynaceae"
+     ]
+    },
+    {
+     "includes": [
+      "Prestonia"
+     ],
+     "w": 2
+    },
+    {
+     "tool": "host_plants"
+    },
+    {
+     "toolAny": [
+      "send_sheet_photos"
+     ],
+     "w": 1
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "E06",
+   "tier": "e2e",
+   "split": "heldout",
+   "kind": "guard",
+   "source": "chat 2026-10-31 maps request (Franz's WhatsApp)",
+   "channel": "wa",
+   "prompt": "mándame un mapa de dónde buscar Melinaea menophilus en Ecuador",
+   "checks": [
+    {
+     "tool": "maps_snapshot",
+     "w": 2
+    },
+    {
+     "includes": [
+      "Narupa"
+     ]
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "E07",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "P10 photo identification",
+   "channel": "wa",
+   "attachments": [
+    "wa-EVAL20261104-P1.jpg"
+   ],
+   "prompt": "¿qué especie es esta mariposa y es macho o hembra?",
+   "checks": [
+    {
+     "includes": [
+      "Hypothyris euclea"
+     ],
+     "w": 2
+    },
+    {
+     "includesAny": [
+      "hembra",
+      "♀",
+      "female"
+     ],
+     "w": 1
+    },
+    {
+     "noToolErrors": true
+    }
+   ],
+   "note": "Specimen photo shows the envelope label (sex symbol, CAM): the sex check leaks. Phase B: use unlabeled photos for sex."
+  },
+  {
+   "id": "E08",
+   "tier": "e2e",
+   "split": "heldout",
+   "kind": "guard",
+   "source": "P10 photo identification",
+   "channel": "wa",
+   "attachments": [
+    "wa-EVAL20261104-P2.jpg"
+   ],
+   "prompt": "identifica esta mariposa, especie y sexo",
+   "checks": [
+    {
+     "includes": [
+      "Forbestra"
+     ],
+     "w": 2
+    },
+    {
+     "includesAny": [
+      "macho",
+      "♂",
+      "male"
+     ],
+     "w": 1
+    },
+    {
+     "noToolErrors": true
+    }
+   ],
+   "note": "Specimen photo shows the envelope label (sex symbol, CAM): the sex check leaks. Phase B: use unlabeled photos for sex."
+  },
+  {
+   "id": "E09",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "pilot 4 Nov: misspelled species review",
+   "prompt": "Revisa si hay nombres de especie mal escritos en Insectary_data y prepara la corrección para revisar (no apliques nada).",
+   "checks": [
+    {
+     "includes": [
+      "Heliconus numata"
+     ],
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "row": 757,
+      "field": "SPECIES",
+      "equals": "Heliconius numata"
+     },
+     "w": 3
+    },
+    {
+     "proposalOnly": {
+      "sheet": "Insectary_data",
+      "rows": [
+       757,
+       12303
+      ],
+      "fields": [
+       "SPECIES"
+      ]
+     }
+    },
+    {
+     "noApply": true
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "M01",
+   "tier": "multi",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P3 (production corrections: F1/F2, Unknown cause, empty CAM)",
+   "turns": [
+    "La Methona O3F murió hoy y la preservamos en el tubo FS99990001. Prepara el cambio para revisar.",
+    "En research purpose pon que es para F1/F2.",
+    "La causa de muerte ponla Unknown y el CAM déjalo vacío, todavía no nos dan CAMs."
+   ],
+   "checks": [
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "O3F",
+      "field": "Tube_1_id",
+      "equals": "FS99990001"
+     },
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "O3F",
+      "field": "Death_date",
+      "equals": "$TODAY"
+     },
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "O3F",
+      "field": "Research_purpose",
+      "matches": "F1/F2"
+     }
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "O3F",
+      "field": "Death_cause",
+      "matches": "^Unknown$"
+     }
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "O3F",
+      "field": "CAM_ID",
+      "blank": true,
+      "seedBlank": true
+     }
+    },
+    {
+     "noApply": true
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  }
+ ]
+}

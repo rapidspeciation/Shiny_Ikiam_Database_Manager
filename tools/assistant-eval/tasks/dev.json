@@ -1,0 +1,668 @@
+{
+ "about": "Lean step 1 dev set (4 Nov 2026). Ground truth read from the eval app (eval-app.mjs, frozen lab seed) by direct tool calls before any model run. cal=true: run twice to estimate noise. Patterns: P1 stale proposal, P2 SQL column guess, P3 domain rule, P5 Bash instead of tool, P7 language.",
+ "tasks": [
+  {
+   "id": "E00",
+   "tier": "e2e",
+   "split": "probe",
+   "kind": "control",
+   "source": "fixed-context probe (DESIGN acceptance check; MINED_PATTERNS §1 app \"hi\")",
+   "about": "Warm-up and fixed-context probe: run alone before each variant's dev run",
+   "prompt": "Responde solo: ok",
+   "checks": [
+    {
+     "includes": [
+      "ok"
+     ]
+    },
+    {
+     "maxTools": 0
+    }
+   ]
+  },
+  {
+   "id": "U10",
+   "tier": "unit",
+   "split": "dev",
+   "kind": "guard",
+   "source": "pilot 4 Nov unit tier (read tools answer without a model)",
+   "calls": [
+    {
+     "tool": "query",
+     "args": {
+      "sql": "SELECT SPECIES, count(*) n FROM Collection_data WHERE Genus='Mechanitis' GROUP BY 1 ORDER BY n DESC"
+     },
+     "checks": [
+      {
+       "includes": [
+        "messenoides\t832",
+        "polymnia\t707"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "describe_sheet",
+     "args": {
+      "sheet": "Insectary_data"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Death_cause"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "get_record",
+     "args": {
+      "sheet": "Collection_data",
+      "id": "CAM072661"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Hypothyris euclea"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "search_text",
+     "args": {
+      "query": "Heliconus numata",
+      "limit": 3
+     },
+     "checks": [
+      {
+       "includes": [
+        "F73"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "list_proposals",
+     "args": {},
+     "checks": []
+    }
+   ]
+  },
+  {
+   "id": "U11",
+   "tier": "unit",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P2 (12 failed query calls with guessed columns)",
+   "about": "P2: the error of a guessed column must name the real columns",
+   "calls": [
+    {
+     "tool": "query",
+     "args": {
+      "sql": "SELECT Collection_status FROM Collection_data LIMIT 1"
+     },
+     "expectError": true,
+     "checks": [
+      {
+       "includes": [
+        "Collection_date"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "query",
+     "args": {
+      "sql": "SELECT Date_collection FROM Collection_data LIMIT 1"
+     },
+     "expectError": true,
+     "checks": [
+      {
+       "includes": [
+        "Collection_date"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "find_records",
+     "args": {
+      "sheet": "Collection_data",
+      "field": "SUBSPECIES",
+      "values": [
+       "intermedia"
+      ]
+     },
+     "expectError": true,
+     "checks": [
+      {
+       "includes": [
+        "Subspecies_Form"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "U12",
+   "tier": "unit",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P1 re-apply of an applied proposal; MINED_PATTERNS §4 answer sizes",
+   "about": "P1 + answer sizes: re-applying an applied proposal; big answers",
+   "calls": [
+    {
+     "tool": "update_proposal",
+     "args": {
+      "proposalId": "3598c799-1f9d-4bc9-b5f7-361cb553998f",
+      "changes": []
+     },
+     "anyError": true,
+     "checks": [
+      {
+       "includesAny": [
+        "Applied",
+        "applied"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "host_plants",
+     "args": {
+      "butterfly": "Tithorea harmonia",
+      "area": "Napo"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Prestonia"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "identify_species",
+     "args": {
+      "files": [
+       "wa-EVAL20261104-P1.jpg"
+      ],
+      "side": "East"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Hypothyris euclea"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "maps_localities",
+     "args": {
+      "taxa": [
+       "Tithorea harmonia"
+      ],
+      "sex": "female"
+     },
+     "checks": [
+      {
+       "includes": [
+        "Cavernas"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 data questions (pilot E01)",
+   "cal": true,
+   "prompt": "¿Cuántas especies de Mechanitis hay en Collection_data y cuántos registros tiene cada una?",
+   "checks": [
+    {
+     "includes": [
+      "messenoides",
+      "polymnia",
+      "lysimnia",
+      "menapis",
+      "mazaeus"
+     ],
+     "w": 2
+    },
+    {
+     "includes": [
+      "832",
+      "707",
+      "308"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 CAM lookups (pilot E02)",
+   "channel": "wa",
+   "prompt": "¿qué especie es el CAM070903 y cuántos registros de esa especie hay en Collection_data?",
+   "checks": [
+    {
+     "includes": [
+      "messenoides"
+     ],
+     "w": 2
+    },
+    {
+     "includes": [
+      "832"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D03",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 data questions; P2 (column Date guessed in step 1)",
+   "channel": "wa",
+   "prompt": "cuántos registros de Oleria onega hay en Collection_data y de qué años?",
+   "checks": [
+    {
+     "includes": [
+      "210"
+     ]
+    },
+    {
+     "includes": [
+      "25",
+      "39",
+      "95",
+      "21",
+      "30"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D04",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 (Franz's WhatsApp: \"mejor sitio para colectar hembras de tithorea harmonia\")",
+   "cal": true,
+   "channel": "wa",
+   "prompt": "cual es el mejor sitio para colectar hembras de tithorea harmonia",
+   "checks": [
+    {
+     "includes": [
+      "Cavernas"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D05",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 host plants with photos, re-sent ×4 (MINED_PATTERNS §3); P6",
+   "cal": true,
+   "channel": "wa",
+   "prompt": "¿Qué especies de plantas hospederas esperaría encontrar de Tithorea harmonia en la provincia de Napo? Muéstrame fotos de las especies potenciales.",
+   "checks": [
+    {
+     "includes": [
+      "Apocynaceae"
+     ]
+    },
+    {
+     "includes": [
+      "Prestonia"
+     ],
+     "w": 2
+    },
+    {
+     "tool": "host_plants"
+    },
+    {
+     "toolAny": [
+      "send_sheet_photos"
+     ]
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D06",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "P10 (identify_species \"file not found\" calls in lab simulations)",
+   "channel": "wa",
+   "attachments": [
+    "wa-EVAL20261104-P1.jpg"
+   ],
+   "prompt": "¿qué especie es esta mariposa?",
+   "checks": [
+    {
+     "includes": [
+      "Hypothyris euclea"
+     ],
+     "w": 2
+    },
+    {
+     "tool": "identify_species"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D07",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "pilot E09 (4 Nov): misspelled species; P2 failed find_records in its 2nd run",
+   "cal": true,
+   "prompt": "Revisa si hay nombres de especie mal escritos en Insectary_data y prepara la corrección para revisar (no apliques nada).",
+   "checks": [
+    {
+     "includes": [
+      "Heliconus numata"
+     ]
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "row": 757,
+      "field": "SPECIES",
+      "equals": "Heliconius numata"
+     },
+     "w": 3
+    },
+    {
+     "proposalOnly": {
+      "sheet": "Insectary_data",
+      "rows": [
+       757,
+       12303
+      ],
+      "fields": [
+       "SPECIES"
+      ]
+     }
+    },
+    {
+     "noApply": true
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D08",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "seeded genus/species mismatch (fixture, 4 Nov); view column TAXON_ID refused in 7 of 9 runs (HILLCLIMB_R15_plus §3)",
+   "about": "Seeded fixture (Franz's idea): genus says Hypothyris, SPECIES set to another genus",
+   "fixtures": [
+    {
+     "sheet": "Collection_data",
+     "row": 3023,
+     "field": "SPECIES",
+     "value": "Hyposcada anchiala",
+     "restore": "Hypothyris euclea"
+    }
+   ],
+   "prompt": "Algo no cuadra con el CAM072661. ¿Lo revisas y preparas la corrección si hace falta? No apliques nada.",
+   "checks": [
+    {
+     "proposal": {
+      "sheet": "Collection_data",
+      "row": 3023,
+      "field": "SPECIES",
+      "equals": "Hypothyris euclea"
+     },
+     "w": 3
+    },
+    {
+     "proposalOnly": {
+      "sheet": "Collection_data",
+      "rows": [
+       3023
+      ],
+      "fields": [
+       "SPECIES",
+       "Subspecies_Form",
+       "Genus"
+      ]
+     }
+    },
+    {
+     "noApply": true
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D09",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "MINED_PATTERNS §1 data questions (sites since a date)",
+   "cal": true,
+   "prompt": "¿En qué lugares hemos colectado desde el 1 de septiembre de 2026?",
+   "checks": [
+    {
+     "includes": [
+      "Ikiam",
+      "Cavernas",
+      "Apuya"
+     ],
+     "w": 2
+    },
+    {
+     "noToolErrors": true,
+     "w": 2
+    }
+   ]
+  },
+  {
+   "id": "D10",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P5 (9 Bash calls to build a maps URL in production)",
+   "about": "P5: link building (Bash in production)",
+   "channel": "wa",
+   "prompt": "dame un link de los mapas de ithomiini para ver los registros de Tithorea harmonia",
+   "checks": [
+    {
+     "regex": "https?://\\S+"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D11",
+   "tier": "multi",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P3 (production corrections: \"En research tienes que poner F1/F2\", \"Causa de muerte Unknown y CAM vacío\")",
+   "cal": true,
+   "turns": [
+    "La D3D murió hoy y la preservamos en el tubo FS99990003. Prepara el cambio para revisar.",
+    "En research purpose pon que es para F1/F2.",
+    "La causa de muerte ponla Unknown y el CAM déjalo vacío, todavía no nos dan CAMs."
+   ],
+   "checks": [
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "D3D",
+      "field": "Tube_1_id",
+      "equals": "FS99990003"
+     },
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "D3D",
+      "field": "Death_date",
+      "equals": "$TODAY"
+     },
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "D3D",
+      "field": "Research_purpose",
+      "matches": "F1/F2"
+     }
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "D3D",
+      "field": "Death_cause",
+      "matches": "^Unknown$"
+     }
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "D3D",
+      "field": "CAM_ID",
+      "blank": true,
+      "seedBlank": true
+     }
+    },
+    {
+     "noApply": true
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "D12",
+   "tier": "multi",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P1 (production: Angel applied in the app, then said \"Si, aplica\")",
+   "mutates": true,
+   "about": "P1: the person applies the draft in the app between turns; the follow-up must not fail on the applied proposal; the reply must not ask to apply it again",
+   "turns": [
+    "La Methona A7E.1 murió hoy y la preservamos en el tubo FS99990002. Prepara el cambio.",
+    "Ah, y la causa de muerte ponla Unknown."
+   ],
+   "betweenTurns": [
+    {
+     "after": 1,
+     "action": "applyLatest"
+    }
+   ],
+   "checks": [
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "A7E.1",
+      "field": "Death_cause",
+      "matches": "^Unknown$"
+     },
+     "w": 2
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "A7E.1",
+      "field": "Tube_1_id",
+      "equals": "FS99990002"
+     }
+    },
+    {
+     "noToolErrors": true,
+     "w": 2
+    },
+    {
+     "excludes": [
+      "aplicalo",
+      "aplicala",
+      "aplicarlo",
+      "aplicarla",
+      "lo aplico",
+      "la aplico",
+      "puedes aplicar",
+      "pulsa aplicar",
+      "pulsa «aplicar»",
+      "con «aplicar»",
+      "dale a aplicar",
+      "toca aplicar"
+     ],
+     "why": "P1: the draft was applied between turns; the reply must not ask to apply it again",
+     "w": 2
+    }
+   ]
+  },
+  {
+   "id": "D13",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "pilot E03 (insectary count, WhatsApp)",
+   "channel": "wa",
+   "prompt": "¿cuántas Methona confusa hay vivas en el insectario?",
+   "checks": [
+    {
+     "includes": [
+      "A7E.1"
+     ],
+     "w": 2
+    },
+    {
+     "regex": "\\b(1|una|uno)\\b"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  }
+ ]
+}

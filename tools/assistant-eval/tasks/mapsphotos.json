@@ -1,0 +1,325 @@
+{
+ "about": "Maps and photos (lab-only features, 4 Nov 2026). Prompts from Franz's own WhatsApp requests of 31 Oct-1 Nov (mined threads); M01/M02 join two real requests. Graded on the tool path, the [images] block as the WhatsApp bridge reads it, filters, credits and honest captions. Held-out twins: sets/heldout-maps.json outside the repo.",
+ "tasks": [
+  {
+   "id": "M01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 (Franz's WhatsApp, two real requests joined)",
+   "channel": "wa",
+   "about": "(a) map picture, one sex; real: 'mejor sitio para colectar hembras de tithorea harmonia' + 'mándame un mapa de dónde buscar…'",
+   "prompt": "mándame un mapa de dónde buscar hembras de Tithorea harmonia",
+   "checks": [
+    {
+     "toolArgs": {
+      "tool": "maps_snapshot",
+      "match": {
+       "species": "tithorea harmonia",
+       "sex": "female"
+      }
+     },
+     "w": 2
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "src": "\\.(png|jpe?g)$"
+     },
+     "w": 2,
+     "why": "the map picture sent (app PNG, or the Pillow JPEG when the app renderer is off)"
+    },
+    {
+     "regex": "https?://\\S+",
+     "why": "map_url to open it live"
+    },
+    {
+     "noToolErrors": true
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "src": "/app-[^/]*\\.png$"
+     },
+     "why": "the app's own picture (its files are app-….png), not the Pillow fallback"
+    }
+   ]
+  },
+  {
+   "id": "M02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31/11-01 (Franz's WhatsApp: \"hembras de Mechanitis messenoides\")",
+   "channel": "wa",
+   "about": "(b) photos of one species and sex (iNaturalist, GBIF, Wings Atlas); real: 'hembras de Mechanitis messenoides'",
+   "prompt": "mándame fotos de hembras de Mechanitis messenoides",
+   "checks": [
+    {
+     "toolArgs": {
+      "tool": [
+       "taxon_photos",
+       "gallery_specimens"
+      ],
+      "match": {
+       "sex": "female"
+      }
+     },
+     "w": 2,
+     "why": "a photo tool with the sex filter (the project's specimens in gallery_specimens count)"
+    },
+    {
+     "toolArgs": {
+      "tool": "taxon_photos",
+      "match": {
+       "taxon": "mechanitis messenoides"
+      }
+     },
+     "why": "taxon_photos: iNaturalist, GBIF and Wings Atlas, not only the project's specimens"
+    },
+    {
+     "tool": "send_sheet_photos"
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "caption": "CC|licen|©|Ikiam|CAM0|dominio p|public domain|derechos"
+     },
+     "w": 2,
+     "why": "every photo credited (photographer, licence or CAM ID)"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "M03",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "chat 2026-10-31 (Franz's WhatsApp, verbatim): egg-laying honesty",
+   "channel": "wa",
+   "about": "(c) egg-laying; real, 31 Oct, verbatim",
+   "prompt": "hay fotos de tithorea harmonia poniendo huevos en la planta hospedera?",
+   "checks": [
+    {
+     "toolArgs": {
+      "tool": "taxon_photos",
+      "match": {
+       "taxon": "tithorea harmonia",
+       "life_stage": "egg"
+      }
+     }
+    },
+    {
+     "tool": "host_plants"
+    },
+    {
+     "regex": "(no|ning[uú]n|ninguna|sin|tampoco|nada)[^.\n]{0,90}(poniendo huevos|ovipos|desov)",
+     "w": 2,
+     "why": "says no source shows or records egg-laying"
+    },
+    {
+     "block": {
+      "min": 0,
+      "max": 5,
+      "captionNot": "(poniendo|pone|puso) huevos|ovipositando|oviposici[oó]n|laying eggs|desovando",
+      "negationOk": true
+     },
+     "w": 2,
+     "why": "no caption claims egg-laying"
+    },
+    {
+     "block": {
+      "min": 0,
+      "max": 5,
+      "caption": "CC|licen|©|Ikiam|CAM0|dominio p|public domain|derechos"
+     },
+     "why": "any photo sent is credited"
+    },
+    {
+     "anyOf": [
+      {
+       "regex": "(revis|mir|busc|ver)\\w*[^.\\n]{0,90}(hoja|mosaico|foto|casilla|tile)",
+       "why": "offers to look through the photos for a real one"
+      },
+      {
+       "tool": "send_sheet_photos"
+      }
+     ],
+     "why": "offers to look through the photos, or did look and sent chosen ones"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "M04",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "host-plant tags fallback, option b (lead, 4 Nov); contact sheet failure",
+   "channel": "wa",
+   "mutates": true,
+   "breakPhotoSheets": true,
+   "about": "(d) host-plant photos when the contact sheet fails: tags fallback sent with honest captions (option b, Franz via lead 4 Nov: a useful photo with an honest caption beats nothing)",
+   "prompt": "¿Qué plantas hospederas tiene Mechanitis messenoides en Napo? Muéstrame fotos.",
+   "checks": [
+    {
+     "tool": "host_plants"
+    },
+    {
+     "toolArgs": {
+      "tool": "host_plants",
+      "match": {
+       "tags_fallback": "true"
+      }
+     },
+     "w": 2
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "caption": "no revisad|not checked|autom[aá]tic"
+     },
+     "w": 2,
+     "why": "photos sent, each caption saying it was picked automatically and not checked"
+    },
+    {
+     "regex": "autom[aá]tic|sin revis|no (las )?(he )?(revis|mir|visto)|nadie (las )?(ha )?(revis|mir)|sin mirar|no verificad",
+     "w": 2,
+     "why": "says they were picked automatically, not looked at"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "M05",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "images_block change (4 Nov): second map task",
+   "channel": "wa",
+   "about": "(a) map picture, no sex; second map task for the images_block change",
+   "prompt": "mándame un mapa de dónde se ha colectado Hypothyris anastasia",
+   "checks": [
+    {
+     "toolArgs": {
+      "tool": "maps_snapshot",
+      "match": {
+       "species": "hypothyris anastasia"
+      }
+     },
+     "w": 2
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "src": "\\.(png|jpe?g)$"
+     },
+     "w": 2,
+     "why": "the map picture sent"
+    },
+    {
+     "regex": "https?://\\S+",
+     "why": "map_url to open it live"
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  },
+  {
+   "id": "G01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "routing sentinel (4 Nov critic round); broke with the R15 cuts (HILLCLIMB_R15_plus §3)",
+   "channel": "wa",
+   "about": "routing sentinel (4 Nov critic round): wild photos of a species go to maps-gallery / taxon_photos, not Bash",
+   "prompt": "¿Tienes fotos de Hypothyris anastasia viva, en el campo?",
+   "checks": [
+    {
+     "toolArgs": {
+      "tool": "Skill",
+      "match": {
+       "skill": "maps-gallery"
+      }
+     }
+    },
+    {
+     "toolArgs": {
+      "tool": "taxon_photos",
+      "match": {
+       "taxon": "hypothyris anastasia"
+      }
+     },
+     "w": 2
+    },
+    {
+     "noTool": "Bash"
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5,
+      "caption": "CC|licen|©|Ikiam|CAM0|dominio p|public domain|derechos"
+     },
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    },
+    {
+     "block": {
+      "min": 0,
+      "max": 5,
+      "captionNot": "project collection|colecci[oó]n del proyecto"
+     },
+     "why": "live butterflies asked: no preserved specimens of the collection"
+    }
+   ]
+  },
+  {
+   "id": "G02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "routing sentinel (4 Nov critic round): a CAM's photos stay with our specimens",
+   "channel": "wa",
+   "about": "routing sentinel: a CAM ID's photos stay with our specimens (gallery_specimens / show_photos), not taxon_photos",
+   "prompt": "mándame las fotos de CAM074406",
+   "checks": [
+    {
+     "toolAny": [
+      "gallery_specimens",
+      "show_photos"
+     ],
+     "w": 2
+    },
+    {
+     "noTool": "taxon_photos"
+    },
+    {
+     "block": {
+      "min": 1,
+      "max": 5
+     },
+     "w": 2
+    },
+    {
+     "noToolErrors": true
+    }
+   ]
+  }
+ ]
+}

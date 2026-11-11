@@ -1,0 +1,97 @@
+{
+ "about": "P1 done right (critic round 4 Nov): the person applies the draft between turns, then corrects a value that differs. D12 stays frozen for history (its turn 2 asks for a value the draft already had, so it cannot show a fix). Mutating: run alone on a freshly started eval app, one task per run.",
+ "tasks": [
+  {
+   "id": "D14",
+   "tier": "multi",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P1 (production: 6 update_proposal calls refused \"Applied…\" after the person applied the draft in the app)",
+   "mutates": true,
+   "about": "P1: after the draft is applied, a correction needs a new draft; the reply says the first one is already in the sheet",
+   "turns": [
+    "La Methona A7E.1 murió hoy y la preservamos en el tubo FS99990002. Prepara el cambio.",
+    "Perdón, el tubo era FS99990005, no FS99990002."
+   ],
+   "betweenTurns": [
+    {
+     "after": 1,
+     "action": "applyLatest"
+    }
+   ],
+   "checks": [
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "A7E.1",
+      "field": "Tube_1_id",
+      "equals": "FS99990005"
+     },
+     "w": 2,
+     "why": "the corrected tube is drafted"
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "A7E.1",
+      "field": "Death_date",
+      "equals": "$TODAY"
+     },
+     "why": "turn 1's death date stands"
+    },
+    {
+     "noToolErrors": true,
+     "w": 2,
+     "why": "no failed call on the applied draft (production: 9 such errors)"
+    },
+    {
+     "regex": "ya (se )?(esta|estan|estaba|quedo|quedaron|fue|habia|se)[^.\\n]{0,40}(aplicad|en la hoja|en la base|escrit|guardad)|ya (se )?aplico|ya esta aplicad|aplicaste|ya figuraba como aplicad",
+     "turn": 2,
+     "w": 2,
+     "why": "says the first draft is already in the sheet"
+    }
+   ]
+  },
+  {
+   "id": "D16",
+   "tier": "multi",
+   "split": "dev",
+   "kind": "bad",
+   "source": "P1 (production run 608077 R4: \"Sí, aplica\" after the person applied it in the app)",
+   "mutates": true,
+   "about": "P1 (production: 'Sí, aplica' after the person applied it in the app): the second apply must not fail, and the reply says it is already in the sheet",
+   "turns": [
+    "La Methona A7E.1 murió hoy y la preservamos en el tubo FS99990002. Prepara el cambio.",
+    "Sí, aplícalo."
+   ],
+   "betweenTurns": [
+    {
+     "after": 1,
+     "action": "applyLatest"
+    }
+   ],
+   "checks": [
+    {
+     "noToolErrors": true,
+     "w": 2,
+     "why": "no failed apply_proposal on the applied draft"
+    },
+    {
+     "regex": "ya (se )?(esta|estan|estaba|quedo|quedaron|fue|habia|se)[^.\\n]{0,40}(aplicad|en la hoja|en la base|escrit|guardad)|ya (se )?aplico|ya esta aplicad|aplicaste|ya figuraba como aplicad",
+     "turn": 2,
+     "w": 2,
+     "why": "says it is already in the sheet"
+    },
+    {
+     "proposal": {
+      "sheet": "Insectary_data",
+      "id": "A7E.1",
+      "field": "Tube_1_id",
+      "equals": "FS99990002"
+     },
+     "why": "the drafted change stands"
+    }
+   ]
+  }
+ ]
+}

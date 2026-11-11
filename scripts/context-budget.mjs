@@ -9,9 +9,9 @@
 //
 //   node scripts/context-budget.mjs                          the table: recorded, measured, change
 //   node scripts/context-budget.mjs --write                  record the sizes (a shrink needs no reason)
-//   node scripts/context-budget.mjs --write --reason "…"     record a growth, with why it is worth its tokens
+//   node scripts/context-budget.mjs --write --reason "…"     record a growth (or a lost lean setting), with why
 //   node scripts/context-budget.mjs --against origin/main    before a deploy: refuses a part larger than on that
-//                                                            ref unless its entry carries a new reason
+//                                                            ref unless its entry carries a new reason; exits 2 when the ref does not exist
 //
 // Bytes, not tokens: they are exact and free to compute. The token counts measured on 6 Nov 2026 are kept in the
 // file's `measuredTokens` for scale (not checked).
@@ -120,11 +120,16 @@ export function compareBudget(budget, parts, lean) {
   return out;
 }
 
-/** The new file: measured sizes; a part that grew (or is new) takes `reason`, which a growth requires. */
+/**
+ * The new file: measured sizes; a part that grew (or is new) takes `reason`, which a growth requires. A lean
+ * setting lost (a deny rule dropped, Artifact back on) needs a reason too: writing it would make the loss the new
+ * normal, and the test would no longer see it.
+ */
 export function updatedBudget(budget, parts, lean, reason = '') {
   const diff = compareBudget(budget, parts, lean);
   const grew = [...diff.grown, ...diff.added].map(d => d.key);
   if (grew.length && !reason) throw new Error(`grew: ${grew.join(', ')}. Say why with --reason "…" (it is paid on every model call).`);
+  if (diff.leanLost.length && !reason) throw new Error(`lean setting lost: ${diff.leanLost.join('; ')}. Say why with --reason "…".`);
   const next = { ...budget, parts: {}, lean };
   for (const [key, n] of Object.entries(parts)) {
     const old = budget.parts?.[key] ?? {};
@@ -189,6 +194,12 @@ async function main(argv) {
   if (stale) console.log('\nThe file differs from the source: run with --write (and --reason "…" for a growth).');
   const ref = arg('--against');
   if (ref) {
+    try {
+      execFileSync('git', ['-C', ROOT, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { stdio: 'ignore' });
+    } catch {
+      console.log(`\nno such ref: ${ref}`);
+      return 2;
+    }
     let base;
     try {
       base = JSON.parse(execFileSync('git', ['-C', ROOT, 'show', `${ref}:assistant/context-budget.json`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));

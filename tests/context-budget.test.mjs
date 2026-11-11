@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { againstBase, compareBudget, measureLean, measureParts, readBudget, updatedBudget } from '../scripts/context-budget.mjs';
 import { checkProbe } from '../scripts/context-probe-check.mjs';
@@ -30,6 +31,28 @@ test('the lean Claude Code settings keep every key and deny rule', () => {
   for (const key of ['enableArtifact', 'disableBundledSkills', 'deny', 'claudeMdExcludes']) assert.ok(key in budget.lean, `lean.${key} recorded`);
   assert.equal(lean.enableArtifact, false);
   assert.equal(lean.disableBundledSkills, true);
+  // Pinned here too, so a --write cannot quietly record a shorter list.
+  assert.deepEqual(budget.lean.deny, [
+    'Agent(Explore)', 'Agent(Plan)', 'Agent(claude)', 'Agent(claude-code-guide)', 'Agent(general-purpose)', 'Agent(statusline-setup)', 'Agent(web-fetch)',
+    'ListAgents', 'ReportFindings', 'ScheduleWakeup', 'Workflow',
+  ]);
+});
+
+test('writing a lost lean setting needs a reason', () => {
+  const base = { parts: {}, lean: { enableArtifact: false, deny: ['Workflow', 'ListAgents'] } };
+  assert.throws(() => updatedBudget(base, {}, { enableArtifact: false, deny: ['Workflow'] }), /lean setting lost: deny: ListAgents/);
+  assert.deepEqual(updatedBudget(base, {}, { enableArtifact: false, deny: ['Workflow'] }, 'ListAgents is used now').lean.deny, ['Workflow']);
+});
+
+test('--against a ref that does not exist fails', () => {
+  const script = new URL('../scripts/context-budget.mjs', import.meta.url).pathname;
+  let status = 0;
+  try {
+    execFileSync(process.execPath, [script, '--against', 'no-such-ref-for-the-budget-test'], { stdio: 'pipe' });
+  } catch (e) {
+    status = e.status;
+  }
+  assert.equal(status, 2);
 });
 
 test('a growth needs a reason; a shrink does not', () => {
