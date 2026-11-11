@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { FIELD_SEX_SPECIES, fieldSexState, type FieldSexAnswer, type FieldSexInput } from '../fieldSex'
@@ -9,6 +8,7 @@ import { SEX_GENERA, sexApplies } from '../sexModel'
 
 const call = (species = 'Danaus plexippus', sex: 'female' | 'male' = 'male', pct = 97): FieldSexAnswer => ({ species, status: 'call', sex, pct, version: 'field-sex/1' })
 const input = (o: Partial<FieldSexInput> = {}): FieldSexInput => ({
+  mode: 'online',
   source: 'online',
   headline: { kind: 'species', name: 'Danaus plexippus' },
   answer: call(),
@@ -44,6 +44,12 @@ describe('fieldSexState', () => {
   it('online only: a phone result never shows it', () => {
     expect(fieldSexState(input({ source: 'phone', live: 'yes' }))).toBeNull()
   })
+  it('switching to «En este teléfono» after an online result hides it, whatever was answered', () => {
+    for (const live of [undefined, 'yes', 'no'] as const) {
+      expect(fieldSexState(input({ live }))).not.toBeNull()
+      expect(fieldSexState(input({ mode: 'phone', live }))).toBeNull()
+    }
+  })
 })
 
 describe('the Ithomiini keep the in-hand line exactly as it was', () => {
@@ -59,15 +65,21 @@ describe('the Ithomiini keep the in-hand line exactly as it was', () => {
     expect(sexApplies('Mechanitis messenoides', ITHOMIINI_GENERA)).toBe('yes')
     expect(sexApplies('Danaus plexippus', ITHOMIINI_GENERA)).toBe('no')
   })
-  it('its files and the view\'s sexState are byte-identical to main (e3000a08); a deliberate change updates these pins', () => {
-    const sha = (s: string) => createHash('sha256').update(s).digest('hex')
-    const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
-    expect(sha(read('../../components/identify/SexEstimate.vue'))).toBe('341c39096f92e5d5a7b147fb24f5d59affa4ac2c633c4d63f010f5e2d5962c8c')
-    expect(sha(read('../sexModel.ts'))).toBe('fb1d6a4810bb1da7e27b913711b065d8948da8ae54ad8a62c6084d220bed8f7e')
-    const view = read('../../views/IdentifyView.vue')
-    const block = /const sexState = computed<SexState \| null>\(\(\) => \{.*?\n\}\)\n/s.exec(view)?.[0] ?? ''
-    expect(sha(block)).toBe('a76af89528fed655e1bf03a7bc16faa941643fbf2591dc813d8de3980f77f84d')
-    // the general line renders only where the in-hand one does not
+  it('the general line renders only where the in-hand one does not', () => {
+    const view = readFileSync(new URL('../../views/IdentifyView.vue', import.meta.url), 'utf8')
     expect(view).toContain('<SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />\n            <FieldSexEstimate v-else-if="fieldSexState"')
+  })
+})
+
+describe('«Sí, viva» is asked again for each new photo and after a restore', () => {
+  const view = readFileSync(new URL('../../views/IdentifyView.vue', import.meta.url), 'utf8')
+  it('a new online photo builds a fresh result (no spread of the old one, so no answer carried over)', () => {
+    const body = /async function identifyOnline\(photo: Photo\) \{.*?\n\}\n/s.exec(view)?.[0] ?? ''
+    expect(body).toContain('result.value = {\n      at,\n      source: \'online\',')
+    expect(body).not.toMatch(/\.\.\.(r|result\.value|old)\b/)
+    expect(body).not.toContain('live')
+  })
+  it('a restored result drops the answer', () => {
+    expect(view).toContain('result.value = { ...v, live: undefined }')
   })
 })

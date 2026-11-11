@@ -44,12 +44,18 @@ describe('FieldSexEstimate', () => {
     expect(all).toContain('93 % de las hembras y el 99 % de los machos')
     expect(all).toContain('No vale para ejemplares de colección ni montados.')
     expect(all).toContain('sin validar hasta la próxima')
+    expect(all).toContain('El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.')
+    expect(all).toContain('en la prueba, cuando respondió, acertó con el 93 % de las hembras')
+    expect(text(el.querySelector('[data-testid=field-sex-change]'))).toBe('responder de nuevo')
+    expect(all).not.toMatch(/llamada/i)
   })
-  it('a male call in English; "change" clears the answer', async () => {
+  it('a male call in English; "answer again" clears the answer', async () => {
     const got: (LiveAnswer | undefined)[] = []
     const el = show({ kind: 'call', species: 'Papilio troilus', sex: 'male', pct: 92 }, a => got.push(a))
     expect(text(el.querySelector('[data-testid=field-sex-call]'))).toBe('♂ Male 92 %')
     expect(text(el)).toContain('Not valid for collection or pinned specimens.')
+    expect(text(el)).toContain('The % estimates how often an answer like this is right; it never exceeds what the test measured.')
+    expect(text(el.querySelector('[data-testid=field-sex-change]'))).toBe('answer again')
     ;(el.querySelector('[data-testid=field-sex-change]') as HTMLButtonElement).click()
     await nextTick()
     expect(got).toEqual([undefined])

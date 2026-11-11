@@ -3,7 +3,7 @@
  * outside the Ithomiini. The server computes it (tools/identifier/field_sex.py, from the BioCLIP feature it already
  * makes) and sends a `fieldSex` block with the answer; this decides whether the page shows it. Pure, tested on its own.
  *
- * Shown only when all hold: the photo was read online; the species named on the page is one of the six and is the
+ * Shown only when all hold: the page is in «En línea» mode and the photo was read online; the species named on the page is one of the six and is the
  * species the server's block is for (the server gates on the species score without the geographic prior, >= 0.8);
  * the in-hand Ithomiini line does not apply (sexApplies 'no'); the server's call is Supported, not suppressed, and the
  * wings were found (status 'call'); and the person said the photo is of a live butterfly (one tap per photo).
@@ -34,6 +34,8 @@ export type FieldSexState =
   | { kind: 'declined'; species: string }
 
 export interface FieldSexInput {
+  /** The page's mode now: switching to «En este teléfono» hides the line, even for a result read online. */
+  mode: 'online' | 'phone'
   source: 'online' | 'phone'
   headline: Headline | null
   answer: FieldSexAnswer | null | undefined
@@ -42,8 +44,8 @@ export interface FieldSexInput {
 }
 
 /** What the line shows, or null for nothing (the usual case). */
-export function fieldSexState({ source, headline, answer, live, ithomiiniGenera }: FieldSexInput): FieldSexState | null {
-  if (source !== 'online' || !answer || headline?.kind !== 'species') return null
+export function fieldSexState({ mode, source, headline, answer, live, ithomiiniGenera }: FieldSexInput): FieldSexState | null {
+  if (mode !== 'online' || source !== 'online' || !answer || headline?.kind !== 'species') return null
   const name = headline.name
   if (sexApplies(name, ithomiiniGenera) !== 'no') return null
   if (!(FIELD_SEX_SPECIES as readonly string[]).includes(name) || answer.species !== name) return null

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * Identificar's general sex line (team only, «En línea», experimental; lib/fieldSex.ts): live butterflies of six
- * species outside the Ithomiini. First one question (is the photo of a live butterfly?), then the call and the % of
- * that call that was right on the fresh test. Same look as the in-hand line (SexEstimate.vue). The view decides the
+ * species outside the Ithomiini. First one question (is the photo of a live butterfly?), then the sex and its % (how
+ * often an answer like this is right, never above what the fresh test measured). Same look as the in-hand line (SexEstimate.vue). The view decides the
  * state; this only shows it and reports the answer.
  */
 import { locale } from '../../lib/i18n'
@@ -40,7 +40,7 @@ const pct = (n: number) => `${new Intl.NumberFormat(locale.value === 'es' ? 'es'
         <template v-else>♂ {{ $t('Macho') }}</template>
         {{ ' ' }}<span class="tabular-nums" data-testid="field-sex-p">{{ pct(state.pct) }}</span>
       </p>
-      <p class="mt-1 text-xs text-fg-muted">{{ $t('El % es cuántas veces acertó esta llamada en fotos de prueba de esta especie.') }}</p>
+      <p class="mt-1 text-xs text-fg-muted">{{ $t('El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.') }}</p>
     </div>
 
     <p v-else class="mt-2 text-sm text-fg-muted" data-testid="field-sex-declined">
@@ -48,12 +48,12 @@ const pct = (n: number) => `${new Intl.NumberFormat(locale.value === 'es' ? 'es'
     </p>
 
     <button v-if="state.kind !== 'ask'" class="mt-1 text-xs text-brand-text hover:underline" data-testid="field-sex-change" @click="$emit('live', undefined)">
-      {{ $t('cambiar') }}
+      {{ $t('responder de nuevo') }}
     </button>
 
     <ul class="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted">
       <li>{{ $t('Comprobado en fotos de iNaturalist de mariposas vivas de seis especies: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus y Poanes zabulon.') }}</li>
-      <li>{{ $t('Las hembras se reconocen peor: en la prueba acertó con el 93 % de las hembras y el 99 % de los machos.') }}</li>
+      <li>{{ $t('Las hembras se reconocen peor: en la prueba, cuando respondió, acertó con el 93 % de las hembras y el 99 % de los machos.') }}</li>
       <li>{{ $t('No vale para ejemplares de colección ni montados.') }}</li>
       <li>{{ $t('Los % se fijaron con esa misma prueba: sin validar hasta la próxima.') }}</li>
     </ul>

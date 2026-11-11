@@ -60,7 +60,6 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the worker's own folder out
 import sex_crops  # noqa: E402
-from field_sex import FieldSex  # noqa: E402
 
 HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
 # Its own file name (5 Nov 2026: alias recipe retrained on V5N serving crops with label fixes, WingsClassificator
@@ -116,6 +115,21 @@ sys.stdout = sys.stderr
 def send(obj):
     OUT.write(json.dumps(obj, separators=(",", ":")) + "\n")
     OUT.flush()
+
+
+def load_field_sex(root):
+    """The general sex line (optional folder <root>/field_sex): its model, or None. Imported here, after the thread and
+    priority limits are set, so a missing or broken field_sex.py or folder leaves the species answers as they are."""
+    fs_dir = os.path.join(root, "field_sex")
+    if not os.path.isdir(fs_dir):
+        return None
+    try:
+        from field_sex import FieldSex
+
+        return FieldSex(fs_dir)
+    except Exception as e:
+        print(f"Field sex model not loaded: {type(e).__name__}: {e}"[:300], file=sys.stderr)
+        return None
 
 
 class Identifier:
@@ -211,14 +225,7 @@ class Identifier:
         self.np, self.torch = np, torch
         self.mean = np.array(MEAN, np.float32)[:, None, None]
         self.std = np.array(STD, np.float32)[:, None, None]
-        # The general sex line (optional folder; a broken one leaves the species answers as they are).
-        self.field_sex = None
-        fs_dir = os.path.join(root, "field_sex")
-        if os.path.isdir(fs_dir):
-            try:
-                self.field_sex = FieldSex(fs_dir)
-            except Exception as e:
-                print(f"Field sex model not loaded: {type(e).__name__}: {e}"[:300], file=sys.stderr)
+        self.field_sex = load_field_sex(root)
         gc.collect()
         self.load_ms = round((time.perf_counter() - t0) * 1000)
 

@@ -66,6 +66,7 @@ class FieldSex:
         d = json.load(open(os.path.join(folder, meta.get("display") or "display.json")))
         self.maps = {sx: (np.array([p[0] for p in m["points"]], np.float64), np.array([p[1] for p in m["points"]], np.float64)) for sx, m in d["maps"].items()}
         self.cap_max = float(d["cap_max"])
+        self.floor = float(d.get("floor", 0.90))
         self.table = {(r["species"], r["called"]): r for r in d["table"]}
         self.display_version = d["version"]
 
@@ -119,13 +120,15 @@ class FieldSex:
         return (self.adapt(x32.astype(np.float64), sp) + self.knn(x32, sp)) / 2
 
     def shown_pct(self, sp, called, conf):
-        """The whole % shown for a Supported call, or None when this species and called sex never shows a call."""
+        """The whole % shown for a Supported call, or None when this species and called sex never shows a call, or when
+        the value would be under the table's floor (90 %: no call is shown under it)."""
         row = self.table.get((sp, called))
         if not row or not row.get("shown"):
             return None
         xs, ys = self.maps[called]
         v = min(float(np.interp(conf, xs, ys)), self.cap_max, float(row["cap"]))
-        return _floor_pct(v)
+        pct = _floor_pct(v)
+        return pct if pct >= _floor_pct(self.floor) else None
 
     def score(self, feat, top_name, top_p, crop):
         """The fieldSex block for one photo: None when the identifier's species (no prior) is not a passing species;
@@ -135,15 +138,16 @@ class FieldSex:
         if sp is None:
             return None
         out = {"species": top_name, "gateP": round(float(top_p), 4), "version": SCHEMA, "display": self.display_version}
+        if top_p < self.gate:  # no sex model work for a species score under the gate
+            out.update(status="below_gate", supported=False)
+            return out
         p = self.ens(feat, sp)
         conf = max(p, 1 - p)
         called = "female" if p >= 0.5 else "male"
         out.update(pFemale=round(p, 6), conf=round(conf, 6))
         supported = top_p >= self.gate and conf >= self.t  # all passing species are in the evidence table
         out["supported"] = bool(supported)
-        if top_p < self.gate:
-            out["status"] = "below_gate"
-        elif not supported:
+        if not supported:
             out["status"] = "not_supported"
         elif crop != "success":
             out["status"] = "no_wings"

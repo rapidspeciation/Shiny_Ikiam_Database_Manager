@@ -92,6 +92,15 @@ try:
     out["max_pct_per_row"] = worst
     out["pct_at_cap_099"] = fs.shown_pct("Cc dd", "female", 1.0)  # 0.99 is 99, not 98
 
+    # a map value under the 90 % floor shows no call (a shown row whose map starts low)
+    L = os.path.join(tmp, "low")
+    low = {"version": "field-sex-display/test", "cap_max": 0.99, "floor": 0.90, "table": [{"species": "Aa bb", "called": "female", "shown": True, "cap": 0.99},
+           {"species": "Aa bb", "called": "male", "shown": True, "cap": 0.99}],
+           "maps": {sx: {"points": [[0.85, 0.80], [0.95, 0.90], [1.0, 0.99]]} for sx in ("female", "male")}}
+    make(L, {"Aa bb": (0.9, unit(20), [1] * 20)}, low)
+    fl = FieldSex(L)
+    out["low_map"] = {str(c): fl.shown_pct("Aa bb", "female", c) for c in (0.85, 0.9, 0.94, 0.95, 1.0)}
+
     # a changed file is refused
     B = os.path.join(tmp, "b")
     shutil.copytree(A, B)

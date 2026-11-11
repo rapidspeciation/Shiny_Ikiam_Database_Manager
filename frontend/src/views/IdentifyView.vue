@@ -639,7 +639,7 @@ const sexState = computed<SexState | null>(() => {
 const fieldSexState = computed<FieldSexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
-  return fieldSexOf({ source: r.source, headline: said.value, answer: r.server?.fieldSex, live: r.live, ithomiiniGenera })
+  return fieldSexOf({ mode: mode.value, source: r.source, headline: said.value, answer: r.server?.fieldSex, live: r.live, ithomiiniGenera })
 })
 function answerLive(live: LiveAnswer | undefined) {
   if (!result.value) return

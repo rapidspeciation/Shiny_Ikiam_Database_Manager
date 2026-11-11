@@ -35,6 +35,7 @@ test('field sex: the gate is >= 0.8 on the given (no-prior) species score; wings
   const out = check();
   assert.equal(out.gate_0799.status, 'below_gate');
   assert.equal(out.gate_0799.sex, undefined);
+  assert.equal(out.gate_0799.pFemale, undefined, 'under the gate the sex model does not run');
   assert.equal(out.gate_08.status, 'call');
   assert.equal(out.no_wings.status, 'no_wings');
   assert.equal(out.no_wings.sex, undefined);
@@ -69,6 +70,8 @@ test('field sex: the % shown never exceeds the table\'s cap nor 99, rounded down
     assert.ok(r.max_pct <= Math.floor(100 * r.cap + 1e-9) && r.max_pct <= 99, `${key}: ${r.max_pct} over cap ${r.cap}`);
   }
   assert.ok(out.real['Papilio polyxenes|male'].max_pct <= 92);
+  // under the 90 % floor: no call, whatever the row says
+  assert.deepEqual(out.low_map, { '0.85': null, '0.9': null, '0.94': null, '0.95': 90, '1.0': 99 });
 });
 
 test('field sex: ADAPT + kNN equal the training code\'s formulas; a changed file is refused', { skip }, () => {
@@ -93,6 +96,27 @@ test('the worker gates field sex on the species score WITHOUT the geographic pri
   assert.deepEqual(r.seen_success, [['Aa bb', 0.85, 'success']]);
   assert.deepEqual(r.seen, [['Aa bb', 0.85, 'centre_crop_fallback']], 'the crop status goes with it');
   assert.equal(r.no_model_block, null, 'no folder: no block');
+});
+
+test('the worker starts and answers without field_sex.py, and loads no field sex model then', { skip }, async () => {
+  const { mkdtempSync, copyFileSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'worker-no-field-sex-'));
+  for (const f of ['worker.py', 'sex_crops.py']) copyFileSync(join(TOOLS, f), join(dir, f));
+  const root = join(dir, 'ident');
+  mkdirSync(join(root, 'field_sex'), { recursive: true });
+  // the module loads (no import of field_sex at the top) and answers a ping on its protocol
+  const ping = spawnSync(python, ['-I', '-B', join(dir, 'worker.py'), '--dir', root, '--no-pin', '--idle', '5'], { input: '{"id":"1","op":"ping"}\n', encoding: 'utf8', timeout: 60_000 });
+  const lines = ping.stdout.trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(lines.slice(0, 2), [{ ready: true, pid: lines[0].pid }, { id: '1', loaded: false }], ping.stderr);
+  // a field_sex folder without field_sex.py: no model, a message, no failure
+  const check = join(dir, 'check.py');
+  writeFileSync(check, `import json, sys\nsys.path.insert(0, ${JSON.stringify(dir)})\nsys.argv = ["worker.py", "--dir", "/x", "--no-pin"]\nimport worker\nr = [worker.load_field_sex(${JSON.stringify(root)}) is None, worker.load_field_sex(${JSON.stringify(dir)}) is None]\nopen(${JSON.stringify(join(dir, 'out.json'))}, "w").write(json.dumps(r))\n`);
+  const run = spawnSync(python, ['-I', '-B', check], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')), [true, true]);
+  assert.match(run.stderr, /Field sex model not loaded: ModuleNotFoundError/);
 });
 
 test('identifyUpload passes a cleaned fieldSex only when the worker gives one', async () => {
