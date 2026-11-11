@@ -40,6 +40,12 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/assets/wing_seg_s2.pt, wing_seg_s2.onnx, field_wingtip_override_v1.json, head_hier_6fa6ab78.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
+  field_sex/                                     (optional: the general sex line of «En línea», field_sex.py)
+
+The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose answer names one of six species
+that passed WingsClassificator's fresh test gets a "fieldSex" block (None otherwise): the bar position, the side it
+leans to, a status, and the % only for a Supported answer. It reads the feature the photo already has. Without the
+folder, answers carry no fieldSex and nothing else changes.
 """
 
 import argparse
@@ -111,6 +117,21 @@ def send(obj):
     OUT.flush()
 
 
+def load_field_sex(root):
+    """The general sex line (optional folder <root>/field_sex): its model, or None. Imported here, after the thread and
+    priority limits are set, so a missing or broken field_sex.py or folder leaves the species answers as they are."""
+    fs_dir = os.path.join(root, "field_sex")
+    if not os.path.isdir(fs_dir):
+        return None
+    try:
+        from field_sex import FieldSex
+
+        return FieldSex(fs_dir)
+    except Exception as e:
+        print(f"Field sex model not loaded: {type(e).__name__}: {e}"[:300], file=sys.stderr)
+        return None
+
+
 class Identifier:
     def __init__(self, root, encoder, threads):
         t0 = time.perf_counter()
@@ -176,6 +197,7 @@ class Identifier:
         self.head.load_state_dict(ck["head_state_dict"])
         self.head.eval()
         self.sp_vocab = list(ck["rank_vocab"]["species"])
+        self.sp_index = {n: i for i, n in enumerate(self.sp_vocab)}
         self.ge_vocab = list(ck["rank_vocab"]["genus"])
         self.leaf2sp = np.array(ck["leaf2rank"]["species"])
         self.leaf2ge = np.array(ck["leaf2rank"]["genus"])
@@ -204,6 +226,7 @@ class Identifier:
         self.np, self.torch = np, torch
         self.mean = np.array(MEAN, np.float32)[:, None, None]
         self.std = np.array(STD, np.float32)[:, None, None]
+        self.field_sex = load_field_sex(root)
         gc.collect()
         self.load_ms = round((time.perf_counter() - t0) * 1000)
 
@@ -260,6 +283,26 @@ class Identifier:
             "prior": side if prior and side in ("East", "West") else ("Ecuador" if prior else None),
         }
 
+    def species_noprior(self, feat, name):
+        """The species marginal of `name` WITHOUT the geographic prior (the field sex line's gate, whatever side the
+        person chose), unrounded; 0 for a name the head does not have."""
+        np, torch = self.np, self.torch
+        if name not in self.sp_index:
+            return 0.0
+        with torch.no_grad():
+            probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
+        return float(probs[self.leaf2sp == self.sp_index[name]].sum())
+
+    def field_sex_block(self, feat, crop, name):
+        """The general sex line for the species the page names (the answer's top species, after the prior when a side
+        was chosen), gated on that species' no-prior score."""
+        if self.field_sex is None or not name or self.field_sex.model_name(name) is None:
+            return None
+        try:
+            return self.field_sex.score(feat, name, self.species_noprior(feat, name), crop)
+        except Exception as e:  # the species answer stands without it
+            return {"status": f"error:{type(e).__name__}"}
+
     def identify(self, path, side=None, box=None, ecuador=None):
         t0 = time.perf_counter()
         with open(path, "rb") as f:
@@ -269,8 +312,12 @@ class Identifier:
         out = self.tops(feat, side, ecuador)
         if out["prior"] == "Ecuador":
             out["prior"] = None
+        extra = {}
+        if self.field_sex is not None:
+            extra["fieldSex"] = self.field_sex_block(feat, geometry.get("status"), (out["species"] or [[None]])[0][0])
         return {
             **out,
+            **extra,
             "crop": geometry.get("status"),
             "wingBox": prov.get("wing_box"),
             "ms": round((time.perf_counter() - t0) * 1000),

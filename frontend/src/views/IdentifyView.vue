@@ -22,6 +22,8 @@ import { usePacks } from '../lib/usePacks'
 import { mbText, numText, packHint, scopeSize, toDownload, type PackScope } from '../lib/photoPacks'
 import { regionLabel, taxaLabel } from '../lib/usePacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
+import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
+import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
@@ -703,6 +705,17 @@ const sexState = computed<SexState | null>(() => {
   return { kind: 'download', mb: mb(sexSize.value ?? SEX_FILE.bytes) }
 })
 
+// ---------------------------------------------------------------- the general sex line (team only, online, experimental)
+
+/** lib/fieldSex.ts: null unless the page names one of the six species and the server's block is for it. */
+const fieldSexState = computed<FieldSexState | null>(() => {
+  const r = result.value
+  if (!session.user || !r || !ranked.value) return null
+  // Hidden when the person picked «En este teléfono»; a signal drop (effective mode phone, choice still online)
+  // leaves a shown answer in place.
+  return fieldSexOf({ mode: modeChoice.value === 'phone' ? 'phone' : 'online', source: r.source, topName: top.value?.name, answer: r.server?.fieldSex, ithomiiniGenera })
+})
+
 // ---------------------------------------------------------------- reference photos
 
 const refs = ref<Record<string, Refs>>({})
@@ -1048,6 +1061,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
             <SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />
+            <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
 
             <section class="mt-4">
               <div class="mb-2 flex items-baseline justify-between gap-2">

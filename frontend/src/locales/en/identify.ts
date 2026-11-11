@@ -264,4 +264,22 @@ export default {
   'No hay foto de referencia para descargar.': 'No reference photo to download.',
   'En Descargas: fotos para comparar': 'In Downloads: photos to compare',
   'Guardando fotos para comparar: {done} de {total}': 'Saving photos to compare: {done} of {total}',
+  // The general sex line (FieldSexEstimate.vue), team only, online only.
+  'experimental: mariposas vivas': 'experimental: live butterflies',
+  'El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.': 'The % estimates how often an answer like this is right; it never exceeds what the test measured.',
+  'Sin respuesta': 'No answer',
+  'se inclina a hembra': 'leans to female',
+  'se inclina a macho': 'leans to male',
+  'En la prueba, las respuestas de este sexo para esta especie acertaron menos del 90 %.': 'In the test, answers of this sex for this species were right less than 90 % of the time.',
+  'La especie no es segura; el sexo puede estar mal.': 'The species is uncertain; the sex may be wrong.',
+  'No se encontraron las alas; el sexo puede estar mal.': 'The wings were not found; the sex may be wrong.',
+  'Probado en fotos de mariposas vivas.': 'Tested on photos of live butterflies.',
+  'Comprobado en fotos de iNaturalist de seis especies: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus y Poanes zabulon.':
+    'Checked on iNaturalist photos of six species: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus and Poanes zabulon.',
+  'Las hembras se reconocen peor: en la prueba, cuando respondió, acertó con el 93 % de las hembras y el 99 % de los machos.':
+    'Females are recognised less well: in the test, when it answered, it was right on 93 % of females and 99 % of males.',
+  'No vale para ejemplares de colección ni montados.': 'Not valid for collection or pinned specimens.',
+  'Los % se fijaron con esa misma prueba: sin validar hasta la próxima.': 'The % were set on that same test: unvalidated until the next one.',
+  'También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).':
+    'It also estimates the sex, online, on photos of six species outside the Ithomiini (experimental, tested on live butterflies).',
 }
