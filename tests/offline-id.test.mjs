@@ -32,6 +32,8 @@ function setup(sizes = {}) {
     // The test's small model is these bytes: its expected hash is theirs.
     if (m === student || m === sex || compatOnly.includes(m)) m.sha256 = createHash('sha256').update(b).digest('hex');
   }
+  // The older pages' entries pin the real files too: here the test's bytes (L1 is also the current model in a rollback build).
+  for (const c of COMPAT_MODELS) if (c.sha256) c.sha256 = createHash('sha256').update(readFileSync(join(ident, c.path))).digest('hex');
   let user = null;
   const server = http.createServer((req, res) => {
     const path = new URL(req.url, 'http://x').pathname.slice('/prueba-offline'.length);
