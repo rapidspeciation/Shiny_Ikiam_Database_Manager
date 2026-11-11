@@ -209,12 +209,8 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </button>
       <p v-if="!online && !current" class="mt-1 text-xs text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="installed && !current && !progress" class="mt-1 text-xs text-fg-muted">{{ $t('Reemplaza las fotos de este teléfono.') }}</p>
-      <p v-if="note" class="mt-2 text-sm text-fg-muted" role="status" data-testid="pack-note">
-        {{ note }}
-        <button v-if="failedSave && online && !progress" class="ml-1 min-h-11 font-medium text-brand-text underline underline-offset-2" data-testid="pack-retry" @click="install(failedSave.scope)">
-          {{ $t('Reintentar') }}
-        </button>
-      </p>
+      <p v-if="note" class="mt-2 text-sm text-fg-muted" role="status" data-testid="pack-note">{{ note }}</p>
+      <button v-if="note && failedSave && online && !progress" class="btn mt-2 min-h-11 px-4" data-testid="pack-retry" @click="install(failedSave.scope)">{{ $t('Reintentar') }}</button>
     </template>
   </section>
 </template>
