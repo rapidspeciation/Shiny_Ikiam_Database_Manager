@@ -85,7 +85,9 @@ async function receiveShare(request) {
 /** The offline test page: its runtime (ort/; onnxruntime-web pinned, a new version needs OFFLINE_ID renamed) from the cache first, the rest from the network first. */
 async function offlineId(request, url) {
   const cache = await caches.open(OFFLINE_ID)
-  if (url.pathname.includes('/prueba-offline/ort/')) {
+  // Its runtime (pinned) and Identificar's reference photos (the packs and the field set: files named by their photo,
+  // never changed under the same name) from the phone first: a weak signal must not hold photos the phone has.
+  if (url.pathname.includes('/prueba-offline/ort/') || (url.pathname.includes('/identificar/') && /\.(jpe?g|png|webp)$/i.test(url.pathname))) {
     const cached = await cache.match(request)
     if (cached) return cached
   }

@@ -5,7 +5,8 @@ import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { licenseUrl, type Refs } from '../../lib/identifyRefs'
 
-const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean }>()
+const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null }>()
+defineEmits<{ hint: [] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
 watch(
@@ -37,7 +38,12 @@ const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
           @error="failed(photo.src)"
         />
         <div v-else class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
-          {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
+          <span>
+            {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
+            <!-- Offline: the choice in Descargas that has its photo (a tap goes there), or that none can be downloaded. -->
+            <button v-if="hint?.go && !loading" class="mt-2 block min-h-11 w-full rounded-md border border-brand px-2 font-medium text-brand-text hover:bg-brand-soft" data-testid="gap-hint" @click="$emit('hint')">{{ hint.text }}</button>
+            <span v-else-if="hint && !loading" class="mt-2 block font-medium" data-testid="gap-hint">{{ hint.text }}</span>
+          </span>
         </div>
         <template v-if="photos.length > 1">
           <button class="btn-ghost absolute top-1/2 left-1 -translate-y-1/2 bg-surface/80" :aria-label="$t('Foto anterior')" @click="step(-1)">

@@ -90,6 +90,11 @@ export interface Engine {
   /** Whether this page, its scripts and the runtime are on the phone (it opens without signal); online, keeps them first. */
   pageOffline(): Promise<boolean>
   remove(): Promise<void>
+  /**
+   * One identifier model off the phone: its own files, and the detector and head too when nothing else on the phone
+   * needs them (the other model, the sex model). The photo packs and the rest of the cache stay.
+   */
+  removeModel(kind: ModelKind): Promise<void>
   /** The models in memory for `kind`; the first time reads them from storage (the slow step). */
   load(kind: ModelKind): Promise<void>
   loaded(kind: ModelKind): boolean
@@ -497,6 +502,30 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     if (changed) await cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
   }
 
+  async function removeModel(kind: ModelKind) {
+    const s = await stored()
+    if (!s) return
+    const other = KINDS.find(k => k !== kind)!
+    const has = (role: FileRole) => storedName(s.files, role) != null
+    const otherKept = MODEL_ROLES[other].every(has)
+    const keepRoles = new Set<FileRole>([...(otherKept ? MODEL_ROLES[other] : []), ...(has('sex') ? SEX_ROLES : [])])
+    const cache = await caches.open(CACHE)
+    for (const [name, f] of Object.entries(s.files)) {
+      const role = roleOf(name, f.role)
+      if (!MODEL_ROLES[kind].includes(role) || keepRoles.has(role)) continue
+      for (let i = 0; i * PART < f.bytes; i++) await cache.delete(at(`models/${name}?part=${i}`))
+      delete s.files[name]
+      if (role === 'detector') {
+        detector?.release().catch(() => {})
+        detector = null
+      }
+      if (role === 'head' || role === 'head-meta') headLoaded = null
+    }
+    encoders[kind]?.release().catch(() => {})
+    delete encoders[kind]
+    await cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+  }
+
   async function remove() {
     detector?.release().catch(() => {})
     sexSession?.release().catch(() => {})
@@ -559,6 +588,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     forgetSex,
     pageOffline,
     remove,
+    removeModel,
     load,
     loaded: kind => !!encoders[kind] && !!detector && !!headLoaded,
     run,
