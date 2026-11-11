@@ -224,3 +224,15 @@ export function columnChoices(user: string) {
     },
   }
 }
+
+/** Where «Solo cambios» is kept (on unless the person turned it off). Not the old key: that one hid only rows. */
+export const CHANGES_ONLY_KEY = 'proposal-changes-only-2'
+
+/**
+ * The table's own columns before the sheet's: on a phone with «Solo cambios» on (`compact`), no «Fila» and a narrow
+ * «Nota IA» (both whole in the cell bar), so the first changed columns fit the first screen.
+ */
+export function proposalFrame(compact: boolean, wide: boolean) {
+  const small = compact && !wide
+  return { rowColumn: !small, note: small ? { width: 90, minWidth: 60 } : { width: 150, minWidth: 70 } }
+}

@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
 import { applyLabGuard } from './lab-guard.mjs';
 import { leanClaude, unleanClaude } from './claude-lean.mjs';
+import { overlaidFiles, overlayReader } from '../server/doc-review.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shared = process.env.ITHOMIINI_SHARED || '/home/ubuntu/ithomiini/shared';
@@ -94,6 +95,10 @@ const flag = name => {
 };
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
+// The instructions as the app has them: the release's files with the changes applied in #/instrucciones
+// (server/doc-review.mjs), until a release has them.
+const readDoc = overlayReader(db, release);
+const overlaid = overlaidFiles(db, release);
 
 /**
  * The voice a WhatsApp chat's workspace carries (.claude/voice/voice.json: { files: [...] } in order), as
@@ -113,7 +118,7 @@ function workspaceVoice(workspace) {
 }
 
 /** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs), and the workspace's voice. */
-const brief = (user, workspace) => composeBrief(user, { docs, knowledge, sheets, source, labUrl, root: release, voice: workspaceVoice(workspace) });
+const brief = (user, workspace) => composeBrief(user, { docs, knowledge, sheets, source, labUrl, root: release, voice: workspaceVoice(workspace), read: readDoc });
 
 /** A workspace's own settings (.claude/ithomiini-workspace.json): the person, when the folder is not named after them. */
 const workspaceSettings = folder => {
@@ -251,6 +256,8 @@ function provision(user, { freshToken, addProject, folder = user.username, title
       const target = join(workspace, folder, 'skills', name);
       rmSync(target, { recursive: true, force: true });
       cpSync(join(skills, name), target, { recursive: true });
+      for (const { path, text } of overlaid)
+        if (path.startsWith(`assistant/skills/${name}/`)) writeFileSync(join(target, path.slice(`assistant/skills/${name}/`.length)), text);
       // In the lab, app-dev opens with the lab's steps (they replace pull, push and deploy).
       const skill = join(target, 'SKILL.md');
       if (labUrl && name === 'app-dev' && existsSync(skill)) {
@@ -268,6 +275,7 @@ function provision(user, { freshToken, addProject, folder = user.username, title
   const agentsTarget = join(workspace, '.claude', 'agents');
   rmSync(agentsTarget, { recursive: true, force: true });
   if (existsSync(agents)) cpSync(agents, agentsTarget, { recursive: true });
+  for (const { path, text } of overlaid) if (path.startsWith('assistant/agents/')) writeFileSync(join(agentsTarget, path.slice('assistant/agents/'.length)), text);
 
   // Chats may write and run their own scripts, the database included (no shell guard): an older
   // release's guard hook is taken out.

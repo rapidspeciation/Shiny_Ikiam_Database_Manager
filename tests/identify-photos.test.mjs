@@ -96,13 +96,16 @@ test('identifyUpload: a JPEG to the identifier with the side, the file removed a
   const identifier = {
     identify: async ({ path, side }) => {
       seen.push({ side, there: existsSync(path) });
-      return { species: [['Mechanitis messenoides', 0.8]], subspecies: [['Mechanitis messenoides deceptus', 0.5]], genus: [['Mechanitis', 0.9]], crop: 'success', wingBox: [0.1, 0.2, 0.8, 0.9], prior: 'East', ms: 900, rssMb: 1 };
+      return { species: [['Mechanitis messenoides', 0.8]], subspecies: [['Mechanitis messenoides deceptus', 0.5]], genus: [['Mechanitis', 0.9]], tribe: [['Ithomiini', 0.95]], subfamily: [['Danainae', 0.95]], crop: 'success', wingBox: [0.1, 0.2, 0.8, 0.9], prior: 'East', ms: 900, rssMb: 1 };
     },
   };
   const ok = await identifyUpload({ identifier, body: { photo: jpeg, side: 'East' }, scratch });
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.body.species, [['Mechanitis messenoides', 0.8]]);
   assert.deepEqual(ok.body.wingBox, [0.1, 0.2, 0.8, 0.9]);
+  // The tribes' and subfamilies' totals pass through (the page's tribe / subfamily answer, a lab flag).
+  assert.deepEqual(ok.body.tribe, [['Ithomiini', 0.95]]);
+  assert.deepEqual(ok.body.subfamily, [['Danainae', 0.95]]);
   assert.equal(ok.body.rssMb, undefined);
   assert.deepEqual(seen, [{ side: 'East', there: true }]);
   assert.deepEqual(readdirSync(scratch), []);

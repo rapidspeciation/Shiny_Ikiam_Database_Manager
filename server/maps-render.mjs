@@ -497,8 +497,13 @@ export function checkExport(result, expect) {
   };
 }
 
-/** The process table from /proc: Map pid → { ppid, rss (bytes), start (clock ticks), cmd }. */
-export function procTable(root = '/proc') {
+/**
+ * The process table from /proc: Map pid → { ppid, rss (bytes), start (clock ticks), cmd }. `cmd: false`: without the
+ * command lines (cmd ''), for the render's memory watch, which needs only ppid and rss. With them, this read took
+ * 420–570 ms of each half-second watch on a loaded PC (the watch's other, stat-only read: 90–310 ms); the command
+ * lines are about 40 % of it (21–36 ms with them, 13–21 ms without, at a lighter moment).
+ */
+export function procTable(root = '/proc', { cmd: withCmd = true } = {}) {
   const out = new Map();
   const page = 4096;
   for (const name of readdirSync(root)) {
@@ -509,7 +514,7 @@ export function procTable(root = '/proc') {
       // After the name: state(0) ppid(1) … starttime(19) vsize(20) rss(21, pages).
       let cmd = '';
       try {
-        cmd = readFileSync(join(root, name, 'cmdline'), 'utf8').replace(/\0/g, ' ');
+        if (withCmd) cmd = readFileSync(join(root, name, 'cmdline'), 'utf8').replace(/\0/g, ' ');
       } catch {
         // gone
       }
@@ -655,7 +660,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
  * The renderer of one maps tools (one per thread). Options for tests: env, workerPath, workerArgs, memAvailable,
- * procTable, deadlineMs, queueMs, minAvailable, rssCap, pollMs, stdoutMax (bytes), dir (where PNGs go), log.
+ * procTable (called with { cmd: false } by the memory watch, with nothing when the command lines are needed),
+ * deadlineMs, queueMs, minAvailable, rssCap, pollMs, stdoutMax (bytes), dir (where PNGs go), log.
  * status() → { enabled, reason }; render(url) → { ok, result, timing } | { ok: false, reason, detail, timing }.
  */
 export function createMapRenderer({
@@ -664,7 +670,7 @@ export function createMapRenderer({
   workerPath = WORKER,
   workerArgs = [],
   memAvailable: memOf = memAvailable,
-  procTable: procOf = () => procTable(),
+  procTable: procOf = options => procTable('/proc', options),
   deadlineMs = DEADLINE_MS,
   queueMs = QUEUE_MS,
   minAvailable = MIN_AVAILABLE,
@@ -734,12 +740,16 @@ export function createMapRenderer({
     let peak = 0;
     let killedFor = null;
     let reaping = Promise.resolve();
-    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true })).catch(() => {}));
+    let reaped = null; // what the last kill left: { killed, left }
+    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true })).then(r => (reaped = r ?? null)).catch(() => {}));
     let giveUp = null;
     /** Kill the run (once); its 'close' then answers, or, if its pipes stay open, CLOSE_MS later the run gives up. */
     const stop = reason => {
       if (killedFor) return;
       killedFor = reason;
+      // The memory watch ends here: the kill looks at the tree itself, and the watch's reads of /proc (hundreds of
+      // ms each on a loaded machine) would only hold up the kill and the answer.
+      clearInterval(poll);
       reap();
       grace = setTimeout(() => giveUp?.(), CLOSE_MS);
     };
@@ -803,12 +813,13 @@ export function createMapRenderer({
         child.stdin.on('error', () => {});
         child.stdin.write(`${JSON.stringify({ url: job.url ?? null, viewport: EXPORT.viewport, deadline_ms: Math.max(1000, budgetMs - 1000) })}\n`);
         onSpawn?.(child, stop);
+        if (killedFor) return; // stopped already (lost_turn): no deadline or memory watch for a run being killed
         const left = budgetMs - (now() - started);
         timer = setTimeout(() => stop('deadline'), Math.max(0, left));
         poll = setInterval(() => {
           tree.observe();
           try {
-            const rss = treeRss(procOf(), child.pid);
+            const rss = treeRss(procOf({ cmd: false }), child.pid);
             peak = Math.max(peak, rss);
             if (rss > rssCap) stop('memory_cap');
           } catch {
@@ -821,8 +832,13 @@ export function createMapRenderer({
       clearTimeout(timer);
       clearInterval(poll);
       clearTimeout(grace);
-      // Whatever is left: the worker if it still runs, and anything seen under it that is still the same process.
-      await reap();
+      // Whatever is left: the worker if it still runs, and anything seen under it that is still the same process. Not
+      // again when a kill (stop) left none of them running and the worker has exited: nothing of the tree is left that
+      // could have started another, so a new look (two full reads of /proc, 240–530 ms on a loaded machine) would
+      // find nothing.
+      await reaping;
+      const gone = reaped?.left.length === 0 && child && (child.exitCode !== null || child.signalCode !== null);
+      if (!gone) await reap();
       child?.stdin?.destroy();
       rmSync(tmp, { recursive: true, force: true });
     }

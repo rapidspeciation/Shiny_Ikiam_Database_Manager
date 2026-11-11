@@ -5,6 +5,8 @@ import { isoToSerial } from '../dates'
 import {
   dayDoubt,
   draftValues,
+  emergenceState,
+  LATE_DAYS,
   idProblem,
   nextId,
   siblingSpecies,
@@ -251,5 +253,18 @@ describe('the day', () => {
     expect(dayDoubt(5, 9, 6, null)).toBe('before-laid')
     expect(dayDoubt(7, 9, 1, 8)).toBe('before-pupa')
     expect(dayDoubt(9, 9, 1, 8)).toBe('')
+  })
+})
+
+describe('a pupa group against its expected emergence', () => {
+  const due = isoToSerial('2026-09-18')
+  it('is late (amber) only more than 3 days past it, as Inicio counts', () => {
+    expect(LATE_DAYS).toBe(3)
+    expect(emergenceState(due, isoToSerial('2026-11-07'))).toBe('late')
+    expect(emergenceState(due, due + 4)).toBe('late')
+    expect(emergenceState(due, due + 3)).toBe('due')
+    expect(emergenceState(due, due)).toBe('due')
+    expect(emergenceState(due, due - 1)).toBe('ahead')
+    expect(emergenceState(null, due)).toBeNull()
   })
 })

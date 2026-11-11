@@ -13,11 +13,17 @@
 //   maxTools: n           at most n tool calls (Bash counted)
 //   noToolErrors: true    no failed tool call
 //   toolArgs: { tool | [tools], match: {arg: regex} }   a call of that tool (one of them) whose arguments match
-//   block: { kind: images|files, min, max, exists, src, caption, captionNot }   the reply's [images]/[files] block as the
+//   noToolArgs: { tool | [tools], match }   no such call
+//   skill: name           the chat loaded that skill (a Skill call, or a Read of skills/<name>/SKILL.md)
+//   noSkill: name | [names]   it loaded none of them
+//   maxCalls: { tool | [tools], max }   at most `max` calls of these tools (e.g. ToolSearch round trips)
+//   block: { kind: images|files, min, max, exists, src, caption, captionNot, negationOk }   the reply's [images]/[files] block as the
 //                         WhatsApp bridge reads it: count, local files present, src/caption regexes (every item)
 //   proposal: { sheet, row | id, field, equals | matches | blank }   a drafted (not discarded) change has it
 //   noApply: true         no proposal of the chat was applied
 //   proposalOnly: { sheet, rows?, ids?, fields }   every drafted change stays inside these rows/ids and fields
+// Routing cases (tier 'routing') are graded on their first `stopAfter` tool calls only (default 3): the run is
+// interrupted there (run.mjs), and calls the model started before the stop took effect are not graded.
 // Text checks read the chat's final answer (the last message of the last run: what WhatsApp sends);
 // `turn: n` (1-based) reads the final message of that turn instead, `scope: 'all'` every message.
 // A proposal check reads the row's effective final state: the chat's live proposals folded in update order.
@@ -107,6 +113,21 @@ function toolArgsHit(tools, spec) {
   return { pass: false, detail: `args ${calls.map(t => (t.input ?? '').slice(0, 120)).join(' ; ')}` };
 }
 
+/** Whether `text` matches `re`. With `negationOk`, a match whose own clause (the text since the last "(", ",", ";",
+ * ".", ":" or "|", at most 40 characters back) has a negation (no, sin, ni, nunca, not, without, no muestra…) is a
+ * denial, not a claim: "Planta hospedera (no muestra oviposición)" passes, "hembra poniendo huevos" does not. */
+const NEGATION = /(^|[^\p{L}])(no|sin|ni|nunca|not|without|never)([^\p{L}]|$)/iu;
+export function claims(text, re, negationOk = false) {
+  const rx = new RegExp(re, 'gi');
+  for (const m of String(text ?? '').matchAll(rx)) {
+    if (!negationOk) return true;
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    const clause = before.split(/[(,;.:|]/).pop();
+    if (!NEGATION.test(clause)) return true;
+  }
+  return false;
+}
+
 /** The [images] or [files] block of the final reply, as the WhatsApp bridge reads it (parseReply): count within
  * min..max, local files present, every src matching `src`, every caption matching `caption` and none `captionNot`. */
 function blockCheck(text, spec, checkFiles = true) {
@@ -120,14 +141,44 @@ function blockCheck(text, spec, checkFiles = true) {
     if (checkFiles && spec.exists !== false && g.src.startsWith('/') && !existsSync(g.src)) bad.push(`missing file ${g.src}`);
     if (spec.src && !new RegExp(spec.src, 'i').test(g.src)) bad.push(`src ${g.src.slice(-60)}`);
     if (spec.caption && !new RegExp(spec.caption, 'i').test(g.caption)) bad.push(`caption without ${spec.caption}: ${g.caption.slice(0, 80)}`);
-    if (spec.captionNot && new RegExp(spec.captionNot, 'i').test(g.caption)) bad.push(`caption claims ${spec.captionNot}: ${g.caption.slice(0, 80)}`);
+    if (spec.captionNot && claims(g.caption, spec.captionNot, spec.negationOk)) bad.push(`caption claims ${spec.captionNot}: ${g.caption.slice(0, 80)}`);
   }
   return { pass: bad.length === 0, detail: bad.length ? bad.join('; ') : undefined };
 }
 
+/** Whether a tool call loaded skill `name`: the Skill tool with that skill, or a Read of its SKILL.md. */
+function loadsSkill(t, name) {
+  if (t.name === 'Skill') {
+    const m = /"skill"\s*:\s*"([^"]+)"/.exec(String(t.input ?? '').replace(/\\"/g, '"'));
+    return m != null && m[1].replace(/^.*:/, '') === name;
+  }
+  return t.name === 'Read' && String(t.input ?? '').includes(`skills/${name}/SKILL.md`);
+}
+
+/** The tool calls a check sees: all of them, or a routing case's first `stopAfter`. */
+export const gradedTools = (task, tools = []) => (task?.tier === 'routing' ? tools.slice(0, task.stopAfter ?? 3) : tools);
+
+/** The graded calls the interrupt cut before they settled (run.mjs marks such a sample invalid). */
+export const cutGraded = (task, tools = []) => gradedTools(task, tools).filter(t => t.cut);
+
+/**
+ * Re-grading a stored routing row (run.mjs --regrade): its run was stopped after `row.stopAfter` calls, so it is
+ * graded on at most those (min of the task's k and the row's), and it is invalid when the task's k is now larger
+ * than the stop (the calls after it were never made) or a graded call was cut. → { task, invalid? }
+ */
+export function regradeRouting(task, row, tools = []) {
+  if (task?.tier !== 'routing') return { task };
+  const k = task.stopAfter ?? 3;
+  const ran = row.stopped ? (row.stopAfter ?? k) : Infinity;
+  const t = { ...task, stopAfter: Math.min(k, ran) };
+  if (k > ran) return { task: t, invalid: `stopped after ${ran} calls; the task now grades ${k}` };
+  const cut = cutGraded(t, tools);
+  return cut.length ? { task: t, invalid: `graded call cut by the interrupt: ${cut.map(c => c.name).join(', ')}` } : { task: t };
+}
+
 export function grade(task, run, { today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }), checkFiles = true } = {}) {
   const textFor = c => norm(c.scope === 'all' ? run.allText ?? run.finalText : c.turn ? run.turnTexts?.[c.turn - 1] : run.finalText ?? '');
-  const tools = run.tools ?? [];
+  const tools = gradedTools(task, run.tools ?? []);
   const results = [];
   for (const c of task.checks ?? []) {
     const w = c.w ?? 1;
@@ -143,7 +194,17 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
     else if (c.noRegex) pass = !new RegExp(c.noRegex, 'i').test(textFor(c));
     else if (c.tool) pass = tools.some(t => t.name === c.tool);
     else if (c.toolAny) pass = tools.some(t => c.toolAny.includes(t.name));
-    else if (c.anyOf) pass = c.anyOf.some(sub => grade({ checks: [sub] }, run, { today, checkFiles }).score === 1);
+    else if (c.anyOf) pass = c.anyOf.some(sub => grade({ checks: [sub] }, { ...run, tools }, { today, checkFiles }).score === 1);
+    else if (c.skill) pass = tools.some(t => loadsSkill(t, c.skill));
+    else if (c.noSkill) {
+      const hit = [c.noSkill].flat().filter(n => tools.some(t => loadsSkill(t, n)));
+      pass = hit.length === 0;
+      detail = hit.length ? `loaded ${hit.join(', ')}` : undefined;
+    } else if (c.maxCalls) {
+      const n = tools.filter(t => [c.maxCalls.tool].flat().includes(t.name)).length;
+      pass = n <= c.maxCalls.max;
+      detail = pass ? undefined : `${n} calls`;
+    }
     else if (c.noTool) pass = !tools.some(t => [c.noTool].flat().includes(t.name));
     else if (c.maxTools != null) pass = tools.length <= c.maxTools;
     else if (c.noToolErrors) {
@@ -167,6 +228,9 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
       const r = toolArgsHit(tools, c.toolArgs);
       pass = r.pass;
       detail = r.pass ? undefined : r.detail;
+    } else if (c.noToolArgs) {
+      pass = !toolArgsHit(tools, c.noToolArgs).pass;
+      detail = pass ? undefined : 'a matching call was made';
     } else if (c.block) {
       const r = blockCheck(run.finalText ?? '', c.block, checkFiles);
       pass = r.pass;

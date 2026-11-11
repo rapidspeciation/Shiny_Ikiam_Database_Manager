@@ -36,6 +36,7 @@ export const TOOL_RANGES = [
   ['server/photo-gallery.mjs', '/^export const GALLERY_TOOLS/', '/^\\];/'],
   ['server/photo-facts.mjs', '/^export const PHOTO_FACTS_TOOLS/', '/^\\];/'],
   ['server/photo-curation.mjs', '/^export const CURATION_TOOLS/', '/^\\];/'],
+  ['server/doc-review.mjs', '/^export const DOC_TOOLS/', '/^\\];/'],
 ];
 /** Characters of one commit's diff kept (a whole-file rewrite stays readable, not endless). */
 const DIFF_LIMIT = 150_000;
@@ -157,8 +158,11 @@ export async function writeHistory(root = REPO_ROOT, file = HISTORY_FILE) {
  * The instructions page's data. `tools`: the MCP tool list exactly as
  * tools/list gives it (server/assistant.mjs). The history comes from git in a
  * checkout (recomputed when HEAD moves), else from the release's file.
+ * `docReview` (server/doc-review.mjs): the files' text in effect (changes applied in the app) and those changes
+ * in each file's history.
  */
-export function createInstructions({ root = REPO_ROOT, tools = () => [], historyFile = HISTORY_FILE } = {}) {
+export function createInstructions({ root = REPO_ROOT, tools = () => [], historyFile = HISTORY_FILE, docReview = null } = {}) {
+  const read = rel => (docReview ? docReview.effectiveText(rel) : readFileSync(join(root, rel), 'utf8'));
   let cached = null; // { head, promise }
   let shipped = null; // { mtime, data }
 
@@ -190,9 +194,9 @@ export function createInstructions({ root = REPO_ROOT, tools = () => [], history
 
   function content(entry) {
     // The brief as a workspace on the server gets it, for a generic person.
-    if (entry.id === 'assistant/AGENTS.md') return { meta: null, content: composeBrief(GENERIC_PERSON, { ...SERVER_PATHS, root }) };
+    if (entry.id === 'assistant/AGENTS.md') return { meta: null, content: composeBrief(GENERIC_PERSON, { ...SERVER_PATHS, root, read }) };
     if (entry.kind === 'tools') return { tools: tools() };
-    const text = readFileSync(join(root, entry.id), 'utf8');
+    const text = entry.kind === 'markdown' ? read(entry.id) : readFileSync(join(root, entry.id), 'utf8');
     if (entry.kind !== 'markdown') return { content: text };
     const { meta, body } = frontMatter(text);
     return { meta, content: body };
@@ -211,6 +215,7 @@ export function createInstructions({ root = REPO_ROOT, tools = () => [], history
           ...content(entry),
           lastChanged: commits?.[0]?.date ?? null,
           history: commits?.map(({ diff: _diff, ...c }) => c) ?? null,
+          ...(docReview && entry.kind === 'markdown' ? { revisions: docReview.revisions(entry.id) } : {}),
         };
       }),
     };
@@ -218,6 +223,11 @@ export function createInstructions({ root = REPO_ROOT, tools = () => [], history
 
   /** One commit's word diff of one entry. */
   async function diff(id, commit) {
+    const rev = /^rev:(\d+)$/.exec(String(commit));
+    if (rev) {
+      const out = docReview ? await docReview.revisionDiff(id, rev[1]) : null;
+      return out ? { commit, diff: out.diff } : null;
+    }
     const found = (await history())?.entries?.[id]?.find(c => c.commit === commit);
     return found ? { commit: found.commit, diff: found.diff } : null;
   }

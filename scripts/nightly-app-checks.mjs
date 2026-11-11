@@ -8,9 +8,12 @@
 // walk came in for six weeks while nothing outside Monitoreo → Importar said so (server/monitoring.mjs wikilocHealth).
 //   node scripts/nightly-app-checks.mjs --sheet-ranges [--log <file>]   (GOOGLE_CREDENTIALS_FILE, WORKBOOK_ID)
 // The workbook's fixed end rows kept ahead of its rows (server/sheet-ranges.mjs): one line per rule moved, each change
-// with the rule as it was appended to the --log file (JSON lines, for the way back). Exit 0: nothing near or moved and
-// read back; 3: a rule on a range protected from the app, left for its owner; 1: an error or a rule not read back as sent.
-import { appendFileSync } from 'node:fs';
+// with the rule as it was appended to the --log file (JSON lines, for the way back). A range protected from the app is
+// left for its owner and kept in sheet-ranges-state.json beside the log: told once, again only when it changes (the
+// app's alerts list it too, server/alerts.mjs). Exit 0: nothing near, or moved and read back, or only ranges already
+// told; 3: a protected range told for the first time or changed; 1: an error or a rule not read back as sent.
+import { appendFileSync, existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const url = process.argv[2] || 'http://127.0.0.1:8794/health';
@@ -53,21 +56,49 @@ export function wikilocLine(w, at = Date.now()) {
  */
 export async function sheetRangesRun(request, log, options = {}) {
   const { keepRangesAhead } = await import('../server/sheet-ranges.mjs');
+  let planned = false;
   const keep = entry => {
     if (!log) throw new Error('no --log file: nothing sent');
     appendFileSync(log, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    if (entry.status === 'planned') planned = true;
   };
+  const stateFile = log ? join(dirname(log), 'sheet-ranges-state.json') : null;
+  const notes = [];
   try {
-    const out = await keepRangesAhead(request, { ...options, beforeWrite: keep });
-    const r = out.record;
-    if (r.changes.length || r.leftOut.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : 'sent' });
+    let known = {};
+    try {
+      if (stateFile && existsSync(stateFile)) known = JSON.parse(readFileSync(stateFile, 'utf8')).leftOut || {};
+    } catch (e) {
+      notes.push(`Sheet ranges: ${stateFile} did not read (${String(e.message).slice(0, 120)}): its ranges are told again`);
+    }
+    const out = await keepRangesAhead(request, { ...options, known, beforeWrite: keep });
+    out.lines.unshift(...notes);
+    const { state, toldLeftOut, ...r } = out.record;
+    // Every plan logged gets its outcome (a write refused as protected too: nothing landed).
+    if (planned || r.changes.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : r.changes.length ? 'sent' : 'refused' });
+    else if (toldLeftOut) keep({ ...r, status: 'left out' });
+    if (stateFile) {
+      writeFileSync(`${stateFile}.new`, `${JSON.stringify({ at: r.at, leftOut: state }, null, 1)}\n`, { mode: 0o600 });
+      renameSync(`${stateFile}.new`, stateFile);
+    }
     return out;
   } catch (e) {
     return { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === '--sheet-ranges') {
+// Run as a script, also through a symlink: the nightly runs /home/ubuntu/ithomiini/current/scripts/…, and Node gives
+// import.meta.url the real path (releases/<stamp>/…). Comparing the path as typed, the run did nothing and passed (the
+// night of 11 Nov 2026).
+const isMain = (() => {
+  try {
+    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+})();
+const mode = process.argv[2];
+if (isMain && mode === '--sheet-ranges') {
   const i = process.argv.indexOf('--log');
   let out;
   try {
@@ -77,9 +108,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
   } catch (e) {
     out = { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
   }
+  // A run always says what it did; one that says nothing has not run.
+  if (!out.lines?.length) out = { code: 1, lines: ['Sheet ranges: FAILING: the run said nothing'] };
   console.log(out.lines.join('\n'));
   process.exitCode = out.code;
-} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+} else if (isMain && mode?.startsWith('--')) {
+  console.log(`Unknown option ${mode}: node scripts/nightly-app-checks.mjs [health URL] | --sheet-ranges --log <file>`);
+  process.exitCode = 1;
+} else if (isMain) {
   let out;
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });

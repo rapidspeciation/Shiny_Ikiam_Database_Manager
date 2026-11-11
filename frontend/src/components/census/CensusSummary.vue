@@ -147,7 +147,7 @@ function findingText(f: Finding) {
         </h2>
         <ul class="divide-y divide-violet-100 rounded-xl border border-violet-200 bg-violet-50">
           <li v-for="f in findings" :key="f.mark.id" class="px-3 py-1.5 text-sm text-violet-950">
-            {{ findingText(f) }}<template v-if="f.mark.note"> — {{ f.mark.note }}</template>
+            {{ findingText(f) }}<template v-if="f.mark.note">: {{ f.mark.note }}</template>
             <span class="text-xs text-violet-700"> · {{ f.mark.actorName }}</span>
           </li>
         </ul>

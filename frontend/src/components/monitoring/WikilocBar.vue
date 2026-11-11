@@ -281,7 +281,7 @@ watch(showProfiles, v => v && loadProfiles())
           }"
           >{{ $t(STATUS[j.status]) }}</span
         >
-        {{ label(j) }} · {{ ago(j.updatedAt) }}<template v-if="j.message"> — {{ j.message }}</template>
+        {{ label(j) }} · {{ ago(j.updatedAt) }}<template v-if="j.message"> · {{ j.message }}</template>
       </li>
     </ul>
     <p v-if="active.length && !workerOnline" class="mt-1 text-xs text-amber-800">

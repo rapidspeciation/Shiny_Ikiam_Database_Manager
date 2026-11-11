@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import ImportPanel from '../components/monitoring/ImportPanel.vue'
 import ScrollRow from '../components/ScrollRow.vue'
+import type { MoreSide } from '../lib/scrollRow'
 import { useSession } from '../stores/session'
 
 // The report (ECharts) and the map (Leaflet) load only when opened.
@@ -32,12 +34,24 @@ const router = useRouter()
 const panel = computed(() => PANELS.value.find(p => p.id === route.query.vista)?.id || 'resumen')
 // Changing tabs shows the whole list: a butterfly chosen with «En el mapa» or «ver fotos» stays only while you look at it.
 const show = (id: string) => router.replace({ query: { ...route.query, vista: id, individuo: undefined } })
+/** The tab row hides more tabs at its right (a phone): a › there says so and scrolls on. */
+const tabRow = ref<{ scrollOn: () => void }>()
+const tabsMore = ref<MoreSide>('none')
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- One row that scrolls sideways on a phone (the last tab faded at the edge), never wider than the screen. -->
-    <ScrollRow as="nav" :active="panel" class="flex gap-0.5 border-b border-stone-200 bg-surface px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
+    <!-- One row that scrolls sideways on a phone (the last tab faded at the edge, and a › while more tabs wait to the
+         right; the open one brought into sight), never wider than the screen. -->
+    <div class="relative">
+    <ScrollRow
+      ref="tabRow"
+      as="nav"
+      :active="panel"
+      class="flex gap-0.5 border-b border-stone-200 bg-surface px-3 pt-2 sm:gap-1 sm:px-4"
+      :aria-label="$t('Monitoreo')"
+      @more="side => (tabsMore = side)"
+    >
       <button
         v-for="p in PANELS"
         :key="p.id"
@@ -55,6 +69,18 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
         ><span class="hidden sm:inline">{{ $t(p.label) }}</span>
       </button>
     </ScrollRow>
+    <button
+      v-if="tabsMore === 'end' || tabsMore === 'both'"
+      type="button"
+      tabindex="-1"
+      aria-hidden="true"
+      class="absolute top-0 right-0 bottom-px flex w-11 items-center justify-end bg-linear-to-l from-surface from-50% to-transparent pr-1.5 text-fg-muted"
+      data-more-tabs
+      @click="tabRow?.scrollOn()"
+    >
+      <ChevronRight :size="18" />
+    </button>
+    </div>
     <div class="min-h-0 flex-1">
       <ImportPanel v-if="panel === 'importar'" />
       <SummaryPanel v-else-if="panel === 'resumen'" />

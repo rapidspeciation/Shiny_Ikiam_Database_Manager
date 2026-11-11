@@ -166,7 +166,7 @@ function write() {
           )
         "
       >
-        <input v-model="notPreserved" type="checkbox" /> {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
+        <input v-model="notPreserved" type="checkbox" /> {{ $t('Sin preservar: sin CAM ni tubos') }}
       </label>
       <button
         class="btn-primary"

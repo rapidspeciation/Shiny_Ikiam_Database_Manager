@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { formSections, phoneViewFor, sectionOf } from '../rowForm'
+import { formSections, noteGroups, phoneViewFor, sectionOf } from '../rowForm'
 import { en } from '../../locales/en'
 import type { Field } from '../types'
 
@@ -26,12 +26,12 @@ describe('form sections', () => {
   const insectary = formSections(headers('Insectary_data'), ['Insectary_ID', 'CAM_ID'])
 
   it('puts every Insectary_data column in one section, most used first', () => {
-    expect(insectary.map(s => s.key)).toEqual(['id', 'dates', 'tubes', 'notes', 'storage', 'manifest'])
+    expect(insectary.map(s => s.key)).toEqual(['id', 'notes', 'dates', 'tubes', 'storage', 'manifest'])
     expect(insectary.flatMap(s => s.fields).length).toBe(53)
     expect(keysOf(insectary, 'id')?.slice(0, 6)).toEqual(['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'Stock_of_origin', 'SPECIES', 'Sex'])
     expect(keysOf(insectary, 'id')).toContain('Collection_location')
     expect(keysOf(insectary, 'dates')).toEqual(['Intro2Insectary_date', 'Death_date', 'Death_cause', 'Preservation_date'])
-    expect(keysOf(insectary, 'notes')).toEqual(['Photo_dorsal', 'Photo_ventral', 'Notes_Insectary_data'])
+    expect(keysOf(insectary, 'notes')).toEqual(['Notes_Insectary_data', 'Photo_dorsal', 'Photo_ventral'])
     expect(keysOf(insectary, 'storage')).toHaveLength(8)
     expect(keysOf(insectary, 'manifest')).toHaveLength(13)
   })
@@ -64,5 +64,21 @@ describe('form sections', () => {
 
   it('has English for every section title', () => {
     for (const s of [...insectary, ...formSections(headers('Insectary_stocks'))]) expect(en[s.title], s.title).toBeTruthy()
+  })
+})
+
+describe('side form groups', () => {
+  it('puts the ID and the note first, then every other column once, in the sheet order', () => {
+    const fields = headers('Insectary_data')
+    const groups = noteGroups(fields, ['Insectary_ID', 'CAM_ID'])
+    expect(groups.map(g => g.key)).toEqual(['first', 'all'])
+    expect(groups[0].fields.map(f => f.key)).toEqual(['Insectary_ID', 'CAM_ID', 'Notes_Insectary_data'])
+    const rest = groups[1].fields.map(f => f.key)
+    expect(rest).not.toContain('Notes_Insectary_data')
+    expect(rest).toEqual(fields.map(f => f.key).filter(k => !['Insectary_ID', 'CAM_ID', 'Notes_Insectary_data'].includes(k)))
+  })
+
+  it('stays one list without a note column', () => {
+    expect(noteGroups([{ key: 'A' }, { key: 'B' }] as Field[], ['A']).map(g => g.key)).toEqual(['all'])
   })
 })

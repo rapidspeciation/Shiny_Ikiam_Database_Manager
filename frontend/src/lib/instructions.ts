@@ -35,6 +35,16 @@ export interface Entry {
   tools?: McpTool[]
   lastChanged: string | null
   history: Commit[] | null
+  /** Changes applied in the app (server/doc-review.mjs), newest first. */
+  revisions?: Revision[]
+}
+export interface Revision {
+  revision: number
+  kind: 'apply' | 'undo'
+  date: string
+  author: string
+  heading: string
+  gitState: string
 }
 export interface InstructionsPage {
   historySource: 'git' | 'release' | null

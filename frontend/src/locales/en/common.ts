@@ -12,6 +12,8 @@ export default {
   Asistente: 'Assistant',
   'Renombrar fotos': 'Rename photos',
   Revisión: 'Review',
+  // AppHeader: «Más» carrying the open page's name («Censo ▾»).
+  '{tab}: más secciones': '{tab}: more sections',
   Guardar: 'Save',
   Cancelar: 'Cancel',
   Cerrar: 'Close',

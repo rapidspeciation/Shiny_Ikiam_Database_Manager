@@ -804,6 +804,25 @@ export function sheetGroups(
   })
 }
 
+/**
+ * «Solo cambios»: the columns, of `fields` and in their order, where at least one of `rows` changes something or
+ * has something to look at (a value that differs from the sheet's, a cell the person typed or set back, a doubtful,
+ * unreadable or warned cell, a cell edited in the sheet, a formula written). Lines that write nothing (context) do
+ * not count, unless the sheet refuses them. The table's ID and «Nota IA» columns are its own and always show.
+ */
+export function changedColumns(rows: ProposalChange[], fields: string[], newRowFormulas: string[] = []): string[] {
+  const counted = rows.filter(c => !c.context || c.page?.error)
+  return fields.filter(field =>
+    counted.some(c => {
+      const cell = cellOf(c, field, newRowFormulas)
+      if (cell.warning || cell.sheetEdit || cell.doubtful || cell.formulaWrite) return true
+      if (cell.kind === 'person' || cell.kind === 'reverted' || cell.kind === 'unreadable' || cell.kind === 'kept') return true
+      if (cell.kind !== 'proposed') return false
+      return c.create ? cell.value !== null && cell.value !== '' : !same(cell.value, cell.was)
+    }),
+  )
+}
+
 /** Cells whose value changed between two versions of a proposal (to flash them), as cellId(key, field). */
 export function changedCells(prev: Proposal | undefined, next: Proposal): string[] {
   if (!prev || prev.id !== next.id) return []

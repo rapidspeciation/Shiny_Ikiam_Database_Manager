@@ -42,8 +42,14 @@
 // would overwrite newer data: the alert says to redo those disappearances from
 // the notebook, not to apply them. Each alert leads with the outcome in the
 // base and keeps who opened the census or the chat.
+//
+// Workbook ranges left for their owners (scripts/nightly-app-checks.mjs --sheet-ranges): a dropdown or a conditional
+// format whose fixed end the nightly could not move because the range is protected from the app. Read from the
+// nightly's state file; information at the end of the list, gone once the nightly no longer leaves it out.
 
-import { msg, msgn } from './messages.mjs';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { msg, msgn, tpl } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
@@ -68,6 +74,27 @@ export const CENSUS_COVER_DAYS = 7;
 export const CENSUS_PROPOSAL_DAYS = 14;
 /** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
 export const SAMPLE_DAYS = 180;
+
+/** The nightly's state file of ranges left for their owners: shared/nightly-tests, beside the database. */
+export function sheetRangesStateFile(env = process.env) {
+  return env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'nightly-tests', 'sheet-ranges-state.json') : null;
+}
+/** The ranges in that file ([] when there is none or it does not read). */
+export function leftOutRanges(file = sheetRangesStateFile()) {
+  if (!file) return [];
+  try {
+    return Object.values(JSON.parse(readFileSync(file, 'utf8')).leftOut || {});
+  } catch {
+    return [];
+  }
+}
+const fileStamp = file => {
+  try {
+    return String(statSync(file).mtimeMs);
+  } catch {
+    return '-';
+  }
+};
 
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const isDate = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -405,56 +432,64 @@ export function staleCensusProposals(store, today = todaySerial()) {
 }
 
 const LINK = '#/revision?vista=alertas';
+/**
+ * The pools in the team's words (alerts on Inicio and Revisión): which butterflies take their CAMs (the sheet
+ * columns of camPools). A pool not named here keeps its Lists column's name.
+ */
+const POOL_NAMES = {
+  // Collection_data CAM_ID_insectary and Insectary_data CAM_ID: butterflies of the insectary, wild-caught or reared.
+  'InsectaryWild&Reared_CAMid': tpl('CAM de insectario (silvestres y criadas)'),
+  // Collection_data CAM_ID: wild butterflies preserved in the field.
+  Wild_indv_CAMid: tpl('CAM de campo (silvestres)'),
+  // The CRISPR sheet's CAM_ID.
+  CRISPRonly_CAMid: tpl('CAM de CRISPR'),
+};
+const poolName = pool => (POOL_NAMES[pool] ? msg(POOL_NAMES[pool]) : pool);
 const CENSUS_LINK = '#/censo';
 /** A row opened in the Buscador. */
 const rowLink = (sheet, search) => `#/tablas?${new URLSearchParams({ hoja: sheet, buscar: search })}`;
 /**
- * The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link, action? }.
- * `action` { kind: 'cancel-census', census }: the app offers to cancel that census session.
+ * The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link, action?, detail?,
+ * detailMsg? }. `action` { kind: 'cancel-census', census }: the app offers to cancel that census session. `detail`:
+ * the long part (a CAM range, its last CAM), shown on request.
  */
-function alertList(cams, rule, samples, today, censuses = [], censusProposals = []) {
+export function alertList(cams, rule, samples, today, censuses = [], censusProposals = [], ranges = []) {
   const out = [];
-  const add = (id, level, m, link, action) => out.push({ id, level, text: m.text, textMsg: m.msg, link, ...(action ? { action } : {}) });
+  const add = (id, level, m, link, action, detail) =>
+    out.push({ id, level, text: m.text, textMsg: m.msg, link, ...(action ? { action } : {}), ...(detail ? { detail: detail.text, detailMsg: detail.msg } : {}) });
   const day = date => (date ? date.split('-').reverse().join('/') : '—');
   for (const p of cams) {
-    if (p.level === 'out')
-      add(`cam:${p.pool}`, 'warn', msg('{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.', { pool: p.pool }), LINK);
+    const pool = poolName(p.pool);
+    if (p.level === 'out') add(`cam:${p.pool}`, 'warn', msg('{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.', { pool }), LINK);
     for (const r of p.ranges) {
+      // The range and its last CAM: the long part, shown on request.
+      const range = { first: r.first, last: r.last, cam: r.lastUsed?.cam, date: day(r.lastUsed?.date) };
       if (r.level === 'next')
         add(
           `cam:${p.pool}:${r.first}`,
           'info',
-          msgn(
-            r.left,
-            '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.',
-            '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.',
-            { pool: p.pool, first: r.first, last: r.last, cam: r.lastUsed.cam, date: day(r.lastUsed.date), nextFirst: r.nextRange.first, nextLast: r.nextRange.last },
-          ),
+          msgn(r.left, '{pool}: queda {n} CAM; el siguiente rango ya está en Lists.', '{pool}: quedan {n} CAM; el siguiente rango ya está en Lists.', { pool }),
           LINK,
+          undefined,
+          msg('Rango {first}–{last}, último {cam} ({date}); siguiente rango {nextFirst}–{nextLast}.', { ...range, nextFirst: r.nextRange.first, nextLast: r.nextRange.last }),
         );
       if (r.level === 'idle')
         add(
           `cam:${p.pool}:${r.first}`,
           'info',
-          msgn(
-            r.left,
-            '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).',
-            '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).',
-            { pool: p.pool, first: r.first, last: r.last, cam: r.lastUsed.cam, date: day(r.lastUsed.date) },
-          ),
+          msgn(r.left, '{pool}: queda {n} CAM, sin uso desde {date}.', '{pool}: quedan {n} CAM, sin uso desde {date}.', { pool, date: range.date }),
           LINK,
+          undefined,
+          msg('Rango {first}–{last}, último {cam}.', range),
         );
       if (r.level === 'low')
         add(
           `cam:${p.pool}:${r.first}`,
           'warn',
-          msgn(
-            r.left,
-            '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.',
-            '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.',
-            { pool: p.pool, first: r.first, last: r.last, cam: r.lastUsed.cam, date: day(r.lastUsed.date) },
-          ),
+          msgn(r.left, '{pool}: queda {n} CAM. Pidan a PAS o AA un rango nuevo.', '{pool}: quedan {n} CAM. Pidan a PAS o AA un rango nuevo.', { pool }),
           LINK,
+          undefined,
+          msg('Rango {first}–{last}, último {cam} ({date}).', range),
         );
     }
   }
@@ -541,8 +576,8 @@ function alertList(cams, rule, samples, today, censuses = [], censusProposals = 
     const vars = { id: s.id, species: s.species || '—', date: day(s.date) };
     const m =
       s.kind === 'preserved_na'
-        ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta al equipo', vars)
-        : msg('{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo', vars);
+        ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA: pregunta al equipo', vars)
+        : msg('{id} ({species}) preservada el {date} sin CAM/tubo: pregunta al equipo', vars);
     add(`sample:${s.recordId}`, 'warn', m, rowLink(s.sheet, s.id));
   }
   for (const s of rule.reached.filter(s => s.recentAfter))
@@ -568,6 +603,34 @@ function alertList(cams, rule, samples, today, censuses = [], censusProposals = 
       }),
       LINK,
     );
+  // One alert per sheet and rule: dropdown runs of a sheet with the same list are named together.
+  const groups = new Map();
+  for (const r of ranges) {
+    const key = [r.kind, r.sheet, r.before, r.after].join('\u0000');
+    if (!groups.has(key)) groups.set(key, { ...r, cells: [] });
+    const g = groups.get(key);
+    // The label of a dropdown: «Sheet A2:A226»; a conditional format is named by its formula.
+    g.cells.push(String(r.label).slice(String(r.sheet).length + 1).replace(/^([A-Z]+\d+):\1$/, '$1'));
+    if (String(r.since) < String(g.since)) g.since = r.since;
+  }
+  for (const r of groups.values()) {
+    // The margin the new end leaves past the list's last filled row (EXTEND in server/sheet-ranges.mjs).
+    const margin = Number(/(\d+)$/.exec(String(r.after))?.[1]) - r.rows;
+    const vars = { sheet: r.sheet, cells: r.cells.join(', '), rows: r.rows, margin, before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
+    add(
+      `sheet-range:${r.key || `${r.kind}:${r.label}`}`,
+      'info',
+      r.kind === 'dropdown'
+        ? msg(
+            '{sheet} {cells}: el desplegable toma sus opciones de {before}, pero la lista ya llega a la fila {rows}; debería ser {after} ({margin} filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
+            vars,
+          )
+        : msg(
+            '{sheet}, formato condicional {before}: debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.',
+            vars,
+          ),
+    );
+  }
   return out;
 }
 
@@ -583,7 +646,7 @@ function appStamp(store) {
     : '-';
   return `${census}:${proposals}`;
 }
-export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}:${appStamp(store)}`;
+export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}:${appStamp(store)}:${fileStamp(sheetRangesStateFile())}`;
 /**
  * Everything the alerts know, computed again only when the local copy or the day changed, here
  * in this thread. The app's requests ask freshAlerts instead (in the Revisión worker thread,
@@ -609,7 +672,7 @@ export function alertsEntry(store) {
     computedAt: new Date().toISOString(),
     ms: Date.now() - started,
     thresholds: { camLeft: CAM_LOW_LEFT, camShare: CAM_LOW_SHARE },
-    alerts: alertList(cams, rule, samples, today, censuses, censusProposals),
+    alerts: alertList(cams, rule, samples, today, censuses, censusProposals, leftOutRanges()),
     camPools: cams,
     preserveRule: rule,
     missingSamples: samples,

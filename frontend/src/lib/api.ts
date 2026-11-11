@@ -32,7 +32,7 @@ export const csrfToken = () => csrf
 export const pageId = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`
 
 /** The app's folder relative to this page: '' for the app, '../' for a page in a folder of its own (lib/appRoot.ts). */
-const apiRoot = typeof document === 'undefined' ? '' : (document.querySelector<HTMLMetaElement>('meta[name="app-root"]')?.content ?? '')
+export const apiRoot = typeof document === 'undefined' ? '' : (document.querySelector<HTMLMetaElement>('meta[name="app-root"]')?.content ?? '')
 
 /** Requests are relative to the page, so the app works under any base path. */
 export async function api<T>(

@@ -57,6 +57,11 @@ export const MAIN_TOOLS = new Set([
   'meeting_doc_get',
   'meeting_doc_apply',
   'meeting_doc_picture',
+  // The instructions' comments and changes (server/doc-review.mjs) are kept by the app's thread.
+  'doc_threads',
+  'reply_doc_thread',
+  'propose_doc_change',
+  'revise_doc_change',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;
@@ -70,12 +75,13 @@ export function createAssistantHost({
   store,
   config = {},
   invitations = null,
+  docReview = null,
   workerUrl = new URL('./assistant-worker.mjs', import.meta.url),
   callMs,
   viewsMs,
   backoffMs,
 } = {}) {
-  const main = createAssistant({ store, config, invitations });
+  const main = createAssistant({ store, config, invitations, docReview });
   const decided = workerMode(store, config);
   if (decided.mode === 'inline') {
     return {

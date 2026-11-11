@@ -74,7 +74,9 @@ const levelTone: Record<string, string> = {
             >
               <AlertTriangle v-if="a.level === 'warn'" :size="15" class="mt-0.5 shrink-0 text-amber-700" />
               <Info v-else :size="15" class="mt-0.5 shrink-0 text-stone-500" />
-              <span>{{ tx(a.text, a.textMsg) }}</span>
+              <span
+                >{{ tx(a.text, a.textMsg) }}<span v-if="a.detail" class="block text-xs opacity-80">{{ tx(a.detail, a.detailMsg) }}</span></span
+              >
               <a
                 v-if="alertLink(a.link)"
                 :href="alertLink(a.link)!.href"

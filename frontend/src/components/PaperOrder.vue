@@ -8,6 +8,9 @@ const order = defineModel<RecordedOrder>({ required: true })
 </script>
 
 <template>
+  <!-- «Ordenar:» before the buttons, so the group does not read as one more filter beside «De todos | Mías». -->
+  <div class="inline-flex items-center gap-1.5">
+  <span class="text-xs text-fg-muted" aria-hidden="true">{{ $t('Ordenar:') }}</span>
   <div
     class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm"
     role="group"
@@ -33,5 +36,6 @@ const order = defineModel<RecordedOrder>({ required: true })
     >
       <ArrowDown v-if="order.desc" :size="16" /><ArrowUp v-else :size="16" />
     </button>
+  </div>
   </div>
 </template>

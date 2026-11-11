@@ -354,16 +354,23 @@ export default {
 
   // server/alerts.mjs: Revisión → Alertas and Inicio
   '{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.': '{pool}: no CAMs left in any range. Ask PAS or AA for a new range.',
-  '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.':
-    '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}); the next range is already on Lists: {nextFirst}–{nextLast}.',
-  '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}); el siguiente rango ya está en Lists: {nextFirst}–{nextLast}.':
-    '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}); the next range is already on Lists: {nextFirst}–{nextLast}.',
-  '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
-    '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
-  '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
-    '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
-  '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAM left in {first}–{last}, unused since {date} (last {cam}).',
-  '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAMs left in {first}–{last}, unused since {date} (last {cam}).',
+  '{sheet} {cells}: el desplegable toma sus opciones de {before}, pero la lista ya llega a la fila {rows}; debería ser {after} ({margin} filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.':
+    '{sheet} {cells}: the dropdown takes its choices from {before}, but the list already reaches row {rows}; it should be {after} ({margin} rows of margin). The app cannot change it (protected range): PAS can do it by hand (Data → Data validation). Seen on {date}.',
+  '{sheet}, formato condicional {before}: debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.':
+    '{sheet}, conditional format {before}: it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Format → Conditional formatting). Seen on {date}.',
+  '{pool}: queda {n} CAM; el siguiente rango ya está en Lists.': '{pool}: {n} CAM left; the next range is already on Lists.',
+  '{pool}: quedan {n} CAM; el siguiente rango ya está en Lists.': '{pool}: {n} CAMs left; the next range is already on Lists.',
+  '{pool}: queda {n} CAM. Pidan a PAS o AA un rango nuevo.': '{pool}: {n} CAM left. Ask PAS or AA for a new range.',
+  '{pool}: quedan {n} CAM. Pidan a PAS o AA un rango nuevo.': '{pool}: {n} CAMs left. Ask PAS or AA for a new range.',
+  '{pool}: queda {n} CAM, sin uso desde {date}.': '{pool}: {n} CAM left, unused since {date}.',
+  '{pool}: quedan {n} CAM, sin uso desde {date}.': '{pool}: {n} CAMs left, unused since {date}.',
+  'Rango {first}–{last}, último {cam} ({date}); siguiente rango {nextFirst}–{nextLast}.': 'Range {first}–{last}, last {cam} ({date}); next range {nextFirst}–{nextLast}.',
+  'Rango {first}–{last}, último {cam}.': 'Range {first}–{last}, last {cam}.',
+  'Rango {first}–{last}, último {cam} ({date}).': 'Range {first}–{last}, last {cam} ({date}).',
+  // The CAM pools in the team's words.
+  'CAM de insectario (silvestres y criadas)': 'Insectary CAM (wild and reared)',
+  'CAM de campo (silvestres)': 'Field CAM (wild)',
+  'CAM de CRISPR': 'CRISPR CAM',
   'Censo de {species} del {date}: sigue abierto en la pestaña Censo y sin marcas ({expected} mariposas esperadas). Si se contó en papel, pasen las marcas y termínenlo; si no se hizo, cancélenlo.':
     'Census of {species} of {date}: still open in the Census tab with no marks ({expected} butterflies expected). If it was counted on paper, enter the marks and finish it; if it was not done, cancel it.',
   'Censo: {n} propuesta con {gone} desaparecidas espera desde el {date} sin aplicar (chat «{title}» de {by}). Revísenla y aplíquenla o descártenla; mientras tanto esas mariposas cuentan como vivas.':
@@ -392,10 +399,10 @@ export default {
     '{species}: {n} preserved in the last 60 days after reaching {limit} ({total} in all).',
   '{species}: {preserved} preservadas, falta {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
   '{species}: {preserved} preservadas, faltan {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
-  '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo': '{id} ({species}) preserved on {date} without CAM/tube — ask the team',
+  '{id} ({species}) preservada el {date} sin CAM/tubo: pregunta al equipo': '{id} ({species}) preserved on {date} without CAM/tube: ask the team',
   '{id} ({species}) preservada el {date} sin CAM/tubo': '{id} ({species}) preserved on {date} without CAM/tube',
-  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta al equipo':
-    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA — ask the team',
+  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA: pregunta al equipo':
+    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA: ask the team',
   '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA':
     '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA',
   // server/suggestions/wikiloc-transects.mjs: corrections from the Wikiloc points

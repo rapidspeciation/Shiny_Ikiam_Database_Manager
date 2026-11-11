@@ -2,6 +2,7 @@
 // «Acerca de y licencias» of the Identificar tab (views/IdentifyView.vue): where the models come from, their
 // licences (lib/publicModels.ts MODEL_PAGES, the Hugging Face model cards) and the reference photos' credit.
 import { MODEL_PAGES } from '../../lib/publicModels'
+import { CONTRIB_ENABLED } from '../../lib/contribConfig'
 /** Signed in: the tab also offers «En línea (servidor)», which sends the photo. */
 defineProps<{ team?: boolean }>()
 </script>
@@ -14,6 +15,9 @@ defineProps<{ team?: boolean }>()
     </p>
     <p v-else class="mt-2 text-fg-muted">
       {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este dispositivo: no se envían a ningún servidor.') }}
+    </p>
+    <p v-if="team && CONTRIB_ENABLED" class="mt-2 text-fg-muted" data-testid="about-contrib">
+      {{ $t('«Enviar al equipo» (Ayude a entrenar la IA) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».') }}
     </p>
     <ul class="mt-2 list-disc space-y-1.5 pl-5">
       <li>
@@ -34,6 +38,7 @@ defineProps<{ team?: boolean }>()
         {{ $t('Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.') }}
         <a :href="MODEL_PAGES.head" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
       </li>
+      <li v-if="team">{{ $t('También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).') }}</li>
       <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.') }}</li>
     </ul>
   </details>

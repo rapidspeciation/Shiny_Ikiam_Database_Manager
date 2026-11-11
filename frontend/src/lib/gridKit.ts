@@ -1555,3 +1555,14 @@ function markPick() {
   for (const el of items) el.classList.toggle('is-pick', !!pick && el.offsetParent !== null && el.textContent?.trim() === pick)
 }
 if (typeof document !== 'undefined') document.addEventListener('keyup', () => setTimeout(markPick, 80), true)
+
+/**
+ * Escape pressed in a grid with no cell (or header filter) being edited: the keyboard's way out of a grid whose Tab
+ * moves cell to cell (Cambios propuestos sends the focus to «Aplicar»). Escape in an open edit still cancels it.
+ */
+export function escapeLeavesGrid(event: Pick<KeyboardEvent, 'key' | 'target' | 'defaultPrevented' | 'ctrlKey' | 'altKey' | 'metaKey'>): boolean {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return false
+  const el = event.target as HTMLElement | null
+  if (!el?.closest?.('.tabulator')) return false
+  return !(el.closest('.tabulator-editing') || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
+}

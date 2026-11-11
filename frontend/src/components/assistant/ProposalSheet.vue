@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { ArrowDown, ArrowUp, Check, CheckCheck, FileSpreadsheet, Redo2, Sparkles, Table2, Undo2 } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, Check, CheckCheck, Ellipsis, FileSpreadsheet, Redo2, Sparkles, Table2, Undo2 } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import { copyText } from '../../lib/clipboard'
 import {
@@ -72,6 +72,7 @@ import {
   type SheetRows,
 } from '../../lib/proposalRows'
 import { StepBuilder, UndoHistory, historyFor, snapCell, type Step } from '../../lib/proposalUndo'
+import { proposalFrame } from '../../lib/proposalColumns'
 import { planMove, rowsText, type MovePlan, type MoveRefusal } from '../../lib/proposalMove'
 import { errorText } from '../../lib/notice'
 import { isSumField, sumTotal } from '../../lib/sums'
@@ -167,6 +168,11 @@ const props = defineProps<{
   historyKey?: string
   /** Columns only to read in these rows, with where they change instead (a rack deposit's Rack_ID and Sort). */
   lockedFields?: Record<string, string>
+  /**
+   * A phone with «Solo cambios» on: no «Fila» column and a narrow «Nota IA» (both whole in the cell bar), so the
+   * changed columns start on the first screen.
+   */
+  compact?: boolean
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -717,16 +723,19 @@ function columns(): ColumnDefinition[] {
       headerHozAlign: 'center',
       headerTooltip: t('Filas escritas en la hoja'),
     })
-  cols.push({
-    title: t('Fila'),
-    field: '__row',
-    width: markedRows() ? 70 : 54,
-    frozen: wide,
-    hozAlign: 'right',
-    cssClass: 'row-number',
-    headerSort: false,
-    formatter: rowFormatter as never,
-  })
+  // The sheet's row number (in the cell bar too): left out on a phone with «Solo cambios» on.
+  const frame = proposalFrame(!!props.compact, wide)
+  if (frame.rowColumn)
+    cols.push({
+      title: t('Fila'),
+      field: '__row',
+      width: markedRows() ? 70 : 54,
+      frozen: wide,
+      hozAlign: 'right',
+      cssClass: 'row-number',
+      headerSort: false,
+      formatter: rowFormatter as never,
+    })
   // The notebook line, to follow the page row by row.
   if (paged())
     cols.push({
@@ -748,8 +757,7 @@ function columns(): ColumnDefinition[] {
       title: t('Nota IA'),
       field: '__note',
       headerSort: false,
-      width: 150,
-      minWidth: 70,
+      ...frame.note,
       cssClass: 'proposal-note',
       headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
       formatter: (cell: CellComponent) => {
@@ -989,6 +997,8 @@ function onCellEdited(cell: CellComponent) {
 // ------------------------------------------------------------ the sheet's value or the assistant's, for the selection
 /** What the buttons can do with the selected cells (counts, for their labels). */
 const actions = ref({ sheet: 0, ai: 0, check: 0 })
+/** A phone: the tools for the selected cells shown («⋯» pressed). */
+const toolsOpen = ref(false)
 function selected() {
   const out: { key: string; field: string; cell: NonNullable<ReturnType<typeof info>> }[] = []
   for (const range of table?.getRanges() ?? [])
@@ -1412,6 +1422,7 @@ const layoutKey = () =>
     markedRows() ? 'm' : '',
     sharedNote.value === null ? 'n' : '',
     repeatRows() ? `r${Math.max(0, ...props.changes.map(c => c.label.length))}` : '',
+    props.compact ? 'k' : '',
   ].join('\n')
 function sync() {
   if (!table || !built) return
@@ -1629,6 +1640,7 @@ watch(
     props.applied,
     rules.value,
     locale.value,
+    props.compact,
   ],
   sync,
 )
@@ -1636,9 +1648,30 @@ watch(
 
 <template>
   <div>
-    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-xs text-stone-500">
+    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-xs text-stone-500 max-sm:gap-x-1.5">
       <slot />
       <template v-if="editable">
+        <!-- On a phone the tools for the selected cells wait behind «⋯» (a row of their own when opened). -->
+        <!-- In a span: .proposal-use sets display outside Tailwind's layers, so sm:hidden on the button would lose. -->
+        <span class="flex self-stretch sm:hidden">
+        <button
+          type="button"
+          class="proposal-use hit-target min-w-8 justify-center"
+          :aria-expanded="toolsOpen"
+          :aria-label="$t('Más herramientas')"
+          :title="$t('Más herramientas')"
+          data-tools-toggle
+          @mousedown.prevent
+          @click="toolsOpen = !toolsOpen"
+        >
+          <Ellipsis :size="14" />
+        </button>
+        </span>
+        <span
+          class="items-center gap-2 sm:contents"
+          :class="toolsOpen ? 'flex basis-full flex-wrap' : 'max-sm:hidden'"
+          data-tools
+        >
         <!-- Kept from taking the focus: the grid keeps its selection while the button is pressed. -->
         <span class="flex items-center gap-1">
           <button
@@ -1736,6 +1769,7 @@ watch(
         >
           <CheckCheck :size="12" /> {{ $t('Marcar revisadas') }}<template v-if="actions.check > 1"> ({{ actions.check }})</template>
         </button>
+        </span>
       </template>
       <slot name="end" />
     </div>

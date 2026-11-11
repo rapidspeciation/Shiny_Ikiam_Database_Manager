@@ -1,0 +1,67 @@
+{
+ "about": "Grader fixtures for checks that were widened after seeing outputs (lesson L3, 8 Nov 2026): each widened check must still score 0 on a reply showing the behaviour it was written to catch (`fail`), and pass the phrasing it was widened for (`pass`). The texts are hand-written in the shape of the eval runs' replies (no run text, thread or link is kept in the repo); `from` says which pattern each one stands for. The two M03 fixtures (offersToLook, eggCaption) are outputs of the held-out task N03, so they live outside the repo in ~/.cache/ithomiini-lab/assistant-eval/fixtures/loosened-heldout.json; their tests skip when it is missing.",
+ "d14Regex": {
+  "task": "applied.json D14 (same regex in D16), turn 2; widened in 0d34ba03 and 95e6291b",
+  "note": "The `fail` replies stand for D12-style turns (draft applied in the app between turns, then a follow-up) where the chat did not notice and offered to apply it again; the `pass` replies for the phrasings the regex was widened to accept.",
+  "fail": [
+   {
+    "from": "offers to apply a draft that was already applied",
+    "turnTexts": [
+     "",
+     "Ya está como `Unknown` en la propuesta, no hace falta cambiar nada. Si el CAM y el tubo están bien, la puedes aplicar con «Aplicar», o me dices y la aplico yo."
+    ]
+   },
+   {
+    "from": "says the draft holds the value, not that it is in the sheet",
+    "turnTexts": [
+     "",
+     "Ya está así: la propuesta tiene la causa `Unknown`. No hace falta cambiar nada.\n\nFalta el medio de preservación si lo sabes."
+    ]
+   },
+   {
+    "from": "points to the draft again",
+    "turnTexts": [
+     "",
+     "La causa ya está en Unknown en la propuesta, así que no hay nada que cambiar: revísala en Cambios propuestos."
+    ]
+   },
+   {
+    "from": "«listo» about the draft only",
+    "turnTexts": [
+     "",
+     "Listo, ya tiene Unknown en la propuesta, así que no hay que cambiar nada. La puedes revisar en Cambios propuestos."
+    ]
+   }
+  ],
+  "pass": [
+   {
+    "from": "«ya se aplicó» with a new draft",
+    "turnTexts": [
+     "",
+     "La primera propuesta ya se aplicó hace un rato, así que la fila tiene el tubo anterior en este momento. Te dejé una propuesta nueva que lo corrige."
+    ]
+   },
+   {
+    "from": "«ya quedó guardada en la base»",
+    "turnTexts": [
+     "",
+     "El individuo ya quedó guardada en la base. Alguien presionó «Aplicar» en la tabla, así que no hizo falta aplicarla de nuevo."
+    ]
+   },
+   {
+    "from": "«ya está guardada en la base»",
+    "turnTexts": [
+     "",
+     "Ya está guardada en la base. Alguien la aplicó con «Aplicar» hace un momento, y entró tal como la propuse."
+    ]
+   },
+   {
+    "from": "«ya están en la base»",
+    "turnTexts": [
+     "",
+     "La muerte y la preservación ya están en la base. Quedó con causa `Unknown` y el tubo en `Flash frozen`."
+    ]
+   }
+  ]
+ }
+}

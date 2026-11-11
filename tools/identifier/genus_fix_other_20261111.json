@@ -1,0 +1,29 @@
+{
+ "source": "Release review, 11 Nov 2026: names the head's training table has wrong outside Ithomiini. Dismorphia and Moschoneura (Dismorphiinae) are not Pierini, Doxocopa (Apaturinae) is not Limenitidini, «Satyrini, Subtribe Euptychiina» is a subtribe written as a tribe, and Libytheidae is the old family rank of Libytheinae. The wrong tribe is left out (missing, not wrong) until a corrected full table is applied; Libytheana gets Libytheinae.",
+ "genera": {
+  "Dismorphia": {
+   "tribe": "",
+   "subfamily": "Dismorphiinae"
+  },
+  "Doxocopa": {
+   "tribe": "",
+   "subfamily": "Apaturinae"
+  },
+  "Libytheana": {
+   "tribe": "",
+   "subfamily": "Libytheinae"
+  },
+  "Modestia": {
+   "tribe": "",
+   "subfamily": ""
+  },
+  "Moschoneura": {
+   "tribe": "",
+   "subfamily": "Dismorphiinae"
+  },
+  "Yphthimoides": {
+   "tribe": "",
+   "subfamily": ""
+  }
+ }
+}

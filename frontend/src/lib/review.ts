@@ -369,6 +369,9 @@ export interface Alert {
   link?: string
   /** What the app offers on the alert: cancel a census session left unused (admins). */
   action?: { kind: 'cancel-census'; census: string }
+  /** The long part (a CAM range and its last CAM): shown on request on Inicio, beside the text in Revisión. */
+  detail?: string
+  detailMsg?: Msg
 }
 /** An insectary butterfly preserved without its CAM or tube (server/preserved.mjs), and whom to ask. */
 export interface MissingSample {

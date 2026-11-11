@@ -13,7 +13,7 @@ import { notify } from '../lib/notice'
 import { locale, t } from '../lib/i18n'
 import { menuLeft } from '../lib/menuPlace'
 import { oppositeTheme, theme, themePref } from '../lib/theme'
-import { fitTabs, splitTabs } from '../lib/headerTabs'
+import { headerLayout, type HeaderLayout } from '../lib/headerTabs'
 import { useDismiss } from '../composables/useDismiss'
 
 const session = useSession()
@@ -66,40 +66,58 @@ const shown = computed(() =>
 )
 /** A tab of the row (and «Más», and their measured copies). */
 const TAB =
-  'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white focus-visible:-outline-offset-2 max-sm:px-2.5 lg:px-2.5'
+  'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-on-brand-muted hover:text-white focus-visible:-outline-offset-2 max-sm:px-1.5 lg:px-2.5'
 const activePath = computed(() => (route.meta.tab as string | undefined) ?? route.path)
 
 /**
- * The row: the tabs used day to day, plus a hidden one while it is open (lib/headerTabs.ts); those that do not fit
- * the row's width move into «Más» too. The widths come from an invisible copy of the row (`measurer`).
+ * The row: the tabs used day to day, plus a hidden one while it is open; when that row does not fit (a phone), the
+ * same few daily tasks on every page, and the open page's name on «Más» (lib/headerTabs.ts). The widths come from
+ * an invisible copy of every tab (`measurer`).
  */
-const split = computed(() => splitTabs(shown.value, activePath.value))
+type Tab = (typeof shown.value)[number]
 const rowBox = ref<HTMLElement>()
 const measurer = ref<HTMLElement>()
-const kept = ref<number[] | null>(null)
+/** Measured widths: each tab in the row, and «Más» plain or carrying a tab's name. */
+const widths = ref<{ tab: Record<string, number>; more: number; moreAs: Record<string, number>; room: number } | null>(null)
 function fit() {
   const box = rowBox.value
   const m = measurer.value
   if (!box || !m) return
-  const items = Array.from(m.querySelectorAll<HTMLElement>('[data-measure-tab]'))
-  const moreWidth = m.querySelector<HTMLElement>('[data-measure-more]')?.offsetWidth ?? 80
-  const active = split.value.row.findIndex(t => t.path === activePath.value)
-  kept.value = fitTabs(
-    items.map(el => el.getBoundingClientRect().width),
-    box.clientWidth,
-    moreWidth,
-    split.value.menu.length > 0,
-    active,
-  )
+  const of = (selector: string) =>
+    Object.fromEntries(Array.from(m.querySelectorAll<HTMLElement>(selector)).map(el => [el.dataset.path!, el.getBoundingClientRect().width]))
+  widths.value = {
+    tab: of('[data-measure-tab]'),
+    more: m.querySelector<HTMLElement>('[data-measure-more]')?.getBoundingClientRect().width ?? 80,
+    moreAs: of('[data-measure-more-as]'),
+    room: box.clientWidth,
+  }
 }
-const rowTabs = computed(() => (kept.value ? split.value.row.filter((_, i) => kept.value!.includes(i)) : split.value.row))
-const menuTabs = computed(() => [...split.value.row.filter(t => !rowTabs.value.includes(t)), ...split.value.menu])
+const layout = computed((): HeaderLayout<Tab> => {
+  const w = widths.value
+  // Before the first measure: every tab in the row (as the usual row would be).
+  if (!w) return headerLayout(shown.value, activePath.value, Infinity, () => 0, 0, () => 0)
+  return headerLayout(
+    shown.value,
+    activePath.value,
+    w.room,
+    t => w.tab[t.path] ?? 0,
+    w.more,
+    t => w.moreAs[t.path] ?? w.more,
+  )
+})
+const rowTabs = computed(() => layout.value.row)
+const menuTabs = computed(() => layout.value.menu)
 /** Where the hidden ones begin in the menu (a line above them). */
-const firstHidden = computed(() => menuTabs.value.length - split.value.menu.length)
+const firstHidden = computed(() => layout.value.firstHidden)
+/** The open page, when it waits in «Más»: the button carries its name (and is marked as the open one). */
+const moreLabel = computed(() => layout.value.moreLabel)
+const moreActive = computed(() => layout.value.moreActive)
+/** The room for «Más» when the open page's name has to end in «…» (360 px, a long name). */
+const moreRoom = computed(() => layout.value.moreRoom)
 /** Changes waiting in the tabs behind «Más»: shown on the button, since those tabs are out of sight. */
 const waitingInMenu = computed(() => menuTabs.value.reduce((n, tab) => n + (waiting.value[tab.path] ?? 0), 0))
 let observer: ResizeObserver | null = null
-watch([split, locale], () => nextTick(fit))
+watch([shown, locale, () => JSON.stringify(waiting.value)], () => nextTick(fit))
 
 const more = ref(false)
 const moreHolder = ref<HTMLElement>()
@@ -200,7 +218,8 @@ async function logout() {
         <span class="max-sm:hidden lg:max-xl:hidden">Ikiam Insectary DB</span>
       </RouterLink>
       <!-- The tabs: as many as fit, the rest in «Más» (lib/headerTabs.ts); the row never scrolls nor cuts a label. -->
-      <div ref="rowBox" class="relative order-last flex w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
+      <!-- On a phone the row reaches nearer the screen's edges: four daily tasks and «Más» fit at 360 px. -->
+      <div ref="rowBox" class="relative order-last flex w-full min-w-0 max-sm:-mx-2 max-sm:w-[calc(100%+1rem)] lg:order-none lg:w-auto lg:flex-1">
         <nav class="-mb-px flex min-w-0 items-stretch" :aria-label="$t('Secciones')">
           <RouterLink
             v-for="tab in rowTabs"
@@ -228,17 +247,19 @@ async function logout() {
             <button
               ref="moreTrigger"
               type="button"
-              :class="[TAB, 'inline-flex items-center gap-0.5']"
+              :class="[TAB, 'inline-flex min-w-0 items-center gap-0.5', { '!border-white !text-white': moreActive }]"
+              :style="moreRoom === null ? undefined : { maxWidth: `${moreRoom}px` }"
               :aria-expanded="more"
               aria-controls="more-tabs"
+              :aria-label="moreLabel ? $t('{tab}: más secciones', { tab: $t(moreLabel.label) }) : undefined"
               data-more-trigger
               @click="toggleMore"
               @keydown="openMoreWithKeys"
             >
-              {{ $t('Más') }}
+              <span class="min-w-0 truncate">{{ moreLabel ? $t(moreLabel.label) : $t('Más') }}</span>
               <span
                 v-if="waitingInMenu"
-                class="ml-1 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
+                class="ml-1 shrink-0 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
                 :title="
                   $tn(
                     waitingInMenu,
@@ -248,7 +269,7 @@ async function logout() {
                 "
                 >{{ waitingInMenu }}</span
               >
-              <ChevronDown :size="14" aria-hidden="true" />
+              <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
             </button>
             <ul
               v-if="more"
@@ -269,6 +290,8 @@ async function logout() {
                 <RouterLink
                   :to="tab.path"
                   class="flex min-h-10 items-center justify-between gap-3 px-3 py-2 hover:bg-surface-sunken pointer-coarse:min-h-11"
+                  :class="{ 'font-semibold text-brand-text': activePath === tab.path }"
+                  :aria-current="activePath === tab.path ? 'page' : undefined"
                 >
                   {{ $t(tab.label) }}
                   <span v-if="waiting[tab.path]" class="rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950">{{
@@ -283,13 +306,18 @@ async function logout() {
         <!-- In a box of no height, so the copy never widens the page. -->
         <div class="pointer-events-none invisible absolute top-0 left-0 h-0 w-full overflow-hidden" aria-hidden="true">
           <div ref="measurer" class="flex w-max">
-            <span v-for="tab in split.row" :key="tab.path" :class="TAB" data-measure-tab
+            <span v-for="tab in shown" :key="tab.path" :class="TAB" :data-path="tab.path" data-measure-tab
               >{{ $t(tab.label) }}
               <span v-if="waiting[tab.path]" class="ml-1 rounded-full px-1.5 text-xs font-semibold">{{ waiting[tab.path] }}</span></span
             >
             <span :class="[TAB, 'inline-flex items-center gap-0.5']" data-measure-more
               >{{ $t('Más')
-              }}<span v-if="waitingInMenu || split.menu.some(t => waiting[t.path])" class="ml-1 rounded-full px-1.5 text-xs font-semibold">99</span
+              }}<span v-if="Object.values(waiting).some(Boolean)" class="ml-1 rounded-full px-1.5 text-xs font-semibold">99</span
+              ><ChevronDown :size="14"
+            /></span>
+            <span v-for="tab in shown" :key="`more:${tab.path}`" :class="[TAB, 'inline-flex items-center gap-0.5']" :data-path="tab.path" data-measure-more-as
+              >{{ $t(tab.label)
+              }}<span v-if="Object.values(waiting).some(Boolean)" class="ml-1 rounded-full px-1.5 text-xs font-semibold">99</span
               ><ChevronDown :size="14"
             /></span>
           </div>

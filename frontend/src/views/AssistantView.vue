@@ -291,8 +291,9 @@ onMounted(async () => {
             : $t('Actualizar T3 ({from} → {to})', { from: t3Version?.current, to: t3Version?.latest })
         }}
       </button>
+      <!-- T3's version and «Volver a conectar»: machinery, for admins; an update (above) shows for everyone. -->
       <button
-        v-else-if="t3Url && t3Version"
+        v-else-if="t3Url && t3Version && session.isAdmin"
         class="rounded px-1 text-xs text-stone-500 hover:bg-stone-200"
         :title="t3Version.latest ? $t('Es la última versión estable de T3 Code') : $t('No se pudo consultar la última versión')"
         @click="t3Dialog = true"
@@ -300,7 +301,7 @@ onMounted(async () => {
         T3 {{ t3Version.current }}<template v-if="t3Version.latest && !t3Version.updateAvailable"> · {{ $t('al día') }}</template>
       </button>
       <template v-if="t3Url">
-        <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="reconnectT3">
+        <button v-if="session.isAdmin" class="btn-ghost" :title="$t('Volver a conectar T3')" @click="reconnectT3">
           <RefreshCw :size="13" />
         </button>
         <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" :title="$t('Abrir T3 en otra pestaña')"

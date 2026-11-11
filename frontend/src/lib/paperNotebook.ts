@@ -107,17 +107,17 @@ export function lineText(line: NotebookLine, day: number): { mark: '☺' | '✗'
   return { mark: '·', text: t('viva') }
 }
 
-/** One line of the copied text, in the notebook's words: «P4D ✗ desapareció 2/10», «P6D ▬ muerta 29/9 Unknown — resaltar». */
+/** One line of the copied text, in the notebook's words: «P4D ✗ desapareció 2/10», «P6D ▬ muerta 29/9 Unknown · resaltar». */
 export function copyLine(line: NotebookLine, day: number): string {
   if (line.todo === 'write') return `${line.id} ✗ ${t('desapareció {day}', { day: slashDay(day) })}`
   if (line.todo === 'highlight')
     return `${line.id} ${deathCopy(line.death!)}${line.census?.status === 'seen' ? ` (${t('☺ vista')})` : ''}`
   return `${line.id} ${lineText(line, day).mark === '☺' ? '☺ ' : ''}${lineText(line, day).text}`
 }
-/** «▬ muerta 29/9 Unknown — resaltar». */
+/** «▬ muerta 29/9 Unknown · resaltar». */
 export function deathCopy(death: PaperDeath): string {
   const what = [dayText(death.date, slashDay), death.cause].filter(Boolean).join(' ')
-  return `▬ ${t('muerta {what} — resaltar', { what })}`.replace(/\s+/g, ' ')
+  return `▬ ${t('muerta {what} · resaltar', { what })}`.replace(/\s+/g, ' ')
 }
 
 /** «Copiar como texto»: a title, then one line per butterfly in the order shown. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { KeybindingsModule, TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent } from 'tabulator-tables'
-import { attachPendingCut, cutCellId, spreadsheetKeys, tabulatorKeyCode } from '../gridKit'
+import { attachPendingCut, cutCellId, escapeLeavesGrid, spreadsheetKeys, tabulatorKeyCode } from '../gridKit'
 
 const keyCode = (key: string, legacy = 0) =>
   (KeybindingsModule.prototype as unknown as { getKeyCode: (e: Partial<KeyboardEvent>) => number }).getKeyCode({ key, keyCode: legacy })
@@ -221,5 +221,35 @@ describe('a cut kept until it is pasted (attachPendingCut)', () => {
     clip.restore()
     cuts.destroy()
     g.done()
+  })
+})
+
+/** A grid as Tabulator draws it: its body, a cell, and a cell being edited with its input. */
+function drawnGrid() {
+  document.body.innerHTML = `
+    <div class="tabulator"><div class="tabulator-tableholder" tabindex="0">
+      <div class="tabulator-cell">P1E</div>
+      <div class="tabulator-cell tabulator-editing"><input /></div>
+    </div></div>
+    <button>Aplicar</button>`
+  const q = (s: string) => document.querySelector<HTMLElement>(s)!
+  return { body: q('.tabulator-tableholder'), cell: q('.tabulator-cell'), editor: q('input'), outside: q('button') }
+}
+const key = (target: HTMLElement, k = 'Escape', extra: Partial<KeyboardEvent> = {}) =>
+  escapeLeavesGrid({ key: k, target, defaultPrevented: false, ctrlKey: false, altKey: false, metaKey: false, ...extra })
+
+describe('the keyboard way out of a grid', () => {
+  it('Escape leaves the grid when no cell is being edited', () => {
+    const g = drawnGrid()
+    expect(key(g.body)).toBe(true)
+    expect(key(g.cell)).toBe(true)
+  })
+  it('Escape in an open edit only cancels it; other keys and places do nothing', () => {
+    const g = drawnGrid()
+    expect(key(g.editor)).toBe(false)
+    expect(key(g.body, 'Tab')).toBe(false)
+    expect(key(g.outside)).toBe(false)
+    expect(key(g.body, 'Escape', { ctrlKey: true })).toBe(false)
+    expect(key(g.body, 'Escape', { defaultPrevented: true })).toBe(false)
   })
 })

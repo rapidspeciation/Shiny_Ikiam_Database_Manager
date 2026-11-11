@@ -20,11 +20,12 @@ const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; 
 <template>
   <section class="rounded-lg border border-stone-300 bg-surface p-4 shadow-sm">
     <h2 class="mb-3 text-lg font-semibold">{{ $t('Últimos IDs usados') }}</h2>
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <!-- Two columns on a phone too: the five boxes take three short rows, so the alerts start higher. -->
+    <div class="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-5">
       <div v-for="r in rows(ids)" :key="r.label" class="rounded-md bg-stone-50 px-3 py-2" :title="r.hint">
         <p class="text-xs font-medium text-stone-500">{{ r.label }}</p>
         <template v-if="r.entry">
-          <p class="font-mono text-2xl font-semibold tracking-tight">{{ r.entry.last }}</p>
+          <p class="font-mono text-2xl font-semibold tracking-tight max-sm:text-lg">{{ r.entry.last }}</p>
           <p class="text-xs text-stone-600">
             {{ dateLabel(r.entry.date) }} · {{ $t('siguiente') }}
             <span class="font-mono font-semibold text-brand-700">{{ r.entry.next ?? '—' }}</span>
@@ -34,14 +35,14 @@ const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; 
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" :title="$t('Primera fila libre de Insectary_data con ID ya escrito')">
         <p class="text-xs font-medium text-stone-500">{{ $t('Siguiente Insectary ID') }}</p>
-        <p v-if="ids.insectaryId" class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.insectaryId }}</p>
+        <p v-if="ids.insectaryId" class="font-mono text-2xl font-semibold tracking-tight text-brand-700 max-sm:text-lg">{{ ids.insectaryId }}</p>
         <p v-else class="mt-1 text-xs text-amber-800">
           {{ $t('No quedan filas preasignadas al final de Insectary_data: crea más.') }}
         </p>
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" :title="$t('El número de clutch más alto + 1')">
         <p class="text-xs font-medium text-stone-500">{{ $t('Siguiente clutch') }}</p>
-        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.clutch ?? '—' }}</p>
+        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700 max-sm:text-lg">{{ ids.clutch ?? '—' }}</p>
       </div>
     </div>
     <InsectaryIdsWarning class="mt-3" @extended="$emit('extended')" />
