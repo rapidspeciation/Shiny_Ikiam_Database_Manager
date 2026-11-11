@@ -99,17 +99,20 @@ export const MAX_UPLOAD = 6 * 1024 * 1024;
 
 /**
  * The general sex line's block from the worker (tools/identifier/field_sex.py), cleaned: the species it is for, its
- * status, and the call and its whole % only when the status is 'call' (a sex and 0 to 99). The worker's raw P and
- * confidence are not passed on. null when there is no block, or it is not one the page knows.
+ * status, the bar position p (P(female), 0 to 1, 3 decimals), the side it leans to and whether it is outside the
+ * «no seguro» band; the whole % only when the status is 'call' (90 to 99). null when there is no block, or it is not
+ * one the page knows. A 'call' without a valid % becomes 'cell_under_90' (bar, no %).
  */
-const FIELD_SEX_STATUS = new Set(['call', 'below_gate', 'not_supported', 'no_wings', 'suppressed']);
+const FIELD_SEX_STATUS = new Set(['call', 'band', 'cell_under_90', 'species_unsure', 'no_wings']);
 export function fieldSexBlock(fs) {
   if (!fs || typeof fs !== 'object' || typeof fs.species !== 'string' || !FIELD_SEX_STATUS.has(fs.status)) return null;
-  const out = { species: fs.species, status: fs.status, version: typeof fs.version === 'string' ? fs.version : null };
+  const p = Number(fs.p);
+  if (!Number.isFinite(p) || p < 0 || p > 1 || (fs.sex !== 'female' && fs.sex !== 'male')) return null;
+  const out = { species: fs.species, status: fs.status, p: Math.round(p * 1000) / 1000, sex: fs.sex, sure: fs.sure === true, version: typeof fs.version === 'string' ? fs.version : null };
   if (fs.status !== 'call') return out;
   const pct = Number(fs.pct);
-  if ((fs.sex !== 'female' && fs.sex !== 'male') || !Number.isInteger(pct) || pct < 0 || pct > 99) return { ...out, status: 'not_supported' };
-  return { ...out, sex: fs.sex, pct };
+  if (!Number.isInteger(pct) || pct < 90 || pct > 99) return { ...out, status: 'cell_under_90' };
+  return { ...out, pct };
 }
 export async function identifyUpload({ identifier, body, scratch, sides = async () => null }) {
   const bad = (status, code, message) => ({ status, body: { error: { code, message } } });

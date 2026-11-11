@@ -42,10 +42,9 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   onnx/bioclip25h_visual_int8.onnx
   field_sex/                                     (optional: the general sex line of «En línea», field_sex.py)
 
-The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose species without the geographic
-prior is one of six species that passed WingsClassificator's fresh test gets a "fieldSex" block in its answer
-(None otherwise). It reads the feature the photo already has; the page shows it only after the person says the photo
-is of a live butterfly. Without the folder, answers carry no fieldSex and nothing else changes.
+The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose answer names one of six species
+that passed WingsClassificator's fresh test gets a "fieldSex" block (None otherwise): the bar position, the side it leans to, a status, and the % only for a Supported answer. It reads the feature the
+photo already has. Without the folder, answers carry no fieldSex and nothing else changes.
 """
 
 import argparse
@@ -197,6 +196,7 @@ class Identifier:
         self.head.load_state_dict(ck["head_state_dict"])
         self.head.eval()
         self.sp_vocab = list(ck["rank_vocab"]["species"])
+        self.sp_index = {n: i for i, n in enumerate(self.sp_vocab)}
         self.ge_vocab = list(ck["rank_vocab"]["genus"])
         self.leaf2sp = np.array(ck["leaf2rank"]["species"])
         self.leaf2ge = np.array(ck["leaf2rank"]["genus"])
@@ -282,23 +282,23 @@ class Identifier:
             "prior": side if prior and side in ("East", "West") else ("Ecuador" if prior else None),
         }
 
-    def species_top_noprior(self, feat):
-        """The top species and its marginal WITHOUT the geographic prior (the field sex line's gate, whatever side the
-        person chose), unrounded."""
+    def species_noprior(self, feat, name):
+        """The species marginal of `name` WITHOUT the geographic prior (the field sex line's gate, whatever side the
+        person chose), unrounded; 0 for a name the head does not have."""
         np, torch = self.np, self.torch
+        if name not in self.sp_index:
+            return 0.0
         with torch.no_grad():
             probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
-        agg = np.zeros(len(self.sp_vocab))
-        np.add.at(agg, self.leaf2sp, probs)
-        j = int(np.argsort(-agg, kind="stable")[0])
-        return self.sp_vocab[j], float(agg[j])
+        return float(probs[self.leaf2sp == self.sp_index[name]].sum())
 
-    def field_sex_block(self, feat, crop):
-        if self.field_sex is None:
+    def field_sex_block(self, feat, crop, name):
+        """The general sex line for the species the page names (the answer's top species, after the prior when a side
+        was chosen), gated on that species' no-prior score."""
+        if self.field_sex is None or not name or self.field_sex.model_name(name) is None:
             return None
         try:
-            name, p = self.species_top_noprior(feat)
-            return self.field_sex.score(feat, name, p, crop)
+            return self.field_sex.score(feat, name, self.species_noprior(feat, name), crop)
         except Exception as e:  # the species answer stands without it
             return {"status": f"error:{type(e).__name__}"}
 
@@ -313,7 +313,7 @@ class Identifier:
             out["prior"] = None
         extra = {}
         if self.field_sex is not None:
-            extra["fieldSex"] = self.field_sex_block(feat, geometry.get("status"))
+            extra["fieldSex"] = self.field_sex_block(feat, geometry.get("status"), (out["species"] or [[None]])[0][0])
         return {
             **out,
             **extra,

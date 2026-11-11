@@ -34,7 +34,7 @@ defineProps<{ team?: boolean }>()
         {{ $t('Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.') }}
         <a :href="MODEL_PAGES.head" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
       </li>
-      <li v-if="team">{{ $t('También estima el sexo, en línea, en fotos de mariposas vivas de seis especies fuera de las Ithomiini (experimental).') }}</li>
+      <li v-if="team">{{ $t('También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).') }}</li>
       <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.') }}</li>
     </ul>
   </details>

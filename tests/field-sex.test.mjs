@@ -31,22 +31,37 @@ test('field sex: only the passing species get a block; the alias maps the head\'
   assert.equal(out.alias.sex, 'female');
 });
 
-test('field sex: the gate is >= 0.8 on the given (no-prior) species score; wings must be found', { skip }, () => {
+test('field sex: every photo of the six gets a bar position; only a Supported answer outside the band gets a %', { skip }, () => {
   const out = check();
-  assert.equal(out.gate_0799.status, 'below_gate');
-  assert.equal(out.gate_0799.sex, undefined);
-  assert.equal(out.gate_0799.pFemale, undefined, 'under the gate the sex model does not run');
+  // under the species gate: the bar and the side, the species note, no %
+  assert.equal(out.gate_0799.status, 'species_unsure');
+  assert.equal(out.gate_0799.supported, false);
+  assert.equal(out.gate_0799.sex, 'female');
+  assert.equal(out.gate_0799.sure, true);
+  assert.ok(out.gate_0799.p > 0.85 && out.gate_0799.p < 1);
+  assert.equal(out.gate_0799.pct, undefined);
+  // at the gate: the call and its %
   assert.equal(out.gate_08.status, 'call');
+  assert.equal(out.gate_08.supported, true);
+  assert.equal(typeof out.gate_08.pct, 'number');
+  assert.equal(out.gate_08.p, out.gate_0799.p, 'the same photo, the same bar position');
+  // no wings: bar, no %
   assert.equal(out.no_wings.status, 'no_wings');
-  assert.equal(out.no_wings.sex, undefined);
-  assert.equal(out.not_supported.status, 'not_supported');
+  assert.equal(out.no_wings.pct, undefined);
+  // inside the «no seguro» band (confidence under 0.85): leaning side, no %
+  assert.equal(out.not_supported.status, 'band');
+  assert.equal(out.not_supported.sure, false);
   assert.equal(out.not_supported.supported, false);
+  assert.ok(out.not_supported.p > 0.15 && out.not_supported.p < 0.85);
+  assert.equal(out.not_supported.sex, out.not_supported.p >= 0.5 ? 'female' : 'male');
+  assert.equal(out.not_supported.pct, undefined);
 });
 
-test('field sex: a suppressed species x called sex gives no call (not the other sex either)', { skip }, () => {
+test('field sex: a species x sex cell under 90 % gets the bar and marker but no call and no %', { skip }, () => {
   const out = check();
-  assert.equal(out.suppressed.status, 'suppressed');
-  assert.equal(out.suppressed.sex, undefined);
+  assert.equal(out.suppressed.status, 'cell_under_90');
+  assert.equal(out.suppressed.supported, true);
+  assert.equal(out.suppressed.sex, 'male', 'the side the marker is on');
   assert.equal(out.suppressed.pct, undefined);
   assert.equal(out.max_pct_per_row['Cc dd|male'], null);
 });
@@ -91,11 +106,14 @@ test('the worker gates field sex on the species score WITHOUT the geographic pri
   const r = JSON.parse(read(out, 'utf8'));
   // East: the prior takes the top species down (the page would name Cc dd) ...
   assert.equal(r.east_top[0], 'Cc dd');
+  assert.equal(r.none_top[0], 'Aa bb');
   assert.equal(r.east_prior, 'East');
   // ... but the sex line is given the no-prior top species and its own score
-  assert.deepEqual(r.noprior, ['Aa bb', 0.85]);
-  assert.deepEqual(r.seen_success, [['Aa bb', 0.85, 'success']]);
-  assert.deepEqual(r.seen, [['Aa bb', 0.85, 'centre_crop_fallback']], 'the crop status goes with it');
+  assert.deepEqual(r.noprior, [0.85, 0.1, 0]);
+  // the block is for the species the page names (Cc dd with East), gated on ITS no-prior score (0.10, so unsure);
+  // with no side, Aa bb at 0.85; the crop status goes with it
+  assert.deepEqual(r.seen, [['Cc dd', 0.1, 'success'], ['Aa bb', 0.85, 'centre_crop_fallback']]);
+  assert.equal(r.not_six, null, 'a species outside the six: no block');
   assert.equal(r.no_model_block, null, 'no folder: no block');
 });
 
@@ -128,17 +146,20 @@ test('identifyUpload passes a cleaned fieldSex only when the worker gives one', 
   const scratch = mkdtempSync(join(tmpdir(), 'field-sex-upload-'));
   const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString('base64');
   const base = { species: [['Danaus plexippus', 0.97]], subspecies: [], genus: [['Danaus', 0.99]], crop: 'success', wingBox: null, prior: null, ms: 9 };
-  const call = { species: 'Danaus plexippus', status: 'call', sex: 'male', pct: 97, pFemale: 0.02, conf: 0.98, gateP: 0.97, version: 'field-sex/1' };
+  const call = { species: 'Danaus plexippus', status: 'call', sex: 'male', pct: 97, p: 0.021, pFemale: 0.02134, sure: true, supported: true, gateP: 0.97, version: 'field-sex/1' };
   const withBlock = await identifyUpload({ identifier: { identify: async () => ({ ...base, fieldSex: call }) }, body: { photo: jpeg }, scratch });
-  assert.deepEqual(withBlock.body.fieldSex, { species: 'Danaus plexippus', status: 'call', sex: 'male', pct: 97, version: 'field-sex/1' });
+  assert.deepEqual(withBlock.body.fieldSex, { species: 'Danaus plexippus', status: 'call', p: 0.021, sex: 'male', sure: true, pct: 97, version: 'field-sex/1' });
   // an Ithomiini (no block, or null): the answer has no fieldSex key at all, as before
   for (const fieldSex of [undefined, null]) {
     const r = await identifyUpload({ identifier: { identify: async () => ({ ...base, species: [['Mechanitis messenoides', 0.9]], fieldSex }) }, body: { photo: jpeg }, scratch });
     assert.equal('fieldSex' in r.body, false);
   }
-  // a block that is not a call carries no sex; an odd one is dropped or made not supported
-  assert.deepEqual(fieldSexBlock({ species: 'Danaus plexippus', status: 'suppressed', sex: 'male', pct: 97 }), { species: 'Danaus plexippus', status: 'suppressed', version: null });
+  // a block that is not a call carries the bar position and side but no %; an odd one is dropped or loses its %
+  assert.deepEqual(fieldSexBlock({ species: 'Danaus plexippus', status: 'band', p: 0.4567, sex: 'male', sure: false, pct: 97 }),
+    { species: 'Danaus plexippus', status: 'band', p: 0.457, sex: 'male', sure: false, version: null });
   assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'error:ValueError' }), null);
-  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', sex: 'male', pct: 100 }).status, 'not_supported');
-  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', sex: 'other', pct: 90 }).status, 'not_supported');
+  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'band', p: 1.2, sex: 'male' }), null);
+  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'band', p: 0.5, sex: 'other' }), null);
+  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', p: 0.02, sex: 'male', sure: true, pct: 100 }).status, 'cell_under_90');
+  assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', p: 0.02, sex: 'male', sure: true, pct: 89 }).pct, undefined);
 });

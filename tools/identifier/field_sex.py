@@ -1,4 +1,4 @@
-"""The general (field) sex line of Identificar «En línea»: experimental, six species, live photos only.
+"""The general (field) sex line of Identificar «En línea»: experimental, six species, tested on live photos.
 
 The model is WingsClassificator's September 2026 single-photo sex model (reports/field_sex_20260928), scored once on
 fresh iNaturalist photos (reports/general_sex_20261111: PASS_RULE.md and RESULTS.md, 11 Nov 2026). It reads the same
@@ -8,13 +8,17 @@ fresh iNaturalist photos (reports/general_sex_20261111: PASS_RULE.md and RESULTS
   scorer (score_fresh.py, which calls train_eval.py knn_within_species and predict).
 A call is Supported when the identifier's species (head 6fa6ab78's species marginal WITHOUT the geographic prior) is
 one of the six species that passed the fresh test, at >= 0.8, and the ENS confidence max(p, 1 - p) is >= 0.85. The
-fresh test licenses only that: live photos, that gate, these six species. The page asks whether the photo is of a live
-butterfly before it shows anything.
+fresh test licenses only that: live photos, that gate, these six species. The page says it was tested on photos of
+live butterflies (no question since Franz's phone test, 11 Nov 2026).
 
 The % shown (Franz, 11 Nov 2026): per called sex, an isotonic map of the confidence to how often that call was right
 (September cross-fitted rows), capped by the fresh precision of that species and called sex (or of the six pooled
 when a species has fewer than 20 such calls), at most 99 %, rounded down. A species and called sex under 90 % on the
 fresh test shows no call at all. Those caps were set on the fresh test itself: unvalidated until the next fresh read.
+
+Since Franz's phone test (11 Nov 2026) every photo of the six species gets a bar position (P(female)) and a status:
+the % is shown only for a Supported answer outside the «no seguro» band (confidence 0.85, the tested rule's t).
+Inside the band, under the species gate or without wings, the page shows the bar and the side it leans to, no %.
 
 Files (--dir/field_sex, from WingsClassificator reports/general_sex_20261111/scripts/export_field_sex.py; team-only,
 never public: the bank holds features of iNaturalist photos):
@@ -130,31 +134,38 @@ class FieldSex:
         pct = _floor_pct(v)
         return pct if pct >= _floor_pct(self.floor) else None
 
-    def score(self, feat, top_name, top_p, crop):
-        """The fieldSex block for one photo: None when the identifier's species (no prior) is not a passing species;
-        else {species, gateP, status, ...} with status 'call' (sex, pct), 'below_gate', 'no_wings', 'not_supported'
-        or 'suppressed'. top_name/top_p: head 6fa6ab78's top species marginal WITHOUT the geographic prior."""
-        sp = self.model_name(top_name)
+    def score(self, feat, name, gate_p, crop):
+        """The fieldSex block for one photo, or None when `name` (the species the page names) is not a passing species.
+
+        Always a bar position for the six species: p (P(female), 3 decimals), sex (the side it leans to, female when
+        p >= 0.5) and sure (confidence max(p, 1 - p) >= t, outside the «no seguro» band, P 0.15 to 0.85). Then one
+        status, first that applies:
+          species_unsure  gate_p (head 6fa6ab78's no-prior score for `name`) under 0.8: the species is not sure
+          no_wings        the wings were not found (the crop fell back)
+          band            confidence under t (0.85): «no seguro», leaning to `sex`
+          cell_under_90   a Supported answer whose species x sex cell (or its %) is under 90 % on the fresh test
+          call            a Supported answer: sex and pct (90 to 99), the frozen rule's served condition
+        Only `call` carries a %. "Supported" (the tested rule) is gate_p >= 0.8 and confidence >= 0.85."""
+        sp = self.model_name(name)
         if sp is None:
             return None
-        out = {"species": top_name, "gateP": round(float(top_p), 4), "version": SCHEMA, "display": self.display_version}
-        if top_p < self.gate:  # no sex model work for a species score under the gate
-            out.update(status="below_gate", supported=False)
-            return out
         p = self.ens(feat, sp)
         conf = max(p, 1 - p)
         called = "female" if p >= 0.5 else "male"
-        out.update(pFemale=round(p, 6), conf=round(conf, 6))
-        supported = conf >= self.t  # the gate passed above; all passing species are in the evidence table
-        out["supported"] = bool(supported)
-        if not supported:
-            out["status"] = "not_supported"
+        sure = conf >= self.t
+        out = {"species": name, "gateP": round(float(gate_p), 4), "version": SCHEMA, "display": self.display_version,
+               "p": round(p, 3), "pFemale": round(p, 6), "sex": called, "sure": bool(sure),
+               "supported": bool(gate_p >= self.gate and sure)}  # all passing species are in the evidence table
+        if gate_p < self.gate:
+            out["status"] = "species_unsure"
         elif crop != "success":
             out["status"] = "no_wings"
+        elif not sure:
+            out["status"] = "band"
         else:
             pct = self.shown_pct(sp, called, conf)
             if pct is None:
-                out["status"] = "suppressed"
+                out["status"] = "cell_under_90"
             else:
-                out.update(status="call", sex=called, pct=pct)
+                out.update(status="call", pct=pct)
         return out

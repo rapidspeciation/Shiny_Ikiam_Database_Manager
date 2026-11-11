@@ -18,7 +18,7 @@ import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
-import { fieldSexState as fieldSexOf, type FieldSexState, type LiveAnswer } from '../lib/fieldSex'
+import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
@@ -239,8 +239,6 @@ interface Result {
   side?: Side
   /** The sex estimate (team only): the model's logit, or why it does not apply. */
   sex?: { z: number } | { na: 'nowings' }
-  /** The general sex line's question for this photo: is it of a live butterfly (unanswered: nothing shown). */
-  live?: LiveAnswer
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
@@ -535,9 +533,8 @@ async function restoreLast() {
     const v = JSON.parse(raw)
     if (v.source === 'online') {
       // A server result: shown as it was, its side with it (a session that ended leaves nothing of the team's).
-      // The live-butterfly answer is asked again.
       if (!session.user) return sessionStorage.removeItem(LAST)
-      result.value = { ...v, live: undefined }
+      result.value = v
       sideFromResult(v)
     } else {
       if (!anyReady.value) return
@@ -635,19 +632,14 @@ const sexState = computed<SexState | null>(() => {
 
 // ---------------------------------------------------------------- the general sex line (team only, online, experimental)
 
-/** lib/fieldSex.ts: null unless the server sent a call for one of the six species and the page names that species. */
+/** lib/fieldSex.ts: null unless the page names one of the six species and the server's block is for it. */
 const fieldSexState = computed<FieldSexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
   // Hidden when the person picked «En este teléfono»; a signal drop (effective mode phone, choice still online)
   // leaves a shown answer in place.
-  return fieldSexOf({ mode: modeChoice.value === 'phone' ? 'phone' : 'online', source: r.source, headline: said.value, answer: r.server?.fieldSex, live: r.live, ithomiiniGenera })
+  return fieldSexOf({ mode: modeChoice.value === 'phone' ? 'phone' : 'online', source: r.source, topName: top.value?.name, answer: r.server?.fieldSex, ithomiiniGenera })
 })
-function answerLive(live: LiveAnswer | undefined) {
-  if (!result.value) return
-  result.value = { ...result.value, live }
-  keepLast()
-}
 
 // ---------------------------------------------------------------- reference photos
 
@@ -978,7 +970,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
             <SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />
-            <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" @live="answerLive" />
+            <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
 
             <section class="mt-4">
               <div class="mb-2 flex items-baseline justify-between gap-2">

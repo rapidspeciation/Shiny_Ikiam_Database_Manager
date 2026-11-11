@@ -6,11 +6,11 @@ import { locale, t, tn } from '../../lib/i18n'
 import { SEX_FILE } from '../../lib/sexModel'
 import { useSession } from '../../stores/session'
 
-// Identificar with a server result restored from this browser session (the page's own restore path), then new photos
-// read through a stand-in server: the in-hand line for an Ithomiini; the general sex line for a Monarch, asked again
-// after a restore and for each new photo; kept through a signal drop, gone once the person picks «En este teléfono»
-// (the phone has the small model here, so the result stays on screen). The phone's models and the server are
-// stand-ins. No AI.
+// Identificar with a server result restored from this browser session (the page's own restore path), then a new photo
+// read through a stand-in server: the in-hand line for an Ithomiini; the general sex line (a bar) for a Monarch,
+// whatever its region, with no question asked; kept through a signal drop, gone once the person picks «En este
+// teléfono» (the phone has the small model here, so the result stays on screen). The phone's models and the server
+// are stand-ins. No AI.
 
 vi.mock('../../lib/offlineEngine', async orig => {
   const real = await orig<typeof import('../../lib/offlineEngine')>()
@@ -121,24 +121,23 @@ const stored = (server: unknown, extra: Record<string, unknown> = {}) => ({
   ...extra,
 })
 
+const block = (o: Record<string, unknown> = {}) => ({ species: 'Danaus plexippus', status: 'call', p: 0.03, sex: 'male', sure: true, pct: 96, version: 'field-sex/1', ...o })
+const callText = (host: Element) => host.querySelector('[data-testid=field-sex-call]')?.textContent!.replace(/\s+/g, ' ').trim()
+
 describe('IdentifyView: the two sex lines', () => {
   it('an Ithomiini keeps the in-hand line, even if a general block came with it', async () => {
-    const call = { species: 'Mechanitis messenoides', status: 'call', sex: 'male', pct: 97, version: 'field-sex/1' }
-    const { host } = await mountWith(stored(answer('Mechanitis messenoides', 0.93, call)))
+    const { host } = await mountWith(stored(answer('Mechanitis messenoides', 0.93, block({ species: 'Mechanitis messenoides' }))))
     expect(host.querySelector('[data-testid=sex-estimate]')).not.toBeNull()
     expect(host.querySelector('[data-testid=sex-estimate]')!.textContent).toContain('experimental: fotos en mano')
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
-  it('a Monarch: asked again after a restore; «Sí, viva» shows the call; «En este teléfono» hides the line', async () => {
-    const call = { species: 'Danaus plexippus', status: 'call', sex: 'male', pct: 96, version: 'field-sex/1' }
-    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, call), { live: 'yes' }))
+  it('a Monarch: the answer and its % at once, no question; «En este teléfono» hides the line', async () => {
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
-    expect(host.querySelector('[data-testid=field-sex-ask]')).not.toBeNull()
-    expect(host.querySelector('[data-testid=field-sex-call]')).toBeNull()
-    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
-    await settle()
-    expect(host.querySelector('[data-testid=field-sex-call]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('♂ Macho 96 %')
+    expect(callText(host)).toBe('♂ Macho 96 %')
+    expect(host.querySelector('[data-testid=field-sex-tested]')!.textContent).toContain('Probado en fotos de mariposas vivas.')
+    expect(host.querySelector('[data-testid=field-sex] button')).toBeNull()
     const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
     phone.click()
     await settle()
@@ -147,35 +146,44 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
+  it('a Monarch the identifier is not sure of (headline not a species): the bar, the note, no %', async () => {
+    const { host } = await mountWith(stored(answer('Danaus plexippus', 0.55, block({ status: 'species_unsure', pct: undefined }))))
+    expect(host.querySelector('[data-testid=field-sex]')).not.toBeNull()
+    expect(callText(host)).toBe('♂ Macho')
+    expect(host.querySelector('[data-testid=field-sex-note]')!.textContent).toContain('La especie no es segura; el sexo puede estar mal.')
+    expect(host.querySelector('[data-testid=field-sex-p]')).toBeNull()
+  })
+
+  it('a Monarch in the band: «No seguro» and the side, no %', async () => {
+    const { host } = await mountWith(stored(answer('Danaus plexippus', 0.97, block({ status: 'band', p: 0.7, sex: 'female', sure: false, pct: undefined }))))
+    expect(callText(host)).toBe('No seguro (se inclina a hembra)')
+    expect(host.querySelector('[data-testid=field-sex-p]')).toBeNull()
+  })
+
+  it('another species outside the Ithomiini: nothing', async () => {
+    const { host } = await mountWith(stored(answer('Danaus gilippus', 0.97, null)))
+    expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
+    expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+  })
+
   it('a signal drop does not hide a shown answer (the person did not pick «En este teléfono»)', async () => {
-    const call = { species: 'Danaus plexippus', status: 'call', sex: 'female', pct: 97, version: 'field-sex/1' }
-    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, call)))
-    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
-    await settle()
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block({ p: 0.97, sex: 'female', pct: 97 }))))
     dispatchEvent(new Event('offline'))
     await settle()
     const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
     expect(phone.getAttribute('aria-checked')).toBe('true') // the page now reads on the phone ...
     expect(host.querySelector('[data-testid=result-source]')).not.toBeNull()
-    expect(host.querySelector('[data-testid=field-sex-call]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('♀ Hembra 97 %') // ... the answer stays
+    expect(callText(host)).toBe('♀ Hembra 97 %') // ... the answer stays
     dispatchEvent(new Event('online'))
   })
 
-  it('a new photo asks «¿viva?» again', async () => {
-    const call = (sex: string, pct: number) => ({ species: 'Danaus plexippus', status: 'call', sex, pct, version: 'field-sex/1' })
-    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, call('male', 96))))
-    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
-    await settle()
-    expect(host.querySelector('[data-testid=field-sex-call]')).not.toBeNull()
-    server.answers.push(answer('Danaus plexippus', 0.96, call('female', 97)))
-    const input = host.querySelector<HTMLInputElement>('input[type=file]:not([capture])')!
-    input.dispatchEvent(new Event('change'))
+  it('a new photo shows its own answer', async () => {
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
+    expect(callText(host)).toBe('♂ Macho 96 %')
+    server.answers.push(answer('Danaus plexippus', 0.96, block({ status: 'band', p: 0.3, sex: 'male', sure: false, pct: undefined })))
+    host.querySelector<HTMLInputElement>('input[type=file]:not([capture])')!.dispatchEvent(new Event('change'))
     await settle()
     expect(server.answers).toHaveLength(0)
-    expect(host.querySelector('[data-testid=field-sex-ask]')).not.toBeNull()
-    expect(host.querySelector('[data-testid=field-sex-call]')).toBeNull()
-    ;(host.querySelector('[data-testid=field-sex-yes]') as HTMLButtonElement).click()
-    await settle()
-    expect(host.querySelector('[data-testid=field-sex-call]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('♀ Hembra 97 %')
+    expect(callText(host)).toBe('No seguro (se inclina a macho)')
   })
 })
