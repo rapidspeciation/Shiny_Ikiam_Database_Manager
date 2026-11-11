@@ -38,14 +38,10 @@ export const POLICY = Object.freeze({
   sexForAnySpecies: true,
 });
 /**
- * The consent the phone showed (DESIGN.md §6). PLACEHOLDER: the wording is a draft, not checked by IKIAM. No route
- * serves the text yet; lane B shows its own copy and sends CONSENT_VERSION.
+ * The consent the phone showed (DESIGN.md §6): its version. The text, a DRAFT not checked by IKIAM, is the phone's
+ * (frontend/src/lib/contribConfig.ts CONSENT, with the same version), marked as a draft on screen.
  */
 export const CONSENT_VERSION = 'v1-draft';
-export const CONSENT_TEXT = Object.freeze({
-  es: 'BORRADOR (no final): la foto y lo que usted indique se guardan en el servidor del proyecto y el equipo los revisa antes de usarlos para entrenar los modelos.',
-  en: 'DRAFT (not final): the photo and what you tell us are stored on the project server and reviewed by the team before they train the models.',
-});
 /** Consent versions an item may carry: a phone that queued items under an older version still sends them. */
 export const CONSENTS = new Set([CONSENT_VERSION]);
 /** The licence recorded with each item (Q2's default). */
