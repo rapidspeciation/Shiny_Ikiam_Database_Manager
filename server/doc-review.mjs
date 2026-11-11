@@ -435,13 +435,18 @@ export function createGitSync({ worktree, push = false, remote = 'origin', branc
       }
     }
     await git(worktree, ['add', '--', ...paths]);
+    let commit;
     if (!(await git(worktree, ['diff', '--cached', '--name-only'])).trim()) {
-      const head = (await git(worktree, ['rev-parse', 'HEAD'])).trim();
-      return { state: push ? 'pushed' : 'committed', commit: head };
+      // Nothing new to commit: a retry after a refused push finds its commit already here. It counts as pushed only
+      // when the remote branch has it; otherwise it goes through the push below.
+      commit = (await git(worktree, ['rev-parse', 'HEAD'])).trim();
+      if (!push) return { state: 'committed', commit };
+      if ((await git(worktree, ['rev-list', '--count', `${remote}/${branch}..HEAD`])).trim() === '0') return { state: 'pushed', commit };
+    } else {
+      await git(worktree, [...(await identity()), 'commit', '-q', '-m', job.message, '--', ...paths]);
+      commit = (await git(worktree, ['rev-parse', 'HEAD'])).trim();
+      if (!push) return { state: 'committed', commit };
     }
-    await git(worktree, [...(await identity()), 'commit', '-q', '-m', job.message, '--', ...paths]);
-    const commit = (await git(worktree, ['rev-parse', 'HEAD'])).trim();
-    if (!push) return { state: 'committed', commit };
     let error = '';
     for (let i = 0; i < 3; i++) {
       try {
@@ -646,8 +651,9 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       return null;
     }
   }
-  const revisionView = r =>
-    r && { id: r.id, kind: r.kind, gitState: r.git_state, gitCommit: r.git_commit, gitError: r.git_error, appliedAt: r.applied_at, appliedBy: r.applied_by ? nameOf(r.applied_by) : null, undoneAt: r.undone_at };
+  // The git error (it can name the remote and server paths) only for admins, who can act on it.
+  const revisionView = (r, admin = false) =>
+    r && { id: r.id, kind: r.kind, gitState: r.git_state, gitCommit: r.git_commit, gitError: admin ? r.git_error : null, appliedAt: r.applied_at, appliedBy: r.applied_by ? nameOf(r.applied_by) : null, undoneAt: r.undone_at };
   function seriesView(seriesId, user, { checks = true } = {}) {
     const versions = db.prepare('SELECT * FROM doc_changes WHERE series_id = ? ORDER BY version').all(seriesId);
     const c = versions.at(-1);
@@ -686,7 +692,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
       createdAt: c.created_at,
       decidedAt: c.decided_at,
       decidedBy: c.decided_by ? nameOf(c.decided_by) : null,
-      revision: revisionView(revision),
+      revision: revisionView(revision, isAdmin(user)),
       budget: guard?.budget ?? [],
       checks: guard?.checks ?? [],
       versions: versions.map(v => ({ id: v.id, version: v.version, before: v.before, after: v.after, diff: v.diff, createdAt: v.created_at, status: v.status })),
@@ -911,7 +917,7 @@ export function createDocReview({ db, root, git = null, refresh = null, measure 
     if (out.error) return out;
     if (out.checks.length) {
       db.prepare('DELETE FROM doc_changes WHERE id = ?').run(out.change.id);
-      db.prepare("UPDATE doc_changes SET status = 'pending' WHERE id = ?").run(last.id);
+      db.prepare('UPDATE doc_changes SET status = ? WHERE id = ?').run(last.status, last.id);
       return { error: `Refused by the checks: ${JSON.stringify(out.checks)}` };
     }
     // Why this version exists when its diff may look like the last one's.

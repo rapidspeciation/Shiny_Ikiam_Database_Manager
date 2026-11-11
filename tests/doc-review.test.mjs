@@ -438,6 +438,23 @@ test('git: each revision is one commit in the worktree; pushed only when enabled
   assert.equal((await pushing.commit({ path: 'assistant/x.json', text: 'x' })).state, 'failed');
 });
 
+test('git: a push the remote refused is pushed by the retry, not reported as pushed while only local', async () => {
+  const { remote, work, g } = repoPair();
+  const hook = join(remote, 'hooks', 'pre-receive');
+  writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const pushing = createGitSync({ worktree: work, push: true, author: { name: 'App', email: 'app@example.invalid' } });
+  const job = { path: SKILL_PATH, text: SKILL.replace('Dos', 'Tres'), parentHash: hashText(SKILL), sectionBefore: '', sectionAfter: '', message: 'Instrucciones: retry' };
+  const refused = await pushing.commit(job);
+  assert.equal(refused.state, 'failed');
+  assert.equal(g(remote, 'log', '-1', '--format=%s', 'main').trim(), 'seed');
+  writeFileSync(hook, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const retried = await pushing.commit(job);
+  assert.equal(retried.state, 'pushed');
+  assert.equal(g(remote, 'log', '-1', '--format=%s', 'main').trim(), 'Instrucciones: retry');
+  // Once on the remote, the same job again is pushed with nothing to do.
+  assert.equal((await pushing.commit(job)).state, 'pushed');
+});
+
 test('every active admin, not only the first one, asks Claude, proposes, applies, discards and undoes; an inactive admin and the other roles do not', async () => {
   const { root, db } = fixture();
   db.prepare("INSERT INTO users VALUES ('u-admin2','marta','Marta','admin',1,'marta@example.org')").run();
