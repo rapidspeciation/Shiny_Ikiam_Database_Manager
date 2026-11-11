@@ -56,16 +56,26 @@ export function wikilocLine(w, at = Date.now()) {
  */
 export async function sheetRangesRun(request, log, options = {}) {
   const { keepRangesAhead } = await import('../server/sheet-ranges.mjs');
+  let planned = false;
   const keep = entry => {
     if (!log) throw new Error('no --log file: nothing sent');
     appendFileSync(log, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    if (entry.status === 'planned') planned = true;
   };
   const stateFile = log ? join(dirname(log), 'sheet-ranges-state.json') : null;
+  const notes = [];
   try {
-    const known = stateFile && existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')).leftOut || {} : {};
+    let known = {};
+    try {
+      if (stateFile && existsSync(stateFile)) known = JSON.parse(readFileSync(stateFile, 'utf8')).leftOut || {};
+    } catch (e) {
+      notes.push(`Sheet ranges: ${stateFile} did not read (${String(e.message).slice(0, 120)}): its ranges are told again`);
+    }
     const out = await keepRangesAhead(request, { ...options, known, beforeWrite: keep });
+    out.lines.unshift(...notes);
     const { state, toldLeftOut, ...r } = out.record;
-    if (r.changes.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : 'sent' });
+    // Every plan logged gets its outcome (a write refused as protected too: nothing landed).
+    if (planned || r.changes.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : r.changes.length ? 'sent' : 'refused' });
     else if (toldLeftOut) keep({ ...r, status: 'left out' });
     if (stateFile) {
       writeFileSync(`${stateFile}.new`, `${JSON.stringify({ at: r.at, leftOut: state }, null, 1)}\n`, { mode: 0o600 });

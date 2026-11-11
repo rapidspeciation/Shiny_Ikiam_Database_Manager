@@ -596,20 +596,28 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
       }),
       LINK,
     );
+  // One alert per sheet and rule: dropdown runs of a sheet with the same list are named together.
+  const groups = new Map();
   for (const r of ranges) {
-    // The label: «Sheet A2:A226» (a dropdown's cells) or «Sheet rule 3» (a conditional format's place in the list).
-    const where = String(r.label).slice(String(r.sheet).length + 1);
-    const vars = { sheet: r.sheet, cells: where, rule: where.replace(/^rule /, ''), before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
+    const key = [r.kind, r.sheet, r.before, r.after].join('\u0000');
+    if (!groups.has(key)) groups.set(key, { ...r, cells: [] });
+    const g = groups.get(key);
+    // The label of a dropdown: «Sheet A2:A226»; a conditional format is named by its formula.
+    g.cells.push(String(r.label).slice(String(r.sheet).length + 1));
+    if (String(r.since) < String(g.since)) g.since = r.since;
+  }
+  for (const r of groups.values()) {
+    const vars = { sheet: r.sheet, cells: r.cells.join(', '), rows: r.rows, before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
     add(
-      `sheet-range:${r.kind}:${r.label}`,
+      `sheet-range:${r.key || `${r.kind}:${r.label}`}`,
       'info',
       r.kind === 'dropdown'
         ? msg(
-            '{sheet} {cells}: el desplegable toma sus opciones de {before}, que ya no llega al final de la lista; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
+            '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya tiene {rows} filas; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
             vars,
           )
         : msg(
-            '{sheet}, regla {rule} del formato condicional: cuenta hasta {before}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.',
+            '{sheet}, formato condicional {before}: debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.',
             vars,
           ),
     );

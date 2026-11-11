@@ -13,6 +13,7 @@
 // sheet's grid is kept as sent: tried on the test copy). Only these two kinds are touched: other rules, their order,
 // formats and conditions stay as they are.
 import { columnLetter } from './columns.mjs';
+import { lockedRanges } from './premade.mjs';
 
 export const MARGIN = 1000;
 export const EXTEND = 10_000;
@@ -139,15 +140,17 @@ const overlaps = (a, b) =>
   (a.startRowIndex ?? 0) < (b.endRowIndex ?? Infinity) && (b.startRowIndex ?? 0) < (a.endRowIndex ?? Infinity) &&
   (a.startColumnIndex ?? 0) < (b.endColumnIndex ?? Infinity) && (b.startColumnIndex ?? 0) < (a.endColumnIndex ?? Infinity);
 /**
- * The protections that keep the credential from a change: protected ranges of its sheet it cannot edit
- * (requestingUserCanEdit false) over its cells. One with exceptions (unprotectedRanges) is not counted: the write is
- * tried, and Google's refusal says.
+ * The protections that keep the credential from a change: protected ranges of its sheet it cannot edit (lockedRanges:
+ * Google leaves requestingUserCanEdit out when it is false; warning-only ones are editable) over its cells, each as
+ * `id:rows:columns` (a protection that moves or grows reads as another). One with exceptions (unprotectedRanges) is not
+ * counted: the write is tried, and Google's refusal says.
  */
 export function blockingProtections(sheet, change) {
-  return (sheet?.protectedRanges || [])
-    .filter(p => p.requestingUserCanEdit === false && !p.unprotectedRanges?.length && rangesOf(change).some(r => overlaps(p.range || {}, r)))
-    .map(p => p.protectedRangeId)
-    .sort((a, b) => a - b);
+  const span = (a, b) => `${a ?? ''}-${b ?? ''}`;
+  return lockedRanges(sheet?.protectedRanges)
+    .filter(p => !p.unprotectedRanges?.length && rangesOf(change).some(r => overlaps(p.range || {}, r)))
+    .map(p => `${p.protectedRangeId}:${span(p.range?.startRowIndex, p.range?.endRowIndex)}:${span(p.range?.startColumnIndex, p.range?.endColumnIndex)}`)
+    .sort();
 }
 
 /**
@@ -162,11 +165,11 @@ export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at } = {})
   const lines = [];
   let warn = false;
   for (const c of leftOut) {
-    const key = `${c.kind}:${c.label}`;
+    const key = c.key || `${c.kind}:${c.label}`;
     const was = known[key];
     const protections = c.protections || [];
     const changed = !was || was.before !== c.before || String(was.protections) !== String(protections) || c.rows - was.toldRows >= margin;
-    state[key] = { kind: c.kind, sheet: c.sheet, label: c.label, before: c.before, after: c.after, rows: c.rows, protections, since: was?.since || at, toldAt: changed ? at : was.toldAt, toldRows: changed ? c.rows : was.toldRows };
+    state[key] = { key, kind: c.kind, sheet: c.sheet, label: c.label, before: c.before, after: c.after, rows: c.rows, protections, since: was?.since || at, toldAt: changed ? at : was.toldAt, toldRows: changed ? c.rows : was.toldRows };
     if (!changed) continue;
     warn = true;
     lines.push(
@@ -176,7 +179,7 @@ export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at } = {})
     );
   }
   for (const [key, was] of Object.entries(known))
-    if (!state[key]) lines.push(`Sheet ranges: ${was.kind} ${was.label} is no longer left out (moved, or changed by hand)`);
+    if (!state[key]) lines.push(`Sheet ranges: ${was.kind} ${was.label} is no longer left out (moved, changed by hand, or writable again)`);
   const quiet = Object.values(state).filter(e => e.toldAt !== at);
   if (quiet.length)
     lines.push(`Sheet ranges: ${quiet.length} known range${quiet.length === 1 ? '' : 's'} still left for ${quiet.length === 1 ? 'its owner' : 'their owners'} (told before: sheet-ranges-state.json)`);
@@ -195,7 +198,7 @@ export async function keepRangesAhead(request, options = {}) {
   const lines = [];
   const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount)),conditionalFormats)';
   const meta = await request(
-    `?fields=${enc('sheets(properties(sheetId,title,gridProperties(rowCount)),conditionalFormats,protectedRanges(protectedRangeId,range,requestingUserCanEdit,unprotectedRanges))')}`,
+    `?fields=${enc('sheets(properties(sheetId,title,gridProperties(rowCount)),conditionalFormats,protectedRanges(protectedRangeId,range,requestingUserCanEdit,warningOnly,unprotectedRanges))')}`,
   );
   const sheets = meta.sheets || [];
   const byTitle = new Map(sheets.map(s => [s.properties.title, s.properties]));
@@ -248,6 +251,8 @@ export async function keepRangesAhead(request, options = {}) {
       after: c.after,
       note: `the grid has ${c.grid} rows`,
       rows: c.grid,
+      // Kept from night to night by its formula (its index moves when rules are added above it).
+      key: `conditional format:${c.sheet}:${c.before}`,
       request: { updateConditionalFormatRule: { sheetId: c.sheetId, index: c.index, rule: c.next } },
       inverse: { updateConditionalFormatRule: { sheetId: c.sheetId, index: c.index, rule: c.rule } },
       check: c,
@@ -255,7 +260,10 @@ export async function keepRangesAhead(request, options = {}) {
     ...dv.map(d => {
       const source = listSource(d.before);
       const list = lists.get(source.key);
-      return { kind: 'dropdown', sheet: d.sheet, label: `${d.sheet} ${d.cells}`, before: d.before, after: d.after, note: `${source.key} has ${list.last} rows of ${list.grid}`, rows: list.last, request: d.request, inverse: d.inverse };
+      return { kind: 'dropdown', sheet: d.sheet, label: `${d.sheet} ${d.cells}`, before: d.before, after: d.after, note: `${source.key} has ${list.last} rows of ${list.grid}`, rows: list.last,
+        // Kept from night to night by where its run starts (it grows when rows are added with the dropdown).
+        key: `dropdown:${d.sheet}:${columnLetter(d.request.setDataValidation.range.startColumnIndex)}${d.request.setDataValidation.range.startRowIndex + 1}`,
+        request: d.request, inverse: d.inverse };
     }),
   ];
   const record = { at: new Date(options.at ?? Date.now()).toISOString(), changes: [], leftOut: [] };
@@ -311,7 +319,8 @@ export async function keepRangesAhead(request, options = {}) {
       }
     }
   } catch (e) {
-    // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it.
+    // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it. A
+    // range found writable tonight is out of the state; it is tried again the next night.
     report();
     record.unconfirmed = pending.map(strip);
     lines.push(`Sheet ranges: FAILING: the write did not confirm (${String(e.message).slice(0, 200)}): check the planned changes in the log`);

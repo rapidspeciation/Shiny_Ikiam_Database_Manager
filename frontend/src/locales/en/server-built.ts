@@ -363,10 +363,10 @@ export default {
   '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
     '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
   '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAM left in {first}–{last}, unused since {date} (last {cam}).',
-  '{sheet} {cells}: el desplegable toma sus opciones de {before}, que ya no llega al final de la lista; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.':
-    '{sheet} {cells}: the dropdown takes its choices from {before}, which no longer reaches the end of the list; it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Data → Data validation). Seen on {date}.',
-  '{sheet}, regla {rule} del formato condicional: cuenta hasta {before}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.':
-    '{sheet}, conditional format rule {rule}: it counts up to {before}; it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Format → Conditional formatting). Seen on {date}.',
+  '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya tiene {rows} filas; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.':
+    '{sheet} {cells}: the dropdown takes its choices from {before} and the list already has {rows} rows; it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Data → Data validation). Seen on {date}.',
+  '{sheet}, formato condicional {before}: debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.':
+    '{sheet}, conditional format {before}: it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Format → Conditional formatting). Seen on {date}.',
   '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAMs left in {first}–{last}, unused since {date} (last {cam}).',
   'Censo de {species} del {date}: sigue abierto en la pestaña Censo y sin marcas ({expected} mariposas esperadas). Si se contó en papel, pasen las marcas y termínenlo; si no se hizo, cancélenlo.':
     'Census of {species} of {date}: still open in the Census tab with no marks ({expected} butterflies expected). If it was counted on paper, enter the marks and finish it; if it was not done, cancel it.',
