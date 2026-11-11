@@ -8,7 +8,14 @@ with indexes into the two lists, -1 for none. Placeholder names (UNKNOWN_tribe_<
 UNKNOWN_*) and «incertae sedis» are not names to show: those species count as having no tribe (or subfamily), so a
 placeholder group can never be the answer. Species with neither are left out.
 
+The head was trained on a genus table that splits Ithomiini into 8 old tribes for some genera, files others under
+"Ithomiini" with subfamily "Ithomiinae", puts the moth Macrosoma in Ithomiini and lacks Athyrtis, Epityches and
+Leucothyris (WingsClassificator reports/model_autoresearch_20261109/taxonomic/TRIBE_FIX.md). genus_fix_ithomiini_20261110.json
+overrides those genera with the lab taxonomy's values (the Ithomiini-only table Franz chose on 10 Nov): every Ithomiini
+genus is tribe Ithomiini, subfamily Danainae; Macrosoma is Hedylinae with no tribe.
+
   <identifier venv>/bin/python tools/identifier/export_taxonomy.py <dir>/app/assets/head_hier_6fa6ab78.pt [out.json]
+  python3 tools/identifier/export_taxonomy.py --refix [taxonomy.json]   (applies the genus fix to an exported file)
 """
 
 import hashlib
@@ -16,28 +23,29 @@ import json
 import os
 import sys
 
-import torch
-
+HERE = os.path.dirname(os.path.abspath(__file__))
 HIDDEN = ("incertae sedis",)
+GENUS_FIX = os.path.join(HERE, "genus_fix_ithomiini_20261110.json")
 
 
 def shown(name):
     return bool(name) and not name.startswith("UNKNOWN") and name not in HIDDEN
 
 
-def main():
-    src = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "taxonomy_6fa6ab78.json")
-    sha = hashlib.sha256(open(src, "rb").read()).hexdigest()
-    ck = torch.load(src, map_location="cpu", weights_only=False)
-    voc, l2r = ck["rank_vocab"], ck["leaf2rank"]
-    per_species = {}
-    for i in range(len(ck["leaves"])):
-        sp = voc["species"][l2r["species"][i]]
-        t, s = voc["tribe"][l2r["tribe"][i]], voc["subfamily"][l2r["subfamily"][i]]
-        prev = per_species.setdefault(sp, (t, s))
-        if prev != (t, s):
-            raise SystemExit(f"{sp}: leaves disagree on tribe / subfamily ({prev} vs {(t, s)})")
+def fixed(per_species, fix=None):
+    """per_species {species: (tribe, subfamily)} with the genus fix applied; an empty value means none."""
+    if fix is None:
+        with open(GENUS_FIX) as f:
+            fix = json.load(f)["genera"]
+    out = {}
+    for sp, pair in per_species.items():
+        g = fix.get(sp.split(" ")[0])
+        out[sp] = (g["tribe"], g["subfamily"]) if g else pair
+    return out
+
+
+def write(per_species, sha, out):
+    """The file the server and the page read, from {species: (tribe, subfamily)}."""
     tribes = sorted({t for t, _ in per_species.values() if shown(t)})
     subfamilies = sorted({s for _, s in per_species.values() if shown(s)})
     ti, si = {n: k for k, n in enumerate(tribes)}, {n: k for k, n in enumerate(subfamilies)}
@@ -51,6 +59,40 @@ def main():
     with open(out, "w") as f:
         json.dump(doc, f, separators=(",", ":"), ensure_ascii=False)
         f.write("\n")
+    return doc
+
+
+def refix(path):
+    """Applies the genus fix to an exported file (its names, read back), keeping its head."""
+    with open(path) as f:
+        doc = json.load(f)
+    name = lambda names, k: names[k] if k >= 0 else ""
+    per_species = {sp: (name(doc["tribes"], t), name(doc["subfamilies"], s)) for sp, (t, s) in doc["species"].items()}
+    new = write(fixed(per_species), doc["head"], path)
+    print(json.dumps({"species": len(new["species"]), "tribes": len(new["tribes"]), "subfamilies": len(new["subfamilies"]), "out": path}))
+
+
+def main():
+    if sys.argv[1] == "--refix":
+        return refix(sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "taxonomy_6fa6ab78.json"))
+    import torch
+
+    src = sys.argv[1]
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "taxonomy_6fa6ab78.json")
+    sha = hashlib.sha256(open(src, "rb").read()).hexdigest()
+    ck = torch.load(src, map_location="cpu", weights_only=False)
+    voc, l2r = ck["rank_vocab"], ck["leaf2rank"]
+    raw = {}
+    for i in range(len(ck["leaves"])):
+        sp = voc["species"][l2r["species"][i]]
+        t, s = voc["tribe"][l2r["tribe"][i]], voc["subfamily"][l2r["subfamily"][i]]
+        prev = raw.setdefault(sp, (t, s))
+        if prev != (t, s):
+            raise SystemExit(f"{sp}: leaves disagree on tribe / subfamily ({prev} vs {(t, s)})")
+    per_species = fixed(raw)
+    write(per_species, sha, out)
+    species = json.load(open(out))["species"]
+    tribes, subfamilies = sorted({t for t, _ in per_species.values() if shown(t)}), sorted({s for _, s in per_species.values() if shown(s)})
     hidden_t = sum(1 for t, _ in per_species.values() if not shown(t))
     hidden_s = sum(1 for _, s in per_species.values() if not shown(s))
     print(json.dumps({

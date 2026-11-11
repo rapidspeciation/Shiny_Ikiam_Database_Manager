@@ -451,7 +451,7 @@ const sspRest = (name: string) => (subspecies.value.get(name)?.length ?? 0) - ss
 const openSsp = ref<string | null>(null)
 const grouped = computed(() => (ranked.value ? groupByGenus(ranked.value.species, ranked.value.genus) : null))
 const top = computed(() => ranked.value?.species[0])
-/** Lab flag only (TRIBE_RUNG): the head's tribe and subfamily per species, for the phone's totals. */
+/** With the flag (TRIBE_RUNG): the head's tribe and subfamily per species, for the phone's totals. */
 const taxonomy = shallowRef<Taxonomy | null>(null)
 watch(
   () => head.value?.meta.head_sha256,

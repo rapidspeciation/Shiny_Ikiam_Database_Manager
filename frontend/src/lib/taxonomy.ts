@@ -1,6 +1,6 @@
 /**
  * The head's tribe and subfamily per species for the phone's tribe / subfamily answer (lib/identifyResult.ts
- * higherRanks, lab flag TRIBE_RUNG): tools/identifier/taxonomy_6fa6ab78.json, the file the server identifier reads,
+ * higherRanks, flag TRIBE_RUNG): tools/identifier/taxonomy_6fa6ab78.json, the file the server identifier reads,
  * shipped with the page as its own small script (loaded only with the flag on). Null when it is not this head's.
  */
 import type { Taxonomy } from './identifyResult'

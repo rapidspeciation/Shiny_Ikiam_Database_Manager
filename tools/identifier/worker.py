@@ -65,7 +65,7 @@ MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
 TOP = 5
 # The head's tribe and subfamily per species, placeholders left out (export_taxonomy.py): the worker adds each
-# tribe's and subfamily's total to a photo's answer (Identificar's tribe / subfamily answer, a lab flag on the page).
+# tribe's and subfamily's total to a photo's answer (Identificar's tribe / subfamily answer).
 TAXONOMY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "taxonomy_6fa6ab78.json")
 
 

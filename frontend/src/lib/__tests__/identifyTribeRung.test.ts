@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { CLEAR, headline, higherRanks, shownTaxon, subspeciesHint, TRIBE_RUNG, type Taxonomy } from '../identifyResult'
 import { serverRanking, type ServerAnswer } from '../identifyOnline'
+import { isIthomiiniGenus } from '../ithomiiniGenera'
 
 // The tribe / subfamily answer (WingsClassificator X-A8): species >= CLEAR, genus >= CLEAR, tribe >= CLEAR,
-// subfamily >= CLEAR, else «not sure»; behind the lab flag TRIBE_RUNG (off by default).
+// subfamily >= CLEAR, else «not sure»; TRIBE_RUNG on unless built with VITE_TRIBE_RUNG=0.
 const species = ['Mechanitis polymnia', 'Mechanitis lysimnia', 'Oleria onega', 'Hypothyris anastasia', 'Danaus plexippus', 'Heliconius erato', 'Chetone angulosa', 'Athis inca']
 const tax: Taxonomy = {
   head: 'h',
@@ -33,11 +34,10 @@ const say = (scores: number[], on = true) => {
 }
 
 describe('tribe and subfamily answer', () => {
-  it('is off unless the page is built with the lab flag', () => {
-    expect(TRIBE_RUNG).toBe(false)
+  it('is on unless the page is built with VITE_TRIBE_RUNG=0', () => {
+    expect(TRIBE_RUNG).toBe(true)
     const a = answer([0.3, 0.2, 0.3, 0, 0.1, 0, 0.1, 0])
-    // Flag off (the default, and explicitly): the old ladder, even with the totals given.
-    expect(headline(a.top, a.genus, a.higher)).toEqual({ kind: 'unsure' })
+    // Flag off: the old ladder, even with the totals given.
     expect(headline(a.top, a.genus, a.higher, false)).toEqual({ kind: 'unsure' })
     expect(headline(a.top, a.genus, null, true)).toEqual({ kind: 'unsure' })
   })
@@ -117,6 +117,27 @@ describe('tribe and subfamily answer', () => {
     expect([...t.tribes, ...t.subfamilies].filter(n => !shownTaxon(n))).toEqual([])
     const pairs = Object.values(t.species)
     expect(pairs.every(([a, b]) => a < t.tribes.length && b < t.subfamilies.length && (a >= 0 || b >= 0))).toBe(true)
-    expect(t.species['Mechanitis polymnia']).toEqual([t.tribes.indexOf('Ithomiini'), t.subfamilies.indexOf('Ithomiinae')])
+    expect(t.species['Mechanitis polymnia']).toEqual([t.tribes.indexOf('Ithomiini'), t.subfamilies.indexOf('Danainae')])
+  })
+
+  it('files every Ithomiini genus under tribe Ithomiini and subfamily Danainae, and only them (the corrected genus table)', () => {
+    const file = new URL('../../../../tools/identifier/taxonomy_6fa6ab78.json', import.meta.url)
+    const t = JSON.parse(readFileSync(file, 'utf8')) as Taxonomy
+    const name = (sp: string) => {
+      const [a, b] = t.species[sp] ?? [-1, -1]
+      return [a >= 0 ? t.tribes[a] : null, b >= 0 ? t.subfamilies[b] : null]
+    }
+    const species = Object.keys(t.species)
+    const ithomiini = species.filter(sp => isIthomiiniGenus(sp.split(' ')[0]))
+    expect(ithomiini.length).toBeGreaterThan(300)
+    for (const sp of ithomiini) expect([sp, ...name(sp)]).toEqual([sp, 'Ithomiini', 'Danainae'])
+    // No other genus counts toward Ithomiini: the moth Macrosoma (Hedylidae) above all.
+    expect(species.filter(sp => name(sp)[0] === 'Ithomiini' && !isIthomiiniGenus(sp.split(' ')[0]))).toEqual([])
+    const moth = species.find(sp => sp.startsWith('Macrosoma '))!
+    expect(name(moth)).toEqual([null, 'Hedylinae'])
+    // The old split of Ithomiini into tribes is gone.
+    for (const old of ['Dircennini', 'Godyridini', 'Napeogenini', 'Mechanitini', 'Melinaeini', 'Oleriini', 'Tithoreini', 'Athesitini'])
+      expect(t.tribes).not.toContain(old)
+    expect(t.subfamilies).not.toContain('Ithomiinae')
   })
 })

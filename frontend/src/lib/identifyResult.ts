@@ -4,7 +4,7 @@
  *
  * The scores are the head's probabilities, not calibrated on people's photos: the tab never turns them into words
  * like «muy probable». It only names the genus instead of the species when the species is unclear and the genus is
- * not (CLEAR, a cut not yet checked against held-out photos: DESIGN.md, «Not in this version»); with the lab flag
+ * not (CLEAR, a cut not yet checked against held-out photos: DESIGN.md, «Not in this version»); with the flag
  * TRIBE_RUNG, then the tribe and the subfamily.
  */
 import type { StockCount } from './frozenStock'
@@ -53,10 +53,11 @@ export type Headline =
   | { kind: 'unsure' }
 
 /**
- * The tribe and subfamily answer (WingsClassificator X-A8, S1-confirmed with the same CLEAR): a lab flag, off unless
- * the page is built with VITE_TRIBE_RUNG=1, so the ladder stays species, genus, «not sure» everywhere else.
+ * The tribe and subfamily answer (WingsClassificator X-A8, S1-confirmed with the same CLEAR): on (Franz, 11 Nov 2026:
+ * deploy it to test in production), with a line saying it is there for testing. A page built with VITE_TRIBE_RUNG=0
+ * keeps the old ladder: species, genus, «not sure».
  */
-export const TRIBE_RUNG = import.meta.env.VITE_TRIBE_RUNG === '1'
+export const TRIBE_RUNG = import.meta.env.VITE_TRIBE_RUNG !== '0'
 
 /** Every tribe's and subfamily's total: the sum of its species' scores (all of them, not only the listed ones). */
 export interface Higher {
@@ -78,7 +79,7 @@ function best(totals: Map<string, number> | undefined): { name: string; p: numbe
 }
 
 /**
- * The species when its score is clear, else its genus when that is, else (with the lab flag `on` and the totals
+ * The species when its score is clear, else its genus when that is, else (with the flag `on` and the totals
  * `higher`) the tribe, then the subfamily, whose total is clear, else «not sure». Used for both the server's answer
  * and the phone's.
  */
