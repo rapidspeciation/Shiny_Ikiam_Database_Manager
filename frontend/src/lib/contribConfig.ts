@@ -12,6 +12,13 @@
  * - GPS_DECIMALS: the location is rounded on the phone before it is kept or sent (the server rounds it again).
  */
 export const CONTRIB_ENABLED = import.meta.env.VITE_CONTRIB === '1'
+/**
+ * Who sees the card and «Mis envíos»: every signed-in team member (Franz, 11 Nov 2026: not admins only), never a
+ * signed-out visitor, and nobody in a build without VITE_CONTRIB=1. The server checks the same (POLICY.roles).
+ */
+export function contribFor(user: { role?: string } | null | undefined, enabled = CONTRIB_ENABLED): boolean {
+  return enabled && !!user
+}
 export const CONSENT_VERSION = 'v1-draft'
 export const CONSENT_DRAFT = true
 export const GPS_DECIMALS = 2

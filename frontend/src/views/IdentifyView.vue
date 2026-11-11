@@ -43,7 +43,7 @@ import { useSession } from '../stores/session'
 declare const __BUILD_ID__: string
 import ContributeCard, { type Labels, type Outcome } from '../components/identify/ContributeCard.vue'
 import MyContributions from '../components/identify/MyContributions.vue'
-import { CONSENT_VERSION, CONTRIB_ENABLED, GPS_DECIMALS } from '../lib/contribConfig'
+import { CONSENT_VERSION, contribFor, GPS_DECIMALS } from '../lib/contribConfig'
 import { AlreadyListed, createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
 import { askPersistence, browserLock, idbStore } from '../lib/contribIdb'
 import { photoMeta, roundGps } from '../lib/exifMeta'
@@ -728,7 +728,7 @@ const fieldSexState = computed<FieldSexState | null>(() => {
 
 // ---------------------------------------------------------------- photos sent to train the AI (team only, VITE_CONTRIB)
 
-const contribOn = computed(() => CONTRIB_ENABLED && !!session.user)
+const contribOn = computed(() => contribFor(session.user))
 let outbox: Outbox | null = null
 const myItems = ref<Item[]>([])
 const pendingCount = ref(0)
@@ -755,7 +755,7 @@ let outboxStarting: Promise<void> | null = null
  * is open; the first send runs on by itself, so Enviar never waits for it.
  */
 function startOutbox(): Promise<void> {
-  if (!CONTRIB_ENABLED || !session.user) return Promise.resolve()
+  if (!contribFor(session.user)) return Promise.resolve()
   outboxStarting ??= (async () => {
     outbox = createOutbox({ store: await idbStore(), send: httpSend, lock: browserLock })
     syncOutbox({ force: true, status: true }).catch(() => null)
