@@ -205,7 +205,7 @@ export default {
   'se inclina a hembra': 'leans to female',
   'se inclina a macho': 'leans to male',
   'En la prueba, las respuestas de este sexo para esta especie acertaron menos del 90 %.': 'In the test, answers of this sex for this species were right less than 90 % of the time.',
-  'La especie no es segura; el sexo puede estar mal.': 'The species is not sure; the sex may be wrong.',
+  'La especie no es segura; el sexo puede estar mal.': 'The species is uncertain; the sex may be wrong.',
   'No se encontraron las alas; el sexo puede estar mal.': 'The wings were not found; the sex may be wrong.',
   'Probado en fotos de mariposas vivas.': 'Tested on photos of live butterflies.',
   'Comprobado en fotos de iNaturalist de seis especies: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus y Poanes zabulon.':

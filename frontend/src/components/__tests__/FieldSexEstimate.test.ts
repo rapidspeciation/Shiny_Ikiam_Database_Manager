@@ -73,7 +73,7 @@ describe('FieldSexEstimate', () => {
     const band = show(st({ status: 'band', p: 0.7, sex: 'female', sure: false, pct: null }))
     expect(text(band.querySelector('[data-testid=field-sex-call]'))).toBe('Not sure (leans to female)')
     const sp = show(st({ status: 'species_unsure', pct: null, note: 'species' }))
-    expect(text(sp.querySelector('[data-testid=field-sex-note]'))).toBe('The species is not sure; the sex may be wrong.')
+    expect(text(sp.querySelector('[data-testid=field-sex-note]'))).toBe('The species is uncertain; the sex may be wrong.')
   })
   it('no em dashes in any of its texts, in either language', () => {
     for (const lang of ['es', 'en'] as const) {

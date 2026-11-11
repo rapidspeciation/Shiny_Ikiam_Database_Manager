@@ -104,11 +104,10 @@ test('the worker gates field sex on the species score WITHOUT the geographic pri
   const run = spawnSync(python, ['-I', new URL('./fixtures/field-sex-gate-check.py', import.meta.url).pathname, TOOLS, out], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(run.status, 0, run.stderr);
   const r = JSON.parse(read(out, 'utf8'));
-  // East: the prior takes the top species down (the page would name Cc dd) ...
+  // East: the prior takes the top species down (the page names Cc dd)
   assert.equal(r.east_top[0], 'Cc dd');
   assert.equal(r.none_top[0], 'Aa bb');
   assert.equal(r.east_prior, 'East');
-  // ... but the sex line is given the no-prior top species and its own score
   assert.deepEqual(r.noprior, [0.85, 0.1, 0]);
   // the block is for the species the page names (Cc dd with East), gated on ITS no-prior score (0.10, so unsure);
   // with no side, Aa bb at 0.85; the crop status goes with it

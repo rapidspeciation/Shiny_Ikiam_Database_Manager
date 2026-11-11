@@ -43,8 +43,9 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   field_sex/                                     (optional: the general sex line of «En línea», field_sex.py)
 
 The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose answer names one of six species
-that passed WingsClassificator's fresh test gets a "fieldSex" block (None otherwise): the bar position, the side it leans to, a status, and the % only for a Supported answer. It reads the feature the
-photo already has. Without the folder, answers carry no fieldSex and nothing else changes.
+that passed WingsClassificator's fresh test gets a "fieldSex" block (None otherwise): the bar position, the side it
+leans to, a status, and the % only for a Supported answer. It reads the feature the photo already has. Without the
+folder, answers carry no fieldSex and nothing else changes.
 """
 
 import argparse
