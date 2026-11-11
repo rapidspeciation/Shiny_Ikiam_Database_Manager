@@ -38,7 +38,9 @@ type Named = Pick<PackTaxon, 'name' | 'rank' | 'genus' | 'species' | 'family' | 
 /** The catalog of several lists' taxa (the first list's entry wins for a name). */
 export function catalog(...lists: Named[][]): Catalog {
   const taxa = new Map<string, Named>()
-  for (const list of lists) for (const t of list) if (!taxa.has(t.name)) taxa.set(t.name, t)
+  // A name with no family is a misspelt head label («Hwy», «M», «Psilogramm»: neither iNaturalist nor GBIF knows it,
+  // and it has no photo): not offered.
+  for (const list of lists) for (const t of list) if (t.family && !taxa.has(t.name)) taxa.set(t.name, t)
   const speciesOf = new Map<string, Set<string>>()
   const sspOf = new Map<string, Set<string>>()
   const genusInfo = new Map<string, { family?: string; group?: Group }>()

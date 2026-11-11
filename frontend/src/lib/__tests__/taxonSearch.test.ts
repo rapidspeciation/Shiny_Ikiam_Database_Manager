@@ -35,6 +35,11 @@ describe('taxon search', () => {
     expect(search(cat, 'm')).toEqual([])
     expect(search(cat, 'zzz')).toEqual([])
   })
+  it('r2-fable-F12: misspelt head labels (no family in any source) are not offered', () => {
+    const c = catalog([t('Hwy rubrocaudata', 'moth', ''), t('Psilogramm menephron', 'moth', ''), t('Psilogramma menephron', 'moth', 'Sphingidae')])
+    expect(search(c, 'hwy')).toEqual([])
+    expect(search(c, 'psilogramm').map(h => h.name)).toEqual(['Psilogramma', 'Psilogramma menephron'])
+  })
   it('lists a genus’ species and a species’ subspecies, each once, from every list', () => {
     expect(cat.speciesOf.get('Mechanitis')).toEqual(['Mechanitis lysimnia', 'Mechanitis mazaeus', 'Mechanitis polymnia'])
     expect(cat.sspOf.get('Mechanitis polymnia')).toEqual(['Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])

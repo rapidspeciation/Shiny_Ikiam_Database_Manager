@@ -6,33 +6,25 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Check, ChevronDown, Images } from 'lucide-vue-next'
 import { locale, t, tn } from '../../lib/i18n'
-import { countrySizes, packCountries, mbText, sameRegion, sameScope, scopeSize, TAXA_SCOPES, updateAvailable, type PackScope, type Region } from '../../lib/photoPacks'
+import { countrySizes, packCountries, mbText, numText, sameRegion, sameScope, scopeSize, TAXA_SCOPES, toDownload, updateAvailable, type PackScope, type Region, type TaxaScope } from '../../lib/photoPacks'
 import { fieldSet } from '../../lib/identifyRefs'
-import { taxaLabel, usePacks } from '../../lib/usePacks'
+import { countryName, regionLabel, taxaLabel, usePacks } from '../../lib/usePacks'
 
 const props = defineProps<{ online: boolean }>()
-const { index, indexFailed, pack, progress, note, failedSave, scope, load, install, remove, removeLegacy: dropLegacy } = usePacks()
+const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, install, remove, removeLegacy: dropLegacy } = usePacks()
 onMounted(() => load())
 watch(
   () => props.online,
   on => on && !index.value && load(true),
 )
 
-const regionNames = computed(() => {
-  try {
-    return new Intl.DisplayNames([locale.value === 'es' ? 'es' : 'en'], { type: 'region' })
-  } catch {
-    return null
-  }
-})
-const countryName = (iso: string) => regionNames.value?.of(iso) ?? iso
 const countries = computed(() => (index.value ? packCountries(index.value, countryName) : []))
 
 const size = (s: PackScope) => (index.value ? scopeSize(index.value, s) : null)
 // A number stays with its unit when the line wraps («439 fotos ·» / «12 MB», never «12» / «MB»).
 // «≈» when part of it is estimated (photos listed but not on this server yet).
 const zText = (z: { photos: number; bytes: number; missing?: number } | null | undefined) =>
-  z ? (z.missing ? '≈\u00a0' : '') + tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
+  z ? (z.missing ? '≈\u00a0' : '') + tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: numText(z.photos), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
 const sizeText = (s: PackScope) => zText(size(s))
 const EC: Region = ['EC']
 const isEc = computed(() => sameRegion(scope.value.region, EC))
@@ -58,10 +50,24 @@ function toggleCountry(iso: string) {
 /** Every country's size at once (one pass), again only when the groups or the subspecies choice change. */
 const byCountry = computed(() => (index.value ? countrySizes(index.value, { taxa: scope.value.taxa, ssp: scope.value.ssp }) : new Map()))
 const countrySize = (iso: string) => zText(byCountry.value.get(iso))
-const regionLabel = (r: Region) => (r === 'neotropics' ? t('Neotrópico') : r.length === 1 ? countryName(r[0]) : t('{n} países', { n: r.length }))
+/**
+ * The options' size lines in one computed: again only when the list, the choice or the language change, not at each
+ * step of a save (8 passes over the whole list each time).
+ */
+const tiles = computed(() => {
+  if (!index.value) return null
+  const s = scope.value
+  return {
+    taxa: Object.fromEntries(TAXA_SCOPES.map(k => [k, sizeText({ ...s, taxa: k })])) as Record<TaxaScope, string>,
+    region: { ec: sizeText({ ...s, region: EC }), some: isSome.value ? sizeText(s) : '', neotropics: sizeText({ ...s, region: 'neotropics' }) },
+    ssp: { no: sizeText({ ...s, ssp: false }), yes: sizeText({ ...s, ssp: true }) },
+  }
+})
 const regionOn = (r: 'ec' | 'some' | 'neotropics') => (r === 'ec' ? isEc.value && !picking.value : r === 'some' ? isSome.value || picking.value : scope.value.region === 'neotropics')
 
 const total = computed(() => size(scope.value))
+/** What the choice downloads now: the photos it takes that the phone does not have (none: no MB on the button). */
+const cost = computed(() => (index.value ? toDownload(index.value, scope.value, pack.value?.index) : 0))
 const installed = computed(() => pack.value?.installed ?? null)
 const current = computed(() => !!installed.value && sameScope(installed.value.scope, scope.value))
 const newer = computed(() => updateAvailable(installed.value, index.value))
@@ -103,7 +109,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
         <Check :size="18" class="mt-0.5 shrink-0 text-success-text" />
         <span>
           {{ taxaLabel(installed.scope.taxa) }} · {{ regionLabel(installed.scope.region) }} · {{ installed.scope.ssp ? $t('con subespecies') : $t('solo especies') }}
-          <span class="block text-sm font-normal text-fg-muted tabular-nums">{{ $t('{n} fotos · {mb} MB · {date}', { n: installed.photos.toLocaleString(), mb: mbText(installed.bytes), date: when(installed.at) }) }}</span>
+          <span class="block text-sm font-normal text-fg-muted tabular-nums">{{ $t('{n} fotos · {mb} MB · {date}', { n: numText(installed.photos), mb: mbText(installed.bytes), date: when(installed.at) }) }}</span>
         </span>
       </p>
       <p v-if="newer" class="mt-2 text-sm font-medium text-pending-text">{{ $t('Hay fotos nuevas en el servidor.') }}</p>
@@ -113,7 +119,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </div>
     </div>
     <div v-else-if="legacy" class="mt-3 rounded-lg border border-border p-3 text-sm">
-      <p>{{ $t('Fotos guardadas antes (Ithomiini): {n} fotos · {mb} MB', { n: legacy.count, mb: mbText(legacy.bytes) }) }}</p>
+      <p>{{ $t('Fotos guardadas antes (Ithomiini): {n} fotos · {mb} MB', { n: numText(legacy.count), mb: mbText(legacy.bytes) }) }}</p>
       <button class="btn-danger mt-2 min-h-11 px-4" @click="removeLegacy">{{ $t('Borrar del teléfono') }}</button>
     </div>
 
@@ -136,7 +142,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
           >
             <input type="radio" name="pack-taxa" class="sr-only" :value="k" :checked="scope.taxa === k" @change="set({ taxa: k })" />
             <span class="flex items-center gap-1.5 font-medium"><Check v-if="scope.taxa === k" :size="16" class="shrink-0 text-brand-text" />{{ taxaLabel(k) }}</span>
-            <span class="text-xs text-fg-muted tabular-nums">{{ sizeText({ ...scope, taxa: k }) }}</span>
+            <span class="text-xs text-fg-muted tabular-nums">{{ tiles?.taxa[k] }}</span>
           </label>
         </div>
         <p v-if="sampleNote" class="mt-1.5 text-xs text-pending-text">{{ sampleNote }}</p>
@@ -145,7 +151,8 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <!-- Region -->
       <fieldset class="mt-4">
         <legend class="mb-1.5 text-sm font-semibold">{{ $t('Dónde') }}</legend>
-        <div class="grid grid-cols-3 gap-2" role="radiogroup" :aria-label="$t('Dónde')">
+        <!-- Three across from 420 px; on a narrower phone one under the other, the size beside the name (each fits its box). -->
+        <div class="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3" role="radiogroup" :aria-label="$t('Dónde')">
           <button
             v-for="r in ['ec', 'some', 'neotropics'] as const"
             :key="r"
@@ -153,7 +160,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
             :data-testid="`region-${r}`"
             role="radio"
             :aria-checked="regionOn(r)"
-            class="opt flex min-h-14 flex-col justify-center rounded-lg border-2 px-2 py-1.5 text-left"
+            class="opt flex min-h-12 items-center justify-between gap-x-3 rounded-lg border-2 px-3 py-1.5 text-left min-[420px]:min-h-14 min-[420px]:flex-col min-[420px]:items-start min-[420px]:justify-center min-[420px]:px-2"
             :class="regionOn(r) ? 'border-brand bg-brand-soft' : 'border-border bg-surface'"
             @click="chooseRegion(r)"
           >
@@ -162,7 +169,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
               {{ r === 'ec' ? countryName('EC') : r === 'some' ? (isSome ? regionLabel(scope.region) : $t('Otros países')) : $t('Neotrópico') }}
               <ChevronDown v-if="r === 'some'" :size="14" class="shrink-0 transition-transform" :class="picking ? 'rotate-180' : ''" />
             </span>
-            <span v-if="r !== 'some' || isSome" class="text-xs text-fg-muted tabular-nums">{{ sizeText({ ...scope, region: r === 'ec' ? EC : r === 'some' ? scope.region : 'neotropics' }) }}</span>
+            <span v-if="r !== 'some' || isSome" class="text-right text-xs text-fg-muted tabular-nums min-[420px]:text-left">{{ tiles?.region[r] }}</span>
           </button>
         </div>
         <ul v-if="picking" class="mt-2 max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border" data-testid="countries">
@@ -188,7 +195,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
           >
             <input type="radio" name="pack-ssp" class="sr-only" :checked="scope.ssp === v" @change="set({ ssp: v })" />
             <span class="flex items-center gap-1.5 text-sm font-medium"><Check v-if="scope.ssp === v" :size="16" class="shrink-0 text-brand-text" />{{ v ? $t('Especies y subespecies') : $t('Solo especies') }}</span>
-            <span class="text-xs text-fg-muted tabular-nums">{{ sizeText({ ...scope, ssp: v }) }}</span>
+            <span class="text-xs text-fg-muted tabular-nums">{{ v ? tiles?.ssp.yes : tiles?.ssp.no }}</span>
           </label>
         </div>
       </fieldset>
@@ -197,19 +204,19 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
         <div class="h-2.5 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100">
           <div class="h-full bg-brand transition-[width]" :style="{ width: `${pct}%` }" />
         </div>
-        <p class="mt-1 text-sm text-fg-muted tabular-nums">{{ $t('{done} de {total} fotos', progress) }}</p>
+        <p class="mt-1 text-sm text-fg-muted tabular-nums">{{ $t('{done} de {total} fotos', { done: numText(progress.done), total: numText(progress.total) }) }}</p>
       </div>
       <button
         v-else-if="!current && total"
         class="btn-primary mt-4 min-h-12 w-full px-4 text-base"
-        :disabled="!online || !(total.photos - total.missing)"
+        :disabled="!online || removing || !(total.photos - total.missing)"
         data-testid="pack-install"
         @click="install()"
       >
-        {{ installed ? $t('Cambiar a esta elección') : $t('Descargar fotos') }} · {{ mbText(total.bytes - total.missingBytes) }} MB
+        {{ installed ? $t('Cambiar a esta elección') : $t('Descargar fotos') }}<template v-if="cost"> · {{ mbText(cost) }} MB</template>
       </button>
       <p v-if="total?.missing && !current" class="mt-1 text-xs text-pending-text" data-testid="pack-missing">
-        {{ total.missing === total.photos ? $t('Estas fotos aún no están en el servidor.') : $t('{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.', { n: total.missing.toLocaleString(), mb: mbText(total.missingBytes) }) }}
+        {{ total.missing === total.photos ? $t('Estas fotos aún no están en el servidor.') : $t('{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.', { n: numText(total.missing), mb: mbText(total.missingBytes) }) }}
       </p>
       <p v-if="!online && !current" class="mt-1 text-xs text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="installed && !current && !progress" class="mt-1 text-xs text-fg-muted">{{ $t('Reemplaza las fotos de este teléfono.') }}</p>

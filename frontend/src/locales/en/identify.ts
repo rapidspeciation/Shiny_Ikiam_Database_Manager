@@ -244,7 +244,7 @@ export default {
   Descargando: 'Downloading',
   'Descargar el identificador': 'Download the identifier',
   'Más opciones en Descargas': 'More options in Downloads',
-  'Con {n} fotos para comparar ({mb} MB).': 'With {n} photos to compare ({mb} MB).',
+  'Incluye {n} fotos para comparar ({mb} MB).': 'Includes {n} photos to compare ({mb} MB).',
   'sin fotos para comparar': 'no photos to compare',
   Identificador: 'Identifier',
   'Borrar del teléfono': 'Delete',
@@ -255,9 +255,13 @@ export default {
   'Foto de la subespecie': 'Photo of the subspecies',
   '{n} de {total} fotos no se descargaron: siguen las fotos de antes.': '{n} of {total} photos did not download: the photos from before stay.',
   'No se descargaron las fotos.': 'The photos did not download.',
-  'En Descargas: {taxa} · Neotrópico, {mb} MB': 'In Downloads: {taxa} · Neotropics, {mb} MB',
+  'En Descargas: {taxa} · {region}, {mb} MB': 'In Downloads: {taxa} · {region}, {mb} MB',
   // Full photo list (11 Nov 2026).
   'Estas fotos aún no están en el servidor.': 'These photos are not on the server yet.',
   '{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.': '{n} of these photos are not on the server yet (≈ {mb} MB): the rest is saved.',
   'Experimental, fotos en mano de 13 géneros de Ithomiini. Solo para el equipo.': 'Experimental, in-hand photos of 13 Ithomiini genera. Team only.',
+  // Review r2 (11 Nov 2026).
+  'No hay foto de referencia para descargar.': 'No reference photo to download.',
+  'En Descargas: fotos para comparar': 'In Downloads: photos to compare',
+  'Guardando fotos para comparar: {done} de {total}': 'Saving photos to compare: {done} of {total}',
 }

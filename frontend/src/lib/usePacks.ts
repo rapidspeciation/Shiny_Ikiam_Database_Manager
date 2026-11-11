@@ -9,14 +9,25 @@
  * 'pending' and is tried again on the next open with a model and signal.
  */
 import { ref, shallowRef, watch } from 'vue'
-import { t } from './i18n'
-import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type TaxaScope } from './photoPacks'
+import { locale, t } from './i18n'
+import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
 import { retireFieldSet } from './identifyRefs'
 
 /** A taxa choice's name (the scientific ones are not translated). */
 export function taxaLabel(k: TaxaScope): string {
   return k === 'ithomiini' ? 'Ithomiini' : k === 'nymphalidae' ? 'Nymphalidae' : k === 'butterflies' ? t('Mariposas') : t('Mariposas y polillas')
 }
+
+/** A country's name in the app's language (ISO2 when the browser cannot say). */
+export function countryName(iso: string): string {
+  try {
+    return new Intl.DisplayNames([locale.value === 'es' ? 'es' : 'en'], { type: 'region' }).of(iso) ?? iso
+  } catch {
+    return iso
+  }
+}
+/** A region choice's name: «Neotrópico», a country, or «3 países». */
+export const regionLabel = (r: Region) => (r === 'neotropics' ? t('Neotrópico') : r.length === 1 ? countryName(r[0]) : t('{n} países', { n: r.length }))
 
 const AUTO = 'identify:pack-auto'
 const getAuto = () => {
@@ -38,6 +49,8 @@ const index = shallowRef<PackIndex | null>(null)
 const indexFailed = ref(false)
 const pack = shallowRef<InstalledPack | null>(null)
 const progress = ref<{ done: number; total: number } | null>(null)
+/** A Delete under way (its photos go a while after the pack is off the screen). */
+const removing = ref(false)
 const note = ref<string | null>(null)
 /** The last save did not complete: what it was, for «Reintentar». */
 const failedSave = ref<{ scope: PackScope; failed: number; total: number } | null>(null)
@@ -71,7 +84,7 @@ async function load(force = false) {
 }
 
 async function install(s: PackScope = scope.value) {
-  if (progress.value) return null
+  if (progress.value || removing.value) return null
   note.value = null
   failedSave.value = null
   await loadIndex(!index.value)
@@ -109,13 +122,19 @@ async function install(s: PackScope = scope.value) {
 }
 
 async function remove() {
-  if (progress.value) return
+  if (progress.value || removing.value) return
   setAuto('done')
-  await removePack()
+  // Off the screen at once; the photos go after (lib/photoPacks.ts removePack: the record first).
   pack.value = null
   note.value = null
   failedSave.value = null
-  changed.value++
+  removing.value = true
+  try {
+    await removePack()
+  } finally {
+    removing.value = false
+    changed.value++
+  }
 }
 /** The older «Fotos para el campo» set off the phone (Descargas' Delete on it). */
 async function removeLegacy() {
@@ -130,6 +149,7 @@ export function usePacks() {
     indexFailed,
     pack,
     progress,
+    removing,
     note,
     failedSave,
     scope,

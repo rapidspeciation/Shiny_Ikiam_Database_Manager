@@ -10,7 +10,7 @@ import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, WifiOff, X } from 'lucide-vue-next'
 import { t } from '../../lib/i18n'
-import { installedPack, onlineIndex } from '../../lib/photoPacks'
+import { installedPack, numText, onlineIndex } from '../../lib/photoPacks'
 import { referencePhotos, savedPhotos, type Refs } from '../../lib/identifyRefs'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
@@ -127,7 +127,8 @@ async function loadPhotos() {
       let part = list.slice(i, i + BATCH)
       for (let round = 0; round < 3 && part.length; round++) {
         if (round) await new Promise(r => setTimeout(r, 4000))
-        const got = await referencePhotos(part, { signedIn: props.signedIn })
+        // The server's whole list beside the pack for every name: a subspecies outside the pack shows too.
+        const got = await referencePhotos(part, { signedIn: props.signedIn, everySource: true })
         if (ticket !== asked) return
         // A name the phone had photos of keeps them first; the server's add to them.
         const merged = { ...refs.value }
@@ -201,7 +202,9 @@ watch(
         id="taxon-q"
         ref="input"
         v-model="query"
-        type="search"
+        type="text"
+        inputmode="search"
+        enterkeyhint="search"
         role="combobox"
         autocomplete="off"
         autocapitalize="off"
@@ -244,7 +247,7 @@ watch(
 
     <p v-if="!online" class="mt-2 flex items-center gap-1.5 text-sm text-fg-muted">
       <WifiOff :size="16" class="shrink-0" />
-      <template v-if="packCount">{{ $t('Sin señal: busca en las {n} fotos guardadas.', { n: packCount }) }}</template>
+      <template v-if="packCount">{{ $t('Sin señal: busca en las {n} fotos guardadas.', { n: numText(packCount) }) }}</template>
       <template v-else-if="loaded">
         {{ $t('Sin señal y sin fotos guardadas.') }}
         <button class="min-h-11 font-medium text-brand-text underline underline-offset-2" @click="emit('downloads')">{{ $t('Descargas') }}</button>

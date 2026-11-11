@@ -12,7 +12,7 @@
 import { api } from './api'
 import { appRoot } from './appRoot'
 import { CACHE } from './offlineEngine'
-import { installedSources, onlineSources, photosFrom, type PackLookup, type TaxonPhoto } from './photoPacks'
+import { installedSources, onlineSources, packSources, photosFrom, type PackLookup, type TaxonPhoto } from './photoPacks'
 
 export interface RefPhoto {
   src: string
@@ -185,10 +185,16 @@ function fromApi(entry: ApiEntry): Refs {
 /**
  * The photos of `names`: signed in and online, asked to the server (names it is still looking up come back
  * `pending`); else what the phone kept, then the static field set. `pending`: names to ask again in a few seconds.
+ * `everySource` (the search): with signal the server's whole photo list beside the installed pack for every name, so
+ * the subspecies outside the pack show too; Compare reads that list only for a species the pack lacks.
  */
-export async function referencePhotos(names: string[], { signedIn = true }: { signedIn?: boolean } = {}): Promise<{ refs: Record<string, Refs>; pending: string[] }> {
+export async function referencePhotos(
+  names: string[],
+  { signedIn = true, everySource = false }: { signedIn?: boolean; everySource?: boolean } = {},
+): Promise<{ refs: Record<string, Refs>; pending: string[] }> {
+  const pack = async (refs: Record<string, Refs>) => withPack(refs, names, everySource && navigator.onLine ? await packSources().catch(() => []) : undefined)
   // Without an account only the static set (lists kept from a team session point at the team's photo proxy).
-  if (!signedIn) return { refs: await withField(await withPack({}, names), names), pending: [] }
+  if (!signedIn) return { refs: await withField(await pack({}), names), pending: [] }
   const have = await kept()
   if (navigator.onLine) {
     try {
@@ -203,12 +209,12 @@ export async function referencePhotos(names: string[], { signedIn = true }: { si
         refs[name] = e.inat || e.specimens?.length ? fromApi(e) : (have[name] ?? { photos: [], taxonUrl: null })
       }
       await keep(Object.fromEntries(Object.entries(refs).filter(([, r]) => r.photos.length)))
-      return { refs: await withField(await withPack(refs, names), names), pending }
+      return { refs: await withField(await pack(refs), names), pending }
     } catch {
       /* offline after all: what the phone kept */
     }
   }
-  return { refs: await withField(await withPack(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]])), names), names), pending: [] }
+  return { refs: await withField(await pack(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]]))), names), pending: [] }
 }
 
 /**
@@ -275,9 +281,11 @@ async function withField(refs: Record<string, Refs>, names: string[]): Promise<R
   const saved = navigator.onLine ? null : await savedFieldFiles()
   const out = { ...refs }
   for (const n of names) {
+    // Without signal a species' photo too only when saved (a pack retires the set: one not on the phone would show as
+    // nothing, and hide the pointer to a pack that has it).
     if (!out[n]?.photos.length) {
       const e = field.species.find(f => f.name === n)
-      if (e) out[n] = fieldRefs(e)
+      if (e && (!saved || saved.has(new URL(e.file, FIELD_DIR()).href))) out[n] = fieldRefs(e)
     }
     // Without signal only those the phone saved (the others would show as missing).
     // A photo pack gave its subspecies already (lib/photoPacks.ts): the older set adds none.

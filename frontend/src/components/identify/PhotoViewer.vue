@@ -30,6 +30,7 @@ function onKey(e: KeyboardEvent) {
 }
 let x0: number | null = null
 const down = (e: PointerEvent) => (x0 = e.clientX)
+const cancel = () => (x0 = null)
 function up(e: PointerEvent) {
   if (x0 == null) return
   const dx = e.clientX - x0
@@ -60,7 +61,7 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
           <X :size="26" />
         </button>
       </div>
-      <div class="viewer-photo relative min-h-0 flex-1 select-none" @pointerdown="down" @pointerup="up">
+      <div class="viewer-photo relative min-h-0 flex-1 select-none" @pointerdown="down" @pointerup="up" @pointercancel="cancel">
         <img v-if="photo" :key="photo.src" :src="photo.src" alt="" class="absolute inset-0 size-full object-contain" draggable="false" />
         <template v-if="photos.length > 1">
           <button class="absolute top-1/2 left-2 grid size-12 -translate-y-1/2 place-items-center rounded-full bg-black/55 hover:bg-black/75" :aria-label="$t('Foto anterior')" @click="step(-1)">
@@ -91,9 +92,10 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
 </template>
 
 <style scoped>
-/* Swipes and the page's pinch zoom pass; a zoomed photo can be looked over before stepping on. */
+/* A sideways drag stays with the page's swipe (pan-x would hand it to the browser, which cancels the pointer); up and
+   down and the page's pinch zoom pass. */
 .viewer-photo {
-  touch-action: pan-x pan-y pinch-zoom;
+  touch-action: pan-y pinch-zoom;
 }
 /* Held sideways on a phone: the photo takes the whole height, the bar and the name lie over its edges. */
 @media (orientation: landscape) and (max-height: 540px) {

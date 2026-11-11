@@ -19,8 +19,8 @@ import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import DownloadsPanel, { type ModelRow, type SexRow } from '../components/identify/DownloadsPanel.vue'
 import TaxonSearch from '../components/identify/TaxonSearch.vue'
 import { usePacks } from '../lib/usePacks'
-import { mbText, SCOPE_GROUPS, scopeSize, TAXA_SCOPES, type PackScope } from '../lib/photoPacks'
-import { taxaLabel } from '../lib/usePacks'
+import { mbText, numText, packHint, scopeSize, toDownload, type PackScope } from '../lib/photoPacks'
+import { regionLabel, taxaLabel } from '../lib/usePacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
@@ -171,10 +171,11 @@ function sizeLine(k: ModelKind) {
       })
 }
 const fromHf = computed(() => !!listing.value && 'source' in listing.value && listing.value.source === 'public')
-/** The first screen's one-tap download (the fast model): free space it needs. */
+/** The first screen's one-tap download (the fast model and the photos announced with it): free space it needs. */
 const firstLacksSpace = computed(() => {
   const s = sizes.value.small
-  return s && space.value && s.plain > space.value.free ? { need: roughMb(s.plain), free: mb(space.value.free) } : null
+  const need = (s?.plain ?? 0) + (firstPack.value?.bytes ?? 0)
+  return s && space.value && need > space.value.free ? { need: roughMb(need), free: mb(space.value.free) } : null
 })
 const lacksSpace = computed(() => {
   const s = sizes.value[wanted.value]
@@ -753,7 +754,12 @@ packs.loadInstalled()
 const firstPack = computed(() => {
   if (!packs.index.value || packs.pack.value || packs.autoDone()) return null
   const z = scopeSize(packs.index.value, packs.scope.value)
-  return z.photos - z.missing ? { n: (z.photos - z.missing).toLocaleString(), mb: mbText(z.bytes - z.missingBytes) } : null
+  return z.photos - z.missing ? { n: numText(z.photos - z.missing), mb: mbText(z.bytes - z.missingBytes), bytes: z.bytes - z.missingBytes } : null
+})
+/** The first screen's button: the model and the photos that follow it, one total. */
+const firstMb = computed(() => {
+  const s = sizes.value.small
+  return roughMb((s ? s.wire || s.plain : 0) || publicSize('small')) + (firstPack.value ? Math.round(firstPack.value.bytes / 1048576) : 0)
 })
 // The first screen needs the list for that line (and its size); elsewhere it is read where it is used.
 watch(
@@ -770,25 +776,28 @@ async function firstDownload() {
 function autoPack() {
   if (packs.autoPending() && (ready.value.small || ready.value.full) && online.value && !packs.pack.value && !packs.progress.value) packs.install()
 }
-/** Compare without a saved photo, offline: which pack would have it, and its size (Descargas, one tap). */
-const gapHint = computed(() => {
+/**
+ * Compare without a saved photo, offline (lib/photoPacks.ts packHint): the choice in Descargas that has its photo and
+ * what it downloads (beside the pack on the phone, as Descargas' button says); that no photo of it can be downloaded; or, with no list on the phone, the way to Descargas.
+ */
+const gapHint = computed<{ text: string; go: boolean; scope: PackScope | null } | null>(() => {
   const name = showing.value
+  if (!name || online.value || refsLoading.value || refs.value[name]?.photos.length) return null
   const idx = packs.index.value
-  if (!name || online.value || !idx || refsLoading.value || refs.value[name]?.photos.length) return null
-  const entry = idx.taxa.find(x => x.photo && (x.name === name || x.species === name))
-  if (!entry) return null
-  const cur = packs.pack.value?.installed.scope ?? packs.scope.value
-  const level = Math.max(TAXA_SCOPES.findIndex(k => SCOPE_GROUPS[k].includes(entry.group)), TAXA_SCOPES.indexOf(cur.taxa))
-  const scope: PackScope = { taxa: TAXA_SCOPES[level], region: 'neotropics', ssp: cur.ssp }
-  return { scope, text: t('En Descargas: {taxa} · Neotrópico, {mb} MB', { taxa: taxaLabel(scope.taxa), mb: mbText(scopeSize(idx, scope).bytes) }) }
+  if (!idx && !packs.indexFailed.value) return null // the list is still being read
+  const h = packHint(idx, name, packs.pack.value?.installed.scope ?? packs.scope.value)
+  if (!h) return null
+  if (h.kind === 'none') return { text: t('No hay foto de referencia para descargar.'), go: false, scope: null }
+  if (h.kind === 'downloads') return { text: t('En Descargas: fotos para comparar'), go: true, scope: null }
+  return { text: t('En Descargas: {taxa} · {region}, {mb} MB', { taxa: taxaLabel(h.scope.taxa), region: regionLabel(h.scope.region), mb: mbText(packs.pack.value ? toDownload(idx!, h.scope, packs.pack.value.index) : h.bytes) }), go: true, scope: h.scope }
 })
 watch(
   () => !!result.value && !online.value && !refsLoading.value && !refs.value[showing.value]?.photos.length,
   need => need && packs.loadIndex(),
 )
 function fixGap() {
-  if (!gapHint.value) return
-  packs.scope.value = gapHint.value.scope
+  if (!gapHint.value?.go) return
+  if (gapHint.value.scope) packs.scope.value = gapHint.value.scope
   go('downloads')
 }
 // A pack saved or removed: the photos on screen are asked again.
@@ -960,6 +969,10 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
         <button class="ml-1 min-h-11 px-1 text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Cambiar') }}</button>
       </span>
       <span v-if="!online" class="inline-flex items-center gap-1 text-fg-muted"><WifiOff :size="14" />{{ $t('Ahora sin señal') }}</span>
+      <!-- The photos announced with the first download, saving (long enough to walk out of signal meanwhile). -->
+      <span v-if="packs.progress.value" class="basis-full font-medium text-pending-text tabular-nums" role="status" data-testid="pack-saving">
+        {{ $t('Guardando fotos para comparar: {done} de {total}', { done: numText(packs.progress.value.done), total: numText(packs.progress.value.total) }) }}
+      </span>
     </div>
 
     <!-- A. No model on the phone yet: the fast one in one tap, the rest in Descargas -->
@@ -976,11 +989,11 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       </div>
       <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
-          <Download :size="20" />{{ $t('Descargar el identificador') }} · {{ modelRows[0].downloadMb }} MB
+          <Download :size="20" />{{ $t('Descargar el identificador') }} · {{ firstMb }} MB
         </button>
         <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
       </div>
-      <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Con {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
+      <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Incluye {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
       <p v-if="firstLacksSpace" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">{{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', firstLacksSpace) }}</p>
       <p v-if="!online" class="mt-2 text-sm text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="isIos && !installed" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
@@ -1041,7 +1054,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
                 <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
               </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint?.text ?? null" @hint="fixGap" />
+              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" @hint="fixGap" />
               <div class="mt-3 flex flex-wrap gap-2">
                 <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
                   {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}
@@ -1187,7 +1200,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           <button class="flex min-h-12 w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm font-medium hover:bg-surface-sunken" data-testid="to-downloads" @click="go('downloads')">
             <Download :size="18" class="shrink-0 text-brand-text" />
             <span class="flex-1">{{ $t('Descargas') }}</span>
-            <span class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: packs.pack.value.installed.photos.toLocaleString() }) : $t('sin fotos para comparar') }}</span>
+            <span v-if="!packs.progress.value" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('sin fotos para comparar') }}</span>
           </button>
           <IdentifyAbout :team="!!session.user" />
         </div>

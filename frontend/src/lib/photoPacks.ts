@@ -14,6 +14,7 @@
  * INSTALLED_KEY, so the phone knows what it has without signal and when the server has a newer list.
  */
 import { appRoot } from './appRoot'
+import { intlLocale } from './i18n'
 import { CACHE } from './offlineEngine'
 
 export type Group = 'ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'
@@ -118,7 +119,6 @@ export function setPackScope(scope: PackScope) {
   }
 }
 
-/** The entries of a list a scope takes (with a photo). */
 /** The entries of a list a scope takes: with a photo on the server (`withMissing`: also those listed but not made). */
 export function packTaxa(index: Pick<PackIndex, 'taxa'>, scope: PackScope, { withMissing = false } = {}): PackTaxon[] {
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
@@ -156,18 +156,31 @@ export function packSize(entries: PackTaxon[]): Size {
 export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packTaxa(index, scope, { withMissing: true }))
 
 /** Each country's size for a scope's taxa and subspecies choice, in one pass over the list (the country picker). */
-export function countrySizes(index: Pick<PackIndex, 'taxa'>, scope: Pick<PackScope, 'taxa' | 'ssp'>): Map<string, { photos: number; bytes: number }> {
+export function countrySizes(index: Pick<PackIndex, 'taxa'>, scope: Pick<PackScope, 'taxa' | 'ssp'>): Map<string, Size> {
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
-  const files = new Map<string, Map<string, number>>()
+  const files = new Map<string, Map<string, [number, boolean]>>()
   for (const t of index.taxa) {
     if (!t.photo || !groups.has(t.group) || (!scope.ssp && t.rank !== 'species')) continue
     for (const c of t.countries) {
       let m = files.get(c)
       if (!m) files.set(c, (m = new Map()))
-      m.set(t.photo.file, t.bytes)
+      m.set(t.photo.file, [t.bytes, !!t.photo.missing])
     }
   }
-  return new Map([...files].map(([c, m]) => [c, { photos: m.size, bytes: [...m.values()].reduce((a, b) => a + b, 0) }]))
+  // Like packSize: the photos not on the server yet counted apart, so the row says «≈».
+  return new Map(
+    [...files].map(([c, m]) => {
+      const z: Size = { photos: m.size, bytes: 0, missing: 0, missingBytes: 0 }
+      for (const [b, miss] of m.values()) {
+        z.bytes += b
+        if (miss) {
+          z.missing++
+          z.missingBytes += b
+        }
+      }
+      return [c, z]
+    }),
+  )
 }
 
 /** Every country the list names, Ecuador first, then by the name shown. */
@@ -177,10 +190,44 @@ export function packCountries(index: Pick<PackIndex, 'taxa'>, nameOf: (iso: stri
   return [...all].sort((a, b) => (a === 'EC' ? -1 : b === 'EC' ? 1 : nameOf(a).localeCompare(nameOf(b))))
 }
 
-/** «12.3» MB, one decimal under 10 MB, whole above. */
+/** «12.3» MB, one decimal under 10 MB, whole above, in the app's language («3,7» in Spanish). */
 export function mbText(bytes: number): string {
   const mb = bytes / 1048576
-  return mb < 10 ? (Math.max(0.1, Math.round(mb * 10) / 10)).toFixed(1) : String(Math.round(mb))
+  return mb < 10
+    ? Math.max(0.1, Math.round(mb * 10) / 10).toLocaleString(intlLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : Math.round(mb).toLocaleString(intlLocale())
+}
+/** A count in the app's language («4.852» in Spanish, «4,852» in English), whatever the phone's language. */
+export const numText = (n: number) => n.toLocaleString(intlLocale())
+
+/** What the photos a choice takes cost to save now: those not on the phone yet (the installed pack's are kept). */
+export function toDownload(index: Pick<PackIndex, 'taxa'>, scope: PackScope, have: Pick<PackIndex, 'taxa'> | null | undefined): number {
+  const kept = new Set((have?.taxa ?? []).flatMap(t => (t.photo ? [t.photo.file] : [])))
+  const files = new Map<string, number>()
+  for (const t of packTaxa(index, scope)) if (!kept.has(t.photo!.file)) files.set(t.photo!.file, t.bytes)
+  return [...files.values()].reduce((a, b) => a + b, 0)
+}
+
+/**
+ * Compare without a saved photo, offline: which choice in Descargas would bring one. `scope`: a choice that takes a
+ * photo of the taxon the server has (its own, else a subspecies'), with what it would download; 'none': the list
+ * names it but has no photo of it to download (not made yet, or recorded in no Neotropical country); 'downloads': no
+ * list on the phone to tell, so only the way to Descargas; null: nothing to say.
+ */
+export type PackHint = { kind: 'scope'; scope: PackScope; bytes: number } | { kind: 'none' } | { kind: 'downloads' }
+export function packHint(index: Pick<PackIndex, 'taxa'> | null, name: string, current: PackScope): PackHint | null {
+  if (!index) return { kind: 'downloads' }
+  const named = index.taxa.filter(x => x.name === name || x.species === name)
+  if (!named.length) return null
+  const usable = named.filter(x => x.photo && !x.photo.missing && x.countries.length)
+  // The taxon's own photo first, then a subspecies' (which needs the subspecies choice).
+  const entry = usable.find(x => x.name === name) ?? usable.find(x => x.rank === 'species') ?? usable[0]
+  if (!entry) return named.some(x => x.photo) ? { kind: 'none' } : null
+  const level = Math.max(TAXA_SCOPES.findIndex(k => SCOPE_GROUPS[k].includes(entry.group)), TAXA_SCOPES.indexOf(current.taxa))
+  const region: Region = current.region !== 'neotropics' && entry.countries.some(c => current.region.includes(c)) ? [...current.region] : 'neotropics'
+  const scope: PackScope = { taxa: TAXA_SCOPES[level], region, ssp: current.ssp || entry.rank === 'subspecies' }
+  const z = scopeSize(index, scope)
+  return { kind: 'scope', scope, bytes: z.bytes - z.missingBytes }
 }
 
 /** The photo's URL: its file under the list's base (relative to the list's own URL). */
@@ -264,7 +311,7 @@ async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
 
 /**
  * Saves the photos `scope` takes from the server's list on this phone. Photos already on the phone are not
- * downloaded again, unless the list gives another size for them (a photo changed under the same name). Only when
+ * downloaded again (a changed photo has another name). Only when
  * every photo of the new choice is saved does it replace the pack before (its record, and the photos it no longer
  * takes, with any other photo left under the folders); otherwise the pack before stays as it was and the result says
  * how many failed, for a retry. The first pack on a phone is kept even when some photos failed (Update completes it).
@@ -284,10 +331,9 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   await pool(files, 4, async u => {
     if (quota) return
     try {
+      // A photo's name holds a hash of its bytes (scripts/photo-packs.py): one on the phone is the right one.
       let r = await cache.match(u)
-      let size = r ? (await r.clone().blob()).size : 0
-      // The same name with other bytes than the list says: asked again past every cache.
-      if (r && want.get(u) && size !== want.get(u)) r = undefined
+      let size = want.get(u) ?? 0
       if (!r) {
         const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
         if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) {
@@ -309,9 +355,6 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   // Not complete over a pack, or nothing saved at all: nothing recorded (the pack before, if any, stays).
   if ((before && failed) || (files.length && !ok.size)) return { pack: before, failed, total: files.length, kept: true }
   const base = new URL(index.base ?? 'photos/', indexUrl).href
-  // Replaced: whatever else is under the folders (the pack before's other photos, photos seen online) goes.
-  const bases = new Set([base, ...(before ? [before.index.base ?? base] : [])])
-  for (const b of bases) for (const r of await keysUnder(cache, b)) if (!ok.has(r.url)) await cache.delete(r)
   const pack: InstalledPack = {
     index: { ...index, base, taxa: take.filter(t => ok.has(src(t))) },
     installed: {
@@ -323,22 +366,31 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
       failed,
     },
   }
+  // The new record first: if it cannot be written (a full phone, the page closed), the record before still points
+  // at its photos, all still there.
   try {
     await cache.put(INSTALLED_KEY(), new Response(JSON.stringify(pack), { headers: { 'content-type': 'application/json' } }))
   } catch (err) {
     throw isQuota(err) ? new Error('quota') : err
   }
   installedMemo = Promise.resolve(pack)
+  // Then whatever else is under the folders goes (the pack before's other photos, photos seen online, photos left
+  // by a Delete cut short); cut short itself, the next save takes them.
+  const bases = new Set([base, ...(before ? [before.index.base ?? base] : [])])
+  for (const b of bases) await pool((await keysUnder(cache, b)).filter(r => !ok.has(r.url)), 8, async r => void (await cache.delete(r)))
   return { pack, failed, total: files.length, kept: false }
 }
 
-/** The installed pack off the phone: its list and every photo under its folder (also photos seen online there). */
+/**
+ * The installed pack off the phone: its record first (a Delete cut short leaves no pack that says it has photos it
+ * lost), then every photo under its folder (also photos seen online there), several at a time.
+ */
 export async function removePack(): Promise<void> {
   const before = await installedPack()
   const cache = await caches.open(CACHE)
-  if (before) for (const r of await keysUnder(cache, before.index.base ?? new URL('photos/', INDEX_URL()).href)) await cache.delete(r)
   await cache.delete(INSTALLED_KEY())
   installedMemo = Promise.resolve(null)
+  if (before) await pool(await keysUnder(cache, before.index.base ?? new URL('photos/', INDEX_URL()).href), 8, async r => void (await cache.delete(r)))
 }
 
 // ---------------------------------------------------------------- photos of a taxon, for Compare and the search

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PackIndex, PackTaxon } from '../photoPacks'
+import type { PackIndex, PackScope, PackTaxon } from '../photoPacks'
 
 // Photo packs (Identificar → Descargas): the list's shape, scope x region sizes, the install (a fake Cache Storage)
 // with update and removal, and Compare's photos from the pack offline with the server's online fallback.
@@ -108,6 +108,9 @@ describe('pack list and scope', () => {
     const out = await installPack(withMissing, { taxa: 'all', region: ['EC'], ssp: false }, () => {})
     expect(out).toMatchObject({ kept: false, failed: 0, total: 4 })
     expect(fetched.some(u => u.endsWith('u.webp'))).toBe(false)
+    // r2-sol-F8: the country rows count them apart too (so they say «≈»).
+    const { countrySizes } = await import('../photoPacks')
+    expect(countrySizes(withMissing, { taxa: 'all', ssp: false }).get('EC')).toEqual({ photos: 5, bytes: 16500, missing: 1, missingBytes: 500 })
   })
 
   it('reads a stored scope back safely, Ecuador by default', async () => {
@@ -197,14 +200,14 @@ describe('replacing a pack safely (review r1)', () => {
     expect(await installedPack()).toBeNull()
   })
 
-  it('sol-F2: a kept photo whose size is not the list’s is fetched again', async () => {
+  it('r2-fable-F11: a photo already on the phone is not fetched again (a changed photo has another name)', async () => {
     const store = fakeCaches()
     const { installPack, photoSrc, INDEX_URL } = await import('../photoPacks')
     const u = photoSrc(index, INDEX_URL(), '1.webp')
     store.set(u, new Response(new Uint8Array(7), { headers: { 'content-type': 'image/webp' } }))
-    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
-    expect(fetched).toContain(u)
-    expect((await (await store.get(u)!.clone().blob()).size)).toBe(1000)
+    const out = await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    expect(fetched).not.toContain(u)
+    expect(out.pack?.installed).toMatchObject({ photos: 2, bytes: 3000 })
   })
 
   it('F12: a full phone stops the save with "quota" and leaves the pack before as it was', async () => {
@@ -220,6 +223,45 @@ describe('replacing a pack safely (review r1)', () => {
     await expect(installPack(index, { taxa: 'nymphalidae', region: ['EC'], ssp: false }, () => {})).rejects.toThrow('quota')
     expect((await installedPack())?.installed.scope.taxa).toBe('ithomiini')
     expect(store.size).toBeGreaterThan(0)
+  })
+
+  it('r2-sol-F1: a new record that cannot be written leaves the pack before, its record and its photos', async () => {
+    const store = fakeCaches()
+    const { installPack, INSTALLED_KEY } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    const cache = await caches.open('x')
+    const put = cache.put
+    ;(cache as { put: typeof put }).put = async (u, r) => {
+      if (String(u) === INSTALLED_KEY()) throw new DOMException('full', 'QuotaExceededError')
+      return put(u, r)
+    }
+    await expect(installPack(index, { taxa: 'all', region: ['CO'], ssp: false }, () => {})).rejects.toThrow('quota')
+    const record = JSON.parse(await store.get(INSTALLED_KEY())!.clone().text())
+    expect(record.installed.scope).toEqual({ taxa: 'ithomiini', region: ['EC'], ssp: false })
+    expect([...store.keys()].filter(u => /photos\/[14]\.webp$/.test(u))).toHaveLength(2)
+  })
+
+  it('r2-fable-F1: a Delete cut short leaves no pack record (and is off the screen at once)', async () => {
+    const store = fakeCaches()
+    const { installPack, INSTALLED_KEY } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
+    // The page closes while the photos are going: their deletes never finish.
+    const cache = await caches.open('x')
+    const del = cache.delete
+    ;(cache as { delete: typeof del }).delete = async r => ((typeof r === 'string' ? r : r instanceof URL ? r.href : r.url).includes('/packs/photos/') ? new Promise<boolean>(() => {}) : del(r))
+    const { usePacks } = await import('../usePacks')
+    const p = usePacks()
+    await p.loadInstalled()
+    expect(p.pack.value).not.toBeNull()
+    void p.remove()
+    expect(p.pack.value).toBeNull()
+    expect(p.removing.value).toBe(true)
+    await new Promise(r => setTimeout(r, 20))
+    expect(store.has(INSTALLED_KEY())).toBe(false)
+    // Opened again: no pack that says it has the photos it lost; the next save takes those left.
+    vi.resetModules()
+    const again = await import('../photoPacks')
+    expect(await again.installedPack()).toBeNull()
   })
 
   it('F11: Delete removes every photo under the pack’s folder, also ones seen online', async () => {
@@ -324,10 +366,69 @@ describe('Compare from the pack', () => {
     expect(refs['Mechanitis polymnia'].photos[0].src).toMatch(/1\.webp$/)
   })
 
+  it('r2-sol-F6: the search with signal shows the server’s subspecies beside an installed pack; Compare does not read the list', async () => {
+    fakeCaches()
+    const { installPack } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
+    fetched.length = 0
+    const { referencePhotos } = await import('../identifyRefs')
+    const compare = await referencePhotos(['Mechanitis polymnia'], { signedIn: false })
+    expect(compare.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia proceriformis'])
+    expect(fetched.some(u => u.endsWith('/packs/index.json'))).toBe(false)
+    const search = await referencePhotos(['Mechanitis polymnia'], { signedIn: false, everySource: true })
+    expect(search.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])
+    // The installed photo first: the pack's copy, not the server's.
+    expect(search.refs['Mechanitis polymnia'].photos[0].src).toMatch(/1\.webp$/)
+  })
+
   it('signed out and online: the server’s whole list beyond the pack', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
     const { refs } = await referencePhotos(['Heliconius erato'], { signedIn: false })
     expect(refs['Heliconius erato'].photos[0].src).toMatch(/\/identificar\/packs\/photos\/6\.webp$/)
+  })
+})
+
+describe('the pointer offline when Compare has no photo (r2-sol-F7)', () => {
+  const cur: PackScope = { taxa: 'ithomiini', region: ['EC'], ssp: false }
+
+  it('a: an Ithomiini outside the pack is not hidden by the older set’s photo that is not on the phone', async () => {
+    const store = fakeCaches()
+    const field = { species: [{ name: 'Aeria elara', file: 'aeria-elara.jpg', attribution: '(c) Di', license: 'CC-BY', taxonUrl: null }] }
+    let dir = ''
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string) => {
+        if (!String(u).endsWith('/field/index.json')) return new Response('', { status: 404 })
+        dir = String(u).replace(/index\.json$/, '')
+        return new Response(JSON.stringify(field))
+      }),
+    )
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    const { referencePhotos } = await import('../identifyRefs')
+    expect((await referencePhotos(['Aeria elara'], { signedIn: false })).refs['Aeria elara']).toBeUndefined()
+    // Saved on the phone: shown.
+    store.set(`${dir}aeria-elara.jpg`, new Response('x'))
+    expect((await referencePhotos(['Aeria elara'], { signedIn: false })).refs['Aeria elara'].photos[0].src).toBe(`${dir}aeria-elara.jpg`)
+  })
+
+  it('b: points to a choice that downloads the photo, with what it downloads; says when none can be downloaded', async () => {
+    const { packHint } = await import('../photoPacks')
+    const moth = (name: string, countries: string[], missing: boolean): PackTaxon => ({ ...tx(name, 'moth', countries, `${name.length}.webp`, 900, 'Erebidae'), photo: { ...tx(name, 'moth', [], 'm.webp').photo!, file: `${name}.webp`, missing } })
+    const list: PackIndex = { ...index, taxa: [...index.taxa, moth('Abablemma bilineata', ['CR', 'MX'], true), moth('Actias truncatipennis', [], false), tx('Napeogenes sylphis caucayaensis', 'ithomiini', ['CO'], 'n.webp', 50)] }
+    // Not made yet, or in no Neotropical country: nothing to download.
+    expect(packHint(list, 'Abablemma bilineata', cur)).toEqual({ kind: 'none' })
+    expect(packHint(list, 'Actias truncatipennis', cur)).toEqual({ kind: 'none' })
+    // A moth of Ecuador: the region kept, the groups widened; the MB is what downloads (not the estimate).
+    expect(packHint(list, 'Urania leilus', cur)).toEqual({ kind: 'scope', scope: { taxa: 'all', region: ['EC'], ssp: false }, bytes: 16000 })
+    // Only a subspecies has a photo: the choice with subspecies, in a region that has it.
+    expect(packHint(list, 'Napeogenes sylphis', cur)).toMatchObject({ kind: 'scope', scope: { taxa: 'ithomiini', region: 'neotropics', ssp: true } })
+    // Not in the list at all: nothing said.
+    expect(packHint(list, 'Nomen nudum', cur)).toBeNull()
+  })
+
+  it('c: with no list on the phone, the way to Descargas', async () => {
+    const { packHint } = await import('../photoPacks')
+    expect(packHint(null, 'Urania leilus', cur)).toEqual({ kind: 'downloads' })
   })
 })
