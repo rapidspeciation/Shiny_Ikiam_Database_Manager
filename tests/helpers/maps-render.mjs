@@ -154,8 +154,8 @@ export function fakeModule(scenario) {
   writeFileSync(join(dir, 'scenario.json'), JSON.stringify({ log: logFile, ...scenario }));
   const module = join(dir, 'pw.mjs');
   writeFileSync(module, `export * from ${JSON.stringify(`${FAKE_PW}?s=${encodeURIComponent(join(dir, 'scenario.json'))}`)};\n`);
-  // Complete lines only: the worker, the browser and its helper append to the log while it is read, and a line being
-  // written may be seen in part (it has no newline yet).
+  // Complete lines only: the worker, the browser and its helper append to the log while it is read, so the file may
+  // be there but still empty, or a line being written seen in part (no newline yet).
   const log = () => (existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').slice(0, -1).map(l => JSON.parse(l)) : []);
   const fake = { module, log, get: k => log().filter(e => k in e).map(e => e[k]) };
   fakes.push(fake);

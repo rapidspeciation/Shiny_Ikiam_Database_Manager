@@ -813,6 +813,7 @@ export function createMapRenderer({
         child.stdin.on('error', () => {});
         child.stdin.write(`${JSON.stringify({ url: job.url ?? null, viewport: EXPORT.viewport, deadline_ms: Math.max(1000, budgetMs - 1000) })}\n`);
         onSpawn?.(child, stop);
+        if (killedFor) return; // stopped already (lost_turn): no deadline or memory watch for a run being killed
         const left = budgetMs - (now() - started);
         timer = setTimeout(() => stop('deadline'), Math.max(0, left));
         poll = setInterval(() => {
