@@ -70,9 +70,8 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
               <span v-if="m.recommended && !m.ready" class="ml-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">{{ $t('recomendado') }}</span>
               <span v-if="m.ready && active === m.kind" class="ml-1 rounded bg-brand px-1.5 py-0.5 text-xs font-medium text-on-brand">{{ $t('en uso') }}</span>
             </p>
-            <p class="text-sm text-fg-muted tabular-nums">
-              <template v-if="m.ready || m.outdated"><Check :size="14" class="mr-0.5 inline text-success-text" />{{ $t('{mb} MB en el teléfono', { mb: m.takesMb }) }}</template>
-              <template v-else>{{ $t('{mb} MB', { mb: m.downloadMb }) }}</template>
+            <p v-if="m.ready || m.outdated" class="text-sm text-fg-muted tabular-nums">
+              <Check :size="14" class="mr-0.5 inline text-success-text" />{{ $t('{mb} MB en el teléfono', { mb: m.takesMb }) }}
             </p>
           </div>
           <div v-if="download?.kind === m.kind" class="mt-2" role="status">
@@ -91,7 +90,7 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
               {{ $t('Actualizar · {mb} MB', { mb: m.downloadMb }) }}
             </button>
             <button v-if="m.ready && active !== m.kind" class="btn min-h-11 px-4" @click="emit('use', m.kind)">{{ $t('Usar este') }}</button>
-            <button v-if="m.ready || m.outdated" class="btn-danger min-h-11 px-4" :disabled="!!download" @click="emit('remove', m.kind)">{{ $t('Borrar') }}</button>
+            <button v-if="m.ready || m.outdated" class="btn-danger min-h-11 px-4" :disabled="!!download" @click="emit('remove', m.kind)">{{ $t('Borrar del teléfono') }}</button>
           </div>
         </li>
       </ul>
@@ -112,9 +111,8 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
           <h2 class="text-lg font-semibold">{{ $t('Sexo estimado') }}</h2>
           <p class="text-sm text-fg-muted">{{ $t('Experimental, solo fotos en mano. Solo para el equipo.') }}</p>
         </div>
-        <p class="shrink-0 text-sm text-fg-muted tabular-nums">
-          <template v-if="sex.ready || sex.outdated"><Check :size="14" class="mr-0.5 inline text-success-text" />{{ $t('{mb} MB en el teléfono', { mb: sex.takesMb }) }}</template>
-          <template v-else>{{ $t('{mb} MB', { mb: sex.downloadMb }) }}</template>
+        <p v-if="sex.ready || sex.outdated" class="shrink-0 text-sm text-fg-muted tabular-nums">
+          <Check :size="14" class="mr-0.5 inline text-success-text" />{{ $t('{mb} MB en el teléfono', { mb: sex.takesMb }) }}
         </p>
       </div>
       <div v-if="sex.progress" class="mt-2" role="status">
@@ -128,7 +126,7 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
           {{ $t('Descargar') }} · {{ sex.downloadMb }} MB
         </button>
         <button v-if="sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" @click="emit('sexDownload')">{{ $t('Actualizar · {mb} MB', { mb: sex.downloadMb }) }}</button>
-        <button v-if="sex.ready || sex.outdated" class="btn-danger min-h-11 px-4" @click="emit('sexRemove')">{{ $t('Borrar') }}</button>
+        <button v-if="sex.ready || sex.outdated" class="btn-danger min-h-11 px-4" @click="emit('sexRemove')">{{ $t('Borrar del teléfono') }}</button>
       </div>
       <p v-if="sex.error" class="mt-2 text-sm text-error-text" role="alert">{{ sex.error }}</p>
     </section>
@@ -136,7 +134,7 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
     <PackPanel :online="online" />
 
     <details class="rounded-lg border border-border bg-surface p-3 text-sm">
-      <summary class="min-h-6 cursor-pointer font-medium">{{ $t('Instalar en el teléfono') }}</summary>
+      <summary class="-my-1 cursor-pointer py-3 font-medium">{{ $t('Instalar en el teléfono') }}</summary>
       <p class="mt-1 text-fg-muted">{{ $t('Android: menú ⋮ → «Instalar app». iPhone: Compartir → «Agregar a inicio», y abra la app desde el ícono.') }}</p>
     </details>
   </div>

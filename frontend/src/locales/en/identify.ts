@@ -202,10 +202,10 @@ export default {
   'Para identificar sin internet. Uno basta.': 'To identify without internet. One is enough.',
   'en uso': 'in use',
   '{mb} MB en el teléfono': '{mb} MB on the phone',
-  '{mb} MB': '{mb} MB',
   'Actualizar · {mb} MB': 'Update · {mb} MB',
   'Experimental, solo fotos en mano. Solo para el equipo.': 'Experimental, in-hand photos only. For the team only.',
   '{n} fotos · {mb} MB': '{n} photos · {mb} MB',
+  '{n} foto · {mb} MB': '{n} photo · {mb} MB',
   Neotrópico: 'Neotropics',
   '{n} países': '{n} countries',
   'Por ahora la lista tiene fotos solo de Ithomiini.': 'For now the list has photos of Ithomiini only.',
@@ -248,4 +248,5 @@ export default {
   'Con {n} fotos para comparar ({mb} MB).': 'With {n} photos to compare ({mb} MB).',
   'sin fotos para comparar': 'no photos to compare',
   Identificador: 'Identifier',
+  'Borrar del teléfono': 'Delete',
 }

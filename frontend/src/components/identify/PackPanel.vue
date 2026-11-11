@@ -5,7 +5,7 @@
 // size, an update when the server's list is newer, and its removal.
 import { computed, onMounted, ref, watch } from 'vue'
 import { Check, ChevronDown, Images } from 'lucide-vue-next'
-import { locale, t } from '../../lib/i18n'
+import { locale, t, tn } from '../../lib/i18n'
 import { packCountries, mbText, sameRegion, sameScope, scopeSize, TAXA_SCOPES, updateAvailable, type PackScope, type Region, type TaxaScope } from '../../lib/photoPacks'
 import { fieldSet, retireFieldSet } from '../../lib/identifyRefs'
 import { usePacks } from '../../lib/usePacks'
@@ -38,7 +38,8 @@ const countries = computed(() => (index.value ? packCountries(index.value, count
 const size = (s: PackScope) => (index.value ? scopeSize(index.value, s) : null)
 const sizeText = (s: PackScope) => {
   const z = size(s)
-  return z ? t('{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }) : ''
+  // A number stays with its unit when the line wraps («439 fotos ·» / «12 MB», never «12» / «MB»).
+  return z ? tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
 }
 const EC: Region = ['EC']
 const isEc = computed(() => sameRegion(scope.value.region, EC))
@@ -107,12 +108,12 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <p v-if="newer" class="mt-2 text-sm font-medium text-pending-text">{{ $t('Hay fotos nuevas en el servidor.') }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
         <button v-if="(newer || installed.failed) && current" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" @click="install()">{{ $t('Actualizar fotos') }}</button>
-        <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar') }}</button>
+        <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar del teléfono') }}</button>
       </div>
     </div>
     <div v-else-if="legacy" class="mt-3 rounded-lg border border-border p-3 text-sm">
       <p>{{ $t('Fotos guardadas antes (Ithomiini): {n} fotos · {mb} MB', { n: legacy.count, mb: mbText(legacy.bytes) }) }}</p>
-      <button class="btn-danger mt-2 min-h-11 px-4" @click="removeLegacy">{{ $t('Borrar') }}</button>
+      <button class="btn-danger mt-2 min-h-11 px-4" @click="removeLegacy">{{ $t('Borrar del teléfono') }}</button>
     </div>
 
     <p v-if="!index && indexFailed" class="mt-3 text-sm text-fg-muted">
@@ -143,11 +144,12 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <!-- Region -->
       <fieldset class="mt-4">
         <legend class="mb-1.5 text-sm font-semibold">{{ $t('Dónde') }}</legend>
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-3 gap-2" role="radiogroup" :aria-label="$t('Dónde')">
           <button
             v-for="r in ['ec', 'some', 'neotropics'] as const"
             :key="r"
             type="button"
+            :data-testid="`region-${r}`"
             role="radio"
             :aria-checked="r === 'ec' ? isEc : r === 'some' ? isSome || picking : scope.region === 'neotropics'"
             class="opt flex min-h-14 flex-col justify-center rounded-lg border-2 px-2 py-1.5 text-left"

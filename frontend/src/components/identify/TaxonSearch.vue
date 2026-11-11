@@ -135,7 +135,7 @@ const cards = computed<Card[]>(() => {
 })
 /** The first card of a species or subspecies is the big one; the rest go in the grid. */
 const lead = computed(() => (chosen.value && chosen.value.rank !== 'genus' ? (cards.value[0] ?? null) : null))
-const lead_is_taxon = computed(() => !!lead.value && lead.value.name === chosen.value?.name)
+const leadIsTaxon = computed(() => !!lead.value && lead.value.name === chosen.value?.name)
 const grid = computed(() => (lead.value ? cards.value.slice(1) : cards.value))
 /** Names the lists know but with no photo here. */
 const noPhoto = computed(() => {
@@ -155,7 +155,7 @@ const gridTitle = computed(() => {
 
 const viewer = ref<number | null>(null)
 const viewerPhotos = computed<ViewerPhoto[]>(() =>
-  cards.value.map(c => ({ src: c.photo.src, name: c.name, kicker: c.kicker, credit: c.photo.level === 'specimen' ? c.photo.credit : c.photo.credit, license: c.photo.license, source: c.photo.source ?? null })),
+  cards.value.map(c => ({ src: c.photo.src, name: c.name, kicker: c.kicker, credit: c.photo.credit, license: c.photo.license, source: c.photo.source ?? null })),
 )
 const openCard = (c: Card) => (viewer.value = cards.value.indexOf(c))
 const goTo = (name: string) => cat.value && pick(search(cat.value, name, 1)[0])
@@ -245,10 +245,10 @@ watch(
       </p>
 
       <!-- A species or subspecies: its photo large -->
-      <button v-if="lead" class="photo-card mt-3 block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left" data-testid="lead-photo" @click="openCard(lead)">
+      <button v-if="lead" class="photo-card mt-3 block w-full overflow-hidden lg:max-w-xl rounded-xl border-2 border-brand bg-surface text-left" data-testid="lead-photo" @click="openCard(lead)">
         <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat object-cover" @error="fail(lead.photo.src)" />
         <span class="block px-3 py-2">
-          <span v-if="!lead_is_taxon" class="block text-xs font-medium text-fg-muted uppercase">{{ lead.kicker ?? $t('Especie') }}</span>
+          <span v-if="!leadIsTaxon" class="block text-xs font-medium text-fg-muted uppercase">{{ lead.kicker ?? $t('Especie') }}</span>
           <i class="block text-lg font-semibold">{{ lead.name }}</i>
           <span class="block truncate text-xs text-fg-muted">{{ lead.photo.credit }}<template v-if="lead.photo.license"> · {{ lead.photo.license }}</template></span>
         </span>
