@@ -4,7 +4,8 @@ Description=Ithomiini: the full tests of the live release's commit on this serve
 [Service]
 Type=oneshot
 WorkingDirectory=/home/ubuntu/ithomiini/current
-# No EnvironmentFile: the tests get none of the service's settings or secrets (scripts/nightly-tests.sh).
+# No EnvironmentFile: the tests get none of the service's settings or secrets (scripts/nightly-tests.sh); its `ranges`
+# job alone gets the Google credential's path, read from service.env.
 ExecStart=/bin/bash /home/ubuntu/ithomiini/current/scripts/nightly-tests.sh
 Environment=NIGHTLY_SCRATCH_PARENT=/home/ubuntu/.cache/ithomiini-nightly
 ExecStartPre=/bin/mkdir -p /home/ubuntu/.cache/ithomiini-nightly /home/ubuntu/ithomiini/shared/nightly-tests

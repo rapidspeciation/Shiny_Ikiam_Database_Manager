@@ -6,6 +6,11 @@
 // than 2 days ago). 1: failing (the latest Wikiloc import failed, a followed profile's latest check failed, or the worker
 // stopped asking for work), or /health did not answer. In Oct 2026 three imports failed and no
 // walk came in for six weeks while nothing outside Monitoreo → Importar said so (server/monitoring.mjs wikilocHealth).
+//   node scripts/nightly-app-checks.mjs --sheet-ranges [--log <file>]   (GOOGLE_CREDENTIALS_FILE, WORKBOOK_ID)
+// The workbook's fixed end rows kept ahead of its rows (server/sheet-ranges.mjs): one line per rule moved, each change
+// with the rule as it was appended to the --log file (JSON lines, for the way back). Exit 0: nothing near or moved and
+// read back; 3: a rule on a range protected from the app, left for its owner; 1: an error or a rule not read back as sent.
+import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const url = process.argv[2] || 'http://127.0.0.1:8794/health';
@@ -41,7 +46,31 @@ export function wikilocLine(w, at = Date.now()) {
   return { code: 1, line: `Wikiloc imports: ${w.status}: the app could not tell (journalctl --user -u ithomiini)` };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** The --sheet-ranges run: `request` a GoogleSheets request, `log` the --log file (or none). */
+export async function sheetRangesRun(request, log, options = {}) {
+  const { keepRangesAhead } = await import('../server/sheet-ranges.mjs');
+  try {
+    const out = await keepRangesAhead(request, options);
+    if (log && (out.record.changes.length || out.record.leftOut.length)) appendFileSync(log, `${JSON.stringify(out.record)}\n`, { mode: 0o600 });
+    return out;
+  } catch (e) {
+    return { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === '--sheet-ranges') {
+  const i = process.argv.indexOf('--log');
+  let out;
+  try {
+    const { GoogleSheets } = await import('../server/sheets.mjs');
+    const sheets = new GoogleSheets({ spreadsheetId: process.env.WORKBOOK_ID || undefined });
+    out = await sheetRangesRun((path, options) => sheets.request(path, { background: true, ...options }), i > 0 ? process.argv[i + 1] : null);
+  } catch (e) {
+    out = { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
+  }
+  console.log(out.lines.join('\n'));
+  process.exitCode = out.code;
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let out;
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });

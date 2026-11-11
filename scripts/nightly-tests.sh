@@ -4,10 +4,13 @@
 # server's own node and cores. It writes a dated log and last-result.json in shared/nightly-tests/ and nothing else:
 # no AI (the server tests run with tests/helpers/no-ai.mjs, the frontend's guard is in its setupFiles), no WhatsApp,
 # no team chat, no live data (a fresh copy of the commit, its own HOME, none of the service's settings); of the live app
-# it reads only its public /health (the wikiloc job, scripts/nightly-app-checks.mjs).
+# it reads only its public /health (the wikiloc job, scripts/nightly-app-checks.mjs). One job besides the tests, `ranges`,
+# works on the workbook: the fixed end rows of its rules kept ahead of its rows (server/sheet-ranges.mjs), from the live
+# release with only the app's Google credential (its path from service.env); SHEET_RANGES_GUARD=0 there turns it off.
 #   bash /home/ubuntu/ithomiini/current/scripts/nightly-tests.sh
 # ITHOMIINI_APP_ROOT (default /home/ubuntu/ithomiini), NIGHTLY_SCRATCH_PARENT (default ~/.cache/ithomiini-nightly) and
-# NIGHTLY_HEALTH_URL (default http://127.0.0.1:8794/health, the live app's) for other setups.
+# NIGHTLY_HEALTH_URL (default http://127.0.0.1:8794/health, the live app's) and ITHOMIINI_SERVICE_ENV (default
+# ~/.config/ithomiini/service.env) for other setups.
 set -uo pipefail
 app="${ITHOMIINI_APP_ROOT:-/home/ubuntu/ithomiini}"
 out="$app/shared/nightly-tests"
@@ -59,9 +62,23 @@ job() { # job <name> <command...>: one at a time, at the lowest priority
   nice -n 19 "${clean[@]}" "$@"
   rc=$?
   # 3: a warning (scripts/nightly-app-checks.mjs), kept in the result without failing the night.
-  if [ "$rc" = 0 ]; then result[$name]=pass; elif [ "$rc" = 3 ] && [ "$name" = wikiloc ]; then result[$name]=warn; else result[$name]=fail; fi
+  if [ "$rc" = 0 ]; then result[$name]=pass; elif [ "$rc" = 3 ] && { [ "$name" = wikiloc ] || [ "$name" = ranges ]; }; then result[$name]=warn; else result[$name]=fail; fi
   echo "== $name: ${result[$name]} in $(( $(date +%s) - s )) s"
 }
+# The workbook's fixed end rows (a conditional format's `$A$2:$A$20846`, a dropdown's list) moved ahead when its rows
+# come within 1,000 of them, each move one line here and one record in sheet-ranges.jsonl (the rule as it was). The
+# live release's own script (not the copy, whose packages npm installs), with the credential's path and nothing else.
+service_env="${ITHOMIINI_SERVICE_ENV:-${HOME:-/home/ubuntu}/.config/ithomiini/service.env}"
+setting() { sed -n "s/^$1=//p" "$service_env" 2>/dev/null | tail -n 1; }
+if [ "$(setting SHEET_RANGES_GUARD)" = 0 ]; then
+  echo "== ranges: off (SHEET_RANGES_GUARD=0 in $service_env)"
+elif [ -z "$(setting GOOGLE_CREDENTIALS_FILE)" ]; then
+  echo "== ranges: no GOOGLE_CREDENTIALS_FILE in $service_env"; result[ranges]=fail
+else
+  wb="$(setting WORKBOOK_ID)"
+  job ranges env "GOOGLE_CREDENTIALS_FILE=$(setting GOOGLE_CREDENTIALS_FILE)" ${wb:+"WORKBOOK_ID=$wb"} \
+    node "$app/current/scripts/nightly-app-checks.mjs" --sheet-ranges --log "$out/sheet-ranges.jsonl"
+fi
 job install npm --prefix frontend ci --no-audit --no-fund --prefer-offline
 [ "${result[install]}" = pass ] || finish failed "npm ci failed"
 job check node scripts/check.mjs
