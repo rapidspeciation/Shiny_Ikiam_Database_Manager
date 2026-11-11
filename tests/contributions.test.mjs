@@ -197,10 +197,16 @@ test('size and shape: over 4 MB (413), over 1600 px or turned (422), not a JPEG 
   assert.equal(caught(() => contrib.accept(item({ consent: undefined }), ana)).code, 'CONSENT_REQUIRED');
   assert.equal(caught(() => contrib.accept(item({ consent: 'v0' }), ana)).status, 422);
   assert.equal(caught(() => contrib.accept(item({ gps: { lat: 200, lon: 0 } }), ana)).code, 'INVALID_GPS');
-  assert.equal(caught(() => contrib.accept(item({ takenAt: '2030-01-01' }), ana)).code, 'INVALID_DATE');
+  assert.equal(caught(() => contrib.accept(item({ gps: { lat: null, lon: null } }), ana)).code, 'INVALID_GPS');
   assert.equal(caught(() => contrib.accept(item(), { id: 'u-x', role: 'guest' })).status, 403);
   assert.equal(caught(() => contrib.accept(item(), null)).status, 401);
   assert.equal(count(), 0);
+  // The optional day taken never refuses an item: EXIF's form is read, a reset clock or a day ahead is dropped.
+  const day = takenAt => contrib.accept(item({ photo: jpeg({ seed: 40 + count() }), takenAt }), ana).body.contribution.takenAt;
+  assert.deepEqual([day('2026:11:10 08:31:00'), day('1970-01-01T00:00:00'), day('2030-01-01'), day('ayer')], ['2026-11-10', null, null, null]);
+  // A typed name with a number or a question mark («sp. 2», «cf.?»).
+  const named = contrib.accept(item({ photo: jpeg({ seed: 90 }), labels: { species: { name: 'Napeogenes sp. 2?', freeText: true } } }), ana).body.contribution;
+  assert.deepEqual(named.species, { name: 'Napeogenes sp. 2?', rank: 'species', confirmed: false, freeText: true });
 });
 
 test('low disk or a full store: 507 with Retry-After, and nothing written', () => {
@@ -236,18 +242,21 @@ test('deleted: files and row gone, a tombstone kept; the same id or photo is ref
     const body = item();
     contrib.accept(body, ana);
     assert.equal(caught(() => contrib.remove(body.id, bob)).status, 403);
-    assert.deepEqual(contrib.remove(body.id.toUpperCase(), ana), { deleted: body.id, already: false });
+    assert.deepEqual(contrib.remove(body.id.toUpperCase(), ana), { deleted: body.id, already: false, removed: true });
     assert.equal(count(), 0);
     assert.ok(!existsSync(join(dir, '2026-11', `${body.id}.jpg`)) && !existsSync(join(dir, '2026-11', `${body.id}.thumb.jpg`)));
     assert.equal(contrib.file(body.id), null);
     const stone = store.db.prepare('SELECT * FROM contribution_tombstones WHERE id = ?').get(body.id);
     assert.deepEqual([stone.user_id, stone.sha256, stone.deleted_by], [ana.id, body.sha256, ana.id]);
     assert.ok(stone.deleted_at);
-    // A stale phone sends it again: refused, under its id or a new one.
-    assert.equal(caught(() => contrib.accept(body, ana)).status, 410);
-    assert.equal(caught(() => contrib.accept({ ...body, id: randomUUID() }, ana)).code, 'CONTRIBUTION_DELETED');
-    assert.deepEqual(contrib.remove(body.id, ana), { deleted: body.id, already: true });
+    // A stale phone sends it again under its id: refused.
+    assert.deepEqual(Object.values(caught(() => contrib.accept(body, ana))).slice(0, 2), [410, 'CONTRIBUTION_DELETED']);
+    assert.deepEqual(contrib.remove(body.id, ana), { deleted: body.id, already: true, removed: false });
     assert.deepEqual(contrib.mine(ana).contributions, []);
+    // «Deshacer» and Enviar again with the right label: the same photo under a new id is a new item.
+    const fixed = contrib.accept({ ...body, id: randomUUID(), labels: { sex: 'male' } }, ana);
+    assert.deepEqual([fixed.status, fixed.body.contribution.sex], [201, 'male']);
+    contrib.remove(fixed.body.contribution.id, ana);
     // An admin deletes anyone's; the tombstone names the owner.
     const bobs = item({ photo: jpeg({ seed: 13 }) });
     contrib.accept(bobs, bob);
@@ -255,7 +264,8 @@ test('deleted: files and row gone, a tombstone kept; the same id or photo is ref
     assert.deepEqual(Object.values(store.db.prepare('SELECT user_id, deleted_by FROM contribution_tombstones WHERE id = ?').get(bobs.id)), [bob.id, admin.id]);
     // Deleted before it arrived (a send still on its way): refused when it comes.
     const late = item({ photo: jpeg({ seed: 17 }) });
-    assert.deepEqual(contrib.remove(late.id, ana), { deleted: late.id, already: false });
+    // No photo held under that id: said, so the phone does not take it for a deletion of a photo.
+    assert.deepEqual(contrib.remove(late.id, ana), { deleted: late.id, already: false, removed: false });
     assert.equal(caught(() => contrib.accept(late, ana)).status, 410);
     assert.equal(caught(() => contrib.remove('nope', ana)).code, 'INVALID_ID');
   } finally {

@@ -1856,7 +1856,9 @@ export async function createApp(config = {}, options = {}) {
       throw fail('NOT_FOUND', 'Route not found', 404);
     } catch (e) {
       const status = Number(e.status) || 500;
-      if (status >= 500) console.error(`[${requestId}]`, e.stack || e.message);
+      // A full contributions store (507) is said in one line: every phone's retry would print a stack.
+      if (e.code === 'STORE_FULL') console.warn(`[${requestId}] ${e.message}`);
+      else if (status >= 500) console.error(`[${requestId}]`, e.stack || e.message);
       return json(res, status, {
         error: {
           code: e.code || 'SERVER_ERROR',

@@ -11,7 +11,8 @@
 // and the training export with its leak gate (lane E) come later.
 //
 // Deleting an item (its owner or an admin) removes its files and its row and keeps a tombstone {id, user, sha256,
-// deleted_at}, so a phone that still holds it cannot send it again (410), under the same id or as the same photo.
+// deleted_at}, so a phone that still holds it cannot send it again under its id (410). The same photo under a new id
+// is a new item: that is how a wrong label is corrected («Deshacer», then Enviar again).
 //
 // Files: <dir>/<yyyy-mm>/<id>.jpg and <id>.thumb.jpg, by default in `contributions` next to the database
 // (CONTRIB_DIR; scripts/backup.mjs copies them and drops the copies of deleted items). In memory for an in-memory
@@ -27,7 +28,8 @@ import { readJpeg } from './clutch-photos.mjs';
  * - `roles`: who may send (Q1: the team, i.e. anyone signed in; the routes sit after the sign-in check);
  * - `gpsDecimals`: the location kept, when the person ticked it (Q5: 0.01°, about 1 km);
  * - `keepTakenDay`: the day the photo was taken is kept (Q5);
- * - `sexForAnySpecies`: sex labels are taken for every species, not only those with a sex model (Q7).
+ * - `sexForAnySpecies`: sex labels are taken for every species, not only those with a sex model (Q7); false only
+ *   requires a species label beside a sex label here (which species have a sex model is the review queue's, lane D).
  */
 export const POLICY = Object.freeze({
   roles: Object.freeze(['observer', 'editor', 'reviewer', 'admin']),
@@ -35,7 +37,10 @@ export const POLICY = Object.freeze({
   keepTakenDay: true,
   sexForAnySpecies: true,
 });
-/** The consent the phone showed (DESIGN.md §6). PLACEHOLDER: the wording is a draft, not checked by IKIAM. */
+/**
+ * The consent the phone showed (DESIGN.md §6). PLACEHOLDER: the wording is a draft, not checked by IKIAM. No route
+ * serves the text yet; lane B shows its own copy and sends CONSENT_VERSION.
+ */
 export const CONSENT_VERSION = 'v1-draft';
 export const CONSENT_TEXT = Object.freeze({
   es: 'BORRADOR (no final): la foto y lo que usted indique se guardan en el servidor del proyecto y el equipo los revisa antes de usarlos para entrenar los modelos.',
@@ -83,7 +88,7 @@ export function initContributions(db) {
       sha256 TEXT NOT NULL, phash TEXT, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes INTEGER NOT NULL, thumb_bytes INTEGER NOT NULL,
       file TEXT NOT NULL, photo_kind TEXT, sex_label TEXT, species_label TEXT, species_rank TEXT, species_confirmed INTEGER,
       free_text_name INTEGER, prediction_json TEXT, gps_lat REAL, gps_lon REAL, gps_acc REAL, taken_at TEXT,
-      consent_version TEXT NOT NULL, licence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', deleted_at TEXT);
+      consent_version TEXT NOT NULL, licence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received');
     CREATE INDEX IF NOT EXISTS contributions_user ON contributions(user_id, received_at);
     CREATE UNIQUE INDEX IF NOT EXISTS contributions_user_sha ON contributions(user_id, sha256);
     CREATE TABLE IF NOT EXISTS contribution_tombstones(id TEXT PRIMARY KEY, user_id TEXT, sha256 TEXT, received_at TEXT,
@@ -121,7 +126,7 @@ function cleanLabels(labels) {
     const s = labels.species;
     if (typeof s !== 'object' || Array.isArray(s)) throw fail('INVALID_LABELS', 'labels.species must be an object');
     const name = typeof s.name === 'string' ? s.name.trim().replace(/\s+/g, ' ') : '';
-    if (!name || name.length > NAME_MAX || !/^[\p{L}][\p{L}\p{M} .()'×-]*$/u.test(name)) throw fail('INVALID_LABELS', 'labels.species.name is not a taxon name');
+    if (!name || name.length > NAME_MAX || !/^[\p{L}][\p{L}\p{M}\d .,()'?/×-]*$/u.test(name)) throw fail('INVALID_LABELS', 'labels.species.name is not a taxon name');
     const rank = isBlank(s.rank) ? 'species' : String(s.rank);
     if (!RANKS.has(rank)) throw fail('INVALID_LABELS', 'labels.species.rank must be genus, species or subspecies');
     species = { name, rank, confirmed: s.confirmed === true, freeText: s.freeText === true };
@@ -130,12 +135,15 @@ function cleanLabels(labels) {
   if (sex && !POLICY.sexForAnySpecies && !species) throw fail('NO_LABEL', 'A sex label needs the species', 422);
   return { sex, kind, species };
 }
-/** The day the photo was taken (YYYY-MM-DD), from a day or a date-time; null when unknown or not kept. */
+/**
+ * The day the photo was taken (YYYY-MM-DD), from a day, a date-time or EXIF's 2026:11:10; null when unknown, not
+ * kept, or not believable (a camera clock reset to 1970, a day ahead): it is optional, so it never refuses the item.
+ */
 function cleanTaken(value, now) {
   if (isBlank(value) || !POLICY.keepTakenDay) return null;
-  const day = String(value).slice(0, 10);
+  const day = String(value).slice(0, 10).replace(/^(\d{4}):(\d{2}):(\d{2})$/, '$1-$2-$3');
   const latest = new Date(now + 86_400_000).toISOString().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)) || day < '1990-01-01' || day > latest) throw fail('INVALID_DATE', 'takenAt is not a valid date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)) || day < '1990-01-01' || day > latest) return null;
   return day;
 }
 /** When the person pressed Enviar (the phone's clock): kept if it reads as a date, else null. */
@@ -146,9 +154,8 @@ function cleanCreated(value) {
 /** The location, only when sent (the person ticked it): rounded; accuracy in whole metres. */
 function cleanGps(gps) {
   if (isBlank(gps)) return null;
-  const lat = Number(gps.lat);
-  const lon = Number(gps.lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw fail('INVALID_GPS', 'gps must have lat and lon');
+  const { lat, lon } = gps;
+  if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw fail('INVALID_GPS', 'gps must have lat and lon');
   const k = 10 ** POLICY.gpsDecimals;
   const acc = Number(gps.acc);
   return { lat: Math.round(lat * k) / k, lon: Math.round(lon * k) / k, acc: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null };
@@ -234,7 +241,10 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
   /**
    * One item from the phone: `{ id, photo, thumb?, sha256, createdAt?, takenAt?, labels, prediction?, gps?, consent }`.
    * 201 stored; 200 `{ already: true }` for the same id with the same photo, or the same person's same photo under
-   * another id (with the first id); 409 the same id with other bytes; 410 an item deleted before.
+   * another id: then `id` is the first one's, and the phone keeps that id (to list or delete it); 409 the same id with
+   * other bytes; 410 an id deleted before (the phone drops the item).
+   * `sha256` is of the bytes the phone sent; the stored file is those bytes without their metadata segments, so its
+   * own hash can differ (lanes D and E hash the file when they need it).
    */
   function accept(body, user) {
     if (!user?.id) throw fail('AUTH_REQUIRED', 'Sign in required', 401);
@@ -244,7 +254,7 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     if (!UUID.test(id)) throw fail('INVALID_ID', 'id must be a UUID');
     const sha = String(body.sha256 ?? '').toLowerCase();
     if (!SHA.test(sha)) throw fail('INVALID_SHA', 'sha256 must be the photo bytes’ SHA-256, in hex');
-    if (db.prepare('SELECT 1 FROM contribution_tombstones WHERE id = ? OR (user_id = ? AND sha256 = ?)').get(id, user.id, sha))
+    if (db.prepare('SELECT 1 FROM contribution_tombstones WHERE id = ?').get(id))
       throw fail('CONTRIBUTION_DELETED', 'This photo was deleted and is not taken again', 410);
     const prior = db.prepare('SELECT * FROM contributions WHERE id = ?').get(id);
     if (prior) {
@@ -311,19 +321,20 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     return { status: 201, body: { already: false, contribution: shape(db.prepare('SELECT * FROM contributions WHERE id = ?').get(id)) } };
   }
 
-  /** The person's own items, newest first (at most 500). */
+  /** The person's own items, newest first (all of them: each can be deleted from «Mis envíos»). */
   function mine(user) {
-    return { contributions: db.prepare('SELECT * FROM contributions WHERE user_id = ? ORDER BY received_at DESC LIMIT 500').all(user.id).map(shape) };
+    return { contributions: db.prepare('SELECT * FROM contributions WHERE user_id = ? ORDER BY received_at DESC').all(user.id).map(shape) };
   }
 
   /**
    * Deletes an item: its owner, or an admin. Its files and row go; a tombstone stays. An id the server does not
-   * have yet (a send still on its way) gets a tombstone too, so it is refused when it arrives. Deleting again is fine.
+   * have yet (a send still on its way) gets a tombstone too, so it is refused when it arrives (`removed: false`: no
+   * photo was held under this id). Deleting again is fine.
    */
   function removeItem(rawId, user) {
     const id = String(rawId ?? '').toLowerCase();
     if (!UUID.test(id)) throw fail('INVALID_ID', 'id must be a UUID');
-    if (db.prepare('SELECT 1 FROM contribution_tombstones WHERE id = ?').get(id)) return { deleted: id, already: true };
+    if (db.prepare('SELECT 1 FROM contribution_tombstones WHERE id = ?').get(id)) return { deleted: id, already: true, removed: false };
     const row = db.prepare('SELECT * FROM contributions WHERE id = ?').get(id);
     if (row && row.user_id !== user.id && user.role !== 'admin') throw fail('FORBIDDEN', 'Only your own photos', 403);
     const deletedAt = new Date(now()).toISOString();
@@ -347,10 +358,10 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
       remove(`${row.file}.jpg`);
       remove(`${row.file}.thumb.jpg`);
     }
-    return { deleted: id, already: false };
+    return { deleted: id, already: false, removed: !!row };
   }
 
-  /** An item's bytes (`thumb` or the photo), for the review page (lane D); null when gone. */
+  /** An item's bytes (`thumb` or the photo), for the review page (lane D, no route yet); null when gone. */
   function file(id, size = 'full') {
     const row = db.prepare('SELECT file, thumb_bytes FROM contributions WHERE id = ?').get(String(id));
     if (!row) return null;
