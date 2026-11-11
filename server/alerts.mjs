@@ -75,9 +75,8 @@ export const CENSUS_PROPOSAL_DAYS = 14;
 /** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
 export const SAMPLE_DAYS = 180;
 
-/** The nightly's state file of ranges left for their owners: SHEET_RANGES_STATE, else beside the database. */
+/** The nightly's state file of ranges left for their owners: shared/nightly-tests, beside the database. */
 export function sheetRangesStateFile(env = process.env) {
-  if (env.SHEET_RANGES_STATE) return resolve(env.SHEET_RANGES_STATE);
   return env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'nightly-tests', 'sheet-ranges-state.json') : null;
 }
 /** The ranges in that file ([] when there is none or it does not read). */
@@ -603,7 +602,7 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
     if (!groups.has(key)) groups.set(key, { ...r, cells: [] });
     const g = groups.get(key);
     // The label of a dropdown: «Sheet A2:A226»; a conditional format is named by its formula.
-    g.cells.push(String(r.label).slice(String(r.sheet).length + 1));
+    g.cells.push(String(r.label).slice(String(r.sheet).length + 1).replace(/^([A-Z]+\d+):\1$/, '$1'));
     if (String(r.since) < String(g.since)) g.since = r.since;
   }
   for (const r of groups.values()) {
@@ -613,7 +612,7 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
       'info',
       r.kind === 'dropdown'
         ? msg(
-            '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya tiene {rows} filas; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
+            '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya llega a la fila {rows}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
             vars,
           )
         : msg(

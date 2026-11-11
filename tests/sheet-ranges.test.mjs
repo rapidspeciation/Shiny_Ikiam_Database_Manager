@@ -407,8 +407,13 @@ test('the protections that keep the app from a change', () => {
   assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 0, 2), requestingUserCanEdit: true }]), change), []);
   assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 0, 2), warningOnly: true }]), change), []);
   assert.deepEqual(blockingProtections(sheet([{ protectedRangeId: 42, range: range(9, 0, 226, 3, 4) }]), change), []);
+  // A protection with exceptions: none only when one of them holds all the change's cells.
   const withException = { protectedRangeId: 7, range: { sheetId: 9 }, unprotectedRanges: [range(9, 0, 226, 0, 1)] };
   assert.deepEqual(blockingProtections(sheet([withException]), change), []);
+  const otherColumnFree = { protectedRangeId: 7, range: { sheetId: 9 }, unprotectedRanges: [range(9, 0, 226, 1, 2)] };
+  assert.deepEqual(blockingProtections(sheet([otherColumnFree]), change), ['7:-:-']);
+  const partlyFree = { protectedRangeId: 7, range: { sheetId: 9 }, unprotectedRanges: [range(9, 0, 100, 0, 1)] };
+  assert.deepEqual(blockingProtections(sheet([partlyFree]), change), ['7:-:-']);
   assert.deepEqual(blockingProtections(undefined, change), []);
   // A conditional format: its covered ranges.
   const cf = { request: { updateConditionalFormatRule: { rule: { ranges: [range(9, 1, 226, 5, 6)] } } } };
@@ -446,7 +451,7 @@ test('nights with a protected dropdown: never sent, told the first night only, k
   assert.deepEqual(list.map(a => [a.id, a.level]), [['sheet-range:dropdown:Barcoding_DNA:A2', 'info']]);
   assert.equal(
     list[0].text,
-    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507 y la lista ya tiene 7732 filas; debería ser =Lists!$T$2:$T$17732. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
+    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507 y la lista ya llega a la fila 7732; debería ser =Lists!$T$2:$T$17732. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
   );
   const cfAlert = alertList([], { reached: [], close: [], limit: 30 }, [], 46000, [], [], [
     { kind: 'conditional format', sheet: 'S', label: 'S rule 3', before: '=CONTAR.SI($A$2:$A$100, A2)>1', after: '=CONTAR.SI($A$2:$A$10100, A2)>1', rows: 100, since: '2026-11-12T06:30:00.000Z' },
@@ -459,7 +464,7 @@ test('nights with a protected dropdown: never sent, told the first night only, k
     sperm('dropdown:Sperm_dissections:L34', 'Sperm_dissections L34:L34'),
   ]);
   assert.equal(grouped.length, 1);
-  assert.match(grouped[0].text, /^Sperm_dissections B35:B37, L34:L34: el desplegable toma sus opciones de =Insectary_data!\$P\$2:\$P\$4948 y la lista ya tiene 14512 filas/);
+  assert.match(grouped[0].text, /^Sperm_dissections B35:B37, L34: el desplegable toma sus opciones de =Insectary_data!\$P\$2:\$P\$4948 y la lista ya llega a la fila 14512;/);
   assert.deepEqual(leftOutRanges(join(dir, 'none.json')), []);
   // Its owner moves it by hand: the next night forgets it, and the alert goes.
   sheets[2].dv = new Map([...sheets[2].dv].map(([k, v]) => [k, toEnd(v, 17732)]));
@@ -485,4 +490,31 @@ test('a write Google refuses as protected (its protection not listed as such) cl
   const third = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-14T06:30:00Z') });
   assert.equal(third.code, 3);
   assert.match(third.lines[0], /sheet-ranges-state\.json did not read .*: its ranges are told again$/);
+});
+
+test('a whole sheet protected with another column free: no write; a night whose write times out keeps what it knew', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sheet-ranges-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, 'sheet-ranges.jsonl');
+  const sheets = workbook({ end: 30846, zEnd: 13775 });
+  sheets[2].protectedRanges = [{ protectedRangeId: 7, range: { sheetId: 9 }, unprotectedRanges: [range(9, 0, 20, 1, 2)] }];
+  const fake = fakeWorkbook(sheets);
+  const first = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-12T06:30:00Z') });
+  assert.equal(first.code, 3);
+  assert.equal(fake.calls.filter(c => c.method === 'POST').length, 0);
+  // The protection lifted, but the write (now with that range) times out: tonight cannot tell, the entry stays, unsaid.
+  delete sheets[2].protectedRanges;
+  const timedOut = await sheetRangesRun(async (path, options = {}) => {
+    if (options.method === 'POST') throw Object.assign(new Error('Google Sheets did not answer in 120 s'), { timeout: true });
+    return fake.request(path, options);
+  }, log, { at: Date.parse('2026-11-13T06:30:00Z') });
+  assert.equal(timedOut.code, 1);
+  assert.ok(!timedOut.lines.some(l => /no longer left out/.test(l)), timedOut.lines.join('\n'));
+  const kept = leftOutRanges(join(dir, 'sheet-ranges-state.json'));
+  assert.deepEqual(kept.map(r => [r.label, r.since]), [['Barcoding_DNA A2:A20', '2026-11-12T06:30:00.000Z']]);
+  // The next night it goes through: moved, told once, forgotten.
+  const third = await sheetRangesRun(fake.request, log, { at: Date.parse('2026-11-14T06:30:00Z') });
+  assert.equal(third.code, 0, third.lines.join('\n'));
+  assert.ok(third.lines.includes('Sheet ranges: dropdown Barcoding_DNA A2:A20 is no longer left out (moved, changed by hand, or writable again)'));
+  assert.deepEqual(leftOutRanges(join(dir, 'sheet-ranges-state.json')), []);
 });

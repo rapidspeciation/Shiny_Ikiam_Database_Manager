@@ -142,13 +142,17 @@ const overlaps = (a, b) =>
 /**
  * The protections that keep the credential from a change: protected ranges of its sheet it cannot edit (lockedRanges:
  * Google leaves requestingUserCanEdit out when it is false; warning-only ones are editable) over its cells, each as
- * `id:rows:columns` (a protection that moves or grows reads as another). One with exceptions (unprotectedRanges) is not
- * counted: the write is tried, and Google's refusal says.
+ * `id:rows:columns` (a protection that moves or grows reads as another). One whose exception (unprotectedRanges) holds
+ * all the change's cells does not count, as in premade.mjs columnLocked.
  */
 export function blockingProtections(sheet, change) {
   const span = (a, b) => `${a ?? ''}-${b ?? ''}`;
+  const within = (u, r) =>
+    (u.startRowIndex ?? 0) <= (r.startRowIndex ?? 0) && (r.endRowIndex ?? Infinity) <= (u.endRowIndex ?? Infinity) &&
+    (u.startColumnIndex ?? 0) <= (r.startColumnIndex ?? 0) && (r.endColumnIndex ?? Infinity) <= (u.endColumnIndex ?? Infinity);
+  const ranges = rangesOf(change);
   return lockedRanges(sheet?.protectedRanges)
-    .filter(p => !p.unprotectedRanges?.length && rangesOf(change).some(r => overlaps(p.range || {}, r)))
+    .filter(p => ranges.some(r => overlaps(p.range || {}, r)) && !(p.unprotectedRanges || []).some(u => ranges.every(r => within(u, r))))
     .map(p => `${p.protectedRangeId}:${span(p.range?.startRowIndex, p.range?.endRowIndex)}:${span(p.range?.startColumnIndex, p.range?.endColumnIndex)}`)
     .sort();
 }
@@ -160,7 +164,7 @@ export function blockingProtections(sheet, change) {
  * One that is no longer left out (moved, changed by hand, or writable again) is told once and forgotten.
  * Returns { state, lines, warn } (warn: something told as new or changed).
  */
-export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at } = {}) {
+export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at, carry = false } = {}) {
   const state = {};
   const lines = [];
   let warn = false;
@@ -178,8 +182,11 @@ export function leftOutReport(leftOut, known = {}, { margin = MARGIN, at } = {})
       }`,
     );
   }
+  // carry: a night whose write did not confirm keeps the entries it could not settle, unsaid.
   for (const [key, was] of Object.entries(known))
-    if (!state[key]) lines.push(`Sheet ranges: ${was.kind} ${was.label} is no longer left out (moved, changed by hand, or writable again)`);
+    if (state[key]) continue;
+    else if (carry) state[key] = was;
+    else lines.push(`Sheet ranges: ${was.kind} ${was.label} is no longer left out (moved, changed by hand, or writable again)`);
   const quiet = Object.values(state).filter(e => e.toldAt !== at);
   if (quiet.length)
     lines.push(`Sheet ranges: ${quiet.length} known range${quiet.length === 1 ? '' : 's'} still left for ${quiet.length === 1 ? 'its owner' : 'their owners'} (told before: sheet-ranges-state.json)`);
@@ -275,8 +282,8 @@ export async function keepRangesAhead(request, options = {}) {
     if (protections.length) record.leftOut.unshift({ ...strip(changes.splice(i, 1)[0]), protections });
   }
   let code = 0;
-  const report = () => {
-    const r = leftOutReport(record.leftOut, options.known || {}, { margin: options.margin, at: record.at });
+  const report = (carry = false) => {
+    const r = leftOutReport(record.leftOut, options.known || {}, { margin: options.margin, at: record.at, carry });
     record.state = r.state;
     record.toldLeftOut = r.warn;
     lines.push(...r.lines);
@@ -319,9 +326,9 @@ export async function keepRangesAhead(request, options = {}) {
       }
     }
   } catch (e) {
-    // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it. A
-    // range found writable tonight is out of the state; it is tried again the next night.
-    report();
+    // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it. The
+    // ranges left out before stay in the state (tonight did not tell whether they were moved).
+    report(true);
     record.unconfirmed = pending.map(strip);
     lines.push(`Sheet ranges: FAILING: the write did not confirm (${String(e.message).slice(0, 200)}): check the planned changes in the log`);
     return { code: 1, lines, record };

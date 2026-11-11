@@ -363,8 +363,8 @@ export default {
   '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
     '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
   '{pool}: queda {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAM left in {first}–{last}, unused since {date} (last {cam}).',
-  '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya tiene {rows} filas; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.':
-    '{sheet} {cells}: the dropdown takes its choices from {before} and the list already has {rows} rows; it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Data → Data validation). Seen on {date}.',
+  '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya llega a la fila {rows}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.':
+    '{sheet} {cells}: the dropdown takes its choices from {before} and the list already reaches row {rows}; it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Data → Data validation). Seen on {date}.',
   '{sheet}, formato condicional {before}: debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Formato → Formato condicional). Visto el {date}.':
     '{sheet}, conditional format {before}: it should be {after}. The app cannot change it (protected range): PAS can do it by hand (Format → Conditional formatting). Seen on {date}.',
   '{pool}: quedan {n} CAM en {first}–{last}, sin uso desde {date} (último {cam}).': '{pool}: {n} CAMs left in {first}–{last}, unused since {date} (last {cam}).',
