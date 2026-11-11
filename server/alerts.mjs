@@ -606,13 +606,15 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
     if (String(r.since) < String(g.since)) g.since = r.since;
   }
   for (const r of groups.values()) {
-    const vars = { sheet: r.sheet, cells: r.cells.join(', '), rows: r.rows, before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
+    // The margin the new end leaves past the list's last filled row (EXTEND in server/sheet-ranges.mjs).
+    const margin = Number(/(\d+)$/.exec(String(r.after))?.[1]) - r.rows;
+    const vars = { sheet: r.sheet, cells: r.cells.join(', '), rows: r.rows, margin, before: r.before, after: r.after, date: day(String(r.since).slice(0, 10)) };
     add(
       `sheet-range:${r.key || `${r.kind}:${r.label}`}`,
       'info',
       r.kind === 'dropdown'
         ? msg(
-            '{sheet} {cells}: el desplegable toma sus opciones de {before} y la lista ya llega a la fila {rows}; debería ser {after}. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
+            '{sheet} {cells}: el desplegable toma sus opciones de {before}, pero la lista ya llega a la fila {rows}; debería ser {after} ({margin} filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el {date}.',
             vars,
           )
         : msg(

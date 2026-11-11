@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { conditionalFormatPlan, listSource, listTarget, validationPlan, validationCells, keepRangesAhead, leftOutReport, blockingProtections } from '../server/sheet-ranges.mjs';
+import { conditionalFormatPlan, listSource, listTarget, validationPlan, validationCells, keepRangesAhead, leftOutReport, blockingProtections, EXTEND } from '../server/sheet-ranges.mjs';
 import { alertList, leftOutRanges } from '../server/alerts.mjs';
 import { sheetRangesRun } from '../scripts/nightly-app-checks.mjs';
 
@@ -446,13 +446,21 @@ test('nights with a protected dropdown: never sent, told the first night only, k
   const ranges = leftOutRanges(state);
   assert.equal(ranges.length, 1);
   assert.equal(ranges[0].since, '2026-11-12T06:30:00.000Z');
+  // The end it should have: the list's last filled row (7732) + EXTEND, not a digit dropped from it.
+  assert.equal(ranges[0].rows, 7732);
+  assert.equal(Number(/(\d+)$/.exec(ranges[0].after)[1]), ranges[0].rows + EXTEND);
   // The app's alerts: one piece of information, after the others.
   const list = alertList([], { reached: [], close: [], limit: 30 }, [], 46000, [], [], ranges);
   assert.deepEqual(list.map(a => [a.id, a.level]), [['sheet-range:dropdown:Barcoding_DNA:A2', 'info']]);
   assert.equal(
     list[0].text,
-    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507 y la lista ya llega a la fila 7732; debería ser =Lists!$T$2:$T$17732. La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
+    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507, pero la lista ya llega a la fila 7732; debería ser =Lists!$T$2:$T$17732 (10000 filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
   );
+  // The English, from the same descriptor.
+  const en = readFileSync(new URL('../frontend/src/locales/en/server-built.ts', import.meta.url), 'utf8');
+  assert.ok(en.includes(`'${list[0].textMsg.key}':`));
+  assert.ok(en.includes("'{sheet} {cells}: the dropdown takes its choices from {before}, but the list already reaches row {rows}; it should be {after} ({margin} rows of margin)."));
+  assert.equal(list[0].textMsg.vars.margin, EXTEND);
   const cfAlert = alertList([], { reached: [], close: [], limit: 30 }, [], 46000, [], [], [
     { kind: 'conditional format', sheet: 'S', label: 'S rule 3', before: '=CONTAR.SI($A$2:$A$100, A2)>1', after: '=CONTAR.SI($A$2:$A$10100, A2)>1', rows: 100, since: '2026-11-12T06:30:00.000Z' },
   ]);
@@ -464,7 +472,10 @@ test('nights with a protected dropdown: never sent, told the first night only, k
     sperm('dropdown:Sperm_dissections:L34', 'Sperm_dissections L34:L34'),
   ]);
   assert.equal(grouped.length, 1);
-  assert.match(grouped[0].text, /^Sperm_dissections B35:B37, L34: el desplegable toma sus opciones de =Insectary_data!\$P\$2:\$P\$4948 y la lista ya llega a la fila 14512;/);
+  assert.equal(
+    grouped[0].text.split('. La app')[0],
+    'Sperm_dissections B35:B37, L34: el desplegable toma sus opciones de =Insectary_data!$P$2:$P$4948, pero la lista ya llega a la fila 14512; debería ser =Insectary_data!$P$2:$P$24512 (10000 filas de margen)',
+  );
   assert.deepEqual(leftOutRanges(join(dir, 'none.json')), []);
   // Its owner moves it by hand: the next night forgets it, and the alert goes.
   sheets[2].dv = new Map([...sheets[2].dv].map(([k, v]) => [k, toEnd(v, 17732)]));
