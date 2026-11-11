@@ -705,7 +705,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const out = await session.run({ [session.inputNames[0]]: new ort!.Tensor('float32', sexInput(sq), [1, 3, 224, 224]) })
     lastMs.sex = Math.round(performance.now() - t)
     // The logit by name (model C also gives p_female), else the first output (model B has one).
-    const name = sexSession.outputNames.includes('logit') ? 'logit' : sexSession.outputNames[0]
+    const name = session.outputNames.includes('logit') ? 'logit' : session.outputNames[0]
     return (out[name].data as Float32Array)[0]
   }
 
