@@ -1,0 +1,179 @@
+{
+  "about": "Bytes of each part of the chats' fixed context that we own, measured from source by scripts/context-budget.mjs; tests/context-budget.test.mjs fails when the source differs. A growth is recorded with --write --reason \"…\". `lean`: the Claude Code settings that take out what the chats never use (scripts/claude-lean.mjs; claudeMdExcludes from the eval workspace).",
+  "measuredTokens": {
+    "note": "Informational, not checked: tokens counted with the API's count endpoint on a captured bare-probe request (eval workspace, lab T3 0.1.x, Claude Code 2.1.317, Opus 5.5), before the R15 cuts.",
+    "date": "2026-11-06",
+    "source": "WingsClassificator/reports/assistant_eval_20261104/HILLCLIMB_R15_plus.md §1",
+    "values": {
+      "workspace brief (AGENTS.md)": 5721,
+      "project skills listing (17 skills)": 3239,
+      "our MCP tools, always loaded (11)": 8587,
+      "match_notebook": 1921,
+      "propose_changes": 1582,
+      "query": 939,
+      "find_records": 916,
+      "update_proposal": 772,
+      "get_proposal": 542,
+      "show_rows": 537,
+      "list_proposals": 484,
+      "apply_proposal": 401,
+      "describe_sheet": 295,
+      "get_record": 198,
+      "deferred tool names, ours": 621,
+      "bare probe before R15": 57794,
+      "bare probe after R15": 35729
+    }
+  },
+  "parts": {
+    "brief": {
+      "bytes": 15623,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+    },
+    "skill:app-dev": {
+      "bytes": 423,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:app-guide": {
+      "bytes": 511,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:data-review": {
+      "bytes": 527,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:data-rules": {
+      "bytes": 704,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:digitalizar-cuaderno": {
+      "bytes": 602,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:edit-instructions": {
+      "bytes": 572,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:google-account": {
+      "bytes": 400,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:historial": {
+      "bytes": 487,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:invitar": {
+      "bytes": 322,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:maps-gallery": {
+      "bytes": 780,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:meeting-agenda": {
+      "bytes": 440,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:monitoring": {
+      "bytes": 498,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:photos": {
+      "bytes": 1272,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:rack-reader": {
+      "bytes": 594,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:weather": {
+      "bytes": 390,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:whatsapp": {
+      "bytes": 288,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skill:whatsapp-bridge": {
+      "bytes": 297,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "skills (total)": {
+      "bytes": 9124,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:find_records": {
+      "bytes": 2089,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:query": {
+      "bytes": 3764,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+    },
+    "mcp:get_record": {
+      "bytes": 451,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:describe_sheet": {
+      "bytes": 741,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:propose_changes": {
+      "bytes": 3694,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:match_notebook": {
+      "bytes": 4260,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:show_rows": {
+      "bytes": 1199,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:list_proposals": {
+      "bytes": 1191,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:apply_proposal": {
+      "bytes": 1021,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:update_proposal": {
+      "bytes": 1858,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp:get_proposal": {
+      "bytes": 1450,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    },
+    "mcp always-loaded (total)": {
+      "bytes": 21718,
+      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+    },
+    "mcp deferred names": {
+      "bytes": 1291,
+      "reason": "doc_threads, reply_doc_thread, propose_doc_change, revise_doc_change: comments on the instructions (#/instrucciones), deferred"
+    },
+    "mcp server instructions": {
+      "bytes": 0,
+      "reason": "baseline after R15 (6-7 Nov 2026)"
+    }
+  },
+  "lean": {
+    "enableArtifact": false,
+    "disableBundledSkills": true,
+    "deny": [
+      "Agent(Explore)",
+      "Agent(Plan)",
+      "Agent(claude)",
+      "Agent(claude-code-guide)",
+      "Agent(general-purpose)",
+      "Agent(statusline-setup)",
+      "Agent(web-fetch)",
+      "ListAgents",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "Workflow"
+    ],
+    "claudeMdExcludes": []
+  }
+}

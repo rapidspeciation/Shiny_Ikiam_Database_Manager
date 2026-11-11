@@ -42,20 +42,22 @@ unless the person explicitly asks.`;
  * The workspace's brief. `user`: { display_name, username }; `docs`: the
  * project documentation's folder; `knowledge`: the Drive documents' folder; `sheets`: the sheets' copy;
  * `source` and `labUrl`: the local lab's checkout and address (the lab note); `root`: where assistant/AGENTS.md is;
- * `voice`: the voice's files in order (absolute paths), else the app's (assistant/voice/app.md, core.md).
+ * `voice`: the voice's files in order (absolute paths), else the app's (assistant/voice/app.md, core.md);
+ * `read(relPath)`: how assistant/ files are read (the overlay of changes applied in the app, server/doc-review.mjs).
  */
 export function composeBrief(
   user,
-  { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release, voice = null } = SERVER_PATHS,
+  { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release, voice = null, read = null } = SERVER_PATHS,
 ) {
-  const body = readFileSync(join(root, 'assistant', 'AGENTS.md'), 'utf8')
+  const readRel = read ?? (rel => readFileSync(join(root, rel), 'utf8'));
+  const body = readRel('assistant/AGENTS.md')
     .replaceAll('{{person}}', user.display_name)
     .replaceAll('{{username}}', user.username)
     .replaceAll('{{docs}}', docs)
     .replaceAll('{{knowledge}}', knowledge)
     .replaceAll('{{sheets}}', sheets)
     .trimEnd();
-  const files = voice ?? ['app.md', 'core.md'].map(f => join(root, 'assistant', 'voice', f));
-  const brief = `${body}\n\n${files.map(f => readFileSync(f, 'utf8').trim()).join('\n\n')}`;
+  const voiceText = voice ? voice.map(f => readFileSync(f, 'utf8')) : ['app.md', 'core.md'].map(f => readRel(`assistant/voice/${f}`));
+  const brief = `${body}\n\n${voiceText.map(t => t.trim()).join('\n\n')}`;
   return labUrl ? `${brief}\n\n## Local test lab\n\n${labAppDev(labUrl, source)}\n` : `${brief}\n`;
 }
