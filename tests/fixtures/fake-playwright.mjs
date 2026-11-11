@@ -83,7 +83,7 @@ export const chromium = {
       // (It and its helper log their own pids.)
       spawn(process.execPath, [fileURLToPath(new URL('./fake-browser.mjs', import.meta.url)), scenario.log, 'browser', `--user-data-dir=${join(process.env.TMPDIR, 'profile')}`], { detached: true, stdio: 'ignore' });
       // As Playwright's launch, which returns once Chromium is up: here once the browser and its helper run.
-      while (!/"renderer":/.test(readFileSync(scenario.log, 'utf8'))) await new Promise(r => setTimeout(r, 20));
+      while (!/"renderer":\d+\}\n/.test(readFileSync(scenario.log, 'utf8'))) await new Promise(r => setTimeout(r, 20));
     }
     if (scenario.launchFail) throw new Error(scenario.launchFail);
     if (scenario.hang === 'launch') await forever();
