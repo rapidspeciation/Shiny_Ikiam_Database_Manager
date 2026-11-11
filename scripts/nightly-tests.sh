@@ -66,7 +66,8 @@ job() { # job <name> <command...>: one at a time, at the lowest priority
   echo "== $name: ${result[$name]} in $(( $(date +%s) - s )) s"
 }
 # The workbook's fixed end rows (a conditional format's `$A$2:$A$20846`, a dropdown's list) moved ahead when its rows
-# come within 1,000 of them, each move one line here and one record in sheet-ranges.jsonl (the rule as it was). The
+# come within 1,000 of them, each move one line here and in sheet-ranges.jsonl the plan before the write (the rule as
+# it was) and the outcome after it. The
 # live release's own script (not the copy, whose packages npm installs), with the credential's path and nothing else.
 service_env="${ITHOMIINI_SERVICE_ENV:-${HOME:-/home/ubuntu}/.config/ithomiini/service.env}"
 setting() { sed -n "s/^$1=//p" "$service_env" 2>/dev/null | tail -n 1; }

@@ -7,9 +7,11 @@
 //    its end (Lists!Z had 3,775 rows on 11 Nov 2026).
 // When the rows that exist come within MARGIN of a formula's end, it moves to EXTEND past them (a formula range past
 // the grid costs nothing: Google counts only the rows that exist); the covered range is left to Google, which grows it
-// with the grid. An end further behind the grid than MARGIN is taken as meant (a short lookup block) and only named.
-// A dropdown's end moves when its list's last filled row comes within MARGIN, to EXTEND past it, and stops at the list
-// sheet's grid. Only these two kinds are touched: other rules, their order, formats and conditions stay as they are.
+// with the grid. An end further behind the grid than MARGIN is taken as meant (a short lookup block) and only named;
+// on a sheet under MARGIN rows that cannot be told, so such a block there would be moved too (none on 11 Nov 2026).
+// A dropdown's end moves when its list's last filled row comes within MARGIN, to EXTEND past it (an end past the list
+// sheet's grid is kept as sent: tried on the test copy). Only these two kinds are touched: other rules, their order,
+// formats and conditions stay as they are.
 import { columnLetter } from './columns.mjs';
 
 export const MARGIN = 1000;
@@ -80,10 +82,10 @@ export function validationCells(title, sheetId, data) {
   return cells;
 }
 
-/** Where a dropdown on a growing list should end: `{ last, grid }` of the list's column → its new end, or null. */
+/** Where a dropdown on a growing list should end: `{ last }` (the list column's last filled row) → its new end, or null. */
 export function listTarget(end, list, { margin = MARGIN, extend = EXTEND } = {}) {
   if (!list || list.last + margin < end) return null;
-  const target = Math.min(list.last + extend, list.grid);
+  const target = list.last + extend;
   return target > end ? target : null;
 }
 
@@ -157,7 +159,17 @@ export async function keepRangesAhead(request, options = {}) {
   const samples = sheets.length ? (await request(`?${sampled}`)).sheets || [] : [];
   const sampleCells = samples.flatMap(s => validationCells(s.properties.title, s.properties.sheetId, s.data));
   const growing = options.growing || GROWING_LISTS;
-  const used = [...new Set(sampleCells.map(c => sourceOf(c.dv)?.key).filter(key => key && growing.includes(key)))];
+  const near = new Map();
+  for (const c of sampleCells) if (growing.includes(sourceOf(c.dv)?.key)) near.set(`${c.sheet}\u0000${c.column}`, c);
+  let cells = [];
+  if (near.size) {
+    const p = new URLSearchParams({ fields: 'sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(dataValidation))))' });
+    for (const c of near.values()) p.append('ranges', `${quoteTitle(c.sheet)}!${columnLetter(c.column)}:${columnLetter(c.column)}`);
+    const whole = (await request(`?${p}`)).sheets || [];
+    cells = whole.flatMap(s => validationCells(s.properties.title, s.properties.sheetId, s.data)).filter(c => near.has(`${c.sheet}\u0000${c.column}`));
+  }
+  // The lists those columns name (a block further down may name another).
+  const used = [...new Set(cells.map(c => sourceOf(c.dv)?.key).filter(key => key && growing.includes(key)))];
   const lists = new Map();
   if (used.length) {
     const p = new URLSearchParams();
@@ -171,16 +183,7 @@ export async function keepRangesAhead(request, options = {}) {
       lists.set(key, { last: lastFilled(read.valueRanges?.[i]?.values), grid: byTitle.get(sheet)?.gridProperties?.rowCount || 0 });
     });
   }
-  const near = new Map();
-  for (const c of sampleCells) if (growing.includes(sourceOf(c.dv)?.key)) near.set(`${c.sheet}\u0000${c.column}`, c);
-  let dv = [];
-  if (near.size) {
-    const p = new URLSearchParams({ fields: 'sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(dataValidation))))' });
-    for (const c of near.values()) p.append('ranges', `${quoteTitle(c.sheet)}!${columnLetter(c.column)}:${columnLetter(c.column)}`);
-    const whole = (await request(`?${p}`)).sheets || [];
-    const cells = whole.flatMap(s => validationCells(s.properties.title, s.properties.sheetId, s.data)).filter(c => near.has(`${c.sheet}\u0000${c.column}`));
-    dv = validationPlan(cells, lists, options);
-  }
+  const dv = validationPlan(cells, lists, options);
 
   const changes = [
     ...cf.changes.map(c => ({
@@ -240,6 +243,8 @@ export async function keepRangesAhead(request, options = {}) {
     }
   } catch (e) {
     // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it.
+    for (const c of record.leftOut)
+      lines.push(`Sheet ranges: WARNING: ${c.kind} ${c.label} is protected from the app: its owner moves ${c.before} to ${c.after} by hand`);
     record.unconfirmed = pending.map(strip);
     lines.push(`Sheet ranges: FAILING: the write did not confirm (${String(e.message).slice(0, 200)}): check the planned changes in the log`);
     return { code: 1, lines, record };

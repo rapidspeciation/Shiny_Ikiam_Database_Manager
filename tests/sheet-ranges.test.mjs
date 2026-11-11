@@ -77,11 +77,13 @@ test('a dropdown list: parsed, and where it should end', () => {
   assert.equal(listSource('=Lists!$Z$2:$AA$3030'), null);
   assert.equal(listSource('=Lists!Z:Z'), null);
   assert.equal(listSource('=Lists!$Z$2:$Z$3030+1'), null);
-  // Lists!Z had 3,775 rows of 50,500: from 3030 to 13775. Far from the end: nothing. At the grid's end: nothing more.
+  // Lists!Z had 3,775 rows: from 3030 to 13775. Far from the end: nothing. Past the list sheet's grid is fine (Google
+  // keeps it as sent): Insectary_stocks!A, 1,122 rows on a 1,999-row grid.
   assert.equal(listTarget(3030, { last: 3775, grid: 50500 }), 13775);
   assert.equal(listTarget(13775, { last: 3775, grid: 50500 }), null);
-  assert.equal(listTarget(634, { last: 1122, grid: 1999 }), 1999);
-  assert.equal(listTarget(1999, { last: 1122, grid: 1999 }), null);
+  assert.equal(listTarget(634, { last: 1122, grid: 1999 }), 11122);
+  assert.equal(listTarget(1999, { last: 1122, grid: 1999 }), 11122);
+  assert.equal(listTarget(11122, { last: 1122, grid: 1999 }), null);
   assert.equal(listTarget(100, undefined), null);
 });
 
@@ -331,9 +333,14 @@ test('a dropdown block further down a column is found though the sampled rows ar
   const sheets = workbook({ end: 30846, zEnd: 13775 });
   sheets[2].dv = new Map();
   for (let row = 20; row < 25; row++) sheets[1].dv.set(`${row}:4`, list('=Lists!$Z$2:$Z$3030'));
+  // And one on another growing list that no sampled row names.
+  sheets[1].dv.set('30:4', list('=Lists!$T$2:$T$3507'));
   const out = await keepRangesAhead(fakeWorkbook(sheets).request);
   assert.equal(out.code, 0, out.lines.join('\n'));
-  assert.deepEqual(out.lines, ['Sheet ranges: moved dropdown Collection_data E21:E25: =Lists!$Z$2:$Z$3030 → =Lists!$Z$2:$Z$13775 (Lists!Z has 3775 rows of 50500)']);
+  assert.deepEqual(out.lines, [
+    'Sheet ranges: moved dropdown Collection_data E21:E25: =Lists!$Z$2:$Z$3030 → =Lists!$Z$2:$Z$13775 (Lists!Z has 3775 rows of 50500)',
+    'Sheet ranges: moved dropdown Collection_data E31:E31: =Lists!$T$2:$T$3507 → =Lists!$T$2:$T$17732 (Lists!T has 7732 rows of 50500)',
+  ]);
   assert.deepEqual(sheets[1].dv.get('22:4'), list('=Lists!$Z$2:$Z$13775'));
 });
 
