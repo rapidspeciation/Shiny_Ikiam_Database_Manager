@@ -39,8 +39,8 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
           :key="photo.src"
           :src="photo.src"
           alt=""
-          class="aspect-square w-full rounded-md object-cover"
-          :class="loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken'"
+          class="aspect-square w-full rounded-md"
+          :class="[loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken', photo.kind === 'preserved' ? 'object-contain' : 'object-cover']"
           @load="done(photo.src)"
           @error="failed(photo.src)"
         />

@@ -8,6 +8,7 @@
  * or searched, comes before all of that.
  */
 import { appRoot } from './appRoot'
+import { photoMeta } from './exifMeta'
 
 /** Land borders (and the nearest islands, for the Caribbean) of the photo packs' 49 Neotropical countries. */
 const BORDERS: Record<string, string[]> = {
@@ -72,6 +73,15 @@ export interface Place {
 export const NO_PLACE: Place = { home: [] }
 
 /**
+ * Compare's place: a subspecies the model names puts its range first only when the person's country is in it (or no
+ * country is known); else the country alone (Fable r4-F4). The search, where the subspecies is chosen, takes the range.
+ */
+export const comparePlace = (home: string[], range: string[] | null | undefined): Place => ({
+  home,
+  range: range?.length && (!home.length || home.some(c => range.includes(c))) ? range : null,
+})
+
+/**
  * A photo's place in the order (lower first): without a subspecies' range, home 0, a neighbour 1, another country 2,
  * not known 3; with one, the range first (home inside it before the rest of it), then the same four after it.
  * Without any home or range every photo is 0 (the list's own order).
@@ -97,11 +107,12 @@ export function byPlace<T>(items: T[], place: Place, countryOf: (x: T) => string
 }
 
 /**
- * The photos of one taxon a pack keeps, at most `k`: one from the region chosen, one from a neighbouring country and
- * one from elsewhere (or not known) when there are, then the rest in that order; the list's own order inside each.
- * No region (Neotropics): the list's first `k`.
+ * The photos of one taxon a pack keeps, at most `k`: one from the region chosen, then the curated taxon photo (the
+ * list's pick, often the clearest: Fable r4-F5), then one from a neighbouring country and one from elsewhere (or not
+ * known) when there are, then the rest by place; the list's own order inside each. No region (Neotropics): the list's
+ * first `k`.
  */
-export function choosePhotos<T extends { country?: string | null }>(photos: T[], region: string[] | null, k: number): T[] {
+export function choosePhotos<T extends { country?: string | null; curated?: boolean }>(photos: T[], region: string[] | null, k: number): T[] {
   if (photos.length <= k && !region) return photos
   if (!region?.length) return photos.slice(0, k)
   const tier = (p: T) => {
@@ -109,10 +120,8 @@ export function choosePhotos<T extends { country?: string | null }>(photos: T[],
     return r >= 2 ? 2 : r
   }
   const firsts: T[] = []
-  for (const t of [0, 1, 2]) {
-    const p = photos.find(x => tier(x) === t)
-    if (p) firsts.push(p)
-  }
+  for (const p of [photos.find(x => tier(x) === 0), photos.find(x => x.curated), photos.find(x => tier(x) === 1), photos.find(x => tier(x) === 2)])
+    if (p && !firsts.includes(p)) firsts.push(p)
   const rest = byPlace(
     photos.filter(p => !firsts.includes(p)),
     { home: region },
@@ -123,63 +132,13 @@ export function choosePhotos<T extends { country?: string | null }>(photos: T[],
 
 // ---------------------------------------------------------------- the GPS position in a photo
 
-/** The GPS position in a JPEG's Exif block, or null (none, not a JPEG, cut short, 0/0). */
-export function exifGps(bytes: ArrayBuffer): { lat: number; lon: number } | null {
+/** The GPS position in a JPEG's Exif block, or null (lib/exifMeta.ts, the photo contributions' reader). */
+export const exifGps = (bytes: ArrayBuffer): { lat: number; lon: number } | null => {
   try {
-    const v = new DataView(bytes)
-    if (v.byteLength < 4 || v.getUint16(0) !== 0xffd8) return null
-    let at = 2
-    while (at + 4 <= v.byteLength) {
-      if (v.getUint8(at) !== 0xff) return null
-      const marker = v.getUint8(at + 1)
-      const len = v.getUint16(at + 2)
-      if (marker === 0xda || marker === 0xd9) return null // the image data: no Exif before it
-      // APP1 «Exif\0\0»
-      if (marker === 0xe1 && at + 10 <= v.byteLength && v.getUint32(at + 4) === 0x45786966 && v.getUint16(at + 8) === 0) return tiffGps(v, at + 10, at + 2 + len)
-      at += 2 + len
-    }
+    return photoMeta(bytes).gps
   } catch {
-    /* a broken file: no position */
+    return null
   }
-  return null
-}
-
-function tiffGps(v: DataView, tiff: number, end: number): { lat: number; lon: number } | null {
-  const little = v.getUint16(tiff) === 0x4949
-  const u16 = (o: number) => v.getUint16(tiff + o, little)
-  const u32 = (o: number) => v.getUint32(tiff + o, little)
-  if (u16(2) !== 42) return null
-  const ifd = (o: number) => {
-    const n = u16(o)
-    const tags = new Map<number, { type: number; count: number; value: number }>()
-    for (let i = 0; i < n; i++) {
-      const e = o + 2 + i * 12
-      if (tiff + e + 12 > end) break
-      tags.set(u16(e), { type: u16(e + 2), count: u32(e + 4), value: e + 8 })
-    }
-    return tags
-  }
-  const gpsAt = ifd(u32(4)).get(0x8825)
-  if (!gpsAt) return null
-  const gps = ifd(u32(gpsAt.value))
-  const ref = (tag: number) => {
-    const t = gps.get(tag)
-    return t ? String.fromCharCode(v.getUint8(tiff + t.value)) : ''
-  }
-  const dms = (tag: number) => {
-    const t = gps.get(tag)
-    if (!t || t.type !== 5 || t.count < 3) return null
-    const o = u32(t.value)
-    const r = (i: number) => {
-      const den = u32(o + i * 8 + 4)
-      return den ? u32(o + i * 8) / den : 0
-    }
-    return r(0) + r(1) / 60 + r(2) / 3600
-  }
-  const lat = dms(2)
-  const lon = dms(4)
-  if (lat == null || lon == null || (lat === 0 && lon === 0) || lat > 90 || lon > 180) return null
-  return { lat: ref(1) === 'S' ? -lat : lat, lon: ref(3) === 'W' ? -lon : lon }
 }
 
 // ---------------------------------------------------------------- the country of a position

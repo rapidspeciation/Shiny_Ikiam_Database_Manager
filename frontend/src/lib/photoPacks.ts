@@ -50,6 +50,8 @@ export interface PackPhoto {
   country?: string | null
   /** Absent: 'live'. */
   kind?: PhotoKind
+  /** The taxon's curated photo (iNaturalist's taxon photo, or the field set's): kept second in a pack. */
+  curated?: boolean
   /** A preserved specimen's ID (its collection number), shown with «Preserved specimen». */
   specimen?: string | null
   /** Where its bytes are in the list's bundles: [bundle number, byte offset] (absent: only its own file). */
@@ -154,10 +156,10 @@ export function setPackScope(scope: PackScope) {
 }
 
 /** A list in the current shape: a first-schema taxon's `photo` and `bytes` become its one photo (country not known). */
-export function normIndex<T extends { taxa: unknown[] }>(index: T): T & { taxa: PackTaxon[] } {
+export function normIndex<T extends { taxa: unknown[] }>(index: T, { photoOnly = false } = {}): T & { taxa: PackTaxon[] } {
   const taxa = (index.taxa as OldTaxon[]).map(t => {
-    if (Array.isArray(t.photos)) return t as PackTaxon
-    const { photo, bytes, ...rest } = t
+    if (Array.isArray(t.photos) && !photoOnly) return t as PackTaxon
+    const { photo, bytes, photos: _all, ...rest } = t
     return { ...rest, photos: photo ? [{ ...photo, bytes: bytes ?? 0, country: null }] : [] } as PackTaxon
   })
   return { ...index, taxa }
@@ -358,6 +360,8 @@ export interface Installed {
   at: string
   /** Photos that could not be saved (the next update takes them). */
   failed: number
+  /** 2: written by this code (taxa's `photos` are what was saved). Absent: the first schema's code (`photo` only). */
+  schema?: 2
 }
 /** The installed pack: its list (only the taxa saved, `base` absolute) and what was saved. */
 export interface InstalledPack {
@@ -372,7 +376,11 @@ export function installedPack(): Promise<InstalledPack | null> {
       const r = await (await caches.open(CACHE)).match(INSTALLED_KEY())
       if (!r) return null
       const v = (await r.json()) as InstalledPack
-      return Array.isArray(v?.index?.taxa) && v.installed ? { ...v, index: normIndex(v.index) } : null
+      if (!Array.isArray(v?.index?.taxa) || !v.installed) return null
+      if (v.installed.schema === 2) return { ...v, index: normIndex(v.index) }
+      // A record of the first schema's code (release 1, possibly saved from a schema 2 list, whose taxa then carry the
+      // list's photos, not what was saved: Fable r4-F2): only `photo` was saved, and it counts as out of date.
+      return { index: normIndex(v.index, { photoOnly: true }), installed: { ...v.installed, version: `${v.installed.version}~schema1` } }
     } catch {
       return null
     }
@@ -417,8 +425,13 @@ export interface BundleRange {
   end: number
   items: { u: string; offset: number; bytes: number; file: string }[]
 }
-/** Photos closer than this in a bundle share a request (the bytes between them come along, unused). */
-const GAP = 64 * 1024
+/**
+ * Photos closer than this in a bundle share a request (the bytes between them come along, unused): under one photo, so
+ * a choice whose photos alternate with others' (a country other than Ecuador) fetches few extra bytes (Fable r4-F8,
+ * lab list: Peru butterflies +4 % at 8 KB, 1,742 requests; +18 % at 16 KB; +85 % at 64 KB). Ecuador's choices are
+ * long runs (15 requests, nothing extra) whatever the gap.
+ */
+const GAP = 8 * 1024
 /** At most this many bytes in one request (what a dropped connection costs again). */
 const MAX_RANGE = 8 * 1048576
 /** The range requests for `urls` (those without a place in a bundle go to `rest`, one request each). */
@@ -591,6 +604,7 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
       bytes: [...ok.values()].reduce((a, b) => a + b, 0),
       at: new Date().toISOString(),
       failed,
+      schema: 2,
     },
   }
   // The new record first: if it cannot be written (a full phone, the page closed), the record before still points

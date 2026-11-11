@@ -41,7 +41,7 @@ import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, TRIBE_RUNG, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { loadTaxonomy } from '../lib/taxonomy'
 import { orderRefs, referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
-import { photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
+import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -992,21 +992,18 @@ watch(
   },
   { immediate: true },
 )
-const photoPlace = computed<PhotoPlace>(() => ({ home: result.value?.country ? [result.value.country] : settingHome.value, range: sspRange.value }))
-/** The line under Compare's photo saying whose photos come first (a subspecies' range, then the person's country). */
+/**
+ * Whose photos first. A subspecies the model merely names puts its range first only when the person's country is in
+ * it (Fable r4-F4: a named Brazilian subspecies must not put Brazil before the photo's own Ecuador); without a
+ * country, its range. The search, where the person picks the subspecies, always takes the range.
+ */
+const photoPlace = computed<PhotoPlace>(() => comparePlace(result.value?.country ? [result.value.country] : settingHome.value, sspRange.value))
+/** The line under Compare's photo saying whose photos come first (short: Fable r4-F11). */
 const firstLine = computed(() => {
   const p = photoPlace.value
-  const gps = !!result.value?.country
-  const country = p.home.length ? regionLabel(p.home) : null
-  if (p.range?.length && sspNamed.value) {
-    const ssp = sspNamed.value.split(' ').slice(2).join(' ')
-    if (!country) return t('Primero fotos del área de la subespecie {ssp}', { ssp })
-    return gps
-      ? t('Primero fotos del área de la subespecie {ssp}, luego de {country} (GPS de su foto)', { ssp, country })
-      : t('Primero fotos del área de la subespecie {ssp}, luego de {country}', { ssp, country })
-  }
-  if (!country) return null
-  return gps ? t('Primero fotos de {country} (GPS de su foto)', { country }) : t('Primero fotos de {country}', { country })
+  if (p.home.length) return t('Primero fotos de {country}', { country: regionLabel(p.home) })
+  if (p.range?.length && sspNamed.value) return t('Primero fotos del área de la subespecie {ssp}', { ssp: sspNamed.value.split(' ').slice(2).join(' ') })
+  return null
 })
 /** What the first download brings with it (the chosen pack, saved after the model). */
 const firstPack = computed(() => {

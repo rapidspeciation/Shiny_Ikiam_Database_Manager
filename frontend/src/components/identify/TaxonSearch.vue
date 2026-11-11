@@ -295,7 +295,7 @@ watch(
 
       <!-- A species or subspecies: its photo large -->
       <button v-if="lead" class="photo-card mt-3 block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left lg:max-w-xl" data-testid="lead-photo" @click="openCard(lead)">
-        <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat object-cover" @error="fail(lead.photo.src)" />
+        <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat" :class="lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(lead.photo.src)" />
         <span class="block px-3 py-2">
           <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
           <i class="block text-lg font-semibold">{{ lead.name }}</i>
@@ -308,7 +308,7 @@ watch(
         <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3" :data-testid="`photo-grid-${s.id}`" data-grid="photos">
           <li v-for="c in s.cards" :key="c.key">
             <button class="photo-card block w-full overflow-hidden rounded-lg border border-border-strong bg-surface text-left" @click="openCard(c)">
-              <img :src="c.photo.src" alt="" loading="lazy" class="aspect-square w-full bg-photo-mat object-cover" @error="fail(c.photo.src)" />
+              <img :src="c.photo.src" alt="" loading="lazy" class="aspect-square w-full bg-photo-mat" :class="c.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(c.photo.src)" />
               <span class="block px-2 py-1.5">
                 <i v-if="c.label" class="block text-[0.95rem] leading-snug font-medium break-words">{{ c.label }}</i>
                 <span v-if="c.viaSsp" class="block text-xs text-fg-muted">{{ $t('Foto de la subespecie') }} <i>{{ c.viaSsp }}</i></span>

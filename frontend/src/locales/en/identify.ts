@@ -274,10 +274,7 @@ export default {
   'Ejemplar preservado': 'Preserved specimen',
   'Foto: {who}': 'Photo: {who}',
   'Primero fotos de {country}': 'Photos from {country} first',
-  'Primero fotos de {country} (GPS de su foto)': "Photos from {country} first (your photo's GPS)",
   'Primero fotos del área de la subespecie {ssp}': 'Photos from the range of subspecies {ssp} first',
-  'Primero fotos del área de la subespecie {ssp}, luego de {country}': 'Photos from the range of subspecies {ssp} first, then {country}',
-  'Primero fotos del área de la subespecie {ssp}, luego de {country} (GPS de su foto)': "Photos from the range of subspecies {ssp} first, then {country} (your photo's GPS)",
   // The general sex line (FieldSexEstimate.vue), team only, online only.
   'experimental: mariposas vivas': 'experimental: live butterflies',
   'El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.': 'The % estimates how often an answer like this is right; it never exceeds what the test measured.',

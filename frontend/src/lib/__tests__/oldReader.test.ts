@@ -116,7 +116,7 @@ describe.skipIf(!hasPillow)('r4-sol-F1: a page of release 1 and the lists after 
     const store = fakeCaches()
     const fresh = await import('../photoPacks')
     const mine = await fresh.installPack(await fresh.onlineIndex(), ecPack, () => {})
-    expect(mine.pack?.index.taxa.find(t => t.name === 'Mechanitis polymnia')?.photos.map(p => p.country)).toEqual(['EC', 'CO'])
+    expect(mine.pack?.index.taxa.find(t => t.name === 'Mechanitis polymnia')?.photos.map(p => [p.country, !!p.curated])).toEqual([['EC', false], [null, true]])
     vi.resetModules()
     const old = await import('./fixtures/photoPacks-642d9251')
     const pack = await old.installedPack()
@@ -131,6 +131,31 @@ describe.skipIf(!hasPillow)('r4-sol-F1: a page of release 1 and the lists after 
     const again = await old.installPack(await old.onlineIndex(), ecPack, () => {})
     expect(again).toMatchObject({ failed: 0, kept: false })
     expect(again.pack?.installed.photos).toBe(2)
+  })
+})
+
+describe.skipIf(!hasPillow)('Fable r4-F2: a record release 1 saved from the new list', () => {
+  it('is read from `photo` alone (what was saved), every photo on the phone, and counts as out of date', async () => {
+    const store = fakeCaches()
+    const old = await import('./fixtures/photoPacks-642d9251')
+    await old.installPack(await old.onlineIndex(), ecPack, () => {})
+    // Its record carries the list's full `photos` (4 of M. polymnia) beside the one photo it saved.
+    const raw = JSON.parse(await (await caches.open('x')).match(old.INSTALLED_KEY())!.then(r => r!.text()))
+    expect(raw.index.taxa.find((t: { name: string }) => t.name === 'Mechanitis polymnia').photos).toHaveLength(4)
+    vi.resetModules()
+    const fresh = await import('../photoPacks')
+    const pack = (await fresh.installedPack())!
+    for (const t of pack.index.taxa) {
+      expect(t.photos, t.name).toHaveLength(1)
+      expect(store.has(new URL(t.photos[0].file, pack.index.base).href), t.name).toBe(true)
+    }
+    expect(fresh.updateAvailable(pack.installed, await fresh.onlineIndex())).toBe(true)
+    // The update writes a record of this code (schema 2): then no update is offered.
+    const out = await fresh.installPack(await fresh.onlineIndex(), ecPack, () => {})
+    expect(out.pack?.installed.schema).toBe(2)
+    vi.resetModules()
+    const again = await import('../photoPacks')
+    expect(again.updateAvailable((await again.installedPack())!.installed, await again.onlineIndex())).toBe(false)
   })
 })
 
@@ -153,7 +178,7 @@ describe.skipIf(!hasPillow)('r4-sol-F2: the server list beside a saved pack', ()
   it('a two-photo pack: the server list adds the taxon’s other photos, each once', async () => {
     fakeCaches()
     const fresh = await import('../photoPacks')
-    // The Ecuador pack keeps two of its four photos (Ecuador's and Colombia's).
+    // The Ecuador pack keeps two of its four photos (Ecuador's and the curated taxon photo).
     await fresh.installPack(await fresh.onlineIndex(), ecPack, () => {})
     const kept = (await fresh.installedPack())!.index.taxa.find(t => t.name === 'Mechanitis polymnia')!.photos
     vi.resetModules()

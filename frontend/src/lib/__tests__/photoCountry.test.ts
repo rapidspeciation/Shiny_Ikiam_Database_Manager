@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { byPlace, choosePhotos, countryIn, countryRank, exifGps, neighboursOf, type CountryShapes } from '../photoCountry'
+import { byPlace, choosePhotos, comparePlace, countryIn, countryRank, exifGps, neighboursOf, type CountryShapes } from '../photoCountry'
 import type { PackIndex, PackPhoto, PackTaxon } from '../photoPacks'
 
 // Photos by country (Franz, 11 Nov 2026: a Mechanitis lysimnia photo from Ecuador compared with Brazilian photos of
@@ -26,6 +26,17 @@ describe('the order of countries', () => {
     expect(['EC', 'CO'].map(c => countryRank(c, { home: ['EC'], range: ['CO', 'EC'] }))).toEqual([0, 1])
   })
 
+  it('Fable r4-F4: Compare takes a named subspecies’ range only when the person’s country is in it', () => {
+    // M. p. casabranca (Brazil) named for a photo from Ecuador: Ecuador first, not Brazil.
+    expect(comparePlace(['EC'], ['BR'])).toEqual({ home: ['EC'], range: null })
+    expect(byPlace(['BR', 'EC', 'CO'], comparePlace(['EC'], ['BR']), c => c)).toEqual(['EC', 'CO', 'BR'])
+    // kayei (Ecuador, Trinidad) and a Colombian GPS position: Colombia first.
+    expect(comparePlace(['CO'], ['EC', 'TT']).range).toBeNull()
+    // The range holds the country: kept. No country known: the range.
+    expect(comparePlace(['EC'], ['EC', 'TT']).range).toEqual(['EC', 'TT'])
+    expect(comparePlace([], ['BR']).range).toEqual(['BR'])
+  })
+
   it('sorts stably inside a rank', () => {
     const items = [
       { id: 'br', c: 'BR' },
@@ -48,6 +59,17 @@ describe('the order of countries', () => {
     expect(choosePhotos(all, ['PE'], 2).map(x => x.file)).toEqual(['pe', 'default'])
     // Neotropics: the builder's first ones.
     expect(choosePhotos(all, null, 3).map(x => x.file)).toEqual(['default', 'ec', 'co'])
+  })
+
+  it('Fable r4-F5: the curated taxon photo is kept second, after the region’s own, before a neighbour’s', () => {
+    const p = (file: string, country: string | null, curated = false) => ({ file, country, ...(curated ? { curated } : {}) })
+    const all = [p('taxon', 'BR', true), p('ec', 'EC'), p('co', 'CO'), p('pe', 'PE')]
+    expect(choosePhotos(all, ['EC'], 2).map(x => x.file)).toEqual(['ec', 'taxon'])
+    expect(choosePhotos(all, ['EC'], 3).map(x => x.file)).toEqual(['ec', 'taxon', 'co'])
+    // No Ecuador photo: the taxon photo, then a neighbour's.
+    expect(choosePhotos([p('taxon', null, true), p('co', 'CO')], ['EC'], 2).map(x => x.file)).toEqual(['taxon', 'co'])
+    // The taxon photo is Ecuador's itself: then a neighbour's.
+    expect(choosePhotos([p('taxon', 'EC', true), p('co', 'CO'), p('pe', 'PE')], ['EC'], 2).map(x => x.file)).toEqual(['taxon', 'co'])
   })
 })
 

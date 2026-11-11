@@ -10,7 +10,7 @@
  */
 import { ref, shallowRef, watch } from 'vue'
 import { locale, t } from './i18n'
-import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, revalidateIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
+import { installPack, installedPack, numText, onlineIndex, packScope, removePack, resetOnlineIndex, revalidateIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
 import { retireFieldSet } from './identifyRefs'
 
 /** A taxa choice's name (the scientific ones are not translated). */
@@ -127,10 +127,10 @@ async function install(s: PackScope = scope.value) {
     if (out.kept) {
       failedSave.value = { scope: s, failed: out.failed, total: out.total }
       note.value = out.pack
-        ? t('{n} de {total} fotos no se descargaron: siguen las fotos de antes.', { n: out.failed, total: out.total })
+        ? t('{n} de {total} fotos no se descargaron: siguen las fotos de antes.', { n: numText(out.failed), total: numText(out.total) })
         : t('No se descargaron las fotos.')
     } else if (out.failed) {
-      note.value = t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed })
+      note.value = t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: numText(out.failed) })
     } else {
       // Replaced in full: the older «Fotos para el campo» set goes (its files this pack uses stay).
       await retireFieldSet(new Set(out.pack!.index.taxa.flatMap(x => x.photos.map(ph => new URL(ph.file, out.pack!.index.base).href))))

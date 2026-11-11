@@ -32,14 +32,16 @@ test('photo-packs.py taxa: photos by country and a preserved specimen', { skip: 
     const obs = (rows) => gzipSync(rows.map(r => JSON.stringify(r)).join('\n') + '\n');
     const o = (id, faves, photoId, file, license = 'cc-by-nc') => ({ id, faves, taxon: { id: 148675, name: 'Mechanitis polymnia', rank: 'species', anc: [] }, photos: [{ id: photoId, url: file, license, attribution: `(c) obs ${id}` }] });
     // Ecuador: the most faved wins; a photo without a reusable licence is passed over.
-    writeFileSync(join(dir, 'obs-EC.jsonl.gz'), obs([o(1, 0, 101, img('pe')), o(2, 5, 102, img('ec')), o(3, 9, 103, img('co'), null)]));
+    // The most faved of all (6) is annotated as a caterpillar (--young): left out.
+    writeFileSync(join(dir, 'obs-EC.jsonl.gz'), obs([o(1, 0, 101, img('pe')), o(2, 5, 102, img('ec')), o(3, 9, 103, img('co'), null), o(6, 50, 106, img('pe'))]));
+    writeFileSync(join(dir, 'young-EC.json'), JSON.stringify([6]));
     // Colombia: also has the taxon photo itself, so that one is known to be from Colombia.
     writeFileSync(join(dir, 'obs-CO.jsonl.gz'), obs([o(4, 1, 104, img('co')), o(5, 0, 59300165, img('t1'))]));
     writeFileSync(join(dir, 'preserved.json'), JSON.stringify({ schema: 'ithomiini-preserved/1', photos: [{ name: 'Hyposcada kena', file: 'wing.png', specimen: 'CAM040123', country: 'EC', attribution: '(c) Wellcome Sanger Institute', license: 'CC-BY' }] }));
     const out = join(dir, 'packs');
     const run = spawnSync(
       python,
-      ['-I', SCRIPT, 'taxa', '--taxa', join(dir, 'taxa.json'), '--out', out, '--cell', 'EC:all', '--pause', '0', '--obs', `EC=${join(dir, 'obs-EC.jsonl.gz')}`, '--obs', `CO=${join(dir, 'obs-CO.jsonl.gz')}`, '--preserved', join(dir, 'preserved.json')],
+      ['-I', SCRIPT, 'taxa', '--taxa', join(dir, 'taxa.json'), '--out', out, '--cell', 'EC:all', '--pause', '0', '--obs', `EC=${join(dir, 'obs-EC.jsonl.gz')}`, '--obs', `CO=${join(dir, 'obs-CO.jsonl.gz')}`, '--young', join(dir, 'young-EC.json'), '--preserved', join(dir, 'preserved.json')],
       { encoding: 'utf8', timeout: 120_000 },
     );
     assert.equal(run.status, 0, run.stderr + run.stdout);
@@ -52,6 +54,8 @@ test('photo-packs.py taxa: photos by country and a preserved specimen', { skip: 
       ['CO', 'https://www.inaturalist.org/photos/104', 'CC-BY-NC'],
     ]);
     assert.ok(mp.photos.every(p => p.bytes > 0 && /^\d+-[0-9a-f]{8}\.webp$/.test(p.file) && p.attribution && p.taxonUrl));
+    // The taxon photo is marked curated (a pack keeps it second), the observation photos are not.
+    assert.deepEqual(mp.photos.map(p => !!p.curated), [true, false, false]);
     const hk = index.taxa.find(t => t.name === 'Hyposcada kena');
     assert.equal(hk.photos.length, 1);
     assert.deepEqual({ kind: hk.photos[0].kind, specimen: hk.photos[0].specimen, country: hk.photos[0].country, license: hk.photos[0].license }, { kind: 'preserved', specimen: 'CAM040123', country: 'EC', license: 'CC-BY' });

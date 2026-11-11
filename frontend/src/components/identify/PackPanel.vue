@@ -72,6 +72,8 @@ const cost = computed(() => (index.value ? toDownload(index.value, scope.value, 
 const installed = computed(() => pack.value?.installed ?? null)
 const current = computed(() => !!installed.value && sameScope(installed.value.scope, scope.value))
 const newer = computed(() => updateAvailable(installed.value, index.value))
+/** What «Actualizar fotos» downloads: the installed choice's photos not on the phone yet (Fable r4-F7). */
+const updateCost = computed(() => (index.value && installed.value ? toDownload(index.value, installed.value.scope, pack.value?.index) : 0))
 const legacy = ref(fieldSet())
 const when = (iso: string) => new Date(iso).toLocaleDateString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short' })
 /** The list is a sample (the lab's): said plainly. */
@@ -115,7 +117,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </p>
       <p v-if="newer" class="mt-2 text-sm font-medium text-pending-text">{{ $t('Hay fotos nuevas en el servidor.') }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        <button v-if="newer || installed.failed" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" data-testid="pack-update" @click="install(installed.scope)">{{ $t('Actualizar fotos') }}</button>
+        <button v-if="newer || installed.failed" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" data-testid="pack-update" @click="install(installed.scope)">{{ $t('Actualizar fotos') }}<template v-if="updateCost"> · {{ mbText(updateCost) }} MB</template></button>
         <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar del teléfono') }}</button>
       </div>
     </div>
