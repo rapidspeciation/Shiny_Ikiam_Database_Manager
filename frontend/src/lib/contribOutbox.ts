@@ -146,6 +146,8 @@ export interface Draft {
 }
 
 export class OutboxFull extends Error {}
+/** The same photo is listed already (sent or waiting), with its first labels: delete that one to send it again. */
+export class AlreadyListed extends Error {}
 
 export function createOutbox({
   store,
@@ -170,6 +172,7 @@ export function createOutbox({
   /** A new item for `userId` from Enviar; refused (OutboxFull) while MAX_PENDING wait for signal. */
   async function add(userId: string, draft: Draft): Promise<Item> {
     const items = await mine(userId)
+    if (items.some(i => i.sha256 === draft.sha256 && i.state !== 'deleting' && i.state !== 'failed')) throw new AlreadyListed('already')
     if (items.filter(waiting).length >= MAX_PENDING) throw new OutboxFull('full')
     const item: Item = {
       id: uuid(),
@@ -221,7 +224,13 @@ export function createOutbox({
     const contribution = a.body?.contribution as ServerItem | undefined
     if ((a.status === 201 || a.status === 200) && contribution) {
       const first = typeof a.body?.id === 'string' && a.body.id !== item.id ? a.body.id : null
-      if (first && (await store.all()).some(i => i.id !== item.id && (i.id === first || i.serverId === first))) {
+      const listed = first ? (await store.all()).find(i => i.id !== item.id && (i.id === first || i.serverId === first)) : undefined
+      // The first one is being deleted here (Borrar, then Enviar again): this one waits for that delete, then is new.
+      if (listed?.state === 'deleting') {
+        await store.put({ ...item, state: 'pending', nextAt: Math.max(listed.nextAt, t) + 1 })
+        return 'next'
+      }
+      if (listed) {
         await store.delete(item.id)
         return 'already'
       }
@@ -230,7 +239,6 @@ export function createOutbox({
         state: 'sent',
         serverId: first,
         photo: null,
-        sha256: null,
         thumb: null,
         lastError: null,
         // The labels the server holds (the first ones, when the photo was sent before from elsewhere).
@@ -265,7 +273,9 @@ export function createOutbox({
     if (running) return running
     const run = async (): Promise<FlushResult> => {
       const out: FlushResult = { sent: 0, stopped: null, already: [] }
-      for (const { id } of await mine(userId)) {
+      // Deletes first (a photo sent again after «Borrar» goes after its delete); sent ones are not walked.
+      const todo = (await mine(userId)).filter(i => waiting(i) || i.state === 'deleting').sort((a, b) => Number(b.state === 'deleting') - Number(a.state === 'deleting'))
+      for (const { id } of todo) {
         // Read again: «Borrar» may have changed it while the one before was on its way.
         const item = (await store.all()).find(i => i.id === id)
         if (!item || !(waiting(item) || item.state === 'deleting')) continue
@@ -310,20 +320,22 @@ export function createOutbox({
    * thumbnail), so any of them can be deleted here; and sent items the server no longer holds (deleted elsewhere) gone.
    */
   async function refresh(userId: string): Promise<void> {
+    // The phone's list as it was before the question: an item sent or deleted meanwhile is not judged by an older answer.
+    const local = await mine(userId)
     const a = await send('GET', 'identify/contributions/mine')
     const list = a.body?.contributions as ServerItem[] | undefined
     if (a.status !== 200 || !Array.isArray(list)) return
     const server = new Map(list.map(c => [c.id, c]))
-    const local = await mine(userId)
+    const now = new Map((await store.all()).map(i => [i.id, i]))
     const known = new Set(local.map(i => i.serverId ?? i.id))
     for (const item of local) {
-      if (item.state !== 'sent') continue
+      if (item.state !== 'sent' || now.get(item.id)?.state !== 'sent') continue
       const c = server.get(item.serverId ?? item.id)
       if (!c) await store.delete(item.id)
       else if (c.status !== item.serverStatus) await store.put({ ...item, serverStatus: c.status ?? null })
     }
     for (const c of list) {
-      if (known.has(c.id)) continue
+      if (known.has(c.id) || now.has(c.id) || [...now.values()].some(i => i.serverId === c.id)) continue
       const at = c.createdAt ?? c.receivedAt ?? new Date(0).toISOString()
       await store.put({
         id: c.id,

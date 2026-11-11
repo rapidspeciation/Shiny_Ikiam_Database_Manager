@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * «Mis envíos»: the photos this person sent from this phone (lib/contribOutbox.ts), with their status, and «Borrar»,
- * which deletes one on the phone and on the server (once there is signal).
+ * «Mis envíos»: the photos this person sent (from this phone, and those the server lists from others; lib/contribOutbox.ts),
+ * with their status, and «Borrar», which deletes one on the phone and on the server (once there is signal).
  */
 import { Trash2 } from 'lucide-vue-next'
 import { t } from '../../lib/i18n'

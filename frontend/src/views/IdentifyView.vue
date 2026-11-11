@@ -37,7 +37,7 @@ declare const __BUILD_ID__: string
 import ContributeCard, { type Labels, type Outcome } from '../components/identify/ContributeCard.vue'
 import MyContributions from '../components/identify/MyContributions.vue'
 import { CONSENT_VERSION, CONTRIB_ENABLED, GPS_DECIMALS } from '../lib/contribConfig'
-import { createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
+import { AlreadyListed, createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
 import { askPersistence, browserLock, idbStore } from '../lib/contribIdb'
 import { photoMeta, roundGps } from '../lib/exifMeta'
 import { headSource, listSource, type TaxonSource } from '../lib/taxonPick'
@@ -662,13 +662,18 @@ const contribShown = computed(() => {
 })
 
 let outboxStarting: Promise<void> | null = null
-/** The outbox once the session is known (also when it came after the page's wait for it). */
+/**
+ * The outbox once the session is known (also when it came after the page's wait for it). It resolves once the storage
+ * is open; the first send runs on by itself, so Enviar never waits for it.
+ */
 function startOutbox(): Promise<void> {
   if (!CONTRIB_ENABLED || !session.user) return Promise.resolve()
   outboxStarting ??= (async () => {
     outbox = createOutbox({ store: await idbStore(), send: httpSend, lock: browserLock })
-    await syncOutbox({ force: true, status: true })
-  })()
+    syncOutbox({ force: true, status: true }).catch(() => null)
+  })().catch(() => {
+    outboxStarting = null
+  })
   return outboxStarting
 }
 /**
@@ -747,7 +752,7 @@ async function contribute(labels: Labels): Promise<Outcome> {
     })
     lastContrib = item.id
   } catch (e) {
-    return e instanceof OutboxFull ? 'full' : 'error'
+    return e instanceof OutboxFull ? 'full' : e instanceof AlreadyListed ? 'already' : 'error'
   }
   askPersistence()
   const sync = await within(syncOutbox({ force: true }), CARD_WAIT_MS)

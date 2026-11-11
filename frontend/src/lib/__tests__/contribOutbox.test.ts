@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BACKOFF, backoff, createOutbox, memoryStore, OutboxFull, type Answer, type Draft, type Send } from '../contribOutbox'
+import { AlreadyListed, BACKOFF, backoff, createOutbox, memoryStore, OutboxFull, type Answer, type Draft, type Send } from '../contribOutbox'
 import { MAX_PENDING } from '../contribConfig'
 
 // The phone's outbox for photos sent to train the AI: what each server answer does to an item.
@@ -45,7 +45,7 @@ describe('contribOutbox', () => {
     expect(calls[0]).toMatchObject({ method: 'POST', path: 'identify/contributions', body: { id: item.id, photo: 'cGhvdG81', sha256: draft().sha256, consent: { version: 'v1-draft' } } })
     expect((calls[0].body.labels as { sex: string }).sex).toBe('female')
     const kept = store.items.get(item.id)!
-    expect(kept).toMatchObject({ state: 'sent', photo: null, thumb: null, sha256: null, serverStatus: 'received' })
+    expect(kept).toMatchObject({ state: 'sent', photo: null, thumb: null, serverStatus: 'received' })
     expect(kept.mini).toBeTruthy()
     expect(await outbox.pending('ana')).toBe(0)
     // Nothing more to send.
@@ -93,9 +93,44 @@ describe('contribOutbox', () => {
     const { outbox, store } = setup(() => (++n === 1 ? answer(201, OK) : answer(200, { already: true, id: '00000000-0000-4000-8000-000000000001', contribution: { status: 'received' } })))
     const a = await outbox.add('ana', draft())
     await outbox.flush('ana')
-    const b = await outbox.add('ana', { ...draft(), payload: { ...draft().payload, labels: { ...draft().payload.labels, sex: 'male' } } })
+    // (The server knows it by its bytes; here a copy whose hash this phone did not keep.)
+    const b = await outbox.add('ana', { ...draft(), sha256: 'b'.repeat(64), payload: { ...draft().payload, labels: { ...draft().payload.labels, sex: 'male' } } })
     expect(await outbox.flush('ana')).toEqual({ sent: 0, stopped: null, already: [b.id] })
     expect([...store.items.keys()]).toEqual([a.id])
+  })
+
+  it('the same photo again while this phone lists it (also without signal): refused at Enviar; after «Borrar» it may go again', async () => {
+    let up = false
+    const { outbox, calls, store } = setup((method) => (!up ? answer(0, null) : method === 'DELETE' ? answer(200, {}) : answer(201, OK)))
+    const a = await outbox.add('ana', draft())
+    await expect(outbox.add('ana', draft())).rejects.toBeInstanceOf(AlreadyListed)
+    up = true
+    await outbox.flush('ana', { force: true })
+    await expect(outbox.add('ana', draft())).rejects.toBeInstanceOf(AlreadyListed)
+    // «Borrar», then Enviar again with signal: the delete goes first, then the new item.
+    await outbox.remove(a.id)
+    const again = await outbox.add('ana', draft())
+    await outbox.flush('ana', { force: true })
+    expect(calls.map(c => c.method)).toEqual(['POST', 'DELETE', 'POST'])
+    expect(store.items.get(again.id)!.state).toBe('sent')
+  })
+
+  it('«Borrar» then Enviar again under weak signal: the new one waits for the delete instead of being lost', async () => {
+    // The timer reaches the new item while the delete still waits: the server answers `already` with the first id.
+    const answers: Answer[] = [answer(201, OK), answer(0, null), answer(200, { already: true, id: '00000000-0000-4000-8000-000000000001', contribution: { status: 'received' } })]
+    const { outbox, calls, clock, store } = setup(() => answers.shift() ?? (calls.at(-1)!.method === 'DELETE' ? answer(200, {}) : answer(201, OK)))
+    const a = await outbox.add('ana', draft())
+    await outbox.flush('ana')
+    await outbox.remove(a.id)
+    await outbox.flush('ana') // the DELETE: no signal, backs off
+    const again = await outbox.add('ana', draft())
+    await outbox.flush('ana') // only the new one is due: `already`, the first is still being deleted
+    expect(store.items.get(again.id)).toMatchObject({ state: 'pending' })
+    clock.t += 3_600_000
+    await outbox.flush('ana')
+    expect(calls.map(c => c.method)).toEqual(['POST', 'DELETE', 'POST', 'DELETE', 'POST'])
+    expect(store.items.get(again.id)!.state).toBe('sent')
+    expect(store.items.has(a.id)).toBe(false)
   })
 
   it('a 200 without the stored item (a proxy, a captive portal) is not taken for sent', async () => {
