@@ -24,9 +24,13 @@ defineEmits<{ download: [] }>()
 /** The model's calibration: its cutoff and band (logits) and display. */
 const cal = computed(() => (props.state.kind === 'ready' && props.state.calibration) || SEX_DEFAULT)
 const CUT = computed(() => cal.value.cut)
-/** The scale: logit -1 to 7 for model B (P 27 % to 99.9 %), where the cutoff and the band sit apart; wider when a model's band reaches past it. */
-const LO = computed(() => Math.min(-1, CUT.value.lo - 2.6))
-const HI = computed(() => Math.max(7, CUT.value.hi + 2.1))
+/**
+ * The scale, from the model's own band: 2.6 logit below lo to 2.1 above hi (model B: -0.98 to 6.97, as its -1 to 7
+ * before; model C: -2.79 to 3.30, where its team scores lie). No fixed floor or ceiling: a model whose scores sit
+ * lower would otherwise leave part of the bar empty.
+ */
+const LO = computed(() => CUT.value.lo - 2.6)
+const HI = computed(() => CUT.value.hi + 2.1)
 const at = (z: number) => `${(100 * (Math.min(HI.value, Math.max(LO.value, z)) - LO.value)) / (HI.value - LO.value)}%`
 const fmt = (v: number, digits: number) => new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)
 /** The calibrated % (lib/sexModel.ts SEX_DISPLAY): whole numbers, never a sure-looking 100 %. */
@@ -36,11 +40,7 @@ const tick = (z: number) => `♀ ${fmt(100 * sexShownFemale(z, cal.value.display
 const z = computed(() => (props.state.kind === 'ready' ? props.state.z : null))
 const shown = computed(() => (z.value == null ? null : sexShown(z.value, cal.value)))
 const call = computed(() => shown.value?.call ?? null)
-const ticks = computed(() => [
-  { z: CUT.value.lo, label: tick(CUT.value.lo) },
-  { z: CUT.value.t, label: `${t('corte')} ${tick(CUT.value.t)}` },
-  { z: CUT.value.hi, label: tick(CUT.value.hi) },
-])
+const ticks = computed(() => ({ lo: tick(CUT.value.lo), t: `${t('corte')} ${tick(CUT.value.t)}`, hi: tick(CUT.value.hi) }))
 </script>
 
 <template>
@@ -64,6 +64,13 @@ const ticks = computed(() => [
         </p>
       </div>
       <div class="mt-2" aria-hidden="true">
+        <!--
+          The labels never overlap, however close the marks (model C: the cutoff and hi are 0.2 logit apart): the
+          cutoff's label has its own row above the bar; below it, lo's label ends at lo and hi's starts at hi.
+        -->
+        <div class="relative h-4 text-[0.7rem] leading-4 text-fg-muted tabular-nums">
+          <span class="absolute -translate-x-1/2 whitespace-nowrap" data-testid="sex-tick-t" :style="{ left: at(CUT.t) }">{{ ticks.t }}</span>
+        </div>
         <div class="relative h-3 overflow-hidden rounded-sm">
           <div class="absolute inset-y-0 left-0 bg-fill-sky/30" :style="{ width: at(CUT.lo) }" />
           <div class="sex-band absolute inset-y-0" :style="{ left: at(CUT.lo), right: `calc(100% - ${at(CUT.hi)})` }" />
@@ -74,7 +81,8 @@ const ticks = computed(() => [
           <div class="sex-marker absolute top-0 -translate-x-1/2" :style="{ left: at(z) }" />
         </div>
         <div class="relative h-4 text-[0.7rem] leading-4 text-fg-muted tabular-nums">
-          <span v-for="(tk, i) in ticks" :key="i" class="absolute -translate-x-1/2 whitespace-nowrap" :style="{ left: at(tk.z) }">{{ tk.label }}</span>
+          <span class="absolute -translate-x-full whitespace-nowrap pr-0.5" data-testid="sex-tick-lo" :style="{ left: at(CUT.lo) }">{{ ticks.lo }}</span>
+          <span class="absolute whitespace-nowrap pl-0.5" data-testid="sex-tick-hi" :style="{ left: at(CUT.hi) }">{{ ticks.hi }}</span>
         </div>
         <div class="relative mt-0.5 h-4 text-xs leading-4 text-fg-muted">
           <span class="absolute left-0">♂ {{ $t('macho') }}</span>
@@ -83,7 +91,7 @@ const ticks = computed(() => [
         </div>
       </div>
       <p class="sr-only">
-        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: tick(CUT.t), lo: ticks[0].label, hi: ticks[2].label }) }}
+        {{ $t('Corte en fotos en mano: {t}; no seguro entre {lo} y {hi}.', { t: tick(CUT.t), lo: ticks.lo, hi: ticks.hi }) }}
       </p>
     </template>
 

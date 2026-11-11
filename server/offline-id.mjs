@@ -101,7 +101,9 @@ const etagOf = s => `"${s.size.toString(36)}-${Math.floor(s.mtimeMs).toString(36
  *   file (a bare *.onnx name in offline/), bytes (> 0), sha256 (64 lowercase hex),
  *   input (optional; only { size: 224, values: 'raw' }: the 224 px square as raw 0 to 255 RGB, channels first),
  *   calibration { cut: { t, lo, hi } logits with lo < t < hi, display: { a > 0, b } (P(female) = sigmoid(a z + b)),
- *                 genera: [Genus, …] }.
+ *                 genera: [Genus, …] },
+ *   notes (optional): { es, en }, one plain sentence or two each (at most 300 characters) shown with the download in
+ *                 Descargas: what was measured about the model's cost (speed, memory). Only measured facts.
  */
 export function checkSexManifest(m) {
   const fail = why => ({ ok: false, why });
@@ -121,6 +123,10 @@ export function checkSexManifest(m) {
   if (![t, lo, hi].every(num) || !(lo < t && t < hi)) return fail('calibration.cut: numbers with lo < t < hi');
   if (!num(a) || !num(b) || !(a > 0)) return fail('calibration.display: numbers a > 0 and b');
   if (!Array.isArray(c.genera) || !c.genera.length || !c.genera.every(g => typeof g === 'string' && /^[A-Z][a-z]+$/.test(g))) return fail('calibration.genera: a list of genus names');
+  const n = m.notes;
+  const text = v => typeof v === 'string' && v.trim().length > 0 && v.length <= 300 && !/[<>\u0000-\u001f]/.test(v);
+  if (n !== undefined && !(n && typeof n === 'object' && !Array.isArray(n) && Object.keys(n).length && Object.entries(n).every(([k, v]) => (k === 'es' || k === 'en') && text(v))))
+    return fail('notes: { "es": "…", "en": "…" }, plain text of at most 300 characters each');
   return {
     ok: true,
     entry: {
@@ -133,6 +139,7 @@ export function checkSexManifest(m) {
       packed: false,
       version: m.version.trim(),
       calibration: { cut: { t, lo, hi }, display: { a, b }, genera: [...c.genera] },
+      ...(n ? { notes: { ...n } } : {}),
     },
   };
 }
@@ -311,6 +318,7 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
             version: m.version ?? contentVersion(sha256),
             sha256,
             ...(m.calibration ? { calibration: m.calibration } : {}),
+            ...(m.notes ? { notes: m.notes } : {}),
             ...(parts ? { parts: parts.map(p => p.sha256) } : {}),
           });
         }

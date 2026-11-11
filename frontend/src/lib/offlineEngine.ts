@@ -60,6 +60,8 @@ export interface ModelFile {
   version?: string
   sha256?: string
   calibration?: unknown
+  /** The sex model's notes for Descargas (its manifest's: measured cost), per language. */
+  notes?: { es?: string; en?: string }
 }
 /**
  * What the list offers for a model against the phone (lib/offlineId.ts offerFor): `state` 'none' (not offered),
@@ -630,7 +632,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const t = performance.now()
     const out = await sexSession.run({ [sexSession.inputNames[0]]: new ort!.Tensor('float32', sexInput(sq), [1, 3, 224, 224]) })
     lastMs.sex = Math.round(performance.now() - t)
-    return (out[sexSession.outputNames[0]].data as Float32Array)[0]
+    // The logit by name (model C also gives p_female), else the first output (model B has one).
+    const name = sexSession.outputNames.includes('logit') ? 'logit' : sexSession.outputNames[0]
+    return (out[name].data as Float32Array)[0]
   }
 
   async function forgetSex() {

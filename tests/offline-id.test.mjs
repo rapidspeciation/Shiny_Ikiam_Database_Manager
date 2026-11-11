@@ -419,3 +419,40 @@ test('checkSexManifest: what the field-sex worker must supply (HANDOFF.md), and 
   }
   assert.equal(checkSexManifest(null).ok, false);
 });
+
+test('model C\'s manifest as delivered (field-sex-C-20261111) is valid; notes are optional plain text', () => {
+  const c = {
+    schema: 'phone-model/1',
+    role: 'sex',
+    version: 'field-sex-C-20261111',
+    file: 'sex_c_dinov2b_sam_flip_fp16.onnx',
+    bytes: 171606829,
+    sha256: 'a9784a1c6b9988af638ca20cff2f41cb83951a38a00c1eafa7138efd69b53a3d',
+    input: { size: 224, values: 'raw' },
+    calibration: { cut: { t: 0.9918, lo: -0.1859, hi: 1.1956 }, display: { a: 1.0038, b: -0.5417 }, genera: SEX_B.calibration.genera },
+  };
+  const r = checkSexManifest(c);
+  assert.equal(r.ok, true);
+  assert.equal(r.entry.version, 'field-sex-C-20261111');
+  assert.equal(r.entry.notes, undefined);
+  const notes = { es: 'Más lento que el modelo B: 0,92 s por foto en una computadora portátil.', en: 'Slower than model B: 0.92 s per photo on a laptop.' };
+  assert.deepEqual(checkSexManifest({ ...c, notes }).entry.notes, notes);
+  assert.deepEqual(checkSexManifest({ ...c, notes: { es: notes.es } }).entry.notes, { es: notes.es });
+  for (const bad of [{}, { fr: 'x' }, { es: '' }, { es: 'x'.repeat(301) }, { es: '<b>x</b>' }, { es: 'a\nb' }, ['x'], 'x'])
+    assert.match(checkSexManifest({ ...c, notes: bad }).why ?? '', /notes/, JSON.stringify(bad));
+});
+
+test('the notes reach the phone\'s list with the sex model', async () => {
+  const { base, ident, server, signIn } = await setup();
+  try {
+    signIn();
+    const c = Buffer.from('a model with notes');
+    writeFileSync(join(ident, 'offline', 'sex_c_test.onnx'), c);
+    writeFileSync(join(ident, SEX_MANIFEST), JSON.stringify(cManifest(c, { notes: { es: 'Más lento.', en: 'Slower.' } })));
+    const list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.deepEqual(list.files.find(f => f.role === 'sex').notes, { es: 'Más lento.', en: 'Slower.' });
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});

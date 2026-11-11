@@ -205,7 +205,10 @@ export default {
   'Actualizar · {mb} MB': 'Update · {mb} MB',
   // Descargas: a newer model version (DownloadsPanel, model-versions 11 Nov 2026)
   'Nueva versión disponible': 'New version available',
-  'Instalada: {from}. Nueva: {to}.': 'Installed: {from}. New: {to}.',
+  'Nueva: {v}, {mb} MB.': 'New: {v}, {mb} MB.',
+  'Instalada: {v}, {mb} MB.': 'Installed: {v}, {mb} MB.',
+  'Instalada: {v}.': 'Installed: {v}.',
+  'Instalada: {mb} MB, sin versión registrada.': 'Installed: {mb} MB, no version recorded.',
   'Nueva: {to}.': 'New: {to}.',
   'Versión {v}': 'Version {v}',
   'Comprobando la descarga…': 'Checking the download…',

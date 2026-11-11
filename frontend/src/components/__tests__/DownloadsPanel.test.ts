@@ -41,31 +41,38 @@ afterEach(() => {
   locale.value = 'en'
 })
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-const sexRow = (o: Partial<SexRow> = {}): SexRow => ({ genera: 13, ready: true, outdated: false, downloadMb: 164, takesMb: 41, progress: null, error: null, versions: { from: 'B 2026-11-08', to: 'B 2026-11-08' }, ...o })
+const C = 'field-sex-C-20261111'
+const NOTE = 'Más lento que el modelo B: 0,92 s por foto en una computadora portátil (B: 0,15 s). En teléfonos aún no se ha medido.'
+const sexRow = (o: Partial<SexRow> = {}): SexRow => ({ genera: 13, ready: true, outdated: false, downloadMb: 172, takesMb: 43, progress: null, error: null, versions: { from: 'B 2026-11-08', to: 'B 2026-11-08', fromMb: 43, toMb: 43 }, ...o })
+/** Model C listed, model B on the phone (the numbers Descargas gets from the view: 10^6-byte MB). */
+const update = (o: Partial<SexRow> = {}) => sexRow({ outdated: true, note: NOTE, versions: { from: 'B 2026-11-08', to: C, fromMb: 43, toMb: 172 }, ...o })
 const modelRow = (o: Partial<ModelRow> = {}): ModelRow => ({ kind: 'small', label: 'Rápido y liviano', ready: true, outdated: false, downloadMb: 25, takesMb: 65, recommended: true, ...o })
 
 describe('Descargas: model versions', () => {
-  it('the phone has no stored version, the server lists C: «Nueva versión disponible» with the new size and «Actualizar»', async () => {
+  it('the phone has no stored version, the server lists C: «Nueva versión disponible», 172 MB and «Actualizar»', async () => {
     locale.value = 'es'
     let asked = 0
-    const el = show({ sex: sexRow({ outdated: true, versions: { from: null, to: 'C 2026-11-20' } }) }, { onSexDownload: () => asked++ })
+    const el = show({ sex: update({ versions: { from: null, to: C, fromMb: 43, toMb: 172 } }) }, { onSexDownload: () => asked++ })
     const sex = el.querySelector('[data-testid=dl-sex]')!
-    expect(text(sex.querySelector('[data-testid=sex-update]'))).toMatch(/^Nueva versión disponible ?Nueva: C 2026-11-20\.$/)
+    const notice = text(sex.querySelector('[data-testid=sex-update]'))
+    expect(notice).toMatch(/^Nueva versión disponible ?Nueva: field-sex-C-20261111, 172 MB\. ?Instalada: 43 MB, sin versión registrada\./)
+    // The cost, as the model's manifest states it (measured on a laptop; nothing claimed for phones).
+    expect(text(sex.querySelector('[data-testid=sex-note]'))).toBe(NOTE)
     const btn = sex.querySelector<HTMLButtonElement>('[data-testid=sex-refresh]')!
-    expect(text(btn)).toBe('Actualizar · 164 MB')
+    expect(text(btn)).toBe('Actualizar · 172 MB')
     expect(btn.disabled).toBe(false)
     btn.click()
     expect(asked).toBe(1)
     // The installed one stays usable: still on the phone, removable; no first-download button.
-    expect(text(sex)).toContain('41 MB en el teléfono')
+    expect(text(sex)).toContain('43 MB en el teléfono')
     expect(sex.querySelector('[data-testid=sex-download]')).toBeNull()
   })
 
-  it('an older recorded version: both versions shown; in English too', () => {
+  it('model B recorded: both versions and sizes; in English too', () => {
     locale.value = 'en'
-    const el = show({ sex: sexRow({ outdated: true, versions: { from: 'B 2026-11-08', to: 'C 2026-11-20' } }) })
-    expect(text(el.querySelector('[data-testid=sex-update]'))).toMatch(/^New version available ?Installed: B 2026-11-08\. New: C 2026-11-20\.$/)
-    expect(text(el.querySelector('[data-testid=sex-refresh]'))).toBe('Update · 164 MB')
+    const el = show({ sex: update() })
+    expect(text(el.querySelector('[data-testid=sex-update]'))).toMatch(/^New version available ?New: field-sex-C-20261111, 172 MB\. ?Installed: B 2026-11-08, 43 MB\./)
+    expect(text(el.querySelector('[data-testid=sex-refresh]'))).toBe('Update · 172 MB')
   })
 
   it('the same version: no update notice, no update button, the version shown', () => {
@@ -73,15 +80,24 @@ describe('Descargas: model versions', () => {
     const el = show({ sex: sexRow() })
     expect(el.querySelector('[data-testid=sex-update]')).toBeNull()
     expect(el.querySelector('[data-testid=sex-refresh]')).toBeNull()
+    expect(el.querySelector('[data-testid=sex-note]')).toBeNull()
     expect(text(el.querySelector('[data-testid=sex-version]'))).toBe('Versión B 2026-11-08')
+  })
+
+  it('nothing on the phone: the download button and the model\'s note', () => {
+    locale.value = 'es'
+    const el = show({ sex: sexRow({ ready: false, note: NOTE, versions: { from: null, to: C, fromMb: null, toMb: 172 } }) })
+    expect(text(el.querySelector('[data-testid=sex-download]'))).toBe('Descargar · 172 MB')
+    expect(text(el.querySelector('[data-testid=sex-note]'))).toBe(NOTE)
+    expect(el.querySelector('[data-testid=sex-update]')).toBeNull()
   })
 
   it('during the update: the progress, then «Comprobando la descarga…»; the installed version stays in use', () => {
     locale.value = 'es'
-    let el = show({ sex: sexRow({ outdated: true, progress: { done: 50 * 1048576, total: 164 * 1048576 } }) })
-    expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toMatch(/^50 de 164 MB ?Mientras tanto se sigue usando la versión instalada\.$/)
+    let el = show({ sex: update({ progress: { done: 50e6, total: 171606829 } }) })
+    expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toMatch(/^50 de 172 MB ?Mientras tanto se sigue usando la versión instalada\.$/)
     expect(el.querySelector('[data-testid=sex-refresh]')).toBeNull()
-    el = show({ sex: sexRow({ outdated: true, progress: { done: 164 * 1048576, total: 164 * 1048576 } }) })
+    el = show({ sex: update({ progress: { done: 171606829, total: 171606829 } }) })
     expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toContain('Comprobando la descarga…')
   })
 

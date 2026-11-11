@@ -31,7 +31,7 @@ import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
-import { t } from '../lib/i18n'
+import { locale, t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
@@ -107,8 +107,9 @@ const store = {
     }
   },
 }
-const mb = (b: number) => Math.max(1, Math.round(b / 1048576))
-const roughMb = (b: number) => (b > 200 * 1048576 ? Math.round(b / 10485760) * 10 : Math.max(1, Math.round(b / 5242880) * 5))
+// MB as phones and the models' reports count them (10^6 bytes): model C is «172 MB», model B «43 MB».
+const mb = (b: number) => Math.max(1, Math.round(b / 1e6))
+const roughMb = (b: number) => (b > 200e6 ? Math.round(b / 10e6) * 10 : Math.max(1, Math.round(b / 5e6) * 5))
 
 // ---------------------------------------------------------------- models: list, readiness, download
 
@@ -671,7 +672,13 @@ const sexRow = computed<SexRow | null>(() => {
     takesMb: mb(sexInstalled.value?.bytes ?? listed?.bytes ?? SEX_FILE.bytes),
     progress: sexDownload.value,
     error: sexError.value,
-    versions: { from: sexInstalled.value?.version ?? null, to: o?.to ?? null },
+    versions: {
+      from: sexInstalled.value?.version ?? null,
+      to: o?.to ?? null,
+      fromMb: sexInstalled.value ? mb(sexInstalled.value.bytes) : null,
+      toMb: listed ? mb(listed.bytes) : null,
+    },
+    note: (locale.value === 'en' ? (listed?.notes?.en ?? listed?.notes?.es) : (listed?.notes?.es ?? listed?.notes?.en)) ?? null,
   }
 })
 async function removeSex() {
@@ -968,7 +975,7 @@ const firstPack = computed(() => {
 /** The first screen's button: the model and the photos that follow it, one total. */
 const firstMb = computed(() => {
   const s = sizes.value.small
-  return roughMb((s ? s.wire || s.plain : 0) || publicSize('small')) + (firstPack.value ? Math.round(firstPack.value.bytes / 1048576) : 0)
+  return roughMb((s ? s.wire || s.plain : 0) || publicSize('small')) + (firstPack.value ? Math.round(firstPack.value.bytes / 1e6) : 0)
 })
 // The first screen needs the list for that line (and its size); elsewhere it is read where it is used.
 watch(

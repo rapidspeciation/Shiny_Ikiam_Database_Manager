@@ -9,7 +9,13 @@ import type { ModelKind } from '../../lib/offlineId'
 import PackPanel from './PackPanel.vue'
 
 /** The installed and the offered version (null: not known, e.g. a model kept before versions existed). */
-export interface Versions { from: string | null; to: string | null }
+export interface Versions {
+  from: string | null
+  to: string | null
+  /** The installed and the offered file's size in MB (the sex model: its size changes with the model). */
+  fromMb?: number | null
+  toMb?: number | null
+}
 export interface ModelRow {
   kind: ModelKind
   label: string
@@ -33,6 +39,8 @@ export interface SexRow {
   progress: { done: number; total: number } | null
   error: string | null
   versions?: Versions
+  /** The model's own note (its manifest's: measured cost, speed or memory), in the page's language; null: none. */
+  note?: string | null
 }
 defineProps<{
   models: ModelRow[]
@@ -46,7 +54,8 @@ defineProps<{
   online: boolean
 }>()
 const emit = defineEmits<{ download: [kind: ModelKind]; use: [kind: ModelKind]; remove: [kind: ModelKind]; sexDownload: []; sexRemove: [] }>()
-const mb = (b: number) => Math.max(1, Math.round(b / 1048576))
+/** MB as phones and the model reports count them (10^6 bytes). */
+const mb = (b: number) => Math.max(1, Math.round(b / 1e6))
 const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / Math.max(1, p.total))
 /** All bytes in: the file is being checked (its SHA-256) before it replaces the installed one. */
 const checking = (p: { done: number; total: number }) => p.total > 1 && p.done >= p.total
@@ -105,7 +114,7 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
             <span>
               <span class="font-medium">{{ $t('Nueva versión disponible') }}</span>
               <span v-if="named(m.versions?.to)" class="block text-xs text-fg-muted">
-                {{ named(m.versions?.from) ? $t('Instalada: {from}. Nueva: {to}.', { from: m.versions!.from!, to: m.versions!.to! }) : $t('Nueva: {to}.', { to: m.versions!.to! }) }}
+                {{ named(m.versions?.from) ? $t('Instalada: {v}.', { v: m.versions!.from! }) + ' ' + $t('Nueva: {to}.', { to: m.versions!.to! }) : $t('Nueva: {to}.', { to: m.versions!.to! }) }}
               </span>
             </span>
           </p>
@@ -156,12 +165,18 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
         <RefreshCw :size="15" class="mt-0.5 shrink-0 text-brand-text" />
         <span>
           <span class="font-medium">{{ $t('Nueva versión disponible') }}</span>
-          <span v-if="named(sex.versions?.to)" class="block text-xs text-fg-muted" data-testid="sex-versions">
-            {{ named(sex.versions?.from) ? $t('Instalada: {from}. Nueva: {to}.', { from: sex.versions!.from!, to: sex.versions!.to! }) : $t('Nueva: {to}.', { to: sex.versions!.to! }) }}
+          <span v-if="named(sex.versions?.to)" class="block text-xs text-fg-muted tabular-nums" data-testid="sex-versions">
+            <span class="block">{{ sex.versions?.toMb ? $t('Nueva: {v}, {mb} MB.', { v: sex.versions.to!, mb: sex.versions.toMb }) : $t('Nueva: {to}.', { to: sex.versions!.to! }) }}</span>
+            <span v-if="named(sex.versions?.from)" class="block">
+              {{ sex.versions?.fromMb ? $t('Instalada: {v}, {mb} MB.', { v: sex.versions.from!, mb: sex.versions.fromMb }) : $t('Instalada: {v}.', { v: sex.versions!.from! }) }}
+            </span>
+            <span v-else-if="sex.versions?.fromMb" class="block">{{ $t('Instalada: {mb} MB, sin versión registrada.', { mb: sex.versions.fromMb }) }}</span>
           </span>
+          <span v-if="sex.note" class="mt-1 block text-xs text-fg-muted" data-testid="sex-note">{{ sex.note }}</span>
         </span>
       </p>
-      <p v-else-if="sex.ready && named(sex.versions?.from)" class="mt-1 text-xs text-fg-subtle" data-testid="sex-version">{{ $t('Versión {v}', { v: sex.versions!.from! }) }}</p>
+      <p v-else-if="!sex.ready && sex.note && !sex.progress" class="mt-2 text-xs text-fg-muted" data-testid="sex-note">{{ sex.note }}</p>
+      <p v-else-if="sex.ready && !sex.progress && named(sex.versions?.from)" class="mt-1 text-xs text-fg-subtle" data-testid="sex-version">{{ $t('Versión {v}', { v: sex.versions!.from! }) }}</p>
       <div v-if="!sex.progress" class="mt-2 flex flex-wrap gap-2">
         <button v-if="!sex.ready && !sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-download" @click="emit('sexDownload')">
           {{ $t('Descargar') }} · {{ sex.downloadMb }} MB
