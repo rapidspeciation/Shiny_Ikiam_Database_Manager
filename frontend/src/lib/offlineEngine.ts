@@ -718,6 +718,8 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const names = Object.keys(s?.files ?? {}).filter(name => roleOf(name, s!.files[name].role) === 'sex')
     for (const name of names) delete s!.files[name]
     if (names.length) await putStored(cache, s!)
+    // The stored sex files by name, whatever the name.
+    for (const name of names) await dropParts(cache, name)
     // Then every cached part of a sex model, by its file's role: also a download or an update cut halfway, whose file
     // stored.json never named (the team's model must not stay on a phone signed out).
     await dropRoles(cache, new Set<FileRole>(['sex']))
