@@ -171,7 +171,7 @@ class HttpError extends Error {
  * Identificar tab: the same headers, no models of its own). `webRoot`: the built page (web/); `identifierDir`: the
  * identifier's files; `user`: the signed-in person or null.
  */
-export async function serveOfflineId(req, res, { page = 'prueba-offline', path, webRoot, identifierDir, user }) {
+export async function serveOfflineId(req, res, { page = 'prueba-offline', path, webRoot, identifierDir, user, packsDir = null }) {
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
     if (path === '') {
@@ -212,10 +212,19 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
       return await sendFile(req, res, join(identifierDir, model.path), { 'cache-control': 'private, no-store' });
     }
     const clean = decodeURIComponent(path).replace(/^\/+/, '');
-    const root = resolve(webRoot, page);
-    const file = resolve(root, clean || 'index.html');
+    // The photo packs (scripts/photo-packs.py, frontend/src/lib/photoPacks.ts): from PACKS_DIR when set (a set too
+    // large for Git), else beside the page (identificar/packs/).
+    const inPacks = page === 'identificar' && packsDir && clean.startsWith('packs/');
+    const root = inPacks ? resolve(packsDir) : resolve(webRoot, page);
+    const file = resolve(root, inPacks ? clean.slice('packs/'.length) : clean || 'index.html');
     if (!file.startsWith(root + '/')) throw new HttpError(404, 'File not found');
     const html = file.endsWith('.html');
+    // A pack list made with its .gz beside it (the builder writes both): sent compressed when the browser takes gzip.
+    if (file.endsWith('/index.json') && clean.includes('packs/') && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+      const [plain, gz] = await Promise.all([stat(file).catch(() => null), stat(`${file}.gz`).catch(() => null)]);
+      if (plain?.isFile() && gz?.isFile() && gz.mtimeMs >= plain.mtimeMs)
+        return await sendFile(req, res, `${file}.gz`, { 'content-type': 'application/json', 'content-encoding': 'gzip', vary: 'accept-encoding', 'cache-control': 'no-cache' });
+    }
     return await sendFile(req, res, file, {
       'content-security-policy':
         "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' https://huggingface.co https://*.hf.co; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
@@ -366,7 +375,7 @@ async function sendFile(req, res, file, extra) {
   const s = await stat(file).catch(() => null);
   if (!s?.isFile()) throw new HttpError(404, 'File not found');
   const etag = etagOf(s);
-  const headers = { ...isolated, ...extra, etag, 'last-modified': s.mtime.toUTCString(), 'accept-ranges': 'bytes', 'content-type': types[extname(file)] || 'application/octet-stream' };
+  const headers = { ...isolated, 'content-type': types[extname(file)] || 'application/octet-stream', ...extra, etag, 'last-modified': s.mtime.toUTCString(), 'accept-ranges': 'bytes' };
   if (req.headers['if-none-match'] && req.headers['if-none-match'].split(/\s*,\s*/).includes(etag)) {
     res.writeHead(304, headers);
     return res.end();

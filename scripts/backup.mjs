@@ -74,3 +74,38 @@ async function copyPhotos(from, to) {
 }
 await copyPhotos(photos, photoCopy);
 if (copied) console.log(`Clutch photos copied: ${copied} new file(s) in ${photoCopy}`);
+// The photos sent from Identificar to train the AI (server/contributions.mjs) are copied the same way, except that
+// one deleted in the app is deleted here too (its tombstone in the database): the person was told it leaves the server.
+// The daily database backups keep its row until they rotate out (14 days).
+const contributions = resolve(process.env.CONTRIB_DIR || join(dirname(source), 'contributions'));
+const contributionCopy = join(directory, 'contributions');
+copied = 0;
+await copyPhotos(contributions, contributionCopy);
+if (copied) console.log(`Contributed photos copied: ${copied} new file(s) in ${contributionCopy}`);
+let tombstones = [];
+const tombstoneDb = new DatabaseSync(source, { readOnly: true });
+try {
+  if (tombstoneDb.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'contribution_tombstones'").get())
+    tombstones = tombstoneDb.prepare('SELECT id FROM contribution_tombstones').all().map(r => r.id);
+} finally {
+  tombstoneDb.close();
+}
+let dropped = 0;
+async function dropDeleted(dir, ids) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) await dropDeleted(path, ids);
+    else if (entry.isFile() && ids.has(entry.name.replace(/(\.thumb)?\.jpg$/, ''))) {
+      await unlink(path);
+      dropped++;
+    }
+  }
+}
+if (tombstones.length) await dropDeleted(contributionCopy, new Set(tombstones));
+if (dropped) console.log(`Deleted contributed photos removed from the copy: ${dropped} file(s)`);

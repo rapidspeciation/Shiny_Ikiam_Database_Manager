@@ -136,3 +136,55 @@ test('headSides: the sides of the Andes the head records per species; identifyUp
   const out = await identifyUpload({ identifier, body: { photo: jpeg }, scratch: join(dir, 's'), sides: () => headSides(path) });
   assert.deepEqual(out.body.recorded, { 'G c': { East: true, West: false } });
 });
+
+test('the Identificar page: photo packs from PACKS_DIR, the list gzipped when its .gz is there', async () => {
+  const { gzipSync, gunzipSync } = await import('node:zlib');
+  const { utimesSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'identify-packs-'));
+  const web = join(dir, 'web');
+  const packs = join(dir, 'packs');
+  mkdirSync(join(web, 'identificar', 'packs'), { recursive: true });
+  mkdirSync(join(packs, 'photos'), { recursive: true });
+  writeFileSync(join(web, 'identificar', 'packs', 'index.json'), '{"beside":"page"}');
+  const list = JSON.stringify({ schema: 'ithomiini-photo-packs/1', version: 'v1', taxa: [] });
+  writeFileSync(join(packs, 'index.json'), list);
+  writeFileSync(join(packs, 'photos', '1.webp'), Buffer.from('RIFF0000WEBP'));
+  const serve = packsDir => http.createServer((req, res) => {
+    const path = new URL(req.url, 'http://x').pathname.slice('/identificar'.length);
+    serveOfflineId(req, res, { page: 'identificar', path, webRoot: web, identifierDir: null, user: null, packsDir });
+  });
+  const run = async (packsDir, fn) => {
+    const server = serve(packsDir);
+    await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+    try {
+      await fn(`http://127.0.0.1:${server.address().port}/identificar`);
+    } finally {
+      server.close();
+    }
+  };
+  await run(packs, async base => {
+    const plain = await fetch(`${base}/packs/index.json`);
+    assert.equal(plain.status, 200);
+    assert.equal(await plain.text(), list);
+    const photo = await fetch(`${base}/packs/photos/1.webp`);
+    assert.equal(photo.headers.get('content-type'), 'image/webp');
+    assert.equal(photo.headers.get('cross-origin-resource-policy'), 'same-origin');
+    assert.equal((await fetch(`${base}/packs/../../web/identificar/index.html`)).status, 404);
+    // With its .gz (as new as the list): compressed for a browser that takes gzip.
+    writeFileSync(join(packs, 'index.json.gz'), gzipSync(list));
+    const later = new Date(Date.now() + 5000);
+    utimesSync(join(packs, 'index.json.gz'), later, later);
+    const gz = await new Promise((ok, fail) =>
+      http.get(`${base}/packs/index.json`, { headers: { 'accept-encoding': 'gzip' } }, r => {
+        const chunks = [];
+        r.on('data', c => chunks.push(c));
+        r.on('end', () => ok({ headers: r.headers, body: Buffer.concat(chunks) }));
+      }).on('error', fail),
+    );
+    assert.equal(gz.headers['content-encoding'], 'gzip');
+    assert.equal(gz.headers['content-type'], 'application/json');
+    assert.equal(gunzipSync(gz.body).toString(), list);
+  });
+  // Without PACKS_DIR: the list beside the page.
+  await run(null, async base => assert.deepEqual(await (await fetch(`${base}/packs/index.json`)).json(), { beside: 'page' }));
+});

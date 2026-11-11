@@ -6,6 +6,7 @@
  */
 import { api, ApiError } from './api'
 import { t } from './i18n'
+import type { FieldSexAnswer } from './fieldSex'
 import type { Candidate, Higher } from './identifyResult'
 
 export type Mode = 'online' | 'phone'
@@ -24,6 +25,8 @@ export interface ServerAnswer {
   wingBox: [number, number, number, number] | null
   prior: string | null
   ms: number | null
+  /** The general sex line (lib/fieldSex.ts): only for the six species it covers. */
+  fieldSex?: FieldSexAnswer | null
 }
 
 /**
