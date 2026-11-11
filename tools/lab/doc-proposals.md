@@ -6,8 +6,7 @@ on each, as he would with Claude's own. The proposer reads his comments and answ
 reaches the live app.
 
 - **Address:** `http://127.0.0.1:8841/api/ai/mcp` (MCP over HTTP, JSON-RPC `tools/call`). The page is
-  `http://127.0.0.1:8841/#/instrucciones`, or https://franz-gpdwin4.tailf5d2f1.ts.net:9921/#/instrucciones on the
-  tailnet.
+  `http://127.0.0.1:8841/#/instrucciones`, or the lab's tailnet address on port 9921 (`tools/lab/tailscale.sh`).
 - **Token:** `~/.cache/ithomiini-lab/doc-comments-20261108/auditor-token.txt` (mode 600), sent as
   `Authorization: Bearer <token>`.
   - It belongs to the lab admin `auditor` («Auditoría»).
