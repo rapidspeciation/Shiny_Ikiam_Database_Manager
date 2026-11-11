@@ -316,10 +316,10 @@ test('every listed file carries a version and its SHA-256: the content for the i
     for (const f of list.files) {
       const bytes = readFileSync(join(ident, MODELS.find(m => m.name === f.name).path));
       assert.equal(f.sha256, sha256Of(bytes), f.name);
-      assert.equal(f.version, f.role === 'sex' ? SEX_B.version : f.role === 'student' ? 'small-SB-20261111' : contentVersion(f.sha256), f.name);
-      assert.deepEqual(f.input, f.role === 'student' ? { size: 182, values: 'clip' } : undefined, f.name);
-      // The small model's release note travels with it (Descargas shows it with the update).
-      if (f.role === 'student') assert.match(f.notes.es, /81,8\u00a0% frente al 79,4\u00a0%/);
+      // The current small model (S_B; L1 in a rollback build) with its version, input size and note.
+      assert.equal(f.version, f.role === 'sex' ? SEX_B.version : f.role === 'student' ? STUDENT.version : contentVersion(f.sha256), f.name);
+      assert.deepEqual(f.input, f.role === 'student' ? STUDENT.input : undefined, f.name);
+      if (f.role === 'student') assert.deepEqual(f.notes, STUDENT.notes);
     }
     // Without a manifest the sex model is model B, with its calibration (the phone keeps it with the file).
     const b = list.files.find(f => f.role === 'sex');
