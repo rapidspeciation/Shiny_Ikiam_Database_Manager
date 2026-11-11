@@ -23,6 +23,8 @@ photo-reader/
 server/instructions-history.json
 # Clutch photos taken in the app (server/clutch-photos.mjs), when the database sits in the checkout.
 clutch-photos/
+# Photos sent from Identificar to train the AI (server/contributions.mjs), when the database sits in the checkout.
+contributions/
 
 # Lab-only material kept off the public repo (4 Nov 2026): eval tasks from team chats, lab reports.
 reports/assistant_maps_photos_20261102/

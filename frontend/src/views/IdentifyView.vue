@@ -8,6 +8,8 @@
  * inventory, no species-photos), and the inventory a team session left on the phone is removed.
  * The team also sees an experimental sex estimate for in-hand photos (SexEstimate, lib/sexModel.ts); its model is
  * the team's (signed in only) and is removed from the phone when signed out.
+ * Behind VITE_CONTRIB=1, the team can also send the photo with their labels to train the AI (ContributeCard,
+ * lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them).
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -38,6 +40,14 @@ import { referencePhotos, savedPhotos, type Refs } from '../lib/identifyRefs'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
+declare const __BUILD_ID__: string
+import ContributeCard, { type Labels, type Outcome } from '../components/identify/ContributeCard.vue'
+import MyContributions from '../components/identify/MyContributions.vue'
+import { CONSENT_VERSION, CONTRIB_ENABLED, GPS_DECIMALS } from '../lib/contribConfig'
+import { AlreadyListed, createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
+import { askPersistence, browserLock, idbStore } from '../lib/contribIdb'
+import { photoMeta, roundGps } from '../lib/exifMeta'
+import { headSource, listSource, type TaxonSource } from '../lib/taxonPick'
 
 const session = useSession()
 
@@ -716,6 +726,169 @@ const fieldSexState = computed<FieldSexState | null>(() => {
   return fieldSexOf({ mode: modeChoice.value === 'phone' ? 'phone' : 'online', source: r.source, topName: top.value?.name, answer: r.server?.fieldSex, ithomiiniGenera })
 })
 
+// ---------------------------------------------------------------- photos sent to train the AI (team only, VITE_CONTRIB)
+
+const contribOn = computed(() => CONTRIB_ENABLED && !!session.user)
+let outbox: Outbox | null = null
+const myItems = ref<Item[]>([])
+const pendingCount = ref(0)
+const outboxPaused = ref(false)
+let outboxTimer: ReturnType<typeof setTimeout> | null = null
+let lastContrib: string | null = null
+/** The photo the card would send: the server's copy (online), or this phone's photo (in memory, not after a restore). */
+const contribPhoto = computed(() => {
+  const r = result.value
+  if (!r) return false
+  return r.source === 'online' ? !!r.photo : lastPhoto.value?.at === r.at
+})
+/** The location and day in the photo's EXIF (read before the canvas drops them). */
+const photoInfo = computed(() => (lastPhoto.value && lastPhoto.value.at === result.value?.at ? photoMeta(lastPhoto.value.photo.bytes) : { gps: null, takenAt: null }))
+const contribShown = computed(() => {
+  if (!ranked.value || !top.value) return null
+  if (said.value?.kind === 'genus') return { name: (said.value as { genus: string }).genus, rank: 'genus' as const }
+  return { name: top.value.name, rank: 'species' as const }
+})
+
+let outboxStarting: Promise<void> | null = null
+/**
+ * The outbox once the session is known (also when it came after the page's wait for it). It resolves once the storage
+ * is open; the first send runs on by itself, so Enviar never waits for it.
+ */
+function startOutbox(): Promise<void> {
+  if (!CONTRIB_ENABLED || !session.user) return Promise.resolve()
+  outboxStarting ??= (async () => {
+    outbox = createOutbox({ store: await idbStore(), send: httpSend, lock: browserLock })
+    syncOutbox({ force: true, status: true }).catch(() => null)
+  })().catch(() => {
+    outboxStarting = null
+  })
+  return outboxStarting
+}
+/**
+ * Sends what waits (now: `force`), then the list and the next timed try. Paused for the sign-in (401/403): no timer;
+ * the signal coming back, the page shown again or Enviar try again.
+ */
+async function syncOutbox({ force = false, status = false } = {}) {
+  if (!outbox || !session.user) return null
+  const uid = session.user.id
+  const r = await outbox.flush(uid, { force })
+  outboxPaused.value = r.stopped === 'auth'
+  if ((status || r.sent) && !r.stopped) await outbox.refresh(uid).catch(() => null)
+  myItems.value = await outbox.list(uid)
+  pendingCount.value = await outbox.pending(uid)
+  if (outboxTimer) clearTimeout(outboxTimer)
+  const at = r.stopped === 'auth' ? null : await outbox.nextAt(uid)
+  if (at !== null) outboxTimer = setTimeout(() => syncOutbox(), Math.max(1000, at - Date.now()))
+  return r
+}
+/** The card waits at most this long for the send (weak signal): the item is safe on the phone and goes on by itself. */
+const CARD_WAIT_MS = 8000
+const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<null>(ok => setTimeout(() => ok(null), ms))])
+const onVisible = () => document.visibilityState === 'visible' && syncOutbox({ force: true })
+
+const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('')
+/** What the AI said, kept with the item (DESIGN §4 «Metadata kept»); the person's labels are apart. */
+function prediction() {
+  const r = result.value!
+  const genus = [...(ranked.value?.genus ?? new Map()).entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+  return {
+    source: r.source,
+    model: r.kind ?? null,
+    // The head that read it: the phone's (its sha256), or the file the server lists (online).
+    head: r.source === 'phone' ? (head.value?.meta.head_sha256 ?? null) : null,
+    headFile: files.value?.find(f => f.role === 'head-meta')?.name ?? null,
+    status: r.status,
+    wingBox: r.server?.wingBox ?? null,
+    prior: r.server?.prior ?? null,
+    build: __BUILD_ID__,
+    side: r.source === 'online' ? (r.side ?? null) : sideValue.value,
+    species: (ranked.value?.species ?? []).slice(0, 5).map(c => ({ name: c.name, p: c.p })),
+    genus: genus.map(([name, p]) => ({ name, p })),
+    subspecies: top.value ? (subspecies.value.get(top.value.name) ?? []).slice(0, 3).map(c => ({ name: c.name, p: c.p })) : [],
+    sex: r.sex && 'z' in r.sex ? { z: r.sex.z, model: SEX_FILE.name, sha256: SEX_FILE.sha256 } : null,
+    pick: pick.value,
+    at: r.at,
+  }
+}
+async function contribute(labels: Labels): Promise<Outcome> {
+  const r = result.value
+  const uid = session.user?.id
+  await startOutbox()
+  if (!r || !uid || !outbox) return 'error'
+  let photo: string
+  try {
+    photo = r.source === 'online' && r.photo ? r.photo : jpegBase64(await photoCanvas(lastPhoto.value!.photo.blob))
+  } catch {
+    return 'error'
+  }
+  const bytes = Uint8Array.from(atob(photo), c => c.charCodeAt(0))
+  const meta = photoInfo.value
+  try {
+    const item = await outbox.add(uid, {
+      photo,
+      sha256: hex(await crypto.subtle.digest('SHA-256', bytes)),
+      thumb: r.crop.replace(/^data:image\/jpeg;base64,/, ''),
+      mini: smallThumb.value,
+      payload: {
+        createdAt: new Date().toISOString(),
+        takenAt: meta.takenAt,
+        labels: { species: labels.species, sex: labels.sex, photoKind: labels.photoKind },
+        prediction: prediction(),
+        gps: labels.includeGps && meta.gps ? roundGps(meta.gps, GPS_DECIMALS) : null,
+        consent: { version: CONSENT_VERSION },
+      },
+    })
+    lastContrib = item.id
+  } catch (e) {
+    return e instanceof OutboxFull ? 'full' : e instanceof AlreadyListed ? 'already' : 'error'
+  }
+  askPersistence()
+  const sync = await within(syncOutbox({ force: true }), CARD_WAIT_MS)
+  if (sync?.already.includes(lastContrib!)) return 'already'
+  const item = myItems.value.find(i => i.id === lastContrib)
+  if (item?.state === 'failed') {
+    refusal.value = item.lastError
+    return 'refused'
+  }
+  return item?.state === 'sent' ? 'sent' : 'queued'
+}
+/** Why the server refused the last item (shown on the card). */
+const refusal = ref<string | null>(null)
+async function undoContribution() {
+  if (!outbox || !lastContrib) return
+  await outbox.remove(lastContrib)
+  lastContrib = null
+  await within(syncOutbox({ force: true }), CARD_WAIT_MS)
+}
+async function removeContribution(id: string) {
+  if (!outbox) return
+  await outbox.remove(id)
+  await syncOutbox({ force: true })
+}
+
+/** «Es otra especie»: the model's names (the head's list), else the result's candidates. */
+const headNames = shallowRef<{ species: string[]; leaves?: string[]; is_ssp?: string } | null>(null)
+let headNamesTried = false
+async function loadHeadNames() {
+  if (headNames.value || headNamesTried) return
+  headNamesTried = true
+  const f = files.value?.find(x => x.role === 'head-meta')
+  try {
+    if (f) {
+      const r = await fetch(f.url ?? new URL(`prueba-offline/models/${f.name}`, appRoot()).href, { credentials: f.url ? 'omit' : 'same-origin' })
+      if (r.ok) return void (headNames.value = await r.json())
+    }
+  } catch {
+    /* no signal: the phone's copy */
+  }
+  if (anyReady.value) headNames.value = (await engine.loadHead().catch(() => null))?.meta ?? null
+}
+watch(contribShown, v => v && contribOn.value && loadHeadNames())
+const taxa = computed<TaxonSource>(() => {
+  const meta = head.value?.meta ?? headNames.value
+  return meta ? headSource(meta) : listSource(ranked.value?.species.map(c => c.name) ?? [])
+})
+
 // ---------------------------------------------------------------- reference photos
 
 const refs = ref<Record<string, Refs>>({})
@@ -839,6 +1012,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'nu
 
 const goOnline = () => {
   online.value = true
+  syncOutbox({ force: true })
   refresh().then(autoPack) // keeps the page too when it was opened without signal; a cut-off first save goes on
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 }
@@ -850,6 +1024,7 @@ onMounted(async () => {
   addEventListener('dragover', onDragOver)
   addEventListener('dragleave', onDragLeave)
   addEventListener('drop', onDrop)
+  document.addEventListener('visibilitychange', onVisible)
   await sessionKnown()
   if (unmounted) return // left during the wait
   const known = session.ready
@@ -863,6 +1038,7 @@ onMounted(async () => {
       if (known || signedInAs) return location.reload()
       // The session only came after the wait (slow signal): taken as it is, without a reload (no loop).
       signedInAs = id
+      startOutbox()
       await refresh()
       stock.value = await engine.stock()
       engine.refreshStock().then(async () => (stock.value = await engine.stock()))
@@ -874,6 +1050,7 @@ onMounted(async () => {
   await refresh()
   await restoreLast()
   autoPack()
+  startOutbox()
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
 let stopSessionWatch: (() => void) | null = null
@@ -887,7 +1064,9 @@ onBeforeUnmount(() => {
   removeEventListener('dragover', onDragOver)
   removeEventListener('dragleave', onDragLeave)
   removeEventListener('drop', onDrop)
+  document.removeEventListener('visibilitychange', onVisible)
   if (refsTimer) clearTimeout(refsTimer)
+  if (outboxTimer) clearTimeout(outboxTimer)
 })
 const anyReady = computed(() => ready.value.small || ready.value.full)
 </script>
@@ -932,6 +1111,9 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 
     <template v-else>
     <!-- Where the photo is read: the server (signed in, with signal) or this phone. Signed out: this phone only. -->
+    <p v-if="contribOn && pendingCount" class="mb-3 inline-flex items-center gap-1.5 rounded-full bg-cell-pending px-2.5 py-1 text-xs font-medium text-pending-text" role="status" data-testid="contrib-pending">
+      <WifiOff v-if="!outboxPaused" :size="14" />{{ $tn(pendingCount, '1 envío pendiente', '{n} envíos pendientes') }}<template v-if="outboxPaused"> · {{ $t('Inicie sesión para enviar.') }}</template>
+    </p>
     <div v-if="checked && session.user" class="mb-3" data-testid="mode">
       <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
         <button
@@ -1062,6 +1244,17 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             </p>
             <SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />
             <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
+            <ContributeCard
+              v-if="contribOn && !noWings && contribPhoto && contribShown"
+              :key="result.at"
+              :shown="contribShown"
+              :pick="pick"
+              :source="taxa"
+              :has-gps="!!photoInfo.gps"
+              :send="contribute"
+              :undo="undoContribution"
+              :refusal="refusal"
+            />
 
             <section class="mt-4">
               <div class="mb-2 flex items-baseline justify-between gap-2">
@@ -1194,6 +1387,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :focus="stockFocus"
             :names-subspecies="result.source === 'online' || !!head?.ssp"
           />
+
+          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" @remove="removeContribution" />
 
           <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">
             <summary class="cursor-pointer font-medium">{{ $t('Mis identificaciones') }} <span class="font-normal text-fg-muted">({{ $t('en este teléfono') }})</span></summary>

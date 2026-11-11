@@ -98,6 +98,7 @@ import { createInstructions } from './instructions.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { createSpeciesPhotos } from './species-photos.mjs';
 import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.mjs';
+import { contributionsDir, createContributions } from './contributions.mjs';
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
@@ -405,6 +406,11 @@ export function configFromEnv(env = process.env) {
     speciesPhotos: env.SPECIES_PHOTOS !== '0',
     // Photos of clutches taken in the app (server/clutch-photos.mjs): clutch-photos next to the database by default.
     clutchPhotoDir: env.CLUTCH_PHOTO_DIR,
+    // Photos sent from Identificar to train the AI (server/contributions.mjs): contributions next to the database by default;
+    // the store's cap and the free space below which it takes no more, in GB.
+    contributionsDir: env.CONTRIB_DIR,
+    contributionsMaxGb: env.CONTRIB_MAX_GB ? Number(env.CONTRIB_MAX_GB) : undefined,
+    contributionsMinFreeGb: env.CONTRIB_MIN_FREE_GB ? Number(env.CONTRIB_MIN_FREE_GB) : undefined,
     // T3 Code (stock install on its own host), shown inside the Asistente tab.
     t3: env.ITHOMIINI_T3_URL
       ? {
@@ -763,6 +769,12 @@ export async function createApp(config = {}, options = {}) {
   });
   const clutchPhotos = createClutchPhotos(store, {
     dir: config.clutchPhotoDir || clutchPhotoDir({}, store.db.location?.() ?? null),
+  });
+  const contributions = createContributions(store, {
+    dir: config.contributionsDir || contributionsDir({}, store.db.location?.() ?? null),
+    ...(Number.isFinite(config.contributionsMaxGb) ? { maxBytes: config.contributionsMaxGb * 1024 ** 3 } : {}),
+    ...(Number.isFinite(config.contributionsMinFreeGb) ? { minFreeBytes: config.contributionsMinFreeGb * 1024 ** 3 } : {}),
+    ...options.contributions,
   });
   const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
   // Reset links asked for from the sign-in page: 3 per account and 9 per address every 15 minutes.
@@ -1221,6 +1233,15 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, clutchPhotos.remove(decodePart(path.split('/')[4]), user));
       }
+      // Photos sent from Identificar to train the AI (server/contributions.mjs; the team only in v1, so after the sign-in check):
+      // sent once per item (idempotent by its id), the person's own listed, deleted with a tombstone.
+      if (method === 'POST' && path === '/api/identify/contributions') {
+        const out = contributions.accept(body, user);
+        return json(res, out.status, out.body);
+      }
+      if (method === 'GET' && path === '/api/identify/contributions/mine') return json(res, 200, contributions.mine(user));
+      if (method === 'DELETE' && /^\/api\/identify\/contributions\/[^/]+$/.test(path))
+        return json(res, 200, contributions.remove(decodePart(path.split('/')[4]), user));
       if (method === 'PUT' && path === '/api/clutches/notebook/up-to') {
         requireEditor(user);
         return json(res, 200, setNotebookUpTo(store, body, user));
@@ -1838,7 +1859,9 @@ export async function createApp(config = {}, options = {}) {
       throw fail('NOT_FOUND', 'Route not found', 404);
     } catch (e) {
       const status = Number(e.status) || 500;
-      if (status >= 500) console.error(`[${requestId}]`, e.stack || e.message);
+      // A full contributions store (507) is said in one line: every phone's retry would print a stack.
+      if (e.code === 'STORE_FULL') console.warn(`[${requestId}] ${e.message}`);
+      else if (status >= 500) console.error(`[${requestId}]`, e.stack || e.message);
       return json(res, status, {
         error: {
           code: e.code || 'SERVER_ERROR',
@@ -1847,7 +1870,7 @@ export async function createApp(config = {}, options = {}) {
           ...(e.messageMsg && (status < 500 || e.code) ? { messageMsg: e.messageMsg } : {}),
           ...(e.details ? { details: e.details } : {}),
         },
-      });
+      }, e.headers?.['retry-after'] ? { 'retry-after': e.headers['retry-after'] } : {});
     }
   });
   /** Proposals being applied, saves being written and saves whose outcome is still unknown; whether the app is stopping. */
