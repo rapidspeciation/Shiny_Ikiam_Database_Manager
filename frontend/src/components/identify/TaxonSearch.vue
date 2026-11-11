@@ -299,7 +299,7 @@ watch(
         <span class="block px-3 py-2">
           <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
           <i class="block text-lg font-semibold">{{ lead.name }}</i>
-          <span class="block truncate text-xs text-fg-muted" data-testid="lead-credit">{{ creditLine(lead.photo) }}</span>
+          <span class="block text-xs text-fg-muted" :class="lead.photo.kind === 'preserved' ? 'break-words' : 'truncate'" data-testid="lead-credit">{{ creditLine(lead.photo) }}</span>
         </span>
       </button>
 
