@@ -6,7 +6,9 @@ first, each {file, attribution, license, taxonUrl, source, bytes, country (ISO2 
 ('live' or 'preserved'), specimen (a preserved specimen's ID)}. The page keeps up to 2 photos of a taxon in a pack
 (PER_TAXON): the region's first, then one from a neighbouring country or else from elsewhere (lib/photoCountry.ts
 choosePhotos); with signal it shows them all.
-`version` is a hash of the entries: a phone whose pack has another version is offered an update.
+`version` is a hash of the entries: a phone whose pack has another version is offered an update. Each entry also keeps
+schema 1's `photo` and `bytes` (its first photo), so pages still running the first schema's code read the same list
+(write(), legacy()).
 
 Country photos (--obs ISO2=<file>): the observations of a country that photo-packs-obs.py saved (research grade,
 reusable licence). For each taxon (its iNaturalist id, same rank) the best one (most faves, then the newest) gives a
@@ -15,7 +17,7 @@ photo from that country; a taxon photo that is also an observation photo there t
 Preserved specimens (--preserved <manifest.json>): {"schema": "ithomiini-preserved/1", "photos": [{"name", "file"
 (an image, relative to the manifest), "specimen" (its ID), "country" (or null), "attribution", "license", "source"
 (or null)}]}, or the Sanger wing crops' manifest ({"items": [{"taxon", "specimen_id", "file", "poor", ...}]}: entries
-flagged poor are left out; credit "Sanger/Ikiam", no licence line). Each becomes a photo of kind 'preserved' of a taxon
+flagged poor are left out; credit "Ikiam / Wellcome Sanger Institute", shown as «Foto: …», no licence line). Each becomes a photo of kind 'preserved' of a taxon
 that has no live photo (with --preserved-all, of every taxon named). A WebP no larger than --size is kept byte for
 byte (the crops are made at the pack's settings already); anything else is made like the other photos.
 
@@ -95,7 +97,22 @@ def check(taxa):
             assert ph.get("kind") != "preserved" or ph.get("specimen"), t
 
 
+LEGACY = ("file", "attribution", "license", "taxonUrl", "source")
+
+
+def legacy(t):
+    """Schema 1's fields beside schema 2's (`photo` and `bytes`: the taxon's first photo), so a page still running the
+    first schema's code (release 1, 642d9251, open in a tab or offline on a phone) reads the new list as before: its
+    installer takes `photo`, which is in photos/, and never sees an empty list (it would record a pack with no photos
+    and delete the photos it had: review r4-sol-F1)."""
+    first = t["photos"][0] if t["photos"] else None
+    t["photo"] = {**{k: first.get(k) for k in LEGACY}, **({"missing": True} if first.get("missing") else {})} if first else None
+    t["bytes"] = first["bytes"] if first else 0
+    return t
+
+
 def write(out, taxa, base, source, sample=None, bundles=None):
+    taxa = [legacy(t) for t in taxa]
     check(taxa)
     taxa = sorted(taxa, key=lambda t: t["name"])
     index = {"schema": "ithomiini-photo-packs/2", "version": version_of(taxa), "built": time.strftime("%Y-%m-%d"), "base": base, "source": source}
@@ -115,6 +132,7 @@ def write(out, taxa, base, source, sample=None, bundles=None):
     os.replace(path + ".gz.part", path + ".gz")
     made = {ph["file"]: ph for t in taxa for ph in t["photos"] if not ph.get("missing")}
     with_photo = [t for t in taxa if any(not ph.get("missing") for ph in t["photos"])]
+    assert all((t["photo"] or {}).get("file") == (t["photos"][0]["file"] if t["photos"] else None) for t in taxa)
     by_group = {g: sum(1 for t in with_photo if t["group"] == g) for g in GROUPS}
     known = sum(1 for ph in made.values() if ph.get("country"))
     print(f"{path}: {len(taxa)} taxa, {len(with_photo)} with a photo, {len(made)} photo files ({known} with their country), {sum(ph['bytes'] for ph in made.values()) / 1048576:.1f} MB; by group {by_group}; version {index['version']}; index {os.path.getsize(path) / 1024:.0f} KB")
@@ -167,7 +185,7 @@ def read_preserved(path):
     if doc.get("schema") != "ithomiini-preserved/1" and isinstance(doc.get("items"), list):
         # The Sanger wing crops (offline-packs research, sanger-crops/crops-*/manifest.json).
         doc = {"photos": [{"name": e["taxon"], "file": e["file"], "specimen": e["specimen_id"], "country": e.get("country"),
-                           "attribution": "Sanger/Ikiam", "license": "", "source": None}
+                           "attribution": "Ikiam / Wellcome Sanger Institute", "license": "", "source": None}
                           for e in doc["items"] if not e.get("poor") and e.get("taxon") and e.get("file") and e.get("specimen_id")]}
     else:
         assert doc.get("schema") == "ithomiini-preserved/1", f"{path}: schema ithomiini-preserved/1 or a crops manifest with items"

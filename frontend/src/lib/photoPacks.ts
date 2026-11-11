@@ -163,6 +163,17 @@ export function normIndex<T extends { taxa: unknown[] }>(index: T): T & { taxa: 
   return { ...index, taxa }
 }
 
+/**
+ * A taxon as the first schema's code reads it too: `photo` and `bytes` from its first photo (review r4-sol-F1: a page
+ * of release 1, still open in a tab or offline, reads the installed record and the server's list; without these it saw
+ * no photos, recorded an empty pack and deleted the photos the phone had).
+ */
+export function withLegacy<T extends PackTaxon>(t: T): T & { photo: Omit<PackPhoto, 'bytes'> | null; bytes: number } {
+  const first = t.photos[0]
+  const photo = first ? { file: first.file, attribution: first.attribution, license: first.license, taxonUrl: first.taxonUrl, source: first.source, ...(first.missing ? { missing: true } : {}) } : null
+  return { ...t, photo, bytes: first?.bytes ?? 0 }
+}
+
 /** A taxon with a photo on the server (`withMissing`: also one listed but not made). */
 const usable = (t: PackTaxon, withMissing: boolean) => t.photos.filter(p => withMissing || !p.missing)
 /** The region's countries, null for «Neotrópico». */
@@ -553,7 +564,12 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
     if (quota) return
     try {
       const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
-      if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) await keep(u, await got.blob())
+      if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) {
+        // The same checks as a bundle's photos (r4-sol-F3): its size, and the hash in its name; else counted as failed.
+        const p = want.get(u)!
+        const body = new Uint8Array(await got.arrayBuffer())
+        if ((p.missing || !p.bytes || body.length === p.bytes) && (await sameBytes(p.file, body))) await keep(u, new Blob([body], { type: got.headers.get('content-type') ?? typeOf(u) }))
+      }
     } catch {
       /* counted as failed: a retry takes it */
     }
@@ -567,7 +583,7 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   const base = new URL(index.base ?? 'photos/', indexUrl).href
   const pack: InstalledPack = {
     // Each taxon with the photos saved of it (a taxon none of whose photos could be saved is left out).
-    index: { ...index, base, taxa: take.map(t => ({ ...t, photos: t.photos.filter(p => ok.has(src(p))) })).filter(t => t.photos.length) },
+    index: { ...index, base, taxa: take.map(t => withLegacy({ ...t, photos: t.photos.filter(p => ok.has(src(p))) })).filter(t => t.photos.length) },
     installed: {
       scope: { ...scope, region: scope.region === 'neotropics' ? 'neotropics' : [...scope.region] },
       version: index.version,
@@ -698,15 +714,24 @@ export async function onlineSources(): Promise<PackLookup[]> {
   if (onlineLookup?.index !== index) onlineLookup = { index, l: lookup(index, INDEX_URL()) }
   return [onlineLookup.l]
 }
-/** speciesPhotos with each taxon's photos from the first source that has any of it (each taxon from one source). */
+/** A photo's identity across lists: its iNaturalist page, else its file name (the same in the pack and online). */
+const photoKey = (p: TaxonPhoto) => p.source || p.src.split('/').pop() || p.src
+/**
+ * speciesPhotos from every source, each photo once (review r4-sol-F2: a taxon in the installed pack still gets the
+ * server list's other photos, e.g. its Ecuador photo next to an older pack's Brazilian one). The first source's copy
+ * is kept (the pack's, on the phone); a country only the later copy knows is taken over.
+ */
 export function photosFrom(sources: PackLookup[], species: string): TaxonPhoto[] {
-  const seen = new Set<string>()
+  const seen = new Map<string, TaxonPhoto>()
   const out: TaxonPhoto[] = []
-  for (const s of sources) {
-    const got = speciesPhotos(s, species).filter(p => !seen.has(p.name))
-    for (const p of got) out.push(p)
-    for (const p of got) seen.add(p.name)
-  }
+  for (const s of sources)
+    for (const p of speciesPhotos(s, species)) {
+      const had = seen.get(photoKey(p))
+      if (!had) {
+        seen.set(photoKey(p), p)
+        out.push(p)
+      } else if (!had.country && p.country) had.country = p.country
+    }
   // The species' own photo first, then its subspecies by name.
   return out.sort((a, b) => (a.rank === b.rank ? (a.rank === 'species' ? 0 : a.name.localeCompare(b.name)) : a.rank === 'species' ? -1 : 1))
 }

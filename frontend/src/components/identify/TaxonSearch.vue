@@ -159,7 +159,7 @@ const shownRefs = computed(() =>
 )
 /** «© Ana · CC-BY · Ecuador»: the credit line of a photo (a preserved specimen named first, with its ID). */
 const creditLine = (p: Card['photo'], license = true) =>
-  [p.kind === 'preserved' ? [t('Ejemplar preservado'), p.specimen].filter(Boolean).join(' ') : null, p.credit, license ? p.license : null, p.country ? countryName(p.country) : null]
+  [p.kind === 'preserved' ? [t('Ejemplar preservado'), p.specimen].filter(Boolean).join(' ') : null, p.kind === 'preserved' ? t('Foto: {who}', { who: p.credit }) : p.credit, license ? p.license : null, p.country ? countryName(p.country) : null]
     .filter(Boolean)
     .join(' · ')
 const view = computed(() => (chosen.value && cat.value ? taxonView(cat.value, chosen.value, shownRefs.value) : null))

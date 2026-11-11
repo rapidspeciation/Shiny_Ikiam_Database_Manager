@@ -267,9 +267,8 @@ export async function taxonRange(name: string): Promise<string[] | null> {
  */
 export async function withPack(refs: Record<string, Refs>, names: string[], sources?: PackLookup[]): Promise<Record<string, Refs>> {
   let from = sources ?? (await installedSources().catch(() => []))
-  // The server's whole list only for names the installed pack has no photo of (and only with signal).
-  if (!sources && navigator.onLine && names.some(n => !photosFrom(from, n).some(p => p.rank === 'species')))
-    from = [...from, ...(await onlineSources().catch(() => []))]
+  // With signal the server's whole list too, also for names the pack has (its other countries' photos: r4-sol-F2).
+  if (!sources && navigator.onLine) from = [...from, ...(await onlineSources().catch(() => []))]
   if (!from.length) return refs
   const out = { ...refs }
   for (const n of names) {

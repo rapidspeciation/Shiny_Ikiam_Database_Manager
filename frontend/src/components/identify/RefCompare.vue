@@ -76,7 +76,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         <span v-else class="break-words"
           ><span v-if="photo.kind === 'preserved'" class="font-medium" data-testid="preserved">{{ $t('Ejemplar preservado') }}<template v-if="photo.specimen"> {{ photo.specimen }}</template> · </span
           ><a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
-          ><template v-else>{{ photo.credit }}</template
+          ><template v-else>{{ photo.kind === 'preserved' ? $t('Foto: {who}', { who: photo.credit }) : photo.credit }}</template
           ><template v-if="photo.license">
             ·
             <a v-if="licenseUrl(photo.license)" :href="licenseUrl(photo.license)!" target="_blank" rel="noopener license" class="underline-offset-2 hover:underline">{{ photo.license }}</a

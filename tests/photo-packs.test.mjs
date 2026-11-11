@@ -86,7 +86,12 @@ test('photo-packs.py taxa: the Sanger crops manifest (poor ones left out, WebP k
     assert.equal(run.status, 0, run.stderr + run.stdout);
     const index = JSON.parse(readFileSync(join(out, 'index.json'), 'utf8'));
     const of = name => index.taxa.find(x => x.name === name).photos;
-    assert.deepEqual(of('Mechanitis polymnia werneri').map(p => [p.kind, p.specimen, p.attribution, p.license]), [['preserved', 'CAM000001', 'Sanger/Ikiam', '']]);
+    assert.deepEqual(of('Mechanitis polymnia werneri').map(p => [p.kind, p.specimen, p.attribution, p.license]), [['preserved', 'CAM000001', 'Ikiam / Wellcome Sanger Institute', '']]);
+    // Schema 1's fields beside (r4-sol-F1): the first photo as `photo`, its size as `bytes`, for pages of release 1.
+    for (const x of index.taxa) {
+      assert.equal(x.photo?.file ?? null, x.photos[0]?.file ?? null);
+      assert.equal(x.bytes, x.photos[0]?.bytes ?? 0);
+    }
     assert.deepEqual(of('Mechanitis polymnia eurydice'), []);
     assert.equal(of('Mechanitis polymnia').length, 1);
     assert.equal(of('Mechanitis polymnia')[0].kind, undefined);

@@ -158,7 +158,7 @@ describe('install, update and removal', () => {
 
   it('counts photos that failed, for the next update', async () => {
     fakeCaches()
-    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('3.webp') ? new Response('', { status: 500 }) : new Response(new Uint8Array(10), { headers: { 'content-type': 'image/webp' } }))))
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('3.webp') ? new Response('', { status: 500 }) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
     const { installPack } = await import('../photoPacks')
     const out = await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
     // The first pack on a phone is kept with what came (Update completes it).
@@ -365,15 +365,15 @@ describe('Compare from the pack', () => {
     expect(refs['Mechanitis polymnia'].photos[0].src).toMatch(/1\.webp$/)
   })
 
-  it('r2-sol-F6: the search with signal shows the server’s subspecies beside an installed pack; Compare does not read the list', async () => {
+  it('r2-sol-F6, r4-sol-F2: with signal the search and Compare show the server’s subspecies beside an installed pack', async () => {
     fakeCaches()
     const { installPack } = await import('../photoPacks')
     await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
     fetched.length = 0
     const { referencePhotos } = await import('../identifyRefs')
     const compare = await referencePhotos(['Mechanitis polymnia'], { signedIn: false })
-    expect(compare.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia proceriformis'])
-    expect(fetched.some(u => u.endsWith('/packs/index.json'))).toBe(false)
+    // Compare reads the server's list too with signal (its other countries' photos of a saved taxon: r4-sol-F2).
+    expect(compare.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])
     const search = await referencePhotos(['Mechanitis polymnia'], { signedIn: false, everySource: true })
     expect(search.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])
     // The installed photo first: the pack's copy, not the server's.

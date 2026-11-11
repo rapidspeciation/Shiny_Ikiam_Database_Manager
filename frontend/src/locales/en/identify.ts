@@ -272,6 +272,7 @@ export default {
   'Guardando fotos para comparar: {done} de {total}': 'Saving photos to compare: {done} of {total}',
   // Photos by country (11 Nov 2026).
   'Ejemplar preservado': 'Preserved specimen',
+  'Foto: {who}': 'Photo: {who}',
   'Primero fotos de {country}': 'Photos from {country} first',
   'Primero fotos de {country} (GPS de su foto)': "Photos from {country} first (your photo's GPS)",
   'Primero fotos del área de la subespecie {ssp}': 'Photos from the range of subspecies {ssp} first',

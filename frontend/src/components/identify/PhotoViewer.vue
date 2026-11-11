@@ -85,7 +85,7 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
         <p class="mt-1 text-sm text-white/75">
           <template v-if="photo.preserved != null">{{ $t('Ejemplar preservado') }}<template v-if="photo.preserved"> {{ photo.preserved }}</template> · </template>
           <a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
-          ><template v-else>{{ photo.credit }}</template
+          ><template v-else>{{ photo.preserved != null ? $t('Foto: {who}', { who: photo.credit }) : photo.credit }}</template
           ><template v-if="photo.license">
             ·
             <a v-if="licenseUrl(photo.license)" :href="licenseUrl(photo.license)!" target="_blank" rel="noopener license" class="underline-offset-2 hover:underline">{{ photo.license }}</a

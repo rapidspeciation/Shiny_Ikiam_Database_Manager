@@ -48,7 +48,7 @@ function fakeCaches() {
 let built = build()
 let requests: { url: string; range: string | null }[] = []
 /** A server: bundles by range (or whole when `noRanges`), single photos, failures on demand. */
-function server({ noRanges = false, failFirst = 0, corrupt = false } = {}) {
+function server({ noRanges = false, failFirst = 0, corrupt = false, corruptSingle = false, shortSingle = false } = {}) {
   let failures = failFirst
   vi.stubGlobal(
     'fetch',
@@ -67,7 +67,10 @@ function server({ noRanges = false, failFirst = 0, corrupt = false } = {}) {
         return new Response(all.slice(s, e + 1), { status: 206, headers: { 'content-range': `bytes ${s}-${e}/${all.length}` } })
       }
       const i = Number(/\/(\d+)-[0-9a-f]{8}\.webp$/.exec(url)?.[1] ?? -1)
-      return i >= 0 ? new Response(bytesOf(i), { headers: { 'content-type': 'image/webp' } }) : new Response('', { status: 404 })
+      if (i < 0) return new Response('', { status: 404 })
+      const body = bytesOf(i).slice(0, shortSingle ? 50 : undefined)
+      if (corruptSingle) body[5] ^= 255
+      return new Response(body, { headers: { 'content-type': 'image/webp' } })
     }),
   )
 }
@@ -147,6 +150,19 @@ describe('a pack saved from bundles', () => {
     expect(requests.filter(r => r.url.endsWith('.webp')).length).toBe(30)
     expect(await photoBytes(store, 0)).toEqual(bytesOf(0))
   }, 15_000)
+
+  it('r4-sol-F3: bundle and single photo both wrong (bytes, or cut short): nothing kept, every photo counted failed', async () => {
+    for (const bad of [{ corruptSingle: true }, { shortSingle: true }]) {
+      vi.resetModules()
+      requests = []
+      const store = fakeCaches()
+      server({ corrupt: true, ...bad })
+      const { installPack } = await import('../photoPacks')
+      const out = await installPack(built.index, scope, () => {})
+      expect(out).toMatchObject({ failed: 30, total: 30, pack: null })
+      expect([...store.keys()].filter(u => u.endsWith('.webp'))).toEqual([])
+    }
+  }, 30_000)
 
   it('a list without bundles: one request per photo, as before', async () => {
     fakeCaches()
