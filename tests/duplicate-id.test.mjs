@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets, GoogleSheets, moveRowRefs, structureRequests } from '../server/sheets.mjs';
 import { applyBatch } from '../server/batch.mjs';
-import { duplicateIdRow, suffixedId } from '../server/premade.mjs';
+import { duplicateIdRow, noteProtection, rowInsertLocked, suffixedId } from '../server/premade.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
@@ -57,8 +57,8 @@ function workbook() {
   });
 }
 
-async function fixture() {
-  const sheets = new LocalSheets({ [SHEET]: workbook() }, { evaluate });
+async function fixture(options = {}) {
+  const sheets = new LocalSheets({ [SHEET]: workbook() }, { evaluate, ...options });
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: [SHEET] });
   const at = row => store.getRecordBySheetRow(SHEET, row);
@@ -303,8 +303,8 @@ test('the requests: rows inserted from the bottom up, copied, emptied, then the 
 
 // ---------------------------------------------------------------- the assistant's proposals
 
-async function assistantFixture() {
-  const { sheets, store, at, idOf } = await fixture();
+async function assistantFixture(options) {
+  const { sheets, store, at, idOf } = await fixture(options);
   const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('ed-1','ed','ED','editor','s','h',1,'2026-01-01')")
@@ -423,6 +423,94 @@ test('a pending proposal on the rows below an inserted W2B.2 still maps to them:
     assert.equal(applied.status, 'applied', JSON.stringify(applied));
     assert.deepEqual([at(6).values.Sex, at(7).values.Sex], ['female', 'male']);
     assert.equal(at(6).id, w3b.id);
+  } finally {
+    store.close();
+  }
+});
+
+// ---------------------------------------------------------------- rows the app's account may not insert
+
+// Columns as letters, rows 1-based, as ROWS_RULE.md (10 Nov 2026) read Google's protections; made-up editors.
+const C = letter => [...letter].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+const columnsLocked = (from, to, rows = {}) => ({ range: { startColumnIndex: C(from), endColumnIndex: C(to) + 1, ...rows }, requestingUserCanEdit: false });
+const RECORDED = {
+  // AG–BB and AG–AJ down every row, G only in rows 6854–12462: none the app may edit.
+  Insectary_data: [columnsLocked('AG', 'BB'), columnsLocked('AG', 'AJ'), columnsLocked('G', 'G', { startRowIndex: 6853, endRowIndex: 12462 })],
+  // The whole sheet and AO–AP editable by the app; A, O–R, X–Y, BG–BY not.
+  Collection_data: [
+    { range: {}, requestingUserCanEdit: true },
+    { range: { startRowIndex: 0, endRowIndex: 1 }, requestingUserCanEdit: true },
+    { ...columnsLocked('AO', 'AP'), requestingUserCanEdit: true },
+    columnsLocked('A', 'A'),
+    columnsLocked('O', 'R'),
+    columnsLocked('X', 'Y'),
+    columnsLocked('BG', 'BY'),
+  ],
+  // Whole sheet protected, the app among its editors.
+  Photo_links: [{ range: {}, requestingUserCanEdit: true }],
+  Lists: [{ range: {}, requestingUserCanEdit: true }],
+  Insectary_stocks: [],
+};
+
+test('rows the app may insert, by the protections as Google lists them (ROWS_RULE.md, 10 Nov): not in Insectary_data or Collection_data, yes in Photo_links and Lists', async () => {
+  const store = new Store({ localMode: true }, { sheets: new LocalSheets({}) });
+  try {
+    // Not known yet (no sync): refused where protected columns reached every row, as an insert Google would refuse.
+    assert.equal(rowInsertLocked(store.db, 'Insectary_data', 10), true);
+    assert.equal(rowInsertLocked(store.db, 'Collection_data', 10), true);
+    assert.equal(rowInsertLocked(store.db, 'Photo_links', 10), false);
+    for (const [sheet, ranges] of Object.entries(RECORDED)) noteProtection(store.db, sheet, ranges);
+    for (const at of [3, 500, 20000]) {
+      assert.equal(rowInsertLocked(store.db, 'Insectary_data', at), true, `Insectary_data ${at}`);
+      assert.equal(rowInsertLocked(store.db, 'Collection_data', at), true, `Collection_data ${at}`);
+      assert.equal(rowInsertLocked(store.db, 'Photo_links', at), false, `Photo_links ${at}`);
+      assert.equal(rowInsertLocked(store.db, 'Lists', at), false, `Lists ${at}`);
+      assert.equal(rowInsertLocked(store.db, 'Insectary_stocks', at), false, `Insectary_stocks ${at}`);
+    }
+    // A range over some rows only reaches an insert next to them: G of rows 6854–12462.
+    noteProtection(store.db, 'Insectary_data', [RECORDED.Insectary_data[2]]);
+    assert.deepEqual(
+      [6853, 6854, 9000, 12463, 12464].map(at => rowInsertLocked(store.db, 'Insectary_data', at)),
+      [false, true, true, true, false],
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test('a W2B.2 row in Insectary_data, where protected columns reach every row: refused when it is proposed (propose_changes, update_proposal), with what to ask PAS and its values to paste', async () => {
+  const { store, at, call } = await assistantFixture({
+    protectedRanges: { [SHEET]: [{ startColumnIndex: C('AG'), endColumnIndex: C('BB') + 1 }] },
+  });
+  try {
+    const w2b = at(4);
+    const refused = await call('propose_changes', {
+      reason: 'Dos mariposas con W2B',
+      newRows: [{ sheet: SHEET, values: { Insectary_ID: 'w2b.2', Sex: 'female', 'CLUTCH NUMBER': 804 }, note: 'second one' }],
+    });
+    assert.ok(!refused.proposalId, JSON.stringify(refused));
+    assert.match(refused.error, /cannot insert a row in Insectary_data/);
+    assert.match(refused.error, /Ask PAS to insert it by hand in Google Sheets below row 4 \(W2B, the last row of W2B/);
+    assert.match(refused.error, /then fill it with a proposal on that row/);
+    // The values in the sheet's column order, a tab between columns, from the first one given.
+    const cells = [['Insectary_ID', 'W2B.2'], ['CLUTCH NUMBER', '804'], ['Sex', 'female']].sort((a, b) => col(a[0]) - col(b[0]));
+    const line = Array.from({ length: col(cells.at(-1)[0]) - col(cells[0][0]) + 1 }, () => '');
+    for (const [key, value] of cells) line[col(key) - col(cells[0][0])] = value;
+    assert.ok(refused.error.endsWith(`tab-separated from column ${String.fromCharCode(65 + col(cells[0][0]))}: ${line.join('\t')}`), refused.error);
+    assert.equal(store.db.prepare('SELECT count(*) n FROM ai_proposals').get().n, 0, 'no proposal');
+
+    // The suffix on W2B's own row is a cell edit: it goes.
+    const renamed = await call('propose_changes', { reason: 'x', changes: [{ recordId: w2b.id, values: { Insectary_ID: 'W2B.1' } }] });
+    assert.ok(renamed.proposalId, JSON.stringify(renamed));
+    // A row added to it later, or a pre-made row's ID changed in the table to a suffixed one: refused the same way.
+    const added = await call('update_proposal', { proposalId: renamed.proposalId, newRows: [{ sheet: SHEET, values: { Insectary_ID: 'W2B.2', Sex: 'male' } }] });
+    assert.match(JSON.stringify(added), /cannot insert a row in Insectary_data/, JSON.stringify(added));
+    const premade = await call('propose_changes', { reason: 'y', newRows: [{ sheet: SHEET, values: { Insectary_ID: 'W5B', Sex: 'male' } }] });
+    assert.ok(premade.proposalId, JSON.stringify(premade));
+    const retyped = await call('update_proposal', { proposalId: premade.proposalId, rows: [{ index: 0, values: { Insectary_ID: 'W2B.2' } }] });
+    assert.match(JSON.stringify(retyped), /cannot insert a row in Insectary_data/, JSON.stringify(retyped));
+    const kept = await call('get_proposal', { proposalId: premade.proposalId, full: true });
+    assert.deepEqual(kept.rows.map(r => r.values.Insectary_ID), ['W5B']);
   } finally {
     store.close();
   }

@@ -23,7 +23,8 @@ import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
-import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, suffixedId } from './premade.mjs';
+import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, rowInsertLocked, suffixedId } from './premade.mjs';
+import { columnLetter } from './columns.mjs';
 import { formulaNotes, isPlaceholder, newRowFormulas, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
 import { shiftFormula } from './sheets.mjs';
 import { parseFormula, relativeFormula } from './formula.mjs';
@@ -349,7 +350,7 @@ const TOOLS = [
           '- A row: `recordId`, or `sheet` + `id` (W2B, CAM079891, a clutch number).',
           '- A value typed in a formula cell is left to the formula when it gives the same, else written over it, doubtful; Insectary_ID takes only a suffix (W2B → W2B.1).',
           `- {"formula": "=..."}: English names, commas, {row} = the row's number. Down a column: bulk \`rows\`, up to ${FORMULA_ROWS} rows if only formulas.`,
-          "- A new Insectary_data row names its Insectary_ID and fills that ID's pre-made row; a second butterfly of a used ID takes a suffix (W2B.2), inserted below.",
+          "- A new Insectary_data row names its Insectary_ID and fills that ID's pre-made row; a second butterfly of a used ID takes a suffix (W2B.2), in a row inserted below (by PAS where the sheet refuses the app: the error says).",
           `- Up to ${PROPOSAL_ROWS} rows; \`bulk\`: the same values to many rows. \`photo\`, \`rotate\`: as in match_notebook.`,
           '- lookAt (returned): rows worth a look; tell the person what matters before they apply.',
           VALUES_RULES,
@@ -1334,6 +1335,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // A suffixed ID (W2B.2): the second butterfly given an ID, in a row inserted below that ID's rows.
       const duplicate = duplicateIdRow(store, values.Insectary_ID);
       if (duplicate?.problem) return { error: `${at}: ${DUPLICATE_PROBLEMS[duplicate.problem](duplicate)}` };
+      // Refused now, not at «Aplicar»: protected columns the app's account cannot edit reach that row.
+      if (duplicate && rowInsertLocked(db, sheet, duplicate.anchor.row + 1)) return { error: `${at}: ${insertRefused(sheet, duplicate, values)}` };
       if (!duplicate && !insectaryIdRow(store, values.Insectary_ID))
         return {
           error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, one the ID series reaches next, or a suffixed one like W2B.2 for a second butterfly with an ID already used)`,
@@ -1408,6 +1411,26 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     Object.entries(values)
       .filter(([field, value]) => isUnique(sheet, field) && isIdValue(value))
       .map(([field, value]) => [field, value, `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`]);
+
+  /**
+   * A row the app's account may not insert (premade.mjs rowInsertLocked): PAS inserts it by hand, a
+   * proposal fills it; its values tab-separated in the sheet's column order, ready to paste.
+   */
+  function insertRefused(sheet, duplicate, values) {
+    const columns = sheetColumns(sheet);
+    const cells = Object.entries(values)
+      .filter(([field]) => columns.has(field))
+      .map(([field, value]) => [columns.get(field), String(value ?? '').replace(/\s+/g, ' ')])
+      .sort((a, b) => a[0] - b[0]);
+    const first = cells[0]?.[0] ?? 0;
+    const line = Array.from({ length: (cells.at(-1)?.[0] ?? first) - first + 1 }, () => '');
+    for (const [column, value] of cells) line[column - first] = value;
+    return (
+      `the app cannot insert a row in ${sheet}: protected columns reach that row. ` +
+      `Ask PAS to insert it by hand in Google Sheets below row ${duplicate.anchor.row} (${duplicate.anchor.value}, the last row of ${duplicate.base}; or where the notebook puts it), ` +
+      `then fill it with a proposal on that row. Its values, tab-separated from column ${columnLetter(first)}: ${line.join('\t')}`
+    );
+  }
 
   /** Why a suffixed Insectary ID cannot get its row (premade.mjs duplicateIdRow). */
   const DUPLICATE_PROBLEMS = {

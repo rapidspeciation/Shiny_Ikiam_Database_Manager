@@ -100,6 +100,30 @@ export function protectedFields(db, sheet, row, columns) {
   return out;
 }
 
+/**
+ * Sheets with columns locked for the app's account down every row (Google's protections read 10 Nov 2026:
+ * Insectary_data AG–BB, Collection_data A, O–R, X–Y, BG–BY), so no row can be inserted while their
+ * protections are not known yet.
+ */
+const ROWS_LOCKED_UNKNOWN = new Set(['Insectary_data', 'Collection_data']);
+
+/**
+ * Whether Google refuses the app's account a row inserted at sheet row `at` (1-based, the new row's
+ * number) of `sheet`: a range it cannot edit (as last noted: noteProtection) reaches the row above or
+ * the row there now, whatever its columns. Google lets an account insert rows only where every
+ * protected range they fall in is one it may edit; the unprotected parts of a range do not change that.
+ */
+export function rowInsertLocked(db, sheet, at) {
+  let locked = null;
+  try {
+    locked = JSON.parse(db.prepare('SELECT value FROM settings WHERE key = ?').get(PROTECTED_KEY(sheet))?.value ?? 'null');
+  } catch {
+    /* Unknown. */
+  }
+  if (!Array.isArray(locked)) return ROWS_LOCKED_UNKNOWN.has(sheet);
+  return locked.some(({ range: r = {} }) => (r.startRowIndex ?? 0) < at && at - 2 < (r.endRowIndex ?? Infinity));
+}
+
 /** Where the sheet's rows end in the app's copy: last row with formulas, last used row, last row. */
 function tail(store, sheet) {
   const q = where =>
