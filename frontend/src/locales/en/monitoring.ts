@@ -333,7 +333,7 @@ export default {
   'fotos del proyecto': 'project photos',
   'Fila liberada con fotos del proyecto: posible fila corrida': 'Released row with project photos: rows may be shifted',
   'sin foto': 'no photo',
-  'género fuera de los 13': 'genus not among the 13',
+  'género fuera del modelo': "genus outside the model's genera",
   'no se ven las alas': 'wings not found',
   'sin CAM': 'no CAM',
   'no fiable en esta especie': 'not reliable for this species',

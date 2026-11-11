@@ -109,10 +109,12 @@ values are typed there.
   released adults): not an error.
 - Prepupa and pupa dates per individual are not typed anywhere.
 
-## Dates and plausibility (medians 2024–26)
+## Dates and plausibility
 
-- Laid → hatch 6 d (zaneka 4); hatch → pupa 15 d (intermedia 18); pupa →
-  adult 8 d; laid → first adult 27–31 d.
+- Medians of the first dates, clutches laid Jan 2024 to Oct 2026: laid →
+  hatch 5 d (n 384, zaneka 4 d), hatch → pupa 15.5 d (n 308, intermedia
+  18 d), pupa → adult 8 d (n 320), laid → first adult 29 d (n 360, 27–31 by
+  year).
 - A clear date out of order is proposed as written and pointed out (the team
   often keeps it). A month slip (laid 17 Sep, adults 14 Jul) is likely: say
   which date looks wrong.

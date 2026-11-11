@@ -14,11 +14,10 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 | Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
 | Insectary_stocks | clutch of eggs |
 
-The app's account cannot insert rows: when a row is needed between others (a
-repeated ID's row, `W0B.1`), tell the person where it goes (see data-rules,
-Duplicates) and ask them, or a curator (PAS), to insert it by hand in Google
-Sheets, then fill it with a proposal. A Collection_data capture that was left out
-goes at the end with `newRows`.
+The app cannot insert or delete rows in Insectary_data or Collection_data:
+protected columns reach every row. A repeated ID's row (`W0B.1`, data-rules
+Duplicates) goes between others, so PAS inserts it and types its ID, and a
+proposal fills it. A capture that was left out goes at the end with `newRows`.
 
 Counts, ranges, comparisons across sheets and cell histories take one `query`:
 SQL on a copy of the sheets (their rows in use; `<sheet>_all` adds the empty
@@ -58,15 +57,12 @@ A formula goes into a proposal as `{"formula": "=..."}`, in English with
 commas as the Sheets API takes it (`IF`, `XLOOKUP`; people see `SI`,
 `BUSCARX`).
 
-Formulas and conditional formats need to be light: the workbook recalculates
-after every change, and the app waits for it before it can save again. A
-conditional format that marked repeated Insectary IDs using `INDIRECTO` once
-made every change take about 3 minutes, so nobody could save from the app;
-rewritten with a fixed range (`=Y(A2<>"", CONTAR.SI($A$2:$A$20846, A2) > 1)`)
-changes took 1–3 seconds again. Prefer fixed ranges that end near the last
-used row over `INDIRECTO`, `DESREF` or whole-column lookups copied down
-thousands of rows. The proposal answers a `formulaCost`: tell the person
-what it says.
+Formulas and conditional formats must stay light: the workbook recalculates
+after every change, and the app waits for it before it can save. Use fixed
+ranges that end past the last used row, as in
+`=Y(A2<>"", CONTAR.SI($A$2:$A$30846, A2) > 1)`, not `INDIRECTO`, `DESREF` or
+whole-column lookups.
+Tell the person what the proposal's `formulaCost` says.
 
 **Emergidos and Clutches entries are kept in the app** until someone presses
 «Guardar en Google Sheets» («Save to Google Sheets»), so they are not in the
@@ -120,8 +116,7 @@ replaces it) is discarded with `update_proposal` `discard`.
     (n 1,920), M. lysimnia 21 d (n 1,150), Melinaea menophilus 30 d (n 592).
   - Wild-caught (n 1,264): median 7 days after entry, a lower bound.
   - Census check: 318 of 873 open records had entered over 90 days ago.
-  - Clutch first-event medians: laying to hatch 5 d (n 823), hatch to pupa 16
-    (n 642), pupa to adult 8 (n 492), laying to adult 28 (n 481).
+  - Clutch stage times: data-rules.
   - Recorded adults/pupae, pooled: 81 % (534 clutches).
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.

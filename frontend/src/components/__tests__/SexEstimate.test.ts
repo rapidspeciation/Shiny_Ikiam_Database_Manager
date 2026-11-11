@@ -61,4 +61,40 @@ describe('SexEstimate', () => {
     b.click()
     expect(clicked).toBe(1)
   })
+
+  // Model C (field-sex-C-20261111): its manifest's calibration (WingsClassificator APP_PREP.md, 11 Nov 2026).
+  const C = { cut: { t: 0.9918, lo: -0.1859, hi: 1.1956 }, display: { a: 1.0038, b: -0.5417 }, genera: ['Oleria', 'Mechanitis'] }
+  const left = (el: Element | null) => parseFloat((el as HTMLElement).style.left)
+
+  it('model C: its own call, %, marks and scale (2.6 logit below lo to 2.1 above hi, no fixed floor or ceiling)', () => {
+    const el = show({ kind: 'ready', z: 2.2, calibration: C })
+    expect(text(el.querySelector('[data-testid=sex-call]'))).toContain('♀')
+    expect(text(el.querySelector('[data-testid=sex-p]'))).toBe('84 %')
+    expect(text(el.querySelector('[data-testid=sex-tick-lo]'))).toMatch(/^♀ 32[.,]6 %$/)
+    expect(text(el.querySelector('[data-testid=sex-tick-t]'))).toMatch(/(corte|cutoff) ♀ 61[.,]2 %/)
+    expect(text(el.querySelector('[data-testid=sex-tick-hi]'))).toMatch(/♀ 65[.,]9 %/)
+    // The scale -2.7859 to 3.2956: lo at 42.7 %, the marker (z 2.2) at 82.0 %, no empty right part.
+    expect(left(el.querySelector('[data-testid=sex-tick-lo]'))).toBeCloseTo(42.75, 1)
+    expect(left(el.querySelector('.sex-marker'))).toBeCloseTo(81.98, 1)
+    expect(left(el.querySelector('[data-testid=sex-tick-hi]'))).toBeCloseTo(65.47, 1)
+  })
+
+  it('the labels cannot overlap: the cutoff has its own row, lo\'s label ends at lo, hi\'s starts at hi', () => {
+    for (const cal of [C, undefined]) {
+      const el = show({ kind: 'ready', z: 0.5, calibration: cal })
+      const t = el.querySelector('[data-testid=sex-tick-t]')!, lo = el.querySelector('[data-testid=sex-tick-lo]')!, hi = el.querySelector('[data-testid=sex-tick-hi]')!
+      expect(t.parentElement).not.toBe(lo.parentElement)
+      expect(lo.parentElement).toBe(hi.parentElement)
+      expect(lo.className).toContain('-translate-x-full') // drawn to the left of lo
+      expect(hi.className).not.toMatch(/translate-x/) // drawn to the right of hi
+      host!.remove()
+    }
+  })
+
+  it('model B keeps its scale (about -1 to 7)', () => {
+    const el = show({ kind: 'ready', z: 3 })
+    // lo 1.6157 on -0.9843 to 6.9722: 32.7 % (was 32.7 % on -1 to 7).
+    expect(left(el.querySelector('[data-testid=sex-tick-lo]'))).toBeCloseTo(32.68, 1)
+    expect(left(el.querySelector('[data-testid=sex-tick-hi]'))).toBeCloseTo(73.61, 1)
+  })
 })

@@ -29,13 +29,13 @@ import { regionLabel, taxaLabel } from '../lib/usePacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
-import { SEX_FILE, sexApplies } from '../lib/sexModel'
+import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
-import { MODEL_ROLES, sameFile, storedName } from '../lib/offlineId'
+import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
-import { t } from '../lib/i18n'
-import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
+import { locale, t } from '../lib/i18n'
+import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, TRIBE_RUNG, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
@@ -112,8 +112,9 @@ const store = {
     }
   },
 }
-const mb = (b: number) => Math.max(1, Math.round(b / 1048576))
-const roughMb = (b: number) => (b > 200 * 1048576 ? Math.round(b / 10485760) * 10 : Math.max(1, Math.round(b / 5242880) * 5))
+// MB as phones and the models' reports count them (10^6 bytes): model C is «172 MB», model B «43 MB».
+const mb = (b: number) => Math.max(1, Math.round(b / 1e6))
+const roughMb = (b: number) => (b > 200e6 ? Math.round(b / 10e6) * 10 : Math.max(1, Math.round(b / 5e6) * 5))
 
 // ---------------------------------------------------------------- models: list, readiness, download
 
@@ -130,6 +131,8 @@ const download = ref<{ kind: ModelKind; done: number; total: number; retrying?: 
 const dlError = ref<string | null>(null)
 const space = ref<{ free: number } | null>(null)
 const sizes = ref<Record<ModelKind, { plain: number; wire: number; total: number } | null>>({ small: null, full: null })
+/** What the list offers against the phone (a first download, a newer version, nothing new); null: no list known. */
+const offers = ref<Record<ModelKind | 'sex', Offer | null>>({ small: null, full: null, sex: null })
 const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 const installed = matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
 
@@ -143,8 +146,8 @@ async function refresh() {
   if (files.value && !headTried) {
     const list = files.value
     for (const k of KINDS) {
-      const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !sameFile(s?.files[f.name], f))
-      if (ready.value[k] || !need.length || need.some(f => f.role !== 'head-meta') || sexDownload.value) continue
+      const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !isCurrent(s?.files[f.name], f))
+      if (engine.offer(k, list, s).state !== 'update' || need.some(f => f.role !== 'head-meta') || sexDownload.value || download.value) continue
       headTried = true
       head.value = null
       await engine.download(k, list, () => {}).catch(() => null)
@@ -156,8 +159,11 @@ async function refresh() {
   }
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
   for (const k of KINDS) stored.value[k] = !!s && MODEL_ROLES[k].every(r => storedName(s!.files, r) != null)
+  for (const k of KINDS) offers.value[k] = files.value ? engine.offer(k, files.value, s) : null
+  offers.value.sex = session.user && files.value ? engine.offer('sex', files.value, s) : null
   sexStored.value = !!s && storedName(s.files, 'sex') != null
-  sexReady.value = !!session.user && (await engine.sexReady(files.value))
+  sexReady.value = !!session.user && (await engine.sexReady())
+  sexInstalled.value = session.user ? await engine.sexInfo() : null
   sexSize.value = session.user && files.value ? engine.sexToDownload(files.value, s).plain : null
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
@@ -214,6 +220,7 @@ async function startDownload(kind: ModelKind = wanted.value) {
     return
   }
   download.value = { kind, done: 0, total: 1 }
+  const updating = offers.value[kind]?.state === 'update'
   try {
     await engine.download(kind, files.value, (done, total, retrying) => (download.value = { kind, done, total, retrying }))
     store.set(CHOSEN, kind)
@@ -226,7 +233,9 @@ async function startDownload(kind: ModelKind = wanted.value) {
           ? t('Este modelo no está disponible por ahora.')
           : /quota/i.test(m)
             ? t('No hay espacio suficiente en el teléfono.')
-            : t('La descarga se cortó. Toque Descargar para seguir donde quedó.')
+            : updating
+              ? t('No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.')
+              : t('La descarga se cortó. Toque Descargar para seguir donde quedó.')
   } finally {
     download.value = null
     await refresh()
@@ -252,18 +261,25 @@ function useModel(kind: ModelKind) {
   wanted.value = kind
   store.set(CHOSEN, kind)
 }
+/** A model's note (its manifest's) in the page's language, else the other one. */
+const noteOf = (n: { es?: string; en?: string } | null | undefined) => (locale.value === 'en' ? (n?.en ?? n?.es) : (n?.es ?? n?.en)) ?? null
 /** The Descargas place's rows (DownloadsPanel). */
 const modelRows = computed<ModelRow[]>(() =>
   KINDS.map(k => {
     const s = sizes.value[k] ?? { plain: publicSize(k), wire: publicSize(k), total: publicSize(k) }
+    const o = offers.value[k]
     return {
       kind: k,
       label: label(k),
       ready: ready.value[k],
-      outdated: !ready.value[k] && stored.value[k] && !!files.value,
-      downloadMb: roughMb(s.wire || s.plain || publicSize(k)),
+      // On the phone and the list offers a newer version (a phone with no stored version counts as older).
+      outdated: o?.state === 'update',
+      // An update says its exact size (one file of about 23 MB, not «25 MB»); a first download its rounded size.
+      downloadMb: o?.state === 'update' ? mb(s.wire || s.plain) : roughMb(s.wire || s.plain || publicSize(k)),
       takesMb: roughMb(s.total),
       recommended: k === 'small',
+      versions: o ? { from: o.from, to: o.to, fromMb: o.fromBytes ? mb(o.fromBytes) : null, toMb: o.toBytes ? mb(o.toBytes) : null } : undefined,
+      note: noteOf(o?.notes),
     }
   }),
 )
@@ -308,8 +324,8 @@ interface Result {
   /** The smaller photo sent (base64 JPEG): sent again when the side changes. */
   photo?: string
   side?: Side
-  /** The sex estimate (team only): the model's logit, or why it does not apply. */
-  sex?: { z: number } | { na: 'nowings' }
+  /** The sex estimate (team only): the model's logit and the model that gave it (its calibration reads it), or why it does not apply. */
+  sex?: { z: number; m?: SexModelInfo } | { na: 'nowings' }
   /** The country of the photo's GPS position (ISO2), when it has one in the Neotropics. */
   country?: string | null
 }
@@ -670,18 +686,36 @@ const sexError = ref<string | null>(null)
 let sexBusy = false
 /** The last photo, and its square when this phone read it: in memory only, for the estimate. */
 const lastPhoto = shallowRef<{ at: string; photo: Photo; cut?: { square: Uint8Array; status: string } } | null>(null)
-const sexListed = computed(() => !!files.value?.some(f => f.role === 'sex' && f.name === SEX_FILE.name))
+/** The server offers a sex model this phone can take (lib/offlineEngine.ts sexFiles: its SHA-256 and calibration). */
+const sexListed = computed(() => !!offers.value.sex && offers.value.sex.state !== 'none')
 const sexStored = ref(false)
+/** The sex model on the phone (its version and calibration), or null. */
+const sexInstalled = ref<SexModelInfo | null>(null)
+/** The calibration the estimate applies with: the installed model's, else the offered one's, else model B's. */
+const sexCalibration = computed<SexCalibration>(
+  () => sexInstalled.value?.calibration ?? parseCalibration(files.value?.find(f => f.role === 'sex')?.calibration) ?? SEX_DEFAULT,
+)
 /** Descargas' sex row: the team's only, when the server offers it or the phone has it. */
 const sexRow = computed<SexRow | null>(() => {
   if (!session.user || !(sexListed.value || sexStored.value)) return null
+  const o = offers.value.sex
+  const listed = files.value?.find(f => f.role === 'sex')
   return {
+    genera: sexCalibration.value.genera.length,
     ready: sexReady.value,
-    outdated: !sexReady.value && sexStored.value && !!files.value,
-    downloadMb: mb(sexSize.value || SEX_FILE.bytes),
-    takesMb: mb(SEX_FILE.bytes),
+    // On the phone and the list offers a newer version (a phone with no stored version counts as older).
+    outdated: o?.state === 'update',
+    downloadMb: mb(sexSize.value || listed?.bytes || SEX_FILE.bytes),
+    takesMb: mb(sexInstalled.value?.bytes ?? listed?.bytes ?? SEX_FILE.bytes),
     progress: sexDownload.value,
     error: sexError.value,
+    versions: {
+      from: sexInstalled.value?.version ?? null,
+      to: o?.to ?? null,
+      fromMb: sexInstalled.value ? mb(sexInstalled.value.bytes) : null,
+      toMb: listed ? mb(listed.bytes) : null,
+    },
+    note: noteOf(listed?.notes),
   }
 })
 async function removeSex() {
@@ -698,7 +732,7 @@ async function estimateSex() {
   sexError.value = null
   try {
     const cut = p.cut ?? (await engine.square(p.photo))
-    const sex = cut.status !== 'success' ? { na: 'nowings' as const } : { z: await engine.sexLogit(cut.square) }
+    const sex = cut.status !== 'success' ? { na: 'nowings' as const } : { z: await engine.sexLogit(cut.square), m: engine.sexLoaded() ?? undefined }
     if (result.value?.at !== r.at) return
     result.value = { ...result.value, sex }
     keepLast()
@@ -718,17 +752,21 @@ async function downloadSexModel() {
   if (!files.value || sexDownload.value || download.value) return
   sexError.value = null
   sexDownload.value = { done: 0, total: 1 }
+  const updating = offers.value.sex?.state === 'update'
   try {
     await engine.downloadSex(files.value, (done, total) => (sexDownload.value = { done, total }))
-    sexReady.value = await engine.sexReady(files.value)
-    ready.value = await engine.ready(files.value)
-    sexSize.value = engine.sexToDownload(files.value, await engine.stored()).plain
-    sexStored.value = true
-  } catch {
-    sexError.value = t('No se pudo descargar el modelo. Pruebe de nuevo.')
+  } catch (err) {
+    // An update that failed (a cut, a file that is not the listed one): the installed version stays and keeps working.
+    // A full phone: trying again cannot help (an update needs the new model beside the installed one).
+    sexError.value = /quota/i.test(String((err as Error)?.message ?? err))
+      ? t('No hay espacio suficiente en el teléfono.')
+      : updating
+        ? t('No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.')
+        : t('No se pudo descargar el modelo. Pruebe de nuevo.')
   } finally {
     sexDownload.value = null
   }
+  await refresh()
   estimateSex()
 }
 
@@ -736,11 +774,12 @@ const sexState = computed<SexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
   const name = said.value?.kind === 'genus' ? (said.value as { genus: string }).genus : top.value?.name
-  const applies = sexApplies(name, ithomiiniGenera)
+  const applies = sexApplies(name, ithomiiniGenera, sexCalibration.value.genera)
   if (applies === 'no') return null
   if (applies === 'genus') return { kind: 'genus', genus: name!.split(' ')[0] }
-  if (r.sex) return 'na' in r.sex ? { kind: 'nowings' } : { kind: 'ready', z: r.sex.z }
-  if (sexDownload.value) return { kind: 'downloading', ...sexDownload.value }
+  if (r.sex) return 'na' in r.sex ? { kind: 'nowings' } : { kind: 'ready', z: r.sex.z, calibration: r.sex.m?.calibration ?? SEX_DEFAULT }
+  // An update downloading: the installed version keeps estimating meanwhile.
+  if (sexDownload.value && !sexReady.value) return { kind: 'downloading', ...sexDownload.value }
   if (sexError.value) return { kind: 'error', message: sexError.value }
   // A result restored after another tab, without its photo: nothing to estimate.
   if (sexReady.value) return lastPhoto.value?.at === r.at ? { kind: 'running' } : null
@@ -838,7 +877,7 @@ function prediction() {
     species: (ranked.value?.species ?? []).slice(0, 5).map(c => ({ name: c.name, p: c.p })),
     genus: genus.map(([name, p]) => ({ name, p })),
     subspecies: top.value ? (subspecies.value.get(top.value.name) ?? []).slice(0, 3).map(c => ({ name: c.name, p: c.p })) : [],
-    sex: r.sex && 'z' in r.sex ? { z: r.sex.z, model: SEX_FILE.name, sha256: SEX_FILE.sha256 } : null,
+    sex: r.sex && 'z' in r.sex ? { z: r.sex.z, model: r.sex.m?.name ?? SEX_FILE.name, sha256: r.sex.m?.sha256 ?? SEX_FILE.sha256, version: r.sex.m?.version ?? null } : null,
     pick: pick.value,
     at: r.at,
   }
@@ -1014,7 +1053,7 @@ const firstPack = computed(() => {
 /** The first screen's button: the model and the photos that follow it, one total. */
 const firstMb = computed(() => {
   const s = sizes.value.small
-  return roughMb((s ? s.wire || s.plain : 0) || publicSize('small')) + (firstPack.value ? Math.round(firstPack.value.bytes / 1048576) : 0)
+  return roughMb((s ? s.wire || s.plain : 0) || publicSize('small')) + (firstPack.value ? Math.round(firstPack.value.bytes / 1e6) : 0)
 })
 // The first screen needs the list for that line (and its size); elsewhere it is read where it is used.
 watch(
@@ -1296,7 +1335,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                         : $t('Posible identificación')
               }}
             </p>
-            <h1 class="text-2xl leading-tight font-semibold" data-testid="headline">
+            <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
+            <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p">
               <template v-if="said?.kind === 'genus'">
                 <i>{{ said.genus }}</i>
                 <span class="block text-base font-normal text-fg-muted">{{ $t('la especie no es segura') }}</span>

@@ -48,7 +48,7 @@ likely to know.
 
 | Initials | Knows |
 |---|---|
-| PAS | the workbook's owner: CAM ranges (with AA), pre-made rows, columns and formulas, dropdown lists, Pedigree, taxonomy |
+| PAS (Patricio Salazar) | the workbook's owner: CAM ranges (with AA), pre-made rows, columns and formulas, dropdown lists, Pedigree, taxonomy |
 | AA | crosses, monitoring, the insectary protocols; CAM ranges with PAS |
 | AO | typing the notebooks into the workbook |
 | ABV | field collections |

@@ -12,7 +12,9 @@
  * 3. That box cut from the upright photo, padded to a grey (128) square and resized to 224 px with Pillow's
  *    bicubic filter in its own integer arithmetic.
  * 4. The encoder's feature, normalised, through the cosine head (fp16 weights), the leaves summed per species.
- *    Or the small model's (studentInput: the same crop at 192 px), the same 1024-D feature and the same head.
+ *    Or the small model's (studentInput: the same crop at its own size, 192 px for L1, another model's from its
+ *    manifest: studentSizeOf),
+ *    the same 1024-D feature and the same head.
  *
  * Where the server reads the mask's outline (cv2 contours) this reads the mask's pixels: same box, close shape
  * measures (they only decide rare cases: rectangle artefacts and overlapping duplicates).
@@ -442,8 +444,20 @@ export function resizeBilinear(x: Float32Array, channels: number, inH: number, i
   return out
 }
 
-/** The small model's input: the same 224 px crop, the CLIP mean and std, resized to 192 (bilinear, no antialias). */
+/**
+ * The small model's input: the same 224 px crop, the CLIP mean and std, resized to its size (bilinear, no antialias).
+ * The size travels with the model (the list's `input.size`, kept in stored.json with the file): 192 is model L1's,
+ * the only small model before sizes were listed, so a file without one is L1. A wrong size fails in onnxruntime
+ * (the graphs fix their height and width).
+ */
 export const STUDENT_SIZE = 192
+/** Sizes of small models by file name, for a copy stored without its size (a phone that took S_B, then an older build). */
+const KNOWN_SIZES: Record<string, number> = { 'student_SB_int8.onnx': 182, 'student_L1_int8.onnx': 192 }
+/** A small-model file's input size: its own (a whole number of 32 to 512 px), else its name's, else L1's 192. */
+export function studentSizeOf(f?: { input?: { size?: unknown } | null } | null, name?: string): number {
+  const n = f?.input?.size
+  return typeof n === 'number' && Number.isInteger(n) && n >= 32 && n <= 512 ? n : ((name ? KNOWN_SIZES[name] : undefined) ?? STUDENT_SIZE)
+}
 export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): Float32Array {
   return resizeBilinear(encoderInput(rgb, size), 3, size, size, out, out)
 }
@@ -473,9 +487,20 @@ export function roleOf(name: string, role?: string | null): FileRole {
   return name.endsWith('.json') ? 'head-meta' : 'head'
 }
 
-/** `parts`: the SHA-256 of each 32 MB part, when the source said (Hugging Face's list, the server's parts manifest). */
-export interface StoredFile { etag: string; bytes: number; role?: string; parts?: string[] }
-export interface ListedFile { name: string; etag: string; bytes: number; role: string; parts?: string[] }
+/**
+ * `parts`: the SHA-256 of each 32 MB part, when the source said (Hugging Face's list, the server's parts manifest).
+ * `version` and `sha256`: the installed version and the whole file's SHA-256 (the list's, checked on the phone before
+ * the file was taken); files kept before versions existed have neither. `slot`: the file's parts are kept under
+ * partKey(name, i, slot) (a newer version of a file with the same name is downloaded beside the old one, so the old
+ * one works until the new one is checked). `calibration`: the sex model's cutoff, band and display (lib/sexModel.ts). `input`: the small model's input size
+ * (studentSizeOf), stored with the file so that an update swaps the model and its size together.
+ */
+export interface StoredFile { etag: string; bytes: number; role?: string; parts?: string[]; version?: string; sha256?: string; slot?: string; calibration?: unknown; input?: { size: number } }
+/** `version` and `sha256`: the model version the server (or the public list) offers, and the file's SHA-256. */
+export interface ListedFile { name: string; etag: string; bytes: number; role: string; parts?: string[]; version?: string; sha256?: string; input?: { size: number; values?: string } }
+
+/** The cache key (relative to the page's folder) of part `i` of a stored model file. */
+export const partKey = (name: string, i: number, slot?: string) => `models/${name}?part=${i}${slot ? `&v=${slot}` : ''}`
 
 /**
  * Whether the stored file is the listed one: the same ETag (the same source), or the same part hashes (a model
@@ -509,6 +534,58 @@ export function rolesReady(roles: FileRole[], stored: Record<string, StoredFile>
     const f = listed.find(l => l.role === role)
     return !!f && sameFile(stored[f.name], f)
   })
+}
+
+/**
+ * Whether the stored file IS the listed version: the same SHA-256 when both know it. A file kept before versions
+ * existed (no SHA-256 stored) is an old version, unless it is provably the listed bytes (sameFile: the same ETag, or
+ * the same part hashes); then it only lacks the label, and adoptVersions records it without a download.
+ */
+export function isCurrent(stored: StoredFile | undefined, listed: ListedFile): boolean {
+  if (!stored) return false
+  if (stored.sha256 && listed.sha256) return stored.sha256 === listed.sha256 && stored.bytes === listed.bytes
+  return sameFile(stored, listed)
+}
+
+/**
+ * Whether files can run from what is stored: one file of each role. The version does not matter: an older one keeps
+ * working until its update is downloaded and checked (offlineEngine's download swaps then).
+ */
+export function rolesStored(roles: FileRole[], stored: Record<string, StoredFile> | null): boolean {
+  return !!stored && roles.every(role => storedName(stored, role) != null)
+}
+
+/**
+ * What the server offers for these roles against the phone: 'none' (a role not listed: nothing to offer), 'missing'
+ * (a role not on the phone: a first download), 'update' (on the phone, but a listed file is another version),
+ * 'current'. `files`: the listed files not current on the phone (what a download fetches).
+ */
+export function offerFor(roles: FileRole[], stored: Record<string, StoredFile> | null, listed: ListedFile[]): { state: 'none' | 'missing' | 'update' | 'current'; files: ListedFile[] } {
+  const wanted = roles.map(role => listed.find(l => l.role === role))
+  if (wanted.some(f => !f)) return { state: 'none', files: [] }
+  const need = (wanted as ListedFile[]).filter(f => !isCurrent(stored?.[f.name], f))
+  if (!rolesStored(roles, stored)) return { state: 'missing', files: need }
+  return { state: need.length ? 'update' : 'current', files: need }
+}
+
+/**
+ * Files kept before versions existed (no `sha256`) that are provably the listed bytes (sameFile): the listed version,
+ * SHA-256 and part hashes are recorded on them (`extra` adds role-specific fields, the sex model's calibration).
+ * Returns whether anything changed. Pure: the caller stores the result.
+ */
+export function adoptVersions(stored: Record<string, StoredFile>, listed: ListedFile[], extra: (f: ListedFile) => Partial<StoredFile> = () => ({})): boolean {
+  let changed = false
+  for (const f of listed) {
+    const have = stored[f.name]
+    if (!have || have.sha256 || !sameFile(have, f)) continue
+    const before = JSON.stringify(have)
+    if (f.sha256) have.sha256 = f.sha256
+    if (f.version) have.version = f.version
+    if (f.parts?.length && !have.parts && have.bytes === f.bytes) have.parts = f.parts
+    if (f.sha256) Object.assign(have, extra(f))
+    changed ||= JSON.stringify(have) !== before
+  }
+  return changed
 }
 
 /** The model to identify with: the one asked for when it is ready, else the one that is, else none. */
