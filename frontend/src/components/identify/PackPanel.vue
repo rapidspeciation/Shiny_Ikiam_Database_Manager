@@ -11,8 +11,9 @@ import { fieldSet } from '../../lib/identifyRefs'
 import { countryName, regionLabel, taxaLabel, usePacks } from '../../lib/usePacks'
 
 const props = defineProps<{ online: boolean }>()
-const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, install, remove, removeLegacy: dropLegacy } = usePacks()
-onMounted(() => load())
+const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, open, install, remove, removeLegacy: dropLegacy } = usePacks()
+// Opened: the list checked again, so a list the server replaced shows its new sizes (11 Nov 2026, «≈ 131 MB»).
+onMounted(() => open())
 watch(
   () => props.online,
   on => on && !index.value && load(true),

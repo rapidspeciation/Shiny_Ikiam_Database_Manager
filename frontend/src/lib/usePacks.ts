@@ -10,7 +10,7 @@
  */
 import { ref, shallowRef, watch } from 'vue'
 import { locale, t } from './i18n'
-import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
+import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, revalidateIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
 import { retireFieldSet } from './identifyRefs'
 
 /** A taxa choice's name (the scientific ones are not translated). */
@@ -64,6 +64,24 @@ let loadingIndex: Promise<void> | null = null
 async function loadInstalled() {
   pack.value = await installedPack()
 }
+/** When the list was last checked against the server. */
+let checkedAt = 0
+/**
+ * The server's list checked again (Descargas opened, the page back in front, a save about to start): a new list
+ * replaces the one shown, so its sizes and «Actualizar fotos» follow the server. At most every `minMs`.
+ */
+async function refreshIndex(minMs = 15_000) {
+  if (!index.value) return loadIndex()
+  if (Date.now() - checkedAt < minMs || !navigator.onLine) return
+  checkedAt = Date.now()
+  const fresh = await revalidateIndex().catch(() => null)
+  if (fresh && fresh !== index.value) index.value = fresh
+}
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    // A phone keeps the page for days: back in front after a while, the list is checked again.
+    if (document.visibilityState === 'visible' && index.value) refreshIndex(10 * 60_000)
+  })
 /** The server's list (for sizes, the search beyond the pack, updates). */
 async function loadIndex(force = false) {
   if (index.value && !force) return
@@ -71,6 +89,7 @@ async function loadIndex(force = false) {
   loadingIndex ??= (async () => {
     try {
       index.value = await onlineIndex()
+      checkedAt = Date.now()
       indexFailed.value = false
     } catch {
       indexFailed.value = !index.value
@@ -82,12 +101,18 @@ async function load(force = false) {
   await loadInstalled()
   await loadIndex(force)
 }
+/** Descargas opened: the installed pack, and the server's list checked again. */
+async function open() {
+  await loadInstalled()
+  await refreshIndex()
+}
 
 async function install(s: PackScope = scope.value) {
   if (progress.value || removing.value) return null
   note.value = null
   failedSave.value = null
-  await loadIndex(!index.value)
+  // Never a save from a list the server has replaced since.
+  await refreshIndex(0)
   if (!index.value) {
     note.value = t('Hace falta conexión a internet.')
     return null
@@ -155,8 +180,10 @@ export function usePacks() {
     scope,
     changed,
     load,
+    open,
     loadInstalled,
     loadIndex,
+    refreshIndex,
     install,
     remove,
     removeLegacy,

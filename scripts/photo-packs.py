@@ -14,8 +14,19 @@ photo from that country; a taxon photo that is also an observation photo there t
 
 Preserved specimens (--preserved <manifest.json>): {"schema": "ithomiini-preserved/1", "photos": [{"name", "file"
 (an image, relative to the manifest), "specimen" (its ID), "country" (or null), "attribution", "license", "source"
-(or null)}]}. Each becomes a photo of kind 'preserved' of a taxon that has no live photo (with --preserved-all, of
-every taxon named), made like the others.
+(or null)}]}, or the Sanger wing crops' manifest ({"items": [{"taxon", "specimen_id", "file", "poor", ...}]}: entries
+flagged poor are left out; credit "Sanger/Ikiam", no licence line). Each becomes a photo of kind 'preserved' of a taxon
+that has no live photo (with --preserved-all, of every taxon named). A WebP no larger than --size is kept byte for
+byte (the crops are made at the pack's settings already); anything else is made like the other photos.
+
+Bundles (taxa mode): the photos made are also written as a few files of about --bundle-mb MB each
+(bundles/b<NN>-<sha256, 10 hex>.bin, the WebP files back to back, uncompressed: WebP gains nothing from gzip), and
+each photo in the list gets "at": [bundle number, byte offset]; the list names the files in "bundles" [{file, bytes}].
+A phone then saves a pack with a few tens of range requests instead of one request per photo
+(frontend/src/lib/photoPacks.ts). Order inside: the photos an Ecuador pack keeps first, then those a Neotropics pack
+keeps, then the rest; inside each by group (Ithomiini, other Nymphalidae, other butterflies, moths), species before
+subspecies, by name; so the common choices are a few long runs. A bundle's name changes with its bytes (served as immutable). The single photos stay in photos/ for the
+online view of one taxon.
 
 From the Ithomiini «Fotos para el campo» set (scripts/field-photos.py), its photos left where they are (base ../field/):
 
@@ -84,12 +95,14 @@ def check(taxa):
             assert ph.get("kind") != "preserved" or ph.get("specimen"), t
 
 
-def write(out, taxa, base, source, sample=None):
+def write(out, taxa, base, source, sample=None, bundles=None):
     check(taxa)
     taxa = sorted(taxa, key=lambda t: t["name"])
     index = {"schema": "ithomiini-photo-packs/2", "version": version_of(taxa), "built": time.strftime("%Y-%m-%d"), "base": base, "source": source}
     if sample:
         index["sample"] = sample
+    if bundles:
+        index["bundles"] = bundles
     index["taxa"] = taxa
     os.makedirs(out, exist_ok=True)
     path = os.path.join(out, "index.json")
@@ -149,9 +162,15 @@ def read_preserved(path):
     if not path:
         return {}
     doc = json.load(open(path, encoding="utf-8"))
-    assert doc.get("schema") == "ithomiini-preserved/1", f"{path}: schema ithomiini-preserved/1"
     base = os.path.dirname(os.path.abspath(path))
     out = {}
+    if doc.get("schema") != "ithomiini-preserved/1" and isinstance(doc.get("items"), list):
+        # The Sanger wing crops (offline-packs research, sanger-crops/crops-*/manifest.json).
+        doc = {"photos": [{"name": e["taxon"], "file": e["file"], "specimen": e["specimen_id"], "country": e.get("country"),
+                           "attribution": "Sanger/Ikiam", "license": "", "source": None}
+                          for e in doc["items"] if not e.get("poor") and e.get("taxon") and e.get("file") and e.get("specimen_id")]}
+    else:
+        assert doc.get("schema") == "ithomiini-preserved/1", f"{path}: schema ithomiini-preserved/1 or a crops manifest with items"
     for e in doc.get("photos") or []:
         assert e.get("name") and e.get("file") and e.get("specimen"), e
         file = os.path.join(base, e["file"])
@@ -199,6 +218,68 @@ def photo_id(source):
     """The iNaturalist photo id of a photo page URL (…/photos/<id>), or None."""
     tail = (source or "").rstrip("/").rsplit("/", 1)[-1]
     return int(tail) if tail.isdigit() else None
+
+
+NEAR_EC = {"CO", "PE"}
+
+
+def chosen_for_ec(photos, k=2):
+    """The photos an Ecuador pack keeps of a taxon (frontend/src/lib/photoCountry.ts choosePhotos with region EC)."""
+    rank = lambda p: 0 if p.get("country") == "EC" else 1 if p.get("country") in NEAR_EC else 2 if p.get("country") else 3
+    tier = lambda p: min(rank(p), 2)
+    firsts = [next(p for p in photos if tier(p) == t) for t in (0, 1, 2) if any(tier(p) == t for p in photos)]
+    rest = sorted((p for p in photos if p not in firsts), key=rank)
+    return (firsts + rest)[:k]
+
+
+def make_bundles(out_dir, taxa, photos_dir, bundle_mb):
+    """The made photos back to back in bundles/ (about bundle_mb MB each); each photo gets "at": [bundle, offset]."""
+    order = {}
+    for t in taxa:
+        made = [p for p in t["photos"] if not p.get("missing")]
+        ec = {p["file"] for p in chosen_for_ec(made)} if "EC" in t["countries"] else set()
+        # A Neotropics pack keeps the list's first two (the taxon photo, then Ecuador's).
+        nt = {p["file"] for p in made[:2]} if t["countries"] else set()
+        for i, p in enumerate(made):
+            key = (0 if p["file"] in ec else 1, 0 if p["file"] in nt else 1, GROUPS.index(t["group"]), 0 if t["rank"] == "species" else 1, t["name"], i)
+            order[p["file"]] = min(order.get(p["file"], key), key)
+    files = sorted(order, key=order.get)
+    bdir = os.path.join(out_dir, "bundles")
+    os.makedirs(bdir, exist_ok=True)
+    bundles, at, chunk, offset = [], {}, [], 0
+
+    def flush():
+        nonlocal chunk, offset
+        if not chunk:
+            return
+        body = b"".join(chunk)
+        name = f"b{len(bundles):03d}-{hashlib.sha256(body).hexdigest()[:10]}.bin"
+        path = os.path.join(bdir, name)
+        if not os.path.exists(path):
+            with open(path + ".part", "wb") as fh:
+                fh.write(body)
+            os.replace(path + ".part", path)
+        bundles.append({"file": f"bundles/{name}", "bytes": len(body)})
+        chunk, offset = [], 0
+
+    limit = int(bundle_mb * 1048576)
+    for f in files:
+        body = open(os.path.join(photos_dir, f), "rb").read()
+        if offset and offset + len(body) > limit:
+            flush()
+        at[f] = [len(bundles), offset]
+        chunk.append(body)
+        offset += len(body)
+    flush()
+    for t in taxa:
+        for p in t["photos"]:
+            if p["file"] in at:
+                p["at"] = at[p["file"]]
+    names = {b["file"].split("/")[-1] for b in bundles}
+    for f in sorted(set(os.listdir(bdir)) - names):
+        print("  bundle not named by the list:", os.path.join(bdir, f))
+    print(f"bundles: {len(bundles)} files, {sum(b['bytes'] for b in bundles) / 1048576:.1f} MB, {len(files)} photos", flush=True)
+    return bundles
 
 
 SCOPE_GROUPS = {
@@ -270,15 +351,19 @@ def taxa_mode(a):
                     stats["failed"] += 1
                 return None
         try:
-            im = ImageOps.exif_transpose(Image.open(BytesIO(body))).convert("RGB")
+            src_im = Image.open(BytesIO(body))
+            im = ImageOps.exif_transpose(src_im).convert("RGB")
         except Exception:  # noqa: BLE001 - not an image
             with lock:
                 stats["failed"] += 1
             return None
-        im.thumbnail((a.size, a.size), Image.LANCZOS)
-        buf = BytesIO()
-        im.save(buf, "WEBP", quality=a.quality, method=6)
-        webp = buf.getvalue()
+        if src_im.format == "WEBP" and max(src_im.size) <= a.size:
+            webp = body  # made at these settings already (the Sanger crops): not encoded twice
+        else:
+            im.thumbnail((a.size, a.size), Image.LANCZOS)
+            buf = BytesIO()
+            im.save(buf, "WEBP", quality=a.quality, method=6)
+            webp = buf.getvalue()
         name = f"{pid}-{hashlib.sha256(webp).hexdigest()[:8]}.webp"
         path = os.path.join(photos_dir, name)
         with open(path + ".part", "wb") as f:
@@ -361,7 +446,8 @@ def taxa_mode(a):
     stale = sorted(set(os.listdir(photos_dir)) - {f for f in made.values() if f} - set(have.values()))
     for f in stale[:20]:
         print("  not named by the list:", os.path.join(photos_dir, f))
-    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences (taxon photos and research-grade observations by country; 400 px WebP)", sample=a.sample)
+    bundles = make_bundles(a.out, out, photos_dir, a.bundle_mb) if a.bundle_mb > 0 else None
+    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences (taxon photos and research-grade observations by country; 400 px WebP)", sample=a.sample, bundles=bundles)
 
 
 def main():
@@ -385,6 +471,7 @@ def main():
     tx.add_argument("--obs", action="append", help="ISO2=<obs-ISO2.jsonl.gz> (photo-packs-obs.py): a photo from that country per taxon")
     tx.add_argument("--preserved", help="the preserved specimens' manifest (ithomiini-preserved/1)")
     tx.add_argument("--preserved-all", action="store_true", help="a preserved photo also for taxa with a live photo")
+    tx.add_argument("--bundle-mb", type=float, default=8, help="bundle size in MB (0: no bundles)")
     tx.add_argument("--limit", type=int)
     a = ap.parse_args()
     if a.cmd == "taxa":

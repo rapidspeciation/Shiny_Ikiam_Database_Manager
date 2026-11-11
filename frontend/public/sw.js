@@ -119,7 +119,9 @@ self.addEventListener('fetch', event => {
     return
   }
   if (request.method !== 'GET' || url.origin !== location.origin) return
-  // Its models are read by the page from the cache itself; their download (ranges) goes straight to the server.
+  // Its models are read by the page from the cache itself; their download (ranges) goes straight to the server. So do
+  // the photo packs' bundles: the page cuts them into photos and keeps those (a bundle kept here would be a second copy).
+  if (url.pathname.includes('/identificar/packs/bundles/')) return
   if (url.pathname.includes('/prueba-offline/') || url.pathname.includes('/identificar/')) {
     if (!url.pathname.includes('/prueba-offline/models/')) event.respondWith(offlineId(request, url))
     return

@@ -52,6 +52,8 @@ export interface PackPhoto {
   kind?: PhotoKind
   /** A preserved specimen's ID (its collection number), shown with «Preserved specimen». */
   specimen?: string | null
+  /** Where its bytes are in the list's bundles: [bundle number, byte offset] (absent: only its own file). */
+  at?: [number, number]
   /**
    * Listed but not on this server yet (the builder made only some regions' photos, scripts/photo-packs.py --cell):
    * counted in sizes with `bytes` estimated, never saved or shown.
@@ -86,6 +88,11 @@ export interface PackIndex {
   source?: string
   /** A note for the preview when only part of the regions has photos (said in the panel, plainly). */
   sample?: string
+  /**
+   * The photos back to back in a few files (scripts/photo-packs.py make_bundles), relative to the list: a pack is
+   * saved with a few tens of range requests instead of one request per photo. Absent: one request per photo.
+   */
+  bundles?: { file: string; bytes: number }[]
   taxa: PackTaxon[]
 }
 
@@ -284,19 +291,52 @@ export const photoSrc = (index: Pick<PackIndex, 'base'>, indexUrl: string, file:
 // ---------------------------------------------------------------- the server's list and the installed pack
 
 let onlineMemo: Promise<PackIndex> | null = null
-/** The server's whole list (asked once per page; with no signal the service worker may answer with the last one seen). */
+/** The memo's validator (ETag, else Last-Modified): a check that gets the same one keeps the list already read. */
+let memoTag: string | null = null
+const tagOf = (r: Response) => r.headers.get('etag') ?? r.headers.get('last-modified')
+async function readIndex(r: Response): Promise<PackIndex> {
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const v = (await r.json()) as PackIndex
+  if (!Array.isArray(v?.taxa)) throw new Error('not a pack list')
+  return normIndex(v)
+}
+/**
+ * The server's whole list, read once and kept for the page (with no signal the service worker may answer with the
+ * last one seen). revalidateIndex() checks it again.
+ */
 export function onlineIndex(): Promise<PackIndex> {
   onlineMemo ??= fetch(INDEX_URL(), { credentials: 'same-origin', cache: 'no-cache' })
-    .then(r => (r.ok ? (r.json() as Promise<PackIndex>) : Promise.reject(new Error(`HTTP ${r.status}`))))
-    .then(v => (Array.isArray(v?.taxa) ? normIndex(v) : Promise.reject(new Error('not a pack list'))))
+    .then(r => ((memoTag = tagOf(r)), readIndex(r)))
     .catch(err => {
       onlineMemo = null
       throw err
     })
   return onlineMemo
 }
+/**
+ * The list again from the server (11 Nov 2026: a phone kept showing «≈ 131 MB» for a choice the server had made exact,
+ * 124 MB, because an open page read the list only once). A conditional request: the same validator keeps the list
+ * already read (no new parse); a new list replaces it. Without signal, or on an error, the list kept stays.
+ */
+export async function revalidateIndex(): Promise<PackIndex> {
+  if (!onlineMemo) return onlineIndex()
+  const had = await onlineMemo.catch(() => null)
+  try {
+    const r = await fetch(INDEX_URL(), { credentials: 'same-origin', cache: 'no-cache' })
+    const tag = tagOf(r)
+    if (had && r.ok && tag && tag === memoTag) return had
+    const fresh = await readIndex(r)
+    if (had && fresh.version === had.version) return had
+    memoTag = tag
+    onlineMemo = Promise.resolve(fresh)
+    return fresh
+  } catch (err) {
+    if (had) return had
+    throw err
+  }
+}
 /** Forget the memo (tests, a manual «check again»). */
-export const resetOnlineIndex = () => (onlineMemo = null)
+export const resetOnlineIndex = () => ((onlineMemo = null), (memoTag = null))
 
 export interface Installed {
   scope: PackScope
@@ -357,6 +397,94 @@ async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
   return (await cache.keys()).filter(r => r.url.startsWith(base) && !/\.json(\?|$)/.test(r.url))
 }
 
+const typeOf = (u: string) => (/\.jpe?g$/i.test(u) ? 'image/jpeg' : /\.png$/i.test(u) ? 'image/png' : 'image/webp')
+
+/** A run of photos in one bundle fetched with one range request: [start, end) and each photo's URL and place. */
+export interface BundleRange {
+  bundle: number
+  start: number
+  end: number
+  items: { u: string; offset: number; bytes: number; file: string }[]
+}
+/** Photos closer than this in a bundle share a request (the bytes between them come along, unused). */
+const GAP = 64 * 1024
+/** At most this many bytes in one request (what a dropped connection costs again). */
+const MAX_RANGE = 8 * 1048576
+/** The range requests for `urls` (those without a place in a bundle go to `rest`, one request each). */
+export function bundleRanges(index: Pick<PackIndex, 'bundles'>, urls: string[], photo: Map<string, PackPhoto>, rest: string[]): BundleRange[] {
+  const byBundle = new Map<number, BundleRange['items']>()
+  for (const u of urls) {
+    const p = photo.get(u)
+    const b = p?.at?.[0]
+    if (!p || b == null || !index.bundles?.[b] || p.at![1] + p.bytes > index.bundles[b].bytes) {
+      rest.push(u)
+      continue
+    }
+    if (!byBundle.has(b)) byBundle.set(b, [])
+    byBundle.get(b)!.push({ u, offset: p.at![1], bytes: p.bytes, file: p.file })
+  }
+  const out: BundleRange[] = []
+  for (const [bundle, items] of [...byBundle].sort((a, b) => a[0] - b[0])) {
+    items.sort((a, b) => a.offset - b.offset)
+    let cur: BundleRange | null = null
+    for (const it of items) {
+      const end = it.offset + it.bytes
+      if (cur && it.offset - cur.end <= GAP && end - cur.start <= MAX_RANGE) {
+        cur.items.push(it)
+        cur.end = Math.max(cur.end, end)
+      } else out.push((cur = { bundle, start: it.offset, end, items: [it] }))
+    }
+  }
+  return out
+}
+/** A photo's bytes against the hash in its name (…-<8 hex>.webp); a name without one is taken on its length. */
+async function sameBytes(file: string, body: Uint8Array): Promise<boolean> {
+  const want = /-([0-9a-f]{8})\.webp$/.exec(file)?.[1]
+  if (!want || !globalThis.crypto?.subtle) return true
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', body as Uint8Array<ArrayBuffer>))
+  return [...hash.slice(0, 4)].map(b => b.toString(16).padStart(2, '0')).join('') === want
+}
+/**
+ * One range of a bundle, cut into its photos (null: the request or a photo's bytes did not come right). `arrived`
+ * hears of each photo whose bytes are in, as they stream (the progress line moves within a range).
+ */
+async function fetchRange(index: Pick<PackIndex, 'bundles'>, indexUrl: string, rg: BundleRange, arrived: (u: string) => void = () => {}): Promise<[string, Blob][] | null> {
+  const b = index.bundles![rg.bundle]
+  // no-store: the browser's own cache does not keep a second copy; a range answer is never kept by the service worker.
+  const r = await fetch(new URL(b.file, indexUrl).href, { credentials: 'same-origin', cache: 'no-store', headers: { range: `bytes=${rg.start}-${rg.end - 1}` } })
+  if (r.status !== 206 && r.status !== 200) return null
+  // A server that ignores ranges sends the whole bundle (200).
+  const base = r.status === 206 ? rg.start : 0
+  const length = r.status === 206 ? rg.end - rg.start : b.bytes
+  const buf = new Uint8Array(length)
+  let got = 0
+  let next = 0
+  const reader = r.body?.getReader()
+  if (reader)
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (got + value.length > length) return null
+      buf.set(value, got)
+      got += value.length
+      while (next < rg.items.length && rg.items[next].offset - base + rg.items[next].bytes <= got) arrived(rg.items[next++].u)
+    }
+  else {
+    const all = new Uint8Array(await r.arrayBuffer())
+    if (all.length > length) return null
+    buf.set(all)
+    got = all.length
+  }
+  if (got !== length) return null
+  const out: [string, Blob][] = []
+  for (const it of rg.items) {
+    const body = buf.slice(it.offset - base, it.offset - base + it.bytes)
+    if (!(await sameBytes(it.file, body))) return null
+    out.push([it.u, new Blob([body], { type: typeOf(it.u) })])
+  }
+  return out
+}
+
 /**
  * Saves the photos `scope` takes from the server's list on this phone. Photos already on the phone are not
  * downloaded again (a changed photo has another name). Only when
@@ -364,38 +492,72 @@ async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
  * takes, with any other photo left under the folders); otherwise the pack before stays as it was and the result says
  * how many failed, for a retry. The first pack on a phone is kept even when some photos failed (Update completes it).
  * A full phone stops the save at once with an Error('quota'), the pack before untouched.
+ * With bundles in the list (index.bundles) the photos come in a few range requests, each cut into its photos and kept
+ * under the photo's own address (the service worker and Compare see the same photos as before); `progress` still
+ * counts photos.
  */
 export async function installPack(index: PackIndex, scope: PackScope, progress: (done: number, total: number) => void, indexUrl = INDEX_URL()): Promise<InstallResult> {
   const take = packTaxa(index, scope).map(t => ({ ...t, photos: chosenPhotos(t, scope) }))
   const cache = await caches.open(CACHE)
   const src = (p: PackPhoto) => photoSrc(index, indexUrl, p.file)
-  const want = new Map<string, number>()
-  for (const t of take) for (const p of t.photos) want.set(src(p), p.bytes)
+  const want = new Map<string, PackPhoto>()
+  for (const t of take) for (const p of t.photos) want.set(src(p), p)
   const files = [...want.keys()]
   const ok = new Map<string, number>()
   let done = 0
   let quota: unknown = null
+  // Each photo counted once in the progress line, when its bytes are in (a range tried again counts nothing twice).
+  const counted = new Set<string>()
+  const tick = (u: string) => {
+    if (counted.has(u)) return
+    counted.add(u)
+    progress(++done, files.length)
+  }
   progress(0, files.length)
-  await pool(files, 4, async u => {
+  // Those on the phone already: a photo's name holds a hash of its bytes (scripts/photo-packs.py), so one on the
+  // phone is the right one; a save cut short goes on from what it kept.
+  const todo: string[] = []
+  await pool(files, 8, async u => {
+    if (await cache.match(u).catch(() => undefined)) {
+      ok.set(u, want.get(u)!.bytes)
+      tick(u)
+    } else todo.push(u)
+  })
+  /** One photo into Cache Storage under its own address (a failure is counted; a full phone stops the save). */
+  const keep = async (u: string, body: Blob) => {
     if (quota) return
     try {
-      // A photo's name holds a hash of its bytes (scripts/photo-packs.py): one on the phone is the right one.
-      let r = await cache.match(u)
-      let size = want.get(u) ?? 0
-      if (!r) {
-        const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
-        if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) {
-          size = (await got.clone().blob()).size
-          await cache.put(u, got)
-          r = got
-        }
-      }
-      if (r) ok.set(u, size)
+      await cache.put(u, new Response(body, { headers: { 'content-type': typeOf(u), 'content-length': String(body.size) } }))
+      ok.set(u, body.size)
     } catch (err) {
       if (isQuota(err)) quota = err
-      /* otherwise counted as failed: a retry takes it */
     }
-    progress(++done, files.length)
+  }
+  // The bundles: a few long range requests; each range is one unit, tried again on its own when the signal drops.
+  const one: string[] = []
+  const ranges = index.bundles?.length ? bundleRanges(index, todo, want, one) : (one.push(...todo), [])
+  await pool(ranges, 3, async rg => {
+    for (let attempt = 0; attempt < 3 && !quota; attempt++) {
+      if (attempt) await new Promise(r => setTimeout(r, 500 * attempt))
+      const got = await fetchRange(index, indexUrl, rg, tick).catch(() => null)
+      if (!got) continue
+      // A few at a time: Cache Storage writes are the slow part on a phone.
+      await pool(got, 8, async ([u, body]) => keep(u, body))
+      for (const [u] of got) tick(u)
+      return
+    }
+    one.push(...rg.items.map(x => x.u)) // the range failed three times: its photos one by one below
+  })
+  // One request per photo: a list without bundles, a photo outside them, a range that kept failing.
+  await pool(one, 4, async u => {
+    if (quota) return
+    try {
+      const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
+      if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) await keep(u, await got.blob())
+    } catch {
+      /* counted as failed: a retry takes it */
+    }
+    tick(u)
   })
   if (quota) throw new Error('quota')
   const before = await installedPack()

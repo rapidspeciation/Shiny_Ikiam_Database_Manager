@@ -166,9 +166,20 @@ test('the Identificar page: photo packs from PACKS_DIR, the list gzipped when it
     const plain = await fetch(`${base}/packs/index.json`);
     assert.equal(plain.status, 200);
     assert.equal(await plain.text(), list);
+    // The list is checked every time, also without gzip (it used to be kept an hour then: a phone showed old sizes).
+    assert.equal(plain.headers.get('cache-control'), 'no-cache');
     const photo = await fetch(`${base}/packs/photos/1.webp`);
     assert.equal(photo.headers.get('content-type'), 'image/webp');
     assert.equal(photo.headers.get('cross-origin-resource-policy'), 'same-origin');
+    assert.equal(photo.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    // A bundle: a byte range of it, as a phone saving a pack asks (scripts/photo-packs.py make_bundles).
+    mkdirSync(join(packs, 'bundles'), { recursive: true });
+    writeFileSync(join(packs, 'bundles', 'b000-0123456789.bin'), Buffer.from('AAAABBBBCCCC'));
+    const part = await fetch(`${base}/packs/bundles/b000-0123456789.bin`, { headers: { range: 'bytes=4-7' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 4-7/12');
+    assert.equal(part.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(await part.text(), 'BBBB');
     assert.equal((await fetch(`${base}/packs/../../web/identificar/index.html`)).status, 404);
     // With its .gz (as new as the list): compressed for a browser that takes gzip.
     writeFileSync(join(packs, 'index.json.gz'), gzipSync(list));

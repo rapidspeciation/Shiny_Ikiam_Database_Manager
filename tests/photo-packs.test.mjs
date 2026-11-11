@@ -59,3 +59,50 @@ test('photo-packs.py taxa: photos by country and a preserved specimen', { skip: 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('photo-packs.py taxa: the Sanger crops manifest (poor ones left out, WebP kept as is) and bundles with offsets', { skip: !hasPillow && 'Pillow not installed' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'photo-packs-'));
+  try {
+    const made = spawnSync(
+      python,
+      ['-I', '-c', 'import sys\nfrom PIL import Image\nImage.new("RGB", (600, 400), (10, 90, 160)).save(sys.argv[1])\nfor i, p in enumerate(sys.argv[2:]): Image.new("RGB", (380, 260), (90, 30 * i, 60)).save(p, "WEBP", quality=60)', join(dir, 't1.png'), join(dir, 'CAM1d.webp'), join(dir, 'CAM2d.webp')],
+      { encoding: 'utf8' },
+    );
+    assert.equal(made.status, 0, made.stderr);
+    const t = (name, photo) => ({ name, rank: name.split(' ').length > 2 ? 'subspecies' : 'species', genus: name.split(' ')[0], family: 'Nymphalidae', group: 'ithomiini', countries: ['EC'], inatId: null, photo });
+    writeFileSync(join(dir, 'taxa.json'), JSON.stringify([
+      t('Mechanitis polymnia', { url: join(dir, 't1.png'), inatPhotoId: 5, attribution: '(c) A', license: 'CC-BY', taxonUrl: null, source: 'https://www.inaturalist.org/photos/5' }),
+      t('Mechanitis polymnia werneri', null),
+      t('Mechanitis polymnia eurydice', null),
+    ]));
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ label: 'Preserved specimen', items: [
+      { taxon: 'Mechanitis polymnia werneri', rank: 'subspecies', specimen_id: 'CAM000001', file: 'CAM1d.webp', poor: false },
+      { taxon: 'Mechanitis polymnia eurydice', rank: 'subspecies', specimen_id: 'CAM000002', file: 'CAM2d.webp', poor: true },
+      // A taxon with a live photo: no preserved one.
+      { taxon: 'Mechanitis polymnia', rank: 'species', specimen_id: 'CAM000003', file: 'CAM2d.webp', poor: false },
+    ] }));
+    const out = join(dir, 'packs');
+    const run = spawnSync(python, ['-I', SCRIPT, 'taxa', '--taxa', join(dir, 'taxa.json'), '--out', out, '--cell', 'EC:all', '--pause', '0', '--preserved', join(dir, 'manifest.json'), '--bundle-mb', '0.001'], { encoding: 'utf8', timeout: 120_000 });
+    assert.equal(run.status, 0, run.stderr + run.stdout);
+    const index = JSON.parse(readFileSync(join(out, 'index.json'), 'utf8'));
+    const of = name => index.taxa.find(x => x.name === name).photos;
+    assert.deepEqual(of('Mechanitis polymnia werneri').map(p => [p.kind, p.specimen, p.attribution, p.license]), [['preserved', 'CAM000001', 'Sanger/Ikiam', '']]);
+    assert.deepEqual(of('Mechanitis polymnia eurydice'), []);
+    assert.equal(of('Mechanitis polymnia').length, 1);
+    assert.equal(of('Mechanitis polymnia')[0].kind, undefined);
+    // The crop's bytes unchanged (made at the pack's settings already).
+    const crop = of('Mechanitis polymnia werneri')[0];
+    assert.deepEqual(readFileSync(join(out, 'photos', crop.file)), readFileSync(join(dir, 'CAM1d.webp')));
+    // Bundles: each photo's bytes at its place (a tiny bundle size).
+    assert.ok(index.bundles.length >= 1);
+    for (const p of [crop, of('Mechanitis polymnia')[0]]) {
+      const [b, offset] = p.at;
+      const bundle = readFileSync(join(out, index.bundles[b].file));
+      assert.equal(bundle.length, index.bundles[b].bytes);
+      assert.deepEqual(bundle.subarray(offset, offset + p.bytes), readFileSync(join(out, 'photos', p.file)));
+      assert.match(index.bundles[b].file, /^bundles\/b\d{3}-[0-9a-f]{10}\.bin$/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
