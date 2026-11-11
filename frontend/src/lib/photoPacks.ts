@@ -560,7 +560,9 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   // The bundles: a few long range requests; each range is one unit, tried again on its own when the signal drops.
   const one: string[] = []
   const ranges = index.bundles?.length ? bundleRanges(index, todo, want, one) : (one.push(...todo), [])
-  await pool(ranges, 3, async rg => {
+  // Short ranges (a photo or a few, as when an update adds one photo per taxon beside the one the phone has) are
+  // mostly waiting: 8 of them in flight; long ones 3 (r5-fable-F2).
+  const fetchOne = async (rg: BundleRange) => {
     for (let attempt = 0; attempt < 3 && !quota; attempt++) {
       if (attempt) await new Promise(r => setTimeout(r, 500 * attempt))
       const got = await fetchRange(index, indexUrl, rg, tick).catch(() => null)
@@ -571,7 +573,9 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
       return
     }
     one.push(...rg.items.map(x => x.u)) // the range failed three times: its photos one by one below
-  })
+  }
+  const SHORT = 256 * 1024
+  await Promise.all([pool(ranges.filter(r => r.end - r.start >= SHORT), 3, fetchOne), pool(ranges.filter(r => r.end - r.start < SHORT), 8, fetchOne)])
   // One request per photo: a list without bundles, a photo outside them, a range that kept failing.
   await pool(one, 4, async u => {
     if (quota) return
@@ -728,8 +732,11 @@ export async function onlineSources(): Promise<PackLookup[]> {
   if (onlineLookup?.index !== index) onlineLookup = { index, l: lookup(index, INDEX_URL()) }
   return [onlineLookup.l]
 }
-/** A photo's identity across lists: its iNaturalist page, else its file name (the same in the pack and online). */
-const photoKey = (p: TaxonPhoto) => p.source || p.src.split('/').pop() || p.src
+/**
+ * A photo's identity across lists: the taxon it shows and its iNaturalist page, else its file name (the same in the
+ * pack and online). By taxon too: a species and its subspecies that share a file each keep their card (r5-fable-F1).
+ */
+const photoKey = (p: TaxonPhoto) => `${p.name}|${p.source || p.src.split('/').pop() || p.src}`
 /**
  * speciesPhotos from every source, each photo once (review r4-sol-F2: a taxon in the installed pack still gets the
  * server list's other photos, e.g. its Ecuador photo next to an older pack's Brazilian one). The first source's copy

@@ -276,6 +276,28 @@ describe('a pack of several photos per taxon', () => {
     expect(ordered.map(p => p.country)).toContain('PE')
   })
 
+  it('r5-fable-F1: a species and its subspecies sharing a file each keep their photo (Napeogenes lycora, offline)', async () => {
+    fakeCaches()
+    const shared: PackIndex = {
+      ...multi,
+      taxa: [
+        taxon('Napeogenes lycora', ['EC'], [photo('70.webp', 'EC')]),
+        taxon('Napeogenes lycora lycora', ['EC'], [photo('70.webp', 'EC')]),
+        taxon('Napeogenes lycora apulia', ['EC'], [photo('71.webp', 'EC')]),
+      ],
+    }
+    const { installPack } = await import('../photoPacks')
+    await installPack(shared, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
+    online = false
+    const { savedPhotos } = await import('../identifyRefs')
+    const got = (await savedPhotos(['Napeogenes lycora']))['Napeogenes lycora'].photos
+    expect(got.map(p => [p.level, p.taxon ?? null, p.src.split('/').pop()])).toEqual([
+      ['species', null, '70.webp'],
+      ['subspecies', 'Napeogenes lycora apulia', '71.webp'],
+      ['subspecies', 'Napeogenes lycora lycora', '70.webp'],
+    ])
+  })
+
   it('a preserved specimen keeps its kind and ID to the screen', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
