@@ -27,25 +27,27 @@ const insectary = (grid = 20846, end = 20846) => ({
   ],
 });
 
-test('a conditional format: its formula end (and a covered range ending there) moves when the grid comes within 1,000 rows', () => {
+test('a conditional format: its formula end moves when the grid comes within 1,000 rows, its covered range is left to Google', () => {
   const { changes } = conditionalFormatPlan([insectary()]);
   assert.equal(changes.length, 1);
   const [c] = changes;
   assert.equal(c.index, 2);
   assert.equal(c.after, '=Y(A2<>"", CONTAR.SI($A$2:$A$30846, A2) > 1)');
-  // Only the end differs: the same rule with the formula's number and the covered range's end changed.
+  // Only the end differs: the same rule with the formula's number changed.
   const back = structuredClone(c.next);
   back.booleanRule.condition.values[0].userEnteredValue = c.before;
-  back.ranges[0].endRowIndex = 20846;
   assert.deepEqual(back, c.rule);
-  assert.equal(c.next.ranges[0].endRowIndex, 30846);
   // After the 11 Nov edit: 10,000 ahead, nothing to do until the grid reaches 29,846 rows.
   assert.equal(conditionalFormatPlan([insectary(20846, 30846)]).changes.length, 0);
   assert.equal(conditionalFormatPlan([insectary(29845, 30846)]).changes.length, 0);
   const near = conditionalFormatPlan([insectary(29846, 30846)]).changes;
   assert.equal(near[0].after, '=Y(A2<>"", CONTAR.SI($A$2:$A$39846, A2) > 1)');
-  // The covered range (at the grid's end, 29846) did not end where the formula did: left as it is.
-  assert.equal(near[0].next.ranges[0].endRowIndex, 29846);
+  // Rows appended past the end since the last night (up to 1,000): still moved.
+  assert.equal(conditionalFormatPlan([insectary(31846, 30846)]).changes[0].after, '=Y(A2<>"", CONTAR.SI($A$2:$A$41846, A2) > 1)');
+  // Further behind: taken as meant (a short block), named, not moved.
+  const short = conditionalFormatPlan([insectary(31847, 30846)]);
+  assert.equal(short.changes.length, 0);
+  assert.deepEqual(short.behind, [{ sheet: 'Insectary_data', index: 2, end: 30846, grid: 31847 }]);
 });
 
 test('a conditional format of another kind is never touched', () => {
@@ -65,6 +67,8 @@ test('a conditional format of another kind is never touched', () => {
   // Two fixed ranges: each end moved on its own.
   const both = conditionalFormatPlan(sheet([formula(r, '=CONTAR.SI($A$2:$A$100, A2)+CONTAR.SI($B$2:$B$5000, A2)>1')])).changes;
   assert.equal(both[0].after, '=CONTAR.SI($A$2:$A$10100, A2)+CONTAR.SI($B$2:$B$5000, A2)>1');
+  // A short lookup block far above the grid's end is not a growing range.
+  assert.equal(conditionalFormatPlan(sheet([formula(r, '=COINCIDIR(A2,$K$2:$K$12,0)')], 5000)).changes.length, 0);
 });
 
 test('a dropdown list: parsed, and where it should end', () => {
@@ -263,7 +267,7 @@ test('a rule that does not read back as sent fails the job', async () => {
   assert.match(out.lines.at(-1), /FAILING: Insectary_data's conditional formats read back other than sent/);
 });
 
-test('--sheet-ranges: a record line in the log only when something moved; an error is a failing line', async t => {
+test('--sheet-ranges: the log gets the plan before a write and the outcome after, nothing when nothing moves; an error is a failing line', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'sheet-ranges-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const log = join(dir, 'sheet-ranges.jsonl');
@@ -275,13 +279,62 @@ test('--sheet-ranges: a record line in the log only when something moved; an err
   near[2].dv = new Map();
   const out = await sheetRangesRun(fakeWorkbook(near).request, log);
   assert.equal(out.code, 0);
-  const lines = readFileSync(log, 'utf8').trim().split('\n');
-  assert.equal(lines.length, 1);
-  assert.equal(JSON.parse(lines[0]).changes.length, 2);
+  const lines = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  // The plan (with the rules as they were) before the write, the outcome after it.
+  assert.deepEqual(lines.map(l => [l.status, l.changes.length]), [['planned', 2], ['sent', 2]]);
+  assert.equal(lines[0].conditionalFormatsAsRead.Insectary_data.length, 3);
   const broken = await sheetRangesRun(async () => {
     throw new Error('Google Sheets 503: busy');
   }, log);
   assert.deepEqual(broken, { code: 1, lines: ['Sheet ranges: FAILING: Google Sheets 503: busy'] });
+  // No log file: nothing sent.
+  const fake = fakeWorkbook(workbook());
+  const unlogged = await sheetRangesRun(fake.request, null);
+  assert.deepEqual(unlogged.lines, ['Sheet ranges: FAILING: no --log file: nothing sent']);
+  assert.equal(fake.calls.filter(c => c.method === 'POST').length, 0);
+});
+
+test('a write that may have landed keeps its way back: write not confirmed, or the read-back failing', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sheet-ranges-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, 'sheet-ranges.jsonl');
+  const sheets = workbook({ zEnd: 13775 });
+  sheets[2].dv = new Map();
+  const fake = fakeWorkbook(sheets);
+  // The write lands, then Google stops answering.
+  let posted = false;
+  const flaky = async (path, options = {}) => {
+    if (posted) throw new Error('fetch failed');
+    const out = await fake.request(path, options);
+    if (options.method === 'POST') posted = true;
+    return out;
+  };
+  const late = await sheetRangesRun(flaky, log);
+  assert.equal(late.code, 1);
+  assert.match(late.lines.at(-1), /FAILING: the read-back failed \(fetch failed\)/);
+  // A write that timed out (it may have landed), on a workbook not yet moved.
+  const fresh = workbook({ zEnd: 13775 });
+  fresh[2].dv = new Map();
+  const again = fakeWorkbook(fresh);
+  const timeout = await sheetRangesRun(async (path, options = {}) => {
+    if (options.method === 'POST') throw Object.assign(new Error('Google Sheets did not answer in 120 s'), { timeout: true });
+    return again.request(path, options);
+  }, log);
+  assert.equal(timeout.code, 1);
+  assert.match(timeout.lines.at(-1), /FAILING: the write did not confirm/);
+  const records = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(records.map(r => r.status), ['planned', 'sent', 'planned', 'unconfirmed']);
+  for (const r of records) assert.ok((r.changes.length || r.unconfirmed.length) && (r.changes[0] || r.unconfirmed[0]).inverse);
+});
+
+test('a dropdown block further down a column is found though the sampled rows are already ahead', async () => {
+  const sheets = workbook({ end: 30846, zEnd: 13775 });
+  sheets[2].dv = new Map();
+  for (let row = 20; row < 25; row++) sheets[1].dv.set(`${row}:4`, list('=Lists!$Z$2:$Z$3030'));
+  const out = await keepRangesAhead(fakeWorkbook(sheets).request);
+  assert.equal(out.code, 0, out.lines.join('\n'));
+  assert.deepEqual(out.lines, ['Sheet ranges: moved dropdown Collection_data E21:E25: =Lists!$Z$2:$Z$3030 → =Lists!$Z$2:$Z$13775 (Lists!Z has 3775 rows of 50500)']);
+  assert.deepEqual(sheets[1].dv.get('22:4'), list('=Lists!$Z$2:$Z$13775'));
 });
 
 test('the command without a credential: exit 1, nothing sent', async () => {

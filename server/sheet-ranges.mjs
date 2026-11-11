@@ -5,8 +5,10 @@
 //    `$A$2:$A$20846` does not: a repeat typed in a new row was not marked (tried on the test copy, 11 Nov 2026);
 //  - a dropdown whose choices come from a growing ID list (`=Lists!$Z$2:$Z$3030`) stops offering the IDs added after
 //    its end (Lists!Z had 3,775 rows on 11 Nov 2026).
-// When the rows that exist come within MARGIN of such an end, the end moves to EXTEND past them. A formula range past
-// the grid costs nothing (Google counts only the rows that exist) and needs no rows; a dropdown's list stops at its
+// When the rows that exist come within MARGIN of a formula's end, it moves to EXTEND past them (a formula range past
+// the grid costs nothing: Google counts only the rows that exist); the covered range is left to Google, which grows it
+// with the grid. An end further behind the grid than MARGIN is taken as meant (a short lookup block) and only named.
+// A dropdown's end moves when its list's last filled row comes within MARGIN, to EXTEND past it, and stops at the list
 // sheet's grid. Only these two kinds are touched: other rules, their order, formats and conditions stay as they are.
 import { columnLetter } from './columns.mjs';
 
@@ -27,12 +29,13 @@ const formulaOf = rule => rule.booleanRule?.condition?.type === 'CUSTOM_FORMULA'
 
 /**
  * The conditional formats to move: `sheets` as the Sheets API gives them (properties with gridProperties.rowCount,
- * conditionalFormats). Each change: the rule at its index with only its formula's fixed ends (and a covered range
- * ending at the same row) moved; `rule` is the rule as it was, for the way back.
+ * conditionalFormats). Each change: the rule at its index with only its formula's fixed ends moved; `rule` is the rule
+ * as it was, for the way back. `behind`: ends more than the margin below the grid, left as they are.
  */
 export function conditionalFormatPlan(sheets, { margin = MARGIN, extend = EXTEND } = {}) {
   const changes = [];
   const watched = [];
+  const behind = [];
   for (const sheet of sheets) {
     const { sheetId, title } = sheet.properties;
     const grid = sheet.properties.gridProperties?.rowCount || 0;
@@ -41,19 +44,17 @@ export function conditionalFormatPlan(sheets, { margin = MARGIN, extend = EXTEND
       if (!formula || COMPUTED.test(formula)) return;
       const ends = [...formula.matchAll(OWN_RANGE)].map(m => Number(m[3]));
       if (!ends.length) return;
-      for (const end of ends) watched.push({ sheet: title, index, end, grid });
-      const moved = new Map(ends.filter(end => grid + margin >= end).map(end => [end, grid + extend]));
+      for (const end of ends) (end < grid - margin ? behind : watched).push({ sheet: title, index, end, grid });
+      const moved = new Map(ends.filter(end => end >= grid - margin && end <= grid + margin).map(end => [end, grid + extend]));
       if (!moved.size) return;
       const next = structuredClone(rule);
       next.booleanRule.condition.values[0].userEnteredValue = formula.replace(OWN_RANGE, (all, column, start, end) =>
         moved.has(Number(end)) ? `$${column}$${start}:$${column}$${moved.get(Number(end))}` : all,
       );
-      // A covered range ending where the formula did (left behind by the grid) goes with it; Google stops it at the grid.
-      for (const range of next.ranges || []) if (moved.has(range.endRowIndex)) range.endRowIndex = moved.get(range.endRowIndex);
       changes.push({ sheet: title, sheetId, index, grid, before: formula, after: next.booleanRule.condition.values[0].userEnteredValue, rule, next });
     });
   }
-  return { changes, watched };
+  return { changes, watched, behind };
 }
 
 /** A dropdown's list `{ sheet, column, start, end, key }`, or null when it is not a fixed one-column range. */
@@ -144,8 +145,8 @@ export async function keepRangesAhead(request, options = {}) {
   const byTitle = new Map(sheets.map(s => [s.properties.title, s.properties]));
   const cf = conditionalFormatPlan(sheets, options);
 
-  // Dropdowns: row 2 and the last row of every sheet show which columns take a growing list; only those columns that
-  // came near are read whole.
+  // Dropdowns: row 2 and the last row of every sheet show which columns take a growing list; those columns are read
+  // whole (a block further down may end elsewhere). A column with such a dropdown in neither row is not seen.
   const sampled = new URLSearchParams({ fields: 'sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(dataValidation))))' });
   for (const s of sheets) {
     const rows = s.properties.gridProperties?.rowCount || 0;
@@ -171,11 +172,7 @@ export async function keepRangesAhead(request, options = {}) {
     });
   }
   const near = new Map();
-  for (const c of sampleCells) {
-    const source = sourceOf(c.dv);
-    if (source && growing.includes(source.key) && listTarget(source.end, lists.get(source.key), options))
-      near.set(`${c.sheet}\u0000${c.column}`, c);
-  }
+  for (const c of sampleCells) if (growing.includes(sourceOf(c.dv)?.key)) near.set(`${c.sheet}\u0000${c.column}`, c);
   let dv = [];
   if (near.size) {
     const p = new URLSearchParams({ fields: 'sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(dataValidation))))' });
@@ -204,6 +201,8 @@ export async function keepRangesAhead(request, options = {}) {
     }),
   ];
   const record = { at: new Date(options.at ?? Date.now()).toISOString(), changes: [], leftOut: [] };
+  for (const b of cf.behind)
+    lines.push(`Sheet ranges: left as it is: ${b.sheet} rule ${b.index + 1} counts to row ${b.end}, over ${options.margin ?? MARGIN} rows short of the grid (${b.grid}): taken as meant`);
   if (!changes.length) {
     const nearest = cf.watched.sort((a, b) => a.end - a.grid - (b.end - b.grid))[0];
     lines.push(
@@ -214,46 +213,68 @@ export async function keepRangesAhead(request, options = {}) {
     return { code: 0, lines, record };
   }
 
-  // One atomic batchUpdate; a request on a range the credential cannot edit (protected) is left out and the rest sent.
+  // Before anything is sent, every planned change with the rule as it was, and each sheet's conditional formats as
+  // read (an index shifted by an edit meanwhile would overwrite another rule): `beforeWrite` keeps them (the log file);
+  // when it fails, nothing is sent. A write that may have landed is never without its way back.
+  const strip = ({ check, ...c }) => c;
+  const firstRead = Object.fromEntries(
+    sheets.filter(s => changes.some(c => c.check?.sheet === s.properties.title)).map(s => [s.properties.title, s.conditionalFormats]),
+  );
+  await options.beforeWrite?.({ at: record.at, status: 'planned', changes: changes.map(strip), conditionalFormatsAsRead: firstRead });
+
+  // One atomic batchUpdate; a request on a range the credential cannot edit (protected: Google's 400 "Invalid
+  // requests[i]") is left out and the rest sent.
   let pending = [...changes];
-  for (;;) {
-    if (!pending.length) break;
-    try {
-      await request(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: pending.map(c => c.request) }) });
-      break;
-    } catch (e) {
-      const m = /Invalid requests\[(\d+)\]\.\w+: .*(protegid|protected)/i.exec(e.message || '');
-      if (!m || !pending[Number(m[1])]) throw e;
-      record.leftOut.push(...pending.splice(Number(m[1]), 1).map(({ check, ...c }) => c));
-    }
-  }
   let code = 0;
+  try {
+    for (;;) {
+      if (!pending.length) break;
+      try {
+        await request(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: pending.map(c => c.request) }) });
+        break;
+      } catch (e) {
+        const m = /Invalid requests\[(\d+)\]\.\w+: .*(protegid|protected)/i.exec(e.message || '');
+        if (!m || !pending[Number(m[1])]) throw e;
+        record.leftOut.push(...pending.splice(Number(m[1]), 1).map(strip));
+      }
+    }
+  } catch (e) {
+    // Sent or not (a timed-out write may have landed): the planned record says what to check and how to undo it.
+    record.unconfirmed = pending.map(strip);
+    lines.push(`Sheet ranges: FAILING: the write did not confirm (${String(e.message).slice(0, 200)}): check the planned changes in the log`);
+    return { code: 1, lines, record };
+  }
   for (const c of record.leftOut)
     lines.push(`Sheet ranges: WARNING: ${c.kind} ${c.label} is protected from the app: its owner moves ${c.before} to ${c.after} by hand`);
   if (record.leftOut.length) code = 3;
 
-  // Read back: in each sheet with a moved rule, that rule as sent (a covered range stopped at the grid), the others
-  // unchanged.
-  const after = await request(`?fields=${enc(fields)}`);
-  const afterBy = new Map((after.sheets || []).map(s => [s.properties.title, s]));
   for (const c of pending) {
-    const { check, ...kept } = c;
-    record.changes.push(kept);
+    record.changes.push(strip(c));
     lines.push(`Sheet ranges: moved ${c.kind} ${c.label}: ${c.before} → ${c.after} (${c.note})`);
   }
+  try {
+    if (pending.length && (await readBack(request, sheets, pending, lines, fields))) code = 1;
+  } catch (e) {
+    lines.push(`Sheet ranges: FAILING: the read-back failed (${String(e.message).slice(0, 200)}): check the changes in the log`);
+    code = 1;
+  }
+  return { code, lines, record };
+}
+
+/** The read-back: 1 when a sheet's rules or a dropdown read back other than sent, else 0. */
+async function readBack(request, sheets, pending, lines, fields) {
+  let code = 0;
+  // In each sheet with a moved rule: that rule as sent, the others unchanged.
+  const after = await request(`?fields=${enc(fields)}`);
+  const afterBy = new Map((after.sheets || []).map(s => [s.properties.title, s]));
   for (const s of sheets.filter(s => pending.some(c => c.check?.sheet === s.properties.title))) {
     const now = afterBy.get(s.properties.title)?.conditionalFormats || [];
-    const grid = afterBy.get(s.properties.title)?.properties.gridProperties?.rowCount || 0;
-    const want = (s.conditionalFormats || []).map((rule, index) => {
-      const moved = pending.find(c => c.check && c.check.sheet === s.properties.title && c.check.index === index);
-      if (!moved) return rule;
-      const next = structuredClone(moved.check.next);
-      for (const r of next.ranges || []) if (r.endRowIndex > grid) r.endRowIndex = grid;
-      return next;
-    });
+    const want = (s.conditionalFormats || []).map(
+      (rule, index) => pending.find(c => c.check && c.check.sheet === s.properties.title && c.check.index === index)?.check.next || rule,
+    );
     if (JSON.stringify(now) !== JSON.stringify(want)) {
       code = 1;
-      lines.push(`Sheet ranges: FAILING: ${s.properties.title}'s conditional formats read back other than sent (someone edited them meanwhile?): compare with the record`);
+      lines.push(`Sheet ranges: FAILING: ${s.properties.title}'s conditional formats read back other than sent (someone edited them meanwhile?): compare with conditionalFormatsAsRead in the log`);
     }
   }
   const dvMoved = pending.filter(c => c.kind === 'dropdown');
@@ -275,5 +296,5 @@ export async function keepRangesAhead(request, options = {}) {
         }
     }
   }
-  return { code, lines, record };
+  return code;
 }

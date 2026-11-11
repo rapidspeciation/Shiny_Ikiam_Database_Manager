@@ -46,12 +46,21 @@ export function wikilocLine(w, at = Date.now()) {
   return { code: 1, line: `Wikiloc imports: ${w.status}: the app could not tell (journalctl --user -u ithomiini)` };
 }
 
-/** The --sheet-ranges run: `request` a GoogleSheets request, `log` the --log file (or none). */
+/**
+ * The --sheet-ranges run: `request` a GoogleSheets request, `log` the --log file. Before a write, the planned changes
+ * (with the rules as they were) go into the log; without a log, or when it cannot be written, nothing is sent. After
+ * it, the outcome (moved, left out, unconfirmed) goes in too.
+ */
 export async function sheetRangesRun(request, log, options = {}) {
   const { keepRangesAhead } = await import('../server/sheet-ranges.mjs');
+  const keep = entry => {
+    if (!log) throw new Error('no --log file: nothing sent');
+    appendFileSync(log, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+  };
   try {
-    const out = await keepRangesAhead(request, options);
-    if (log && (out.record.changes.length || out.record.leftOut.length)) appendFileSync(log, `${JSON.stringify(out.record)}\n`, { mode: 0o600 });
+    const out = await keepRangesAhead(request, { ...options, beforeWrite: keep });
+    const r = out.record;
+    if (r.changes.length || r.leftOut.length || r.unconfirmed) keep({ ...r, status: r.unconfirmed ? 'unconfirmed' : 'sent' });
     return out;
   } catch (e) {
     return { code: 1, lines: [`Sheet ranges: FAILING: ${String(e.message).slice(0, 300)}`] };
