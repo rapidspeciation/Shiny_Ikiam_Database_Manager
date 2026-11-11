@@ -17,7 +17,7 @@ import {
   roleOf,
   storedName,
   studentInput,
-  STUDENT_SIZE,
+  studentSizeOf,
   detectorInput,
   encoderInput,
   exifOrientation,
@@ -39,7 +39,7 @@ import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offli
 import { genusStock, speciesStock, stockDate, type FrozenStock } from '../lib/frozenStock'
 
 type OrtModule = typeof Ort
-interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null }
+interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null; version?: string; sha256?: string; input?: { size: number } }
 interface Stored { files: Record<string, StoredFile>; at: string }
 
 const CACHE = 'ithomiini-prueba-offline'
@@ -388,7 +388,8 @@ async function download(kind: ModelKind) {
         }
         await cache.put(key, new Response(new Blob(chunks as BlobPart[]), { headers: { 'x-etag': f.etag, 'x-bytes': String(end - start + 1) } }))
       }
-      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role }
+      // The version and the small model's input size go with the file (Identificar reads them: lib/offlineEngine.ts).
+      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.version ? { version: f.version } : {}), ...(f.role === 'student' && f.input ? { input: { size: f.input.size } } : {}) }
     }
     await cache.put(url('./models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
     diag.downloadSeconds = Math.round((performance.now() - t0) / 1000)
@@ -446,6 +447,8 @@ interface Loaded {
   detectorBackend: string
 }
 let loaded: Loaded | null = null
+/** The small model's input size in memory (lib/offlineId.ts studentSizeOf). */
+let smallSize = 192
 const loadTimes: Record<string, number> = {}
 
 function dropSessions() {
@@ -506,6 +509,7 @@ async function load(useGpu: boolean, kind: ModelKind): Promise<Loaded> {
       loadTimes[`${key}_read_ms`] = Math.round(performance.now() - t)
       const t1 = performance.now()
       const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      if (kind === 'small') smallSize = studentSizeOf(s.files[file])
       bytes = null
       loadTimes[`${key}_session_ms`] = Math.round(performance.now() - t1)
       return session
@@ -584,8 +588,9 @@ async function identify(photo: Photo) {
       const square = letterboxCrop(img, box)
       tick('crop_ms', t)
       t = performance.now()
-      // The small model: the same crop at 192 px (studentInput); the same 1024-D feature.
-      const x = kind === 'small' ? new m.ort.Tensor('float32', studentInput(square), [1, 3, STUDENT_SIZE, STUDENT_SIZE]) : new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
+      // The small model: the same crop at its own size (studentInput; 192 for L1, kept with the file); the same 1024-D feature.
+      const n = smallSize
+      const x = kind === 'small' ? new m.ort.Tensor('float32', studentInput(square, 224, n), [1, 3, n, n]) : new m.ort.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
       const enc = await encoder.run({ [encoder.inputNames[0]]: x })
       const feature = enc[encoder.outputNames[0]].data as Float32Array
       tick('encoder_run_ms', t)

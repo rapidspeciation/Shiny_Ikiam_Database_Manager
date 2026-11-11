@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_ROLES, modelReady, sameFile, type ListedFile, type StoredFile } from '../offlineId'
+import { isCurrent, MODEL_ROLES, modelReady, sameFile, studentSizeOf, type ListedFile, type StoredFile } from '../offlineId'
 import { PUBLIC_FILES } from '../publicModels'
 import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 import { PART, publicListing } from '../offlineEngine'
@@ -34,6 +34,19 @@ describe('the public (Hugging Face) models', () => {
     expect(sameFile({ etag: '"x"', bytes: f.bytes + 1, parts: f.parts }, f)).toBe(false)
     expect(sameFile({ etag: f.etag, bytes: f.bytes }, f)).toBe(true)
     expect(sameFile(undefined, f)).toBe(false)
+  })
+})
+
+describe('the public small model: S_B at 182 px (Hugging Face commit fb2068d5)', () => {
+  it('is listed with its version, input size and note; a phone holding L1 from Hugging Face is offered the update', () => {
+    const sb = publicListing().find(f => f.role === 'student')!
+    expect(sb).toMatchObject({ name: 'student_SB_int8.onnx', version: 'small-SB-20261111', input: { size: 182, values: 'clip' } })
+    expect(sb.url).toContain('/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/')
+    expect(sb.notes?.es).toMatch(/^Mejor en fotos nuevas de iNaturalist \(81,8\u00a0% vs 79,4\u00a0% de aciertos de especie\)\.$/)
+    // L1 as a signed-out phone kept it (its Hugging Face ETag and part hash, no version): not current, so an update.
+    const l1: StoredFile = { etag: '"sha256-d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb"', bytes: 23565423, role: 'student', parts: ['d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb'] }
+    expect(isCurrent(l1, sb as ListedFile)).toBe(false)
+    expect(studentSizeOf(l1)).toBe(192)
   })
 })
 

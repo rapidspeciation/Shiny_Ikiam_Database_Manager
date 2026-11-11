@@ -8,7 +8,19 @@
  */
 import type { FileRole } from './offlineId'
 
-export interface PublicFile { name: string; role: FileRole; bytes: number; sha256: string; url: string; parts: string[] }
+/** `version`: a named version (else its content); `input`: the small model's input size (lib/offlineId.ts studentSizeOf). */
+export interface PublicFile {
+  name: string
+  role: FileRole
+  bytes: number
+  sha256: string
+  url: string
+  parts: string[]
+  version?: string
+  input?: { size: number; values: 'clip' }
+  /** Shown with the update in Descargas (the server's list says the same: server/offline-id.mjs STUDENT). */
+  notes?: { es?: string; en?: string }
+}
 
 export const PUBLIC_FILES: PublicFile[] = [
   { name: "wing_seg_s2.onnx", role: "detector", bytes: 11081888, sha256: "32763314aa910988a50c80569b5803075aeae5544a4cdc7e20a6524f5ea9e836",
@@ -24,9 +36,12 @@ export const PUBLIC_FILES: PublicFile[] = [
   { name: "head_6fa6ab78_fp16.bin", role: "head", bytes: 31430656, sha256: "d20188e14a19a11eb6f8b82543017ef78314dd89e3e57814d101fe6373112660",
     url: "https://huggingface.co/fr4nzzch/butterfly-id-classifier/resolve/4bb06f9080809ca6b3196f49baeea78870a8d1ec/offline/head_6fa6ab78_fp16.bin",
     parts: ["d20188e14a19a11eb6f8b82543017ef78314dd89e3e57814d101fe6373112660"] },
-  { name: "student_L1_int8.onnx", role: "student", bytes: 23565423, sha256: "d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb",
-    url: "https://huggingface.co/fr4nzzch/butterfly-id-small-onnx/resolve/748ceb56dfe2d7caf84f75bbb4b17ae0a986dbed/student_L1_int8.onnx",
-    parts: ["d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb"] },
+  // Model S_B (11 Nov 2026), 182 px: the server's built-in small model too (server/offline-id.mjs STUDENT). Commit
+  // fb2068d5 adds it beside L1 (still at 748ceb56: student_L1_int8.onnx, 23,565,423 B, d6bdc3e5…, 192 px, the rollback).
+  { name: "student_SB_int8.onnx", role: "student", bytes: 23380320, sha256: "200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762", version: "small-SB-20261111", input: { size: 182, values: "clip" },
+    url: "https://huggingface.co/fr4nzzch/butterfly-id-small-onnx/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/student_SB_int8.onnx",
+    parts: ["200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762"],
+    notes: { es: "Mejor en fotos nuevas de iNaturalist (81,8\u00a0% vs 79,4\u00a0% de aciertos de especie).", en: "Better on new iNaturalist photos (81.8\u00a0% vs 79.4\u00a0% of species right)." } },
 ]
 
 /** The models' public pages (licence and model card), for «Acerca de y licencias». */

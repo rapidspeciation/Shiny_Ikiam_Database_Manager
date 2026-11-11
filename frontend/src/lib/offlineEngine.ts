@@ -27,8 +27,8 @@ import {
   roleOf,
   selectMasks,
   storedName,
-  STUDENT_SIZE,
   studentInput,
+  studentSizeOf,
   type FileRole,
   type Head,
   type HeadMeta,
@@ -60,8 +60,10 @@ export interface ModelFile {
   version?: string
   sha256?: string
   calibration?: unknown
-  /** The sex model's notes for Descargas (its manifest's: measured cost), per language. */
+  /** The model's notes for Descargas (its manifest's: measured facts), per language. */
   notes?: { es?: string; en?: string }
+  /** The small model's input size (lib/offlineId.ts studentSizeOf). */
+  input?: { size: number; values?: string }
 }
 /**
  * What the list offers for a model against the phone (lib/offlineId.ts offerFor): `state` 'none' (not offered),
@@ -95,7 +97,20 @@ export type Listing = { files: ModelFile[]; source: 'server' | 'public' } | { er
 
 /** The Hugging Face copies as a listing (no request: the list is part of the page). */
 export const publicListing = (): ModelFile[] =>
-  PUBLIC_FILES.map(f => ({ name: f.name, bytes: f.bytes, etag: `"sha256-${f.sha256}"`, role: f.role, wire: f.bytes, encoding: null, url: f.url, parts: f.parts, version: contentVersion(f.sha256), sha256: f.sha256 }))
+  PUBLIC_FILES.map(f => ({
+    name: f.name,
+    bytes: f.bytes,
+    etag: `"sha256-${f.sha256}"`,
+    role: f.role,
+    wire: f.bytes,
+    encoding: null,
+    url: f.url,
+    parts: f.parts,
+    version: f.version ?? contentVersion(f.sha256),
+    sha256: f.sha256,
+    ...(f.input ? { input: f.input } : {}),
+    ...(f.notes ? { notes: f.notes } : {}),
+  }))
 
 /** A file's version when its source names none: its content (the server's default too, server/offline-id.mjs). */
 export const contentVersion = (sha256: string) => `sha256-${sha256.slice(0, 12)}`
@@ -197,6 +212,13 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     return { files: body.files, source: 'server' }
   }
 
+  /**
+   * What a file keeps beside its version: the sex model's calibration, the small model's input size. Written in the
+   * same stored.json as the file, so an update swaps the model and these together (and a cut keeps the old pair).
+   */
+  const extraOf = (f: ModelFile): Partial<StoredFile> =>
+    f.role === 'sex' && f.calibration ? { calibration: f.calibration } : f.role === 'student' && f.input ? { input: { size: f.input.size } } : {}
+
   const putStored = async (cache: Cache, s: Stored) =>
     cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
 
@@ -207,7 +229,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     if (s && files) {
       const sex = sexFiles(files)
       const listed = [...files.filter(f => f.role !== 'sex'), ...sex]
-      if (adoptVersions(s.files, listed, f => (f.role === 'sex' ? { calibration: (f as ModelFile).calibration } : {}))) await putStored(await caches.open(CACHE), s)
+      if (adoptVersions(s.files, listed, f => extraOf(f as ModelFile))) await putStored(await caches.open(CACHE), s)
     }
     return { full: rolesStored(MODEL_ROLES.full, s?.files ?? null), small: rolesStored(MODEL_ROLES.small, s?.files ?? null) }
   }
@@ -333,6 +355,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       if (roles.includes(ENCODER_ROLE[k])) {
         retire(encoders[k])
         delete encoders[k]
+        delete encoderSize[k]
       }
     if (roles.includes('head') || roles.includes('head-meta')) headLoaded = null
     if (roles.includes('sex')) {
@@ -361,7 +384,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const label = (f: ModelFile): Partial<StoredFile> => ({
       ...(f.version ? { version: f.version } : {}),
       ...(f.sha256 ? { sha256: f.sha256 } : {}),
-      ...(f.role === 'sex' && f.calibration ? { calibration: f.calibration } : {}),
+      ...extraOf(f),
     })
     for (const f of wanted) {
       const old = before?.files[f.name]
@@ -483,6 +506,8 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   let detector: Ort.InferenceSession | null = null
   let detectorOnGpu = false
   const encoders: Partial<Record<ModelKind, Ort.InferenceSession>> = {}
+  /** The input size of each encoder in memory (the small model's own, from the file it was read from). */
+  const encoderSize: Partial<Record<ModelKind, number>> = {}
   let headLoaded: Head | null = null
 
   async function importOrt(file: string): Promise<OrtModule> {
@@ -503,8 +528,10 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     await loadDetector(s)
     if (!encoders[kind]) {
       const t = performance.now()
-      let bytes: Uint8Array | null = await readModel(name(ENCODER_ROLE[kind]))
+      const file = name(ENCODER_ROLE[kind])
+      let bytes: Uint8Array | null = await readModel(file)
       encoders[kind] = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      encoderSize[kind] = kind === 'small' ? studentSizeOf(s.files[file]) : 224
       bytes = null
       lastMs[`${kind}_load`] = Math.round(performance.now() - t)
     }
@@ -595,9 +622,10 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const t0 = performance.now()
     const encoder = encoders[kind]!
     const { square, status } = await cut(photo)
+    const size = encoderSize[kind]!
     const x =
       kind === 'small'
-        ? new ort!.Tensor('float32', studentInput(square), [1, 3, STUDENT_SIZE, STUDENT_SIZE])
+        ? new ort!.Tensor('float32', studentInput(square, 224, size), [1, 3, size, size])
         : new ort!.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
     const enc = await encoder.run({ [encoder.inputNames[0]]: x })
     const feature = Float32Array.from(enc[encoder.outputNames[0]].data as Float32Array)

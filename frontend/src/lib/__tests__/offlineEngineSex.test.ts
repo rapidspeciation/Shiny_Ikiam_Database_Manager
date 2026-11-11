@@ -18,6 +18,7 @@ vi.mock('../sexModel', async orig => {
 vi.resetModules()
 const { createEngine } = await import('../offlineEngine')
 const { SEX_DEFAULT } = await import('../sexModel')
+const { studentSizeOf } = await import('../offlineId')
 
 const BASE = 'https://x.test/prueba-offline/'
 function memoryCaches() {
@@ -265,5 +266,71 @@ describe('versions: the update', () => {
     expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0&v=${entry.slot}`)!.body)).toEqual(NEW)
     expect(store.has(`${BASE}models/student.onnx?part=0`)).toBe(false) // the old version's parts went after the swap
     expect(engine.offer('small', changed, await engine.stored()).state).toBe('current')
+  })
+})
+
+describe('a newer small model at another input size (182 px) replacing L1 (192 px)', () => {
+  const L1 = new Uint8Array([9, 9, 9, 9])
+  const NEW = new Uint8Array([4, 4, 4, 4, 4, 4])
+  /** The list with a newer small model (another file name, version, SHA-256 and input size). */
+  const withNew = (o: Record<string, unknown> = {}) =>
+    files.map(f => (f.role === 'student' ? { name: 'student_new_int8.onnx', bytes: NEW.length, etag: '"new"', role: 'student' as const, version: 'small-NEW-20261111', sha256: sha(NEW), input: { size: 182, values: 'clip' }, ...o } : f))
+  const l1List = files.map(f => (f.role === 'student' ? { ...f, version: 'small-L1-20261031', sha256: sha(L1), input: { size: 192, values: 'clip' } } : f))
+  const body = (u: string) => (u.includes('student_new') ? NEW : bodyOf(u))
+
+  it('L1 kept without a version: an update to the newer model; the model and its input size swap together', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    server(files)
+    const engine = createEngine(BASE, () => [], { signedIn: () => false })
+    await engine.download('small', files, () => {}) // as before versions: no version, no size stored
+    const before = storedJson(store).files['student.onnx']
+    expect(before.version).toBeUndefined()
+    expect(studentSizeOf(before)).toBe(192)
+    expect(engine.offer('small', withNew(), await engine.stored())).toMatchObject({ state: 'update', from: null, to: 'small-NEW-20261111', toBytes: NEW.length })
+    server(withNew(), { body })
+    await engine.download('small', withNew(), () => {})
+    const s = storedJson(store)
+    expect(s.files['student.onnx']).toBeUndefined()
+    expect(s.files['student_new_int8.onnx']).toMatchObject({ version: 'small-NEW-20261111', sha256: sha(NEW), input: { size: 182 } })
+    expect(studentSizeOf(s.files['student_new_int8.onnx'])).toBe(182)
+    expect(partKeys(store).filter(k => k.includes('student'))).toEqual(['models/student_new_int8.onnx?part=0'])
+    expect(engine.offer('small', withNew(), await engine.stored()).state).toBe('current')
+  })
+
+  it('L1 with its version: the same version shows nothing; the list from an older server (no size) still means 192', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    server(l1List)
+    const engine = createEngine(BASE, () => [], { signedIn: () => false })
+    await engine.download('small', l1List, () => {})
+    expect(storedJson(store).files['student.onnx']).toMatchObject({ version: 'small-L1-20261031', input: { size: 192 } })
+    expect(engine.offer('small', l1List, await engine.stored()).state).toBe('current')
+    expect(studentSizeOf({})).toBe(192)
+    expect(studentSizeOf({ input: { size: 0 } })).toBe(192)
+    expect(studentSizeOf({ input: { size: 182 } })).toBe(182)
+  })
+
+  it('an interrupted update keeps L1 and its 192 px', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    server(l1List)
+    const engine = createEngine(BASE, () => [], { signedIn: () => false })
+    await engine.download('small', l1List, () => {})
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      server(withNew(), { body, fail: u => u.includes('student_new') })
+      const done = engine.download('small', withNew(), () => {}).catch(e => e)
+      await vi.runAllTimersAsync()
+      expect(await done).toBeInstanceOf(Error)
+    } finally {
+      vi.useRealTimers()
+    }
+    const s = storedJson(store)
+    expect(s.files['student_new_int8.onnx']).toBeUndefined()
+    expect(s.files['student.onnx']).toMatchObject({ version: 'small-L1-20261031', input: { size: 192 } })
+    expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0`)!.body)).toEqual(L1)
+    expect(await engine.ready(withNew())).toEqual({ small: true, full: false })
+    expect(engine.offer('small', withNew(), await engine.stored()).state).toBe('update')
   })
 })

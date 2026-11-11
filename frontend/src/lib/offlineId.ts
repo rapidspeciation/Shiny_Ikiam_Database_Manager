@@ -12,7 +12,9 @@
  * 3. That box cut from the upright photo, padded to a grey (128) square and resized to 224 px with Pillow's
  *    bicubic filter in its own integer arithmetic.
  * 4. The encoder's feature, normalised, through the cosine head (fp16 weights), the leaves summed per species.
- *    Or the small model's (studentInput: the same crop at 192 px), the same 1024-D feature and the same head.
+ *    Or the small model's (studentInput: the same crop at its own size, 192 px for L1, another model's from its
+ *    manifest: studentSizeOf),
+ *    the same 1024-D feature and the same head.
  *
  * Where the server reads the mask's outline (cv2 contours) this reads the mask's pixels: same box, close shape
  * measures (they only decide rare cases: rectangle artefacts and overlapping duplicates).
@@ -442,8 +444,18 @@ export function resizeBilinear(x: Float32Array, channels: number, inH: number, i
   return out
 }
 
-/** The small model's input: the same 224 px crop, the CLIP mean and std, resized to 192 (bilinear, no antialias). */
+/**
+ * The small model's input: the same 224 px crop, the CLIP mean and std, resized to its size (bilinear, no antialias).
+ * The size travels with the model (the list's `input.size`, kept in stored.json with the file): 192 is model L1's,
+ * the only small model before sizes were listed, so a file without one is L1. A wrong size fails in onnxruntime
+ * (the graphs fix their height and width).
+ */
 export const STUDENT_SIZE = 192
+/** A small-model file's input size: its own (a whole number of 32 to 512 px), else L1's 192. */
+export function studentSizeOf(f?: { input?: { size?: unknown } | null } | null): number {
+  const n = f?.input?.size
+  return typeof n === 'number' && Number.isInteger(n) && n >= 32 && n <= 512 ? n : STUDENT_SIZE
+}
 export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): Float32Array {
   return resizeBilinear(encoderInput(rgb, size), 3, size, size, out, out)
 }
@@ -478,11 +490,12 @@ export function roleOf(name: string, role?: string | null): FileRole {
  * `version` and `sha256`: the installed version and the whole file's SHA-256 (the list's, checked on the phone before
  * the file was taken); files kept before versions existed have neither. `slot`: the file's parts are kept under
  * partKey(name, i, slot) (a newer version of a file with the same name is downloaded beside the old one, so the old
- * one works until the new one is checked). `calibration`: the sex model's cutoff, band and display (lib/sexModel.ts).
+ * one works until the new one is checked). `calibration`: the sex model's cutoff, band and display (lib/sexModel.ts). `input`: the small model's input size
+ * (studentSizeOf), stored with the file so that an update swaps the model and its size together.
  */
-export interface StoredFile { etag: string; bytes: number; role?: string; parts?: string[]; version?: string; sha256?: string; slot?: string; calibration?: unknown }
+export interface StoredFile { etag: string; bytes: number; role?: string; parts?: string[]; version?: string; sha256?: string; slot?: string; calibration?: unknown; input?: { size: number } }
 /** `version` and `sha256`: the model version the server (or the public list) offers, and the file's SHA-256. */
-export interface ListedFile { name: string; etag: string; bytes: number; role: string; parts?: string[]; version?: string; sha256?: string }
+export interface ListedFile { name: string; etag: string; bytes: number; role: string; parts?: string[]; version?: string; sha256?: string; input?: { size: number; values?: string } }
 
 /** The cache key (relative to the page's folder) of part `i` of a stored model file. */
 export const partKey = (name: string, i: number, slot?: string) => `models/${name}?part=${i}${slot ? `&v=${slot}` : ''}`

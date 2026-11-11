@@ -269,7 +269,7 @@ const modelRows = computed<ModelRow[]>(() =>
       ready: ready.value[k],
       // On the phone and the list offers a newer version (a phone with no stored version counts as older).
       outdated: o?.state === 'update',
-      // An update says its exact size (not rounded to 5 MB); a first download its rounded size.
+      // An update says its exact size (one file of about 23 MB, not «25 MB»); a first download its rounded size.
       downloadMb: o?.state === 'update' ? mb(s.wire || s.plain) : roughMb(s.wire || s.plain || publicSize(k)),
       takesMb: roughMb(s.total),
       recommended: k === 'small',
@@ -1248,7 +1248,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p class="text-sm text-fg-muted">
               {{ said?.kind === 'genus' ? $t('Posible género') : said?.kind === 'unsure' ? $t('No estamos seguros. Lo más parecido:') : $t('Posible identificación') }}
             </p>
-            <h1 class="text-2xl leading-tight font-semibold">
+            <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
+            <h1 class="text-2xl leading-tight font-semibold" data-testid="result-top" :data-top="top?.name" :data-top-p="top?.p">
               <template v-if="said?.kind === 'genus'">
                 <i>{{ said.genus }}</i>
                 <span class="block text-base font-normal text-fg-muted">{{ $t('la especie no es segura') }}</span>

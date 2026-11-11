@@ -29,12 +29,26 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  */
 
 /**
- * The small model («modelo pequeño»): a ViT-S/16 distilled from the encoder, the same 1024-D feature (so the same
- * detector, crop and head), 192 px input. Kept in offline/ beside the head. To swap it: copy the new file there and
- * change this one constant (name and sha256); the page offers it again under its new name. A file whose sha256 is
- * not this one is not offered (checked once per file version), and a missing one only hides the option.
+ * The small model («Rápido y liviano», «modelo pequeño»): distilled from the encoder, the same 1024-D feature (so the
+ * same detector, crop and head). Kept in offline/ beside the head. Which file it is, its version, SHA-256 and input
+ * size come from the manifest offline/student-model.json (STUDENT_MANIFEST, checkPhoneManifest), so a new small model
+ * is a data change even when its input size differs (the phone keeps the size with the file). Without a manifest,
+ * model S_B (STUDENT: DINOv2-S/14 reg4 at 182 px, int8, 11 Nov 2026; WingsClassificator
+ * reports/model_autoresearch_20261109/taxonomic EXPORT.md, B12 fresh-set check passed). A file whose SHA-256 is not
+ * the expected one is not offered (checked once per file version), and a missing one only hides the option.
+ * Rollback without a code change: a manifest naming L1 (STUDENT_L1; model-versions HANDOFF.md).
  */
-export const STUDENT = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb' };
+export const STUDENT = {
+  name: 'student_SB_int8.onnx',
+  sha256: '200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762',
+  version: 'small-SB-20261111',
+  input: { size: 182, values: 'clip' },
+  // Shown with the update in Descargas: B12, 1,156 iNaturalist photos never seen in training, species top-1.
+  notes: { es: 'Mejor en fotos nuevas de iNaturalist (81,8\u00a0% vs 79,4\u00a0% de aciertos de especie).', en: 'Better on new iNaturalist photos (81.8\u00a0% vs 79.4\u00a0% of species right).' },
+};
+/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the previous small model, kept in offline/ for the rollback. */
+export const STUDENT_L1 = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb', bytes: 23565423, version: 'small-L1-20261031', input: { size: 192, values: 'clip' } };
+export const STUDENT_MANIFEST = 'offline/student-model.json';
 
 /**
  * The team's experimental sex model (Identificar, signed in only). Never public: it is sent only on this signed-in
@@ -60,13 +74,15 @@ export const SEX_B = {
 };
 export const SEX_MANIFEST = 'offline/sex-model.json';
 export const MANIFEST_SCHEMA = 'phone-model/1';
+/** The roles a manifest in offline/ may define, and its file. */
+export const MANIFESTS = { sex: SEX_MANIFEST, student: STUDENT_MANIFEST };
 
 export const MODELS = [
   { name: 'wing_seg_s2.onnx', path: 'app/assets/wing_seg_s2.onnx', role: 'detector' },
   { name: 'bioclip25h_visual_int8.onnx', path: 'onnx/bioclip25h_visual_int8.onnx', role: 'encoder' },
   { name: 'head_6fa6ab78.json', path: 'offline/head_6fa6ab78.json', role: 'head-meta' },
   { name: 'head_6fa6ab78_fp16.bin', path: 'offline/head_6fa6ab78_fp16.bin', role: 'head' },
-  { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true },
+  { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true, version: STUDENT.version, input: STUDENT.input, notes: STUDENT.notes },
   { name: SEX.name, path: `offline/${SEX.name}`, role: 'sex', sha256: SEX.sha256, optional: true, packed: false, version: SEX_B.version, calibration: SEX_B.calibration },
 ];
 /** The models whose parts are precompressed. */
@@ -96,25 +112,54 @@ const isolated = {
 const etagOf = s => `"${s.size.toString(36)}-${Math.floor(s.mtimeMs).toString(36)}"`;
 
 /**
- * A sex model manifest checked: { ok: true, entry } (the MODELS-style entry the list uses) or { ok: false, why }.
- *   schema 'phone-model/1', role 'sex', version (1 to 80 characters: letters, digits, space . _ : + ( ) -),
+ * A phone-model manifest checked: { ok: true, entry } (the MODELS-style entry the list uses) or { ok: false, why }.
+ * Common to both roles:
+ *   schema 'phone-model/1', role 'sex' or 'student', version (1 to 80 characters: letters, digits, space . _ : + ( ) -),
  *   file (a bare *.onnx name in offline/), bytes (> 0), sha256 (64 lowercase hex),
+ *   notes (optional): { es, en }, one plain sentence or two each (at most 300 characters) shown with the download in
+ *                 Descargas: what was measured about the model (cost, tests). Only measured facts.
+ * role 'sex' (offline/sex-model.json):
  *   input (optional; only { size: 224, values: 'raw' }: the 224 px square as raw 0 to 255 RGB, channels first),
  *   calibration { cut: { t, lo, hi } logits with lo < t < hi, display: { a > 0, b } (P(female) = sigmoid(a z + b)),
- *                 genera: [Genus, …] },
- *   notes (optional): { es, en }, one plain sentence or two each (at most 300 characters) shown with the download in
- *                 Descargas: what was measured about the model's cost (speed, memory). Only measured facts.
+ *                 genera: [Genus, …] }.
+ * role 'student' (offline/student-model.json, «Rápido y liviano»):
+ *   input { size: n, values: 'clip' } (required): the 224 px crop with the CLIP mean and std, resized to n x n
+ *                 (bilinear, no antialias: frontend/src/lib/offlineId.ts studentInput); n 32 to 512. The output stays
+ *                 the 1024-D feature for the identifier's head. The phone keeps n with the file.
  */
-export function checkSexManifest(m) {
+export function checkPhoneManifest(m) {
   const fail = why => ({ ok: false, why });
   if (!m || typeof m !== 'object') return fail('not a JSON object');
   if (m.schema !== MANIFEST_SCHEMA) return fail(`schema must be "${MANIFEST_SCHEMA}"`);
-  if (m.role !== 'sex') return fail('role must be "sex"');
+  if (!Object.hasOwn(MANIFESTS, m.role)) return fail('role must be "sex" or "student"');
   if (typeof m.version !== 'string' || !/^[\w .:+()-]{1,80}$/.test(m.version) || !m.version.trim()) return fail('version: 1 to 80 letters, digits, spaces or . _ : + ( ) -');
   if (typeof m.file !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.onnx$/.test(m.file) || m.file.includes('..')) return fail('file: a bare .onnx file name (in offline/)');
-  if (MODELS.some(x => x.role !== 'sex' && x.name === m.file)) return fail('file: the name of an identifier model');
+  if (MODELS.some(x => x.role !== m.role && x.name === m.file)) return fail('file: the name of an identifier model');
   if (!Number.isSafeInteger(m.bytes) || m.bytes <= 0) return fail('bytes: the file size, a positive integer');
   if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) return fail('sha256: 64 lowercase hex characters');
+  const n = m.notes;
+  const text = v => typeof v === 'string' && v.trim().length > 0 && v.length <= 300 && !/[<>\u0000-\u001f]/.test(v);
+  if (n !== undefined && !(n && typeof n === 'object' && !Array.isArray(n) && Object.keys(n).length && Object.entries(n).every(([k, v]) => (k === 'es' || k === 'en') && text(v))))
+    return fail('notes: { "es": "…", "en": "…" }, plain text of at most 300 characters each');
+  const entry = {
+    name: m.file,
+    path: `offline/${m.file}`,
+    role: m.role,
+    sha256: m.sha256,
+    bytes: m.bytes,
+    optional: true,
+    // Sent plain: the precompressed parts (precompressParts) cover the built-in files only.
+    packed: false,
+    version: m.version.trim(),
+    ...(n ? { notes: { ...n } } : {}),
+  };
+  if (m.role === 'student') {
+    const i = m.input;
+    if (!(i && Number.isInteger(i.size) && i.size >= 32 && i.size <= 512 && i.values === 'clip' && Object.keys(i).length === 2))
+      return fail('input: { "size": <32 to 512>, "values": "clip" } (the 224 px crop, CLIP mean and std, resized to size)');
+    if (m.calibration !== undefined) return fail('calibration: only for the sex model');
+    return { ok: true, entry: { ...entry, input: { size: i.size, values: 'clip' } } };
+  }
   if (m.input !== undefined && !(m.input && m.input.size === 224 && m.input.values === 'raw' && Object.keys(m.input).length === 2))
     return fail('input: only { "size": 224, "values": "raw" } is supported (another input needs a code change)');
   const c = m.calibration, num = v => typeof v === 'number' && Number.isFinite(v);
@@ -123,55 +168,45 @@ export function checkSexManifest(m) {
   if (![t, lo, hi].every(num) || !(lo < t && t < hi)) return fail('calibration.cut: numbers with lo < t < hi');
   if (!num(a) || !num(b) || !(a > 0)) return fail('calibration.display: numbers a > 0 and b');
   if (!Array.isArray(c.genera) || !c.genera.length || !c.genera.every(g => typeof g === 'string' && /^[A-Z][a-z]+$/.test(g))) return fail('calibration.genera: a list of genus names');
-  const n = m.notes;
-  const text = v => typeof v === 'string' && v.trim().length > 0 && v.length <= 300 && !/[<>\u0000-\u001f]/.test(v);
-  if (n !== undefined && !(n && typeof n === 'object' && !Array.isArray(n) && Object.keys(n).length && Object.entries(n).every(([k, v]) => (k === 'es' || k === 'en') && text(v))))
-    return fail('notes: { "es": "…", "en": "…" }, plain text of at most 300 characters each');
-  return {
-    ok: true,
-    entry: {
-      name: m.file,
-      path: `offline/${m.file}`,
-      role: 'sex',
-      sha256: m.sha256,
-      bytes: m.bytes,
-      optional: true,
-      packed: false,
-      version: m.version.trim(),
-      calibration: { cut: { t, lo, hi }, display: { a, b }, genera: [...c.genera] },
-      ...(n ? { notes: { ...n } } : {}),
-    },
-  };
+  return { ok: true, entry: { ...entry, calibration: { cut: { t, lo, hi }, display: { a, b }, genera: [...c.genera] } } };
 }
 
-/** The manifest read once per version of it (ETag): { entry } from it, { entry: null, why } invalid, null without one. */
-let manifestMemo = { key: null, value: null };
-async function sexFromManifest(identifierDir) {
-  const file = join(identifierDir, SEX_MANIFEST);
+/** checkPhoneManifest for the sex model's manifest only. */
+export const checkSexManifest = m => (m && typeof m === 'object' && m.role !== 'sex' ? { ok: false, why: 'role must be "sex"' } : checkPhoneManifest(m));
+
+/** Each manifest read once per version of it (ETag): { entry } from it, { entry: null, why } invalid, null without one. */
+const manifestMemo = new Map();
+async function fromManifest(identifierDir, role) {
+  const rel = MANIFESTS[role];
+  const file = join(identifierDir, rel);
   const s = await stat(file).catch(() => null);
-  const key = s ? `${file}|${etagOf(s)}` : `${file}|-`;
-  if (manifestMemo.key === key) return manifestMemo.value;
+  const key = s ? etagOf(s) : '-';
+  if (manifestMemo.get(file)?.key === key) return manifestMemo.get(file).value;
   let value = null;
   if (s) {
     const json = await readFile(file, 'utf8')
       .then(JSON.parse)
       .catch(e => ({ __error: e.message }));
-    const checked = json?.__error ? { ok: false, why: `not JSON (${json.__error})` } : checkSexManifest(json);
-    value = checked.ok ? { entry: checked.entry } : { entry: null, why: `${SEX_MANIFEST}: ${checked.why}` };
-    if (!checked.ok) console.error(`offline-id: the sex model is not offered: ${value.why}`);
+    const checked = json?.__error ? { ok: false, why: `not JSON (${json.__error})` } : json?.role !== role ? { ok: false, why: `role must be "${role}"` } : checkPhoneManifest(json);
+    value = checked.ok ? { entry: checked.entry } : { entry: null, why: `${rel}: ${checked.why}` };
+    if (!checked.ok) console.error(`offline-id: the ${role === 'sex' ? 'sex' : 'small'} model is not offered: ${value.why}`);
   }
-  manifestMemo = { key, value };
+  manifestMemo.set(file, { key, value });
   return value;
 }
 
 /**
- * The phone's models on this server: MODELS, with the sex model from its manifest when there is one (left out when
- * the manifest is invalid). `problems`: why something is not offered (the manifest), for tools/identifier/check_phone_models.mjs.
+ * The phone's models on this server: MODELS, with the sex model and the small model from their manifests when there
+ * are any (left out when a manifest is invalid). `problems`: why something is not offered (a manifest), for
+ * tools/identifier/check_phone_models.mjs.
  */
 export async function phoneModels(identifierDir) {
-  const manifest = await sexFromManifest(identifierDir);
-  const models = MODELS.flatMap(m => (m.role !== 'sex' || !manifest ? [m] : manifest.entry ? [manifest.entry] : []));
-  return { models, problems: manifest?.why ? [manifest.why] : [] };
+  const manifests = Object.fromEntries(await Promise.all(Object.keys(MANIFESTS).map(async role => [role, await fromManifest(identifierDir, role)])));
+  const models = MODELS.flatMap(m => {
+    const man = manifests[m.role];
+    return !man ? [m] : man.entry ? [man.entry] : [];
+  });
+  return { models, problems: Object.values(manifests).flatMap(v => (v?.why ? [v.why] : [])) };
 }
 
 /** A file's version when its metadata names none: its content (frontend/src/lib/offlineEngine.ts contentVersion). */
@@ -319,6 +354,8 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
             sha256,
             ...(m.calibration ? { calibration: m.calibration } : {}),
             ...(m.notes ? { notes: m.notes } : {}),
+            // The small model's input size (the phone resizes the crop to it): L1 192, a manifest's own.
+            ...(m.role === 'student' && m.input ? { input: m.input } : {}),
             ...(parts ? { parts: parts.map(p => p.sha256) } : {}),
           });
         }

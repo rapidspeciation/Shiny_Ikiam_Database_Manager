@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { serveOfflineId, MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { serveOfflineId, MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, STUDENT_MANIFEST, checkPhoneManifest, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
 
 const student = MODELS.find(m => m.role === 'student');
 const sex = MODELS.find(m => m.role === 'sex');
@@ -306,7 +306,7 @@ function cManifest(bytes, extra = {}) {
   };
 }
 
-test('every listed file carries a version and its SHA-256: the content for the identifier, model B for the sex model', async () => {
+test('every listed file carries a version and its SHA-256: the content for the identifier, S_B and B for the small and sex models', async () => {
   const { base, ident, server, signIn } = await setup();
   try {
     signIn();
@@ -314,7 +314,10 @@ test('every listed file carries a version and its SHA-256: the content for the i
     for (const f of list.files) {
       const bytes = readFileSync(join(ident, MODELS.find(m => m.name === f.name).path));
       assert.equal(f.sha256, sha256Of(bytes), f.name);
-      assert.equal(f.version, f.role === 'sex' ? SEX_B.version : contentVersion(f.sha256), f.name);
+      assert.equal(f.version, f.role === 'sex' ? SEX_B.version : f.role === 'student' ? 'small-SB-20261111' : contentVersion(f.sha256), f.name);
+      assert.deepEqual(f.input, f.role === 'student' ? { size: 182, values: 'clip' } : undefined, f.name);
+      // The small model's release note travels with it (Descargas shows it with the update).
+      if (f.role === 'student') assert.match(f.notes.es, /81,8\u00a0% vs 79,4\u00a0%/);
     }
     // Without a manifest the sex model is model B, with its calibration (the phone keeps it with the file).
     const b = list.files.find(f => f.role === 'sex');
@@ -452,6 +455,101 @@ test('the notes reach the phone\'s list with the sex model', async () => {
     const list = await (await fetch(`${base}/models/list.json`)).json();
     assert.deepEqual(list.files.find(f => f.role === 'sex').notes, { es: 'Más lento.', en: 'Slower.' });
   } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+// ---------------------------------------------------------------- the small model by manifest (another input size)
+
+const newManifest = (bytes, extra = {}) => ({
+  schema: 'phone-model/1',
+  role: 'student',
+  version: 'small-new-test',
+  file: 'student_new_test.onnx',
+  bytes: bytes.length,
+  sha256: sha256Of(bytes),
+  input: { size: 182, values: 'clip' },
+  notes: { es: 'Mejor en pruebas de desarrollo.' },
+  ...extra,
+});
+
+test('a new small model is a data change: its file and offline/student-model.json, with its input size', async () => {
+  const { base, port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  try {
+    signIn();
+    const nb = Buffer.from(Array.from({ length: 2500 }, (_, i) => (i * 13) % 253));
+    writeFileSync(join(ident, 'offline', 'student_new_test.onnx'), nb);
+    writeFileSync(join(ident, STUDENT_MANIFEST), JSON.stringify(newManifest(nb)));
+    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const students = list.files.filter(f => f.role === 'student');
+    assert.equal(students.length, 1);
+    assert.deepEqual(
+      { name: students[0].name, bytes: students[0].bytes, version: students[0].version, sha256: students[0].sha256, input: students[0].input, notes: students[0].notes },
+      { name: 'student_new_test.onnx', bytes: 2500, version: 'small-new-test', sha256: sha256Of(nb), input: { size: 182, values: 'clip' }, notes: { es: 'Mejor en pruebas de desarrollo.' } },
+    );
+    // The sex model and the rest are as before (no sex manifest: model B).
+    assert.equal(list.files.find(f => f.role === 'sex').version, SEX_B.version);
+    const r = await raw(port, `${p}/student_new_test.onnx?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['content-encoding'], undefined); // plain: no precompressed parts for a manifest's file
+    assert.deepEqual(r.body, nb);
+    assert.equal((await raw(port, `${p}/${STUDENT.name}?part=0`)).status, 404); // the built-in one is not served beside it
+    // Not the manifest's bytes: not offered (the full model stays).
+    writeFileSync(join(ident, STUDENT_MANIFEST), JSON.stringify(newManifest(nb, { sha256: '2'.repeat(64) })));
+    const t = new Date(Date.now() + 5000);
+    utimesSync(join(ident, STUDENT_MANIFEST), t, t);
+    const again = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(again.files.some(f => f.role === 'student'), false);
+    assert.equal(again.files.some(f => f.role === 'encoder'), true);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+test('checkPhoneManifest: a small model needs its input size; a sex manifest under the student name is refused', () => {
+  const nb = Buffer.from('a small model');
+  const ok = checkPhoneManifest(newManifest(nb));
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.entry.input, { size: 182, values: 'clip' });
+  assert.equal(ok.entry.packed, false);
+  for (const [change, why] of [
+    [{ input: undefined }, /input/],
+    [{ input: { size: 182 } }, /input/],
+    [{ input: { size: 182, values: 'raw' } }, /input/],
+    [{ input: { size: 1000, values: 'clip' } }, /input/],
+    [{ input: { size: 182.5, values: 'clip' } }, /input/],
+    [{ calibration: SEX_B.calibration }, /calibration/],
+    [{ role: 'encoder' }, /role/],
+    [{ file: 'bioclip25h_visual_int8.onnx' }, /identifier model/],
+  ]) {
+    const r = checkPhoneManifest({ ...newManifest(nb), ...change });
+    assert.equal(r.ok, false, JSON.stringify(change));
+    assert.match(r.why, why, JSON.stringify(change));
+  }
+  // The student's own default L1 name is allowed for a manifest (the same file, a named version).
+  assert.equal(checkPhoneManifest({ ...newManifest(nb), file: STUDENT.name }).ok, true);
+  assert.equal(checkSexManifest(newManifest(nb)).ok, false);
+});
+
+test('a manifest whose role is not its file\'s is not used', async () => {
+  const { base, ident, server, signIn } = await setup();
+  const errors = [];
+  const orig = console.error;
+  console.error = (...a) => errors.push(a.join(' '));
+  try {
+    signIn();
+    const nb = Buffer.from('a small model');
+    writeFileSync(join(ident, 'offline', 'student_new_test.onnx'), nb);
+    writeFileSync(join(ident, SEX_MANIFEST), JSON.stringify(newManifest(nb)));
+    const list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(list.files.some(f => f.role === 'sex'), false);
+    assert.equal(list.files.find(f => f.role === 'student').name, STUDENT.name);
+    assert.match(errors.join('\n'), /sex-model\.json: role must be "sex"/);
+  } finally {
+    console.error = orig;
     server.close();
     server.closeAllConnections();
   }
