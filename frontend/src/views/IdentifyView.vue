@@ -10,29 +10,57 @@
  * the team's (signed in only) and is removed from the phone when signed out.
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { Camera, Check, ChevronDown, ImageUp, RotateCcw, TriangleAlert, WifiOff } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
+import { Camera, Check, ChevronDown, Download, ImageUp, RotateCcw, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
 import { effectiveMode, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, type Mode, type ServerAnswer } from '../lib/identifyOnline'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
-import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
+import DownloadsPanel, { type ModelRow, type SexRow } from '../components/identify/DownloadsPanel.vue'
+import TaxonSearch from '../components/identify/TaxonSearch.vue'
+import { usePacks } from '../lib/usePacks'
+import { mbText, scopeSize } from '../lib/photoPacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
-import { MODEL_ROLES, sameFile } from '../lib/offlineId'
+import { MODEL_ROLES, sameFile, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, type Candidate, type StockDetail } from '../lib/identifyResult'
-import { fieldIndex, fieldScope, fieldSet, inScope, referencePhotos, saveFieldPhotos, setFieldScope, sizeOf, type FieldIndex, type FieldScope, type FieldSet, type Refs } from '../lib/identifyRefs'
+import { fieldSet, referencePhotos, type Refs } from '../lib/identifyRefs'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
 
 const session = useSession()
+
+// ---------------------------------------------------------------- the three places: identify, search, downloads
+const route = useRoute()
+const router = useRouter()
+type Place = 'identify' | 'search' | 'downloads'
+const place = computed<Place>(() => (route.query.vista === 'descargas' ? 'downloads' : route.query.vista === 'buscar' ? 'search' : 'identify'))
+function go(p: Place) {
+  if (p === place.value) return
+  const { vista: _v, taxon: _t, ...rest } = route.query
+  router.push({ query: { ...rest, ...(p === 'identify' ? {} : { vista: p === 'downloads' ? 'descargas' : 'buscar' }) } })
+  window.scrollTo({ top: 0 })
+}
+const PLACES: { id: Place; label: string; icon: typeof Camera }[] = [
+  { id: 'identify', label: 'Identificar', icon: ScanSearch },
+  { id: 'search', label: 'Buscar', icon: Search },
+  { id: 'downloads', label: 'Descargas', icon: Download },
+]
+/** The taxon in the address (the search's), so a shared or reloaded link shows it again. */
+const searchTaxon = computed(() => (typeof route.query.taxon === 'string' ? route.query.taxon : null))
+function onChosenTaxon(name: string | null) {
+  if ((name ?? null) === searchTaxon.value) return
+  const { taxon: _t, ...rest } = route.query
+  router.replace({ query: { ...rest, ...(name ? { taxon: name } : {}) } })
+}
 const pageFiles = () => [
   location.href.split('#')[0],
   ...[...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=manifest]')].map(
@@ -85,7 +113,8 @@ const ready = ref<Record<ModelKind, boolean>>({ small: false, full: false })
 const checked = ref(false)
 const wanted = ref<ModelKind>((store.get(CHOSEN) as ModelKind | null) === 'full' ? 'full' : 'small')
 const active = computed(() => chooseModel(wanted.value, ready.value))
-const choosing = ref(false)
+/** Each model's files are on the phone (perhaps an older version than the server lists). */
+const stored = ref<Record<ModelKind, boolean>>({ small: false, full: false })
 const download = ref<{ kind: ModelKind; done: number; total: number; retrying?: string } | null>(null)
 const dlError = ref<string | null>(null)
 const space = ref<{ free: number } | null>(null)
@@ -115,13 +144,14 @@ async function refresh() {
     if (headTried && result.value) head.value = await engine.loadHead().catch(() => null)
   }
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
+  for (const k of KINDS) stored.value[k] = !!s && MODEL_ROLES[k].every(r => storedName(s!.files, r) != null)
+  sexStored.value = !!s && storedName(s.files, 'sex') != null
   sexReady.value = !!session.user && (await engine.sexReady(files.value))
   sexSize.value = session.user && files.value ? engine.sexToDownload(files.value, s).plain : null
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
   checked.value = true
   if (ready.value.small || ready.value.full) {
-    choosing.value = false
     // Models from the test page: this page and its runtime are kept now (online) before it says it works offline.
     pageOffline.value = await engine.pageOffline()
   }
@@ -152,9 +182,9 @@ const lacksSpace = computed(() => {
   return s && space.value && s.plain > space.value.free ? { need: roughMb(s.plain), free: mb(space.value.free) } : null
 })
 
-async function startDownload() {
-  if (sexDownload.value) return
-  const kind = wanted.value
+async function startDownload(kind: ModelKind = wanted.value) {
+  if (sexDownload.value || download.value) return
+  wanted.value = kind
   dlError.value = null
   // Asked inside the tap (Chrome weighs the gesture): the phone then does not clear the models when short of space.
   navigator.storage?.persist?.().catch(() => null)
@@ -186,14 +216,40 @@ async function startDownload() {
   }
 }
 
-async function removeModels() {
-  if (!confirm(t('¿Borrar los modelos de este teléfono? Para volver a usarlos hay que descargarlos otra vez.'))) return
-  await engine.remove()
-  result.value = null
-  head.value = null
-  sessionStorage.removeItem(LAST)
+async function removeModel(kind: ModelKind) {
+  if (!confirm(t('¿Borrar este modelo del teléfono? Para volver a usarlo hay que descargarlo otra vez.'))) return
+  await engine.removeModel(kind)
+  // A result read by this model stays on screen until the next photo; a restored one needs a model.
+  if (!KINDS.some(k => k !== kind && ready.value[k])) {
+    result.value = null
+    head.value = null
+    try {
+      sessionStorage.removeItem(LAST)
+    } catch {
+      /* nothing kept */
+    }
+  }
   await refresh()
 }
+function useModel(kind: ModelKind) {
+  wanted.value = kind
+  store.set(CHOSEN, kind)
+}
+/** The Descargas place's rows (DownloadsPanel). */
+const modelRows = computed<ModelRow[]>(() =>
+  KINDS.map(k => {
+    const s = sizes.value[k] ?? { plain: publicSize(k), wire: publicSize(k), total: publicSize(k) }
+    return {
+      kind: k,
+      label: label(k),
+      ready: ready.value[k],
+      outdated: !ready.value[k] && stored.value[k] && !!files.value,
+      downloadMb: roughMb(s.wire || s.plain || publicSize(k)),
+      takesMb: roughMb(s.total),
+      recommended: k === 'small',
+    }
+  }),
+)
 
 // ---------------------------------------------------------------- side of the Andes
 
@@ -396,7 +452,7 @@ function imageFile(list: DataTransfer | null): File | null {
   return Array.from(list.files ?? []).find(f => f.type.startsWith('image/')) ?? null
 }
 function photoFile(file: File) {
-  if (!canIdentify.value || busy.value || choosing.value) return
+  if (!canIdentify.value || busy.value || place.value !== 'identify') return
   onPhoto({ target: { files: [file], value: '' } } as unknown as Event)
 }
 function onPaste(e: ClipboardEvent) {
@@ -409,7 +465,7 @@ const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).inclu
 function onDragOver(e: DragEvent) {
   if (!hasFiles(e)) return
   e.preventDefault() // else the browser opens the image instead of the page
-  if (canIdentify.value && !choosing.value) dragging.value = true
+  if (canIdentify.value && place.value === 'identify') dragging.value = true
 }
 function onDrop(e: DragEvent) {
   if (!hasFiles(e)) return
@@ -570,6 +626,24 @@ let sexBusy = false
 /** The last photo, and its square when this phone read it: in memory only, for the estimate. */
 const lastPhoto = shallowRef<{ at: string; photo: Photo; cut?: { square: Uint8Array; status: string } } | null>(null)
 const sexListed = computed(() => !!files.value?.some(f => f.role === 'sex' && f.name === SEX_FILE.name))
+const sexStored = ref(false)
+/** Descargas' sex row: the team's only, when the server offers it or the phone has it. */
+const sexRow = computed<SexRow | null>(() => {
+  if (!session.user || !(sexListed.value || sexStored.value)) return null
+  return {
+    ready: sexReady.value,
+    outdated: !sexReady.value && sexStored.value && !!files.value,
+    downloadMb: mb(sexSize.value || SEX_FILE.bytes),
+    takesMb: mb(SEX_FILE.bytes),
+    progress: sexDownload.value,
+    error: sexError.value,
+  }
+})
+async function removeSex() {
+  if (!confirm(t('¿Borrar este modelo del teléfono? Para volver a usarlo hay que descargarlo otra vez.'))) return
+  await engine.forgetSex()
+  await refresh()
+}
 
 /** The estimate of the result on screen, once (the server's result too: the box and the square come from this phone). */
 async function estimateSex() {
@@ -604,6 +678,7 @@ async function downloadSexModel() {
     sexReady.value = await engine.sexReady(files.value)
     ready.value = await engine.ready(files.value)
     sexSize.value = engine.sexToDownload(files.value, await engine.stored()).plain
+    sexStored.value = true
   } catch {
     sexError.value = t('No se pudo descargar el modelo. Pruebe de nuevo.')
   } finally {
@@ -665,67 +740,32 @@ const refsShown = computed<Refs | undefined>(() => {
 })
 const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !== 'genus')?.src
 
-const field = ref<FieldSet | null>(fieldSet())
-const fieldProgress = ref<{ done: number; total: number } | null>(null)
-const fieldNote = ref<string | null>(null)
-/** What to save (the person's choice on this phone, lib/identifyRefs.ts DEFAULT_SCOPE until then). */
-const scope = ref<FieldScope>(fieldScope())
-watch(scope, setFieldScope, { deep: true })
-/** The field set's list, for the sizes before saving (online, or kept by the service worker). */
-const fieldList = ref<FieldIndex | null>(null)
-const fieldListFailed = ref(false)
-const loadFieldList = () =>
-  fieldIndex().then(
-    v => ((fieldList.value = v), (fieldListFailed.value = false)),
-    () => (fieldListFailed.value = true),
-  )
-loadFieldList()
-watch(online, on => on && !fieldList.value && loadFieldList())
-const fieldMb = (b: number) => (b / 1048576).toFixed(1)
-/** The chosen photos' size, or null while the list is unknown. */
-const fieldSize = computed(() => {
-  if (!fieldList.value) return null
-  const take = inScope(fieldList.value, scope.value)
-  return sizeOf([...take.species, ...take.subspecies])
+// The photo packs (lib/usePacks.ts, chosen in Descargas). Once a model is on the phone and there is signal, the chosen
+// pack is saved by itself, once on this phone (removing it later does not bring it back): without photos a species
+// never looked up online has none in the field (3 Nov 2026: Mechanitis on a phone in airplane mode; 11 Nov 2026).
+const packs = usePacks()
+packs.load()
+/** What the first download brings with it (the chosen pack, saved by itself after the model). */
+const firstPack = computed(() => {
+  if (!packs.index.value || packs.pack.value || store.get(AUTO) === '1') return null
+  const z = scopeSize(packs.index.value, packs.scope.value)
+  return z.photos ? { n: z.photos.toLocaleString(), mb: mbText(z.bytes) } : null
 })
-/** The saved set's choice (a set saved before 4 Nov 2026 was every species, no subspecies). */
-const fieldWas = computed<Pick<FieldScope, 'species' | 'ssp'> | null>(() => (field.value ? (field.value.scope ?? { species: 'all', ssp: 'none' }) : null))
-const fieldCurrent = computed(() => !!fieldWas.value && fieldWas.value.species === scope.value.species && fieldWas.value.ssp === scope.value.ssp)
-const SSP_LEVEL = { none: 0, ec: 1, all: 2 } as const
-/** The new choice leaves out photos the phone has. */
-const fieldNarrower = computed(
-  () => !!fieldWas.value && ((fieldWas.value.species === 'all' && scope.value.species === 'ec') || SSP_LEVEL[scope.value.ssp] < SSP_LEVEL[fieldWas.value.ssp]),
-)
-async function saveField() {
-  fieldNote.value = null
-  fieldProgress.value = { done: 0, total: 1 }
-  try {
-    const out = await saveFieldPhotos(scope.value, (done, total) => (fieldProgress.value = { done, total }))
-    field.value = out
-    const names = shownNames()
-    if (refsTimer) clearTimeout(refsTimer)
-    if (names) loadRefs(names.split('|'))
-    fieldNote.value = out.failed ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed }) : null
-  } catch {
-    fieldNote.value = t('Hace falta conexión a internet.')
-  } finally {
-    fieldProgress.value = null
-  }
-}
-
-// The chosen photos saved by themselves once a model is on the phone and there is signal, unless the person
-// unticked «Guardar también fotos para el campo» in the download panel: without them a species never looked up
-// online has no photo in the field (3 Nov 2026: Mechanitis on a phone in airplane mode). Once per page; a failure
-// leaves the button to finish it.
-let fieldTried = false
+const AUTO = 'identify:pack-auto'
 watch(
-  () => (ready.value.small || ready.value.full) && online.value && !field.value && !choosing.value && scope.value.auto && !!fieldList.value,
+  () => (ready.value.small || ready.value.full) && online.value && !packs.pack.value && !packs.progress.value && !!packs.index.value && !fieldSet() && store.get(AUTO) !== '1',
   go => {
-    if (!go || fieldTried || fieldProgress.value) return
-    fieldTried = true
-    saveField()
+    if (!go) return
+    store.set(AUTO, '1')
+    packs.install()
   },
 )
+// A pack saved or removed: the photos on screen are asked again.
+watch(packs.changed, () => {
+  const names = shownNames()
+  if (refsTimer) clearTimeout(refsTimer)
+  if (names) loadRefs(names.split('|'))
+})
 
 // ---------------------------------------------------------------- the team's frozen stock
 
@@ -799,7 +839,44 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl px-4 pt-4 pb-16 sm:px-6">
+  <div class="mx-auto w-full max-w-5xl px-4 pt-3 pb-16 sm:px-6">
+    <!-- The three places: identify a photo, look a taxon up, what the phone keeps -->
+    <nav class="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-border-strong bg-surface-sunken p-1" :aria-label="$t('Identificar')" data-testid="places">
+      <button
+        v-for="p in PLACES"
+        :key="p.id"
+        class="place flex min-h-12 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.95rem] font-medium"
+        :class="place === p.id ? 'bg-brand text-on-brand shadow-sm' : 'text-fg hover:bg-surface'"
+        :aria-current="place === p.id ? 'page' : undefined"
+        :data-testid="`place-${p.id}`"
+        @click="go(p.id)"
+      >
+        <component :is="p.icon" :size="18" class="shrink-0" />{{ $t(p.label) }}
+        <span v-if="p.id === 'downloads' && packs.progress.value" class="size-2 rounded-full bg-amber-400" :aria-label="$t('Descargando')" />
+      </button>
+    </nav>
+
+    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" :initial="searchTaxon" @downloads="go('downloads')" @chosen="onChosenTaxon" />
+
+    <DownloadsPanel
+      v-else-if="place === 'downloads'"
+      :models="modelRows"
+      :active="active"
+      :download="download"
+      :error="dlError"
+      :lacks-space="lacksSpace"
+      :ios-note="isIos && !installed && !anyReady"
+      :from-hf="fromHf"
+      :sex="sexRow"
+      :online="online"
+      @download="startDownload"
+      @use="useModel"
+      @remove="removeModel"
+      @sex-download="downloadSexModel"
+      @sex-remove="removeSex"
+    />
+
+    <template v-else>
     <!-- Where the photo is read: the server (signed in, with signal) or this phone. Signed out: this phone only. -->
     <div v-if="checked && session.user" class="mb-3" data-testid="mode">
       <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
@@ -842,73 +919,41 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
     </p>
 
     <!-- On the phone: whether it works here without signal, and with which model. -->
-    <div v-if="mode === 'phone' && anyReady && !choosing" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+    <div v-if="mode === 'phone' && anyReady" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
       <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
       <span v-else-if="pageOffline === null" class="text-fg-muted">{{ $t('Preparando para usar sin internet…') }}</span>
       <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
       <span class="whitespace-nowrap">
         <span class="text-fg-muted">{{ label(active!) }}</span>
-        <button class="ml-2 text-brand-text underline-offset-2 hover:underline" @click="choosing = true">{{ $t('Cambiar') }}</button>
+        <button class="ml-1 min-h-11 px-1 text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Cambiar') }}</button>
       </span>
       <span v-if="!online" class="inline-flex items-center gap-1 text-fg-muted"><WifiOff :size="14" />{{ $t('Ahora sin señal') }}</span>
     </div>
 
-    <!-- A. Choosing and downloading a model -->
-    <section v-if="checked && (choosing || (mode === 'phone' && !anyReady))" class="max-w-xl">
+    <!-- A. No model on the phone yet: the fast one in one tap, the rest in Descargas -->
+    <section v-if="checked && mode === 'phone' && !anyReady" class="max-w-xl" data-testid="first-download">
       <h1 class="text-xl font-semibold">{{ $t('Identificar una mariposa') }}</h1>
       <p class="mt-1 text-fg-muted">
         {{ $t('Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.') }}
       </p>
-      <fieldset class="mt-4 space-y-2">
-        <legend class="sr-only">{{ $t('Modelo') }}</legend>
-        <label
-          v-for="k in KINDS"
-          :key="k"
-          class="flex cursor-pointer gap-3 rounded-lg border p-3"
-          :class="wanted === k ? 'border-brand bg-brand-soft' : 'border-border bg-surface'"
-        >
-          <input v-model="wanted" type="radio" name="model" :value="k" class="mt-1 size-4 accent-[var(--focus)]" />
-          <span>
-            <span class="block font-medium"
-              >{{ label(k) }}<span v-if="k === 'small' && !ready[k]" class="ml-2 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">{{ $t('recomendado') }}</span
-              ><span v-if="ready[k]" class="ml-2 text-sm font-normal text-success-text">{{ $t('en el teléfono') }} ✓</span></span
-            >
-            <span class="block text-sm text-fg-muted">{{ sizeLine(k) }}</span>
-          </span>
-        </label>
-      </fieldset>
-      <div v-if="!field" class="mt-3 rounded-lg border border-border bg-surface p-3" data-testid="field-in-download">
-        <label class="flex cursor-pointer items-start gap-2">
-          <input v-model="scope.auto" type="checkbox" class="mt-0.5 size-4 accent-[var(--focus)]" />
-          <span class="text-sm">
-            <span class="font-medium">{{ fieldSize ? $t('Guardar también fotos para el campo (unos {mb} MB)', { mb: fieldMb(fieldSize.bytes) }) : $t('Guardar también fotos para el campo') }}</span>
-            <span class="block text-fg-muted">{{ $t('Una foto por especie (y subespecie) para comparar sin internet.') }}</span>
-          </span>
-        </label>
-        <details v-if="scope.auto" class="mt-2 pl-6">
-          <summary class="cursor-pointer text-sm text-brand-text">{{ $t('Elegir cuáles') }}</summary>
-          <FieldPhotosChoice v-model="scope" :index="fieldList" name="field-dl" class="mt-2" />
-        </details>
-      </div>
-      <p v-if="isIos && !installed && !ready[wanted]" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
-        {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
-      </p>
-      <p v-if="lacksSpace" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
-        {{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', lacksSpace) }}
-      </p>
-      <div class="mt-4 flex flex-wrap items-center gap-3">
-        <button v-if="!ready[wanted]" class="btn-primary px-5 py-2.5 text-base" :disabled="!!download || !!sexDownload" @click="startDownload">{{ $t('Descargar') }}</button>
-        <button v-else class="btn-primary px-5 py-2.5 text-base" @click="(store.set(CHOSEN, wanted), (choosing = false))">{{ $t('Usar este') }}</button>
-        <button v-if="choosing" class="btn" @click="choosing = false">{{ $t('Volver') }}</button>
-      </div>
       <div v-if="download" class="mt-4" role="status">
         <progress class="h-2 w-full accent-[var(--brand)]" :value="download.done" :max="download.total" />
         <p class="mt-1 text-sm text-fg-muted">
           {{ download.retrying ? $t('Se cortó la conexión; reintentando…') : $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}
         </p>
       </div>
+      <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="startDownload('small')">
+          <Download :size="20" />{{ $t('Descargar el identificador') }} · {{ modelRows[0].downloadMb }} MB
+        </button>
+        <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
+      </div>
+      <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Con {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
+      <p v-if="!online" class="mt-2 text-sm text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
+      <p v-if="isIos && !installed" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
+        {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
+      </p>
       <p v-if="dlError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ dlError }}</p>
-      <p v-if="fromHf" class="mt-4 text-xs text-fg-subtle">{{ $t('Gratis y sin cuenta: los modelos se descargan de Hugging Face y quedan en este teléfono.') }}</p>
       <IdentifyAbout class="mt-4" :team="!!session.user" />
     </section>
 
@@ -1106,48 +1151,17 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <button class="btn mt-3" @click="forget"><RotateCcw :size="14" />{{ $t('Borrar la lista') }}</button>
           </details>
 
-          <details class="rounded-lg border border-border bg-surface p-3 text-sm">
-            <summary class="cursor-pointer font-medium">{{ $t('Modelo y almacenamiento') }}</summary>
-            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt class="text-fg-muted">{{ $t('En uso') }}</dt>
-              <dd>
-                {{ active ? label(active) : $t('ninguno en este teléfono') }}
-                <button class="ml-1 text-brand-text hover:underline" @click="choosing = true">{{ active ? $t('Cambiar') : $t('Descargar') }}</button>
-              </dd>
-              <template v-if="engine.lastMs.photo">
-                <dt class="text-fg-muted">{{ $t('Última foto') }}</dt>
-                <dd>{{ $t('{s} s', { s: (engine.lastMs.photo / 1000).toFixed(1) }) }}</dd>
-              </template>
-            </dl>
-            <h3 class="mt-3 font-medium">{{ $t('Fotos para el campo') }}</h3>
-            <p class="text-fg-muted">{{ $t('Una foto de cada especie y subespecie de Ithomiini que tenga una foto libre, para comparar sin internet.') }}</p>
-            <FieldPhotosChoice v-model="scope" :index="fieldList" name="field-box" class="mt-2" />
-            <p v-if="fieldSize" class="mt-2 font-medium" data-testid="field-size">{{ $t('Lo elegido: {n} fotos, unos {mb} MB.', { n: fieldSize.photos, mb: fieldMb(fieldSize.bytes) }) }}</p>
-            <p v-if="field" class="mt-1">{{ $t('{n} fotos guardadas ({mb} MB), {date}', { n: field.count, mb: (field.bytes / 1048576).toFixed(1), date: when(field.at) }) }}</p>
-            <p v-if="fieldProgress" class="mt-1" role="status">{{ $t('{done} de {total} fotos', fieldProgress) }}</p>
-            <p v-if="fieldNote" class="mt-1 text-fg-muted">{{ fieldNote }}</p>
-            <p v-if="!fieldSize && online" class="mt-2 text-fg-muted">
-              <template v-if="fieldListFailed">
-                {{ $t('No se pudo leer la lista de fotos.') }}
-                <button class="ml-1 text-brand-text hover:underline" @click="loadFieldList">{{ $t('Reintentar') }}</button>
-              </template>
-              <template v-else>{{ $t('Calculando el tamaño…') }}</template>
-            </p>
-            <button class="btn mt-2" :disabled="!!fieldProgress || !online || !fieldSize" @click="saveField">
-              {{ !field ? $t('Guardar fotos') : fieldCurrent ? $t('Actualizar fotos') : $t('Guardar esta elección') }}
-            </button>
-            <p v-if="fieldNarrower" class="mt-1 text-xs text-fg-subtle">{{ $t('Las fotos que ya no entran en la elección se borran del teléfono.') }}</p>
-            <h3 class="mt-3 font-medium">{{ $t('Instalar en el teléfono') }}</h3>
-            <p class="text-fg-muted">
-              {{ $t('Android: menú ⋮ → «Instalar app». iPhone: Compartir → «Agregar a inicio», y abra la app desde el ícono.') }}
-            </p>
-            <button v-if="anyReady" class="btn-danger mt-3" @click="removeModels">{{ $t('Borrar los modelos de este teléfono') }}</button>
-          </details>
+          <button class="flex min-h-12 w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm font-medium hover:bg-surface-sunken" data-testid="to-downloads" @click="go('downloads')">
+            <Download :size="18" class="shrink-0 text-brand-text" />
+            <span class="flex-1">{{ $t('Descargas') }}</span>
+            <span class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: packs.pack.value.installed.photos.toLocaleString() }) : $t('sin fotos para comparar') }}</span>
+          </button>
           <IdentifyAbout :team="!!session.user" />
         </div>
       </div>
     </template>
     <p v-else-if="!checked" class="text-fg-muted">{{ $t('Cargando…') }}</p>
+    </template>
     <div
       v-if="dragging"
       class="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-brand/15 p-6"

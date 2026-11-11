@@ -310,6 +310,9 @@ export function configFromEnv(env = process.env) {
     drivePhotosCache: env.DRIVE_PHOTOS_CACHE ? resolve(env.DRIVE_PHOTOS_CACHE) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'drive-photos') : undefined,
     // The AI Identifier's files (identify_species, server/identifier.mjs; tools/identifier/setup.sh): beside the database by default.
     identifierDir: env.IDENTIFIER_DIR ? resolve(env.IDENTIFIER_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'identifier') : undefined,
+    // Identificar's photo packs (scripts/photo-packs.py) when they are kept outside the build (too large for Git):
+    // served at /identificar/packs/. Unset: those beside the page (frontend/public/identificar/packs/).
+    packsDir: env.PACKS_DIR ? resolve(env.PACKS_DIR) : undefined,
     // Field and specimen photos of species from Ecuador's butterfly sites (reference_photos, server/reference-photos.mjs;
     // made and copied there by scripts/reference-photos.mjs): beside the database by default.
     referencePhotosDir: env.REFERENCE_PHOTOS_DIR ? resolve(env.REFERENCE_PHOTOS_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'reference-photos') : undefined,
@@ -822,7 +825,7 @@ export async function createApp(config = {}, options = {}) {
       if (path === '/rename-app' || path.startsWith('/rename-app/')) return serveRenameApp(req, res, path.slice('/rename-app'.length), config.renameAppRoot);
       // The Identificar tab (frontend/identificar/): a page of its own with the test page's headers; models from /prueba-offline/models/.
       if (path === '/identificar' || path.startsWith('/identificar/'))
-        return serveOfflineId(req, res, { page: 'identificar', path: path.slice('/identificar'.length), webRoot: config.webRoot ?? webRoot, identifierDir: null, user: null });
+        return serveOfflineId(req, res, { page: 'identificar', path: path.slice('/identificar'.length), webRoot: config.webRoot ?? webRoot, identifierDir: null, user: null, packsDir: config.packsDir ?? null });
       // The offline identifier test page: its own headers (cross-origin isolated, WebAssembly) and its models behind the sign-in.
       if (path === '/prueba-offline' || path.startsWith('/prueba-offline/'))
         return serveOfflineId(req, res, {
