@@ -41,7 +41,7 @@ export interface PackTaxon {
   genus: string
   family: string
   group: Group
-  /** ISO 3166-1 alpha-2 codes where it is recorded (empty: none known; only «Neotrópico» takes it). */
+  /** ISO 3166-1 alpha-2 codes of the Neotropical countries where it is recorded (empty: none; in no region). */
   countries: string[]
   /** null: no free photo of it (still listed, so the search names it; signed in and online the server may have one). */
   photo: PackPhoto | null
@@ -70,7 +70,7 @@ export const SCOPE_GROUPS: Record<TaxaScope, Group[]> = {
   butterflies: ['ithomiini', 'nymphalidae', 'butterfly'],
   all: ['ithomiini', 'nymphalidae', 'butterfly', 'moth'],
 }
-/** 'neotropics': every taxon of the list; else the taxa recorded in at least one of these countries (ISO2). */
+/** 'neotropics': the taxa recorded in any Neotropical country; else in at least one of these countries (ISO2). */
 export type Region = 'neotropics' | string[]
 export interface PackScope {
   taxa: TaxaScope
@@ -124,7 +124,8 @@ export function packTaxa(index: Pick<PackIndex, 'taxa'>, scope: PackScope, { wit
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
   const region = scope.region === 'neotropics' ? null : new Set(scope.region)
   return index.taxa.filter(
-    t => t.photo && (withMissing || !t.photo.missing) && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (!region || t.countries.some(c => region.has(c))),
+    // «Neotrópico»: any Neotropical country (the head is worldwide: a taxon with none recorded is in no region).
+    t => t.photo && (withMissing || !t.photo.missing) && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (region ? t.countries.some(c => region.has(c)) : t.countries.length > 0),
   )
 }
 export interface Size {

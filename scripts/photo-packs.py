@@ -19,7 +19,8 @@ From the per-taxon list (the offline-packs research's taxa.json: name, rank, spe
 photo {url, inatPhotoId, attribution, license, taxonUrl, source}, bytes), its photos made here as mobile WebP:
 
   python3 -I scripts/photo-packs.py taxa --taxa taxa.json --out <PACKS_DIR> \
-      [--cell EC:all --cell NT:butterflies] [--size 400] [--quality 60] [--workers 3] [--pause 0.4] [--limit N]
+      [--cell EC:all --cell NT:butterflies] [--size 400] [--quality 60] [--workers 3] [--pause 0.4] [--limit N] \
+      [--fallback frontend/public/identificar/field]
 
   --cell REGION:SCOPE chooses the photos made on this server (REGION an ISO2 code, codes joined by +, or NT for any
   Neotropical country; SCOPE ithomiini, nymphalidae, butterflies or all, each taking the groups before it); default
@@ -171,6 +172,13 @@ def taxa_mode(a):
                 except Exception:  # noqa: BLE001 - retried, then counted as failed
                     time.sleep(3 * (attempt + 1))
             time.sleep(a.pause)
+            if body is None and a.fallback:
+                # The field set's own file of the photo (scripts/field-photos.py: <id>.jpg, s<id>.jpg for a subspecies).
+                for stem in (pid, f"s{pid}"):
+                    for ext in ("jpg", "jpeg", "png"):
+                        local = os.path.join(a.fallback, f"{stem}.{ext}")
+                        if body is None and os.path.exists(local):
+                            body = open(local, "rb").read()
             if body is None:
                 with lock:
                     stats["failed"] += 1
@@ -210,7 +218,7 @@ def taxa_mode(a):
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
         made = dict(zip(todo, pool.map(lambda kv: make(*kv), todo.items())))
 
-    out, by_group = [], {}
+    out, by_group, unavailable = [], {}, []
     for e in src:
         parts = e["name"].split()
         ph = e.get("photo") or None
@@ -219,6 +227,11 @@ def taxa_mode(a):
         if ph and ph.get("url"):
             pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
             file = made.get(pid) or have.get(pid)
+            if not file and pid in todo:
+                # Inside the cells but not fetched (gone from iNaturalist, not an image): listed without a photo.
+                out.append(entry)
+                unavailable.append(e["name"])
+                continue
             entry["photo"] = {"file": file or f"{pid}.webp", "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
                               "taxonUrl": ph.get("taxonUrl"), "source": ph.get("source")}
             if file:
@@ -234,7 +247,7 @@ def taxa_mode(a):
     for entry in out:
         if entry["photo"] and entry["photo"].get("missing"):
             entry["bytes"] = mean.get(entry["group"], fallback)
-    print(f"photos: {stats}; mean bytes by group {mean}", flush=True)
+    print(f"photos: {stats}; mean bytes by group {mean}; listed without a photo (not fetched): {len(unavailable)} {unavailable[:12]}", flush=True)
     stale = sorted(set(os.listdir(photos_dir)) - {f for f in made.values() if f} - set(have.values()))
     for f in stale[:20]:
         print("  not named by the list:", os.path.join(photos_dir, f))
@@ -256,6 +269,7 @@ def main():
     tx.add_argument("--quality", type=int, default=60)
     tx.add_argument("--workers", type=int, default=3)
     tx.add_argument("--pause", type=float, default=0.4, help="seconds each worker waits after a download")
+    tx.add_argument("--fallback", help="a folder of photos by iNaturalist id (the field set) for URLs that no longer answer")
     tx.add_argument("--sample")
     tx.add_argument("--limit", type=int)
     a = ap.parse_args()

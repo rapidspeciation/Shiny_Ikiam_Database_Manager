@@ -78,10 +78,10 @@ describe('pack list and scope', () => {
     expect(names({ taxa: 'butterflies', region: ['CO'], ssp: false })).toEqual(['Heliconius erato', 'Papilio thoas'])
     expect(names({ taxa: 'all', region: ['EC'], ssp: false })).toContain('Urania leilus')
     expect(names({ taxa: 'butterflies', region: ['EC'], ssp: false })).not.toContain('Urania leilus')
-    // A set of countries: any of them. No countries known: only the Neotropics.
+    // A set of countries: any of them. No Neotropical country recorded (the head is worldwide): in no region.
     expect(names({ taxa: 'ithomiini', region: ['BR', 'PE'], ssp: true })).toEqual(['Mechanitis polymnia', 'Mechanitis polymnia casabranca', 'Mechanitis lysimnia'])
-    expect(names({ taxa: 'nymphalidae', region: 'neotropics', ssp: false })).toContain('Morpho helenor')
-    expect(names({ taxa: 'all', region: ['EC', 'CO', 'BR', 'PE'], ssp: true })).not.toContain('Morpho helenor')
+    expect(names({ taxa: 'nymphalidae', region: 'neotropics', ssp: false })).toContain('Heliconius erato')
+    expect(names({ taxa: 'nymphalidae', region: 'neotropics', ssp: false })).not.toContain('Morpho helenor')
     // No photo: never in a pack.
     expect(names({ taxa: 'all', region: 'neotropics', ssp: true })).not.toContain('Oleria onega')
   })
