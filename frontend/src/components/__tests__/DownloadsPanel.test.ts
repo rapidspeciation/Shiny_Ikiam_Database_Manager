@@ -57,7 +57,7 @@ describe('Descargas: model versions', () => {
     const notice = text(sex.querySelector('[data-testid=sex-update]'))
     expect(notice).toMatch(/^Nueva versión disponible ?Nueva: field-sex-C-20261111, 172 MB\. ?Instalada: 43 MB, sin versión registrada\./)
     // The cost, as the model's manifest states it (measured on a laptop; nothing claimed for phones).
-    expect(text(sex.querySelector('[data-testid=sex-note]'))).toBe(NOTE)
+    expect(text(sex.querySelector('[data-testid=update-note]'))).toBe(NOTE)
     const btn = sex.querySelector<HTMLButtonElement>('[data-testid=sex-refresh]')!
     expect(text(btn)).toBe('Actualizar · 172 MB')
     expect(btn.disabled).toBe(false)
@@ -110,5 +110,27 @@ describe('Descargas: model versions', () => {
     expect(el.querySelector('[data-testid=dl-get-full]')).not.toBeNull()
     // Still usable meanwhile: «Usar este» is not offered for the one in use, removal is.
     expect(text(el.querySelector('[data-testid=dl-model-small]'))).toContain('Borrar del teléfono')
+  })
+
+  it('«Rápido y liviano», a newer named version listed: the versions with their sizes, its note, «Actualizar · 23 MB»', () => {
+    locale.value = 'es'
+    const NEW_NOTE = 'Una nota del manifiesto del modelo.'
+    const el = show({ models: [modelRow({ outdated: true, downloadMb: 23, versions: { from: 'small-v1-test', to: 'small-v2-test', fromMb: 24, toMb: 23 }, note: NEW_NOTE })] })
+    expect(text(el.querySelector('[data-testid=dl-update-small]'))).toMatch(/^Nueva versión disponible ?Nueva: small-v2-test, 23 MB\. ?Instalada: small-v1-test, 24 MB\. ?Una nota del manifiesto/)
+    expect(text(el.querySelector('[data-testid=dl-refresh-small]'))).toBe('Actualizar · 23 MB')
+    // After the update: its version, no notice.
+    const after = show({ models: [modelRow({ versions: { from: 'small-v2-test', to: 'small-v2-test' } })] })
+    expect(after.querySelector('[data-testid=dl-update-small]')).toBeNull()
+    expect(text(after.querySelector('[data-testid=dl-version-small]'))).toBe('Versión small-v2-test')
+  })
+
+  it('the progress: «Preparando la descarga…» before the first byte, then 0 of the total (not «1 de 1 MB»)', () => {
+    locale.value = 'es'
+    let el = show({ sex: update({ progress: { done: 0, total: 1 } }) })
+    expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toMatch(/^Preparando la descarga…/)
+    el = show({ sex: update({ progress: { done: 0, total: 171606829 } }) })
+    expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toMatch(/^0 de 172 MB/)
+    el = show({ models: [modelRow({ outdated: true })], download: { kind: 'small', done: 0, total: 1 } })
+    expect(text(el.querySelector('[data-testid=dl-model-small] [role=status]'))).toMatch(/^Preparando la descarga…/)
   })
 })

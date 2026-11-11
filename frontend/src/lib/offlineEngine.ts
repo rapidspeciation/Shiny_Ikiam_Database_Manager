@@ -69,7 +69,19 @@ export interface ModelFile {
  * on the wire) and the whole model's; the installed and the offered version of its main file (the encoder, the
  * small model or the sex model; null: not known).
  */
-export interface Offer { state: 'none' | 'missing' | 'update' | 'current'; plain: number; wire: number; total: number; from: string | null; to: string | null }
+export interface Offer {
+  state: 'none' | 'missing' | 'update' | 'current'
+  plain: number
+  wire: number
+  total: number
+  from: string | null
+  to: string | null
+  /** The main file's size on the phone and on the list (null: none). */
+  fromBytes: number | null
+  toBytes: number | null
+  /** The listed main file's notes (its manifest's), per language. */
+  notes: { es?: string; en?: string } | null
+}
 export interface Stored { files: Record<string, StoredFile>; at: string }
 
 export const CACHE = 'ithomiini-prueba-offline'
@@ -220,7 +232,16 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const { state } = offerFor(roles, s?.files ?? null, list)
     const main: FileRole = which === 'sex' ? 'sex' : ENCODER_ROLE[which]
     const have = s && storedName(s.files, main)
-    return { state, ...roleSizes(roles, list, s), from: have ? (s.files[have].version ?? null) : null, to: list.find(f => f.role === main)?.version ?? null }
+    const listed = list.find(f => f.role === main)
+    return {
+      state,
+      ...roleSizes(roles, list, s),
+      from: have ? (s.files[have].version ?? null) : null,
+      to: listed?.version ?? null,
+      fromBytes: have ? s.files[have].bytes : null,
+      toBytes: listed?.bytes ?? null,
+      notes: listed?.notes ?? null,
+    }
   }
 
   /** The page, its scripts and the runtime, for airplane mode (the service worker serves them from this cache). */
@@ -334,6 +355,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     for (const f of wanted) if (isCurrent(before?.files[f.name], f) && (await complete(cache, f.name, before!.files[f.name]))) have.add(f.name)
     const total = wanted.filter(f => !have.has(f.name)).reduce((a, f) => a + f.bytes, 0)
     let done = 0
+    progress(0, total)
     // The new files, written to stored.json at the end only: until then the old versions are what the phone uses.
     const fresh: Record<string, StoredFile> = {}
     const label = (f: ModelFile): Partial<StoredFile> => ({

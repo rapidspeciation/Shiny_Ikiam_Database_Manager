@@ -212,6 +212,7 @@ export default {
   'Nueva: {to}.': 'New: {to}.',
   'Versión {v}': 'Version {v}',
   'Comprobando la descarga…': 'Checking the download…',
+  'Preparando la descarga…': 'Preparing the download…',
   'Mientras tanto se sigue usando la versión instalada.': 'Meanwhile the installed version stays in use.',
   'No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.': 'Could not update. The installed version stays; try again.',
   '{n} fotos · {mb} MB': '{n} photos · {mb} MB',

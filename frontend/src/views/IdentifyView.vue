@@ -256,6 +256,8 @@ function useModel(kind: ModelKind) {
   wanted.value = kind
   store.set(CHOSEN, kind)
 }
+/** A model's note (its manifest's) in the page's language, else the other one. */
+const noteOf = (n: { es?: string; en?: string } | null | undefined) => (locale.value === 'en' ? (n?.en ?? n?.es) : (n?.es ?? n?.en)) ?? null
 /** The Descargas place's rows (DownloadsPanel). */
 const modelRows = computed<ModelRow[]>(() =>
   KINDS.map(k => {
@@ -267,10 +269,12 @@ const modelRows = computed<ModelRow[]>(() =>
       ready: ready.value[k],
       // On the phone and the list offers a newer version (a phone with no stored version counts as older).
       outdated: o?.state === 'update',
-      downloadMb: roughMb(s.wire || s.plain || publicSize(k)),
+      // An update says its exact size (not rounded to 5 MB); a first download its rounded size.
+      downloadMb: o?.state === 'update' ? mb(s.wire || s.plain) : roughMb(s.wire || s.plain || publicSize(k)),
       takesMb: roughMb(s.total),
       recommended: k === 'small',
-      versions: o ? { from: o.from, to: o.to } : undefined,
+      versions: o ? { from: o.from, to: o.to, fromMb: o.fromBytes ? mb(o.fromBytes) : null, toMb: o.toBytes ? mb(o.toBytes) : null } : undefined,
+      note: noteOf(o?.notes),
     }
   }),
 )
@@ -678,7 +682,7 @@ const sexRow = computed<SexRow | null>(() => {
       fromMb: sexInstalled.value ? mb(sexInstalled.value.bytes) : null,
       toMb: listed ? mb(listed.bytes) : null,
     },
-    note: (locale.value === 'en' ? (listed?.notes?.en ?? listed?.notes?.es) : (listed?.notes?.es ?? listed?.notes?.en)) ?? null,
+    note: noteOf(listed?.notes),
   }
 })
 async function removeSex() {
