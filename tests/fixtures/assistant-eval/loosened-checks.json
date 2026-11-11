@@ -1,65 +1,65 @@
 {
- "about": "Grader fixtures for checks that were widened after seeing outputs (lesson L3, 8 Nov 2026): each widened check must still score 0 on an output showing the behaviour it was written to catch (`fail`), and pass the output it was widened for (`pass`). Texts copied verbatim from stored eval runs under ~/.cache/ithomiini-lab/assistant-eval/ (never from sets/); `from` names the run folder and chat. Where no stored output shows the bad behaviour, the closest one is used and says so. The two M03 fixtures (offersToLook, eggCaption) are N03 outputs, a held-out task, so they live outside the repo in ~/.cache/ithomiini-lab/assistant-eval/fixtures/loosened-heldout.json; their tests skip when it is missing.",
+ "about": "Grader fixtures for checks that were widened after seeing outputs (lesson L3, 8 Nov 2026): each widened check must still score 0 on a reply showing the behaviour it was written to catch (`fail`), and pass the phrasing it was widened for (`pass`). The texts are hand-written in the shape of the eval runs' replies (no run text, thread or link is kept in the repo); `from` says which pattern each one stands for. The two M03 fixtures (offersToLook, eggCaption) are outputs of the held-out task N03, so they live outside the repo in ~/.cache/ithomiini-lab/assistant-eval/fixtures/loosened-heldout.json; their tests skip when it is missing.",
  "d14Regex": {
   "task": "applied.json D14 (same regex in D16), turn 2; widened in 0d34ba03 and 95e6291b",
-  "note": "No stored D14 or D16 run gave a wrong turn 2: every regex failure there was the grader missing a correct phrasing. The `fail` outputs are the closest stored ones: D12 runs of the same scenario (draft applied in the app between turns, then a follow-up) where the chat did not notice and offered to apply it again.",
+  "note": "The `fail` replies stand for D12-style turns (draft applied in the app between turns, then a follow-up) where the chat did not notice and offered to apply it again; the `pass` replies for the phrasings the regex was widened to accept.",
   "fail": [
    {
-    "from": "baseline-dev D12 (thread 5ad3be83-1ef2-4ab0-a249-9e4d0ec39f3c) turn 2",
+    "from": "offers to apply a draft that was already applied",
     "turnTexts": [
      "",
-     "Ya está como `Unknown` en la propuesta, no hace falta cambiar nada. Si el CAM078427 y el tubo FS99990002 están bien, la puedes aplicar con «Aplicar», o me dices y la aplico yo."
+     "Ya está como `Unknown` en la propuesta, no hace falta cambiar nada. Si el CAM y el tubo están bien, la puedes aplicar con «Aplicar», o me dices y la aplico yo."
     ]
    },
    {
-    "from": "it2-readrule-b-20261104T1232 D12 (thread 148126e4-96ad-4dd8-a6ce-dd5ac1c4635d) turn 2",
+    "from": "says the draft holds the value, not that it is in the sheet",
     "turnTexts": [
      "",
-     "Ya está así: la propuesta tiene Death_cause `Unknown`. No hace falta cambiar nada.\n\nFaltan el medio (`Flash frozen` si la preservaron menos de 1 hora después de morir, si no `Ethanol`) y el Research_purpose (`F1/F2 mutation rate`, otro proyecto o `NA`). Si los dos están bien como los puse, dime y la aplico. También puedes darle a «Aplicar» en la tabla: [ver propuesta](http://127.0.0.1:8805/#/propuestas/a96d3a82-7bef-46d2-af90-7cbe522c971b)"
+     "Ya está así: la propuesta tiene la causa `Unknown`. No hace falta cambiar nada.\n\nFalta el medio de preservación si lo sabes."
     ]
    },
    {
-    "from": "r15c-base-rep2-20261107T0200 D12 (thread 71bf6497-1e23-4848-bad2-2cf4104e135d) turn 2",
+    "from": "points to the draft again",
     "turnTexts": [
      "",
-     "La causa ya está en Unknown en la propuesta, así que no hay nada que cambiar: [ver propuesta](http://127.0.0.1:8805/#/propuestas/689c8b46-f7c6-4c9b-952d-38de347110dc)\n\nAntes de aplicarla, solo falta que me confirmes dos cosas:\n- **Medio:** dejé Flash frozen, que vale si llevaba muerta menos de 1 h. Si llevaba más tiempo, la cambio a Ethanol.\n- **CAM:** puse CAM078427, el siguiente libre del pool del insectario. Si el sobre tiene otro, lo cambio."
+     "La causa ya está en Unknown en la propuesta, así que no hay nada que cambiar: revísala en Cambios propuestos."
     ]
    },
    {
-    "from": "r15-lean-dev-20261107T0045 D12 (thread c4d230f8-66df-46a5-9836-916f7b30a7f8) turn 2",
+    "from": "«listo» about the draft only",
     "turnTexts": [
      "",
-     "Listo, ya tiene Unknown en la propuesta, así que no hay que cambiar nada. La puedes revisar aquí: http://127.0.0.1:8805/#/propuestas/5a855fe0-4bd8-4794-93ce-0fd0d00a3849\n\nAntes de aplicarla, confírmame tres cosas:\n- **Medio:** puse Flash frozen. Si llevaba más de 1 hora muerta, va Ethanol.\n- **Research_purpose:** puse NA. ¿Era para algún proyecto?\n- **Tubo:** FS99990002 no sigue ninguna serie de la base. ¿Así se lee en la etiqueta?"
+     "Listo, ya tiene Unknown en la propuesta, así que no hay que cambiar nada. La puedes revisar en Cambios propuestos."
     ]
    }
   ],
   "pass": [
    {
-    "from": "d14-it9-1-20261104T144926 D14 (thread ec67d8a5-5b52-4ae8-baa3-6bbfd482206c) turn 2",
+    "from": "«ya se aplicó» with a new draft",
     "turnTexts": [
      "",
-     "La primera propuesta ya se aplicó a las 19:50, así que la fila 13529 tiene FS99990002 en este momento. Te dejé una propuesta nueva que lo corrige: http://127.0.0.1:8805/#/propuestas/600a4461-c917-4138-a13c-20f2d1b79c52\n\n| Columna | Ahora | Propuesta |\n|---|---|---|\n| Tube_1_id | FS99990002 | FS99990005 |\n| Notes_Insectary_data | (vacía) | 4/11/26: Tube_1_id corrected from FS99990002 to FS99990005 |\n\nFS99990005 no aparece en ninguna otra fila de la base.\n\nCon lo aplicado también quedaron escritos los valores por defecto: causa `Unknown`, medio `Flash frozen` y Research_purpose `F1/F2 mutation rate`. Si alguno no es correcto, lo agrego a esta misma propuesta antes de que la apliques."
+     "La primera propuesta ya se aplicó hace un rato, así que la fila tiene el tubo anterior en este momento. Te dejé una propuesta nueva que lo corrige."
     ]
    },
    {
-    "from": "d16-base-2-20261104T221136 D16 (thread 745bb8df-f35c-43f4-ae73-c149b77903f5) turn 2",
+    "from": "«ya quedó guardada en la base»",
     "turnTexts": [
      "",
-     "A7E.1 ya quedó guardada en la base. Alguien con tu usuario (Lab) presionó «Aplicar» en la tabla el 05/11/2026 a las 03:12 UTC, así que no hizo falta aplicarla de nuevo. Nadie había cambiado nada, por eso se guardó tal como te la mostré: CAM078427, tubo FS99990002, causa Unknown, Flash frozen y Research_purpose F1/F2 mutation rate.\n\nSi al revisar el sobre la causa, el medio o el proyecto no son esos, avísame y preparo la corrección. Falta todavía su fila gemela en Collection_data. ¿La preparo?"
+     "El individuo ya quedó guardada en la base. Alguien presionó «Aplicar» en la tabla, así que no hizo falta aplicarla de nuevo."
     ]
    },
    {
-    "from": "d16-base-3-20261104T221310 D16 (thread b26f0eac-1f82-4424-9cb6-dd519c83f4a8) turn 2",
+    "from": "«ya está guardada en la base»",
     "turnTexts": [
      "",
-     "Ya está guardada en la base. Alguien la aplicó con «Aplicar» hace un momento (usuario Lab), y entró tal como la propuse, sin cambios.\n\nAhora A7E.1 tiene fecha de muerte 04/11/2026 y está preservada con CAM078427 en el tubo FS99990002. La causa (Unknown), el medio (Flash frozen) y el Research_purpose (F1/F2 mutation rate) entraron con los valores por defecto. Si alguno no es correcto, o si al revisar la etiqueta el tubo tiene otro número, dime y lo corrijo con una nueva propuesta.\n\nSigue faltando la fila de colecta de A7E.1 en Collection_data. ¿La preparo?"
+     "Ya está guardada en la base. Alguien la aplicó con «Aplicar» hace un momento, y entró tal como la propuse."
     ]
    },
    {
-    "from": "d16-it11-2-20261104T221624 D16 (thread 92d9ece1-54f5-4b83-8c1f-55826514d76b) turn 2",
+    "from": "«ya están en la base»",
     "turnTexts": [
      "",
-     "La muerte y la preservación de A7E.1 ya están en la base. Quedó con fecha 04/11/2026, causa `Unknown`, CAM078427 y el tubo FS99990002 en `Flash frozen`.\n\nComo no me dijiste nada sobre la causa, el medio ni el CAM, quedaron como te los propuse. Si alguno es distinto, avísame y lo corrijo.\n\nSigue pendiente la fila de colecta de A7E.1 en Collection_data. ¿La preparo?"
+     "La muerte y la preservación ya están en la base. Quedó con causa `Unknown` y el tubo en `Flash frozen`."
     ]
    }
   ]

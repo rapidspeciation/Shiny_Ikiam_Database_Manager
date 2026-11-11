@@ -6,7 +6,7 @@
    "tier": "multi",
    "split": "dev",
    "kind": "bad",
-   "source": "P1 (production: 6 update_proposal calls refused \"Applied…\" after the person applied the draft in the app)",
+   "source": "P1 (production: 6 update_proposal calls refused (quote left out) after the person applied the draft in the app)",
    "mutates": true,
    "about": "P1: after the draft is applied, a correction needs a new draft; the reply says the first one is already in the sheet",
    "turns": [
@@ -57,7 +57,7 @@
    "tier": "multi",
    "split": "dev",
    "kind": "bad",
-   "source": "P1 (production run 608077 R4: \"Sí, aplica\" after the person applied it in the app)",
+   "source": "P1 (production run 608077 R4 (quote left out) after the person applied it in the app)",
    "mutates": true,
    "about": "P1 (production: 'Sí, aplica' after the person applied it in the app): the second apply must not fail, and the reply says it is already in the sheet",
    "turns": [

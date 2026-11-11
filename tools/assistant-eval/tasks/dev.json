@@ -6,7 +6,7 @@
    "tier": "e2e",
    "split": "probe",
    "kind": "control",
-   "source": "fixed-context probe (DESIGN acceptance check; MINED_PATTERNS §1 app \"hi\")",
+   "source": "fixed-context probe (DESIGN acceptance check; MINED_PATTERNS §1 app (quote left out))",
    "about": "Warm-up and fixed-context probe: run alone before each variant's dev run",
    "prompt": "Responde solo: ok",
    "checks": [
@@ -309,7 +309,7 @@
    "tier": "e2e",
    "split": "dev",
    "kind": "guard",
-   "source": "chat 2026-10-31 (Franz's WhatsApp: \"mejor sitio para colectar hembras de tithorea harmonia\")",
+   "source": "chat 2026-10-31 (WhatsApp (quote left out))",
    "cal": true,
    "channel": "wa",
    "prompt": "cual es el mejor sitio para colectar hembras de tithorea harmonia",
@@ -364,7 +364,7 @@
    "tier": "e2e",
    "split": "dev",
    "kind": "guard",
-   "source": "P10 (identify_species \"file not found\" calls in lab simulations)",
+   "source": "P10 (identify_species (quote left out) calls in lab simulations)",
    "channel": "wa",
    "attachments": [
     "wa-EVAL20261104-P1.jpg"
@@ -522,7 +522,7 @@
    "tier": "multi",
    "split": "dev",
    "kind": "bad",
-   "source": "P3 (production corrections: \"En research tienes que poner F1/F2\", \"Causa de muerte Unknown y CAM vacío\")",
+   "source": "P3 (production corrections (quote left out))",
    "cal": true,
    "turns": [
     "La D3D murió hoy y la preservamos en el tubo FS99990003. Prepara el cambio para revisar.",
@@ -586,7 +586,7 @@
    "tier": "multi",
    "split": "dev",
    "kind": "bad",
-   "source": "P1 (production: Angel applied in the app, then said \"Si, aplica\")",
+   "source": "P1 (production: a team member applied in the app, then said (quote left out))",
    "mutates": true,
    "about": "P1: the person applies the draft in the app between turns; the follow-up must not fail on the applied proposal; the reply must not ask to apply it again",
    "turns": [

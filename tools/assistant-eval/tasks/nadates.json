@@ -6,7 +6,7 @@
    "tier": "e2e",
    "split": "dev",
    "kind": "bad",
-   "source": "voice worker 2026-11-04 (\"27 deaths without cause\", \"43 clutches without species since 29-oct\" were NA-dated rows)",
+   "source": "voice worker 2026-11-04 ((quote left out) were NA-dated rows)",
    "channel": "wa",
    "about": "since-date count over a recent window: only NA-dated rows would match",
    "prompt": "¿Cuántas mariposas murieron en el insectario desde el 10 de octubre, y cuántas de esas no tienen causa de muerte?",
