@@ -87,6 +87,11 @@ export interface Offer {
 export interface Stored { files: Record<string, StoredFile>; at: string }
 
 export const CACHE = 'ithomiini-prueba-offline'
+/**
+ * The list this build asks for: the versioned one (server/offline-id.mjs LIST_CAPS), which may offer models a build
+ * from before versions cannot run (the small model at another input size, a sex model under another name).
+ */
+export const LIST_PATH = 'models/list.json?caps=versions'
 export const PART = 32 * 1024 * 1024
 export const KINDS: ModelKind[] = ['small', 'full']
 const ORT_FILES = ['ort.wasm.min.mjs', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']
@@ -202,7 +207,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   async function list(): Promise<Listing> {
     if (!navigator.onLine) return { error: 'offline' }
     if (!signedIn()) return { files: publicListing(), source: 'public' }
-    const r = await fetch(at('models/list.json'), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null)
+    const r = await fetch(at(LIST_PATH), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null)
     if (!r) return { error: 'offline' }
     // The session ended meanwhile: the public copies.
     if (r.status === 401) return { files: publicListing(), source: 'public' }
@@ -313,6 +318,20 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       const u = new URL(r.url)
       return u.pathname === path && u.searchParams.has('part')
     })
+  }
+
+  /**
+   * Removes every cached part whose file has one of these roles (roleOf by its name), except files named in `keep`
+   * (those still in stored.json): what a cut download or update left under a name stored.json never had.
+   */
+  async function dropRoles(cache: Cache, roles: Set<FileRole>, keep: Set<string> = new Set()) {
+    const models = new URL(at('models/')).pathname
+    for (const r of await cache.keys()) {
+      const u = new URL(r.url)
+      if (!u.pathname.startsWith(models) || !u.searchParams.has('part')) continue
+      const name = decodeURIComponent(u.pathname.slice(models.length))
+      if (!keep.has(name) && roles.has(roleOf(name))) await cache.delete(r)
+    }
   }
 
   /** Removes a file's parts: all, or all but those of the slot kept (`keep.slot` undefined: the plain keys). */
@@ -531,7 +550,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       const file = name(ENCODER_ROLE[kind])
       let bytes: Uint8Array | null = await readModel(file)
       encoders[kind] = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
-      encoderSize[kind] = kind === 'small' ? studentSizeOf(s.files[file]) : 224
+      encoderSize[kind] = kind === 'small' ? studentSizeOf(s.files[file], file) : 224
       bytes = null
       lastMs[`${kind}_load`] = Math.round(performance.now() - t)
     }
@@ -604,14 +623,15 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
 
   /** The detector's box and the 224 px square (the head's reviewed full-photo list applies when the head is loaded). */
   async function cut(photo: Photo): Promise<{ square: Uint8Array; status: string }> {
+    // Taken before the first await: an update landing meanwhile replaces these (forgetLoaded), not this photo's run.
+    const session = detector!, ortD = detectorOnGpu && gpuOrt ? gpuOrt : ort!, head = headLoaded
     const raw = photo.bytes
     const orientation = exifOrientation(raw)
-    const override = !!headLoaded && headLoaded.meta.full_photo_overrides.includes(await sha256(raw))
+    const override = !!head && head.meta.full_photo_overrides.includes(await sha256(raw))
     const img = await decode(photo.blob)
     const inp = detectorInput(img, orientation)
-    const ortD = detectorOnGpu && gpuOrt ? gpuOrt : ort!
-    const res = await detector!.run({ [detector!.inputNames[0]]: new ortD.Tensor('float32', inp.x, [1, 3, 640, 640]) })
-    const det = res[detector!.outputNames[0]], proto = res[detector!.outputNames[1]]
+    const res = await session.run({ [session.inputNames[0]]: new ortD.Tensor('float32', inp.x, [1, 3, 640, 640]) })
+    const det = res[session.outputNames[0]], proto = res[session.outputNames[1]]
     const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
     const { box, status } = cropBox(selectMasks(masks), orientation, img.width, img.height, override)
     return { square: letterboxCrop(img, box), status }
@@ -620,9 +640,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   async function run(photo: Photo, kind: ModelKind): Promise<RunResult> {
     await load(kind)
     const t0 = performance.now()
-    const encoder = encoders[kind]!
+    // Taken before the first await (see cut): the encoder and its input size of this photo's run.
+    const encoder = encoders[kind]!, size = encoderSize[kind]!
     const { square, status } = await cut(photo)
-    const size = encoderSize[kind]!
     const x =
       kind === 'small'
         ? new ort!.Tensor('float32', studentInput(square, 224, size), [1, 3, size, size])
@@ -680,7 +700,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       lastMs.sex_load = Math.round(performance.now() - t)
     }
     const t = performance.now()
-    const out = await sexSession.run({ [sexSession.inputNames[0]]: new ort!.Tensor('float32', sexInput(sq), [1, 3, 224, 224]) })
+    // Taken before the await: an update landing meanwhile clears sexSession, not this run.
+    const session = sexSession
+    const out = await session.run({ [session.inputNames[0]]: new ort!.Tensor('float32', sexInput(sq), [1, 3, 224, 224]) })
     lastMs.sex = Math.round(performance.now() - t)
     // The logit by name (model C also gives p_female), else the first output (model B has one).
     const name = sexSession.outputNames.includes('logit') ? 'logit' : sexSession.outputNames[0]
@@ -693,12 +715,12 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     sexSessionInfo = null
     const cache = await caches.open(CACHE)
     const s = await stored()
-    if (!s) return
-    const names = Object.keys(s.files).filter(name => roleOf(name, s.files[name].role) === 'sex')
-    for (const name of names) delete s.files[name]
-    if (names.length) await putStored(cache, s)
-    // Its parts after stored.json no longer names them, every slot (a half-downloaded update too).
-    for (const name of names) await dropParts(cache, name)
+    const names = Object.keys(s?.files ?? {}).filter(name => roleOf(name, s!.files[name].role) === 'sex')
+    for (const name of names) delete s!.files[name]
+    if (names.length) await putStored(cache, s!)
+    // Then every cached part of a sex model, by its file's role: also a download or an update cut halfway, whose file
+    // stored.json never named (the team's model must not stay on a phone signed out).
+    await dropRoles(cache, new Set<FileRole>(['sex']))
   }
 
   async function removeModel(kind: ModelKind) {
@@ -725,6 +747,8 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     delete encoders[kind]
     await putStored(cache, s)
     for (const name of gone) await dropParts(cache, name)
+    // And the parts of this model's own files that stored.json does not name (a download or update cut halfway).
+    await dropRoles(cache, new Set(MODEL_ROLES[kind].filter(r => !keepRoles.has(r))), new Set(Object.keys(s.files)))
   }
 
   async function remove() {

@@ -117,7 +117,7 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
             <p v-if="m.outdated" class="mt-1 text-xs text-fg-subtle">{{ $t('Mientras tanto se sigue usando la versión instalada.') }}</p>
           </div>
           <UpdateNotice v-if="m.outdated && download?.kind !== m.kind" :versions="m.versions" :note="m.note" :data-testid="`dl-update-${m.kind}`" />
-          <p v-else-if="!m.ready && m.note && download?.kind !== m.kind" class="mt-2 text-xs text-fg-muted" :data-testid="`dl-note-${m.kind}`">{{ m.note }}</p>
+          <!-- A model's note compares it with the version before: shown only with the update (UpdateNotice). -->
           <p v-else-if="m.ready && named(m.versions?.from) && download?.kind !== m.kind" class="mt-1 text-xs text-fg-subtle" :data-testid="`dl-version-${m.kind}`">
             {{ $t('Versión {v}', { v: m.versions!.from! }) }}
           </p>
@@ -171,7 +171,6 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
         <p v-if="sex.outdated" class="mt-1 text-xs text-fg-subtle">{{ $t('Mientras tanto se sigue usando la versión instalada.') }}</p>
       </div>
       <UpdateNotice v-if="sex.outdated && !sex.progress" :versions="sex.versions" :note="sex.note" data-testid="sex-update" />
-      <p v-else-if="!sex.ready && sex.note && !sex.progress" class="mt-2 text-xs text-fg-muted" data-testid="sex-note">{{ sex.note }}</p>
       <p v-else-if="sex.ready && !sex.progress && named(sex.versions?.from)" class="mt-1 text-xs text-fg-subtle" data-testid="sex-version">{{ $t('Versión {v}', { v: sex.versions!.from! }) }}</p>
       <div v-if="!sex.progress" class="mt-2 flex flex-wrap gap-2">
         <button v-if="!sex.ready && !sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-download" @click="emit('sexDownload')">

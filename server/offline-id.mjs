@@ -38,16 +38,21 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  * the expected one is not offered (checked once per file version), and a missing one only hides the option.
  * Rollback without a code change: a manifest naming L1 (STUDENT_L1; model-versions HANDOFF.md).
  */
-export const STUDENT = {
+export const STUDENT_SB = {
   name: 'student_SB_int8.onnx',
   sha256: '200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762',
   version: 'small-SB-20261111',
   input: { size: 182, values: 'clip' },
   // Shown with the update in Descargas: B12, 1,156 iNaturalist photos never seen in training, species top-1.
-  notes: { es: 'Mejor en fotos nuevas de iNaturalist (81,8\u00a0% vs 79,4\u00a0% de aciertos de especie).', en: 'Better on new iNaturalist photos (81.8\u00a0% vs 79.4\u00a0% of species right).' },
+  notes: { es: 'Mejor en fotos nuevas de iNaturalist: acierta la especie en el 81,8\u00a0% frente al 79,4\u00a0% de la versión anterior.', en: 'Better on new iNaturalist photos: the species right in 81.8\u00a0% against 79.4\u00a0% for the previous version.' },
 };
-/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the previous small model, kept in offline/ for the rollback. */
+/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the previous small model, kept in offline/ for older pages and the rollback. */
 export const STUDENT_L1 = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb', bytes: 23565423, version: 'small-L1-20261031', input: { size: 192, values: 'clip' } };
+/**
+ * The small model this server offers to current pages. Rollback by code (model-versions HANDOFF.md 0b): STUDENT_L1
+ * here and SMALL_L1 in frontend/src/lib/publicModels.ts, nothing else (the phone keeps reading stored sizes).
+ */
+export const STUDENT = STUDENT_SB;
 export const STUDENT_MANIFEST = 'offline/student-model.json';
 
 /**
@@ -200,7 +205,8 @@ async function fromManifest(identifierDir, role) {
  * are any (left out when a manifest is invalid). `problems`: why something is not offered (a manifest), for
  * tools/identifier/check_phone_models.mjs.
  */
-export async function phoneModels(identifierDir) {
+export async function phoneModels(identifierDir, { versioned = true } = {}) {
+  if (!versioned) return { models: COMPAT_MODELS, problems: [] };
   const manifests = Object.fromEntries(await Promise.all(Object.keys(MANIFESTS).map(async role => [role, await fromManifest(identifierDir, role)])));
   const models = MODELS.flatMap(m => {
     const man = manifests[m.role];
@@ -208,6 +214,17 @@ export async function phoneModels(identifierDir) {
   });
   return { models, problems: Object.values(manifests).flatMap(v => (v?.why ? [v.why] : [])) };
 }
+
+/**
+ * The capability a client names to get the versioned listing (list.json?caps=versions; frontend/src/lib/offlineEngine.ts
+ * and src/offline/main.ts send it). A client that does not name it is a build from before model versions (production
+ * up to 11 Nov 2026): it feeds any small model 192 px and takes the sex model only under model B's name, and a page
+ * left open keeps running that code. It gets COMPAT_MODELS: L1 and B, never S_B or a manifest's model.
+ */
+export const LIST_CAPS = 'versions';
+const L1_ENTRY = { name: STUDENT_L1.name, path: `offline/${STUDENT_L1.name}`, role: 'student', sha256: STUDENT_L1.sha256, optional: true, packed: false, version: STUDENT_L1.version, input: STUDENT_L1.input };
+export const COMPAT_MODELS = MODELS.map(m => (m.role === 'student' ? L1_ENTRY : m));
+const namesCaps = req => (new URL(req.url, 'http://x').searchParams.get('caps') ?? '').split(',').includes(LIST_CAPS);
 
 /** A file's version when its metadata names none: its content (frontend/src/lib/offlineEngine.ts contentVersion). */
 export const contentVersion = sha256 => `sha256-${sha256.slice(0, 12)}`;
@@ -328,7 +345,7 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
         const files = [];
         const encoding = pickEncoding(req.headers['accept-encoding']);
         const packed = await compressedParts(identifierDir);
-        for (const m of (await phoneModels(identifierDir)).models) {
+        for (const m of (await phoneModels(identifierDir, { versioned: namesCaps(req) })).models) {
           const s = await stat(join(identifierDir, m.path)).catch(() => null);
           if (!(await usable(identifierDir, m, s))) {
             if (m.optional) continue; // the small model or the sex model: not offered
@@ -363,7 +380,8 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
         res.writeHead(200, { ...isolated, 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'accept-encoding', 'content-length': Buffer.byteLength(body) });
         return res.end(req.method === 'HEAD' ? undefined : body);
       }
-      const model = (await phoneModels(identifierDir)).models.find(m => m.name === name);
+      // Either listing's files: a page from before model versions still downloads L1 and B by name.
+      const model = (await phoneModels(identifierDir)).models.find(m => m.name === name) ?? COMPAT_MODELS.find(m => m.name === name);
       if (!model) throw new HttpError(404, 'File not found');
       if (model.sha256 && !(await usable(identifierDir, model, await stat(join(identifierDir, model.path)).catch(() => null)))) throw new HttpError(404, 'File not found');
       const query = new URL(req.url, 'http://x').searchParams;

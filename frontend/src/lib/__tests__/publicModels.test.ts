@@ -37,16 +37,27 @@ describe('the public (Hugging Face) models', () => {
   })
 })
 
-describe('the public small model: S_B at 182 px (Hugging Face commit fb2068d5)', () => {
-  it('is listed with its version, input size and note; a phone holding L1 from Hugging Face is offered the update', () => {
-    const sb = publicListing().find(f => f.role === 'student')!
-    expect(sb).toMatchObject({ name: 'student_SB_int8.onnx', version: 'small-SB-20261111', input: { size: 182, values: 'clip' } })
-    expect(sb.url).toContain('/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/')
-    expect(sb.notes?.es).toMatch(/^Mejor en fotos nuevas de iNaturalist \(81,8\u00a0% vs 79,4\u00a0% de aciertos de especie\)\.$/)
-    // L1 as a signed-out phone kept it (its Hugging Face ETag and part hash, no version): not current, so an update.
-    const l1: StoredFile = { etag: '"sha256-d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb"', bytes: 23565423, role: 'student', parts: ['d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb'] }
-    expect(isCurrent(l1, sb as ListedFile)).toBe(false)
-    expect(studentSizeOf(l1)).toBe(192)
+describe('the public small model is the server\'s current one (server/offline-id.mjs STUDENT: S_B, or L1 after a rollback)', () => {
+  it('the same file, version, input size and note; a phone holding L1 from Hugging Face is offered S_B', async () => {
+    const url = new URL('../../../../server/offline-id.mjs', import.meta.url).href
+    const { STUDENT } = await import(/* @vite-ignore */ url)
+    const small = publicListing().find(f => f.role === 'student')!
+    expect({ name: small.name, sha256: small.sha256, version: small.version, input: small.input, notes: small.notes }).toEqual({
+      name: STUDENT.name,
+      sha256: STUDENT.sha256,
+      version: STUDENT.version,
+      input: STUDENT.input,
+      notes: STUDENT.notes,
+    })
+    expect(small.url).toContain(`/fr4nzzch/butterfly-id-small-onnx/resolve/`)
+    if (small.name === 'student_SB_int8.onnx') {
+      expect(small.url).toContain('/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/')
+      expect(small.notes?.es).toBe('Mejor en fotos nuevas de iNaturalist: acierta la especie en el 81,8 % frente al 79,4 % de la versión anterior.')
+      // L1 as a signed-out phone kept it (its Hugging Face ETag and part hash, no version): not current, so an update.
+      const l1: StoredFile = { etag: '"sha256-d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb"', bytes: 23565423, role: 'student', parts: ['d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb'] }
+      expect(isCurrent(l1, small as ListedFile)).toBe(false)
+      expect(studentSizeOf(l1, 'student_L1_int8.onnx')).toBe(192)
+    }
   })
 })
 

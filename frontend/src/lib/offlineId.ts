@@ -451,10 +451,12 @@ export function resizeBilinear(x: Float32Array, channels: number, inH: number, i
  * (the graphs fix their height and width).
  */
 export const STUDENT_SIZE = 192
-/** A small-model file's input size: its own (a whole number of 32 to 512 px), else L1's 192. */
-export function studentSizeOf(f?: { input?: { size?: unknown } | null } | null): number {
+/** Sizes of small models by file name, for a copy stored without its size (a phone that took S_B, then an older build). */
+const KNOWN_SIZES: Record<string, number> = { 'student_SB_int8.onnx': 182, 'student_L1_int8.onnx': 192 }
+/** A small-model file's input size: its own (a whole number of 32 to 512 px), else its name's, else L1's 192. */
+export function studentSizeOf(f?: { input?: { size?: unknown } | null } | null, name?: string): number {
   const n = f?.input?.size
-  return typeof n === 'number' && Number.isInteger(n) && n >= 32 && n <= 512 ? n : STUDENT_SIZE
+  return typeof n === 'number' && Number.isInteger(n) && n >= 32 && n <= 512 ? n : ((name ? KNOWN_SIZES[name] : undefined) ?? STUDENT_SIZE)
 }
 export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): Float32Array {
   return resizeBilinear(encoderInput(rgb, size), 3, size, size, out, out)

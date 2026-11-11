@@ -334,3 +334,74 @@ describe('a newer small model at another input size (182 px) replacing L1 (192 p
     expect(engine.offer('small', withNew(), await engine.stored()).state).toBe('update')
   })
 })
+
+describe('review r1: rollback paths and what a cut download leaves', () => {
+  it('model C back to B (the manifest removed on the server): a phone holding C is offered B and gets it, with B\'s calibration', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    server(withC())
+    const engine = createEngine(BASE, () => [], { signedIn: () => true })
+    await engine.downloadSex(withC(), () => {})
+    expect((await engine.sexInfo())?.version).toBe('C 2026-11-20')
+    // The server lists B again.
+    expect(engine.offer('sex', files, await engine.stored())).toMatchObject({ state: 'update', from: 'C 2026-11-20', to: 'B 2026-11-08' })
+    server(files)
+    await engine.downloadSex(files, () => {})
+    const s = storedJson(store)
+    expect(Object.keys(s.files).sort()).toEqual(['sex_test.onnx', 'wing_seg_s2.onnx'])
+    expect(await engine.sexInfo()).toMatchObject({ name: 'sex_test.onnx', version: 'B 2026-11-08', calibration: SEX_DEFAULT })
+    expect(partKeys(store).filter(k => k.includes('sex'))).toEqual(['models/sex_test.onnx?part=0'])
+    expect(engine.offer('sex', files, await engine.stored()).state).toBe('current')
+  })
+
+  it('sign-out (forgetSex) also removes the parts of a sex model whose download was cut (never named in stored.json)', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    await phoneWithOldB(store)
+    // An update to C cut after its first part: C's part is cached under its own name, stored.json still names B.
+    store.set(`${BASE}models/sex_c.onnx?part=0`, { body: C_BYTES.slice().buffer, headers: new Headers({ 'x-etag': '"c"', 'x-bytes': '10' }) })
+    const engine = createEngine(BASE, () => [], { signedIn: () => false })
+    await engine.forgetSex()
+    expect(partKeys(store)).toEqual(['models/wing_seg_s2.onnx?part=0'])
+    expect(Object.keys(storedJson(store).files)).toEqual(['wing_seg_s2.onnx'])
+    // Nothing stored at all, only a cut first download: removed too.
+    store.set(`${BASE}models/sex_c.onnx?part=0`, { body: C_BYTES.slice().buffer, headers: new Headers() })
+    store.delete(`${BASE}models/stored.json`)
+    await engine.forgetSex()
+    expect(partKeys(store)).toEqual(['models/wing_seg_s2.onnx?part=0'])
+  })
+
+  it('«Borrar del teléfono» on the small model also removes a cut update\'s parts, and keeps what the other model needs', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    server(files)
+    const engine = createEngine(BASE, () => [], { signedIn: () => false })
+    await engine.download('small', files, () => {})
+    store.set(`${BASE}models/student_new_int8.onnx?part=0`, { body: new Uint8Array([1]).buffer, headers: new Headers() })
+    await engine.removeModel('small')
+    expect(partKeys(store).some(k => k.includes('student'))).toBe(false)
+    expect(Object.keys(storedJson(store).files)).toEqual([])
+  })
+
+  it('S_B on a phone, offline, against the rollback build (the server offers L1 again): still runs at 182; online, L1 is offered', async () => {
+    const { store, caches } = memoryCaches()
+    vi.stubGlobal('caches', caches)
+    const SB = new Uint8Array([4, 4, 4, 4, 4, 4])
+    const sbList = files.map(f => (f.role === 'student' ? { name: 'student_SB_int8.onnx', bytes: SB.length, etag: '"sb"', role: 'student' as const, version: 'small-SB-20261111', sha256: sha(SB), input: { size: 182, values: 'clip' } } : f))
+    server(sbList, { body: u => (u.includes('student_SB') ? SB : bodyOf(u)) })
+    const engine = createEngine(BASE, () => [], { signedIn: () => true })
+    await engine.download('small', sbList, () => {})
+    const s = storedJson(store)
+    // Offline (no list): usable, at the stored size.
+    expect(await engine.ready(null)).toEqual({ small: true, full: false })
+    expect(studentSizeOf(s.files['student_SB_int8.onnx'], 'student_SB_int8.onnx')).toBe(182)
+    // A copy kept without its size (e.g. through an older page): its name still gives 182, L1's 192.
+    expect(studentSizeOf({}, 'student_SB_int8.onnx')).toBe(182)
+    expect(studentSizeOf({}, 'student_L1_int8.onnx')).toBe(192)
+    expect(studentSizeOf({})).toBe(192)
+    // Online with the rollback build's list (L1 at 192): an update to L1, S_B kept usable until it is in.
+    const l1List = files.map(f => (f.role === 'student' ? { ...f, name: 'student_L1_int8.onnx', version: 'small-L1-20261031', sha256: sha(new Uint8Array([9, 9, 9, 9])), input: { size: 192, values: 'clip' } } : f))
+    expect(engine.offer('small', l1List, await engine.stored())).toMatchObject({ state: 'update', from: 'small-SB-20261111', to: 'small-L1-20261031' })
+    expect(await engine.ready(l1List)).toEqual({ small: true, full: false })
+  })
+})

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { serveOfflineId, MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, STUDENT_MANIFEST, checkPhoneManifest, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { serveOfflineId, MODELS, COMPAT_MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, STUDENT_L1, STUDENT_MANIFEST, checkPhoneManifest, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
 
 const student = MODELS.find(m => m.role === 'student');
 const sex = MODELS.find(m => m.role === 'sex');
@@ -21,14 +21,16 @@ function setup(sizes = {}) {
   mkdirSync(join(web, 'prueba-offline', 'ort'), { recursive: true });
   writeFileSync(join(web, 'prueba-offline', 'index.html'), '<!doctype html><title>t</title>');
   writeFileSync(join(web, 'secret.txt'), 'outside');
-  for (const m of MODELS) {
+  // The current models, and the files only older pages get (L1 when the current small model is another).
+  const compatOnly = COMPAT_MODELS.filter(c => !MODELS.some(m => m.name === c.name));
+  for (const m of [...MODELS, ...compatOnly]) {
     mkdirSync(join(ident, m.path, '..'), { recursive: true });
     const n = sizes[m.name] ?? 1000;
     const b = Buffer.alloc(n);
     for (let i = 0; i < n; i++) b[i] = (i % 256) & (i % 7 ? 0xff : 0x0f);
     writeFileSync(join(ident, m.path), b);
     // The test's small model is these bytes: its expected hash is theirs.
-    if (m === student || m === sex) m.sha256 = createHash('sha256').update(b).digest('hex');
+    if (m === student || m === sex || compatOnly.includes(m)) m.sha256 = createHash('sha256').update(b).digest('hex');
   }
   let user = null;
   const server = http.createServer((req, res) => {
@@ -54,10 +56,10 @@ test('offline test page: isolated page, models only signed in, ranges and ETags'
     assert.equal(bare.status, 301);
     assert.equal((await fetch(`${base}/..%2Fsecret.txt`)).status, 404);
 
-    assert.equal((await fetch(`${base}/models/list.json`)).status, 401);
+    assert.equal((await fetch(`${base}/models/list.json?caps=versions`)).status, 401);
     assert.equal((await fetch(`${base}/models/bioclip25h_visual_int8.onnx`)).status, 401);
     signIn();
-    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.deepEqual(list.files.map(f => [f.name, f.bytes]), MODELS.map(m => [m.name, 1000]));
     const { etag } = list.files[1];
 
@@ -115,7 +117,7 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
     assert.equal(r.headers['x-part-bytes'], '12345');
     assert.deepEqual(r.body, plainFile.subarray(PART_BYTES));
     const plainEtag = r.headers.etag;
-    let list = JSON.parse((await raw(port, `${p}/list.json`, { 'accept-encoding': 'zstd' })).body);
+    let list = JSON.parse((await raw(port, `${p}/list.json?caps=versions`, { 'accept-encoding': 'zstd' })).body);
     assert.equal(list.partBytes, PART_BYTES);
     assert.equal(list.files[1].wire, big);
     assert.equal(list.files[1].encoding, null);
@@ -141,7 +143,7 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
         assert.equal(r.headers.etag, i === 1 ? plainEtag : plainEtag.replace(/-p1"$/, '-p0"'));
         assert.deepEqual(unpack(r.body), plainFile.subarray(i * PART_BYTES, (i + 1) * PART_BYTES));
       }
-      list = JSON.parse((await raw(port, `${p}/list.json`, { 'accept-encoding': accept })).body);
+      list = JSON.parse((await raw(port, `${p}/list.json?caps=versions`, { 'accept-encoding': accept })).body);
       assert.equal(list.files[1].encoding, encoding);
       // Each part's SHA-256 from the manifest: the page knows the same file on Hugging Face (publicModels.ts).
       assert.deepEqual(list.files[1].parts, manifest.files[enc].parts.map(x => x.sha256));
@@ -212,7 +214,7 @@ test('the small model: one constant, listed with its role and hash, hidden when 
   const p = '/prueba-offline/models';
   try {
     signIn();
-    let list = await (await fetch(`${base}/models/list.json`)).json();
+    let list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     const entry = list.files.find(f => f.name === student.name);
     assert.equal(entry.role, 'student');
     assert.equal(entry.sha256, student.sha256);
@@ -221,7 +223,7 @@ test('the small model: one constant, listed with its role and hash, hidden when 
     // Other bytes than the constant says (a swap half done): not offered, not served; the rest unchanged.
     const good = student.sha256;
     student.sha256 = '0'.repeat(64);
-    list = await (await fetch(`${base}/models/list.json`)).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.deepEqual(list.files.map(f => f.role), ['detector', 'encoder', 'head-meta', 'head', 'sex']);
     assert.equal((await raw(port, `${p}/${student.name}?part=0`)).status, 404);
     assert.equal((await raw(port, `${p}/${student.name}`)).status, 404);
@@ -230,7 +232,7 @@ test('the small model: one constant, listed with its role and hash, hidden when 
     // Missing: the full model is still listed, parts are made for the rest, nothing waits for it.
     const file = join(ident, student.path);
     renameSync(file, file + '.away');
-    list = await (await fetch(`${base}/models/list.json`)).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(list.files.length, MODELS.length - 1);
     const { manifest } = await precompressParts(ident, { stamp: '20261031T000000Z' });
     assert.equal(manifest.files[student.name], undefined);
@@ -257,12 +259,12 @@ test('the sex model: signed in only, pinned bytes, sent plain, never in the part
   const p = '/prueba-offline/models';
   try {
     // Signed out: neither the list nor the file nor a part.
-    assert.equal((await fetch(`${base}/models/list.json`)).status, 401);
+    assert.equal((await fetch(`${base}/models/list.json?caps=versions`)).status, 401);
     assert.equal((await raw(port, `${p}/${sex.name}`)).status, 401);
     assert.equal((await raw(port, `${p}/${sex.name}?part=0`)).status, 401);
     assert.equal((await raw(port, `${p}/${sex.name}`, { range: 'bytes=0-9' })).status, 401);
     signIn();
-    let list = await (await fetch(`${base}/models/list.json`)).json();
+    let list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     const entry = list.files.find(f => f.name === sex.name);
     assert.equal(entry.role, 'sex');
     assert.equal(entry.sha256, sex.sha256);
@@ -273,12 +275,12 @@ test('the sex model: signed in only, pinned bytes, sent plain, never in the part
     assert.equal(r.status, 200);
     assert.equal(r.headers['content-encoding'], undefined);
     assert.deepEqual(r.body, readFileSync(join(ident, sex.path)));
-    list = await (await fetch(`${base}/models/list.json`, { headers: { 'accept-encoding': 'zstd' } })).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`, { headers: { 'accept-encoding': 'zstd' } })).json();
     assert.equal(list.files.find(f => f.name === sex.name).parts, undefined);
     // Other bytes than the constant: not offered, not served.
     const good = sex.sha256;
     sex.sha256 = '0'.repeat(64);
-    list = await (await fetch(`${base}/models/list.json`)).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(list.files.some(f => f.role === 'sex'), false);
     assert.equal((await raw(port, `${p}/${sex.name}?part=0`)).status, 404);
     sex.sha256 = good;
@@ -310,14 +312,14 @@ test('every listed file carries a version and its SHA-256: the content for the i
   const { base, ident, server, signIn } = await setup();
   try {
     signIn();
-    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     for (const f of list.files) {
       const bytes = readFileSync(join(ident, MODELS.find(m => m.name === f.name).path));
       assert.equal(f.sha256, sha256Of(bytes), f.name);
       assert.equal(f.version, f.role === 'sex' ? SEX_B.version : f.role === 'student' ? 'small-SB-20261111' : contentVersion(f.sha256), f.name);
       assert.deepEqual(f.input, f.role === 'student' ? { size: 182, values: 'clip' } : undefined, f.name);
       // The small model's release note travels with it (Descargas shows it with the update).
-      if (f.role === 'student') assert.match(f.notes.es, /81,8\u00a0% vs 79,4\u00a0%/);
+      if (f.role === 'student') assert.match(f.notes.es, /81,8\u00a0% frente al 79,4\u00a0%/);
     }
     // Without a manifest the sex model is model B, with its calibration (the phone keeps it with the file).
     const b = list.files.find(f => f.role === 'sex');
@@ -344,7 +346,7 @@ test('a new sex model is a data change: its file and offline/sex-model.json; siz
       utimesSync(join(ident, SEX_MANIFEST), t, t);
     };
     put(cManifest(c));
-    let list = await (await fetch(`${base}/models/list.json`)).json();
+    let list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     const sexes = list.files.filter(f => f.role === 'sex');
     assert.equal(sexes.length, 1, 'only the manifest\'s model: model B is not listed beside it');
     assert.deepEqual(
@@ -352,18 +354,20 @@ test('a new sex model is a data change: its file and offline/sex-model.json; siz
       { name: 'sex_c_test.onnx', bytes: 3000, version: 'C 2026-11-20', sha256: sha256Of(c) },
     );
     assert.deepEqual(sexes[0].calibration, cManifest(c).calibration);
-    // Served, in parts, plain; model B's file is no longer served.
+    // Served, in parts, plain. Model B's file is no longer in the versioned list, but still served: pages from before
+    // model versions get B (COMPAT_MODELS).
     const r = await raw(port, `${p}/sex_c_test.onnx?part=0`, { 'accept-encoding': 'zstd' });
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, c);
-    assert.equal((await raw(port, `${p}/${SEX.name}?part=0`)).status, 404);
+    assert.equal(list.files.some(f => f.name === SEX.name), false);
+    assert.equal((await raw(port, `${p}/${SEX.name}?part=0`)).status, 200);
 
     // The file is not the manifest's (another size, then other bytes of the same size): not offered, not served.
     put(cManifest(c, { bytes: 2999 }));
-    list = await (await fetch(`${base}/models/list.json`)).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(list.files.some(f => f.role === 'sex'), false);
     put(cManifest(c, { sha256: '1'.repeat(64) }));
-    list = await (await fetch(`${base}/models/list.json`)).json();
+    list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(list.files.some(f => f.role === 'sex'), false);
     assert.equal((await raw(port, `${p}/sex_c_test.onnx?part=0`)).status, 404);
     // An invalid manifest: nothing offered (never model B silently instead), the identifier still listed.
@@ -372,7 +376,7 @@ test('a new sex model is a data change: its file and offline/sex-model.json; siz
     console.error = (...a) => errors.push(a.join(' '));
     try {
       put('{ not json');
-      list = await (await fetch(`${base}/models/list.json`)).json();
+      list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
       assert.equal(list.files.some(f => f.role === 'sex'), false);
       assert.equal(list.files.length, MODELS.length - 1);
       assert.match(errors.join('\n'), /sex model is not offered: offline\/sex-model\.json: not JSON/);
@@ -452,7 +456,7 @@ test('the notes reach the phone\'s list with the sex model', async () => {
     const c = Buffer.from('a model with notes');
     writeFileSync(join(ident, 'offline', 'sex_c_test.onnx'), c);
     writeFileSync(join(ident, SEX_MANIFEST), JSON.stringify(cManifest(c, { notes: { es: 'Más lento.', en: 'Slower.' } })));
-    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.deepEqual(list.files.find(f => f.role === 'sex').notes, { es: 'Más lento.', en: 'Slower.' });
   } finally {
     server.close();
@@ -482,7 +486,7 @@ test('a new small model is a data change: its file and offline/student-model.jso
     const nb = Buffer.from(Array.from({ length: 2500 }, (_, i) => (i * 13) % 253));
     writeFileSync(join(ident, 'offline', 'student_new_test.onnx'), nb);
     writeFileSync(join(ident, STUDENT_MANIFEST), JSON.stringify(newManifest(nb)));
-    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     const students = list.files.filter(f => f.role === 'student');
     assert.equal(students.length, 1);
     assert.deepEqual(
@@ -495,12 +499,13 @@ test('a new small model is a data change: its file and offline/student-model.jso
     assert.equal(r.status, 200);
     assert.equal(r.headers['content-encoding'], undefined); // plain: no precompressed parts for a manifest's file
     assert.deepEqual(r.body, nb);
-    assert.equal((await raw(port, `${p}/${STUDENT.name}?part=0`)).status, 404); // the built-in one is not served beside it
+    // The built-in one is not served beside it (unless older pages still get it: L1 when it is the built-in).
+    if (!COMPAT_MODELS.some(c => c.name === STUDENT.name)) assert.equal((await raw(port, `${p}/${STUDENT.name}?part=0`)).status, 404);
     // Not the manifest's bytes: not offered (the full model stays).
     writeFileSync(join(ident, STUDENT_MANIFEST), JSON.stringify(newManifest(nb, { sha256: '2'.repeat(64) })));
     const t = new Date(Date.now() + 5000);
     utimesSync(join(ident, STUDENT_MANIFEST), t, t);
-    const again = await (await fetch(`${base}/models/list.json`)).json();
+    const again = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(again.files.some(f => f.role === 'student'), false);
     assert.equal(again.files.some(f => f.role === 'encoder'), true);
   } finally {
@@ -544,12 +549,51 @@ test('a manifest whose role is not its file\'s is not used', async () => {
     const nb = Buffer.from('a small model');
     writeFileSync(join(ident, 'offline', 'student_new_test.onnx'), nb);
     writeFileSync(join(ident, SEX_MANIFEST), JSON.stringify(newManifest(nb)));
-    const list = await (await fetch(`${base}/models/list.json`)).json();
+    const list = await (await fetch(`${base}/models/list.json?caps=versions`)).json();
     assert.equal(list.files.some(f => f.role === 'sex'), false);
     assert.equal(list.files.find(f => f.role === 'student').name, STUDENT.name);
     assert.match(errors.join('\n'), /sex-model\.json: role must be "sex"/);
   } finally {
     console.error = orig;
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+// ---------------------------------------------------------------- pages from before model versions (production 6366223e)
+
+test('a page from before model versions gets L1 and B only; the versioned list (?caps=versions) offers S_B and a manifest\'s C', async () => {
+  const { port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  try {
+    signIn();
+    // A sex model C by manifest, as on the server after the drop.
+    const c = Buffer.from(Array.from({ length: 1500 }, (_, i) => (i * 7) % 251));
+    writeFileSync(join(ident, 'offline', 'sex_c_test.onnx'), c);
+    writeFileSync(join(ident, SEX_MANIFEST), JSON.stringify(cManifest(c)));
+    // The request of the 6366223e client (frontend/src/lib/offlineEngine.ts list(): models/list.json, no query; the
+    // browser's usual Accept-Encoding), and the parts it then asks for (models/<name>?part=i).
+    const old = JSON.parse((await raw(port, `${p}/list.json`, { 'accept-encoding': 'gzip, deflate, br, zstd' })).body);
+    const small = old.files.find(f => f.role === 'student'), sexOld = old.files.find(f => f.role === 'sex');
+    assert.equal(small.name, STUDENT_L1.name); // the 192 px model that client feeds
+    assert.equal(sexOld.name, SEX.name); // the only sex model that client takes (by B's name)
+    assert.equal(old.files.some(f => f.name === STUDENT.name && STUDENT.name !== STUDENT_L1.name), false);
+    assert.equal(old.files.some(f => f.name === 'sex_c_test.onnx'), false);
+    // That client's downloads still work: each part of L1 and B, with the part ETag it checks (W/"<file etag>-p<i>").
+    for (const f of [small, sexOld]) {
+      const r = await raw(port, `${p}/${f.name}?part=0`, { 'accept-encoding': 'gzip, deflate, br, zstd' });
+      assert.equal(r.status, 200, f.name);
+      assert.equal(r.headers.etag, `W/${f.etag.slice(0, -1)}-p0"`);
+      assert.equal(r.headers['x-part-bytes'], String(f.bytes));
+    }
+    // The current client asks for the versioned list: the current small model and the manifest's sex model.
+    const now = JSON.parse((await raw(port, `${p}/list.json?caps=versions`)).body);
+    assert.equal(now.files.find(f => f.role === 'student').name, STUDENT.name);
+    assert.equal(now.files.find(f => f.role === 'sex').name, 'sex_c_test.onnx');
+    // Other capability names alone do not open it.
+    const other = JSON.parse((await raw(port, `${p}/list.json?caps=other`)).body);
+    assert.equal(other.files.find(f => f.role === 'sex').name, SEX.name);
+  } finally {
     server.close();
     server.closeAllConnections();
   }

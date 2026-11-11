@@ -746,9 +746,14 @@ async function downloadSexModel() {
   const updating = offers.value.sex?.state === 'update'
   try {
     await engine.downloadSex(files.value, (done, total) => (sexDownload.value = { done, total }))
-  } catch {
+  } catch (err) {
     // An update that failed (a cut, a file that is not the listed one): the installed version stays and keeps working.
-    sexError.value = updating ? t('No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.') : t('No se pudo descargar el modelo. Pruebe de nuevo.')
+    // A full phone: trying again cannot help (an update needs the new model beside the installed one).
+    sexError.value = /quota/i.test(String((err as Error)?.message ?? err))
+      ? t('No hay espacio suficiente en el teléfono.')
+      : updating
+        ? t('No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.')
+        : t('No se pudo descargar el modelo. Pruebe de nuevo.')
   } finally {
     sexDownload.value = null
   }

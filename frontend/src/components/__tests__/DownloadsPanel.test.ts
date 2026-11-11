@@ -84,11 +84,11 @@ describe('Descargas: model versions', () => {
     expect(text(el.querySelector('[data-testid=sex-version]'))).toBe('Versión B 2026-11-08')
   })
 
-  it('nothing on the phone: the download button and the model\'s note', () => {
+  it('nothing on the phone: the download button, no note (it compares with a version the phone never had)', () => {
     locale.value = 'es'
-    const el = show({ sex: sexRow({ ready: false, note: NOTE, versions: { from: null, to: C, fromMb: null, toMb: 172 } }) })
+    const el = show({ sex: sexRow({ ready: false, note: NOTE, versions: { from: null, to: C, fromMb: null, toMb: 172 } }), models: [modelRow({ ready: false, note: NOTE })] })
     expect(text(el.querySelector('[data-testid=sex-download]'))).toBe('Descargar · 172 MB')
-    expect(text(el.querySelector('[data-testid=sex-note]'))).toBe(NOTE)
+    expect(text(el)).not.toContain(NOTE)
     expect(el.querySelector('[data-testid=sex-update]')).toBeNull()
   })
 
