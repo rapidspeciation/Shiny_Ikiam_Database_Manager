@@ -18,6 +18,7 @@ const draft = (n = 1): Draft => ({
     consent: { version: 'v1-draft' },
   },
 })
+const OK = { contribution: { status: 'received' } }
 const answer = (status: number, body: Record<string, unknown> | null = {}, retryAfter: number | null = null): Answer => ({ status, body, retryAfter })
 
 /** A server that answers from `next` (default 201) and records each call. */
@@ -39,7 +40,7 @@ describe('contribOutbox', () => {
     const { outbox, calls, store } = setup()
     const item = await outbox.add('ana', draft())
     expect(await outbox.pending('ana')).toBe(1)
-    expect(await outbox.flush('ana')).toEqual({ sent: 1, stopped: null })
+    expect(await outbox.flush('ana')).toEqual({ sent: 1, stopped: null, already: [] })
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({ method: 'POST', path: 'identify/contributions', body: { id: item.id, photo: 'cGhvdG81', sha256: draft().sha256, consent: { version: 'v1-draft' } } })
     expect((calls[0].body.labels as { sex: string }).sex).toBe('female')
@@ -54,16 +55,16 @@ describe('contribOutbox', () => {
 
   it('without signal it waits with a backoff, then goes once the signal is back (the same id)', async () => {
     let up = false
-    const { outbox, calls, clock, store } = setup(() => (up ? answer(201, {}) : answer(0, null)))
+    const { outbox, calls, clock, store } = setup(() => (up ? answer(201, OK) : answer(0, null)))
     const item = await outbox.add('ana', draft())
-    expect(await outbox.flush('ana')).toEqual({ sent: 0, stopped: 'offline' })
+    expect(await outbox.flush('ana')).toEqual({ sent: 0, stopped: 'offline', already: [] })
     expect(store.items.get(item.id)).toMatchObject({ state: 'pending', attempts: 1, nextAt: clock.t + BACKOFF[0] })
     // The timer before the backoff ends: nothing sent.
     await outbox.flush('ana')
     expect(calls).toHaveLength(1)
     // The signal comes back (`online`): sent at once, under the same id.
     up = true
-    expect(await outbox.flush('ana', { force: true })).toEqual({ sent: 1, stopped: null })
+    expect(await outbox.flush('ana', { force: true })).toEqual({ sent: 1, stopped: null, already: [] })
     expect(calls.map(c => c.body.id)).toEqual([item.id, item.id])
     expect(store.items.get(item.id)!.state).toBe('sent')
   })
@@ -74,16 +75,34 @@ describe('contribOutbox', () => {
     expect(backoff(1, () => 1)).toBe(36_000)
   })
 
-  it('200 already with another id: that id is kept and is the one deleted', async () => {
-    const { outbox, calls, store } = setup((method) => (method === 'POST' ? answer(200, { already: true, id: 'first-id' }) : answer(200, { deleted: 'first-id' })))
+  it('200 already with another id: that id is kept, with the labels the server holds, and is the one deleted', async () => {
+    const first = { id: 'first-id', status: 'received', sex: 'male', photoKind: 'live', species: null }
+    const { outbox, calls, store } = setup((method) => (method === 'POST' ? answer(200, { already: true, id: 'first-id', contribution: first }) : answer(200, { deleted: 'first-id' })))
     const item = await outbox.add('ana', draft())
     await outbox.flush('ana')
-    expect(store.items.get(item.id)).toMatchObject({ state: 'sent', serverId: 'first-id' })
+    expect(store.items.get(item.id)).toMatchObject({ state: 'sent', serverId: 'first-id', payload: { labels: { sex: 'male', photoKind: 'live', species: null } } })
     await outbox.remove(item.id)
     expect(await outbox.list('ana')).toEqual([])
     await outbox.flush('ana')
     expect(calls[1]).toMatchObject({ method: 'DELETE', path: 'identify/contributions/first-id' })
     expect(store.items.size).toBe(0)
+  })
+
+  it('the same photo sent again from this phone (already listed here): the new one is dropped and said', async () => {
+    let n = 0
+    const { outbox, store } = setup(() => (++n === 1 ? answer(201, OK) : answer(200, { already: true, id: '00000000-0000-4000-8000-000000000001', contribution: { status: 'received' } })))
+    const a = await outbox.add('ana', draft())
+    await outbox.flush('ana')
+    const b = await outbox.add('ana', { ...draft(), payload: { ...draft().payload, labels: { ...draft().payload.labels, sex: 'male' } } })
+    expect(await outbox.flush('ana')).toEqual({ sent: 0, stopped: null, already: [b.id] })
+    expect([...store.items.keys()]).toEqual([a.id])
+  })
+
+  it('a 200 without the stored item (a proxy, a captive portal) is not taken for sent', async () => {
+    const { outbox, store } = setup(() => answer(200, null))
+    const item = await outbox.add('ana', draft())
+    await outbox.flush('ana')
+    expect(store.items.get(item.id)).toMatchObject({ state: 'pending', photo: 'cGhvdG81', attempts: 1 })
   })
 
   it('410 (deleted on the server): dropped from the phone', async () => {
@@ -97,7 +116,7 @@ describe('contribOutbox', () => {
     const auth = setup(() => answer(401, { error: { message: 'Sign in required' } }))
     const a = await auth.outbox.add('ana', draft())
     await auth.outbox.add('ana', draft(2))
-    expect(await auth.outbox.flush('ana')).toEqual({ sent: 0, stopped: 'auth' })
+    expect(await auth.outbox.flush('ana')).toEqual({ sent: 0, stopped: 'auth', already: [] })
     expect(auth.calls).toHaveLength(1)
     expect(auth.store.items.get(a.id)).toMatchObject({ state: 'pending', attempts: 0 })
     const bad = setup(() => answer(422, { error: { message: 'The photo must be at most 1600 px on its longest side' } }))
@@ -123,7 +142,7 @@ describe('contribOutbox', () => {
 
   it('«Borrar»: one never sent goes at once; a sent one is deleted on the server, also after a time without signal', async () => {
     let up = true
-    const { outbox, calls, store } = setup((method) => (!up ? answer(0, null) : method === 'POST' ? answer(201, {}) : answer(200, { deleted: 'x' })))
+    const { outbox, calls, store } = setup((method) => (!up ? answer(0, null) : method === 'POST' ? answer(201, OK) : answer(200, { deleted: 'x' })))
     const never = await outbox.add('ana', draft())
     await outbox.remove(never.id)
     expect(store.items.size).toBe(0)
@@ -155,7 +174,7 @@ describe('contribOutbox', () => {
     const flushing = slow.flush('ana')
     await new Promise(r => setTimeout(r, 0))
     await slow.remove(item.id)
-    release(answer(201, {}))
+    release(answer(201, OK))
     await flushing
     expect(store.items.get(item.id)!.state).toBe('deleting')
     await slow.flush('ana')
@@ -177,6 +196,34 @@ describe('contribOutbox', () => {
     const { outbox } = setup(() => answer(0, null))
     for (let k = 0; k < MAX_PENDING; k++) await outbox.add('ana', draft(k))
     await expect(outbox.add('ana', draft(99))).rejects.toBeInstanceOf(OutboxFull)
+  })
+
+  it('«Mis envíos» as the server has them: items from another phone added, items deleted elsewhere gone', async () => {
+    let listed: object[] = []
+    const { outbox, store } = setup((method) => (method === 'GET' ? answer(200, { contributions: listed }) : answer(201, OK)))
+    const here = await outbox.add('ana', draft())
+    await outbox.flush('ana')
+    listed = [
+      { id: 'other-phone', status: 'received', createdAt: '2026-11-01T09:00:00.000Z', sex: 'female', photoKind: 'hand', species: null },
+    ]
+    await outbox.refresh('ana')
+    const items = await outbox.list('ana')
+    // The one sent from here is gone from the server (deleted on another phone); the other phone's is listed.
+    expect(items.map(i => i.id)).toEqual(['other-phone'])
+    expect(items[0]).toMatchObject({ state: 'sent', mini: '', payload: { labels: { sex: 'female' } } })
+    expect(store.items.has(here.id)).toBe(false)
+    // A refresh that fails changes nothing.
+    await createOutbox({ store, send: async () => answer(0, null) }).refresh('ana')
+    expect((await outbox.list('ana')).length).toBe(1)
+  })
+
+  it('sent items are not pruned: every one stays deletable', async () => {
+    const { outbox } = setup()
+    for (let k = 0; k < 120; k++) {
+      await outbox.add('ana', draft(k))
+      await outbox.flush('ana')
+    }
+    expect((await outbox.list('ana')).length).toBe(120)
   })
 
   it("the server's status is shown once listed", async () => {

@@ -230,8 +230,8 @@ export default {
   "Enviar fotos para entrenar la IA": "Send photos to train the AI",
   "Si acepta, esta foto y lo que usted indique (especie, sexo, tipo de foto) se guardan en el servidor del proyecto Ithomiini (IKIAM) junto con lo que respondió la IA y su nombre de usuario.": "If you agree, this photo and what you tell us (species, sex, kind of photo) are stored on the Ithomiini project's server (IKIAM), with the AI's answer and your username.",
   "El equipo revisa cada foto antes de usarla para entrenar o evaluar los modelos de identificación y de sexo.": "The team reviews each photo before it is used to train or evaluate the identification and sex models.",
-  "La ubicación solo se envía si marca «Incluir la ubicación de la foto», redondeada a unos 1 km, y nunca se publica. No se envía otra información de la foto.": "Location is sent only if you tick “Include the photo's location”, rounded to about 1 km, and is never published. No other information from the photo is sent.",
-  "Usted conserva los derechos de su foto. Al enviarla, concede al proyecto una licencia no exclusiva, gratuita y sin plazo para usarla en el entrenamiento y la evaluación de modelos, y para publicar esos modelos.": "You keep the rights to your photo. By sending it you grant the project a non-exclusive, free, perpetual licence to use it to train and evaluate models and to publish those models.",
+  "De la información de la foto solo se guarda el día en que se tomó. La ubicación solo se envía si marca «Incluir la ubicación de la foto», redondeada a unos 1 km, y nunca se publica.": "Of the photo's own information, only the day it was taken is kept. Location is sent only if you tick “Include the photo's location”, rounded to about 1 km, and is never published.",
+  "Usted conserva los derechos de su foto. Al enviarla, concede al proyecto una licencia no exclusiva, gratuita y sin plazo para usarla en el entrenamiento y la evaluación de modelos, y para publicar esos modelos. La foto solo se publicaría como parte de un conjunto de datos bajo licencia CC BY 4.0, con crédito a su nombre de usuario.": "You keep the rights to your photo. By sending it you grant the project a non-exclusive, free, perpetual licence to use it to train and evaluate models and to publish those models. The photo itself would only be published as part of a dataset under CC BY 4.0, credited to your username.",
   "Puede borrar cualquier envío desde «Mis envíos». Se borra del servidor y de los próximos entrenamientos; los modelos ya publicados no se pueden «desentrenar».": "You can delete any submission from “My submissions”. It is removed from the server and from future training; models already released cannot be “untrained”.",
   "Nombre de la especie": "Name of the species",
   "Escriba el género o la especie": "Type the genus or the species",
@@ -251,4 +251,7 @@ export default {
   "{n} envíos pendientes": "{n} submissions waiting",
   '«Enviar al equipo» (Ayude a entrenar la IA) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».':
     '“Send to the team” (Help train the AI) is separate: only then are the photo and what you tell us stored on the server, for the team to review and to train the models. You can delete them in “My submissions”.',
+  'El servidor no aceptó la foto: {reason}': 'The server did not accept the photo: {reason}',
+  'Esta foto ya se había enviado, con las etiquetas de entonces. Para cambiarlas, bórrela en «Mis envíos» y envíela de nuevo.':
+    'This photo was already sent, with the labels given then. To change them, delete it in “My submissions” and send it again.',
 }

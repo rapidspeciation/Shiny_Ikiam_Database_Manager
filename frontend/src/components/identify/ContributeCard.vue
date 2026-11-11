@@ -6,7 +6,7 @@
  * signal; «Deshacer» for UNDO_MS after. Team only, behind VITE_CONTRIB (lib/contribConfig.ts).
  * The card never shows the sex model's call next to the buttons, so the person is not nudged.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, CloudOff, HeartHandshake } from 'lucide-vue-next'
 import TaxonPick from './TaxonPick.vue'
 import { CONSENT, CONSENT_DRAFT, CONSENT_VERSION, UNDO_MS } from '../../lib/contribConfig'
@@ -14,7 +14,7 @@ import type { Payload } from '../../lib/contribOutbox'
 import type { TaxonHit, TaxonSource } from '../../lib/taxonPick'
 
 export type Labels = Payload['labels'] & { includeGps: boolean }
-export type Outcome = 'sent' | 'queued' | 'full' | 'error'
+export type Outcome = 'sent' | 'queued' | 'already' | 'refused' | 'full' | 'error'
 
 const props = defineProps<{
   /** The name the result shows: a species, or a genus when the species is not sure. */
@@ -26,6 +26,8 @@ const props = defineProps<{
   hasGps: boolean
   send: (labels: Labels) => Promise<Outcome>
   undo: () => Promise<void>
+  /** The server's reason when it refused the item (`refused`). */
+  refusal?: string | null
 }>()
 
 const CONSENT_KEY = 'identify:contrib-consent'
@@ -40,6 +42,23 @@ const consented = () => {
 const speciesAnswer = ref<'yes' | 'other' | null>(props.pick && props.pick !== props.shown.name ? 'other' : null)
 const other = ref(props.pick && props.pick !== props.shown.name ? props.pick : '')
 const otherHit = ref<TaxonHit | null>(props.pick ? (props.source.search(props.pick, 1).find(h => h.name === props.pick) ?? null) : null)
+// «Se parece a esta» chosen after the card opened: the species line follows it while the person has not answered it.
+watch(
+  () => props.pick,
+  (now, before) => {
+    if (step.value !== 'edit') return
+    const untouched = speciesAnswer.value === null || (speciesAnswer.value === 'other' && other.value === (before ?? ''))
+    if (!untouched) return
+    if (now && now !== props.shown.name) {
+      speciesAnswer.value = 'other'
+      other.value = now
+      otherHit.value = props.source.search(now, 1).find(h => h.name === now) ?? null
+    } else if (speciesAnswer.value === 'other') {
+      speciesAnswer.value = null
+      other.value = ''
+    }
+  },
+)
 const sex = ref<'female' | 'male' | 'unknown' | null>(null)
 const kind = ref<'hand' | 'live' | 'collection' | null>(null)
 const includeGps = ref(false)
@@ -74,7 +93,7 @@ async function submit() {
   }
   step.value = 'sending'
   outcome.value = await props.send({ species: species.value, sex: sexLabel.value, photoKind: kind.value, includeGps: includeGps.value && props.hasGps })
-  if (outcome.value === 'full' || outcome.value === 'error') {
+  if (outcome.value === 'full' || outcome.value === 'error' || outcome.value === 'refused' || outcome.value === 'already') {
     step.value = 'edit'
     return
   }
@@ -175,6 +194,10 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
       <p v-if="missing" class="mt-1 text-xs text-fg-subtle">{{ $t(missing) }}</p>
       <p v-if="outcome === 'full'" class="mt-1 text-sm text-pending-text" role="alert">{{ $t('El teléfono tiene 50 envíos esperando señal; se enviarán antes de guardar más.') }}</p>
       <p v-else-if="outcome === 'error'" class="mt-1 text-sm text-error-text" role="alert">{{ $t('No se pudo preparar la foto para enviarla.') }}</p>
+      <p v-else-if="outcome === 'refused'" class="mt-1 text-sm text-error-text" role="alert" data-testid="contrib-refused">{{ $t('El servidor no aceptó la foto: {reason}', { reason: refusal ?? '' }) }}</p>
+      <p v-else-if="outcome === 'already'" class="mt-1 text-sm text-pending-text" role="status" data-testid="contrib-already">
+        {{ $t('Esta foto ya se había enviado, con las etiquetas de entonces. Para cambiarlas, bórrela en «Mis envíos» y envíela de nuevo.') }}
+      </p>
       <p class="mt-1 text-xs text-fg-subtle">{{ $t('Se revisa antes de usarse. Puede borrarla después en «Mis envíos».') }}</p>
     </template>
   </section>

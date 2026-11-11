@@ -31,12 +31,20 @@ export async function idbStore(): Promise<OutboxStore & { persistent: boolean }>
   } catch {
     return { ...memoryStore(), persistent: false }
   }
-  const tx = (mode: IDBTransactionMode) => db.transaction(STORE, mode).objectStore(STORE)
+  // iOS Safari can close the connection while the page is in the background: one reopen, then the call again.
+  const run = async <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
+    try {
+      return await done(op(db.transaction(STORE, mode).objectStore(STORE)))
+    } catch {
+      db = await open()
+      return done(op(db.transaction(STORE, mode).objectStore(STORE)))
+    }
+  }
   return {
     persistent: true,
-    all: () => done(tx('readonly').getAll() as IDBRequest<Item[]>),
-    put: async item => void (await done(tx('readwrite').put(item))),
-    delete: async id => void (await done(tx('readwrite').delete(id))),
+    all: () => run('readonly', s => s.getAll() as IDBRequest<Item[]>),
+    put: async item => void (await run('readwrite', s => s.put(item))),
+    delete: async id => void (await run('readwrite', s => s.delete(id))),
   }
 }
 

@@ -6,7 +6,9 @@
  *
  * The answers (the server's status codes):
  * - 201, or 200 `already`: sent. The photo is dropped from the phone; a small thumbnail and the status stay. After
- *   `already` with an `id` (the same photo sent before under another id) that id is kept: it is the one to delete.
+ *   `already` with an `id` (the same photo sent before under another id) that id is kept: it is the one to delete,
+ *   and the item shows the labels the server holds (the first ones). If this phone lists that first item already,
+ *   the new one is dropped (`already` in the flush's answer: «Esta foto ya se había enviado»).
  * - 401 / 403: paused until the person signs in again.
  * - 400 / 409 / 413 / 422: failed for good, with the reason; the person can delete it.
  * - 410: deleted on the server before: dropped from the phone.
@@ -17,7 +19,7 @@
  * Only the signed-in person's items are sent or listed; another person on the same phone never sees them.
  * The storage is behind `OutboxStore` (IndexedDB in the app, lib/contribIdb.ts; memory in tests).
  */
-import { MAX_PENDING, MAX_SENT_KEPT } from './contribConfig'
+import { MAX_PENDING } from './contribConfig'
 import { apiRoot, csrfToken } from './api'
 
 export type ItemState = 'pending' | 'sending' | 'sent' | 'failed' | 'deleting'
@@ -100,6 +102,8 @@ export interface FlushResult {
   sent: number
   /** Why it stopped before the end: no session, the limit, no signal or the server. */
   stopped: 'auth' | 'rate' | 'offline' | null
+  /** Items dropped because this phone already lists the same photo, sent before under another id. */
+  already: string[]
 }
 
 /** 30 s, 1 min, 2 min, 5 min, 15 min, then every hour, ±20 %. */
@@ -108,6 +112,19 @@ export const backoff = (attempts: number, rand = Math.random) => {
   const base = BACKOFF[Math.min(Math.max(attempts, 1), BACKOFF.length) - 1]
   return Math.round(base * (0.8 + 0.4 * rand()))
 }
+
+/** An item as GET …/mine and POST answer it (server/contributions.mjs shape). */
+interface ServerItem {
+  id: string
+  status?: string
+  createdAt?: string | null
+  receivedAt?: string
+  takenAt?: string | null
+  sex?: 'female' | 'male' | null
+  photoKind?: Payload['labels']['photoKind']
+  species?: Payload['labels']['species']
+}
+const labelsOf = (c: ServerItem): Payload['labels'] => ({ sex: c.sex ?? null, photoKind: c.photoKind ?? null, species: c.species ?? null })
 
 export function memoryStore(): OutboxStore & { items: Map<string, Item> } {
   const items = new Map<string, Item>()
@@ -171,9 +188,6 @@ export function createOutbox({
       serverStatus: null,
     }
     await store.put(item)
-    // Sent ones beyond MAX_SENT_KEPT leave the list (oldest first); they stay on the server.
-    const sent = items.filter(i => i.state === 'sent')
-    for (const old of sent.slice(0, Math.max(0, sent.length + 1 - MAX_SENT_KEPT))) await store.delete(old.id)
     return item
   }
 
@@ -182,7 +196,7 @@ export function createOutbox({
     return e?.message ?? `HTTP ${a.status}`
   }
 
-  async function sendOne(item: Item, t: number): Promise<FlushResult['stopped'] | 'sent' | 'next'> {
+  async function sendOne(item: Item, t: number): Promise<FlushResult['stopped'] | 'sent' | 'next' | 'already'> {
     if (item.state === 'deleting') {
       const a = await send('DELETE', `identify/contributions/${encodeURIComponent(item.serverId ?? item.id)}`)
       if (a.status === 200 || a.status === 400 || a.status === 404) {
@@ -204,17 +218,24 @@ export function createOutbox({
       await store.put({ ...now2, serverId })
       return 'next'
     }
-    if (a.status === 201 || a.status === 200) {
-      const contribution = a.body?.contribution as { status?: string } | undefined
+    const contribution = a.body?.contribution as ServerItem | undefined
+    if ((a.status === 201 || a.status === 200) && contribution) {
+      const first = typeof a.body?.id === 'string' && a.body.id !== item.id ? a.body.id : null
+      if (first && (await store.all()).some(i => i.id !== item.id && (i.id === first || i.serverId === first))) {
+        await store.delete(item.id)
+        return 'already'
+      }
       await store.put({
         ...item,
         state: 'sent',
-        serverId: typeof a.body?.id === 'string' && a.body.id !== item.id ? a.body.id : null,
+        serverId: first,
         photo: null,
         sha256: null,
         thumb: null,
         lastError: null,
-        serverStatus: contribution?.status ?? 'received',
+        // The labels the server holds (the first ones, when the photo was sent before from elsewhere).
+        payload: first ? { ...item.payload, labels: labelsOf(contribution) } : item.payload,
+        serverStatus: contribution.status ?? 'received',
       })
       return 'sent'
     }
@@ -243,7 +264,7 @@ export function createOutbox({
   async function flush(userId: string, { force = false } = {}): Promise<FlushResult> {
     if (running) return running
     const run = async (): Promise<FlushResult> => {
-      const out: FlushResult = { sent: 0, stopped: null }
+      const out: FlushResult = { sent: 0, stopped: null, already: [] }
       for (const { id } of await mine(userId)) {
         // Read again: «Borrar» may have changed it while the one before was on its way.
         const item = (await store.all()).find(i => i.id === id)
@@ -252,6 +273,7 @@ export function createOutbox({
         if (!force && item.nextAt > t) continue
         const r = await sendOne(item, t)
         if (r === 'sent') out.sent++
+        else if (r === 'already') out.already.push(item.id)
         else if (r !== 'next') {
           out.stopped = r
           break
@@ -261,7 +283,7 @@ export function createOutbox({
     }
     running = (async () => {
       try {
-        return (lock ? await lock(run) : await run()) ?? { sent: 0, stopped: null }
+        return (lock ? await lock(run) : await run()) ?? { sent: 0, stopped: null, already: [] }
       } finally {
         running = null
       }
@@ -283,14 +305,42 @@ export function createOutbox({
     return (await mine(userId)).filter(i => i.state !== 'deleting').reverse()
   }
 
-  /** The statuses the server gives (GET …/mine), on the items sent from this phone. */
+  /**
+   * «Mis envíos» as the server has them (GET …/mine): the statuses; the person's items sent from another phone (no
+   * thumbnail), so any of them can be deleted here; and sent items the server no longer holds (deleted elsewhere) gone.
+   */
   async function refresh(userId: string): Promise<void> {
     const a = await send('GET', 'identify/contributions/mine')
-    if (a.status !== 200) return
-    const status = new Map((a.body?.contributions as { id: string; status: string }[] | undefined)?.map(c => [c.id, c.status]) ?? [])
-    for (const item of await mine(userId)) {
-      const s = status.get(item.serverId ?? item.id)
-      if (item.state === 'sent' && s && s !== item.serverStatus) await store.put({ ...item, serverStatus: s })
+    const list = a.body?.contributions as ServerItem[] | undefined
+    if (a.status !== 200 || !Array.isArray(list)) return
+    const server = new Map(list.map(c => [c.id, c]))
+    const local = await mine(userId)
+    const known = new Set(local.map(i => i.serverId ?? i.id))
+    for (const item of local) {
+      if (item.state !== 'sent') continue
+      const c = server.get(item.serverId ?? item.id)
+      if (!c) await store.delete(item.id)
+      else if (c.status !== item.serverStatus) await store.put({ ...item, serverStatus: c.status ?? null })
+    }
+    for (const c of list) {
+      if (known.has(c.id)) continue
+      const at = c.createdAt ?? c.receivedAt ?? new Date(0).toISOString()
+      await store.put({
+        id: c.id,
+        userId,
+        createdAt: at,
+        state: 'sent',
+        attempts: 0,
+        nextAt: 0,
+        lastError: null,
+        serverId: null,
+        photo: null,
+        sha256: null,
+        thumb: null,
+        mini: '',
+        payload: { createdAt: at, takenAt: c.takenAt ?? null, labels: labelsOf(c), prediction: {}, gps: null, consent: { version: '' } },
+        serverStatus: c.status ?? 'received',
+      })
     }
   }
 
