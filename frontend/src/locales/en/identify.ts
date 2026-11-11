@@ -249,4 +249,6 @@ export default {
   "¿Borrar este envío del teléfono y del servidor?": "Delete this submission from the phone and from the server?",
   "1 envío pendiente": "1 submission waiting",
   "{n} envíos pendientes": "{n} submissions waiting",
+  '«Enviar al equipo» (Ayude a entrenar la IA) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».':
+    '“Send to the team” (Help train the AI) is separate: only then are the photo and what you tell us stored on the server, for the team to review and to train the models. You can delete them in “My submissions”.',
 }
