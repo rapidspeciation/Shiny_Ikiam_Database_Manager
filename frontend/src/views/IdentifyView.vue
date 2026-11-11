@@ -534,6 +534,15 @@ const higher = computed<Higher | null>(() => {
   return scores.value && head.value && taxonomy.value ? higherRanks(scores.value, head.value.meta.species, taxonomy.value) : null
 })
 const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus, higher.value) : null))
+/**
+ * The Ithomiini badge under the headline: from the top species, except under a tribe answer (the tribe says it) or a
+ * subfamily answer (Danainae holds Ithomiini and others: neither the badge nor «No parece una Ithomiini.»).
+ */
+const ithomiiniBadge = computed<boolean | null>(() => {
+  if (said.value?.kind === 'tribe') return said.value.name === 'Ithomiini'
+  if (said.value?.kind === 'subfamily') return null
+  return isIthomiini(top.value?.name ?? '', ITHOMIINI_GENERA)
+})
 const sspHint = computed(() => {
   const hint = top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null
   // The server lists only its 5 most probable subspecies: one listed does not mean the model knows only one.
@@ -1252,8 +1261,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               <i v-else>{{ top?.name }}</i>
             </h1>
             <p class="mt-1 text-sm text-fg-muted">
-              <span v-if="isIthomiini(top?.name ?? '', ithomiiniGenera) === true" class="mr-2 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">Ithomiini</span>
-              <span v-else-if="isIthomiini(top?.name ?? '', ithomiiniGenera) === false" class="mr-2">{{ $t('No parece una Ithomiini.') }}</span>
+              <span v-if="ithomiiniBadge === true" class="mr-2 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">Ithomiini</span>
+              <span v-else-if="ithomiiniBadge === false" class="mr-2">{{ $t('No parece una Ithomiini.') }}</span>
               {{
                 said?.kind === 'genus'
                   ? $t('{genus}: {p} en total', { genus: (said as { genus: string }).genus, p: percent(ranked.genus.get((said as { genus: string }).genus) ?? 0) })

@@ -139,5 +139,11 @@ describe('tribe and subfamily answer', () => {
     for (const old of ['Dircennini', 'Godyridini', 'Napeogenini', 'Mechanitini', 'Melinaeini', 'Oleriini', 'Tithoreini', 'Athesitini'])
       expect(t.tribes).not.toContain(old)
     expect(t.subfamilies).not.toContain('Ithomiinae')
+    // Names wrong outside Ithomiini are left out: a Dismorphia (an Ithomiini mimic) is never «Tribu Pierini».
+    const dismorphia = species.filter(sp => sp.startsWith('Dismorphia '))
+    expect(dismorphia.length).toBeGreaterThan(0)
+    for (const sp of dismorphia) expect(name(sp)).toEqual([null, 'Dismorphiinae'])
+    expect(t.tribes.filter(n => !/^[A-Z][a-z]+ini$/.test(n))).toEqual([])
+    expect(t.subfamilies.filter(n => !/^[A-Z][a-z]+inae$/.test(n))).toEqual([])
   })
 })

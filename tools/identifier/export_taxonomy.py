@@ -1,4 +1,4 @@
-"""The identifier head's tribe and subfamily per species, for Identificar's tribe / subfamily answer (lab flag).
+"""The identifier head's tribe and subfamily per species, for Identificar's tribe / subfamily answer.
 
 Reads the head's own taxonomy (rank_vocab and leaf2rank of head_hier_6fa6ab78.pt, the names the head was trained on)
 and writes tools/identifier/taxonomy_6fa6ab78.json, read by the server identifier (worker.py) and by the Identificar
@@ -13,6 +13,8 @@ The head was trained on a genus table that splits Ithomiini into 8 old tribes fo
 Leucothyris (WingsClassificator reports/model_autoresearch_20261109/taxonomic/TRIBE_FIX.md). genus_fix_ithomiini_20261110.json
 overrides those genera with the lab taxonomy's values (the Ithomiini-only table Franz chose on 10 Nov): every Ithomiini
 genus is tribe Ithomiini, subfamily Danainae; Macrosoma is Hedylinae with no tribe.
+genus_fix_other_20261111.json leaves out tribe names that are wrong outside Ithomiini (Dismorphia «Pierini» and others)
+and gives Libytheana Libytheinae.
 
   <identifier venv>/bin/python tools/identifier/export_taxonomy.py <dir>/app/assets/head_hier_6fa6ab78.pt [out.json]
   python3 tools/identifier/export_taxonomy.py --refix [taxonomy.json]   (applies the genus fix to an exported file)
@@ -25,7 +27,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HIDDEN = ("incertae sedis",)
-GENUS_FIX = os.path.join(HERE, "genus_fix_ithomiini_20261110.json")
+GENUS_FIX = [os.path.join(HERE, n) for n in ("genus_fix_ithomiini_20261110.json", "genus_fix_other_20261111.json")]
 
 
 def shown(name):
@@ -35,8 +37,10 @@ def shown(name):
 def fixed(per_species, fix=None):
     """per_species {species: (tribe, subfamily)} with the genus fix applied; an empty value means none."""
     if fix is None:
-        with open(GENUS_FIX) as f:
-            fix = json.load(f)["genera"]
+        fix = {}
+        for path in GENUS_FIX:
+            with open(path) as f:
+                fix.update(json.load(f)["genera"])
     out = {}
     for sp, pair in per_species.items():
         g = fix.get(sp.split(" ")[0])

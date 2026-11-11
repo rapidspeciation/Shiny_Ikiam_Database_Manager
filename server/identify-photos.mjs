@@ -141,7 +141,7 @@ export async function identifyUpload({ identifier, body, scratch, sides = async 
         subspecies: pairs(out.subspecies),
         genus: pairs(out.genus),
         // Each tribe's and subfamily's total (worker.py, placeholders left out): the page's tribe / subfamily
-        // answer, behind its lab flag (frontend/src/lib/identifyResult.ts TRIBE_RUNG).
+        // answer (frontend/src/lib/identifyResult.ts TRIBE_RUNG).
         tribe: pairs(out.tribe),
         subfamily: pairs(out.subfamily),
         crop: typeof out.crop === 'string' ? out.crop : null,
