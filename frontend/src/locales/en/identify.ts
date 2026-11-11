@@ -203,6 +203,14 @@ export default {
   'en uso': 'in use',
   '{mb} MB en el teléfono': '{mb} MB on the phone',
   'Actualizar · {mb} MB': 'Update · {mb} MB',
+  // Descargas: a newer model version (DownloadsPanel, model-versions 11 Nov 2026)
+  'Nueva versión disponible': 'New version available',
+  'Instalada: {from}. Nueva: {to}.': 'Installed: {from}. New: {to}.',
+  'Nueva: {to}.': 'New: {to}.',
+  'Versión {v}': 'Version {v}',
+  'Comprobando la descarga…': 'Checking the download…',
+  'Mientras tanto se sigue usando la versión instalada.': 'Meanwhile the installed version stays in use.',
+  'No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.': 'Could not update. The installed version stays; try again.',
   '{n} fotos · {mb} MB': '{n} photos · {mb} MB',
   '{n} foto · {mb} MB': '{n} photo · {mb} MB',
   Neotrópico: 'Neotropics',
@@ -259,7 +267,7 @@ export default {
   // Full photo list (11 Nov 2026).
   'Estas fotos aún no están en el servidor.': 'These photos are not on the server yet.',
   '{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.': '{n} of these photos are not on the server yet (≈ {mb} MB): the rest is saved.',
-  'Experimental, fotos en mano de 13 géneros de Ithomiini. Solo para el equipo.': 'Experimental, in-hand photos of 13 Ithomiini genera. Team only.',
+  'Experimental, fotos en mano de {n} géneros de Ithomiini. Solo para el equipo.': 'Experimental, in-hand photos of {n} Ithomiini genera. Team only.',
   // Review r2 (11 Nov 2026).
   'No hay foto de referencia para descargar.': 'No reference photo to download.',
   'En Descargas: fotos para comparar': 'In Downloads: photos to compare',

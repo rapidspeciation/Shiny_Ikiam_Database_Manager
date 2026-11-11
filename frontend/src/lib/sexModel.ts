@@ -9,7 +9,13 @@
  */
 import type { FileRole } from './offlineId'
 
-/** The shipped file, pinned: the server's list must give these bytes (sha256 of the file and of each 32 MB part). */
+/**
+ * The first shipped file (model B, 8 Nov 2026). Not a pin any more: the phone takes the sex model the server lists
+ * (its version, SHA-256 and calibration come from the model folder's manifest, server/offline-id.mjs sexModel), checks
+ * the whole file against that SHA-256 and keeps the calibration with it. These numbers serve as its size before the
+ * list is known, its part hashes (so a copy kept before versions existed counts as this file), and the calibration
+ * of a copy kept before calibrations were stored.
+ */
 export const SEX_FILE = {
   name: 'sex_v2s_ft_full_fp16.onnx',
   role: 'sex' as FileRole,
@@ -32,6 +38,29 @@ export const SEX_CUT = { t: 2.9805, lo: 1.6157, hi: 4.8722 }
 
 /** The genera of the training composites: no estimate for any other genus. */
 export const SEX_GENERA = ['Dircenna', 'Forbestra', 'Godyris', 'Hyposcada', 'Hypothyris', 'Ithomia', 'Mechanitis', 'Methona', 'Napeogenes', 'Oleria', 'Pteronymia', 'Scada', 'Tithorea']
+
+export interface SexCut { t: number; lo: number; hi: number }
+export interface SexDisplay { a: number; b: number }
+/** What a sex model's scores mean: its cutoff and band (logits), its display calibration and the genera it covers. */
+export interface SexCalibration { cut: SexCut; display: SexDisplay; genera: string[] }
+
+/**
+ * A calibration as the server lists it (the model manifest's `calibration`), checked: finite numbers, lo < t < hi,
+ * a > 0 (a higher score is more female), at least one genus. Anything else: null (the model is not taken).
+ */
+export function parseCalibration(x: unknown): SexCalibration | null {
+  const o = x as { cut?: Partial<SexCut>; display?: Partial<SexDisplay>; genera?: unknown } | null
+  if (!o || typeof o !== 'object' || !o.cut || !o.display) return null
+  const { t, lo, hi } = o.cut, { a, b } = o.display
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  if (![t, lo, hi, a, b].every(num) || !(lo! < t! && t! < hi!) || !(a! > 0)) return null
+  const genera = Array.isArray(o.genera) ? o.genera.filter((g): g is string => typeof g === 'string' && /^[A-Z][a-z]+$/.test(g)) : []
+  if (!genera.length || genera.length !== (o.genera as unknown[]).length) return null
+  return { cut: { t: t!, lo: lo!, hi: hi! }, display: { a: a!, b: b! }, genera }
+}
+
+/** The installed sex model: its file, version (null: kept before versions existed), SHA-256 and calibration. */
+export interface SexModelInfo { name: string; bytes: number; version: string | null; sha256: string | null; calibration: SexCalibration }
 
 export type SexCall = 'hembra' | 'macho' | 'no seguro'
 
@@ -60,13 +89,16 @@ export function sexCall(z: number, cut = SEX_CUT): SexCall {
  */
 export const SEX_DISPLAY = { a: 0.415, b: -1.0887 }
 
+/** Model B's calibration (the numbers above): a copy kept without one is model B. */
+export const SEX_DEFAULT: SexCalibration = { cut: SEX_CUT, display: SEX_DISPLAY, genera: SEX_GENERA }
+
 /** The calibrated P(hembra) shown for a score. */
-export const sexShownFemale = (z: number) => sigmoid(SEX_DISPLAY.a * z + SEX_DISPLAY.b)
+export const sexShownFemale = (z: number, display: SexDisplay = SEX_DISPLAY) => sigmoid(display.a * z + display.b)
 
 /** The call and the calibrated % of the sex called; «no seguro»: the side it leans to (the likelier one). */
-export function sexShown(z: number, cut = SEX_CUT): { call: SexCall; sign: '♀' | '♂'; p: number } {
-  const call = sexCall(z, cut)
-  const female = sexShownFemale(z)
+export function sexShown(z: number, cal: Pick<SexCalibration, 'cut' | 'display'> = SEX_DEFAULT): { call: SexCall; sign: '♀' | '♂'; p: number } {
+  const call = sexCall(z, cal.cut)
+  const female = sexShownFemale(z, cal.display)
   const leansFemale = call === 'hembra' || (call === 'no seguro' && female >= 0.5)
   return { call, sign: leansFemale ? '♀' : '♂', p: leansFemale ? female : 1 - female }
 }
@@ -75,9 +107,9 @@ export function sexShown(z: number, cut = SEX_CUT): { call: SexCall; sign: '♀'
  * Whether the estimate applies to the identifier's top species: 'yes' (a trained genus), 'genus' (an Ithomiini
  * outside them: «no aplica»), 'no' (not an Ithomiini, or unknown: nothing shown).
  */
-export function sexApplies(species: string | undefined, ithomiiniGenera: readonly string[]): 'yes' | 'genus' | 'no' {
+export function sexApplies(species: string | undefined, ithomiiniGenera: readonly string[], genera: readonly string[] = SEX_GENERA): 'yes' | 'genus' | 'no' {
   const g = (species ?? '').split(' ')[0]
   if (!g) return 'no'
-  if (SEX_GENERA.includes(g)) return 'yes'
+  if (genera.includes(g)) return 'yes'
   return ithomiiniGenera.includes(g) ? 'genus' : 'no'
 }

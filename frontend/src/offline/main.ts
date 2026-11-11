@@ -33,6 +33,7 @@ import {
   type Rgba,
   type Side,
   type StoredFile,
+  partKey,
 } from '../lib/offlineId'
 import { errorText, PHOTO_UNREADABLE, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { genusStock, speciesStock, stockDate, type FrozenStock } from '../lib/frozenStock'
@@ -339,7 +340,7 @@ async function download(kind: ModelKind) {
     const keep: Stored = { files: {}, at: new Date().toISOString() }
     for (const [name, f] of Object.entries(before?.files ?? {})) {
       if (files.some(l => l.name === name)) keep.files[name] = { ...f, role: roleOf(name, f.role) }
-      else for (let i = 0; i * PART < f.bytes; i++) await cache.delete(url(`./models/${name}?part=${i}`))
+      else for (let i = 0; i * PART < f.bytes; i++) await cache.delete(url(`./${partKey(name, i, f.slot)}`))
     }
     for (const f of wanted) {
       const parts = Math.ceil(f.bytes / PART)
@@ -412,7 +413,8 @@ async function readModel(name: string): Promise<Uint8Array> {
   const cache = await caches.open(CACHE)
   const out = new Uint8Array(f.bytes)
   for (let i = 0, off = 0; off < f.bytes; i++) {
-    const r = await cache.match(url(`./models/${name}?part=${i}`))
+    // Identificar keeps a newer version of a file under its own keys (lib/offlineEngine.ts download: `slot`).
+    const r = await cache.match(url(`./${partKey(name, i, f.slot)}`))
     if (!r) throw new Error(`Falta la parte ${i + 1} de ${name}: descargue de nuevo.`)
     const part = new Uint8Array(await r.arrayBuffer())
     out.set(part, off)

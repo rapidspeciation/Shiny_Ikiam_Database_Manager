@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { serveOfflineId, MODELS, PART_BYTES, SEX, STUDENT, modelsWithoutParts, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { serveOfflineId, MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
 
 const student = MODELS.find(m => m.role === 'student');
 const sex = MODELS.find(m => m.role === 'sex');
@@ -286,4 +286,136 @@ test('the sex model: signed in only, pinned bytes, sent plain, never in the part
     server.close();
     server.closeAllConnections();
   }
+});
+
+// ---------------------------------------------------------------- versions (model-versions, 11 Nov 2026)
+
+const sha256Of = b => createHash('sha256').update(b).digest('hex');
+/** A manifest for a new sex model file in offline/ (model C in the HANDOFF), valid unless changed. */
+function cManifest(bytes, extra = {}) {
+  return {
+    schema: 'phone-model/1',
+    role: 'sex',
+    version: 'C 2026-11-20',
+    file: 'sex_c_test.onnx',
+    bytes: bytes.length,
+    sha256: sha256Of(bytes),
+    input: { size: 224, values: 'raw' },
+    calibration: { cut: { t: 0.5, lo: -0.5, hi: 1.5 }, display: { a: 1, b: 0 }, genera: ['Mechanitis', 'Oleria'] },
+    ...extra,
+  };
+}
+
+test('every listed file carries a version and its SHA-256: the content for the identifier, model B for the sex model', async () => {
+  const { base, ident, server, signIn } = await setup();
+  try {
+    signIn();
+    const list = await (await fetch(`${base}/models/list.json`)).json();
+    for (const f of list.files) {
+      const bytes = readFileSync(join(ident, MODELS.find(m => m.name === f.name).path));
+      assert.equal(f.sha256, sha256Of(bytes), f.name);
+      assert.equal(f.version, f.role === 'sex' ? SEX_B.version : contentVersion(f.sha256), f.name);
+    }
+    // Without a manifest the sex model is model B, with its calibration (the phone keeps it with the file).
+    const b = list.files.find(f => f.role === 'sex');
+    assert.equal(b.name, SEX.name);
+    assert.deepEqual(b.calibration, SEX_B.calibration);
+    assert.equal(list.files.filter(f => f.role !== 'sex').some(f => 'calibration' in f), false);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+test('a new sex model is a data change: its file and offline/sex-model.json; size or hash wrong, or a bad manifest, offers none', async () => {
+  const { base, port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  try {
+    signIn();
+    const c = Buffer.from(Array.from({ length: 3000 }, (_, i) => (i * 31) % 251));
+    writeFileSync(join(ident, 'offline', 'sex_c_test.onnx'), c);
+    const put = m => {
+      writeFileSync(join(ident, SEX_MANIFEST), typeof m === 'string' ? m : JSON.stringify(m));
+      // A new mtime each time (the manifest is read again when its ETag changes).
+      const t = new Date(Date.now() + Math.floor(Math.random() * 1e6));
+      utimesSync(join(ident, SEX_MANIFEST), t, t);
+    };
+    put(cManifest(c));
+    let list = await (await fetch(`${base}/models/list.json`)).json();
+    const sexes = list.files.filter(f => f.role === 'sex');
+    assert.equal(sexes.length, 1, 'only the manifest\'s model: model B is not listed beside it');
+    assert.deepEqual(
+      { name: sexes[0].name, bytes: sexes[0].bytes, version: sexes[0].version, sha256: sexes[0].sha256 },
+      { name: 'sex_c_test.onnx', bytes: 3000, version: 'C 2026-11-20', sha256: sha256Of(c) },
+    );
+    assert.deepEqual(sexes[0].calibration, cManifest(c).calibration);
+    // Served, in parts, plain; model B's file is no longer served.
+    const r = await raw(port, `${p}/sex_c_test.onnx?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, c);
+    assert.equal((await raw(port, `${p}/${SEX.name}?part=0`)).status, 404);
+
+    // The file is not the manifest's (another size, then other bytes of the same size): not offered, not served.
+    put(cManifest(c, { bytes: 2999 }));
+    list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(list.files.some(f => f.role === 'sex'), false);
+    put(cManifest(c, { sha256: '1'.repeat(64) }));
+    list = await (await fetch(`${base}/models/list.json`)).json();
+    assert.equal(list.files.some(f => f.role === 'sex'), false);
+    assert.equal((await raw(port, `${p}/sex_c_test.onnx?part=0`)).status, 404);
+    // An invalid manifest: nothing offered (never model B silently instead), the identifier still listed.
+    const errors = [];
+    const orig = console.error;
+    console.error = (...a) => errors.push(a.join(' '));
+    try {
+      put('{ not json');
+      list = await (await fetch(`${base}/models/list.json`)).json();
+      assert.equal(list.files.some(f => f.role === 'sex'), false);
+      assert.equal(list.files.length, MODELS.length - 1);
+      assert.match(errors.join('\n'), /sex model is not offered: offline\/sex-model\.json: not JSON/);
+      assert.deepEqual((await phoneModels(ident)).problems.length, 1);
+    } finally {
+      console.error = orig;
+    }
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+test('checkSexManifest: what the field-sex worker must supply (HANDOFF.md), and nothing that escapes offline/', () => {
+  const c = Buffer.from('model C');
+  const ok = checkSexManifest(cManifest(c));
+  assert.equal(ok.ok, true);
+  assert.equal(ok.entry.path, 'offline/sex_c_test.onnx');
+  assert.equal(ok.entry.packed, false);
+  assert.equal(checkSexManifest({ ...cManifest(c), input: undefined }).ok, true); // input defaults to 224 raw
+  const bad = [
+    [{ schema: 'phone-model/2' }, /schema/],
+    [{ role: 'detector' }, /role/],
+    [{ version: '' }, /version/],
+    [{ version: '<script>' }, /version/],
+    [{ version: 'x'.repeat(81) }, /version/],
+    [{ file: '../app/x.onnx' }, /file/],
+    [{ file: 'sub/x.onnx' }, /file/],
+    [{ file: '.hidden.onnx' }, /file/],
+    [{ file: 'x.bin' }, /file/],
+    [{ file: 'bioclip25h_visual_int8.onnx' }, /identifier model/],
+    [{ bytes: 0 }, /bytes/],
+    [{ bytes: '3000' }, /bytes/],
+    [{ sha256: 'ABC' }, /sha256/],
+    [{ input: { size: 256, values: 'raw' } }, /input/],
+    [{ input: { size: 224, values: 'imagenet' } }, /input/],
+    [{ calibration: null }, /calibration/],
+    [{ calibration: { cut: { t: 1, lo: 2, hi: 3 }, display: { a: 1, b: 0 }, genera: ['Oleria'] } }, /cut/],
+    [{ calibration: { cut: { t: 1, lo: 0, hi: 3 }, display: { a: -1, b: 0 }, genera: ['Oleria'] } }, /display/],
+    [{ calibration: { cut: { t: 1, lo: 0, hi: 3 }, display: { a: 1, b: 0 }, genera: [] } }, /genera/],
+    [{ calibration: { cut: { t: 1, lo: 0, hi: 3 }, display: { a: 1, b: 0 }, genera: ['oleria'] } }, /genera/],
+  ];
+  for (const [change, why] of bad) {
+    const r = checkSexManifest({ ...cManifest(c), ...change });
+    assert.equal(r.ok, false, JSON.stringify(change));
+    assert.match(r.why, why, JSON.stringify(change));
+  }
+  assert.equal(checkSexManifest(null).ok, false);
 });

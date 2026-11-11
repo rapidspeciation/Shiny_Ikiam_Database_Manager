@@ -18,9 +18,11 @@ import {
   letterboxCrop,
   makeHead,
   MODEL_ROLES,
-  modelReady,
-  rolesReady,
-  sameFile,
+  adoptVersions,
+  isCurrent,
+  offerFor,
+  partKey,
+  rolesStored,
   readMasks,
   roleOf,
   selectMasks,
@@ -37,11 +39,35 @@ import {
 import type { Photo } from './offlinePhoto'
 import type { FrozenStock } from './frozenStock'
 import { PUBLIC_FILES } from './publicModels'
-import { SEX_FILE, SEX_ROLES, sexInput } from './sexModel'
+import { parseCalibration, SEX_DEFAULT, SEX_FILE, SEX_ROLES, sexInput, type SexCalibration, type SexModelInfo } from './sexModel'
+import { Sha256 } from './sha256'
 
 type OrtModule = typeof Ort
-/** `url`: a public copy (Hugging Face) fetched in ranges; else the server's parts. `parts`: each part's SHA-256. */
-export interface ModelFile { name: string; bytes: number; etag: string; role: FileRole; wire?: number; encoding?: string | null; url?: string; parts?: string[] }
+/**
+ * `url`: a public copy (Hugging Face) fetched in ranges; else the server's parts. `parts`: each part's SHA-256.
+ * `version` and `sha256`: the model version offered and the whole file's SHA-256 (checked before the file is taken).
+ * `calibration`: the sex model's (lib/sexModel.ts parseCalibration).
+ */
+export interface ModelFile {
+  name: string
+  bytes: number
+  etag: string
+  role: FileRole
+  wire?: number
+  encoding?: string | null
+  url?: string
+  parts?: string[]
+  version?: string
+  sha256?: string
+  calibration?: unknown
+}
+/**
+ * What the list offers for a model against the phone (lib/offlineId.ts offerFor): `state` 'none' (not offered),
+ * 'missing' (a first download), 'update' (a newer version than the phone's), 'current'; the bytes to download (plain,
+ * on the wire) and the whole model's; the installed and the offered version of its main file (the encoder, the
+ * small model or the sex model; null: not known).
+ */
+export interface Offer { state: 'none' | 'missing' | 'update' | 'current'; plain: number; wire: number; total: number; from: string | null; to: string | null }
 export interface Stored { files: Record<string, StoredFile>; at: string }
 
 export const CACHE = 'ithomiini-prueba-offline'
@@ -55,7 +81,10 @@ export type Listing = { files: ModelFile[]; source: 'server' | 'public' } | { er
 
 /** The Hugging Face copies as a listing (no request: the list is part of the page). */
 export const publicListing = (): ModelFile[] =>
-  PUBLIC_FILES.map(f => ({ name: f.name, bytes: f.bytes, etag: `"sha256-${f.sha256}"`, role: f.role, wire: f.bytes, encoding: null, url: f.url, parts: f.parts }))
+  PUBLIC_FILES.map(f => ({ name: f.name, bytes: f.bytes, etag: `"sha256-${f.sha256}"`, role: f.role, wire: f.bytes, encoding: null, url: f.url, parts: f.parts, version: contentVersion(f.sha256), sha256: f.sha256 }))
+
+/** A file's version when its source names none: its content (the server's default too, server/offline-id.mjs). */
+export const contentVersion = (sha256: string) => `sha256-${sha256.slice(0, 12)}`
 
 async function sha256Hex(data: BufferSource): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(b => b.toString(16).padStart(2, '0')).join('')
@@ -73,12 +102,28 @@ export interface Engine {
   base: string
   list(): Promise<Listing>
   stored(): Promise<Stored | null>
+  /**
+   * Whether each model can run from what is on the phone (whatever its version: an older one works until its update
+   * is in). With a list, files kept before versions existed that are the listed bytes get their version recorded.
+   */
   ready(files: ModelFile[] | null): Promise<Record<ModelKind, boolean>>
+  /** What the list offers for a model or the sex model against what is stored (sizes and versions). */
+  offer(which: ModelKind | 'sex', files: ModelFile[], stored: Stored | null): Offer
   /** What a model still needs to download: plain bytes (space on the phone) and on the wire (mobile data). */
   toDownload(kind: ModelKind, files: ModelFile[], stored: Stored | null): { plain: number; wire: number; total: number }
+  /**
+   * Downloads what a model lacks or the newer version the list offers. Each new file is kept beside the old one,
+   * checked (each part's hash when listed, then the whole file's SHA-256), and only then replaces it in one write of
+   * stored.json: until that moment the phone keeps using the old version, and a cut or a bad file leaves it as it was.
+   * The progress reaches the total before the check (the view says «Comprobando…» then).
+   */
   download(kind: ModelKind, files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void): Promise<void>
   /** The team's sex estimate (lib/sexModel.ts): whether its files are on the phone, their size, the download. */
-  sexReady(files: ModelFile[] | null): Promise<boolean>
+  sexReady(files?: ModelFile[] | null): Promise<boolean>
+  /** The sex model on the phone: its file, version and calibration; null when there is none. */
+  sexInfo(): Promise<SexModelInfo | null>
+  /** The sex model that gave the last sexLogit (its calibration reads that score), or null. */
+  sexLoaded(): SexModelInfo | null
   sexToDownload(files: ModelFile[], stored: Stored | null): { plain: number; wire: number; total: number }
   downloadSex(files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void): Promise<void>
   /** The wing detector's 224 px square of a photo (no encoder needed). */
@@ -138,22 +183,19 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     return { files: body.files, source: 'server' }
   }
 
+  const putStored = async (cache: Cache, s: Stored) =>
+    cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+
   async function ready(files: ModelFile[] | null) {
     const s = await stored()
-    // Files kept before the lists said their part hashes: the hashes of the very version listed are added, so the
-    // model also counts as the public copy later (signed out).
+    // Files kept before versions existed (or before the lists said their part hashes) that are the very bytes listed:
+    // the version, SHA-256 and part hashes are recorded, so they count as that version (and as the public copy).
     if (s && files) {
-      let added = false
-      for (const f of files) {
-        const have = s.files[f.name]
-        if (have && f.parts?.length && !have.parts && have.etag === f.etag && have.bytes === f.bytes) {
-          have.parts = f.parts
-          added = true
-        }
-      }
-      if (added) await (await caches.open(CACHE)).put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+      const sex = sexFiles(files)
+      const listed = [...files.filter(f => f.role !== 'sex'), ...sex]
+      if (adoptVersions(s.files, listed, f => (f.role === 'sex' ? { calibration: (f as ModelFile).calibration } : {}))) await putStored(await caches.open(CACHE), s)
     }
-    return { full: modelReady('full', s?.files ?? null, files), small: modelReady('small', s?.files ?? null, files) }
+    return { full: rolesStored(MODEL_ROLES.full, s?.files ?? null), small: rolesStored(MODEL_ROLES.small, s?.files ?? null) }
   }
 
   function toDownload(kind: ModelKind, files: ModelFile[], s: Stored | null) {
@@ -162,12 +204,21 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
 
   function roleSizes(roles: FileRole[], files: ModelFile[], s: Stored | null) {
     const wanted = files.filter(f => roles.includes(f.role))
-    const need = wanted.filter(f => !sameFile(s?.files[f.name], f))
+    const need = wanted.filter(f => !isCurrent(s?.files[f.name], f))
     return {
       plain: need.reduce((a, f) => a + f.bytes, 0),
       wire: need.reduce((a, f) => a + (f.wire ?? f.bytes), 0),
       total: wanted.reduce((a, f) => a + f.bytes, 0),
     }
+  }
+
+  function offer(which: ModelKind | 'sex', files: ModelFile[], s: Stored | null): Offer {
+    const roles = which === 'sex' ? SEX_ROLES : MODEL_ROLES[which]
+    const list = which === 'sex' ? sexFiles(files) : files
+    const { state } = offerFor(roles, s?.files ?? null, list)
+    const main: FileRole = which === 'sex' ? 'sex' : ENCODER_ROLE[which]
+    const have = s && storedName(s.files, main)
+    return { state, ...roleSizes(roles, list, s), from: have ? (s.files[have].version ?? null) : null, to: list.find(f => f.role === main)?.version ?? null }
   }
 
   /** The page, its scripts and the runtime, for airplane mode (the service worker serves them from this cache). */
@@ -199,48 +250,107 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   }
 
   /**
-   * The sex model with the detector. Only the pinned file (lib/sexModel.ts SEX_FILE): a listed file with other bytes
-   * is not taken, and each part is checked against the pinned hashes.
+   * The list with only a sex model the phone can use: one with its SHA-256 (the whole file is checked against it) and
+   * a valid calibration (lib/sexModel.ts parseCalibration); model B's bytes also get its part hashes.
    */
   function sexFiles(files: ModelFile[]): ModelFile[] {
-    return files.flatMap(f => (f.role !== 'sex' ? [f] : f.name === SEX_FILE.name && f.bytes === SEX_FILE.bytes ? [{ ...f, parts: SEX_FILE.parts }] : []))
+    return files.flatMap(f => {
+      if (f.role !== 'sex') return [f]
+      if (!f.sha256 || !/^[0-9a-f]{64}$/.test(f.sha256) || !parseCalibration(f.calibration)) return []
+      return [f.sha256 === SEX_FILE.sha256 && f.bytes === SEX_FILE.bytes && !f.parts ? { ...f, parts: SEX_FILE.parts } : f]
+    })
+  }
+
+  /** Every cached part of a file (any slot). */
+  async function partsOf(cache: Cache, name: string): Promise<Request[]> {
+    const path = new URL(at(`models/${name}`)).pathname
+    return (await cache.keys()).filter(r => {
+      const u = new URL(r.url)
+      return u.pathname === path && u.searchParams.has('part')
+    })
+  }
+
+  /** Removes a file's parts: all, or all but those of the slot kept (`keep.slot` undefined: the plain keys). */
+  async function dropParts(cache: Cache, name: string, keep?: { slot?: string }) {
+    for (const r of await partsOf(cache, name)) {
+      if (keep && (new URL(r.url).searchParams.get('v') ?? undefined) === keep.slot) continue
+      await cache.delete(r)
+    }
+  }
+
+  /** Whether every part of a stored file is in the cache with its length. */
+  async function complete(cache: Cache, name: string, f: StoredFile) {
+    for (let i = 0; i * PART < f.bytes; i++) {
+      const have = await cache.match(at(partKey(name, i, f.slot)))
+      if (!have || Number(have.headers.get('x-bytes')) !== Math.min(f.bytes, (i + 1) * PART) - i * PART) return false
+    }
+    return true
+  }
+
+  /** The SHA-256 of a file as stored (its parts read one at a time); '' when a part is missing. */
+  async function storedSha256(cache: Cache, name: string, bytes: number, slot?: string) {
+    const h = new Sha256()
+    for (let i = 0; i * PART < bytes; i++) {
+      const r = await cache.match(at(partKey(name, i, slot)))
+      if (!r) return ''
+      h.update(new Uint8Array(await r.arrayBuffer()))
+    }
+    return h.hex()
+  }
+
+  /** A session no longer the current version: dropped now, released a little later (a photo may still be running). */
+  const retire = (x: Ort.InferenceSession | null | undefined) => x && setTimeout(() => x.release().catch(() => {}), 60_000)
+  function forgetLoaded(roles: FileRole[]) {
+    if (roles.includes('detector')) {
+      retire(detector)
+      detector = null
+      detectorOnGpu = false
+    }
+    for (const k of KINDS)
+      if (roles.includes(ENCODER_ROLE[k])) {
+        retire(encoders[k])
+        delete encoders[k]
+      }
+    if (roles.includes('head') || roles.includes('head-meta')) headLoaded = null
+    if (roles.includes('sex')) {
+      retire(sexSession)
+      sexSession = null
+      sexSessionInfo = null
+    }
   }
 
   async function downloadRoles(roles: FileRole[], files: ModelFile[], progress: (done: number, total: number, retrying?: string) => void) {
     const wanted = files.filter(f => roles.includes(f.role))
     if (wanted.length !== roles.length) throw new Error('missing-on-server')
     const cache = await caches.open(CACHE)
-    if (roles.includes('head')) headLoaded = null // read again: its JSON may be a new one
     await keepPage(cache)
     if (signedIn()) await refreshStock()
-    const total = wanted.reduce((a, f) => a + f.bytes, 0)
-    let done = 0
-    // The other model's files stay; files the server no longer lists go, with their parts.
     const before = await stored()
-    const keep: Stored = { files: {}, at: new Date().toISOString() }
-    for (const [name, f] of Object.entries(before?.files ?? {})) {
-      if (files.some(l => l.name === name)) keep.files[name] = { ...f, role: roleOf(name, f.role) }
-      else for (let i = 0; i * PART < f.bytes; i++) await cache.delete(at(`models/${name}?part=${i}`))
-    }
+    // The files whose listed version is on the phone already (perhaps from the other source: the same bytes): kept
+    // as they are, and not counted in the progress (its total is what this download fetches).
+    const have = new Set<string>()
+    for (const f of wanted) if (isCurrent(before?.files[f.name], f) && (await complete(cache, f.name, before!.files[f.name]))) have.add(f.name)
+    const total = wanted.filter(f => !have.has(f.name)).reduce((a, f) => a + f.bytes, 0)
+    let done = 0
+    // The new files, written to stored.json at the end only: until then the old versions are what the phone uses.
+    const fresh: Record<string, StoredFile> = {}
+    const label = (f: ModelFile): Partial<StoredFile> => ({
+      ...(f.version ? { version: f.version } : {}),
+      ...(f.sha256 ? { sha256: f.sha256 } : {}),
+      ...(f.role === 'sex' && f.calibration ? { calibration: f.calibration } : {}),
+    })
     for (const f of wanted) {
-      const parts = Math.ceil(f.bytes / PART)
-      // Already kept from the other source (the same bytes): every part there, nothing to download.
       const old = before?.files[f.name]
-      if (old && old.etag !== f.etag && sameFile(old, f)) {
-        let all = true
-        for (let i = 0; i < parts && all; i++) {
-          const have = await cache.match(at(`models/${f.name}?part=${i}`))
-          all = !!have && have.headers.get('x-etag') === old.etag && Number(have.headers.get('x-bytes')) === Math.min(f.bytes, (i + 1) * PART) - i * PART
-        }
-        if (all) {
-          keep.files[f.name] = { ...old, role: f.role, parts: f.parts ?? old.parts }
-          done += f.bytes
-          progress(done, total)
-          continue
-        }
+      const current = isCurrent(old, f)
+      if (have.has(f.name)) {
+        fresh[f.name] = { ...old!, role: f.role, ...(f.parts && !old!.parts ? { parts: f.parts } : {}), ...label(f) }
+        continue
       }
+      // Another version under the same name: the new one gets its own keys, so the old one stays whole until the swap.
+      const slot = old && !current ? newSlot(f, old) : old?.slot
+      const parts = Math.ceil(f.bytes / PART)
       for (let i = 0; i < parts; i++) {
-        const key = at(`models/${f.name}?part=${i}`)
+        const key = at(partKey(f.name, i, slot))
         const start = i * PART, end = Math.min(f.bytes, start + PART) - 1
         const have = await cache.match(key)
         if (have && have.headers.get('x-etag') === f.etag && Number(have.headers.get('x-bytes')) === end - start + 1) {
@@ -265,7 +375,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
                 throw Object.assign(new Error('changed-on-server'), { final: true })
               }
             } else {
-              r = await fetch(key, { credentials: 'same-origin', cache: 'no-store' })
+              r = await fetch(at(partKey(f.name, i)), { credentials: 'same-origin', cache: 'no-store' })
               if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
               // The part's ETag is the listed file's: a model changed since the list is not mixed in.
               if (r.headers.get('etag') !== `W/${f.etag.slice(0, -1)}-p${i}"` || Number(r.headers.get('x-part-bytes')) !== end - start + 1) {
@@ -298,12 +408,32 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
         }
         await cache.put(key, new Response(new Blob(chunks as BlobPart[]), { headers: { 'x-etag': f.etag, 'x-bytes': String(end - start + 1) } }))
       }
-      keep.files[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.parts ? { parts: f.parts } : {}) }
+      // The whole file against the listed SHA-256 before it may replace anything; a bad copy is thrown away.
+      if (f.sha256 && (await storedSha256(cache, f.name, f.bytes, slot)) !== f.sha256) {
+        await dropParts(cache, f.name, old && old.slot !== slot ? { slot: old.slot } : undefined)
+        throw Object.assign(new Error('corrupt'), { final: true })
+      }
+      fresh[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.parts ? { parts: f.parts } : {}), ...(slot ? { slot } : {}), ...label(f) }
     }
-    // Another download may have finished meanwhile (the sex model beside an identifier model): its listed files stay.
-    for (const [name, f] of Object.entries((await stored())?.files ?? {}))
-      if (!keep.files[name] && !roles.includes(roleOf(name, f.role)) && files.some(l => l.name === name)) keep.files[name] = f
-    await cache.put(at('models/stored.json'), new Response(JSON.stringify(keep), { headers: { 'content-type': 'application/json' } }))
+    // The swap, one write of stored.json. Read again: another download (the sex model beside an identifier model)
+    // may have finished meanwhile, and its files stay. The roles downloaded here now name the new files.
+    const latest = (await stored())?.files ?? {}
+    const next: Stored = { files: {}, at: new Date().toISOString() }
+    for (const [name, f] of Object.entries(latest)) if (!roles.includes(roleOf(name, f.role))) next.files[name] = { ...f, role: roleOf(name, f.role) }
+    Object.assign(next.files, fresh)
+    await putStored(cache, next)
+    forgetLoaded(roles)
+    // Then the old versions' parts go: a replaced file entirely, a file kept under its name its other slots.
+    const names = new Set([...Object.keys(latest).filter(n => roles.includes(roleOf(n, latest[n].role))), ...Object.keys(fresh)])
+    for (const name of names) await dropParts(cache, name, fresh[name] ? { slot: fresh[name].slot } : undefined)
+  }
+
+  /** The keys of a new version of a stored file: from its SHA-256 (or ETag), never the old one's. */
+  function newSlot(f: ModelFile, old: StoredFile) {
+    // FNV-1a of the ETag when the list gives no SHA-256.
+    const fnv = () => [...f.etag].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261).toString(16)
+    const base = f.sha256 ? f.sha256.slice(0, 16) : `e${fnv()}`
+    return base === old.slot ? `${base}b` : base
   }
 
   async function readModel(name: string): Promise<Uint8Array> {
@@ -313,7 +443,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const cache = await caches.open(CACHE)
     const out = new Uint8Array(f.bytes)
     for (let i = 0, off = 0; off < f.bytes; i++) {
-      const r = await cache.match(at(`models/${name}?part=${i}`))
+      const r = await cache.match(at(partKey(name, i, f.slot)))
       if (!r) throw new Error('not-downloaded')
       const part = new Uint8Array(await r.arrayBuffer())
       out.set(part, off)
@@ -455,12 +585,28 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   // ---------------------------------------------------------------- the sex estimate (team only, lib/sexModel.ts)
 
   let sexSession: Ort.InferenceSession | null = null
+  let sexSessionInfo: SexModelInfo | null = null
 
-  async function sexReady(files: ModelFile[] | null) {
+  /**
+   * A stored sex file's calibration: the one kept with it; a copy kept before calibrations were stored is model B
+   * (the only one shipped then: lib/sexModel.ts SEX_DEFAULT). Any other file without one: null (not usable).
+   */
+  function calibrationOf(f: StoredFile): SexCalibration | null {
+    return parseCalibration(f.calibration) ?? (!f.sha256 || f.sha256 === SEX_FILE.sha256 ? SEX_DEFAULT : null)
+  }
+
+  async function sexInfo(): Promise<SexModelInfo | null> {
     const s = await stored()
-    // Offline (no list): the pinned file by its name.
-    if (!files) return !!s && storedName(s.files, 'sex') === SEX_FILE.name && storedName(s.files, 'detector') != null
-    return rolesReady(SEX_ROLES, s?.files ?? null, sexFiles(files))
+    const name = s && storedName(s.files, 'sex')
+    if (!name) return null
+    const f = s.files[name], calibration = calibrationOf(f)
+    return calibration ? { name, bytes: f.bytes, version: f.version ?? null, sha256: f.sha256 ?? null, calibration } : null
+  }
+
+  /** The detector and a usable sex model on the phone, whatever its version (an older one works until its update is in). */
+  async function sexReady() {
+    const s = await stored()
+    return rolesStored(SEX_ROLES, s?.files ?? null) && !!(await sexInfo())
   }
 
   async function square(photo: Photo) {
@@ -472,12 +618,13 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
 
   async function sexLogit(sq: Uint8Array): Promise<number> {
     if (!sexSession) {
-      const s = await stored()
-      if (!s || storedName(s.files, 'sex') !== SEX_FILE.name) throw new Error('not-downloaded')
+      const info = await sexInfo()
+      if (!info) throw new Error('not-downloaded')
       ort ??= await importOrt(ORT_FILES[0])
       ort.env.wasm.numThreads = threads
       const t = performance.now()
-      sexSession = await ort.InferenceSession.create(await readModel(SEX_FILE.name), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      sexSession = await ort.InferenceSession.create(await readModel(info.name), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+      sexSessionInfo = info
       lastMs.sex_load = Math.round(performance.now() - t)
     }
     const t = performance.now()
@@ -489,17 +636,15 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   async function forgetSex() {
     sexSession?.release().catch(() => {})
     sexSession = null
+    sexSessionInfo = null
     const cache = await caches.open(CACHE)
     const s = await stored()
     if (!s) return
-    let changed = false
-    for (const [name, f] of Object.entries(s.files)) {
-      if (roleOf(name, f.role) !== 'sex') continue
-      for (let i = 0; i * PART < f.bytes; i++) await cache.delete(at(`models/${name}?part=${i}`))
-      delete s.files[name]
-      changed = true
-    }
-    if (changed) await cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+    const names = Object.keys(s.files).filter(name => roleOf(name, s.files[name].role) === 'sex')
+    for (const name of names) delete s.files[name]
+    if (names.length) await putStored(cache, s)
+    // Its parts after stored.json no longer names them, every slot (a half-downloaded update too).
+    for (const name of names) await dropParts(cache, name)
   }
 
   async function removeModel(kind: ModelKind) {
@@ -510,10 +655,11 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const otherKept = MODEL_ROLES[other].every(has)
     const keepRoles = new Set<FileRole>([...(otherKept ? MODEL_ROLES[other] : []), ...(has('sex') ? SEX_ROLES : [])])
     const cache = await caches.open(CACHE)
+    const gone: string[] = []
     for (const [name, f] of Object.entries(s.files)) {
       const role = roleOf(name, f.role)
       if (!MODEL_ROLES[kind].includes(role) || keepRoles.has(role)) continue
-      for (let i = 0; i * PART < f.bytes; i++) await cache.delete(at(`models/${name}?part=${i}`))
+      gone.push(name)
       delete s.files[name]
       if (role === 'detector') {
         detector?.release().catch(() => {})
@@ -523,7 +669,8 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     }
     encoders[kind]?.release().catch(() => {})
     delete encoders[kind]
-    await cache.put(at('models/stored.json'), new Response(JSON.stringify(s), { headers: { 'content-type': 'application/json' } }))
+    await putStored(cache, s)
+    for (const name of gone) await dropParts(cache, name)
   }
 
   async function remove() {
@@ -578,9 +725,12 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     list,
     stored,
     ready,
+    offer,
     toDownload,
     download,
     sexReady,
+    sexInfo,
+    sexLoaded: () => sexSessionInfo,
     sexToDownload: (files, s) => roleSizes(SEX_ROLES, sexFiles(files), s),
     downloadSex: (files, progress) => downloadRoles(SEX_ROLES, sexFiles(files), progress),
     square,
