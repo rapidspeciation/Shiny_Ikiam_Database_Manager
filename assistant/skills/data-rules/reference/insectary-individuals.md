@@ -233,11 +233,8 @@ after the ID written just before it on that page, which can be far from the
 first use. Point a new duplicate out to the person, with the row it goes
 after.
 
-The app's account cannot insert rows in Insectary_data (protected columns
-reach every row). A curator (PAS) inserts the repeat's row by hand in Google
-Sheets, where it goes; then its data are filled with a normal proposal on
-that row. Renaming an ID with a suffix (`W0B` → `W0B.1`) is a cell edit and
-works from the app.
+Renaming an ID with a suffix (`W0B` → `W0B.1`) is a cell edit the app can
+make.
 
 How it has happened:
 
