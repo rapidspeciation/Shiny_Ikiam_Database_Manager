@@ -753,7 +753,7 @@ packs.loadInstalled()
 const firstPack = computed(() => {
   if (!packs.index.value || packs.pack.value || packs.autoDone()) return null
   const z = scopeSize(packs.index.value, packs.scope.value)
-  return z.photos ? { n: z.photos.toLocaleString(), mb: mbText(z.bytes) } : null
+  return z.photos - z.missing ? { n: (z.photos - z.missing).toLocaleString(), mb: mbText(z.bytes - z.missingBytes) } : null
 })
 // The first screen needs the list for that line (and its size); elsewhere it is read where it is used.
 watch(

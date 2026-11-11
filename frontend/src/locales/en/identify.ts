@@ -203,7 +203,6 @@ export default {
   'en uso': 'in use',
   '{mb} MB en el teléfono': '{mb} MB on the phone',
   'Actualizar · {mb} MB': 'Update · {mb} MB',
-  'Experimental, solo fotos en mano. Solo para el equipo.': 'Experimental, in-hand photos only. For the team only.',
   '{n} fotos · {mb} MB': '{n} photos · {mb} MB',
   '{n} foto · {mb} MB': '{n} photo · {mb} MB',
   Neotrópico: 'Neotropics',
@@ -257,4 +256,8 @@ export default {
   '{n} de {total} fotos no se descargaron: siguen las fotos de antes.': '{n} of {total} photos did not download: the photos from before stay.',
   'No se descargaron las fotos.': 'The photos did not download.',
   'En Descargas: {taxa} · Neotrópico, {mb} MB': 'In Downloads: {taxa} · Neotropics, {mb} MB',
+  // Full photo list (11 Nov 2026).
+  'Estas fotos aún no están en el servidor.': 'These photos are not on the server yet.',
+  '{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.': '{n} of these photos are not on the server yet (≈ {mb} MB): the rest is saved.',
+  'Experimental, fotos en mano de 13 géneros de Ithomiini. Solo para el equipo.': 'Experimental, in-hand photos of 13 Ithomiini genera. Team only.',
 }

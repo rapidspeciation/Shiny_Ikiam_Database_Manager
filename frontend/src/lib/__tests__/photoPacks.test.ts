@@ -88,8 +88,8 @@ describe('pack list and scope', () => {
 
   it('sizes each scope x region, a shared file once', async () => {
     const { scopeSize, TAXA_SCOPES } = await import('../photoPacks')
-    expect(scopeSize(index, { taxa: 'ithomiini', region: 'neotropics', ssp: false })).toEqual({ photos: 2, bytes: 3000 })
-    expect(scopeSize(index, { taxa: 'ithomiini', region: ['EC'], ssp: true })).toEqual({ photos: 3, bytes: 3400 })
+    expect(scopeSize(index, { taxa: 'ithomiini', region: 'neotropics', ssp: false })).toMatchObject({ photos: 2, bytes: 3000 })
+    expect(scopeSize(index, { taxa: 'ithomiini', region: ['EC'], ssp: true })).toMatchObject({ photos: 3, bytes: 3400 })
     const ec = TAXA_SCOPES.map(taxa => scopeSize(index, { taxa, region: ['EC'], ssp: true }))
     expect(ec.map(s => s.photos)).toEqual([3, 4, 4, 5])
     expect(ec.map(s => s.bytes)).toEqual([3400, 8400, 8400, 16400])
@@ -100,10 +100,20 @@ describe('pack list and scope', () => {
     }
   })
 
+  it('counts photos listed but not on the server in sizes (estimated), never in a save', async () => {
+    const { installPack, scopeSize } = await import('../photoPacks')
+    const withMissing: PackIndex = { ...index, taxa: [...index.taxa, { ...tx('Urania fulgens', 'moth', ['EC'], 'u.webp', 500, 'Uraniidae'), photo: { ...tx('x', 'moth', [], 'u.webp').photo!, missing: true } }] }
+    expect(scopeSize(withMissing, { taxa: 'all', region: ['EC'], ssp: false })).toEqual({ photos: 5, bytes: 16500, missing: 1, missingBytes: 500 })
+    fakeCaches()
+    const out = await installPack(withMissing, { taxa: 'all', region: ['EC'], ssp: false }, () => {})
+    expect(out).toMatchObject({ kept: false, failed: 0, total: 4 })
+    expect(fetched.some(u => u.endsWith('u.webp'))).toBe(false)
+  })
+
   it('reads a stored scope back safely, Ecuador by default', async () => {
     const { cleanScope, packScope, setPackScope, DEFAULT_PACK } = await import('../photoPacks')
     expect(packScope()).toEqual(DEFAULT_PACK)
-    expect(DEFAULT_PACK.region).toEqual(['EC'])
+    expect(DEFAULT_PACK).toEqual({ taxa: 'all', region: ['EC'], ssp: true })
     setPackScope({ taxa: 'all', region: ['CO', 'EC'], ssp: false })
     expect(packScope()).toEqual({ taxa: 'all', region: ['CO', 'EC'], ssp: false })
     expect(cleanScope({ taxa: 'x', region: ['ecuador'], ssp: 'yes' })).toEqual(DEFAULT_PACK)

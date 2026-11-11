@@ -27,6 +27,11 @@ export interface PackPhoto {
   taxonUrl: string | null
   /** The photo's own page (iNaturalist), for its credit. */
   source: string | null
+  /**
+   * Listed but not on this server yet (the builder made only some regions' photos, scripts/photo-packs.py --cell):
+   * counted in sizes with `bytes` estimated, never saved or shown.
+   */
+  missing?: boolean
 }
 export interface PackTaxon {
   name: string
@@ -73,7 +78,8 @@ export interface PackScope {
   /** Also the subspecies' photos (a species' photo always comes). */
   ssp: boolean
 }
-export const DEFAULT_PACK: PackScope = { taxa: 'ithomiini', region: ['EC'], ssp: true }
+/** Ecuador, butterflies and moths, with subspecies (Franz, 11 Nov 2026): a moth like Urania leilus has its photo. */
+export const DEFAULT_PACK: PackScope = { taxa: 'all', region: ['EC'], ssp: true }
 
 export const INDEX_URL = () => new URL('identificar/packs/index.json', appRoot()).href
 /** Where the phone keeps the installed pack's list (not a file on the server). */
@@ -113,17 +119,40 @@ export function setPackScope(scope: PackScope) {
 }
 
 /** The entries of a list a scope takes (with a photo). */
-export function packTaxa(index: Pick<PackIndex, 'taxa'>, scope: PackScope): PackTaxon[] {
+/** The entries of a list a scope takes: with a photo on the server (`withMissing`: also those listed but not made). */
+export function packTaxa(index: Pick<PackIndex, 'taxa'>, scope: PackScope, { withMissing = false } = {}): PackTaxon[] {
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
   const region = scope.region === 'neotropics' ? null : new Set(scope.region)
-  return index.taxa.filter(t => t.photo && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (!region || t.countries.some(c => region.has(c))))
+  return index.taxa.filter(
+    t => t.photo && (withMissing || !t.photo.missing) && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (!region || t.countries.some(c => region.has(c))),
+  )
+}
+export interface Size {
+  /** Every photo of the choice (each file once) and its bytes: real, or estimated for those not on the server. */
+  photos: number
+  bytes: number
+  /** Of those, the ones not on the server yet. */
+  missing: number
+  missingBytes: number
 }
 /** Photos and bytes of entries, each file once (a few taxa share a photo). */
-export function packSize(entries: PackTaxon[]): { photos: number; bytes: number } {
-  const files = new Map(entries.filter(e => e.photo).map(e => [e.photo!.file, e.bytes]))
-  return { photos: files.size, bytes: [...files.values()].reduce((a, b) => a + b, 0) }
+export function packSize(entries: PackTaxon[]): Size {
+  const files = new Map<string, [number, boolean]>()
+  for (const e of entries) if (e.photo) files.set(e.photo.file, [e.bytes, !!e.photo.missing])
+  let bytes = 0,
+    missing = 0,
+    missingBytes = 0
+  for (const [b, m] of files.values()) {
+    bytes += b
+    if (m) {
+      missing++
+      missingBytes += b
+    }
+  }
+  return { photos: files.size, bytes, missing, missingBytes }
 }
-export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packTaxa(index, scope))
+/** A choice's size, the photos not on the server yet included (estimated) and counted apart. */
+export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packTaxa(index, scope, { withMissing: true }))
 
 /** Each country's size for a scope's taxa and subspecies choice, in one pass over the list (the country picker). */
 export function countrySizes(index: Pick<PackIndex, 'taxa'>, scope: Pick<PackScope, 'taxa' | 'ssp'>): Map<string, { photos: number; bytes: number }> {
@@ -340,7 +369,7 @@ export function lookup(index: PackIndex, indexUrl: string): PackLookup {
   return { byName, sspOf, src: t => photoSrc(index, indexUrl, t.photo!.file) }
 }
 export const taxonPhoto = (l: PackLookup, t: PackTaxon): TaxonPhoto | null =>
-  t.photo ? { name: t.name, rank: t.rank, src: l.src(t), attribution: t.photo.attribution, license: t.photo.license, source: t.photo.source, taxonUrl: t.photo.taxonUrl } : null
+  t.photo && !t.photo.missing ? { name: t.name, rank: t.rank, src: l.src(t), attribution: t.photo.attribution, license: t.photo.license, source: t.photo.source, taxonUrl: t.photo.taxonUrl } : null
 /** A species' photo then its subspecies' photos (those the list has a photo of). */
 export function speciesPhotos(l: PackLookup, species: string): TaxonPhoto[] {
   const own = l.byName.get(species)

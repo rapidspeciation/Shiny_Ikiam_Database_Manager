@@ -18,15 +18,19 @@ From the Ithomiini «Fotos para el campo» set (scripts/field-photos.py), its ph
 From the per-taxon list (the offline-packs research's taxa.json: name, rank, species, genus, family, group, countries,
 photo {url, inatPhotoId, attribution, license, taxonUrl, source}, bytes), its photos made here as mobile WebP:
 
-  python3 -I scripts/photo-packs.py taxa --taxa taxa.json --out <PACKS_DIR> --cache <dir> \
-      [--size 480] [--quality 70] [--regions EC,CO] [--sample "note"] [--limit N]
+  python3 -I scripts/photo-packs.py taxa --taxa taxa.json --out <PACKS_DIR> \
+      [--cell EC:all --cell NT:butterflies] [--size 400] [--quality 60] [--workers 3] [--pause 0.4] [--limit N]
 
-  Each photo is fetched once into --cache (a local path in `url` is read as it is), resized to --size px on its long
-  side and written as photos/<inatPhotoId>-<sha256 of the WebP, 8 hex>.webp: a changed photo gets a new name, so a
-  phone never keeps old bytes under a name the list gives (the page also checks each kept photo's size against
-  `bytes`). --regions builds only the taxa recorded in those countries (a lab sample; --sample says so in the page);
-  the others stay listed without a photo. Files of earlier builds that the list no longer names are left for the
-  caller to remove (printed). Network: the photo hosts in `url` (about 3 requests a second).
+  --cell REGION:SCOPE chooses the photos made on this server (REGION an ISO2 code, codes joined by +, or NT for any
+  Neotropical country; SCOPE ithomiini, nymphalidae, butterflies or all, each taking the groups before it); default
+  NT:all. Each photo (taxa.json's iNaturalist «medium» URL, or a local path) is fetched once, resized to --size px on
+  its long side (Lanczos) and written as photos/<inatPhotoId>-<sha256 of the WebP, 8 hex>.webp at --quality (method
+  6): a changed photo gets a new name, so a phone never keeps old bytes under a name the list gives (the page also
+  checks each kept photo's size against `bytes`). Resumable: a photo already in photos/ is not fetched again.
+  Photos outside the cells stay in the list with `missing: true` and a size estimated from the made photos of their
+  group; the page says how many of a choice are not on the server yet and saves the rest. Files the list no longer
+  names are printed, for the caller to remove. Network: the photo host in `url` (--workers at once, each waiting
+  --pause s after a download), with a User-Agent that names the tool only.
 """
 import argparse
 import gzip
@@ -60,7 +64,7 @@ def check(taxa):
         if t["photo"]:
             for k in ("file", "attribution", "license", "taxonUrl", "source"):
                 assert k in t["photo"], (k, t)
-            assert t["bytes"] > 0, t
+            assert t["bytes"] > 0 or t["photo"].get("missing"), t
 
 
 def write(out, taxa, base, source, sample=None):
@@ -79,7 +83,7 @@ def write(out, taxa, base, source, sample=None):
     with open(path, "rb") as f, open(path + ".gz.part", "wb") as g:
         g.write(gzip.compress(f.read(), compresslevel=9, mtime=0))
     os.replace(path + ".gz.part", path + ".gz")
-    with_photo = [t for t in taxa if t["photo"]]
+    with_photo = [t for t in taxa if t["photo"] and not t["photo"].get("missing")]
     by_group = {g: sum(1 for t in with_photo if t["group"] == g) for g in GROUPS}
     print(f"{path}: {len(taxa)} taxa, {len(with_photo)} with a photo, {sum(t['bytes'] for t in with_photo) / 1048576:.1f} MB; by group {by_group}; version {index['version']}; index {os.path.getsize(path) / 1024:.0f} KB")
 
@@ -110,77 +114,131 @@ def from_field(a):
     write(a.out, taxa, rel, field.get("source") or "iNaturalist photos under Creative Commons licences", sample="ithomiini-only")
 
 
+SCOPE_GROUPS = {
+    "ithomiini": {"ithomiini"},
+    "nymphalidae": {"ithomiini", "nymphalidae"},
+    "butterflies": {"ithomiini", "nymphalidae", "butterfly"},
+    "all": {"ithomiini", "nymphalidae", "butterfly", "moth"},
+}
+
+
 def taxa_mode(a):
-    from io import BytesIO
+    """The list from taxa.json; the photos of the --cell choices made as WebP in <out>/photos/ (others: `missing`)."""
+    import concurrent.futures
+    import threading
     import urllib.request
+    from io import BytesIO
     from PIL import Image, ImageOps
 
     src = json.load(open(a.taxa, encoding="utf-8"))
     if isinstance(src, dict):
         src = src.get("taxa", [])
-    regions = set(a.regions.split(",")) if a.regions else None
+    cells = []
+    for c in a.cell or ["NT:all"]:
+        region, _, scope = c.partition(":")
+        assert scope in SCOPE_GROUPS, f"--cell REGION:SCOPE, scope one of {sorted(SCOPE_GROUPS)}: {c}"
+        cells.append((None if region == "NT" else set(region.split("+")), SCOPE_GROUPS[scope]))
+
+    def wanted(e):
+        cs = set(e.get("countries") or [])
+        return any(e["group"] in groups and cs and (region is None or region & cs) for region, groups in cells)
+
     photos_dir = os.path.join(a.out, "photos")
     os.makedirs(photos_dir, exist_ok=True)
-    os.makedirs(a.cache, exist_ok=True)
-    ua = {"User-Agent": "ithomiini-photo-packs/1.0"}
+    # Resumable: a photo already made (photos/<id>-<hash>.webp) is not fetched again.
+    have = {}
+    for f in os.listdir(photos_dir):
+        if f.endswith(".webp"):
+            have[f.split("-")[0]] = f
+    ua = {"User-Agent": "ithomiini-photo-packs/1.0 (offline field guide; one request per photo)"}
+    lock = threading.Lock()
+    stats = {"made": 0, "kept": 0, "failed": 0}
 
-    def original(url, pid):
+    def make(pid, url):
+        if pid in have:
+            with lock:
+                stats["kept"] += 1
+            return have[pid]
         if os.path.exists(url):
-            return open(url, "rb").read()
-        path = os.path.join(a.cache, f"{pid}.orig")
-        if not os.path.exists(path):
+            body = open(url, "rb").read()
+        else:
+            body = None
             for attempt in range(4):
                 try:
                     with urllib.request.urlopen(urllib.request.Request(url, headers=ua), timeout=60) as r:
                         body = r.read()
                     break
-                except Exception:  # noqa: BLE001 - retried, then skipped
-                    if attempt == 3:
-                        return None
-                    time.sleep(5 * (attempt + 1))
-            with open(path + ".part", "wb") as f:
-                f.write(body)
-            os.replace(path + ".part", path)
-            time.sleep(0.3)
-        return open(path, "rb").read()
+                except Exception:  # noqa: BLE001 - retried, then counted as failed
+                    time.sleep(3 * (attempt + 1))
+            time.sleep(a.pause)
+            if body is None:
+                with lock:
+                    stats["failed"] += 1
+                return None
+        try:
+            im = ImageOps.exif_transpose(Image.open(BytesIO(body))).convert("RGB")
+        except Exception:  # noqa: BLE001 - not an image
+            with lock:
+                stats["failed"] += 1
+            return None
+        im.thumbnail((a.size, a.size), Image.LANCZOS)
+        buf = BytesIO()
+        im.save(buf, "WEBP", quality=a.quality, method=6)
+        webp = buf.getvalue()
+        name = f"{pid}-{hashlib.sha256(webp).hexdigest()[:8]}.webp"
+        path = os.path.join(photos_dir, name)
+        with open(path + ".part", "wb") as f:
+            f.write(webp)
+        os.replace(path + ".part", path)
+        with lock:
+            stats["made"] += 1
+            have[pid] = name
+            done = stats["made"] + stats["kept"] + stats["failed"]
+            if done % 250 == 0:
+                print(f"  {done} photos ({stats})", flush=True)
+        return name
 
-    out, made, skipped, failed = [], set(), 0, 0
+    todo = {}
     for e in src:
-        ph = e.get("photo") or None
-        entry = {k: e[k] for k in ("name", "rank", "species", "genus", "family", "group")}
-        entry["countries"] = sorted(set(e.get("countries") or []))
-        entry["photo"], entry["bytes"] = None, 0
-        take = ph and ph.get("url") and (not regions or regions & set(entry["countries"]))
-        if take and (a.limit is None or len(made) < a.limit):
+        ph = e.get("photo")
+        if ph and ph.get("url") and wanted(e):
             pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
-            body = original(ph["url"], pid)
-            if body:
-                im = ImageOps.exif_transpose(Image.open(BytesIO(body))).convert("RGB")
-                im.thumbnail((a.size, a.size))
-                buf = BytesIO()
-                im.save(buf, "WEBP", quality=a.quality, method=6)
-                webp = buf.getvalue()
-                name = f"{pid}-{hashlib.sha256(webp).hexdigest()[:8]}.webp"
-                path = os.path.join(photos_dir, name)
-                if not os.path.exists(path):
-                    with open(path + ".part", "wb") as f:
-                        f.write(webp)
-                    os.replace(path + ".part", path)
-                made.add(name)
-                entry["photo"] = {"file": name, "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
-                                  "taxonUrl": ph.get("taxonUrl"), "source": ph.get("source")}
-                entry["bytes"] = len(webp)
+            todo.setdefault(pid, ph["url"])
+    if a.limit is not None:
+        todo = dict(list(todo.items())[: a.limit])
+    print(f"{len(todo)} photos to have ({len([p for p in todo if p in have])} already made)", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
+        made = dict(zip(todo, pool.map(lambda kv: make(*kv), todo.items())))
+
+    out, by_group = [], {}
+    for e in src:
+        parts = e["name"].split()
+        ph = e.get("photo") or None
+        entry = {"name": e["name"], "rank": e["rank"], "species": e.get("species") or " ".join(parts[:2]), "genus": e.get("genus") or parts[0],
+                 "family": e.get("family") or "", "group": e["group"], "countries": sorted(set(e.get("countries") or [])), "photo": None, "bytes": 0}
+        if ph and ph.get("url"):
+            pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
+            file = made.get(pid) or have.get(pid)
+            entry["photo"] = {"file": file or f"{pid}.webp", "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
+                              "taxonUrl": ph.get("taxonUrl"), "source": ph.get("source")}
+            if file:
+                entry["bytes"] = os.path.getsize(os.path.join(photos_dir, file))
+                by_group.setdefault(e["group"], []).append(entry["bytes"])
             else:
-                failed += 1
-        elif ph:
-            skipped += 1
+                # Not made on this server (outside the --cell choices, or not fetched): listed, with its size estimated
+                # from the photos made of its group; the page says so and does not ask for it.
+                entry["photo"]["missing"] = True
         out.append(entry)
-    stale = sorted(set(os.listdir(photos_dir)) - made)
-    print(f"photos made or kept: {len(made)}; not fetched: {failed}; outside --regions/--limit: {skipped}; files no longer named: {len(stale)}")
+    mean = {g: round(sum(v) / len(v)) for g, v in by_group.items() if v}
+    fallback = round(sum(sum(v) for v in by_group.values()) / max(1, sum(len(v) for v in by_group.values())))
+    for entry in out:
+        if entry["photo"] and entry["photo"].get("missing"):
+            entry["bytes"] = mean.get(entry["group"], fallback)
+    print(f"photos: {stats}; mean bytes by group {mean}", flush=True)
+    stale = sorted(set(os.listdir(photos_dir)) - {f for f in made.values() if f} - set(have.values()))
     for f in stale[:20]:
-        print("  stale:", os.path.join(photos_dir, f))
-    # A lab sample of some regions says so in the page («Por ahora hay fotos solo de …»).
-    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences", sample=a.sample or (f"regions:{a.regions}" if a.regions else None))
+        print("  not named by the list:", os.path.join(photos_dir, f))
+    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences (taxon photos; 400 px WebP)", sample=a.sample)
 
 
 def main():
@@ -193,10 +251,11 @@ def main():
     tx = sub.add_parser("taxa", help="the list and its WebP photos from the per-taxon taxa.json")
     tx.add_argument("--taxa", required=True)
     tx.add_argument("--out", required=True)
-    tx.add_argument("--cache", required=True)
-    tx.add_argument("--size", type=int, default=480)
-    tx.add_argument("--quality", type=int, default=70)
-    tx.add_argument("--regions")
+    tx.add_argument("--cell", action="append", help="REGION:SCOPE to make photos of, REGION an ISO2 (EC, EC+CO) or NT (any Neotropical country)")
+    tx.add_argument("--size", type=int, default=400)
+    tx.add_argument("--quality", type=int, default=60)
+    tx.add_argument("--workers", type=int, default=3)
+    tx.add_argument("--pause", type=float, default=0.4, help="seconds each worker waits after a download")
     tx.add_argument("--sample")
     tx.add_argument("--limit", type=int)
     a = ap.parse_args()

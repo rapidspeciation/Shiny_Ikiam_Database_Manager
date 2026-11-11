@@ -30,8 +30,9 @@ const countries = computed(() => (index.value ? packCountries(index.value, count
 
 const size = (s: PackScope) => (index.value ? scopeSize(index.value, s) : null)
 // A number stays with its unit when the line wraps («439 fotos ·» / «12 MB», never «12» / «MB»).
-const zText = (z: { photos: number; bytes: number } | null | undefined) =>
-  z ? tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
+// «≈» when part of it is estimated (photos listed but not on this server yet).
+const zText = (z: { photos: number; bytes: number; missing?: number } | null | undefined) =>
+  z ? (z.missing ? '≈\u00a0' : '') + tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
 const sizeText = (s: PackScope) => zText(size(s))
 const EC: Region = ['EC']
 const isEc = computed(() => sameRegion(scope.value.region, EC))
@@ -201,12 +202,15 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <button
         v-else-if="!current && total"
         class="btn-primary mt-4 min-h-12 w-full px-4 text-base"
-        :disabled="!online || !total.photos"
+        :disabled="!online || !(total.photos - total.missing)"
         data-testid="pack-install"
         @click="install()"
       >
-        {{ installed ? $t('Cambiar a esta elección') : $t('Descargar fotos') }} · {{ mbText(total.bytes) }} MB
+        {{ installed ? $t('Cambiar a esta elección') : $t('Descargar fotos') }} · {{ mbText(total.bytes - total.missingBytes) }} MB
       </button>
+      <p v-if="total?.missing && !current" class="mt-1 text-xs text-pending-text" data-testid="pack-missing">
+        {{ total.missing === total.photos ? $t('Estas fotos aún no están en el servidor.') : $t('{n} de estas fotos aún no están en el servidor (≈ {mb} MB): se guarda el resto.', { n: total.missing.toLocaleString(), mb: mbText(total.missingBytes) }) }}
+      </p>
       <p v-if="!online && !current" class="mt-1 text-xs text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="installed && !current && !progress" class="mt-1 text-xs text-fg-muted">{{ $t('Reemplaza las fotos de este teléfono.') }}</p>
       <p v-if="note" class="mt-2 text-sm text-fg-muted" role="status" data-testid="pack-note">{{ note }}</p>

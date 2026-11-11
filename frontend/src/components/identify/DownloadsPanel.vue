@@ -109,7 +109,7 @@ const pct = (p: { done: number; total: number }) => Math.round((100 * p.done) / 
         <VenusAndMars :size="22" class="mt-0.5 shrink-0 text-fill-pink" />
         <div class="min-w-0 flex-1">
           <h2 class="text-lg font-semibold">{{ $t('Sexo estimado') }}</h2>
-          <p class="text-sm text-fg-muted">{{ $t('Experimental, solo fotos en mano. Solo para el equipo.') }}</p>
+          <p class="text-sm text-fg-muted">{{ $t('Experimental, fotos en mano de 13 géneros de Ithomiini. Solo para el equipo.') }}</p>
         </div>
         <p v-if="sex.ready || sex.outdated" class="shrink-0 text-sm text-fg-muted tabular-nums">
           <Check :size="14" class="mr-0.5 inline text-success-text" />{{ $t('{mb} MB en el teléfono', { mb: sex.takesMb }) }}
