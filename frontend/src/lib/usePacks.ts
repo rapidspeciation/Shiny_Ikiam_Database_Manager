@@ -1,56 +1,107 @@
 /**
- * The photo packs' state for the page (lib/photoPacks.ts), shared by the Descargas place (PackPanel.vue) and the
- * Identificar view (which saves the chosen pack by itself after a model's download): the server's list, the
- * installed pack, a save in progress and its outcome.
+ * The photo packs' state for the page (lib/photoPacks.ts), shared by the Descargas place (PackPanel.vue), the search
+ * and the Identificar view: the installed pack (read from the phone, cheap), the server's list (read only where it is
+ * needed: Descargas, the search, a photo the pack lacks), a save in progress and its outcome.
+ *
+ * The one-time save after the first model (AUTO): only the first screen's download button, which says it, asks for
+ * it ('pending'). It becomes 'done' once a save returns a pack, and also when the person saves, deletes or removes the
+ * older set by hand, so a Delete never brings a pack back. A first save cut off (page closed, signal lost) stays
+ * 'pending' and is tried again on the next open with a model and signal.
  */
 import { ref, shallowRef, watch } from 'vue'
 import { t } from './i18n'
-import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope } from './photoPacks'
+import { installPack, installedPack, onlineIndex, packScope, removePack, resetOnlineIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type TaxaScope } from './photoPacks'
 import { retireFieldSet } from './identifyRefs'
+
+/** A taxa choice's name (the scientific ones are not translated). */
+export function taxaLabel(k: TaxaScope): string {
+  return k === 'ithomiini' ? 'Ithomiini' : k === 'nymphalidae' ? 'Nymphalidae' : k === 'butterflies' ? t('Mariposas') : t('Mariposas y polillas')
+}
+
+const AUTO = 'identify:pack-auto'
+const getAuto = () => {
+  try {
+    return localStorage.getItem(AUTO)
+  } catch {
+    return null
+  }
+}
+const setAuto = (v: 'pending' | 'done') => {
+  try {
+    localStorage.setItem(AUTO, v)
+  } catch {
+    /* private mode */
+  }
+}
 
 const index = shallowRef<PackIndex | null>(null)
 const indexFailed = ref(false)
 const pack = shallowRef<InstalledPack | null>(null)
 const progress = ref<{ done: number; total: number } | null>(null)
 const note = ref<string | null>(null)
+/** The last save did not complete: what it was, for «Reintentar». */
+const failedSave = ref<{ scope: PackScope; failed: number; total: number } | null>(null)
 const scope = ref<PackScope>(packScope())
 watch(scope, v => setPackScope(v), { deep: true })
 /** Bumped after a save or a removal: the photos shown are asked again. */
 const changed = ref(0)
-let loading: Promise<void> | null = null
+let loadingIndex: Promise<void> | null = null
 
-async function load(force = false) {
+/** The installed pack, from the phone (no network). */
+async function loadInstalled() {
+  pack.value = await installedPack()
+}
+/** The server's list (for sizes, the search beyond the pack, updates). */
+async function loadIndex(force = false) {
+  if (index.value && !force) return
   if (force) resetOnlineIndex()
-  loading ??= (async () => {
-    pack.value = await installedPack()
+  loadingIndex ??= (async () => {
     try {
       index.value = await onlineIndex()
       indexFailed.value = false
     } catch {
       indexFailed.value = !index.value
     }
-  })().finally(() => (loading = null))
-  return loading
+  })().finally(() => (loadingIndex = null))
+  return loadingIndex
+}
+async function load(force = false) {
+  await loadInstalled()
+  await loadIndex(force)
 }
 
 async function install(s: PackScope = scope.value) {
-  if (progress.value) return
+  if (progress.value) return null
   note.value = null
-  if (!index.value) await load(true)
+  failedSave.value = null
+  await loadIndex(!index.value)
   if (!index.value) {
     note.value = t('Hace falta conexión a internet.')
-    return
+    return null
   }
   // Asked inside the tap (Chrome weighs the gesture): the phone then does not clear the photos when short of space.
   navigator.storage?.persist?.().catch(() => null)
   progress.value = { done: 0, total: 1 }
   try {
     const out = await installPack(index.value, s, (done, total) => (progress.value = { done, total }))
-    pack.value = out
-    await retireFieldSet(new Set(out.index.taxa.flatMap(x => (x.photo ? [new URL(x.photo.file, out.index.base).href] : []))))
-    note.value = out.installed.failed ? t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.installed.failed }) : null
+    pack.value = out.pack
+    if (out.pack) setAuto('done')
+    if (out.kept) {
+      failedSave.value = { scope: s, failed: out.failed, total: out.total }
+      note.value = out.pack
+        ? t('{n} de {total} fotos no se descargaron: siguen las fotos de antes.', { n: out.failed, total: out.total })
+        : t('No se descargaron las fotos.')
+    } else if (out.failed) {
+      note.value = t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed })
+    } else {
+      // Replaced in full: the older «Fotos para el campo» set goes (its files this pack uses stay).
+      await retireFieldSet(new Set(out.pack!.index.taxa.flatMap(x => (x.photo ? [new URL(x.photo.file, out.pack!.index.base).href] : []))))
+    }
+    return out
   } catch (err) {
+    failedSave.value = { scope: s, failed: 0, total: 0 }
     note.value = /quota/i.test(String((err as Error)?.message)) ? t('No hay espacio suficiente en el teléfono.') : t('Hace falta conexión a internet.')
+    return null
   } finally {
     progress.value = null
     changed.value++
@@ -59,12 +110,39 @@ async function install(s: PackScope = scope.value) {
 
 async function remove() {
   if (progress.value) return
+  setAuto('done')
   await removePack()
   pack.value = null
   note.value = null
+  failedSave.value = null
+  changed.value++
+}
+/** The older «Fotos para el campo» set off the phone (Descargas' Delete on it). */
+async function removeLegacy() {
+  setAuto('done')
+  await retireFieldSet()
   changed.value++
 }
 
 export function usePacks() {
-  return { index, indexFailed, pack, progress, note, scope, changed, load, install, remove }
+  return {
+    index,
+    indexFailed,
+    pack,
+    progress,
+    note,
+    failedSave,
+    scope,
+    changed,
+    load,
+    loadInstalled,
+    loadIndex,
+    install,
+    remove,
+    removeLegacy,
+    /** The first screen's button: a pack is to follow the model. */
+    askAuto: () => getAuto() !== 'done' && setAuto('pending'),
+    autoPending: () => getAuto() === 'pending',
+    autoDone: () => getAuto() === 'done',
+  }
 }

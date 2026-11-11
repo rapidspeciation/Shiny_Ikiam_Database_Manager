@@ -249,4 +249,12 @@ export default {
   'sin fotos para comparar': 'no photos to compare',
   Identificador: 'Identifier',
   'Borrar del teléfono': 'Delete',
+  // Review r1 (11 Nov 2026).
+  'Por ahora hay fotos solo de {places}.': 'For now there are photos only of {places}.',
+  'Otras subespecies': 'Other subspecies',
+  'Ningún taxón con ese nombre en las fotos guardadas.': 'No taxon with that name in the saved photos.',
+  'Foto de la subespecie': 'Photo of the subspecies',
+  '{n} de {total} fotos no se descargaron: siguen las fotos de antes.': '{n} of {total} photos did not download: the photos from before stay.',
+  'No se descargaron las fotos.': 'The photos did not download.',
+  'En Descargas: {taxa} · Neotrópico, {mb} MB': 'In Downloads: {taxa} · Neotropics, {mb} MB',
 }

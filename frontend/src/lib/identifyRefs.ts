@@ -12,7 +12,7 @@
 import { api } from './api'
 import { appRoot } from './appRoot'
 import { CACHE } from './offlineEngine'
-import { packSources, photosFrom, type TaxonPhoto } from './photoPacks'
+import { installedSources, onlineSources, photosFrom, type PackLookup, type TaxonPhoto } from './photoPacks'
 
 export interface RefPhoto {
   src: string
@@ -192,7 +192,8 @@ export async function referencePhotos(names: string[], { signedIn = true }: { si
   const have = await kept()
   if (navigator.onLine) {
     try {
-      const { species } = await api<{ species: Record<string, ApiEntry> }>('species-photos', { method: 'POST', body: { names } })
+      // Given up after 12 s (a weak signal): what the phone has is shown meanwhile and after.
+      const { species } = await api<{ species: Record<string, ApiEntry> }>('species-photos', { method: 'POST', body: { names }, signal: AbortSignal.timeout(12_000) })
       const refs: Record<string, Refs> = {}
       const pending: string[] = []
       for (const name of names) {
@@ -210,6 +211,14 @@ export async function referencePhotos(names: string[], { signedIn = true }: { si
   return { refs: await withField(await withPack(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]])), names), names), pending: [] }
 }
 
+/**
+ * The installed pack's photos of `names` alone: no network, so the screen shows them at once while referencePhotos
+ * asks the server (a live but unresponsive connection must not hold photos the phone has).
+ */
+export async function savedPhotos(names: string[]): Promise<Record<string, Refs>> {
+  return withPack({}, names, await installedSources().catch(() => []))
+}
+
 const packRef = (p: TaxonPhoto): RefPhoto => ({
   src: p.src,
   credit: shortCredit(p.attribution),
@@ -224,8 +233,11 @@ const packRef = (p: TaxonPhoto): RefPhoto => ({
  * server's, without the pack's own photo twice), then its subspecies' photos. A species the packs do not have keeps
  * what it had (the server's photos with signal, as before).
  */
-export async function withPack(refs: Record<string, Refs>, names: string[], sources?: Awaited<ReturnType<typeof packSources>>): Promise<Record<string, Refs>> {
-  const from = sources ?? (await packSources().catch(() => []))
+export async function withPack(refs: Record<string, Refs>, names: string[], sources?: PackLookup[]): Promise<Record<string, Refs>> {
+  let from = sources ?? (await installedSources().catch(() => []))
+  // The server's whole list only for names the installed pack has no photo of (and only with signal).
+  if (!sources && navigator.onLine && names.some(n => !photosFrom(from, n).some(p => p.rank === 'species')))
+    from = [...from, ...(await onlineSources().catch(() => []))]
   if (!from.length) return refs
   const out = { ...refs }
   for (const n of names) {

@@ -6,25 +6,18 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Check, ChevronDown, Images } from 'lucide-vue-next'
 import { locale, t, tn } from '../../lib/i18n'
-import { packCountries, mbText, sameRegion, sameScope, scopeSize, TAXA_SCOPES, updateAvailable, type PackScope, type Region, type TaxaScope } from '../../lib/photoPacks'
-import { fieldSet, retireFieldSet } from '../../lib/identifyRefs'
-import { usePacks } from '../../lib/usePacks'
+import { countrySizes, packCountries, mbText, sameRegion, sameScope, scopeSize, TAXA_SCOPES, updateAvailable, type PackScope, type Region } from '../../lib/photoPacks'
+import { fieldSet } from '../../lib/identifyRefs'
+import { taxaLabel, usePacks } from '../../lib/usePacks'
 
 const props = defineProps<{ online: boolean }>()
-const { index, indexFailed, pack, progress, note, scope, load, install, remove } = usePacks()
+const { index, indexFailed, pack, progress, note, failedSave, scope, load, install, remove, removeLegacy: dropLegacy } = usePacks()
 onMounted(() => load())
 watch(
   () => props.online,
   on => on && !index.value && load(true),
 )
 
-const TAXA_LABEL: Record<TaxaScope, string> = {
-  ithomiini: 'Ithomiini',
-  nymphalidae: 'Nymphalidae',
-  butterflies: 'Mariposas',
-  all: 'Mariposas y polillas',
-}
-const taxaLabel = (k: TaxaScope) => (k === 'ithomiini' || k === 'nymphalidae' ? TAXA_LABEL[k] : t(TAXA_LABEL[k]))
 const regionNames = computed(() => {
   try {
     return new Intl.DisplayNames([locale.value === 'es' ? 'es' : 'en'], { type: 'region' })
@@ -36,11 +29,10 @@ const countryName = (iso: string) => regionNames.value?.of(iso) ?? iso
 const countries = computed(() => (index.value ? packCountries(index.value, countryName) : []))
 
 const size = (s: PackScope) => (index.value ? scopeSize(index.value, s) : null)
-const sizeText = (s: PackScope) => {
-  const z = size(s)
-  // A number stays with its unit when the line wraps («439 fotos ·» / «12 MB», never «12» / «MB»).
-  return z ? tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
-}
+// A number stays with its unit when the line wraps («439 fotos ·» / «12 MB», never «12» / «MB»).
+const zText = (z: { photos: number; bytes: number } | null | undefined) =>
+  z ? tn(z.photos, '{n} foto · {mb} MB', '{n} fotos · {mb} MB', { n: z.photos.toLocaleString(), mb: mbText(z.bytes) }).replace(/(\d) (?=\S)/g, '$1\u00a0') : ''
+const sizeText = (s: PackScope) => zText(size(s))
 const EC: Region = ['EC']
 const isEc = computed(() => sameRegion(scope.value.region, EC))
 const isSome = computed(() => scope.value.region !== 'neotropics' && !isEc.value)
@@ -62,9 +54,11 @@ function toggleCountry(iso: string) {
   else now.add(iso)
   set({ region: now.size ? [...now] : [...EC] })
 }
-const countrySize = (iso: string) => sizeText({ ...scope.value, region: [iso] })
-const regionLabel = (r: Region) =>
-  r === 'neotropics' ? t('Neotrópico') : r.length === 1 ? countryName(r[0]) : r.length <= 3 ? r.map(countryName).join(', ') : t('{n} países', { n: r.length })
+/** Every country's size at once (one pass), again only when the groups or the subspecies choice change. */
+const byCountry = computed(() => (index.value ? countrySizes(index.value, { taxa: scope.value.taxa, ssp: scope.value.ssp }) : new Map()))
+const countrySize = (iso: string) => zText(byCountry.value.get(iso))
+const regionLabel = (r: Region) => (r === 'neotropics' ? t('Neotrópico') : r.length === 1 ? countryName(r[0]) : t('{n} países', { n: r.length }))
+const regionOn = (r: 'ec' | 'some' | 'neotropics') => (r === 'ec' ? isEc.value && !picking.value : r === 'some' ? isSome.value || picking.value : scope.value.region === 'neotropics')
 
 const total = computed(() => size(scope.value))
 const installed = computed(() => pack.value?.installed ?? null)
@@ -72,7 +66,13 @@ const current = computed(() => !!installed.value && sameScope(installed.value.sc
 const newer = computed(() => updateAvailable(installed.value, index.value))
 const legacy = ref(fieldSet())
 const when = (iso: string) => new Date(iso).toLocaleDateString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short' })
-const sampleNote = computed(() => (index.value?.sample === 'ithomiini-only' ? t('Por ahora la lista tiene fotos solo de Ithomiini.') : null))
+/** The list is a sample (the lab's): said plainly. */
+const sampleNote = computed(() => {
+  const v = index.value?.sample
+  if (v === 'ithomiini-only') return t('Por ahora la lista tiene fotos solo de Ithomiini.')
+  if (v?.startsWith('regions:')) return t('Por ahora hay fotos solo de {places}.', { places: v.slice(8).split(',').map(countryName).join(', ') })
+  return null
+})
 
 async function onRemove() {
   if (!confirm(t('¿Borrar las fotos de este teléfono?'))) return
@@ -80,7 +80,7 @@ async function onRemove() {
 }
 async function removeLegacy() {
   if (!confirm(t('¿Borrar las fotos de este teléfono?'))) return
-  await retireFieldSet()
+  await dropLegacy()
   legacy.value = null
 }
 const pct = computed(() => (progress.value ? Math.round((100 * progress.value.done) / Math.max(1, progress.value.total)) : 0))
@@ -107,7 +107,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </p>
       <p v-if="newer" class="mt-2 text-sm font-medium text-pending-text">{{ $t('Hay fotos nuevas en el servidor.') }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        <button v-if="(newer || installed.failed) && current" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" @click="install()">{{ $t('Actualizar fotos') }}</button>
+        <button v-if="newer || installed.failed" class="btn-primary min-h-11 px-4" :disabled="!!progress || !online" data-testid="pack-update" @click="install(installed.scope)">{{ $t('Actualizar fotos') }}</button>
         <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar del teléfono') }}</button>
       </div>
     </div>
@@ -151,12 +151,13 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
             type="button"
             :data-testid="`region-${r}`"
             role="radio"
-            :aria-checked="r === 'ec' ? isEc : r === 'some' ? isSome || picking : scope.region === 'neotropics'"
+            :aria-checked="regionOn(r)"
             class="opt flex min-h-14 flex-col justify-center rounded-lg border-2 px-2 py-1.5 text-left"
-            :class="(r === 'ec' ? isEc && !picking : r === 'some' ? isSome || picking : scope.region === 'neotropics') ? 'border-brand bg-brand-soft' : 'border-border bg-surface'"
+            :class="regionOn(r) ? 'border-brand bg-brand-soft' : 'border-border bg-surface'"
             @click="chooseRegion(r)"
           >
             <span class="flex items-center gap-1 text-sm font-medium">
+              <Check v-if="regionOn(r)" :size="16" class="shrink-0 text-brand-text" />
               {{ r === 'ec' ? countryName('EC') : r === 'some' ? (isSome ? regionLabel(scope.region) : $t('Otros países')) : $t('Neotrópico') }}
               <ChevronDown v-if="r === 'some'" :size="14" class="shrink-0 transition-transform" :class="picking ? 'rotate-180' : ''" />
             </span>
@@ -208,7 +209,12 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       </button>
       <p v-if="!online && !current" class="mt-1 text-xs text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="installed && !current && !progress" class="mt-1 text-xs text-fg-muted">{{ $t('Reemplaza las fotos de este teléfono.') }}</p>
-      <p v-if="note" class="mt-2 text-sm text-fg-muted" role="status">{{ note }}</p>
+      <p v-if="note" class="mt-2 text-sm text-fg-muted" role="status" data-testid="pack-note">
+        {{ note }}
+        <button v-if="failedSave && online && !progress" class="ml-1 min-h-11 font-medium text-brand-text underline underline-offset-2" data-testid="pack-retry" @click="install(failedSave.scope)">
+          {{ $t('Reintentar') }}
+        </button>
+      </p>
     </template>
   </section>
 </template>

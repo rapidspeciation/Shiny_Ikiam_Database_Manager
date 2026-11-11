@@ -19,7 +19,8 @@ import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
 import DownloadsPanel, { type ModelRow, type SexRow } from '../components/identify/DownloadsPanel.vue'
 import TaxonSearch from '../components/identify/TaxonSearch.vue'
 import { usePacks } from '../lib/usePacks'
-import { mbText, scopeSize } from '../lib/photoPacks'
+import { mbText, SCOPE_GROUPS, scopeSize, TAXA_SCOPES, type PackScope } from '../lib/photoPacks'
+import { taxaLabel } from '../lib/usePacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
@@ -31,7 +32,7 @@ import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, type Candidate, type StockDetail } from '../lib/identifyResult'
-import { fieldSet, referencePhotos, type Refs } from '../lib/identifyRefs'
+import { referencePhotos, savedPhotos, type Refs } from '../lib/identifyRefs'
 import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -45,7 +46,7 @@ type Place = 'identify' | 'search' | 'downloads'
 const place = computed<Place>(() => (route.query.vista === 'descargas' ? 'downloads' : route.query.vista === 'buscar' ? 'search' : 'identify'))
 function go(p: Place) {
   if (p === place.value) return
-  const { vista: _v, taxon: _t, ...rest } = route.query
+  const { vista: _v, taxon: _t, foto: _f, ...rest } = route.query
   router.push({ query: { ...rest, ...(p === 'identify' ? {} : { vista: p === 'downloads' ? 'descargas' : 'buscar' }) } })
   window.scrollTo({ top: 0 })
 }
@@ -54,13 +55,6 @@ const PLACES: { id: Place; label: string; icon: typeof Camera }[] = [
   { id: 'search', label: 'Buscar', icon: Search },
   { id: 'downloads', label: 'Descargas', icon: Download },
 ]
-/** The taxon in the address (the search's), so a shared or reloaded link shows it again. */
-const searchTaxon = computed(() => (typeof route.query.taxon === 'string' ? route.query.taxon : null))
-function onChosenTaxon(name: string | null) {
-  if ((name ?? null) === searchTaxon.value) return
-  const { taxon: _t, ...rest } = route.query
-  router.replace({ query: { ...rest, ...(name ? { taxon: name } : {}) } })
-}
 const pageFiles = () => [
   location.href.split('#')[0],
   ...[...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=manifest]')].map(
@@ -177,6 +171,11 @@ function sizeLine(k: ModelKind) {
       })
 }
 const fromHf = computed(() => !!listing.value && 'source' in listing.value && listing.value.source === 'public')
+/** The first screen's one-tap download (the fast model): free space it needs. */
+const firstLacksSpace = computed(() => {
+  const s = sizes.value.small
+  return s && space.value && s.plain > space.value.free ? { need: roughMb(s.plain), free: mb(space.value.free) } : null
+})
 const lacksSpace = computed(() => {
   const s = sizes.value[wanted.value]
   return s && space.value && s.plain > space.value.free ? { need: roughMb(s.plain), free: mb(space.value.free) } : null
@@ -711,6 +710,11 @@ let refsTimer: ReturnType<typeof setTimeout> | null = null
 async function loadRefs(names: string[], tries = 0) {
   if (!names.length) return
   refsLoading.value = true
+  // What the phone has first (no network), then the server's and the rest merged in.
+  if (!tries) {
+    const saved = await savedPhotos(names)
+    refs.value = { ...refs.value, ...Object.fromEntries(Object.entries(saved).filter(([n]) => !refs.value[n]?.photos.length)) }
+  }
   const { refs: got, pending } = await referencePhotos(names, { signedIn: signedIn() })
   refs.value = { ...refs.value, ...got }
   refsLoading.value = pending.length > 0 && tries < 8
@@ -740,26 +744,53 @@ const refsShown = computed<Refs | undefined>(() => {
 })
 const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !== 'genus')?.src
 
-// The photo packs (lib/usePacks.ts, chosen in Descargas). Once a model is on the phone and there is signal, the chosen
-// pack is saved by itself, once on this phone (removing it later does not bring it back): without photos a species
-// never looked up online has none in the field (3 Nov 2026: Mechanitis on a phone in airplane mode; 11 Nov 2026).
+// The photo packs (lib/usePacks.ts, chosen in Descargas). Only the first screen's button, which says so, saves the
+// chosen pack after the model (without photos a species never looked up online has none in the field: 3 Nov 2026,
+// Mechanitis in airplane mode; 11 Nov 2026). A model downloaded in Descargas never starts a pack by itself.
 const packs = usePacks()
-packs.load()
-/** What the first download brings with it (the chosen pack, saved by itself after the model). */
+packs.loadInstalled()
+/** What the first download brings with it (the chosen pack, saved after the model). */
 const firstPack = computed(() => {
-  if (!packs.index.value || packs.pack.value || store.get(AUTO) === '1') return null
+  if (!packs.index.value || packs.pack.value || packs.autoDone()) return null
   const z = scopeSize(packs.index.value, packs.scope.value)
   return z.photos ? { n: z.photos.toLocaleString(), mb: mbText(z.bytes) } : null
 })
-const AUTO = 'identify:pack-auto'
+// The first screen needs the list for that line (and its size); elsewhere it is read where it is used.
 watch(
-  () => (ready.value.small || ready.value.full) && online.value && !packs.pack.value && !packs.progress.value && !!packs.index.value && !fieldSet() && store.get(AUTO) !== '1',
-  go => {
-    if (!go) return
-    store.set(AUTO, '1')
-    packs.install()
-  },
+  () => checked.value && !(ready.value.small || ready.value.full) && online.value,
+  need => need && packs.loadIndex(),
+  { immediate: true },
 )
+async function firstDownload() {
+  packs.askAuto()
+  await startDownload('small')
+  autoPack()
+}
+/** The announced save: after the first screen's download, or again on a later open when it was cut off. */
+function autoPack() {
+  if (packs.autoPending() && (ready.value.small || ready.value.full) && online.value && !packs.pack.value && !packs.progress.value) packs.install()
+}
+/** Compare without a saved photo, offline: which pack would have it, and its size (Descargas, one tap). */
+const gapHint = computed(() => {
+  const name = showing.value
+  const idx = packs.index.value
+  if (!name || online.value || !idx || refsLoading.value || refs.value[name]?.photos.length) return null
+  const entry = idx.taxa.find(x => x.photo && (x.name === name || x.species === name))
+  if (!entry) return null
+  const cur = packs.pack.value?.installed.scope ?? packs.scope.value
+  const level = Math.max(TAXA_SCOPES.findIndex(k => SCOPE_GROUPS[k].includes(entry.group)), TAXA_SCOPES.indexOf(cur.taxa))
+  const scope: PackScope = { taxa: TAXA_SCOPES[level], region: 'neotropics', ssp: cur.ssp }
+  return { scope, text: t('En Descargas: {taxa} · Neotrópico, {mb} MB', { taxa: taxaLabel(scope.taxa), mb: mbText(scopeSize(idx, scope).bytes) }) }
+})
+watch(
+  () => !!result.value && !online.value && !refsLoading.value && !refs.value[showing.value]?.photos.length,
+  need => need && packs.loadIndex(),
+)
+function fixGap() {
+  if (!gapHint.value) return
+  packs.scope.value = gapHint.value.scope
+  go('downloads')
+}
 // A pack saved or removed: the photos on screen are asked again.
 watch(packs.changed, () => {
   const names = shownNames()
@@ -786,7 +817,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'nu
 
 const goOnline = () => {
   online.value = true
-  refresh() // keeps the page too when it was opened without signal
+  refresh().then(autoPack) // keeps the page too when it was opened without signal; a cut-off first save goes on
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 }
 const goOffline = () => (online.value = false)
@@ -820,6 +851,7 @@ onMounted(async () => {
   if (session.user) stock.value = await engine.stock()
   await refresh()
   await restoreLast()
+  autoPack()
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 })
 let stopSessionWatch: (() => void) | null = null
@@ -856,7 +888,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       </button>
     </nav>
 
-    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" :initial="searchTaxon" @downloads="go('downloads')" @chosen="onChosenTaxon" />
+    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" @downloads="go('downloads')" />
 
     <DownloadsPanel
       v-else-if="place === 'downloads'"
@@ -943,12 +975,13 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
         </p>
       </div>
       <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="startDownload('small')">
+        <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
           <Download :size="20" />{{ $t('Descargar el identificador') }} · {{ modelRows[0].downloadMb }} MB
         </button>
         <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
       </div>
       <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Con {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
+      <p v-if="firstLacksSpace" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">{{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', firstLacksSpace) }}</p>
       <p v-if="!online" class="mt-2 text-sm text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
       <p v-if="isIos && !installed" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
         {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
@@ -1008,7 +1041,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
                 <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
               </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" />
+              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint?.text ?? null" @hint="fixGap" />
               <div class="mt-3 flex flex-wrap gap-2">
                 <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
                   {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}

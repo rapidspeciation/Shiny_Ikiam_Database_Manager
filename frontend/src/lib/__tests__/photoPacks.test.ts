@@ -48,6 +48,8 @@ function fakeCaches() {
   return store
 }
 let served: PackIndex = index
+/** A photo's bytes as the list gives them (the fake server answers with that many). */
+const sizeOfFile = (u: string) => served.taxa.find(t => t.photo && u.endsWith(`/${t.photo.file}`))?.bytes ?? 100
 const fetched: string[] = []
 beforeEach(() => {
   vi.resetModules()
@@ -60,7 +62,7 @@ beforeEach(() => {
       fetched.push(String(u))
       if (String(u).endsWith('/packs/index.json')) return new Response(JSON.stringify(served))
       if (String(u).endsWith('.json')) return new Response('{}', { status: 404 })
-      return new Response(new Uint8Array(100), { headers: { 'content-type': 'image/webp' } })
+      return new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } })
     }),
   )
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
@@ -122,7 +124,8 @@ describe('install, update and removal', () => {
     const steps: number[] = []
     const first = await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, done => steps.push(done))
     expect(photos()).toEqual(['1.webp', '3.webp', '4.webp'])
-    expect(first.installed).toMatchObject({ photos: 3, bytes: 300, failed: 0, version: 'v1' })
+    expect(first.kept).toBe(false)
+    expect(first.pack?.installed).toMatchObject({ photos: 3, bytes: 3400, failed: 0, version: 'v1' })
     expect(steps.at(-1)).toBe(3)
     expect(store.has(INSTALLED_KEY())).toBe(true)
     // A wider one downloads only what is new.
@@ -146,8 +149,115 @@ describe('install, update and removal', () => {
     vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('3.webp') ? new Response('', { status: 500 }) : new Response(new Uint8Array(10), { headers: { 'content-type': 'image/webp' } }))))
     const { installPack } = await import('../photoPacks')
     const out = await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
-    expect(out.installed).toMatchObject({ photos: 2, failed: 1 })
-    expect(out.index.taxa.map(t => t.name)).not.toContain('Mechanitis polymnia proceriformis')
+    // The first pack on a phone is kept with what came (Update completes it).
+    expect(out).toMatchObject({ kept: false, failed: 1, total: 3 })
+    expect(out.pack?.installed).toMatchObject({ photos: 2, failed: 1 })
+    expect(out.pack?.index.taxa.map(t => t.name)).not.toContain('Mechanitis polymnia proceriformis')
+  })
+})
+
+describe('replacing a pack safely (review r1)', () => {
+  const fetchFailing = (bad: RegExp) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string) => {
+        fetched.push(String(u))
+        if (bad.test(String(u))) throw new TypeError('network')
+        return new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } })
+      }),
+    )
+
+  it('sol-F1: a replacement that does not complete keeps the pack before, its record and its photos', async () => {
+    const store = fakeCaches()
+    const { installPack, installedPack } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    fetchFailing(/[69]\.webp$/)
+    const out = await installPack(index, { taxa: 'all', region: ['CO'], ssp: false }, () => {})
+    expect(out).toMatchObject({ kept: true, failed: 1, total: 2 })
+    expect((await installedPack())?.installed.scope).toEqual({ taxa: 'ithomiini', region: ['EC'], ssp: false })
+    expect([...store.keys()].filter(u => /photos\/[14]\.webp$/.test(u))).toHaveLength(2)
+  })
+
+  it('fable-F2: a first save where nothing arrived records no pack (so it is tried again)', async () => {
+    fakeCaches()
+    fetchFailing(/\.webp$/)
+    const { installPack, installedPack } = await import('../photoPacks')
+    const out = await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    expect(out).toMatchObject({ pack: null, kept: true, failed: 2 })
+    expect(await installedPack()).toBeNull()
+  })
+
+  it('sol-F2: a kept photo whose size is not the list’s is fetched again', async () => {
+    const store = fakeCaches()
+    const { installPack, photoSrc, INDEX_URL } = await import('../photoPacks')
+    const u = photoSrc(index, INDEX_URL(), '1.webp')
+    store.set(u, new Response(new Uint8Array(7), { headers: { 'content-type': 'image/webp' } }))
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    expect(fetched).toContain(u)
+    expect((await (await store.get(u)!.clone().blob()).size)).toBe(1000)
+  })
+
+  it('F12: a full phone stops the save with "quota" and leaves the pack before as it was', async () => {
+    const store = fakeCaches()
+    const { installPack, installedPack } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    const cache = await caches.open('x')
+    const put = cache.put
+    ;(cache as { put: typeof put }).put = async (u, r) => {
+      if (String(u).endsWith('6.webp')) throw new DOMException('full', 'QuotaExceededError')
+      return put(u, r)
+    }
+    await expect(installPack(index, { taxa: 'nymphalidae', region: ['EC'], ssp: false }, () => {})).rejects.toThrow('quota')
+    expect((await installedPack())?.installed.scope.taxa).toBe('ithomiini')
+    expect(store.size).toBeGreaterThan(0)
+  })
+
+  it('F11: Delete removes every photo under the pack’s folder, also ones seen online', async () => {
+    const store = fakeCaches()
+    const { installPack, removePack, photoSrc, INDEX_URL } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    store.set(photoSrc(index, INDEX_URL(), '8.webp'), new Response('x'))
+    await removePack()
+    expect([...store.keys()].filter(u => u.includes('/packs/photos/'))).toEqual([])
+  })
+})
+
+describe('the one-time save after the first model (review r1)', () => {
+  it('fable-F1/F2: only the first screen asks for it; a save, a Delete or the older set’s removal end it; a failed first save stays asked', async () => {
+    const store = fakeCaches()
+    const { usePacks } = await import('../usePacks')
+    const p = usePacks()
+    expect(p.autoPending()).toBe(false) // nothing asks for it by itself
+    p.askAuto()
+    expect(p.autoPending()).toBe(true)
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : Promise.reject(new TypeError('network')))))
+    await p.install()
+    expect(p.autoPending()).toBe(true) // nothing came: tried again on the next open
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
+    await p.install()
+    expect(p.autoDone()).toBe(true)
+    localStorage.removeItem('identify:pack-auto')
+    await p.remove()
+    expect(p.autoDone()).toBe(true) // a Delete never brings it back
+    localStorage.removeItem('identify:pack-auto')
+    await p.removeLegacy()
+    expect(p.autoDone()).toBe(true)
+    p.askAuto()
+    expect(p.autoPending()).toBe(false)
+    expect(store.size).toBeGreaterThanOrEqual(0)
+  })
+
+  it('sol-F1: the older field set is retired only after a complete save', async () => {
+    fakeCaches()
+    localStorage.setItem('identify:field-photos', JSON.stringify({ count: 3, bytes: 10, at: '2026-11-01' }))
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : String(u).endsWith('3.webp') ? Promise.reject(new TypeError('x')) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
+    const { usePacks } = await import('../usePacks')
+    const p = usePacks()
+    await p.install({ taxa: 'ithomiini', region: ['EC'], ssp: true })
+    expect(localStorage.getItem('identify:field-photos')).not.toBeNull()
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
+    await p.install({ taxa: 'ithomiini', region: ['EC'], ssp: true })
+    expect(localStorage.getItem('identify:field-photos')).toBeNull()
   })
 })
 
@@ -192,6 +302,16 @@ describe('Compare from the pack', () => {
     // The pack's photo first; the server's copy of the same iNaturalist photo (photos/1) not twice.
     expect(refs['Mechanitis polymnia'].photos.map(p => p.credit)).toEqual(['© Ana 1.webp', '© Cy'])
     vi.doUnmock('../api')
+  })
+
+  it('sol-F4: the saved photos come without asking the network', async () => {
+    fakeCaches()
+    const { installPack } = await import('../photoPacks')
+    await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {}))) // a live but silent connection
+    const { savedPhotos } = await import('../identifyRefs')
+    const refs = await savedPhotos(['Mechanitis polymnia'])
+    expect(refs['Mechanitis polymnia'].photos[0].src).toMatch(/1\.webp$/)
   })
 
   it('signed out and online: the server’s whole list beyond the pack', async () => {

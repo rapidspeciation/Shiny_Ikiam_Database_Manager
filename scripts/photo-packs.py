@@ -12,7 +12,21 @@ From the Ithomiini «Fotos para el campo» set (scripts/field-photos.py), its ph
 
   Every entry is group 'ithomiini', family Nymphalidae. Countries: `--countries`, a list of {name, appCountries}
   (the offline-packs research's base.json: the checklist's and the map points' countries), else ['EC'] for an entry
-  recorded in Ecuador (`ec`) and none otherwise (only «Neotrópico» takes those).
+  recorded in Ecuador (`ec`) and none otherwise (only «Neotrópico» takes those). Those files are named by their
+  iNaturalist photo id and never rewritten (scripts/field-photos.py), so a name always means the same bytes.
+
+From the per-taxon list (the offline-packs research's taxa.json: name, rank, species, genus, family, group, countries,
+photo {url, inatPhotoId, attribution, license, taxonUrl, source}, bytes), its photos made here as mobile WebP:
+
+  python3 -I scripts/photo-packs.py taxa --taxa taxa.json --out <PACKS_DIR> --cache <dir> \
+      [--size 480] [--quality 70] [--regions EC,CO] [--sample "note"] [--limit N]
+
+  Each photo is fetched once into --cache (a local path in `url` is read as it is), resized to --size px on its long
+  side and written as photos/<inatPhotoId>-<sha256 of the WebP, 8 hex>.webp: a changed photo gets a new name, so a
+  phone never keeps old bytes under a name the list gives (the page also checks each kept photo's size against
+  `bytes`). --regions builds only the taxa recorded in those countries (a lab sample; --sample says so in the page);
+  the others stay listed without a photo. Files of earlier builds that the list no longer names are left for the
+  caller to remove (printed). Network: the photo hosts in `url` (about 3 requests a second).
 """
 import argparse
 import gzip
@@ -96,6 +110,79 @@ def from_field(a):
     write(a.out, taxa, rel, field.get("source") or "iNaturalist photos under Creative Commons licences", sample="ithomiini-only")
 
 
+def taxa_mode(a):
+    from io import BytesIO
+    import urllib.request
+    from PIL import Image, ImageOps
+
+    src = json.load(open(a.taxa, encoding="utf-8"))
+    if isinstance(src, dict):
+        src = src.get("taxa", [])
+    regions = set(a.regions.split(",")) if a.regions else None
+    photos_dir = os.path.join(a.out, "photos")
+    os.makedirs(photos_dir, exist_ok=True)
+    os.makedirs(a.cache, exist_ok=True)
+    ua = {"User-Agent": "ithomiini-photo-packs/1.0"}
+
+    def original(url, pid):
+        if os.path.exists(url):
+            return open(url, "rb").read()
+        path = os.path.join(a.cache, f"{pid}.orig")
+        if not os.path.exists(path):
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(url, headers=ua), timeout=60) as r:
+                        body = r.read()
+                    break
+                except Exception:  # noqa: BLE001 - retried, then skipped
+                    if attempt == 3:
+                        return None
+                    time.sleep(5 * (attempt + 1))
+            with open(path + ".part", "wb") as f:
+                f.write(body)
+            os.replace(path + ".part", path)
+            time.sleep(0.3)
+        return open(path, "rb").read()
+
+    out, made, skipped, failed = [], set(), 0, 0
+    for e in src:
+        ph = e.get("photo") or None
+        entry = {k: e[k] for k in ("name", "rank", "species", "genus", "family", "group")}
+        entry["countries"] = sorted(set(e.get("countries") or []))
+        entry["photo"], entry["bytes"] = None, 0
+        take = ph and ph.get("url") and (not regions or regions & set(entry["countries"]))
+        if take and (a.limit is None or len(made) < a.limit):
+            pid = str(ph.get("inatPhotoId") or hashlib.sha256(ph["url"].encode()).hexdigest()[:12])
+            body = original(ph["url"], pid)
+            if body:
+                im = ImageOps.exif_transpose(Image.open(BytesIO(body))).convert("RGB")
+                im.thumbnail((a.size, a.size))
+                buf = BytesIO()
+                im.save(buf, "WEBP", quality=a.quality, method=6)
+                webp = buf.getvalue()
+                name = f"{pid}-{hashlib.sha256(webp).hexdigest()[:8]}.webp"
+                path = os.path.join(photos_dir, name)
+                if not os.path.exists(path):
+                    with open(path + ".part", "wb") as f:
+                        f.write(webp)
+                    os.replace(path + ".part", path)
+                made.add(name)
+                entry["photo"] = {"file": name, "attribution": ph.get("attribution") or "", "license": ph.get("license") or "",
+                                  "taxonUrl": ph.get("taxonUrl"), "source": ph.get("source")}
+                entry["bytes"] = len(webp)
+            else:
+                failed += 1
+        elif ph:
+            skipped += 1
+        out.append(entry)
+    stale = sorted(set(os.listdir(photos_dir)) - made)
+    print(f"photos made or kept: {len(made)}; not fetched: {failed}; outside --regions/--limit: {skipped}; files no longer named: {len(stale)}")
+    for f in stale[:20]:
+        print("  stale:", os.path.join(photos_dir, f))
+    # A lab sample of some regions says so in the page («Por ahora hay fotos solo de …»).
+    write(a.out, out, "photos/", "iNaturalist photos under Creative Commons licences", sample=a.sample or (f"regions:{a.regions}" if a.regions else None))
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -103,8 +190,19 @@ def main():
     f.add_argument("--field", required=True)
     f.add_argument("--countries")
     f.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "public", "identificar", "packs"))
+    tx = sub.add_parser("taxa", help="the list and its WebP photos from the per-taxon taxa.json")
+    tx.add_argument("--taxa", required=True)
+    tx.add_argument("--out", required=True)
+    tx.add_argument("--cache", required=True)
+    tx.add_argument("--size", type=int, default=480)
+    tx.add_argument("--quality", type=int, default=70)
+    tx.add_argument("--regions")
+    tx.add_argument("--sample")
+    tx.add_argument("--limit", type=int)
     a = ap.parse_args()
-    if a.cmd == "field":
+    if a.cmd == "taxa":
+        taxa_mode(a)
+    elif a.cmd == "field":
         from_field(a)
     else:
         sys.exit(f"unknown command {a.cmd}")

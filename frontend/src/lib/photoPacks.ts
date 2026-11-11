@@ -125,6 +125,21 @@ export function packSize(entries: PackTaxon[]): { photos: number; bytes: number 
 }
 export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packTaxa(index, scope))
 
+/** Each country's size for a scope's taxa and subspecies choice, in one pass over the list (the country picker). */
+export function countrySizes(index: Pick<PackIndex, 'taxa'>, scope: Pick<PackScope, 'taxa' | 'ssp'>): Map<string, { photos: number; bytes: number }> {
+  const groups = new Set(SCOPE_GROUPS[scope.taxa])
+  const files = new Map<string, Map<string, number>>()
+  for (const t of index.taxa) {
+    if (!t.photo || !groups.has(t.group) || (!scope.ssp && t.rank !== 'species')) continue
+    for (const c of t.countries) {
+      let m = files.get(c)
+      if (!m) files.set(c, (m = new Map()))
+      m.set(t.photo.file, t.bytes)
+    }
+  }
+  return new Map([...files].map(([c, m]) => [c, { photos: m.size, bytes: [...m.values()].reduce((a, b) => a + b, 0) }]))
+}
+
 /** Every country the list names, Ecuador first, then by the name shown. */
 export function packCountries(index: Pick<PackIndex, 'taxa'>, nameOf: (iso: string) => string = c => c): string[] {
   const all = new Set<string>()
@@ -201,66 +216,97 @@ async function pool<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {
   }))
 }
 
+/** What a save did: the pack now on the phone, and whether the new choice took (all its photos saved). */
+export interface InstallResult {
+  /** The pack on the phone after the save: the new one, or the one before when the new one did not complete. */
+  pack: InstalledPack | null
+  /** Photos of the new choice that could not be saved, of `total`. */
+  failed: number
+  total: number
+  /** The new choice did not complete and the pack before it stays (its record and its photos). */
+  kept: boolean
+}
+const isQuota = (err: unknown) => /quota/i.test(`${(err as Error)?.name} ${(err as Error)?.message}`)
+/** Every photo key the phone has under `base` (a pack's photo folder; lists are not photos). */
+async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
+  return (await cache.keys()).filter(r => r.url.startsWith(base) && !/\.json(\?|$)/.test(r.url))
+}
+
 /**
- * Saves the photos `scope` takes from the server's list on this phone; the installed pack's photos it no longer
- * takes are removed. Photos already on the phone (the same URL) are not downloaded again. `progress` gets photos
- * done and the total.
+ * Saves the photos `scope` takes from the server's list on this phone. Photos already on the phone are not
+ * downloaded again, unless the list gives another size for them (a photo changed under the same name). Only when
+ * every photo of the new choice is saved does it replace the pack before (its record, and the photos it no longer
+ * takes, with any other photo left under the folders); otherwise the pack before stays as it was and the result says
+ * how many failed, for a retry. The first pack on a phone is kept even when some photos failed (Update completes it).
+ * A full phone stops the save at once with an Error('quota'), the pack before untouched.
  */
-export async function installPack(index: PackIndex, scope: PackScope, progress: (done: number, total: number) => void, indexUrl = INDEX_URL()): Promise<InstalledPack> {
+export async function installPack(index: PackIndex, scope: PackScope, progress: (done: number, total: number) => void, indexUrl = INDEX_URL()): Promise<InstallResult> {
   const take = packTaxa(index, scope)
   const cache = await caches.open(CACHE)
   const src = (t: PackTaxon) => photoSrc(index, indexUrl, t.photo!.file)
-  const files = [...new Set(take.map(src))]
+  const want = new Map<string, number>()
+  for (const t of take) want.set(src(t), t.bytes)
+  const files = [...want.keys()]
   const ok = new Map<string, number>()
   let done = 0
+  let quota: unknown = null
   progress(0, files.length)
   await pool(files, 4, async u => {
+    if (quota) return
     try {
       let r = await cache.match(u)
+      let size = r ? (await r.clone().blob()).size : 0
+      // The same name with other bytes than the list says: asked again past every cache.
+      if (r && want.get(u) && size !== want.get(u)) r = undefined
       if (!r) {
-        const got = await fetch(u, { credentials: 'same-origin' })
+        const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
         if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) {
-          await cache.put(u, got.clone())
+          size = (await got.clone().blob()).size
+          await cache.put(u, got)
           r = got
         }
       }
-      if (r) ok.set(u, (await r.blob()).size)
-    } catch {
-      /* counted as failed: the next update takes it */
+      if (r) ok.set(u, size)
+    } catch (err) {
+      if (isQuota(err)) quota = err
+      /* otherwise counted as failed: a retry takes it */
     }
     progress(++done, files.length)
   })
+  if (quota) throw new Error('quota')
   const before = await installedPack()
-  if (before) {
-    const keep = new Set(files)
-    for (const t of before.index.taxa) {
-      const u = t.photo ? photoSrc(before.index, INSTALLED_KEY(), t.photo.file) : null
-      if (u && !keep.has(u)) await cache.delete(u)
-    }
-  }
+  const failed = files.length - ok.size
+  // Not complete over a pack, or nothing saved at all: nothing recorded (the pack before, if any, stays).
+  if ((before && failed) || (files.length && !ok.size)) return { pack: before, failed, total: files.length, kept: true }
   const base = new URL(index.base ?? 'photos/', indexUrl).href
-  const saved = take.filter(t => ok.has(src(t)))
+  // Replaced: whatever else is under the folders (the pack before's other photos, photos seen online) goes.
+  const bases = new Set([base, ...(before ? [before.index.base ?? base] : [])])
+  for (const b of bases) for (const r of await keysUnder(cache, b)) if (!ok.has(r.url)) await cache.delete(r)
   const pack: InstalledPack = {
-    index: { ...index, base, taxa: saved },
+    index: { ...index, base, taxa: take.filter(t => ok.has(src(t))) },
     installed: {
       scope: { ...scope, region: scope.region === 'neotropics' ? 'neotropics' : [...scope.region] },
       version: index.version,
       photos: ok.size,
       bytes: [...ok.values()].reduce((a, b) => a + b, 0),
       at: new Date().toISOString(),
-      failed: files.length - ok.size,
+      failed,
     },
   }
-  await cache.put(INSTALLED_KEY(), new Response(JSON.stringify(pack), { headers: { 'content-type': 'application/json' } }))
+  try {
+    await cache.put(INSTALLED_KEY(), new Response(JSON.stringify(pack), { headers: { 'content-type': 'application/json' } }))
+  } catch (err) {
+    throw isQuota(err) ? new Error('quota') : err
+  }
   installedMemo = Promise.resolve(pack)
-  return pack
+  return { pack, failed, total: files.length, kept: false }
 }
 
-/** The installed pack off the phone (its photos and its list). */
+/** The installed pack off the phone: its list and every photo under its folder (also photos seen online there). */
 export async function removePack(): Promise<void> {
   const before = await installedPack()
   const cache = await caches.open(CACHE)
-  if (before) for (const t of before.index.taxa) if (t.photo) await cache.delete(photoSrc(before.index, INSTALLED_KEY(), t.photo.file))
+  if (before) for (const r of await keysUnder(cache, before.index.base ?? new URL('photos/', INDEX_URL()).href)) await cache.delete(r)
   await cache.delete(INSTALLED_KEY())
   installedMemo = Promise.resolve(null)
 }
@@ -306,14 +352,23 @@ export function speciesPhotos(l: PackLookup, species: string): TaxonPhoto[] {
  * the pack). Without signal only the pack (the server's photos would not load).
  */
 export async function packSources(online = navigator.onLine): Promise<PackLookup[]> {
-  const out: PackLookup[] = []
+  return [...(await installedSources()), ...(online ? await onlineSources() : [])]
+}
+/** The installed pack as a source (from the phone's cache: no network). Each list is indexed once per version. */
+let installedLookup: { pack: InstalledPack; l: PackLookup } | null = null
+export async function installedSources(): Promise<PackLookup[]> {
   const pack = await installedPack()
-  if (pack) out.push(lookup(pack.index, INSTALLED_KEY()))
-  if (online) {
-    const index = await onlineIndex().catch(() => null)
-    if (index) out.push(lookup(index, INDEX_URL()))
-  }
-  return out
+  if (!pack) return []
+  if (installedLookup?.pack !== pack) installedLookup = { pack, l: lookup(pack.index, INSTALLED_KEY()) }
+  return [installedLookup.l]
+}
+let onlineLookup: { index: PackIndex; l: PackLookup } | null = null
+/** The server's whole list as a source ([] when it cannot be read). */
+export async function onlineSources(): Promise<PackLookup[]> {
+  const index = await onlineIndex().catch(() => null)
+  if (!index) return []
+  if (onlineLookup?.index !== index) onlineLookup = { index, l: lookup(index, INDEX_URL()) }
+  return [onlineLookup.l]
 }
 /** speciesPhotos from the first source that has the species' photo, its subspecies from any (each photo once). */
 export function photosFrom(sources: PackLookup[], species: string): TaxonPhoto[] {

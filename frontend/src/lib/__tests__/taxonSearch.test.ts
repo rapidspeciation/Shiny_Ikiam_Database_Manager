@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalog, norm, search } from '../taxonSearch'
+import { catalog, norm, search, taxonView, type ShownPhoto } from '../taxonSearch'
 
 // The Identificar search box: one box for a genus, a species or a subspecies, typed whole or in part.
 const t = (name: string, group: 'ithomiini' | 'nymphalidae' | 'butterfly' | 'moth' = 'ithomiini', family = 'Nymphalidae') => {
@@ -43,5 +43,44 @@ describe('taxon search', () => {
   it('a species known only through a subspecies is still found', () => {
     const c = catalog([t('Oleria onega janarilla')])
     expect(search(c, 'oleria onega').map(h => h.rank)).toEqual(['species', 'subspecies'])
+  })
+})
+
+describe('what a chosen taxon shows (review r1)', () => {
+  const ph = (src: string, level: ShownPhoto['level'], taxon?: string): ShownPhoto => ({ src, credit: `© ${src}`, license: 'CC-BY', level, ...(taxon ? { taxon } : {}) })
+  const hit = (name: string) => search(cat, name, 1)[0]
+
+  it('sol-F3: a species’ extra photos and the team’s specimens are not called subspecies', () => {
+    const v = taxonView(cat, hit('Mechanitis polymnia'), {
+      'Mechanitis polymnia': { photos: [ph('a', 'species'), ph('b', 'species'), ph('cam', 'specimen'), ph('s1', 'subspecies', 'Mechanitis polymnia casabranca')] },
+    })
+    expect(v.lead?.photo.src).toBe('a')
+    expect(v.sections.map(s => [s.id, s.cards.map(c => [c.photo.src, c.kicker])])).toEqual([
+      ['more', [['b', 'species'], ['cam', 'specimen']]],
+      ['ssp', [['s1', 'subspecies']]],
+    ])
+  })
+
+  it('sol-F5: a genus card falls back to a saved subspecies photo and names that subspecies', () => {
+    const v = taxonView(cat, hit('Mechanitis'), {
+      'Mechanitis polymnia': { photos: [ph('s1', 'subspecies', 'Mechanitis polymnia casabranca')] },
+      'Mechanitis lysimnia': { photos: [ph('l', 'species')] },
+    })
+    const cards = v.sections[0].cards.map(c => [c.label, c.viaSsp, c.name])
+    expect(cards).toEqual([
+      ['lysimnia', null, 'Mechanitis lysimnia'],
+      ['polymnia', 'casabranca', 'Mechanitis polymnia casabranca'],
+    ])
+    expect(v.noPhoto).toEqual(['Mechanitis mazaeus'])
+  })
+
+  it('fable-F8: subspecies cards carry the epithet alone; the full name stays for the full-screen view', () => {
+    const v = taxonView(cat, hit('Mechanitis polymnia casabranca'), {
+      'Mechanitis polymnia': { photos: [ph('a', 'species'), ph('s1', 'subspecies', 'Mechanitis polymnia casabranca'), ph('s2', 'subspecies', 'Mechanitis polymnia proceriformis')] },
+    })
+    expect(v.lead).toMatchObject({ name: 'Mechanitis polymnia casabranca', photo: { src: 's1' } })
+    const ssp = v.sections.find(s => s.id === 'ssp')!.cards
+    expect(ssp.map(c => [c.label, c.name])).toEqual([['proceriformis', 'Mechanitis polymnia proceriformis']])
+    expect(v.sections.find(s => s.id === 'more')!.cards.map(c => c.photo.src)).toEqual(['a'])
   })
 })
