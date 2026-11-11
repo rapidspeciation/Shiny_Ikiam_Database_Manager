@@ -430,7 +430,7 @@ test('a pending proposal on the rows below an inserted W2B.2 still maps to them:
 
 // ---------------------------------------------------------------- rows the app's account may not insert
 
-// Columns as letters, rows 1-based, as ROWS_RULE.md (10 Nov 2026) read Google's protections; made-up editors.
+// Columns as letters, rows 1-based, as Google's protections of the workbook were read on 10 Nov 2026 (made-up editors).
 const C = letter => [...letter].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
 const columnsLocked = (from, to, rows = {}) => ({ range: { startColumnIndex: C(from), endColumnIndex: C(to) + 1, ...rows }, requestingUserCanEdit: false });
 const RECORDED = {
@@ -452,7 +452,7 @@ const RECORDED = {
   Insectary_stocks: [],
 };
 
-test('rows the app may insert, by the protections as Google lists them (ROWS_RULE.md, 10 Nov): not in Insectary_data or Collection_data, yes in Photo_links and Lists', async () => {
+test('rows the app may insert, by the protections as Google listed them on 10 Nov 2026: not in Insectary_data or Collection_data, yes in Photo_links and Lists', async () => {
   const store = new Store({ localMode: true }, { sheets: new LocalSheets({}) });
   try {
     // Not known yet (no sync): refused where protected columns reached every row, as an insert Google would refuse.
@@ -486,17 +486,17 @@ test('a W2B.2 row in Insectary_data, where protected columns reach every row: re
     const w2b = at(4);
     const refused = await call('propose_changes', {
       reason: 'Dos mariposas con W2B',
-      newRows: [{ sheet: SHEET, values: { Insectary_ID: 'w2b.2', Sex: 'female', 'CLUTCH NUMBER': 804 }, note: 'second one' }],
+      newRows: [{ sheet: SHEET, values: { Insectary_ID: 'w2b.2', Sex: 'female', 'CLUTCH NUMBER': 804, Death_date: '2026-09-20' }, note: 'second one' }],
     });
     assert.ok(!refused.proposalId, JSON.stringify(refused));
     assert.match(refused.error, /cannot insert a row in Insectary_data/);
     assert.match(refused.error, /Ask PAS to insert it by hand in Google Sheets below row 4 \(W2B, the last row of W2B/);
-    assert.match(refused.error, /then fill it with a proposal on that row/);
+    assert.match(refused.error, /and type W2B\.2 in its Insectary_ID; then propose its other values as changes to that row/);
     // The values in the sheet's column order, a tab between columns, from the first one given.
-    const cells = [['Insectary_ID', 'W2B.2'], ['CLUTCH NUMBER', '804'], ['Sex', 'female']].sort((a, b) => col(a[0]) - col(b[0]));
+    const cells = [['Insectary_ID', 'W2B.2'], ['CLUTCH NUMBER', '804'], ['Sex', 'female'], ['Death_date', '2026-09-20']].sort((a, b) => col(a[0]) - col(b[0]));
     const line = Array.from({ length: col(cells.at(-1)[0]) - col(cells[0][0]) + 1 }, () => '');
     for (const [key, value] of cells) line[col(key) - col(cells[0][0])] = value;
-    assert.ok(refused.error.endsWith(`tab-separated from column ${String.fromCharCode(65 + col(cells[0][0]))}: ${line.join('\t')}`), refused.error);
+    assert.ok(refused.error.endsWith(`tab-separated from column ${String.fromCharCode(65 + col(cells[0][0]))} (to paste before copying formulas into the row): ${line.join('\t')}`), refused.error);
     assert.equal(store.db.prepare('SELECT count(*) n FROM ai_proposals').get().n, 0, 'no proposal');
 
     // The suffix on W2B's own row is a cell edit: it goes.

@@ -24,7 +24,6 @@ import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, fi
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, rowInsertLocked, suffixedId } from './premade.mjs';
-import { columnLetter } from './columns.mjs';
 import { formulaNotes, isPlaceholder, newRowFormulas, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
 import { shiftFormula } from './sheets.mjs';
 import { parseFormula, relativeFormula } from './formula.mjs';
@@ -1414,21 +1413,23 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
 
   /**
    * A row the app's account may not insert (premade.mjs rowInsertLocked): PAS inserts it by hand, a
-   * proposal fills it; its values tab-separated in the sheet's column order, ready to paste.
+   * proposal fills it; its values (dates as dates) tab-separated in the sheet's column order, ready to paste.
    */
   function insertRefused(sheet, duplicate, values) {
     const columns = sheetColumns(sheet);
+    const isDate = field => moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date';
     const cells = Object.entries(values)
       .filter(([field]) => columns.has(field))
-      .map(([field, value]) => [columns.get(field), String(value ?? '').replace(/\s+/g, ' ')])
+      .map(([field, value]) => [columns.get(field), String(isDate(field) && typeof value === 'number' ? isoDate(value) : (value ?? '')).replace(/\s+/g, ' ')])
       .sort((a, b) => a[0] - b[0]);
     const first = cells[0]?.[0] ?? 0;
     const line = Array.from({ length: (cells.at(-1)?.[0] ?? first) - first + 1 }, () => '');
     for (const [column, value] of cells) line[column - first] = value;
     return (
       `the app cannot insert a row in ${sheet}: protected columns reach that row. ` +
-      `Ask PAS to insert it by hand in Google Sheets below row ${duplicate.anchor.row} (${duplicate.anchor.value}, the last row of ${duplicate.base}; or where the notebook puts it), ` +
-      `then fill it with a proposal on that row. Its values, tab-separated from column ${columnLetter(first)}: ${line.join('\t')}`
+      `Ask PAS to insert it by hand in Google Sheets below row ${duplicate.anchor.row} (${duplicate.anchor.value}, the last row of ${duplicate.base}; or where the notebook puts it) ` +
+      `and type ${duplicate.id} in its Insectary_ID; then propose its other values as changes to that row. ` +
+      `Its values, tab-separated from column ${colLetter(first)} (to paste before copying formulas into the row): ${line.join('\t')}`
     );
   }
 

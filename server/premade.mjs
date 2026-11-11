@@ -108,10 +108,10 @@ export function protectedFields(db, sheet, row, columns) {
 const ROWS_LOCKED_UNKNOWN = new Set(['Insectary_data', 'Collection_data']);
 
 /**
- * Whether Google refuses the app's account a row inserted at sheet row `at` (1-based, the new row's
- * number) of `sheet`: a range it cannot edit (as last noted: noteProtection) reaches the row above or
- * the row there now, whatever its columns. Google lets an account insert rows only where every
- * protected range they fall in is one it may edit; the unprotected parts of a range do not change that.
+ * Whether a row inserted at sheet row `at` (1-based, the new row's number) of `sheet` is refused when
+ * drafted: a range the app's account cannot edit (as last noted: noteProtection) reaches the row above
+ * or the row there now, whatever its columns. Conservative: Google refuses an insert a range it may not
+ * edit reaches; how it treats a range's edges was not tested with a write.
  */
 export function rowInsertLocked(db, sheet, at) {
   let locked = null;
