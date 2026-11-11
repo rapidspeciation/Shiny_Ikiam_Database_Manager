@@ -210,7 +210,7 @@ export default {
   'Por ahora la lista tiene fotos solo de Ithomiini.': 'For now the list has photos of Ithomiini only.',
   '¿Borrar las fotos de este teléfono?': 'Delete the photos from this phone?',
   'Fotos para comparar': 'Photos to compare',
-  'Una foto por taxón, para comparar y buscar sin internet.': 'One photo per taxon, to compare and search without internet.',
+  'Hasta 2 fotos por taxón, primero las del país elegido. Para comparar y buscar sin internet.': 'Up to 2 photos per taxon, those from the country chosen first. To compare and search without internet.',
   'con subespecies': 'with subspecies',
   'solo especies': 'species only',
   '{n} fotos · {mb} MB · {date}': '{n} photos · {mb} MB · {date}',
@@ -264,4 +264,11 @@ export default {
   'No hay foto de referencia para descargar.': 'No reference photo to download.',
   'En Descargas: fotos para comparar': 'In Downloads: photos to compare',
   'Guardando fotos para comparar: {done} de {total}': 'Saving photos to compare: {done} of {total}',
+  // Photos by country (11 Nov 2026).
+  'Ejemplar preservado': 'Preserved specimen',
+  'Primero fotos de {country}': 'Photos from {country} first',
+  'Primero fotos de {country} (GPS de su foto)': "Photos from {country} first (your photo's GPS)",
+  'Primero fotos del área de la subespecie {ssp}': 'Photos from the range of subspecies {ssp} first',
+  'Primero fotos del área de la subespecie {ssp}, luego de {country}': 'Photos from the range of subspecies {ssp} first, then {country}',
+  'Primero fotos del área de la subespecie {ssp}, luego de {country} (GPS de su foto)': "Photos from the range of subspecies {ssp} first, then {country} (your photo's GPS)",
 }

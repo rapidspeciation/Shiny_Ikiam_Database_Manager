@@ -99,7 +99,7 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
       <Images :size="22" class="mt-0.5 shrink-0 text-fill-emerald" />
       <div class="min-w-0 flex-1">
         <h2 class="text-lg font-semibold">{{ $t('Fotos para comparar') }}</h2>
-        <p class="text-sm text-fg-muted">{{ $t('Una foto por taxón, para comparar y buscar sin internet.') }}</p>
+        <p class="text-sm text-fg-muted">{{ $t('Hasta 2 fotos por taxón, primero las del país elegido. Para comparar y buscar sin internet.') }}</p>
       </div>
     </div>
 

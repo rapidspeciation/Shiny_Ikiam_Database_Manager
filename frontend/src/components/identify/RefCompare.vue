@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // The person's photo beside reference photos of one candidate (views/IdentifyView.vue), with each photo's credit.
-// A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such.
+// A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such,
+// a preserved specimen with its ID. Each photo's country follows its credit; `first` says whose country comes first.
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { licenseUrl, type Refs } from '../../lib/identifyRefs'
+import { countryName } from '../../lib/usePacks'
 
-const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null }>()
+const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; first?: string | null }>()
 defineEmits<{ hint: [] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
@@ -59,16 +61,20 @@ const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
         <span v-if="photo.level === 'subspecies' && photo.taxon" class="font-medium">{{ $t('Subespecie') }} <i>{{ photo.taxon.split(' ').slice(2).join(' ') }}</i>. </span>
         <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ photo.sex }}</template></span>
         <span v-else class="break-words"
+          ><span v-if="photo.kind === 'preserved'" class="font-medium" data-testid="preserved">{{ $t('Ejemplar preservado') }}<template v-if="photo.specimen"> {{ photo.specimen }}</template> · </span
           ><a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
           ><template v-else>{{ photo.credit }}</template
           ><template v-if="photo.license">
             ·
             <a v-if="licenseUrl(photo.license)" :href="licenseUrl(photo.license)!" target="_blank" rel="noopener license" class="underline-offset-2 hover:underline">{{ photo.license }}</a
             ><template v-else>{{ photo.license }}</template></template
+          ><template v-if="photo.country">
+            · <span data-testid="photo-country">{{ countryName(photo.country) }}</span></template
           ></span
         >
         <span v-if="photos.length > 1" class="text-fg-subtle"> · {{ Math.min(at, photos.length - 1) + 1 }}/{{ photos.length }}</span>
       </figcaption>
+      <p v-if="first && photos.length > 1" class="mt-0.5 text-xs text-fg-subtle" data-testid="photos-first">{{ first }}</p>
     </figure>
   </div>
 </template>

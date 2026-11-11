@@ -14,12 +14,11 @@ const tx = (name: string, group: PackTaxon['group'], countries: string[], file: 
     family,
     group,
     countries,
-    photo: file ? { file, attribution: `(c) Ana ${file}, some rights reserved (CC BY)`, license: 'CC-BY', taxonUrl: null, source: `https://www.inaturalist.org/photos/${file.replace(/\D/g, '') || 1}` } : null,
-    bytes: file ? bytes : 0,
+    photos: file ? [{ file, attribution: `(c) Ana ${file}, some rights reserved (CC BY)`, license: 'CC-BY', taxonUrl: null, source: `https://www.inaturalist.org/photos/${file.replace(/\D/g, '') || 1}`, bytes }] : [],
   }
 }
 const index: PackIndex = {
-  schema: 'ithomiini-photo-packs/1',
+  schema: 'ithomiini-photo-packs/2',
   version: 'v1',
   built: '2026-11-11',
   taxa: [
@@ -49,7 +48,7 @@ function fakeCaches() {
 }
 let served: PackIndex = index
 /** A photo's bytes as the list gives them (the fake server answers with that many). */
-const sizeOfFile = (u: string) => served.taxa.find(t => t.photo && u.endsWith(`/${t.photo.file}`))?.bytes ?? 100
+const sizeOfFile = (u: string) => served.taxa.flatMap(t => t.photos).find(p => u.endsWith(`/${p.file}`))?.bytes ?? 100
 const fetched: string[] = []
 beforeEach(() => {
   vi.resetModules()
@@ -102,7 +101,7 @@ describe('pack list and scope', () => {
 
   it('counts photos listed but not on the server in sizes (estimated), never in a save', async () => {
     const { installPack, scopeSize } = await import('../photoPacks')
-    const withMissing: PackIndex = { ...index, taxa: [...index.taxa, { ...tx('Urania fulgens', 'moth', ['EC'], 'u.webp', 500, 'Uraniidae'), photo: { ...tx('x', 'moth', [], 'u.webp').photo!, missing: true } }] }
+    const withMissing: PackIndex = { ...index, taxa: [...index.taxa, { ...tx('Urania fulgens', 'moth', ['EC'], 'u.webp', 500, 'Uraniidae'), photos: [{ ...tx('x', 'moth', [], 'u.webp', 500).photos[0], missing: true }] }] }
     expect(scopeSize(withMissing, { taxa: 'all', region: ['EC'], ssp: false })).toEqual({ photos: 5, bytes: 16500, missing: 1, missingBytes: 500 })
     fakeCaches()
     const out = await installPack(withMissing, { taxa: 'all', region: ['EC'], ssp: false }, () => {})
@@ -144,7 +143,7 @@ describe('install, update and removal', () => {
     // A wider one downloads only what is new.
     fetched.length = 0
     await installPack(index, { taxa: 'all', region: ['EC'], ssp: true }, () => {})
-    expect(fetched.map(u => u.split('/').pop()).sort()).toEqual(['6.webp', '9.webp'])
+    expect(fetched.filter(u => u.endsWith('.webp')).map(u => u.split('/').pop()).sort()).toEqual(['6.webp', '9.webp'])
     // A narrower one removes what it no longer takes.
     await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: false }, () => {})
     expect(photos()).toEqual(['1.webp', '4.webp'])
@@ -414,7 +413,7 @@ describe('the pointer offline when Compare has no photo (r2-sol-F7)', () => {
 
   it('b: points to a choice that downloads the photo, with what it downloads; says when none can be downloaded', async () => {
     const { packHint } = await import('../photoPacks')
-    const moth = (name: string, countries: string[], missing: boolean): PackTaxon => ({ ...tx(name, 'moth', countries, `${name.length}.webp`, 900, 'Erebidae'), photo: { ...tx(name, 'moth', [], 'm.webp').photo!, file: `${name}.webp`, missing } })
+    const moth = (name: string, countries: string[], missing: boolean): PackTaxon => ({ ...tx(name, 'moth', countries, `${name.length}.webp`, 900, 'Erebidae'), photos: [{ ...tx(name, 'moth', [], 'm.webp', 900).photos[0], file: `${name}.webp`, missing }] })
     const list: PackIndex = { ...index, taxa: [...index.taxa, moth('Abablemma bilineata', ['CR', 'MX'], true), moth('Actias truncatipennis', [], false), tx('Napeogenes sylphis caucayaensis', 'ithomiini', ['CO'], 'n.webp', 50)] }
     // Not made yet, or in no Neotropical country: nothing to download.
     expect(packHint(list, 'Abablemma bilineata', cur)).toEqual({ kind: 'none' })

@@ -88,4 +88,14 @@ describe('what a chosen taxon shows (review r1)', () => {
     expect(ssp.map(c => [c.label, c.name])).toEqual([['proceriformis', 'Mechanitis polymnia proceriformis']])
     expect(v.sections.find(s => s.id === 'more')!.cards.map(c => c.photo.src)).toEqual(['a'])
   })
+
+  it('several photos of a subspecies: one card each among the others, all of them for the subspecies chosen', () => {
+    const photos = { photos: [ph('a', 'species'), ph('p1', 'subspecies', 'Mechanitis polymnia proceriformis'), ph('c1', 'subspecies', 'Mechanitis polymnia casabranca'), ph('p2', 'subspecies', 'Mechanitis polymnia proceriformis')] }
+    const sp = taxonView(cat, hit('Mechanitis polymnia'), { 'Mechanitis polymnia': photos })
+    expect(sp.sections.find(s => s.id === 'ssp')!.cards.map(c => c.photo.src)).toEqual(['p1', 'c1'])
+    const ssp = taxonView(cat, hit('Mechanitis polymnia proceriformis'), { 'Mechanitis polymnia': photos })
+    expect(ssp.lead?.photo.src).toBe('p1')
+    expect(ssp.sections.find(s => s.id === 'more')!.cards.map(c => c.photo.src)).toEqual(['p2', 'a'])
+    expect(new Set([ssp.lead, ...ssp.sections.flatMap(s => s.cards)].map(c => c!.key)).size).toBe(4)
+  })
 })

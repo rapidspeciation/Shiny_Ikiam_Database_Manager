@@ -12,7 +12,8 @@
 import { api } from './api'
 import { appRoot } from './appRoot'
 import { CACHE } from './offlineEngine'
-import { installedSources, onlineSources, packSources, photosFrom, type PackLookup, type TaxonPhoto } from './photoPacks'
+import { installedSources, onlineSources, packSources, photosFrom, rangeOf, type PackLookup, type PhotoKind, type TaxonPhoto } from './photoPacks'
+import { byPlace, type Place } from './photoCountry'
 
 export interface RefPhoto {
   src: string
@@ -28,6 +29,11 @@ export interface RefPhoto {
   sex?: string | null
   /** The photo's own page (iNaturalist), for its credit. */
   source?: string | null
+  /** Where it was taken (ISO2; null or absent: not known). */
+  country?: string | null
+  /** 'preserved': a preserved specimen, shown as such with its `specimen` ID (absent: a live butterfly). */
+  kind?: PhotoKind
+  specimen?: string | null
 }
 export interface Refs {
   photos: RefPhoto[]
@@ -37,7 +43,7 @@ export interface Refs {
 interface InatEntry {
   level: 'subspecies' | 'species' | 'genus'
   taxon?: { url?: string }
-  photos: { thumb: string; attribution: string; license: string }[]
+  photos: { thumb: string; attribution: string; license: string; country?: string | null }[]
 }
 interface ApiEntry {
   inat: InatEntry | null
@@ -176,7 +182,7 @@ async function keep(add: Record<string, Refs>) {
 function fromApi(entry: ApiEntry): Refs {
   const inat = entry.inat
   const level = inat?.level === 'genus' ? 'genus' : 'species'
-  const photos: RefPhoto[] = (inat?.photos ?? []).map(p => ({ src: refPhotoSrc(p.thumb), credit: shortCredit(p.attribution), license: p.license, level, source: inatPhotoPage(p.thumb) }))
+  const photos: RefPhoto[] = (inat?.photos ?? []).map(p => ({ src: refPhotoSrc(p.thumb), credit: shortCredit(p.attribution), license: p.license, level, source: inatPhotoPage(p.thumb), country: p.country ?? null }))
   for (const s of entry.specimens ?? [])
     photos.push({ src: `${appRoot()}api/photo/${encodeURIComponent(s.dorsal)}?w=400`, credit: s.cam, license: '', level: 'specimen', sex: s.sex })
   return { photos, taxonUrl: inat?.taxon?.url ?? null }
@@ -231,8 +237,28 @@ const packRef = (p: TaxonPhoto): RefPhoto => ({
   license: p.license,
   level: p.rank,
   source: p.source,
+  country: p.country,
+  ...(p.kind === 'preserved' ? { kind: p.kind, specimen: p.specimen } : {}),
   ...(p.rank === 'subspecies' ? { taxon: p.name } : {}),
 })
+
+/**
+ * Photos in the order of their countries for `place` (lib/photoCountry.ts): the person's country first, then its
+ * neighbours, then the rest, then those whose country is not known; a subspecies' range before all. Inside the same
+ * rank a species' own photos come before its subspecies' (`sspOrder` then orders those: the model's closest first),
+ * else the order they came in.
+ */
+export function orderRefs(photos: RefPhoto[], place: Place, sspOrder?: (taxon: string) => number): RefPhoto[] {
+  const ssp = (p: RefPhoto) => (p.level === 'subspecies' ? 1 : 0)
+  return byPlace(photos, place, p => p.country, (a, b) => ssp(a) - ssp(b) || (sspOrder && a.taxon && b.taxon ? sspOrder(a.taxon) - sspOrder(b.taxon) : 0))
+}
+
+/** A taxon's range (its recorded countries) from the installed pack, else the server's list with signal; null: not known. */
+export async function taxonRange(name: string): Promise<string[] | null> {
+  const mine = rangeOf(await installedSources().catch(() => []), name)
+  if (mine || !navigator.onLine) return mine
+  return rangeOf(await onlineSources().catch(() => []), name)
+}
 /**
  * The photo packs' photos (lib/photoPacks.ts: the installed pack, and with signal the server's whole list) for any
  * taxon of the head, Ithomiini or not: the pack's photo of the species first, then the photos already found (the

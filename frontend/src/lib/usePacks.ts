@@ -108,7 +108,7 @@ async function install(s: PackScope = scope.value) {
       note.value = t('{n} fotos no se guardaron: toque Actualizar fotos para completarlas.', { n: out.failed })
     } else {
       // Replaced in full: the older «Fotos para el campo» set goes (its files this pack uses stay).
-      await retireFieldSet(new Set(out.pack!.index.taxa.flatMap(x => (x.photo ? [new URL(x.photo.file, out.pack!.index.base).href] : []))))
+      await retireFieldSet(new Set(out.pack!.index.taxa.flatMap(x => x.photos.map(ph => new URL(ph.file, out.pack!.index.base).href))))
     }
     return out
   } catch (err) {

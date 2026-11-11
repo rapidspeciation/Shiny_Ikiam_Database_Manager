@@ -1,8 +1,11 @@
 /**
- * Photo packs for the Identificar tab: one reference photo per taxon, kept on the phone to compare a result and to
+ * Photo packs for the Identificar tab: reference photos of each taxon, kept on the phone to compare a result and to
  * look a taxon up without signal (the Descargas place, components/identify/PackPanel.vue; the search,
  * components/identify/TaxonSearch.vue). The server's list is identificar/packs/index.json (scripts/photo-packs.py):
- * one entry per taxon with its rank, genus, family, group, countries (ISO2) and photo with its credit.
+ * one entry per taxon with its rank, genus, family, group, countries (ISO2) and its photos, each with its credit and
+ * the country it was taken in. A pack keeps up to PER_TAXON photos of a taxon: the region's first, then one from a
+ * neighbouring country or else from elsewhere (lib/photoCountry.ts choosePhotos), so an Ecuador pack shows Ecuador's
+ * butterflies first (Franz, 11 Nov 2026); with signal the server's list adds the rest.
  *
  * The person chooses a scope: which taxa (Ithomiini; plus the other Nymphalidae; plus every butterfly; plus moths),
  * which region (Ecuador, one or several countries, the whole Neotropics) and whether to add the subspecies. Every
@@ -16,9 +19,22 @@
 import { appRoot } from './appRoot'
 import { intlLocale } from './i18n'
 import { CACHE } from './offlineEngine'
+import { choosePhotos, SHAPES_URL } from './photoCountry'
 
 export type Group = 'ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'
 export type Rank = 'species' | 'subspecies'
+/**
+ * 'live': a photo of a live butterfly (iNaturalist); 'preserved': a preserved specimen (a set specimen's wings, e.g.
+ * the Sanger crops for taxa with no free photo), shown as «Preserved specimen» with its `specimen` ID.
+ */
+export type PhotoKind = 'live' | 'preserved'
+
+/**
+ * At most this many photos of one taxon in a pack: the region's, then a neighbour's or another. 2, not 3: the default
+ * pack (Ecuador, butterflies and moths, with subspecies) is 118 MB instead of about 154 (59 MB with one photo before;
+ * offline-packs-20261111/rev4-country/NOTES.md).
+ */
+export const PER_TAXON = 2
 
 export interface PackPhoto {
   /** Relative to the index's `base` (default photos/). */
@@ -28,6 +44,14 @@ export interface PackPhoto {
   taxonUrl: string | null
   /** The photo's own page (iNaturalist), for its credit. */
   source: string | null
+  /** The file's size (estimated for a `missing` one). */
+  bytes: number
+  /** Where it was taken (ISO2), null or absent when not known. */
+  country?: string | null
+  /** Absent: 'live'. */
+  kind?: PhotoKind
+  /** A preserved specimen's ID (its collection number), shown with «Preserved specimen». */
+  specimen?: string | null
   /**
    * Listed but not on this server yet (the builder made only some regions' photos, scripts/photo-packs.py --cell):
    * counted in sizes with `bytes` estimated, never saved or shown.
@@ -44,13 +68,16 @@ export interface PackTaxon {
   group: Group
   /** ISO 3166-1 alpha-2 codes of the Neotropical countries where it is recorded (empty: none; in no region). */
   countries: string[]
-  /** null: no free photo of it (still listed, so the search names it; signed in and online the server may have one). */
-  photo: PackPhoto | null
-  /** The photo file's size. */
-  bytes: number
+  /**
+   * Its photos, the builder's best first (empty: no free photo of it; still listed, so the search names it; signed in
+   * and online the server may have one).
+   */
+  photos: PackPhoto[]
 }
+/** A list of the first schema (one `photo` and `bytes` per taxon), as a phone may still keep. */
+type OldTaxon = Omit<PackTaxon, 'photos'> & { photo?: Omit<PackPhoto, 'bytes'> | null; bytes?: number; photos?: PackPhoto[] }
 export interface PackIndex {
-  schema: 'ithomiini-photo-packs/1'
+  schema: 'ithomiini-photo-packs/1' | 'ithomiini-photo-packs/2'
   /** Changes whenever a photo or an entry changes (the builder's hash): an installed pack with another is out of date. */
   version: string
   built: string
@@ -119,15 +146,35 @@ export function setPackScope(scope: PackScope) {
   }
 }
 
+/** A list in the current shape: a first-schema taxon's `photo` and `bytes` become its one photo (country not known). */
+export function normIndex<T extends { taxa: unknown[] }>(index: T): T & { taxa: PackTaxon[] } {
+  const taxa = (index.taxa as OldTaxon[]).map(t => {
+    if (Array.isArray(t.photos)) return t as PackTaxon
+    const { photo, bytes, ...rest } = t
+    return { ...rest, photos: photo ? [{ ...photo, bytes: bytes ?? 0, country: null }] : [] } as PackTaxon
+  })
+  return { ...index, taxa }
+}
+
+/** A taxon with a photo on the server (`withMissing`: also one listed but not made). */
+const usable = (t: PackTaxon, withMissing: boolean) => t.photos.filter(p => withMissing || !p.missing)
+/** The region's countries, null for «Neotrópico». */
+const regionList = (r: Region) => (r === 'neotropics' ? null : r)
+/** The photos of one taxon a scope keeps (PER_TAXON, the region's own first). */
+export const chosenPhotos = (t: PackTaxon, scope: Pick<PackScope, 'region'>, { withMissing = false } = {}) => choosePhotos(usable(t, withMissing), regionList(scope.region), PER_TAXON)
+
 /** The entries of a list a scope takes: with a photo on the server (`withMissing`: also those listed but not made). */
 export function packTaxa(index: Pick<PackIndex, 'taxa'>, scope: PackScope, { withMissing = false } = {}): PackTaxon[] {
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
   const region = scope.region === 'neotropics' ? null : new Set(scope.region)
   return index.taxa.filter(
     // «Neotrópico»: any Neotropical country (the head is worldwide: a taxon with none recorded is in no region).
-    t => t.photo && (withMissing || !t.photo.missing) && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (region ? t.countries.some(c => region.has(c)) : t.countries.length > 0),
+    t => usable(t, withMissing).length > 0 && groups.has(t.group) && (scope.ssp || t.rank === 'species') && (region ? t.countries.some(c => region.has(c)) : t.countries.length > 0),
   )
 }
+/** Each taxon a scope takes with the photos it keeps of it. */
+export const packPhotos = (index: Pick<PackIndex, 'taxa'>, scope: PackScope, { withMissing = false } = {}): PackPhoto[] =>
+  packTaxa(index, scope, { withMissing }).flatMap(t => chosenPhotos(t, scope, { withMissing }))
 export interface Size {
   /** Every photo of the choice (each file once) and its bytes: real, or estimated for those not on the server. */
   photos: number
@@ -136,10 +183,10 @@ export interface Size {
   missing: number
   missingBytes: number
 }
-/** Photos and bytes of entries, each file once (a few taxa share a photo). */
-export function packSize(entries: PackTaxon[]): Size {
+/** Photos and bytes, each file once (a few taxa share a photo). */
+export function packSize(photos: PackPhoto[]): Size {
   const files = new Map<string, [number, boolean]>()
-  for (const e of entries) if (e.photo) files.set(e.photo.file, [e.bytes, !!e.photo.missing])
+  for (const p of photos) files.set(p.file, [p.bytes, !!p.missing])
   let bytes = 0,
     missing = 0,
     missingBytes = 0
@@ -153,18 +200,19 @@ export function packSize(entries: PackTaxon[]): Size {
   return { photos: files.size, bytes, missing, missingBytes }
 }
 /** A choice's size, the photos not on the server yet included (estimated) and counted apart. */
-export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packTaxa(index, scope, { withMissing: true }))
+export const scopeSize = (index: Pick<PackIndex, 'taxa'>, scope: PackScope) => packSize(packPhotos(index, scope, { withMissing: true }))
 
 /** Each country's size for a scope's taxa and subspecies choice, in one pass over the list (the country picker). */
 export function countrySizes(index: Pick<PackIndex, 'taxa'>, scope: Pick<PackScope, 'taxa' | 'ssp'>): Map<string, Size> {
   const groups = new Set(SCOPE_GROUPS[scope.taxa])
   const files = new Map<string, Map<string, [number, boolean]>>()
   for (const t of index.taxa) {
-    if (!t.photo || !groups.has(t.group) || (!scope.ssp && t.rank !== 'species')) continue
+    if (!t.photos.length || !groups.has(t.group) || (!scope.ssp && t.rank !== 'species')) continue
     for (const c of t.countries) {
       let m = files.get(c)
       if (!m) files.set(c, (m = new Map()))
-      m.set(t.photo.file, [t.bytes, !!t.photo.missing])
+      // The photos a pack of that country alone keeps of it.
+      for (const p of choosePhotos(t.photos, [c], PER_TAXON)) m.set(p.file, [p.bytes, !!p.missing])
     }
   }
   // Like packSize: the photos not on the server yet counted apart, so the row says «≈».
@@ -202,9 +250,9 @@ export const numText = (n: number) => n.toLocaleString(intlLocale())
 
 /** What the photos a choice takes cost to save now: those not on the phone yet (the installed pack's are kept). */
 export function toDownload(index: Pick<PackIndex, 'taxa'>, scope: PackScope, have: Pick<PackIndex, 'taxa'> | null | undefined): number {
-  const kept = new Set((have?.taxa ?? []).flatMap(t => (t.photo ? [t.photo.file] : [])))
+  const kept = new Set((have?.taxa ?? []).flatMap(t => t.photos.map(p => p.file)))
   const files = new Map<string, number>()
-  for (const t of packTaxa(index, scope)) if (!kept.has(t.photo!.file)) files.set(t.photo!.file, t.bytes)
+  for (const p of packPhotos(index, scope)) if (!kept.has(p.file)) files.set(p.file, p.bytes)
   return [...files.values()].reduce((a, b) => a + b, 0)
 }
 
@@ -219,10 +267,10 @@ export function packHint(index: Pick<PackIndex, 'taxa'> | null, name: string, cu
   if (!index) return { kind: 'downloads' }
   const named = index.taxa.filter(x => x.name === name || x.species === name)
   if (!named.length) return null
-  const usable = named.filter(x => x.photo && !x.photo.missing && x.countries.length)
+  const can = named.filter(x => usable(x, false).length && x.countries.length)
   // The taxon's own photo first, then a subspecies' (which needs the subspecies choice).
-  const entry = usable.find(x => x.name === name) ?? usable.find(x => x.rank === 'species') ?? usable[0]
-  if (!entry) return named.some(x => x.photo) ? { kind: 'none' } : null
+  const entry = can.find(x => x.name === name) ?? can.find(x => x.rank === 'species') ?? can[0]
+  if (!entry) return named.some(x => x.photos.length) ? { kind: 'none' } : null
   const level = Math.max(TAXA_SCOPES.findIndex(k => SCOPE_GROUPS[k].includes(entry.group)), TAXA_SCOPES.indexOf(current.taxa))
   const region: Region = current.region !== 'neotropics' && entry.countries.some(c => current.region.includes(c)) ? [...current.region] : 'neotropics'
   const scope: PackScope = { taxa: TAXA_SCOPES[level], region, ssp: current.ssp || entry.rank === 'subspecies' }
@@ -240,7 +288,7 @@ let onlineMemo: Promise<PackIndex> | null = null
 export function onlineIndex(): Promise<PackIndex> {
   onlineMemo ??= fetch(INDEX_URL(), { credentials: 'same-origin', cache: 'no-cache' })
     .then(r => (r.ok ? (r.json() as Promise<PackIndex>) : Promise.reject(new Error(`HTTP ${r.status}`))))
-    .then(v => (Array.isArray(v?.taxa) ? v : Promise.reject(new Error('not a pack list'))))
+    .then(v => (Array.isArray(v?.taxa) ? normIndex(v) : Promise.reject(new Error('not a pack list'))))
     .catch(err => {
       onlineMemo = null
       throw err
@@ -273,7 +321,7 @@ export function installedPack(): Promise<InstalledPack | null> {
       const r = await (await caches.open(CACHE)).match(INSTALLED_KEY())
       if (!r) return null
       const v = (await r.json()) as InstalledPack
-      return v?.index?.taxa && v.installed ? v : null
+      return Array.isArray(v?.index?.taxa) && v.installed ? { ...v, index: normIndex(v.index) } : null
     } catch {
       return null
     }
@@ -318,11 +366,11 @@ async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
  * A full phone stops the save at once with an Error('quota'), the pack before untouched.
  */
 export async function installPack(index: PackIndex, scope: PackScope, progress: (done: number, total: number) => void, indexUrl = INDEX_URL()): Promise<InstallResult> {
-  const take = packTaxa(index, scope)
+  const take = packTaxa(index, scope).map(t => ({ ...t, photos: chosenPhotos(t, scope) }))
   const cache = await caches.open(CACHE)
-  const src = (t: PackTaxon) => photoSrc(index, indexUrl, t.photo!.file)
+  const src = (p: PackPhoto) => photoSrc(index, indexUrl, p.file)
   const want = new Map<string, number>()
-  for (const t of take) want.set(src(t), t.bytes)
+  for (const t of take) for (const p of t.photos) want.set(src(p), p.bytes)
   const files = [...want.keys()]
   const ok = new Map<string, number>()
   let done = 0
@@ -356,7 +404,8 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   if ((before && failed) || (files.length && !ok.size)) return { pack: before, failed, total: files.length, kept: true }
   const base = new URL(index.base ?? 'photos/', indexUrl).href
   const pack: InstalledPack = {
-    index: { ...index, base, taxa: take.filter(t => ok.has(src(t))) },
+    // Each taxon with the photos saved of it (a taxon none of whose photos could be saved is left out).
+    index: { ...index, base, taxa: take.map(t => ({ ...t, photos: t.photos.filter(p => ok.has(src(p))) })).filter(t => t.photos.length) },
     installed: {
       scope: { ...scope, region: scope.region === 'neotropics' ? 'neotropics' : [...scope.region] },
       version: index.version,
@@ -378,6 +427,16 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   // by a Delete cut short); cut short itself, the next save takes them.
   const bases = new Set([base, ...(before ? [before.index.base ?? base] : [])])
   for (const b of bases) await pool((await keysUnder(cache, b)).filter(r => !ok.has(r.url)), 8, async r => void (await cache.delete(r)))
+  // The countries' outlines beside the photos: a photo's GPS position names its country without signal from the first
+  // session on (lib/photoCountry.ts; the service worker answers with this copy).
+  try {
+    if (!(await cache.match(SHAPES_URL()))) {
+      const r = await fetch(SHAPES_URL(), { credentials: 'same-origin' })
+      if (r.ok) await cache.put(SHAPES_URL(), r)
+    }
+  } catch {
+    /* read again with signal next time */
+  }
   return { pack, failed, total: files.length, kept: false }
 }
 
@@ -404,12 +463,15 @@ export interface TaxonPhoto {
   license: string
   source: string | null
   taxonUrl: string | null
+  country: string | null
+  kind: PhotoKind
+  specimen: string | null
 }
 /** A list ready to look names up in: by name, and each species' subspecies. */
 export interface PackLookup {
   byName: Map<string, PackTaxon>
   sspOf: Map<string, PackTaxon[]>
-  src: (t: PackTaxon) => string
+  src: (p: PackPhoto) => string
 }
 export function lookup(index: PackIndex, indexUrl: string): PackLookup {
   const byName = new Map<string, PackTaxon>()
@@ -419,14 +481,36 @@ export function lookup(index: PackIndex, indexUrl: string): PackLookup {
     if (t.rank === 'subspecies') sspOf.set(t.species, [...(sspOf.get(t.species) ?? []), t])
   }
   for (const list of sspOf.values()) list.sort((a, b) => a.name.localeCompare(b.name))
-  return { byName, sspOf, src: t => photoSrc(index, indexUrl, t.photo!.file) }
+  return { byName, sspOf, src: p => photoSrc(index, indexUrl, p.file) }
 }
-export const taxonPhoto = (l: PackLookup, t: PackTaxon): TaxonPhoto | null =>
-  t.photo && !t.photo.missing ? { name: t.name, rank: t.rank, src: l.src(t), attribution: t.photo.attribution, license: t.photo.license, source: t.photo.source, taxonUrl: t.photo.taxonUrl } : null
-/** A species' photo then its subspecies' photos (those the list has a photo of). */
+/** A taxon's photos the list has on the server (or the phone), its best first. */
+export const taxonPhotos = (l: PackLookup, t: PackTaxon): TaxonPhoto[] =>
+  t.photos
+    .filter(p => !p.missing)
+    .map(p => ({
+      name: t.name,
+      rank: t.rank,
+      src: l.src(p),
+      attribution: p.attribution,
+      license: p.license,
+      source: p.source,
+      taxonUrl: p.taxonUrl,
+      country: p.country ?? null,
+      kind: p.kind ?? 'live',
+      specimen: p.specimen ?? null,
+    }))
+/** A species' photos then its subspecies' photos (those the list has a photo of). */
 export function speciesPhotos(l: PackLookup, species: string): TaxonPhoto[] {
   const own = l.byName.get(species)
-  return [own, ...(l.sspOf.get(species) ?? [])].flatMap(t => (t ? (taxonPhoto(l, t) ?? []) : []))
+  return [own, ...(l.sspOf.get(species) ?? [])].flatMap(t => (t ? taxonPhotos(l, t) : []))
+}
+/** A taxon's recorded countries in the first list that names it (a subspecies' range), or null. */
+export function rangeOf(sources: Pick<PackLookup, 'byName'>[], name: string): string[] | null {
+  for (const s of sources) {
+    const t = s.byName.get(name)
+    if (t?.countries.length) return t.countries
+  }
+  return null
 }
 
 /**
@@ -452,16 +536,15 @@ export async function onlineSources(): Promise<PackLookup[]> {
   if (onlineLookup?.index !== index) onlineLookup = { index, l: lookup(index, INDEX_URL()) }
   return [onlineLookup.l]
 }
-/** speciesPhotos from the first source that has the species' photo, its subspecies from any (each photo once). */
+/** speciesPhotos with each taxon's photos from the first source that has any of it (each taxon from one source). */
 export function photosFrom(sources: PackLookup[], species: string): TaxonPhoto[] {
   const seen = new Set<string>()
   const out: TaxonPhoto[] = []
-  for (const s of sources)
-    for (const p of speciesPhotos(s, species))
-      if (!seen.has(p.name)) {
-        seen.add(p.name)
-        out.push(p)
-      }
+  for (const s of sources) {
+    const got = speciesPhotos(s, species).filter(p => !seen.has(p.name))
+    for (const p of got) out.push(p)
+    for (const p of got) seen.add(p.name)
+  }
   // The species' own photo first, then its subspecies by name.
   return out.sort((a, b) => (a.rank === b.rank ? (a.rank === 'species' ? 0 : a.name.localeCompare(b.name)) : a.rank === 'species' ? -1 : 1))
 }
