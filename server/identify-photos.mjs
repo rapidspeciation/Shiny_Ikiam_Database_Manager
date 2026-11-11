@@ -93,9 +93,24 @@ export function fieldPhotos(photosOf, names, { batch = 300 } = {}) {
  * (server/identifier.mjs, the same process as identify_species), with the side of the Andes. The photo is written to
  * a file of its own for the identifier and removed after, whatever the answer: nothing is kept.
  * Returns { status, body }: 200 { species, subspecies, genus, recorded, crop, wingBox, prior, ms } (the worker's lists),
- * 400 a bad photo, 503 no identifier here or it failed.
+ * plus fieldSex (fieldSexBlock) only when the worker gave one; 400 a bad photo, 503 no identifier here or it failed.
  */
 export const MAX_UPLOAD = 6 * 1024 * 1024;
+
+/**
+ * The general sex line's block from the worker (tools/identifier/field_sex.py), cleaned: the species it is for, its
+ * status, and the call and its whole % only when the status is 'call' (a sex and 0 to 99). The worker's raw P and
+ * confidence are not passed on. null when there is no block, or it is not one the page knows.
+ */
+const FIELD_SEX_STATUS = new Set(['call', 'below_gate', 'not_supported', 'no_wings', 'suppressed']);
+export function fieldSexBlock(fs) {
+  if (!fs || typeof fs !== 'object' || typeof fs.species !== 'string' || !FIELD_SEX_STATUS.has(fs.status)) return null;
+  const out = { species: fs.species, status: fs.status, version: typeof fs.version === 'string' ? fs.version : null };
+  if (fs.status !== 'call') return out;
+  const pct = Number(fs.pct);
+  if ((fs.sex !== 'female' && fs.sex !== 'male') || !Number.isInteger(pct) || pct < 0 || pct > 99) return { ...out, status: 'not_supported' };
+  return { ...out, sex: fs.sex, pct };
+}
 export async function identifyUpload({ identifier, body, scratch, sides = async () => null }) {
   const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
   if (!identifier) return bad(503, 'unavailable', 'The identifier is not installed on this server.');
@@ -113,6 +128,7 @@ export async function identifyUpload({ identifier, body, scratch, sides = async 
     const pairs = list => (Array.isArray(list) ? list.filter(x => Array.isArray(x) && typeof x[0] === 'string').map(([n, p]) => [n, Number(p) || 0]) : []);
     const species = pairs(out.species);
     const known = await sides().catch(() => null);
+    const fieldSex = fieldSexBlock(out.fieldSex);
     return {
       status: 200,
       body: {
@@ -125,6 +141,8 @@ export async function identifyUpload({ identifier, body, scratch, sides = async 
         wingBox: Array.isArray(out.wingBox) && out.wingBox.length === 4 ? out.wingBox.map(Number) : null,
         prior: out.prior ?? null,
         ms: Number(out.ms) || null,
+        // Only when there is one (one of the general sex line's species): other answers stay as they were.
+        ...(fieldSex ? { fieldSex } : {}),
       },
     };
   } finally {

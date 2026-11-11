@@ -198,4 +198,19 @@ export default {
   'El teléfono se quedó sin memoria para el sexo estimado.': 'The phone ran out of memory for the sex estimate.',
   'No se pudo estimar el sexo en esta foto.': 'The sex could not be estimated on this photo.',
   'No se pudo descargar el modelo. Pruebe de nuevo.': 'The model could not be downloaded. Try again.',
+  // The general sex line (FieldSexEstimate.vue), team only, online only.
+  'experimental: mariposas vivas': 'experimental: live butterflies',
+  '¿Es una foto de una mariposa viva (no de colección ni montada)?': 'Is this a photo of a live butterfly (not a collection or pinned specimen)?',
+  'Sí, viva': 'Yes, live',
+  No: 'No',
+  'El % es cuántas veces acertó esta llamada en fotos de prueba de esta especie.': 'The % is how often this call was right on test photos of this species.',
+  'No se muestra: el modelo solo se comprobó en fotos de mariposas vivas.': 'Not shown: the model was only checked on photos of live butterflies.',
+  'Comprobado en fotos de iNaturalist de mariposas vivas de seis especies: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus y Poanes zabulon.':
+    'Checked on iNaturalist photos of live butterflies of six species: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus and Poanes zabulon.',
+  'Las hembras se reconocen peor: en la prueba acertó con el 93 % de las hembras y el 99 % de los machos.':
+    'Females are recognised less well: in the test it was right on 93 % of females and 99 % of males.',
+  'No vale para ejemplares de colección ni montados.': 'Not valid for collection or pinned specimens.',
+  'Los % se fijaron con esa misma prueba: sin validar hasta la próxima.': 'The % were set on that same test: unvalidated until the next one.',
+  'También estima el sexo, en línea, en fotos de mariposas vivas de seis especies fuera de las Ithomiini (experimental).':
+    'It also estimates the sex, online, on photos of live butterflies of six species outside the Ithomiini (experimental).',
 }

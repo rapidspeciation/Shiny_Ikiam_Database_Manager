@@ -40,6 +40,12 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/assets/wing_seg_s2.pt, wing_seg_s2.onnx, field_wingtip_override_v1.json, head_hier_6fa6ab78.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
+  field_sex/                                     (optional: the general sex line of «En línea», field_sex.py)
+
+The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose species without the geographic
+prior is one of six species that passed WingsClassificator's fresh test gets a "fieldSex" block in its answer
+(None otherwise). It reads the feature the photo already has; the page shows it only after the person says the photo
+is of a live butterfly. Without the folder, answers carry no fieldSex and nothing else changes.
 """
 
 import argparse
@@ -54,6 +60,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the worker's own folder out
 import sex_crops  # noqa: E402
+from field_sex import FieldSex  # noqa: E402
 
 HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
 # Its own file name (5 Nov 2026: alias recipe retrained on V5N serving crops with label fixes, WingsClassificator
@@ -204,6 +211,14 @@ class Identifier:
         self.np, self.torch = np, torch
         self.mean = np.array(MEAN, np.float32)[:, None, None]
         self.std = np.array(STD, np.float32)[:, None, None]
+        # The general sex line (optional folder; a broken one leaves the species answers as they are).
+        self.field_sex = None
+        fs_dir = os.path.join(root, "field_sex")
+        if os.path.isdir(fs_dir):
+            try:
+                self.field_sex = FieldSex(fs_dir)
+            except Exception as e:
+                print(f"Field sex model not loaded: {type(e).__name__}: {e}"[:300], file=sys.stderr)
         gc.collect()
         self.load_ms = round((time.perf_counter() - t0) * 1000)
 
@@ -260,6 +275,26 @@ class Identifier:
             "prior": side if prior and side in ("East", "West") else ("Ecuador" if prior else None),
         }
 
+    def species_top_noprior(self, feat):
+        """The top species and its marginal WITHOUT the geographic prior (the field sex line's gate, whatever side the
+        person chose), unrounded."""
+        np, torch = self.np, self.torch
+        with torch.no_grad():
+            probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
+        agg = np.zeros(len(self.sp_vocab))
+        np.add.at(agg, self.leaf2sp, probs)
+        j = int(np.argsort(-agg, kind="stable")[0])
+        return self.sp_vocab[j], float(agg[j])
+
+    def field_sex_block(self, feat, crop):
+        if self.field_sex is None:
+            return None
+        try:
+            name, p = self.species_top_noprior(feat)
+            return self.field_sex.score(feat, name, p, crop)
+        except Exception as e:  # the species answer stands without it
+            return {"status": f"error:{type(e).__name__}"}
+
     def identify(self, path, side=None, box=None, ecuador=None):
         t0 = time.perf_counter()
         with open(path, "rb") as f:
@@ -269,8 +304,12 @@ class Identifier:
         out = self.tops(feat, side, ecuador)
         if out["prior"] == "Ecuador":
             out["prior"] = None
+        extra = {}
+        if self.field_sex is not None:
+            extra["fieldSex"] = self.field_sex_block(feat, geometry.get("status"))
         return {
             **out,
+            **extra,
             "crop": geometry.get("status"),
             "wingBox": prov.get("wing_box"),
             "ms": round((time.perf_counter() - t0) * 1000),
