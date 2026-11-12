@@ -113,8 +113,10 @@ export function initContributions(db) {
   // predictions kept then are cut to the fields v2 keeps. When a location was held, VACUUM rewrites the file so its
   // bytes do not stay in free pages (backups made before keep them: delete those by hand).
   const columns = new Set(db.prepare('PRAGMA table_info(contributions)').all().map(c => c.name));
-  if (columns.has('gps_lat')) {
-    const held = db.prepare('SELECT count(*) n FROM contributions WHERE gps_lat IS NOT NULL OR gps_lon IS NOT NULL').get().n;
+  const old = ['gps_lat', 'gps_lon', 'gps_acc'].filter(c => columns.has(c));
+  if (old.length) {
+    // Any of the three (a start cut between two ALTERs leaves the rest).
+    const held = db.prepare(`SELECT count(*) n FROM contributions WHERE ${old.map(c => `${c} IS NOT NULL`).join(' OR ')}`).get().n;
     for (const row of db.prepare('SELECT id, prediction_json p FROM contributions WHERE prediction_json IS NOT NULL').all()) {
       let clean = null;
       try {
@@ -124,7 +126,7 @@ export function initContributions(db) {
       }
       db.prepare('UPDATE contributions SET prediction_json = ? WHERE id = ?').run(clean, row.id);
     }
-    for (const c of ['gps_lat', 'gps_lon', 'gps_acc']) if (columns.has(c)) db.exec(`ALTER TABLE contributions DROP COLUMN ${c}`);
+    for (const c of old) db.exec(`ALTER TABLE contributions DROP COLUMN ${c}`);
     if (held) db.exec('VACUUM');
   }
 }

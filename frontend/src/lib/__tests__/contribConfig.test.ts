@@ -38,6 +38,7 @@ describe('consent v2', () => {
     expect(all).not.toMatch(/IKIAM|borrador|experto|1 km|Incluir la ubicación/i)
     expect(all).toMatch(/No se envía la ubicación de la foto/)
     expect(all).toMatch(/registro mínimo/)
+    expect(all).toMatch(/copias de seguridad del servidor pueden conservarlas hasta 14 días/)
     expect(all).toMatch(/solo en ese servidor/)
     expect(all).toMatch(/CC BY 4\.0/)
     expect(all).not.toMatch(/@/)

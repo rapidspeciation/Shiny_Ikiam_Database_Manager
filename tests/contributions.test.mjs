@@ -493,6 +493,11 @@ test('a v1 database: its location columns and whatever they held are dropped', (
   assert.deepEqual([kept.source, kept.side, 'location' in kept], ['phone', 'West', false]);
   assert.ok(!/-0\.95|-77\.8/.test(JSON.stringify(kept)));
   initContributions(store.db);
+  // A start cut between two ALTERs: the columns left are dropped the next time.
+  store.db.exec('ALTER TABLE contributions ADD COLUMN gps_acc REAL');
+  store.db.exec("UPDATE contributions SET gps_acc = 12");
+  initContributions(store.db);
+  assert.ok(!store.db.prepare('PRAGMA table_info(contributions)').all().some(c => c.name.startsWith('gps_')));
 });
 
 test('the consent\'s contact: the address from the server\'s config, or none (the sheet then says how to ask)', () => {
