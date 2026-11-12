@@ -17,7 +17,8 @@ workbook's ID and the app ignores reports from any other workbook.
 ## With gogcli
 
 `./install.sh` creates the script inside the workbook (`WORKBOOK_ID`, the team's by default) or updates it, and
-writes the secret into a `Config.gs` next to it. It needs a gog login that
+writes the secret into a `Config.gs` next to it. It runs as `GOG_ACCOUNT` (required from a PC; on claudeclaw
+`gog.env` sets it). It needs a gog login that
 includes the `appscript` service and the Apps Script API turned on at
 https://script.google.com/home/usersettings. Then open the printed link, choose
 `setup` and press **Run** once, accepting the permissions.

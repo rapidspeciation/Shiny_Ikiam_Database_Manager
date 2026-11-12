@@ -13,7 +13,9 @@ if [ "$(hostname)" = claudeclaw ]; then
   set -a; . ~/.config/ithomiini/gog.env; set +a
   PATH="$HOME/.local/bin:$PATH"
 fi
-ACCOUNT=${GOG_ACCOUNT:-franz.chandi@gmail.com}
+# The gog account to run as: GOG_ACCOUNT (on claudeclaw gog.env sets it); no default, so no address lives here.
+ACCOUNT=${GOG_ACCOUNT:-}
+[ -n "$ACCOUNT" ] || { echo "Set GOG_ACCOUNT to the Google account of your gog login (e.g. GOG_ACCOUNT=you@example.org ./install.sh)." >&2; exit 2; }
 CLIENT=${GOG_CLIENT:-claudeclaw}
 # One script per workbook (the old apps-script-id file belongs to the test copy's script).
 ID_FILE=~/.config/ithomiini/apps-script-id.$WORKBOOK

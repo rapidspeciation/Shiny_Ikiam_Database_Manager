@@ -4,7 +4,7 @@ Completed 25 September 2026 in Ecuador, 26 September 2026 at 02:54 UTC.
 
 [Open the personal test spreadsheet](https://docs.google.com/spreadsheets/d/19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM/edit).
 
-The file is named `Ithomiini database - PERSONAL TEST COPY - 2026-09-25` and is owned by `franz.chandi@gmail.com` in My Drive. Drive permissions returned exactly one permission, the personal account as owner. The copy retains 49 sheets.
+The file is named `Ithomiini database - PERSONAL TEST COPY - 2026-09-25` and is owned by Franz's personal Google account, in its My Drive. Drive permissions returned exactly one permission, the personal account as owner. The copy retains 49 sheets.
 
 ## Checks performed
 
