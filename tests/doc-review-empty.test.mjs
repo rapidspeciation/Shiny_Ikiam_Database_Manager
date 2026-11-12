@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createApp } from '../server/index.mjs';
+import { repoFiles } from './helpers/repo-files.mjs';
 import { initDocReview } from '../server/doc-review.mjs';
 
 // Production starts the doc comments from zero (Franz, 11 Nov 2026): the comments live only in the database's doc_*
@@ -59,7 +59,8 @@ test('a fresh app on the shipped instructions shows no threads, no changes and n
 const KEPT = ['tools/whatsapp/examples/cases.jsonl'];
 
 test('the release carries no database or comment export: no tracked .sqlite, .db or .jsonl outside test fixtures', () => {
-  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
+  // A plain copy of the release (the nightly, no .git): its files, as the release carries them.
+  const tracked = repoFiles(repoRoot);
   const data = tracked.filter(f => /\.(sqlite|sqlite3|db|jsonl)$/i.test(f) && !f.startsWith('tests/fixtures/') && !KEPT.includes(f));
   assert.deepEqual(data, []);
 });

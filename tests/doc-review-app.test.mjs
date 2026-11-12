@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createApp } from '../server/index.mjs';
 import { createUser } from '../server/auth.mjs';
 import { createGitSync, hashText, initDocReview } from '../server/doc-review.mjs';
+import { cloneRepo } from './helpers/repo-files.mjs';
 
 // The doc review through the app: its routes for people (names only), the MCP tools for an admin's chat,
 // the page reading the text in effect, «Pedir a Claude» without T3, and the workspaces' copy of the change.
@@ -145,10 +146,11 @@ test('a refresh writes the change into the workspaces: their brief and their ski
 });
 
 test('git: a change that grows or shrinks a part records only that part in assistant/context-budget.json, in the same commit', async () => {
-  // A clone of this checkout's last commit: the real budget script measures it.
+  // A clone of this checkout's last commit (in a plain copy without .git, a new repo of its files): the real budget
+  // script measures it.
   const base = mkdtempSync(join(tmpdir(), 'doc-budget-'));
   const work = join(base, 'work');
-  execFileSync('git', ['clone', '-q', '--no-hardlinks', repoRoot, work]);
+  cloneRepo(repoRoot, work);
   const g = (...args) => execFileSync('git', ['-C', work, ...args], { encoding: 'utf8' });
   const rel = 'assistant/AGENTS.md';
   const was = readFileSync(join(work, rel), 'utf8');
