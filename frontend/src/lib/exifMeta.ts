@@ -81,22 +81,26 @@ function readTiff(t: DataView): PhotoMeta {
 }
 
 /**
- * The JPEG without its APP1-APP15 and comment segments (EXIF and its GPS, XMP, ICC, maker notes), the image data
- * untouched; the same bytes when there are none. Not a JPEG, or a cut one: null (nothing is sent rather than a photo
- * whose metadata could not be checked).
+ * The JPEG without its APP1-APP15 and comment segments (EXIF and its GPS, XMP, ICC, maker notes), wherever they sit
+ * (between the scans of a progressive JPEG too), its JFIF header (APP0) rebuilt bare (no thumbnail or extra bytes; any
+ * other APP0 dropped), and without anything after its end marker; the image data
+ * untouched; the same bytes when there was nothing to take out. Not a JPEG, or a cut one: null (nothing is sent rather
+ * than a photo whose metadata could not be checked). The server does the same again (server/clutch-photos.mjs readJpeg).
  */
 export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null
   const keep: Uint8Array[] = [bytes.subarray(0, 2)]
   let i = 2
-  let dropped = false
+  let ended = false
   while (i < bytes.length) {
     if (bytes[i] !== 0xff) return null
     let m = bytes[i + 1]
     // Fill bytes before a marker.
     while (m === 0xff && i + 2 < bytes.length) m = bytes[++i + 1]
     if (m === 0xd9) {
+      // The end: whatever follows it is not kept.
       keep.push(bytes.subarray(i, i + 2))
+      ended = true
       break
     }
     if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
@@ -107,17 +111,25 @@ export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
     if (i + 4 > bytes.length) return null
     const len = (bytes[i + 2] << 8) | bytes[i + 3]
     if (len < 2 || i + 2 + len > bytes.length) return null
-    if (m === 0xda) {
-      // The image data runs to the end.
-      keep.push(bytes.subarray(i))
-      break
-    }
-    if ((m >= 0xe1 && m <= 0xef) || m === 0xfe) dropped = true
-    else keep.push(bytes.subarray(i, i + 2 + len))
+    const meta = (m >= 0xe0 && m <= 0xef) || m === 0xfe
+    if (!meta) keep.push(bytes.subarray(i, i + 2 + len))
+    else if (m === 0xe0 && len >= 14 && [0x4a, 0x46, 0x49, 0x46, 0].every((b, k) => bytes[i + 4 + k] === b))
+      keep.push(new Uint8Array([0xff, 0xe0, 0, 16, ...bytes.subarray(i + 4, i + 16), 0, 0]))
     i += 2 + len
+    if (m === 0xda) {
+      // A scan's image data runs to the next marker (0xff then neither a stuffed 0x00 nor a restart marker).
+      let j = i
+      while (j + 1 < bytes.length && !(bytes[j] === 0xff && bytes[j + 1] !== 0x00 && !(bytes[j + 1] >= 0xd0 && bytes[j + 1] <= 0xd7))) j++
+      if (j + 1 >= bytes.length) j = bytes.length
+      keep.push(bytes.subarray(i, j))
+      i = j
+    }
   }
-  if (!dropped) return bytes
-  const out = new Uint8Array(keep.reduce((n, k) => n + k.length, 0))
+  // A JPEG must end with its end marker: a cut file is refused rather than guessed at.
+  if (!ended) return null
+  const total = keep.reduce((n, k) => n + k.length, 0)
+  if (total === bytes.length && keep.every((k, n) => n === 0 || k.buffer === bytes.buffer)) return bytes
+  const out = new Uint8Array(total)
   let at = 0
   for (const k of keep) {
     out.set(k, at)

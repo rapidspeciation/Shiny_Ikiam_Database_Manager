@@ -26,6 +26,8 @@ const props = defineProps<{
   source: TaxonSource
   /** The address the consent gives for deletions and questions (the server's config), or null. */
   contact?: string | null
+  /** The signed-in person: the consent is asked of each person on this phone. */
+  userId: string
   send: (labels: Labels) => Promise<Outcome>
   undo: () => Promise<void>
   /** The server's reason when it refused the item (`refused`). */
@@ -80,7 +82,7 @@ const missing = computed(() => {
 
 async function submit() {
   if (missing.value) return
-  if (!consentAccepted()) {
+  if (!consentAccepted(props.userId)) {
     step.value = 'consent'
     return
   }
@@ -95,7 +97,7 @@ async function submit() {
   undoTimer = setTimeout(() => (canUndo.value = false), UNDO_MS)
 }
 function accept() {
-  acceptConsent()
+  acceptConsent(props.userId)
   // Items this phone queued under an older version go now too (the view lets them out of the outbox).
   emit('consented')
   step.value = 'edit'

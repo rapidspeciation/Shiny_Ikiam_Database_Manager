@@ -28,18 +28,24 @@ export const MAX_PENDING = 50
 /** How long «Deshacer» stays after Enviar. */
 export const UNDO_MS = 10_000
 
-const CONSENT_KEY = 'identify:contrib-consent'
-/** This phone's person accepted the current version (an older one, v1-draft, does not count). */
-export function consentAccepted(): boolean {
+/**
+ * Each person's acceptance, on this phone: another account signed in on the same phone is asked for its own. (v1 kept
+ * one for the whole phone, `identify:contrib-consent`: it is not read, so everyone sees v2.)
+ */
+const consentKey = (userId: string) => `identify:contrib-consent:${userId}`
+/** This person accepted the current version on this phone (an older one, v1-draft, does not count). */
+export function consentAccepted(userId: string | null | undefined): boolean {
+  if (!userId) return false
   try {
-    return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION
+    return localStorage.getItem(consentKey(userId)) === CONSENT_VERSION
   } catch {
     return false
   }
 }
-export function acceptConsent(): void {
+export function acceptConsent(userId: string | null | undefined): void {
+  if (!userId) return
   try {
-    localStorage.setItem(CONSENT_KEY, CONSENT_VERSION)
+    localStorage.setItem(consentKey(userId), CONSENT_VERSION)
   } catch {
     /* private mode: asked again next time */
   }
@@ -49,12 +55,12 @@ export function acceptConsent(): void {
 export const CONSENT = {
   title: 'Enviar fotos para entrenar la IA',
   body: [
-    'Si acepta, esta foto y lo que usted indique (especie, sexo, tipo de foto) se guardan en el servidor del proyecto Ithomiini, junto con lo que respondió la IA, el lado de los Andes elegido y su nombre de usuario. Las fotos se guardan solo en ese servidor: no se copian a Google Drive ni a la hoja de cálculo del proyecto.',
+    'Si acepta, esta foto y lo que usted indique (especie, sexo, tipo de foto) se guardan en el servidor del proyecto Ithomiini, junto con lo que respondió la IA, el lado de los Andes que usted eligió (si eligió uno), la fecha y hora del envío y su nombre de usuario. Las fotos se guardan solo en ese servidor: no se copian a Google Drive ni a la hoja de cálculo del proyecto.',
     'Antes de usar una foto para entrenar o evaluar los modelos de identificación y de sexo, la revisa una persona del equipo con rol de revisor o administrador.',
-    'No se envía ninguna ubicación. El teléfono quita de la foto los datos de la cámara, incluida la ubicación (GPS), antes de enviarla, y el servidor los quita otra vez al recibirla. Solo se guarda el día en que se tomó la foto.',
+    'No se envía la ubicación de la foto. El teléfono quita de la foto los datos de la cámara, incluida la ubicación (GPS), antes de enviarla, y el servidor los quita otra vez al recibirla. De esos datos solo se guarda el día en que se tomó la foto.',
     'Usted conserva los derechos de su foto. Al enviarla, concede al proyecto una licencia no exclusiva, gratuita y sin plazo para usarla en el entrenamiento y la evaluación de modelos, y para publicar esos modelos. La foto solo se publicaría como parte de un conjunto de datos bajo licencia CC BY 4.0, con crédito a su nombre de usuario.',
-    'Puede borrar cualquier envío desde «Mis envíos». Se borra del servidor y de los próximos entrenamientos; los modelos ya publicados no se pueden «desentrenar».',
+    'Puede borrar cualquier envío desde «Mis envíos». Se borran del servidor la foto y sus etiquetas, y no se usa en los próximos entrenamientos. Queda solo un registro mínimo (el identificador del envío, su usuario, la huella digital de la foto y la fecha) para que el mismo envío no vuelva a subirse. Los modelos ya publicados no se pueden «desentrenar», y las copias de un conjunto de datos ya publicado no se pueden retirar.',
   ],
   contact: 'Responsable de los datos: {name}. Para borrar un envío o hacer preguntas, escriba a {email}.',
-  noContact: 'Responsable de los datos: {name}. Para borrar un envío o hacer preguntas, pídalo a cualquier persona del equipo del proyecto.',
+  noContact: 'Responsable de los datos: {name}. Para borrar un envío o hacer preguntas, hable con un administrador del proyecto.',
 } as const

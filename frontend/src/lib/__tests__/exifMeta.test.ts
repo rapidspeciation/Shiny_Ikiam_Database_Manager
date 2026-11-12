@@ -67,14 +67,28 @@ describe('exifMeta', () => {
     const after = stripJpegMeta(before)!
     expect(after.length).toBeLessThan(before.length)
     expect(photoMeta(after.slice().buffer)).toEqual({ gps: null, takenAt: null })
-    // No APP1 (0xffe1) left; the JFIF header and the scan kept.
+    // No APP1 left; a bare JFIF header and the scan kept.
     const text = [...after].map(b => b.toString(16).padStart(2, '0')).join('')
     expect(text).not.toMatch(/ffe1/)
-    expect(text).toMatch(/^ffd8ffe0/)
-    expect(text.endsWith('ffda0002010203ffd9')).toBe(true)
+    expect(text).toBe('ffd8ffe000104a46494600010100000100010000ffda0002010203ffd9')
     // Nothing to take out: the same bytes. Not a JPEG or a cut one: null.
-    expect(stripJpegMeta(after)).toBe(after)
+    expect(stripJpegMeta(after)).toEqual(after)
     expect(stripJpegMeta(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull()
     expect(stripJpegMeta(before.slice(0, 60))).toBeNull()
+  })
+
+  it('stripJpegMeta: metadata between the scans of a progressive JPEG and bytes after its end go too', () => {
+    const gps = [...'GPS -0.95,-77.86'].map(c => c.charCodeAt(0))
+    const app1 = [0xff, 0xe1, 0, gps.length + 2, ...gps]
+    const com = [0xff, 0xfe, 0, gps.length + 2, ...gps]
+    // A JFIF header with a thumbnail's bytes after it (kept bare), an APP0 that is not JFIF (dropped).
+    const jfif = [0xff, 0xe0, 0, 16 + gps.length, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, ...gps]
+    const app0 = [0xff, 0xe0, 0, gps.length + 2, ...gps]
+    // SOI, scan 1 (with a stuffed 0xff00 and a restart marker), an APP1 and a comment, scan 2, EOI, then trailing GPS text.
+    const file = new Uint8Array([0xff, 0xd8, ...jfif, ...app0, 0xff, 0xda, 0, 2, 1, 0xff, 0x00, 2, 0xff, 0xd0, 3, ...app1, ...com, 0xff, 0xda, 0, 2, 4, 5, 0xff, 0xd9, ...gps])
+    const out = stripJpegMeta(file)!
+    expect([...out]).toEqual([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xda, 0, 2, 1, 0xff, 0x00, 2, 0xff, 0xd0, 3, 0xff, 0xda, 0, 2, 4, 5, 0xff, 0xd9])
+    // No end marker: refused.
+    expect(stripJpegMeta(file.slice(0, 60))).toBeNull()
   })
 })

@@ -1441,6 +1441,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               :pick="pick"
               :source="taxa"
               :contact="contribContact"
+              :user-id="session.user!.id"
               :send="contribute"
               :undo="undoContribution"
               :refusal="refusal"
@@ -1579,7 +1580,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :names-subspecies="result.source === 'online' || !!head?.ssp"
           />
 
-          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" :contact="contribContact" @remove="removeContribution" @reconsent="reconsent" />
+          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" :contact="contribContact" :user-id="session.user!.id" @remove="removeContribution" @reconsent="reconsent" />
 
           <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">
             <summary class="cursor-pointer font-medium">{{ $t('Mis identificaciones') }} <span class="font-normal text-fg-muted">({{ $t('en este teléfono') }})</span></summary>

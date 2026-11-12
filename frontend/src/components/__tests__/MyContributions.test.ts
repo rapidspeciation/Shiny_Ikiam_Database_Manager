@@ -35,7 +35,7 @@ const item = (over: Partial<Item> & { version?: string } = {}): Item => ({
 function show(items: Item[]) {
   host = document.createElement('div')
   document.body.append(host)
-  const app = createApp({ render: () => h(MyContributions, { items, paused: false, contact: 'person@example.org', onReconsent: () => void reconsented++ }) })
+  const app = createApp({ render: () => h(MyContributions, { items, paused: false, contact: 'person@example.org', userId: 'u-ana', onReconsent: () => void reconsented++ }) })
   app.config.globalProperties.$t = t
   app.config.globalProperties.$tn = tn
   app.mount(host)
@@ -59,12 +59,14 @@ describe('MyContributions', () => {
   it('an item queued under v1 waits for v2: the sheet once, then it is let out', async () => {
     show([item({ id: 'old', state: 'pending', version: 'v1-draft' }), item({ id: 'new' })])
     expect($('[data-testid=contrib-held]')).not.toBeNull()
+    // Open by itself, so the person sees why the item waits.
+    expect(($('[data-testid=my-contributions]') as HTMLDetailsElement).open).toBe(true)
     $('[data-testid=contrib-held-review]')!.click()
     await nextTick()
     expect($('[data-testid=consent-contact]')!.textContent).toMatch(/person@example\.org/)
     $('[data-testid=consent-accept]')!.click()
     await nextTick()
     expect(reconsented).toBe(1)
-    expect(localStorage.getItem('identify:contrib-consent')).toBe(CONSENT_VERSION)
+    expect(localStorage.getItem('identify:contrib-consent:u-ana')).toBe(CONSENT_VERSION)
   })
 })

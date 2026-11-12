@@ -109,9 +109,24 @@ export function initContributions(db) {
     CREATE TABLE IF NOT EXISTS contribution_verdicts(id INTEGER PRIMARY KEY AUTOINCREMENT, contribution_id TEXT NOT NULL,
       reviewer_id TEXT NOT NULL, verdict TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS contribution_verdicts_item ON contribution_verdicts(contribution_id, id);`);
-  // v1 kept an opt-in location: the columns go, with whatever a v1 phone sent (no location is kept from v2 on).
+  // v1 kept an opt-in location: the columns go, with whatever a v1 phone sent (no location is kept from v2 on); the
+  // predictions kept then are cut to the fields v2 keeps. When a location was held, VACUUM rewrites the file so its
+  // bytes do not stay in free pages (backups made before keep them: delete those by hand).
   const columns = new Set(db.prepare('PRAGMA table_info(contributions)').all().map(c => c.name));
-  for (const c of ['gps_lat', 'gps_lon', 'gps_acc']) if (columns.has(c)) db.exec(`ALTER TABLE contributions DROP COLUMN ${c}`);
+  if (columns.has('gps_lat')) {
+    const held = db.prepare('SELECT count(*) n FROM contributions WHERE gps_lat IS NOT NULL OR gps_lon IS NOT NULL').get().n;
+    for (const row of db.prepare('SELECT id, prediction_json p FROM contributions WHERE prediction_json IS NOT NULL').all()) {
+      let clean = null;
+      try {
+        clean = cleanPrediction(JSON.parse(row.p));
+      } catch {
+        clean = null;
+      }
+      db.prepare('UPDATE contributions SET prediction_json = ? WHERE id = ?').run(clean, row.id);
+    }
+    for (const c of ['gps_lat', 'gps_lon', 'gps_acc']) if (columns.has(c)) db.exec(`ALTER TABLE contributions DROP COLUMN ${c}`);
+    if (held) db.exec('VACUUM');
+  }
 }
 
 /** A base64 JPEG (a data: URL too) as bytes, refused past `max` before it is decoded. */
@@ -169,14 +184,47 @@ function cleanCreated(value) {
   if (isBlank(value) || typeof value !== 'string' || value.length > 40 || Number.isNaN(Date.parse(value))) return null;
   return new Date(value).toISOString();
 }
-/** Keys that would hold a location: dropped at any depth of what the phone sends (none is kept, POLICY). */
-const PLACE_KEYS = new Set(['gps', 'lat', 'lon', 'lng', 'latitude', 'longitude', 'location', 'coords', 'coordinates', 'position', 'geo']);
-const withoutPlace = v =>
-  Array.isArray(v) ? v.map(withoutPlace) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !PLACE_KEYS.has(k.toLowerCase())).map(([k, x]) => [k, withoutPlace(x)])) : v;
-function cleanPrediction(value) {
+/**
+ * What the AI said, as IdentifyView.vue prediction() sends it: only these fields, each of its own kind (names as taxon
+ * names, the rest short tokens, numbers and an ISO time), so nothing else (a location, a person's name) can be kept
+ * here by a request made by hand.
+ */
+const TOKEN = /^[A-Za-z0-9_.:+-]{0,120}$/;
+const TAXON = /^[\p{L}][\p{L}\p{M}\d .,()'?/×_-]*$/u;
+const token = v => (typeof v === 'string' && TOKEN.test(v) ? v : null);
+const numeric = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const taxon = v => (typeof v === 'string' && v.length <= NAME_MAX && TAXON.test(v) ? v : null);
+const scored = (list, n) =>
+  Array.isArray(list)
+    ? list
+        .slice(0, n)
+        .map(x => (x && typeof x === 'object' ? { name: taxon(x.name), p: numeric(x.p) } : null))
+        .filter(x => x?.name)
+    : [];
+export function cleanPrediction(value) {
   if (isBlank(value)) return null;
   if (typeof value !== 'object' || Array.isArray(value)) throw fail('INVALID_PREDICTION', 'prediction must be an object');
-  const text = JSON.stringify(withoutPlace(value));
+  const v = value;
+  const sex = v.sex && typeof v.sex === 'object' && !Array.isArray(v.sex) ? { z: numeric(v.sex.z), model: token(v.sex.model), sha256: token(v.sex.sha256), version: token(v.sex.version) ?? numeric(v.sex.version) } : null;
+  const wingBox = Array.isArray(v.wingBox) && v.wingBox.length === 4 && v.wingBox.every(x => numeric(x) !== null) ? v.wingBox : null;
+  const at = typeof v.at === 'string' && v.at.length <= 40 && !Number.isNaN(Date.parse(v.at)) ? new Date(v.at).toISOString() : null;
+  const text = JSON.stringify({
+    source: token(v.source),
+    model: token(v.model),
+    head: token(v.head),
+    headFile: token(v.headFile),
+    status: token(v.status),
+    wingBox,
+    prior: token(v.prior),
+    build: token(v.build),
+    side: token(v.side),
+    species: scored(v.species, 5),
+    genus: scored(v.genus, 3),
+    subspecies: scored(v.subspecies, 3),
+    sex,
+    pick: taxon(v.pick),
+    at,
+  });
   if (Buffer.byteLength(text) > PREDICTION_MAX) throw fail('INVALID_PREDICTION', 'prediction is too large', 413);
   return text;
 }
@@ -282,6 +330,9 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     const photo = cleanJpeg(photoBytes, PHOTO_EDGE, 'photo');
     const thumb = isBlank(body.thumb) ? null : cleanJpeg(decoded(body.thumb, THUMB_MAX, 'thumbnail'), THUMB_EDGE, 'thumbnail');
     const consent = String(body.consent?.version ?? body.consent ?? '');
+    // An app from before v2 (its cached copy, until it updates): 503, which it takes as «try later», so it keeps the
+    // photo; the updated app holds the item until its person accepts v2. Never stored under v1.
+    if (consent === 'v1-draft') throw fail('CONSENT_OUTDATED', 'The consent changed: update the app and accept the new one', 503, { 'retry-after': '3600' });
     if (!CONSENTS.has(consent)) throw fail('CONSENT_REQUIRED', 'The consent shown must be accepted first', 422);
     const labels = cleanLabels(body.labels);
     const t = now();

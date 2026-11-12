@@ -12,7 +12,8 @@ const sent: Labels[] = []
 let undone = 0
 let consentedCalls = 0
 const pickNow = ref<string | null>(null)
-function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' }; pick: string | null; contact: string | null; outcome: Outcome }> = {}) {
+const KEY = 'identify:contrib-consent:u-ana'
+function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' }; pick: string | null; contact: string | null; outcome: Outcome; userId: string }> = {}) {
   host = document.createElement('div')
   document.body.append(host)
   const app = createApp({
@@ -22,6 +23,7 @@ function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' 
         pick: props.pick !== undefined ? props.pick : pickNow.value,
         source: listSource(['Mechanitis polymnia', 'Mechanitis lysimnia', 'Oleria onega']),
         contact: props.contact ?? null,
+        userId: props.userId ?? 'u-ana',
         onConsented: () => void consentedCalls++,
         send: async (l: Labels) => (sent.push(l), props.outcome ?? 'sent'),
         refusal: 'labels.species.name is not a taxon name',
@@ -43,7 +45,7 @@ beforeEach(() => {
   sent.length = 0
   undone = 0
   consentedCalls = 0
-  localStorage.setItem('identify:contrib-consent', CONSENT_VERSION)
+  localStorage.setItem(KEY, CONSENT_VERSION)
 })
 afterEach(() => {
   host?.remove()
@@ -107,19 +109,34 @@ describe('ContributeCard', () => {
     await nextTick()
     expect(sent).toHaveLength(1)
     expect(consentedCalls).toBe(1)
-    expect(localStorage.getItem('identify:contrib-consent')).toBe(CONSENT_VERSION)
+    expect(localStorage.getItem(KEY)).toBe(CONSENT_VERSION)
+  })
+
+  it('the consent is each person\'s: another account on the same phone is asked for its own', async () => {
+    show({ userId: 'u-bob' })
+    await click('[data-testid=species-yes]')
+    await click('[data-testid=contrib-send]')
+    expect($('[data-testid=consent-sheet]')).not.toBeNull()
+    expect(sent).toHaveLength(0)
+    await click('[data-testid=consent-accept]')
+    await nextTick()
+    expect(sent).toHaveLength(1)
+    expect(localStorage.getItem('identify:contrib-consent:u-bob')).toBe(CONSENT_VERSION)
   })
 
   it('someone who accepted v1 sees v2 once and must accept it again; «Ahora no» sends nothing', async () => {
     expect(CONSENT_VERSION).toBe('v2')
+    localStorage.clear()
+    // As v1 kept it: one key for the phone, and the draft version.
     localStorage.setItem('identify:contrib-consent', 'v1-draft')
+    localStorage.setItem(KEY, 'v1-draft')
     show()
     await click('[data-testid=species-yes]')
     await click('[data-testid=contrib-send]')
     expect($('[data-testid=consent-sheet]')).not.toBeNull()
     await click('[data-testid=consent-later]')
     expect(sent).toHaveLength(0)
-    expect(localStorage.getItem('identify:contrib-consent')).toBe('v1-draft')
+    expect(localStorage.getItem(KEY)).toBe('v1-draft')
     await click('[data-testid=contrib-send]')
     await click('[data-testid=consent-accept]')
     await nextTick()

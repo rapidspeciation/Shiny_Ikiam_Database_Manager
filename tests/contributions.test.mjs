@@ -138,7 +138,17 @@ test('accepted: stored without its metadata (EXIF GPS taken out), no location ke
       gps: { lat: -0.951234, lon: -77.861234, acc: 12.4 },
       lat: -0.95,
       lon: -77.86,
-      prediction: { source: 'online', head: 'head_6fa6ab78', species: [{ name: 'Mechanitis polymnia', p: 0.93 }], gps: { lat: -0.95, lon: -77.86 }, place: { latitude: -0.95, longitude: -77.86, side: 'East' } },
+      prediction: {
+        source: 'online',
+        head: 'head_6fa6ab78',
+        side: 'East',
+        species: [{ name: 'Mechanitis polymnia', p: 0.93, lat: -0.95 }],
+        gps: { lat: -0.95, lon: -77.86 },
+        gps_lat: -0.95,
+        place: { latitude: -0.95, longitude: -77.86 },
+        username: 'ana',
+        status: '-0.95 -77.86',
+      },
     });
     assert.ok(markers(Buffer.from(body.photo, 'base64')).includes(0xe1) && Buffer.from(body.photo, 'base64').includes(GPS_BYTES));
     const out = contrib.accept(body, ana);
@@ -158,7 +168,10 @@ test('accepted: stored without its metadata (EXIF GPS taken out), no location ke
     assert.equal(row.consent_version, CONSENT_VERSION);
     const kept = JSON.parse(row.prediction_json);
     assert.equal(kept.head, 'head_6fa6ab78');
-    assert.deepEqual([kept.gps, kept.place], [undefined, { side: 'East' }]);
+    // Only the fields the app sends, each of its kind: nothing else a hand-made request adds is kept.
+    assert.deepEqual(Object.keys(kept).sort(), ['at', 'build', 'genus', 'head', 'headFile', 'model', 'pick', 'prior', 'sex', 'side', 'source', 'species', 'status', 'subspecies', 'wingBox']);
+    assert.deepEqual([kept.side, kept.status, kept.species], ['East', null, [{ name: 'Mechanitis polymnia', p: 0.93 }]]);
+    assert.ok(!/ana|gps|lat|lon|place/.test(JSON.stringify(kept)), JSON.stringify(kept));
     assert.ok(!Object.keys(row).some(k => /gps|lat|lon/.test(k)), Object.keys(row).join());
     assert.ok(!/-0\.95|-77\.8/.test(JSON.stringify(row)));
     // Files under <yyyy-mm>/<id>: the photo without EXIF/GPS or comment, still a JPEG of the same size.
@@ -244,8 +257,10 @@ test('size and shape: over 4 MB (413), over 1600 px or turned (422), not a JPEG 
   assert.equal(caught(() => contrib.accept(item({ labels: { species: { name: '<script>' } } }), ana)).code, 'INVALID_LABELS');
   assert.equal(caught(() => contrib.accept(item({ consent: undefined }), ana)).code, 'CONSENT_REQUIRED');
   assert.equal(caught(() => contrib.accept(item({ consent: 'v0' }), ana)).status, 422);
-  // The draft v1 is no longer taken: the person accepts v2 first (the phone holds what it queued under v1).
-  assert.equal(caught(() => contrib.accept(item({ consent: { version: 'v1-draft' } }), ana)).code, 'CONSENT_REQUIRED');
+  // The draft v1 is no longer taken. An app from before v2 gets «try later» (503), so it keeps the photo until it
+  // updates; the updated app holds the item until its person accepts v2.
+  const outdated = caught(() => contrib.accept(item({ consent: { version: 'v1-draft' } }), ana));
+  assert.deepEqual([outdated.status, outdated.code, outdated.headers['retry-after']], [503, 'CONSENT_OUTDATED', '3600']);
   assert.equal(caught(() => contrib.accept(item(), { id: 'u-x', role: 'guest' })).status, 403);
   assert.equal(caught(() => contrib.accept(item(), null)).status, 401);
   assert.equal(count(), 0);
@@ -427,6 +442,37 @@ test('review: a reviewer or an admin accepts or rejects; unsure or an unrecognis
   assert.equal(store.db.prepare('SELECT count(*) n FROM contribution_verdicts WHERE contribution_id = ?').get(a.id).n, 0);
 });
 
+test('the server\'s strip: metadata between the scans of a progressive JPEG and bytes after its end are not kept', () => {
+  const { contrib } = fixture();
+  const gps = Buffer.from('GPS -0.951234,-77.861234');
+  const seg = (marker, payload) => Buffer.concat([Buffer.from([0xff, marker, 0, payload.length + 2]), payload]);
+  const sof = Buffer.alloc(15);
+  sof[0] = 8;
+  sof.writeUInt16BE(1200, 1);
+  sof.writeUInt16BE(1600, 3);
+  sof[5] = 3;
+  const scan = data => Buffer.concat([seg(0xda, Buffer.from([3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3f, 0])), Buffer.from(data)]);
+  const photo = Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    seg(0xc2, sof),
+    scan([1, 0xff, 0x00, 2, 0xff, 0xd0, 3]),
+    seg(0xe1, gps),
+    seg(0xfe, gps),
+    seg(0xe0, Buffer.concat([Buffer.from('JFIF\0\x01\x01\x00\x00\x01\x00\x01\x01\x01', 'latin1'), gps])),
+    seg(0xe0, gps),
+    scan([4, 5]),
+    Buffer.from([0xff, 0xd9]),
+    gps,
+  ]);
+  const c = contrib.accept(item({ photo, thumb: null }), ana).body.contribution;
+  const stored = contrib.file(c.id);
+  assert.ok(!stored.includes(gps), stored.toString('latin1'));
+  assert.deepEqual([...stored.subarray(-2)], [0xff, 0xd9]);
+  // The image data itself is kept, stuffed bytes and restart markers included.
+  assert.ok(stored.includes(Buffer.from([1, 0xff, 0x00, 2, 0xff, 0xd0, 3])) && stored.includes(Buffer.from([0x3f, 0, 4, 5, 0xff, 0xd9])));
+  assert.deepEqual([readJpeg(stored).width, readJpeg(stored).height], [1600, 1200]);
+});
+
 test('a v1 database: its location columns and whatever they held are dropped', () => {
   const store = new Store({ localMode: true }, { sheets: null });
   store.db.exec(`CREATE TABLE contributions(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT, received_at TEXT NOT NULL,
@@ -435,13 +481,17 @@ test('a v1 database: its location columns and whatever they held are dropped', (
       free_text_name INTEGER, prediction_json TEXT, gps_lat REAL, gps_lon REAL, gps_acc REAL, taken_at TEXT,
       consent_version TEXT NOT NULL, licence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received')`);
   store.db
-    .prepare(`INSERT INTO contributions(id, user_id, received_at, sha256, width, height, bytes, thumb_bytes, file, gps_lat, gps_lon, gps_acc, consent_version, licence)
-      VALUES(?, 'u-ana', '2026-11-11T10:00:00Z', ?, 10, 10, 1, 0, 'f', -0.95, -77.86, 12, 'v1-draft', 'x')`)
-    .run(randomUUID(), 'a'.repeat(64));
+    .prepare(`INSERT INTO contributions(id, user_id, received_at, sha256, width, height, bytes, thumb_bytes, file, gps_lat, gps_lon, gps_acc, prediction_json, consent_version, licence)
+      VALUES(?, 'u-ana', '2026-11-11T10:00:00Z', ?, 10, 10, 1, 0, 'f', -0.95, -77.86, 12, ?, 'v1-draft', 'x')`)
+    .run(randomUUID(), 'a'.repeat(64), JSON.stringify({ source: 'phone', side: 'West', location: { lat: -0.95, lon: -77.86 } }));
   initContributions(store.db);
   const columns = store.db.prepare('PRAGMA table_info(contributions)').all().map(c => c.name);
   assert.ok(!columns.some(c => c.startsWith('gps_')), columns.join());
   assert.equal(store.db.prepare('SELECT count(*) n FROM contributions').get().n, 1);
+  // The prediction kept then is cut to v2's fields.
+  const kept = JSON.parse(store.db.prepare('SELECT prediction_json p FROM contributions').get().p);
+  assert.deepEqual([kept.source, kept.side, 'location' in kept], ['phone', 'West', false]);
+  assert.ok(!/-0\.95|-77\.8/.test(JSON.stringify(kept)));
   initContributions(store.db);
 });
 
@@ -451,7 +501,7 @@ test('the consent\'s contact: the address from the server\'s config, or none (th
   for (const bad of ['', 'nobody', 'a@b', 'x y@example.org', '<a@b.org>', 'a@b.org, c@d.org', 42]) assert.equal(contactEmail(bad), null, String(bad));
 });
 
-test('HTTP: the consent\'s contact comes from CONTRIB_CONTACT_EMAIL; review routes for reviewers and admins only', async t => {
+test('HTTP: the consent\'s contact comes from CONTRIB_CONTACT_EMAIL; review routes signed in (roles: the review test above)', async t => {
   const { configFromEnv } = await import('../server/index.mjs');
   assert.equal(configFromEnv({ CONTRIB_CONTACT_EMAIL: CONTACT }).contributionsContact, CONTACT);
   assert.equal(configFromEnv({}).contributionsContact, undefined);

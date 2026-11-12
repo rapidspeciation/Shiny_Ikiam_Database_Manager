@@ -11,7 +11,7 @@ import { t } from '../../lib/i18n'
 import { acceptConsent } from '../../lib/contribConfig'
 import { heldForConsent, type Item } from '../../lib/contribOutbox'
 
-defineProps<{ items: Item[]; paused: boolean; contact?: string | null }>()
+const props = defineProps<{ items: Item[]; paused: boolean; contact?: string | null; userId: string }>()
 const emit = defineEmits<{ remove: [string]; reconsent: [] }>()
 const asking = ref(false)
 
@@ -30,20 +30,20 @@ function remove(i: Item) {
   if (confirm(t('¿Borrar este envío del teléfono y del servidor?'))) emit('remove', i.id)
 }
 function accept() {
-  acceptConsent()
+  acceptConsent(props.userId)
   asking.value = false
   emit('reconsent')
 }
 </script>
 
 <template>
-  <details class="rounded-lg border border-border bg-surface p-3 text-sm" data-testid="my-contributions" :open="asking || undefined">
+  <details class="rounded-lg border border-border bg-surface p-3 text-sm" data-testid="my-contributions" :open="asking || items.some(heldForConsent) || undefined">
     <summary class="cursor-pointer font-medium">{{ $t('Mis envíos') }} <span class="font-normal text-fg-muted">({{ items.length }})</span></summary>
     <p v-if="paused" class="mt-2 text-pending-text">{{ $t('Inicie sesión para enviar.') }}</p>
     <template v-if="items.some(heldForConsent)">
       <ConsentSheet v-if="asking" class="mt-2 rounded-md border border-border p-3" :contact="contact ?? null" @accept="accept" @later="asking = false" />
       <p v-else class="mt-2 text-pending-text" data-testid="contrib-held">
-        {{ $t('Las condiciones de envío cambiaron. Los envíos pendientes salen cuando las acepte.') }}
+        {{ $t('Las condiciones de envío cambiaron. Los envíos pendientes se enviarán cuando las acepte.') }}
         <button class="ml-1 text-brand-text underline underline-offset-2" data-testid="contrib-held-review" @click="asking = true">{{ $t('Ver condiciones') }}</button>
       </p>
     </template>
