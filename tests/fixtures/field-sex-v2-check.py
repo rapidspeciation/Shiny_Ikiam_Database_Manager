@@ -152,6 +152,12 @@ try:
     out["estimate_no_wings"] = fs.score(feats[2], "Gg hh", 0.95, "centre_crop_fallback")
     out["outside"] = fs.score(feats[2], "Mechanitis messenoides", 0.99, "success")
     out["cap_max"] = ESTIMATE_CAP_MAX
+    # a photo whose ENS is far outside the band (a bank row of the all-female rare species, a strong ADAPT): under the
+    # gate or without wings it still names no sex
+    fs.calibrated = lambda sp, p, _c=fs.calibrated: _c("Kk solo", 0.999)
+    out["unsure_strong"] = [fs.score(feats[3], "Gg hh", 0.5, "success"), fs.score(feats[3], "Gg hh", 0.95, "centre_crop_fallback"),
+                            fs.score(feats[3], "Gg hh", 0.95, "success")]
+    del fs.calibrated
     # a strong ENS on a species whose cap is 0.99 still shows at most 95
     strong = [fs.calibrated("Kk solo", p) for p in (0.999, 0.0001)]
     out["strong_capped"] = [[round(m, 4), s, round(c, 4)] for m, s, c in strong]

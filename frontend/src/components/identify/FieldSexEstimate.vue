@@ -20,7 +20,8 @@ const at = (p: number) => `${100 * Math.min(1, Math.max(0, p))}%`
 const pct = (n: number) => `${new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { maximumFractionDigits: 0 }).format(n)} %`
 /** The sex is named when it is outside the band; a % only for a call. */
 const named = computed(() => props.state.status !== 'cell_under_90' && props.state.sure)
-/** Under this many training photos the note says the % is cautious on purpose (calibration.json bins B1 and B2). */
+/** Under this many training photos the note says the % comes from similar species (calibration.json bins B1 and B2:
+ * such a species never has its own level). */
 const FEW_PHOTOS = 20
 const colour = computed(() => (props.state.status === 'cell_under_90' || !props.state.sure ? null : props.state.sex))
 </script>
@@ -82,7 +83,7 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
       <template v-else>{{ ' ' }}{{ $t('Viene de todas las especies con un número parecido de fotos de entrenamiento.') }}</template>
     </p>
     <p v-if="!state.verified && state.trainPhotos != null && state.trainPhotos < FEW_PHOTOS" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-few">
-      {{ $t('Hay pocas fotos de entrenamiento de esta especie ({n}), así que el % es prudente.', { n: state.trainPhotos }) }}
+      {{ $t('Hay pocas fotos de entrenamiento de esta especie ({n}): el % viene de especies parecidas, no de ella.', { n: state.trainPhotos }) }}
     </p>
     <p v-if="state.status === 'cell_under_90'" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-cell">
       {{ $t('En la prueba, las respuestas de este sexo para esta especie acertaron menos del 90 %.') }}

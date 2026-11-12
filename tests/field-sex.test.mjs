@@ -63,6 +63,8 @@ test('all species: an estimated species gets the level table\'s map, its level a
   assert.equal(out.estimate_unsure.pct, undefined);
   assert.equal(out.estimate_no_wings.status, 'no_wings');
   assert.equal(out.estimate_no_wings.pct, undefined);
+  // and no clear sex for them, even when the table alone would be outside the band (the page says «No seguro»)
+  assert.deepEqual(out.unsure_strong.map(b => [b.status, b.sure, b.pct]), [['species_unsure', false, undefined], ['no_wings', false, undefined], ['estimate', true, 95]]);
   assert.equal(out.outside, null, 'a species outside the folder (the 13 Ithomiini genera are left out): no block');
   assert.match(out.missing_row, /no calibration row/);
 });

@@ -212,7 +212,7 @@ export default {
   'Viene de especies de su género con un número parecido de fotos de entrenamiento.': 'It comes from species of its genus with a similar number of training photos.',
   'Viene de especies de su familia con un número parecido de fotos de entrenamiento.': 'It comes from species of its family with a similar number of training photos.',
   'Viene de todas las especies con un número parecido de fotos de entrenamiento.': 'It comes from all species with a similar number of training photos.',
-  'Hay pocas fotos de entrenamiento de esta especie ({n}), así que el % es prudente.': 'There are few training photos of this species ({n}), so the % is cautious.',
+  'Hay pocas fotos de entrenamiento de esta especie ({n}): el % viene de especies parecidas, no de ella.': 'There are few training photos of this species ({n}): the % comes from similar species, not from it.',
   'Solo se comprobó con fotos nuevas en seis especies; esta no es una de ellas.': 'It was checked on new photos for six species only; this is not one of them.',
   'Las hembras suelen reconocerse peor que los machos.': 'Females are usually recognised less well than males.',
   'En la prueba, las respuestas de este sexo para esta especie acertaron menos del 90 %.': 'In the test, answers of this sex for this species were right less than 90 % of the time.',

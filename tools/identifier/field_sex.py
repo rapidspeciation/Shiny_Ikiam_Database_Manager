@@ -198,8 +198,9 @@ class FieldSex:
           cell_under_90   a Supported answer whose species x sex cell (or its %) is under 90 % on the fresh test
           call            a Supported answer: sex and pct (90 to 99), the frozen rule's served condition
         Estimated species (verified: false): p is the calibrated, capped P(female), sure is the same band on it, and
-        level / trainPhotos say where the calibration comes from. Status species_unsure or no_wings as above (no %),
-        else estimate with pct (50 to 95), inside the band too."""
+        level / trainPhotos say where the calibration comes from. Status species_unsure or no_wings as above, with no %
+        and sure false (the page then names no sex, only the side it leans to: the table is for the named species and
+        a crop without wings), else estimate with pct (50 to 95), inside the band too."""
         sp = self.model_name(name)
         if sp is None:
             return None
@@ -234,9 +235,9 @@ class FieldSex:
                "verified": False, "level": r["level"], "trainPhotos": int(r["rows"]),
                "p": round(marker, 3), "pFemale": round(p, 6), "sex": sex, "sure": bool(conf >= self.band)}
         if gate_p < self.gate:
-            out["status"] = "species_unsure"
+            out.update(status="species_unsure", sure=False)  # the table is for the named species: no clear sex
         elif crop != "success":
-            out["status"] = "no_wings"
+            out.update(status="no_wings", sure=False)
         else:
             out.update(status="estimate", pct=_floor_pct(conf))
         return out

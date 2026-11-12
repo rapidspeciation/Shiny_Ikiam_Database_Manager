@@ -95,7 +95,7 @@ describe('FieldSexEstimate', () => {
     const el = show(est({ p: 0.43, sex: 'male', pct: 57, level: 'family', trainPhotos: 2 }))
     expect(text(el.querySelector('[data-testid=field-sex-call]'))).toBe('No seguro (se inclina a macho, 57 %)')
     expect(text(el.querySelector('[data-testid=field-sex-level]'))).toContain('Viene de especies de su familia con un número parecido de fotos de entrenamiento.')
-    expect(text(el.querySelector('[data-testid=field-sex-few]'))).toBe('Hay pocas fotos de entrenamiento de esta especie (2), así que el % es prudente.')
+    expect(text(el.querySelector('[data-testid=field-sex-few]'))).toBe('Hay pocas fotos de entrenamiento de esta especie (2): el % viene de especies parecidas, no de ella.')
   })
   it('an estimated species, species unsure: no %, the note, still marked not verified (English)', () => {
     const el = show(est({ status: 'species_unsure', pct: null, note: 'species' }))
