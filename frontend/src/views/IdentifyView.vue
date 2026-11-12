@@ -30,7 +30,7 @@ import { regionLabel, taxaLabel } from '../lib/usePacks'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
-import { loadsSince, timingLine, type PhoneTiming } from '../lib/identifyTiming'
+import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
@@ -379,14 +379,17 @@ async function identify(photo: Photo) {
   if (!kind) return
   try {
     const country = await photoCountry(photo.bytes).catch(() => null)
-    const before = { ...engine.lastMs }
-    if (!engine.loaded(kind)) {
-      busy.value = 'loading'
-      await engine.load(kind)
-    }
-    busy.value = 'analysing'
-    const out = await engine.run(photo, kind)
-    const timing = { loadMs: loadsSince(before, engine.lastMs) }
+    // the load (when needed) and the run, measured once: the runtime and the head count too
+    const phase = await timed(engine.loadGeneration, async () => {
+      if (!engine.loaded(kind)) {
+        busy.value = 'loading'
+        await engine.load(kind)
+      }
+      busy.value = 'analysing'
+      return engine.run(photo, kind)
+    })
+    const out = phase.value
+    const timing = phoneTiming(phase, out.ms)
     head.value = engine.head()
     firstRun.value = false
     const at = new Date().toISOString()
@@ -752,11 +755,12 @@ async function estimateSex() {
   sexError.value = null
   try {
     const cut = p.cut ?? (await engine.square(p.photo))
-    const before = { ...engine.lastMs }
-    const sex = cut.status !== 'success' ? { na: 'nowings' as const } : { z: await engine.sexLogit(cut.square), m: engine.sexLoaded() ?? undefined }
+    const ran = cut.status !== 'success' ? null : await timed(engine.loadGeneration, () => engine.sexLogit(cut.square))
+    const sex = ran ? { z: ran.value, m: engine.sexLoaded() ?? undefined } : { na: 'nowings' as const }
     if (result.value?.at !== r.at) return
-    // the sex model's own time, on this phone's line (it ran only when the wings were found)
-    const timing = 'z' in sex && result.value.timing ? { ...result.value.timing, sexMs: engine.lastMs.sex ?? null, sexLoadMs: loadsSince(before, engine.lastMs, 'sex_load') } : result.value.timing
+    // the sex model's own time, on this phone's line (it ran only when the wings were found), its load included once
+    const sexMs = engine.lastMs.sex ?? ran?.ms ?? null
+    const timing = ran && result.value.timing ? { ...result.value.timing, sexMs, sexLoadMs: ran.fresh ? Math.max(0, ran.ms - (sexMs ?? 0)) : 0, sexFresh: ran.fresh } : result.value.timing
     result.value = { ...result.value, sex, timing }
     keepLast()
   } catch (err) {

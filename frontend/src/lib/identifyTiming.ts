@@ -1,31 +1,37 @@
 /**
  * Identificar's timing line under a result (small grey text): how long the photo took.
- * - On this phone: «Tiempo: 1,4 s en este teléfono», from the engine's own times (offlineEngine lastMs: the photo, plus
- *   any model load this photo needed), «, sexo 0,4 s» when the sex model ran on it, and «(primera vez, cargando
- *   modelos)» when a load time is included.
+ * - On this phone: «Tiempo: 1,4 s en este teléfono»: the engine's photo time (offlineEngine lastMs.photo) or, when the
+ *   photo had to load something (the runtime, the detector, the encoder, the head: Engine.loadGeneration moved), the
+ *   whole phase measured once by `timed`; «, sexo 0,4 s» when the sex model ran on it (its load included the same way),
+ *   and «(primera vez, cargando modelos)» when a load is included.
  * - Online: «Tiempo: 2,1 s en el servidor» (the result's ms: sent to answered).
  * Seconds with one decimal in the page's language (a comma in Spanish). Pure, tested on its own.
  */
 
 /** This photo's times on the phone (ms). Loads count only when this photo needed them. */
 export interface PhoneTiming {
-  /** Model loads (encoder, detector) this photo needed. */
+  /** What loading added to the photo's own time (the phase's wall time minus the photo's), when it loaded. */
   loadMs: number
+  /** The photo had to load something (whatever the durations: two loads can take the same ms). */
+  fresh?: boolean
   /** The sex model's run on this photo, when it ran. */
   sexMs?: number | null
-  /** The sex model's load, when this photo needed it. */
+  /** What loading the sex model (and the runtime, if needed) added, when this photo needed it. */
   sexLoadMs?: number
+  sexFresh?: boolean
 }
 
-/** The sum of the `*_load` times (the sex model's apart) that are new or changed since `before`: the loads one photo
- * needed. `only` limits it to one key (e.g. 'sex_load'). */
-export function loadsSince(before: Record<string, number>, after: Record<string, number>, only?: string): number {
-  let ms = 0
-  for (const [k, v] of Object.entries(after)) {
-    if (!k.endsWith('_load') || (only ? k !== only : k === 'sex_load')) continue
-    if (before[k] !== v && Number.isFinite(v)) ms += v
-  }
-  return ms
+/** Runs `fn` and measures it once, start to end: its wall time, and whether anything was read into memory meanwhile
+ * (`generation`: Engine.loadGeneration). */
+export async function timed<T>(generation: () => number, fn: () => Promise<T>): Promise<{ value: T; ms: number; fresh: boolean }> {
+  const g0 = generation(), t0 = performance.now()
+  const value = await fn()
+  return { value, ms: Math.max(0, Math.round(performance.now() - t0)), fresh: generation() !== g0 }
+}
+
+/** A photo's phone timing from its timed phase (load if needed, then the run) and the engine's photo time. */
+export function phoneTiming(phase: { ms: number; fresh: boolean }, photoMs: number): PhoneTiming {
+  return phase.fresh ? { loadMs: Math.max(0, phase.ms - photoMs), fresh: true } : { loadMs: 0, fresh: false }
 }
 
 type Translate = (es: string, vars?: Record<string, string | number>) => string
@@ -45,6 +51,6 @@ export function timingLine(r: { source: 'online' | 'phone'; ms?: number | null; 
   const sex = Number(r.timing?.sexMs)
   const sexLoad = Math.max(0, Number(r.timing?.sexLoadMs) || 0)
   if (Number.isFinite(sex) && sex > 0) line += ', ' + t('sexo {s} s', { s: seconds(sex + sexLoad, lang) })
-  if (load > 0 || sexLoad > 0) line += ' (' + t('primera vez, cargando modelos') + ')'
+  if (load > 0 || sexLoad > 0 || r.timing?.fresh || r.timing?.sexFresh) line += ' (' + t('primera vez, cargando modelos') + ')'
   return line
 }

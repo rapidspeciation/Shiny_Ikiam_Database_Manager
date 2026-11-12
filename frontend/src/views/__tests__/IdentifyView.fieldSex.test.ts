@@ -34,6 +34,7 @@ vi.mock('../../lib/offlineEngine', async orig => {
     loadHead: async () => null,
     loaded: () => false,
     lastMs: {},
+    loadGeneration: () => 0,
   }
   return { ...real, createEngine: () => engine }
 })

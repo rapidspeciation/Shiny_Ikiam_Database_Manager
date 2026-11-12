@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { loadsSince, seconds, timingLine } from '../identifyTiming'
+import { describe, expect, it, vi } from 'vitest'
+import { phoneTiming, seconds, timed, timingLine } from '../identifyTiming'
 import en from '../../locales/en/identify'
 
 // Identificar's timing line: both modes and the formatting. No model, no AI.
@@ -36,20 +36,43 @@ describe('timingLine', () => {
   })
 })
 
-describe('seconds and loadsSince', () => {
+describe('seconds', () => {
   it('one decimal, rounded', () => {
     expect(seconds(1449, 'es')).toBe('1,4')
     expect(seconds(1450, 'es')).toBe('1,5')
     expect(seconds(12000, 'es')).toBe('12,0')
     expect(seconds(-5, 'en')).toBe('0.0')
   })
-  it('only the loads this photo needed: new or changed *_load keys, the sex model apart', () => {
-    const before = { small_load: 3000, detector_load: 400, photo: 1200, sex_load: 800 }
-    expect(loadsSince(before, { ...before, photo: 1300 })).toBe(0)
-    expect(loadsSince({}, { small_load: 3000, detector_load: 400, photo: 1200 })).toBe(3400)
-    expect(loadsSince(before, { ...before, full_load: 9000 })).toBe(9000)
-    expect(loadsSince(before, { ...before, sex_load: 700 })).toBe(0)
-    expect(loadsSince(before, { ...before, sex_load: 700 }, 'sex_load')).toBe(700)
-    expect(loadsSince(before, before, 'sex_load')).toBe(0)
+})
+
+describe('timed and phoneTiming: the load phase measured once', () => {
+  it('a phase that loads: its whole wall time, what loading added, and the flag', async () => {
+    let gen = 4
+    const now = vi.spyOn(performance, 'now')
+    now.mockReturnValueOnce(1000).mockReturnValueOnce(5200)
+    const phase = await timed(() => gen, async () => { gen += 3; return 'run' })
+    now.mockRestore()
+    expect(phase).toEqual({ value: 'run', ms: 4200, fresh: true })
+    // the photo itself took 1,4 s: loading added 2,8 s, not counted twice
+    expect(phoneTiming(phase, 1400)).toEqual({ loadMs: 2800, fresh: true })
+    expect(timingLine({ source: 'phone', ms: 1400, timing: phoneTiming(phase, 1400) }, es, 'es')).toBe('Tiempo: 4,2 s en este teléfono (primera vez, cargando modelos)')
+  })
+  it('a phase with nothing to load: the photo time alone, no flag', async () => {
+    const phase = await timed(() => 7, async () => 1)
+    expect(phase.fresh).toBe(false)
+    expect(phoneTiming(phase, 1400)).toEqual({ loadMs: 0, fresh: false })
+    expect(timingLine({ source: 'phone', ms: 1400, timing: phoneTiming({ ms: 1500, fresh: false }, 1400) }, es, 'es')).toBe('Tiempo: 1,4 s en este teléfono')
+  })
+  it('regression: a reload that takes exactly as long as the first load still counts as a load', async () => {
+    // the old rule compared rounded durations (small_load 3000 before and after: «no load»); the generation moves
+    let gen = 0
+    const load = async () => { gen++ }
+    const first = await timed(() => gen, load)
+    const again = await timed(() => gen, load)
+    expect(first.fresh && again.fresh).toBe(true)
+    expect(timingLine({ source: 'phone', ms: 900, timing: phoneTiming({ ms: 900, fresh: true }, 900) }, es, 'es')).toBe('Tiempo: 0,9 s en este teléfono (primera vez, cargando modelos)')
+  })
+  it('the sex model\'s load flag alone also says «primera vez»', () => {
+    expect(timingLine({ source: 'phone', ms: 1400, timing: { loadMs: 0, fresh: false, sexMs: 400, sexLoadMs: 0, sexFresh: true } }, es, 'es')).toBe('Tiempo: 1,4 s en este teléfono, sexo 0,4 s (primera vez, cargando modelos)')
   })
 })

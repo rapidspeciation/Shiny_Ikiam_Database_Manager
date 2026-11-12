@@ -207,6 +207,9 @@ export interface Engine {
   /** The models in memory for `kind`; the first time reads them from storage (the slow step). */
   load(kind: ModelKind): Promise<void>
   loaded(kind: ModelKind): boolean
+  /** Goes up by one each time something is read into memory (the runtime, the detector, an encoder, the head, the sex
+   * model): a photo whose phase saw it move had to load (lib/identifyTiming.ts timed), whatever the durations. */
+  loadGeneration(): number
   run(photo: Photo, kind: ModelKind): Promise<RunResult>
   head(): Head | null
   loadHead(): Promise<Head>
@@ -223,7 +226,11 @@ export interface Engine {
  * `signedIn`: whether a team member is signed in (the server's models and inventory); false: Hugging Face's models,
  * no request to the team's API.
  */
-export function createEngine(base: string, pageFiles: () => string[] = () => [], { signedIn = () => true }: { signedIn?: () => boolean } = {}): Engine {
+export function createEngine(
+  base: string,
+  pageFiles: () => string[] = () => [],
+  { signedIn = () => true, runtime }: { signedIn?: () => boolean; /** Tests: a stand-in for the runtime's import. */ runtime?: (url: string) => Promise<OrtModule> } = {},
+): Engine {
   const at = (path: string) => new URL(path, base).href
   const threads = self.crossOriginIsolated ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 4)) : 1
   const lastMs: Record<string, number> = {}
@@ -785,8 +792,12 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   const encoderSize: Partial<Record<ModelKind, number>> = {}
   let headLoaded: Head | null = null
 
+  /** Reads into memory so far (Engine.loadGeneration). */
+  let generation = 0
+
   async function importOrt(file: string): Promise<OrtModule> {
-    const m = (await import(/* @vite-ignore */ at(`ort/${file}`))) as OrtModule
+    const m = runtime ? await runtime(at(`ort/${file}`)) : ((await import(/* @vite-ignore */ at(`ort/${file}`))) as OrtModule)
+    generation++
     m.env.wasm.wasmPaths = at('ort/')
     m.env.logLevel = 'error'
     return m
@@ -807,6 +818,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       let bytes: Uint8Array | null = await readModel(file)
       encoders[kind] = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
       encoderSize[kind] = kind === 'small' ? studentSizeOf(s.files[file], file) : 224
+      generation++
       bytes = null
       lastMs[`${kind}_load`] = Math.round(performance.now() - t)
     }
@@ -834,6 +846,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       }
     }
     detector ??= await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+    generation++
     lastMs.detector_load = Math.round(performance.now() - t)
   }
 
@@ -849,6 +862,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     const meta = JSON.parse(new TextDecoder().decode(await readModel(name('head-meta')))) as HeadMeta
     const w = await readModel(name('head'))
     headLoaded = makeHead(meta, w.buffer as ArrayBuffer)
+    generation++
     return headLoaded
   }
 
@@ -953,6 +967,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       const t = performance.now()
       sexSession = await ort.InferenceSession.create(await readModel(info.name), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
       sexSessionInfo = info
+      generation++
       lastMs.sex_load = Math.round(performance.now() - t)
     }
     const t = performance.now()
@@ -1084,6 +1099,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     removeModel,
     load,
     loaded: kind => !!encoders[kind] && !!detector && !!headLoaded,
+    loadGeneration: () => generation,
     run,
     head: () => headLoaded,
     loadHead,
