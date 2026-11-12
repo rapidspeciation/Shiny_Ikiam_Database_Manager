@@ -37,12 +37,15 @@ vi.mock('../../lib/identifyRefs', async orig => {
   return { ...real, referencePhotos: async () => ({ refs: {}, pending: [] }), fieldIndex: async () => ({ species: [], subspecies: [] }) }
 })
 
-const server = vi.hoisted(() => ({ answers: [] as unknown[] }))
+const server = vi.hoisted(() => ({ answers: [] as unknown[], onCall: null as null | (() => void) }))
 vi.mock('../../lib/identifyOnline', async orig => {
   const real = await orig<typeof import('../../lib/identifyOnline')>()
   return {
     ...real,
-    identifyOnServer: async () => server.answers.shift(),
+    identifyOnServer: async () => {
+      server.onCall?.()
+      return server.answers.shift()
+    },
     photoCanvas: async () => Object.assign(document.createElement('canvas'), { width: 400, height: 300 }),
     jpegBase64: () => 'AA==',
     squareCrop: () => 'data:image/jpeg;base64,AA==',
@@ -206,6 +209,23 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=result-source]')).not.toBeNull()
     expect(callText(host)).toBe('♀ Hembra 97 %') // ... the answer stays
     dispatchEvent(new Event('online'))
+  })
+
+  it('a side change reads the photo again: the timing line shows that read\'s time', async () => {
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 0,9 s en el servidor')
+    server.answers.push(answer('Danaus plexippus', 0.97, block()))
+    // the clock moves 2.1 s while the server answers
+    let clock = 1000
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    server.onCall = () => (clock += 2100)
+    const east = [...host.querySelectorAll<HTMLButtonElement>('[role=radio]')].find(b => b.textContent!.includes('Este (Amazonía)'))!
+    east.click()
+    await settle()
+    now.mockRestore()
+    server.onCall = null
+    expect(server.answers).toHaveLength(0)
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 2,1 s en el servidor')
   })
 
   it('a new photo shows its own answer', async () => {

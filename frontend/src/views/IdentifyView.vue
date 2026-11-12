@@ -353,9 +353,11 @@ async function rereadOnline() {
   runError.value = null
   busy.value = 'analysing'
   try {
+    const started = performance.now()
     const out = await identifyOnServer(r.photo, side)
     if (result.value !== r) return
-    result.value = { ...r, server: out, status: out.crop ?? r.status, side }
+    // the timing line shows this read's time, not the first one's
+    result.value = { ...r, server: out, status: out.crop ?? r.status, side, ms: Math.round(performance.now() - started) }
     keepLast()
   } catch (err) {
     runError.value = onlineError(err)
