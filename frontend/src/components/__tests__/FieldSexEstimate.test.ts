@@ -21,7 +21,8 @@ afterEach(() => {
   locale.value = 'en'
 })
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-const st = (o: Partial<FieldSexState>): FieldSexState => ({ species: 'Danaus plexippus', status: 'call', p: 0.97, sex: 'female', sure: true, pct: 97, note: null, ...o })
+const st = (o: Partial<FieldSexState>): FieldSexState => ({ species: 'Danaus plexippus', status: 'call', p: 0.97, sex: 'female', sure: true, pct: 97, note: null, verified: true, level: null, trainPhotos: null, ...o })
+const est = (o: Partial<FieldSexState>): FieldSexState => ({ species: 'Vanessa cardui', status: 'estimate', p: 0.62, sex: 'female', sure: false, pct: 62, note: null, verified: false, level: 'species', trainPhotos: 900, ...o })
 const marker = (el: Element) => (el.querySelector('[data-testid=field-sex-marker]') as HTMLElement).style.left
 
 describe('FieldSexEstimate', () => {
@@ -75,6 +76,39 @@ describe('FieldSexEstimate', () => {
     const sp = show(st({ status: 'species_unsure', pct: null, note: 'species' }))
     expect(text(sp.querySelector('[data-testid=field-sex-note]'))).toBe('The species is uncertain; the sex may be wrong.')
   })
+  it('an estimated species: the % inside the band too, «estimado, sin verificar para esta especie», its level', () => {
+    locale.value = 'es'
+    const el = show(est({}))
+    expect(text(el.querySelector('[data-testid=field-sex-call]'))).toBe('No seguro (se inclina a hembra, 62 %)')
+    expect(text(el.querySelector('[data-testid=field-sex-unverified]'))).toBe('estimado, sin verificar para esta especie')
+    expect(text(el.querySelector('[data-testid=field-sex-level]'))).toBe('El % estima cuántas veces acierta una respuesta así; nunca supera el 95 %. Viene de fotos de entrenamiento de esta especie.')
+    expect(el.querySelector('[data-testid=field-sex-few]')).toBeNull()
+    expect(el.querySelector('[data-testid=field-sex-tested]')).toBeNull()
+    expect(text(el)).toContain('Solo se comprobó con fotos nuevas en seis especies; esta no es una de ellas.')
+    expect(text(el)).not.toContain('93 % de las hembras')
+    expect(marker(el)).toBe('62%')
+    const sure = show(est({ p: 0.07, sex: 'male', sure: true, pct: 93 }))
+    expect(text(sure.querySelector('[data-testid=field-sex-call]'))).toBe('♂ Macho 93 %')
+  })
+  it('a rare species: the level from its family and the few-photos note', () => {
+    locale.value = 'es'
+    const el = show(est({ p: 0.43, sex: 'male', pct: 57, level: 'family', trainPhotos: 2 }))
+    expect(text(el.querySelector('[data-testid=field-sex-call]'))).toBe('No seguro (se inclina a macho, 57 %)')
+    expect(text(el.querySelector('[data-testid=field-sex-level]'))).toContain('Viene de especies de su familia con un número parecido de fotos de entrenamiento.')
+    expect(text(el.querySelector('[data-testid=field-sex-few]'))).toBe('Hay pocas fotos de entrenamiento de esta especie (2): el % viene de especies parecidas, no de ella.')
+  })
+  it('an estimated species, species unsure: no %, the note, still marked not verified (English)', () => {
+    const el = show(est({ status: 'species_unsure', pct: null, note: 'species' }))
+    expect(text(el.querySelector('[data-testid=field-sex-call]'))).toBe('Not sure (leans to female)')
+    expect(text(el.querySelector('[data-testid=field-sex-unverified]'))).toBe('estimated, not verified for this species')
+    expect(el.querySelector('[data-testid=field-sex-level]')).toBeNull()
+    expect(text(el.querySelector('[data-testid=field-sex-note]'))).toBe('The species is uncertain; the sex may be wrong.')
+    // no % on screen: no note about where the % comes from either
+    expect(show(est({ status: 'species_unsure', pct: null, note: 'species', trainPhotos: 3, level: 'family' })).querySelector('[data-testid=field-sex-few]')).toBeNull()
+    const lean = show(est({}))
+    expect(text(lean.querySelector('[data-testid=field-sex-call]'))).toBe('Not sure (leans to female, 62 %)')
+    expect(text(lean)).toContain('It comes from training photos of this species.')
+  })
   it('no em dashes in any of its texts, in either language', () => {
     for (const lang of ['es', 'en'] as const) {
       locale.value = lang
@@ -84,6 +118,10 @@ describe('FieldSexEstimate', () => {
         st({ status: 'cell_under_90', pct: null }),
         st({ status: 'species_unsure', pct: null, note: 'species' }),
         st({ status: 'no_wings', pct: null, note: 'wings' }),
+        est({}),
+        est({ p: 0.05, sex: 'male', sure: true, pct: 95, level: 'genus', trainPhotos: 3 }),
+        est({ status: 'species_unsure', pct: null, note: 'species', level: 'family' }),
+        est({ level: 'global', trainPhotos: 1 }),
       ]) {
         expect(show(s).textContent).not.toMatch(/—/)
       }

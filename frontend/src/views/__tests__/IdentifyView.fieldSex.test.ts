@@ -42,12 +42,15 @@ vi.mock('../../lib/identifyRefs', async orig => {
   return { ...real, referencePhotos: async () => ({ refs: {}, pending: [] }), fieldIndex: async () => ({ species: [], subspecies: [] }) }
 })
 
-const server = vi.hoisted(() => ({ answers: [] as unknown[] }))
+const server = vi.hoisted(() => ({ answers: [] as unknown[], onCall: null as null | (() => void) }))
 vi.mock('../../lib/identifyOnline', async orig => {
   const real = await orig<typeof import('../../lib/identifyOnline')>()
   return {
     ...real,
-    identifyOnServer: async () => server.answers.shift(),
+    identifyOnServer: async () => {
+      server.onCall?.()
+      return server.answers.shift()
+    },
     photoCanvas: async () => Object.assign(document.createElement('canvas'), { width: 400, height: 300 }),
     jpegBase64: () => 'AA==',
     squareCrop: () => 'data:image/jpeg;base64,AA==',
@@ -137,11 +140,20 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
+  it('an Ithomiini of the 13 genera keeps the in-hand line even with an estimated block', async () => {
+    const est = { species: 'Mechanitis messenoides', status: 'estimate', p: 0.6, sex: 'female', sure: false, pct: 60, verified: false, level: 'species', trainPhotos: 30 }
+    const { host } = await mountWith(stored(answer('Mechanitis messenoides', 0.93, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')!.textContent).toContain('experimental: fotos en mano')
+    expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
+  })
+
   it('a Monarch: the answer and its % at once, no question; «En este teléfono» hides the line', async () => {
     const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
     expect(callText(host)).toBe('♂ Macho 96 %')
     expect(host.querySelector('[data-testid=field-sex-tested]')!.textContent).toContain('Probado en fotos de mariposas vivas.')
+    // the timing line under the result: the stored result's ms, comma decimal
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 0,9 s en el servidor')
     expect(host.querySelector('[data-testid=field-sex] button')).toBeNull()
     const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
     phone.click()
@@ -165,10 +177,32 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=field-sex-p]')).toBeNull()
   })
 
-  it('another species outside the Ithomiini: nothing', async () => {
-    const { host } = await mountWith(stored(answer('Danaus gilippus', 0.97, null)))
+  it('a species outside the model (no block): nothing', async () => {
+    const { host } = await mountWith(stored(answer('Morpho cypris', 0.97, null)))
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+  })
+
+  it('an unverified species: the bar, its % inside the band, «estimado, sin verificar para esta especie»', async () => {
+    const est = { species: 'Danaus gilippus', status: 'estimate', p: 0.31, sex: 'male', sure: false, pct: 69, version: 'field-sex/2', verified: false, level: 'species', trainPhotos: 4489 }
+    const { host } = await mountWith(stored(answer('Danaus gilippus', 0.97, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+    expect(callText(host)).toBe('No seguro (se inclina a macho, 69 %)')
+    expect(host.querySelector('[data-testid=field-sex-unverified]')!.textContent).toContain('estimado, sin verificar para esta especie')
+    expect(host.querySelector('[data-testid=field-sex-tested]')).toBeNull()
+  })
+
+  it('another Ithomiini (not one of the 13 genera): the general estimate replaces «No aplica»; without a block «No aplica» stays', async () => {
+    const est = { species: 'Melinaea marsaeus', status: 'estimate', p: 0.58, sex: 'female', sure: false, pct: 58, version: 'field-sex/2', verified: false, level: 'family', trainPhotos: 2 }
+    const { host } = await mountWith(stored(answer('Melinaea marsaeus', 0.95, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+    expect(callText(host)).toBe('No seguro (se inclina a hembra, 58 %)')
+    expect(host.querySelector('[data-testid=field-sex-few]')!.textContent).toContain('(2)')
+    unmount()
+    document.body.innerHTML = ''
+    const { host: h2 } = await mountWith(stored(answer('Melinaea marsaeus', 0.95, null)))
+    expect(h2.querySelector('[data-testid=sex-na]')!.textContent).toContain('No aplica a Melinaea')
+    expect(h2.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
   it('a signal drop does not hide a shown answer (the person did not pick «En este teléfono»)', async () => {
@@ -180,6 +214,23 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=result-source]')).not.toBeNull()
     expect(callText(host)).toBe('♀ Hembra 97 %') // ... the answer stays
     dispatchEvent(new Event('online'))
+  })
+
+  it('a side change reads the photo again: the timing line shows that read\'s time', async () => {
+    const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 0,9 s en el servidor')
+    server.answers.push(answer('Danaus plexippus', 0.97, block()))
+    // the clock moves 2.1 s while the server answers
+    let clock = 1000
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    server.onCall = () => (clock += 2100)
+    const east = [...host.querySelectorAll<HTMLButtonElement>('[role=radio]')].find(b => b.textContent!.includes('Este (Amazonía)'))!
+    east.click()
+    await settle()
+    now.mockRestore()
+    server.onCall = null
+    expect(server.answers).toHaveLength(0)
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 2,1 s en el servidor')
   })
 
   it('a new photo shows its own answer', async () => {

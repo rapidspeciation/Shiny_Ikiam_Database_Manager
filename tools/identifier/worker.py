@@ -43,10 +43,11 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   onnx/bioclip25h_visual_int8.onnx
   field_sex/                                     (optional: the general sex line of «En línea», field_sex.py)
 
-The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose answer names one of six species
-that passed WingsClassificator's fresh test gets a "fieldSex" block (None otherwise): the bar position, the side it
-leans to, a status, and the % only for a Supported answer. It reads the feature the photo already has. Without the
-folder, answers carry no fieldSex and nothing else changes.
+The general sex line (11 Nov 2026, experimental, field_sex.py): an online photo whose answer names a species of the
+sex model gets a "fieldSex" block (None otherwise): the bar position, the side it leans to, a status and, when shown,
+the %. Six species passed WingsClassificator's fresh test (verified); with a field-sex/2 folder every other species
+of the model (except the 13 Ithomiini genera of the in-hand line) gets a calibrated estimate, marked not verified.
+It reads the feature the photo already has. Without the folder, answers carry no fieldSex and nothing else changes.
 """
 
 import argparse

@@ -99,16 +99,34 @@ export const MAX_UPLOAD = 6 * 1024 * 1024;
 
 /**
  * The general sex line's block from the worker (tools/identifier/field_sex.py), cleaned: the species it is for, its
- * status, the bar position p (P(female), 0 to 1, 3 decimals), the side it leans to and whether it is outside the
- * «no seguro» band; the whole % only when the status is 'call' (90 to 99). null when there is no block, or it is not
- * one the page knows. A 'call' without a valid % becomes 'cell_under_90' (bar, no %).
+ * status, the bar position p (P(female), 0 to 1, 3 decimals), the side it leans to, whether it is outside the
+ * «no seguro» band, and whether the species is one of the six verified on fresh photos.
+ * - Verified: the whole % only when the status is 'call' (90 to 99); a 'call' without a valid % becomes
+ *   'cell_under_90' (bar, no %).
+ * - Estimated (verified false, any other species of the model): also the calibration level and the number of
+ *   training photos; the whole % only when the status is 'estimate' (50 to 95), inside the band too; an 'estimate'
+ *   without a valid % keeps the bar and loses the %. A verified block is sent exactly as before (no new keys).
+ * null when there is no block, or it is not one the page knows.
  */
 const FIELD_SEX_STATUS = new Set(['call', 'band', 'cell_under_90', 'species_unsure', 'no_wings']);
+const FIELD_SEX_ESTIMATE_STATUS = new Set(['estimate', 'species_unsure', 'no_wings']);
+const FIELD_SEX_LEVELS = new Set(['species', 'genus', 'family', 'global']);
 export function fieldSexBlock(fs) {
-  if (!fs || typeof fs !== 'object' || typeof fs.species !== 'string' || !FIELD_SEX_STATUS.has(fs.status)) return null;
+  if (!fs || typeof fs !== 'object' || typeof fs.species !== 'string') return null;
+  const estimated = fs.verified === false;
+  if (!(estimated ? FIELD_SEX_ESTIMATE_STATUS : FIELD_SEX_STATUS).has(fs.status)) return null;
   const p = Number(fs.p);
   if (!Number.isFinite(p) || p < 0 || p > 1 || (fs.sex !== 'female' && fs.sex !== 'male')) return null;
   const out = { species: fs.species, status: fs.status, p: Math.round(p * 1000) / 1000, sex: fs.sex, sure: fs.sure === true, version: typeof fs.version === 'string' ? fs.version : null };
+  if (estimated) {
+    if (!FIELD_SEX_LEVELS.has(fs.level)) return null;
+    const n = Number(fs.trainPhotos);
+    const est = { ...out, verified: false, level: fs.level, trainPhotos: Number.isInteger(n) && n > 0 ? n : null };
+    if (fs.status !== 'estimate') return est;
+    const pct = Number(fs.pct);
+    if (!Number.isInteger(pct) || pct < 50 || pct > 95) return est;
+    return { ...est, pct };
+  }
   if (fs.status !== 'call') return out;
   const pct = Number(fs.pct);
   if (!Number.isInteger(pct) || pct < 90 || pct > 99) return { ...out, status: 'cell_under_90' };
