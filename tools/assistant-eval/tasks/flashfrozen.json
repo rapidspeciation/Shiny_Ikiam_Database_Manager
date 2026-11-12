@@ -1,0 +1,145 @@
+{
+ "about": "Counts of a species by preservation medium (12 Nov 2026). Production chat 11 Nov 7c0a8b23: a flash frozen count of Methona confusa; the follow-up's answer opened with the count whose Subspecies_Form is empty (7), while the asker wanted the Ecuador count (empty + psamathe) next to the total; the first answer also said Collection_data has no subspecies (it has them in Subspecies_Form). The first line should carry the number the person most likely wants, both sheets counted, the split after it. Ground truth by SQL on the eval app's frozen base (sheets.sqlite, built 19 Oct 2026, read-only): Methona confusa flash frozen: Collection_data 61 (psamathe 47 = Ecuador 46 + Peru 1; empty 6 = Ecuador 2, Peru 2, Brazil 2; Panamanian segregate 8, Panama), Insectary_data 0 (one Methona confusa psamathe row, wild-caught, no medium); Ecuador by Country 48, empty + psamathe 53. Tithorea harmonia flash frozen: Collection_data 28 (empty 7 and hermias 13, all Ecuador = 20; helicaon 3 Panama; martina 5 Peru), Insectary_data none. Tithorea harmonia: 2 of the 7 empty Ecuador rows have no tube id, so counting rows with a tube gives 26 and Ecuador 18 (accepted too). Mechanitis messenoides DMSO: Collection_data 'DMSO buffer' 23 (deceptus 16 and f. intermedia 3 Ecuador, empty 4 Colombia); Insectary_data 'DMSO' 4 rows (deceptus, wild-caught), all four twins of Collection_data rows (same Insectary_ID A23, B76, C51, C89), so 23 individuals, 21 with a tube id (A23 and B76 have none); 27 counts the twins twice. Corrected 12 Nov after the baseline: F03 was first written with 27 (twins missed in the ground truth) and F02 without the with-tube reading; the baseline answers showed both. Insectary_data counts a row once when T1, T2 or Preservation_medium has the medium (same numbers either way here). Opening checks read the first non-empty line of the reply. Kinds after the baseline (12 Nov, live text 90c740d2, Opus 5.5 medium, 2 samples): F01 and F02 fail 0/2 (bad); F03 and F04 pass 2/2 (guards: twins counted once, the subspecies found in Subspecies_Form). 12 Nov, after fix 2's F run: F03's no-27 check matched the date 27/08 in a correct reply; it now skips dates (grader fix, regraded on every run). F05 added 12 Nov (orchestrator, option b): an insectary-heavy count with the working rule for the Ecuador figure. F06 added 12 Nov (review round 4): insectary rows from another country (Collection_location).",
+ "tasks": [
+  {
+   "id": "F01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "production chat 11 Nov 7c0a8b23 (species count by medium: answer opened with the empty-subspecies count, not the Ecuador count and the total)",
+   "about": "Methona confusa in flash frozen: first line Ecuador (48 by Country, or 53 = all but the Panamanian segregate) next to the total 61; Panamanian segregate 8 split out; Insectary_data counted (0)",
+   "prompt": "cuantas methona confusa tenemos preservadas en flash frozen",
+   "checks": [
+    {
+     "regex": "^\\s*(?=[^\\n]*\\b61\\b)(?=[^\\n]*\\b(?:48|53)\\b)",
+     "w": 2,
+     "why": "the first line has the Ecuador count (48 by Country, or 53 = empty + psamathe) and the total 61"
+    },
+    {
+     "regex": "(panam|segregad)[^\\n]{0,80}\\b8\\b|\\b8\\b[^\\n]{0,80}(panam|segregad)",
+     "why": "the 8 of the Panamanian segregate are split out"
+    },
+    {
+     "regex": "insectar[^\\n]{0,160}\\b(0|no|ningun\\w*|cero|sin)\\b|\\b(0|no|ningun\\w*|cero)\\b[^\\n]{0,160}insectar",
+     "why": "Insectary_data was counted too (none in flash frozen)"
+    }
+   ]
+  },
+  {
+   "id": "F02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "production chat 11 Nov 7c0a8b23 (variant: another species with an Ecuador subspecies and foreign forms)",
+   "about": "Tithorea harmonia in flash frozen: first line Ecuador 20 (empty 7 + hermias 13) next to the total 28 (or 18 of 26 counting rows with a tube); helicaon (Panama) 3 split out; Insectary_data counted (none)",
+   "prompt": "cuantas tithorea harmonia hay en flash frozen",
+   "checks": [
+    {
+     "regex": "^\\s*(?:(?=[^\\n]*\\b28\\b)(?=[^\\n]*\\b20\\b)|(?=[^\\n]*\\b26\\b)(?=[^\\n]*\\b18\\b))",
+     "w": 2,
+     "why": "the first line has the Ecuador count and the total: 20 of 28 rows, or 18 of 26 with a tube"
+    },
+    {
+     "regex": "(panam|helicaon)[^\\n]{0,80}\\b3\\b|\\b3\\b[^\\n]{0,80}(panam|helicaon)",
+     "why": "the 3 helicaon from Panama are split out"
+    },
+    {
+     "regex": "insectar[^\\n]{0,160}\\b(0|no|ningun\\w*|cero|sin)\\b|\\b(0|no|ningun\\w*|cero)\\b[^\\n]{0,160}insectar",
+     "why": "Insectary_data was counted too (none there)"
+    }
+   ]
+  },
+  {
+   "id": "F03",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "production chat 11 Nov 7c0a8b23 (variant: DMSO buffer; the Insectary_data rows are twins of Collection_data rows, the medium is written 'DMSO' there)",
+   "about": "Mechanitis messenoides in DMSO buffer: first line 23 individuals (21 with a tube id); the 4 Insectary_data rows are twins, not added (27 counts them twice)",
+   "prompt": "cuantas mechanitis messenoides tenemos en dmso buffer",
+   "checks": [
+    {
+     "regex": "^\\s*[^\\n]*\\b(?:23|21)\\b",
+     "w": 2,
+     "why": "the first line has the 23 individuals (or 21 with a tube id)"
+    },
+    {
+     "noRegex": "(?<!\\d|/|\\d[.–-])27(?!\\d|/|[.–-]\\d)",
+     "why": "the 4 Insectary_data twins are not counted twice (a date such as 27/08 is not a count)"
+    },
+    {
+     "regex": "insectar",
+     "why": "Insectary_data was looked at"
+    }
+   ]
+  },
+  {
+   "id": "F04",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "guard",
+   "source": "production chat 11 Nov 7c0a8b23 (variant: a subspecies question; the subspecies is in Subspecies_Form in Collection_data and in SPECIES in Insectary_data)",
+   "about": "Methona confusa psamathe in flash frozen: first line 47 (Collection_data Subspecies_Form psamathe); Insectary_data counted (0)",
+   "prompt": "cuantas methona confusa psamathe hay en flash frozen?",
+   "checks": [
+    {
+     "regex": "^\\s*[^\\n]*\\b47\\b",
+     "w": 2,
+     "why": "the first line has the 47 psamathe of Collection_data (Subspecies_Form)"
+    },
+    {
+     "regex": "insectar[^\\n]{0,160}\\b(0|no|ningun\\w*|cero|sin)\\b|\\b(0|no|ningun\\w*|cero)\\b[^\\n]{0,160}insectar",
+     "why": "Insectary_data was counted too (none in flash frozen)"
+    }
+   ]
+  },
+  {
+   "id": "F05",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "production chat 11 Nov 7c0a8b23 (variant: most of the count is Insectary_data rows, as in production: 158 of 224)",
+   "about": "Mechanitis polymnia in flash frozen: Collection_data 186 (Ecuador 101, Peru 50, Panama 18, Brazil 15, Colombia 2); Insectary_data 1,188 rows (T1, T2 or Preservation_medium; 1,187 by T1 or T2), all Ecuadorian forms (proceriformis, eurydice, werneri = chimborazona, and their hybrids), 21 of them twins of 22 Collection_data rows (wild-caught, same Insectary_ID; T46 has two Collection_data rows). Total 1,352 or 1,353 butterflies by the reading of T46 (1,351 with T1/T2 only), Ecuador 1,267 or 1,268 (all 1,188 Insectary_data rows have an Ecuador Collection_location). First line: the total and the Ecuador figure; 1,374 adds the twins twice; 101 is Ecuador from Collection_data only.",
+   "prompt": "cuantas mechanitis polymnia tenemos en flash frozen",
+   "checks": [
+    {
+     "regex": "^\\s*(?=[^\\n]*\\b1[\\s.,  ]?3(?:4\\d|5\\d|60)\\b)(?=[^\\n]*\\b1[\\s.,  ]?2(?:5[5-9]|6\\d|7[0-5])\\b)",
+     "w": 2,
+     "why": "the first line has the total (about 1,352) and the Ecuador figure (about 1,267, the insectary rows included)"
+    },
+    {
+     "noRegex": "\\b1[\\s.,  ]?374\\b",
+     "why": "the 22 twins are not counted twice"
+    },
+    {
+     "regex": "insectar",
+     "why": "Insectary_data counted"
+    }
+   ]
+  },
+  {
+   "id": "F06",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "production chat 11 Nov 7c0a8b23 (variant: the Insectary_data rows are from another country, recorded in Collection_location; review round 4)",
+   "about": "Heliconius sara in flash frozen: Collection_data 58 (apseudes Brazil 22, magdalena Panama 9 + Colombia 1, sara Ecuador 8 + Peru 2, sprucei Ecuador 7, thamar no Country 5, empty Colombia 4); Insectary_data 80 (Heliconius sara magdalena, reared, Collection_location 'STRI insectaries, Gamboa', COLLECTION_LOCATION_2 'PANAMA | ...'). No twins: Insectary_ID is 'NA' on every row of both sheets and no CAM is shared (an 'NA' match is not a twin). Total 138, Ecuador 15. 95 counts the Gamboa rows as Ecuador; 58 leaves Insectary_data out.",
+   "prompt": "cuantas heliconius sara hay en flash frozen",
+   "checks": [
+    {
+     "regex": "^\\s*(?=[^\\n]*\\b138\\b)(?=[^\\n]*\\b15\\b)",
+     "w": 2,
+     "why": "the first line has the total 138 and the Ecuador figure 15"
+    },
+    {
+     "noRegex": "\\b95\\b",
+     "why": "the Gamboa (Panama) insectary rows are not counted as Ecuador"
+    },
+    {
+     "regex": "gamboa|stri|panam",
+     "why": "the insectary rows' origin is named"
+    }
+   ]
+  }
+ ]
+}

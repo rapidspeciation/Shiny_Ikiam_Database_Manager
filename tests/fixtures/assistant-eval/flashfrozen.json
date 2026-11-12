@@ -1,0 +1,143 @@
+{
+ "about": "Hand-written replies for the species-by-medium count cases (tasks/flashfrozen.json), with the eval base's numbers. fail: the patterns of the production chat of 11 Nov (a greeting line before a per-sheet table and no split by subspecies or country; an opening with the empty-subspecies count alone; one sheet only; the literal medium 'DMSO buffer' searched in Insectary_data). pass: the number the asker most likely wants on the first line, the split after it.",
+ "F01": {
+  "fail": [
+   {
+    "from": "greeting line first, per-sheet table, no Panamanian split, wrong 'no subspecies' remark",
+    "finalText": "Hola. Esto es lo que encontré sobre las *Methona confusa* en flash frozen, según la base:\n\n| Hoja | Origen | Flash frozen |\n|---|---|---|\n| Collection_data | Colectas de campo | 61 |\n| Insectary_data | Criadas | 0 |\n| **Total** | | **61** |\n\nEn Collection_data las colectas salen como «Methona confusa» sin subespecie."
+   },
+   {
+    "from": "opens with the empty-subspecies count alone",
+    "finalText": "En Collection_data hay **6** *Methona confusa* en flash frozen con Subspecies_Form vacío.\n\nLas 61 en flash frozen de esa hoja se reparten así:\n\n| Subspecies_Form | Flash frozen |\n|---|---|\n| (vacío) | 6 |\n| psamathe | 47 |\n| Panamanian segregate | 8 |"
+   },
+   {
+    "from": "Collection_data only, Insectary_data never counted",
+    "finalText": "Hay **61** *Methona confusa* en flash frozen, 53 sin contar el segregado panameño.\n\n| Subspecies_Form | Flash frozen |\n|---|---|\n| psamathe | 47 |\n| (vacío) | 6 |\n| Panamanian segregate | 8 |"
+   }
+  ],
+  "pass": [
+   {
+    "from": "Ecuador by Country first",
+    "finalText": "Tenemos **48** *Methona confusa* de Ecuador en flash frozen, de **61** en total.\n\n| Origen | Flash frozen |\n|---|---|\n| Ecuador (psamathe 46, sin subespecie 2) | 48 |\n| Panamá (Panamanian segregate) | 8 |\n| Perú y Brasil | 5 |\n\nTodas están en Collection_data; en Insectary_data no hay ninguna en flash frozen."
+   },
+   {
+    "from": "empty + psamathe first",
+    "finalText": "Hay 53 *Methona confusa* en flash frozen sin contar el segregado panameño, 61 en total.\n\n- psamathe: 47\n- sin subespecie: 6\n- Panamanian segregate: 8\n\nEn Insectary_data hay 0 en flash frozen (solo una psamathe silvestre, sin medio)."
+   }
+  ]
+ },
+ "F02": {
+  "fail": [
+   {
+    "from": "opens with the empty-subspecies count alone",
+    "finalText": "En Collection_data hay **7** *Tithorea harmonia* en flash frozen sin subespecie.\n\n| Subspecies_Form | Flash frozen |\n|---|---|\n| (vacío) | 7 |\n| hermias | 13 |\n| martina | 5 |\n| helicaon | 3 |\n\nEn Insectary_data no hay ninguna."
+   },
+   {
+    "from": "total only, no split",
+    "finalText": "Hay 28 *Tithorea harmonia* en flash frozen, todas en Collection_data."
+   }
+  ],
+  "pass": [
+   {
+    "from": "Ecuador first",
+    "finalText": "Tenemos **20** *Tithorea harmonia* de Ecuador en flash frozen, de **28** en total.\n\n| Subespecie | País | Flash frozen |\n|---|---|---|\n| hermias | Ecuador | 13 |\n| sin subespecie | Ecuador | 7 |\n| martina | Perú | 5 |\n| helicaon | Panamá | 3 |\n\nEn Insectary_data no hay ninguna."
+   },
+   {
+    "from": "rows with a tube",
+    "finalText": "Hay **18** *Tithorea harmonia* de Ecuador con tubo en flash frozen, de 26 en total.\n\n- hermias (Ecuador): 13\n- sin subespecie (Ecuador): 5\n- martina (Perú): 5\n- helicaon (Panamá): 3\n\nEn Insectary_data no hay ninguna."
+   }
+  ]
+ },
+ "F03": {
+  "fail": [
+   {
+    "from": "twins counted twice",
+    "finalText": "Tenemos **27** *Mechanitis messenoides* en DMSO: 23 en Collection_data (DMSO buffer) y 4 en Insectary_data (escrito «DMSO»)."
+   },
+   {
+    "from": "greeting first",
+    "finalText": "¡Hola!\n\nSon 23 en Collection_data; en Insectary_data hay 4 filas que son las mismas mariposas."
+   },
+   {
+    "from": "27 at the end of a sentence",
+    "finalText": "Hay 23 en Collection_data y 4 en Insectary_data, así que son 27."
+   }
+  ],
+  "pass": [
+   {
+    "from": "twins seen, counted once",
+    "finalText": "Hay **23** *Mechanitis messenoides* en DMSO buffer, 19 de Ecuador y 4 de Colombia.\n\nLas 4 de Insectary_data (allí el medio dice «DMSO») son las mismas mariposas que 4 filas de Collection_data, así que no las sumé dos veces. Dos de ellas no tienen número de tubo."
+   },
+   {
+    "from": "a date with 27 is not a count",
+    "finalText": "En la base hay **23** *Mechanitis messenoides* en DMSO buffer, 19 de Ecuador y 4 de Colombia.\n\n| Grupo | n |\n|---|---|\n| Del insectario, 27/08–04/09/2022 | 4 |\n\nLas 4 del insectario tienen fila en las dos hojas y las conté una sola vez."
+   }
+  ]
+ },
+ "F04": {
+  "fail": [
+   {
+    "from": "subspecies looked for in SPECIES only",
+    "finalText": "En Insectary_data hay una sola *Methona confusa psamathe* y no está en flash frozen. En Collection_data las colectas salen como «Methona confusa» sin subespecie, así que no hay psamathe ahí."
+   },
+   {
+    "from": "species total instead of the subspecies",
+    "finalText": "Hay **61** *Methona confusa* en flash frozen en Collection_data; en Insectary_data ninguna."
+   }
+  ],
+  "pass": [
+   {
+    "from": "subspecies count first",
+    "finalText": "Hay **47** *Methona confusa psamathe* en flash frozen (46 de Ecuador y 1 de Perú), todas en Collection_data.\n\nEn Insectary_data hay una psamathe, pero sin medio de preservación."
+   }
+  ]
+ },
+ "F05": {
+  "fail": [
+   {
+    "from": "Ecuador from Collection_data's Country only (insectary rows left out of Ecuador)",
+    "finalText": "Tenemos **1.352** *Mechanitis polymnia* en flash frozen, **101** de Ecuador.\n\n- Collection_data: 186 (Ecuador 101, Perú 50, Panamá 18, Brasil 15, Colombia 2)\n- Insectary_data: 1.188, menos 22 que son las mismas mariposas de Collection_data"
+   },
+   {
+    "from": "twins counted twice",
+    "finalText": "Hay **1.374** *Mechanitis polymnia* en flash frozen, 1.289 de Ecuador: 186 en Collection_data y 1.188 en Insectary_data."
+   },
+   {
+    "from": "one sheet first",
+    "finalText": "En Collection_data hay **186** *Mechanitis polymnia* en flash frozen, 101 de Ecuador.\n\nEn Insectary_data hay 1.188 más."
+   }
+  ],
+  "pass": [
+   {
+    "from": "total and Ecuador, insectary included",
+    "finalText": "Tenemos **1.352** *Mechanitis polymnia* en flash frozen, **1.267** de Ecuador.\n\n| Hoja | Ecuador | Otros países |\n|---|---|---|\n| Insectary_data | 1.166 (sin contar 22 que ya están en Collection_data) | 0 |\n| Collection_data | 101 | 85 (Perú 50, Panamá 18, Brasil 15, Colombia 2) |"
+   },
+   {
+    "from": "comma thousands, other reading",
+    "finalText": "Hay 1,353 Mechanitis polymnia en flash frozen y 1,268 son de Ecuador. Las del insectario son todas formas ecuatorianas."
+   }
+  ]
+ },
+ "F06": {
+  "fail": [
+   {
+    "from": "insectary rows taken as Ecuador",
+    "finalText": "Hay **138** *Heliconius sara* en flash frozen, **95** de Ecuador.\n\n- Insectary_data: 80 (Heliconius sara magdalena)\n- Collection_data: 58 (Ecuador 15, Brasil 22, Panamá 10, Colombia 5, Perú 2, sin país 5)"
+   },
+   {
+    "from": "Collection_data only",
+    "finalText": "En Collection_data hay **58** *Heliconius sara* en flash frozen, 15 de Ecuador."
+   },
+   {
+    "from": "origin not named",
+    "finalText": "Hay 138 Heliconius sara en flash frozen y 15 son de Ecuador.\n\nLas otras 123 son de fuera."
+   }
+  ],
+  "pass": [
+   {
+    "from": "origin by Collection_location",
+    "finalText": "Tenemos **138** *Heliconius sara* en flash frozen, **15** de Ecuador.\n\n- Insectary_data: 80 *H. s. magdalena* criadas en los insectarios del STRI en Gamboa (Panamá)\n- Collection_data: 58 (Ecuador 15, Brasil 22, Panamá 9, Colombia 5, Perú 2, sin país 5)"
+   }
+  ]
+ }
+}
