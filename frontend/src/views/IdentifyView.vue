@@ -127,7 +127,10 @@ const wanted = ref<ModelKind>((store.get(CHOSEN) as ModelKind | null) === 'full'
 const active = computed(() => chooseModel(wanted.value, ready.value))
 /** Each model's files are on the phone (perhaps an older version than the server lists). */
 const stored = ref<Record<ModelKind, boolean>>({ small: false, full: false })
-const download = ref<{ kind: ModelKind; done: number; total: number; retrying?: string } | null>(null)
+/** A model downloading: its progress, and `waiting` while the connection is down (it goes on by itself). */
+const download = ref<{ kind: ModelKind; done: number; total: number; waiting?: boolean } | null>(null)
+/** What a download cut off before (a reload, the browser closed) left on the phone: «Continuar» (engine.saved). */
+const partials = ref<Record<ModelKind | 'sex', { done: number; total: number } | null>>({ small: null, full: null, sex: null })
 const dlError = ref<string | null>(null)
 const space = ref<{ free: number } | null>(null)
 const sizes = ref<Record<ModelKind, { plain: number; wire: number; total: number } | null>>({ small: null, full: null })
@@ -147,7 +150,7 @@ async function refresh() {
     const list = files.value
     for (const k of KINDS) {
       const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !isCurrent(s?.files[f.name], f))
-      if (engine.offer(k, list, s).state !== 'update' || need.some(f => f.role !== 'head-meta') || sexDownload.value || download.value) continue
+      if (engine.offer(k, list, s).state !== 'update' || need.some(f => f.role !== 'head-meta') || sexDownload.value || download.value || engine.busy(k)) continue
       headTried = true
       head.value = null
       await engine.download(k, list, () => {}).catch(() => null)
@@ -165,6 +168,11 @@ async function refresh() {
   sexReady.value = !!session.user && (await engine.sexReady())
   sexInstalled.value = session.user ? await engine.sexInfo() : null
   sexSize.value = session.user && files.value ? engine.sexToDownload(files.value, s).plain : null
+  // A download cut off before: what it kept (none while one runs on this page: its own bar shows).
+  for (const k of [...KINDS, 'sex'] as const) {
+    const cut = files.value && (k !== 'sex' || session.user) && !engine.busy(k) ? await engine.saved(k, files.value).catch(() => null) : null
+    partials.value[k] = cut && cut.done > 0 && cut.done < cut.total ? cut : null
+  }
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
   checked.value = true
@@ -220,9 +228,10 @@ async function startDownload(kind: ModelKind = wanted.value) {
     return
   }
   download.value = { kind, done: 0, total: 1 }
+  partials.value[kind] = null
   const updating = offers.value[kind]?.state === 'update'
   try {
-    await engine.download(kind, files.value, (done, total, retrying) => (download.value = { kind, done, total, retrying }))
+    await engine.download(kind, files.value, (done, total, state) => (download.value = { kind, done, total, waiting: state === 'waiting' }))
     store.set(CHOSEN, kind)
   } catch (err) {
     const m = (err as Error).message
@@ -280,6 +289,7 @@ const modelRows = computed<ModelRow[]>(() =>
       recommended: k === 'small',
       versions: o ? { from: o.from, to: o.to, fromMb: o.fromBytes ? mb(o.fromBytes) : null, toMb: o.toBytes ? mb(o.toBytes) : null } : undefined,
       note: noteOf(o?.notes),
+      partial: partials.value[k],
     }
   }),
 )
@@ -681,7 +691,7 @@ watch(sideValue, () => {
 const sexReady = ref(false)
 /** Bytes still to download for it (the detector may be on the phone already); null: not known. */
 const sexSize = ref<number | null>(null)
-const sexDownload = ref<{ done: number; total: number } | null>(null)
+const sexDownload = ref<{ done: number; total: number; waiting?: boolean } | null>(null)
 const sexError = ref<string | null>(null)
 let sexBusy = false
 /** The last photo, and its square when this phone read it: in memory only, for the estimate. */
@@ -716,6 +726,7 @@ const sexRow = computed<SexRow | null>(() => {
       toMb: listed ? mb(listed.bytes) : null,
     },
     note: noteOf(listed?.notes),
+    partial: partials.value.sex,
   }
 })
 async function removeSex() {
@@ -754,7 +765,7 @@ async function downloadSexModel() {
   sexDownload.value = { done: 0, total: 1 }
   const updating = offers.value.sex?.state === 'update'
   try {
-    await engine.downloadSex(files.value, (done, total) => (sexDownload.value = { done, total }))
+    await engine.downloadSex(files.value, (done, total, state) => (sexDownload.value = { done, total, waiting: state === 'waiting' }))
   } catch (err) {
     // An update that failed (a cut, a file that is not the listed one): the installed version stays and keeps working.
     // A full phone: trying again cannot help (an update needs the new model beside the installed one).
@@ -1158,6 +1169,9 @@ onMounted(async () => {
   if (known && !session.user && navigator.onLine) await Promise.all([engine.forgetStock(), engine.forgetSex()])
   if (session.user) stock.value = await engine.stock()
   await refresh()
+  // A download that kept running while this tab was closed (the page did not reload): its bar again.
+  for (const k of KINDS) if (engine.busy(k)) void startDownload(k)
+  if (engine.busy('sex')) void downloadSexModel()
   await restoreLast()
   autoPack()
   startOutbox()
@@ -1290,12 +1304,13 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       <div v-if="download" class="mt-4" role="status">
         <progress class="h-2 w-full accent-[var(--brand)]" :value="download.done" :max="download.total" />
         <p class="mt-1 text-sm text-fg-muted">
-          {{ download.retrying ? $t('Se cortó la conexión; reintentando…') : $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}
+          <span v-if="download.waiting" class="font-medium text-pending-text" data-testid="first-waiting">{{ $t('Esperando conexión…') }} · </span>{{ $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}
         </p>
       </div>
       <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
-          <Download :size="20" />{{ $t('Descargar el identificador') }} · {{ firstMb }} MB
+          <!-- A first download cut off by a reload: it goes on from what it kept. -->
+          <Download :size="20" />{{ partials.small ? $t('Continuar la descarga') : $t('Descargar el identificador') }} · {{ partials.small ? mb(partials.small.total - partials.small.done) : firstMb }} MB
         </button>
         <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
       </div>

@@ -200,22 +200,28 @@ describe('versions: the update', () => {
     await phoneWithOldB(store)
     vi.useFakeTimers({ toFake: ['setTimeout'] })
     try {
-      // The connection drops for every part of C (4 tries, then the download gives up).
-      server(withC(), { fail: u => u.includes('sex_c') })
+      // The connection drops for every part of C: the download waits for it (12 Nov 2026: it gave up after 4 tries).
+      let down = true
+      server(withC(), { fail: u => down && u.includes('sex_c') })
       const engine = createEngine(BASE, () => [], { signedIn: () => false })
-      const run = engine.downloadSex(withC(), () => {})
-      const done = run.catch(e => e)
-      await vi.runAllTimersAsync()
-      expect(String(await done)).toMatch(/Failed to fetch/)
+      const states: (string | undefined)[] = []
+      const run = engine.downloadSex(withC(), (_d, _t, state) => states.push(state))
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(states.at(-1)).toBe('waiting')
+      expect(engine.busy('sex')).toBe(true)
       const s = storedJson(store)
       expect(Object.keys(s.files).sort()).toEqual(['sex_test.onnx', 'wing_seg_s2.onnx'])
       expect(new Uint8Array(store.get(`${BASE}models/sex_test.onnx?part=0`)!.body)).toEqual(SEX_BYTES)
       expect(await engine.sexReady()).toBe(true)
       expect((await engine.sexInfo())?.name).toBe('sex_test.onnx')
       expect(engine.offer('sex', withC(), await engine.stored()).state).toBe('update')
-      // Signal back: the update finishes.
-      server(withC())
-      await engine.downloadSex(withC(), () => {})
+      // Signal back: the same download goes on by itself and swaps (a second call joins it).
+      down = false
+      const joined = engine.downloadSex(withC(), () => {})
+      await vi.advanceTimersByTimeAsync(31_000)
+      await run
+      await joined
+      expect(states.at(-1)).toBeUndefined()
       expect(Object.keys(storedJson(store).files).sort()).toEqual(['sex_c.onnx', 'wing_seg_s2.onnx'])
     } finally {
       vi.useRealTimers()
@@ -247,20 +253,23 @@ describe('versions: the update', () => {
     expect(engine.offer('small', changed, await engine.stored())).toMatchObject({ state: 'update', plain: 4 })
     expect(await engine.ready(changed)).toEqual({ small: true, full: false }) // still usable meanwhile
     const body = (u: string) => (u.includes('student') ? NEW : bodyOf(u))
-    // Interrupted: the old bytes stay under the old keys.
+    // Interrupted: the old bytes stay under the old keys while it waits for the signal.
     vi.useFakeTimers({ toFake: ['setTimeout'] })
+    let down = true
+    let run: Promise<void>
     try {
-      server(changed, { fail: u => u.includes('student'), body })
-      const done = engine.download('small', changed, () => {}).catch(e => e)
-      await vi.runAllTimersAsync()
-      expect(await done).toBeInstanceOf(Error)
+      server(changed, { fail: u => down && u.includes('student'), body })
+      run = engine.download('small', changed, () => {})
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(engine.busy('small')).toBe(true)
+      expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0`)!.body)).toEqual(new Uint8Array([9, 9, 9, 9]))
+      expect(storedJson(store).files['student.onnx'].slot).toBeUndefined()
+      down = false
+      await vi.advanceTimersByTimeAsync(31_000)
     } finally {
       vi.useRealTimers()
     }
-    expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0`)!.body)).toEqual(new Uint8Array([9, 9, 9, 9]))
-    expect(storedJson(store).files['student.onnx'].slot).toBeUndefined()
-    server(changed, { body })
-    await engine.download('small', changed, () => {})
+    await run
     const entry = storedJson(store).files['student.onnx']
     expect(entry).toMatchObject({ version: 'sha256-new', sha256: sha(NEW), slot: sha(NEW).slice(0, 16) })
     expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0&v=${entry.slot}`)!.body)).toEqual(NEW)
@@ -318,11 +327,11 @@ describe('a newer small model at another input size (182 px) replacing L1 (192 p
     const engine = createEngine(BASE, () => [], { signedIn: () => false })
     await engine.download('small', l1List, () => {})
     vi.useFakeTimers({ toFake: ['setTimeout'] })
+    let done: Promise<unknown>
     try {
       server(withNew(), { body, fail: u => u.includes('student_new') })
-      const done = engine.download('small', withNew(), () => {}).catch(e => e)
-      await vi.runAllTimersAsync()
-      expect(await done).toBeInstanceOf(Error)
+      done = engine.download('small', withNew(), () => {}).catch(e => e)
+      await vi.advanceTimersByTimeAsync(60_000)
     } finally {
       vi.useRealTimers()
     }
@@ -332,6 +341,10 @@ describe('a newer small model at another input size (182 px) replacing L1 (192 p
     expect(new Uint8Array(store.get(`${BASE}models/student.onnx?part=0`)!.body)).toEqual(L1)
     expect(await engine.ready(withNew())).toEqual({ small: true, full: false })
     expect(engine.offer('small', withNew(), await engine.stored()).state).toBe('update')
+    // «Borrar del teléfono» meanwhile stops the waiting download.
+    await engine.removeModel('small')
+    expect(String(await done)).toMatch(/cancelled/)
+    expect(engine.busy('small')).toBe(false)
   })
 })
 

@@ -10,7 +10,7 @@
  */
 import { ref, shallowRef, watch } from 'vue'
 import { locale, t } from './i18n'
-import { installPack, installedPack, numText, onlineIndex, packScope, removePack, resetOnlineIndex, revalidateIndex, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
+import { installPack, installedPack, numText, onlineIndex, packScope, removePack, resetOnlineIndex, revalidateIndex, savedBytes, sameScope, setPackScope, type InstalledPack, type PackIndex, type PackScope, type Region, type TaxaScope } from './photoPacks'
 import { retireFieldSet } from './identifyRefs'
 
 /** A taxa choice's name (the scientific ones are not translated). */
@@ -45,10 +45,34 @@ const setAuto = (v: 'pending' | 'done') => {
   }
 }
 
+/**
+ * A save under way, kept on the device: a save cut off by a reload or a closed browser is offered again
+ * («Continuar»), and goes on from the photos it saved (they are not downloaded again).
+ */
+const SAVING = 'identify:pack-saving'
+function getSaving(): PackScope | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(SAVING) ?? 'null')
+    return v && typeof v === 'object' && v.taxa ? (v as PackScope) : null
+  } catch {
+    return null
+  }
+}
+function setSaving(v: PackScope | null) {
+  try {
+    if (v) localStorage.setItem(SAVING, JSON.stringify(v))
+    else localStorage.removeItem(SAVING)
+  } catch {
+    /* private mode */
+  }
+}
+
 const index = shallowRef<PackIndex | null>(null)
 const indexFailed = ref(false)
 const pack = shallowRef<InstalledPack | null>(null)
-const progress = ref<{ done: number; total: number } | null>(null)
+const progress = ref<{ done: number; total: number; waiting?: boolean } | null>(null)
+/** A save cut off before (a reload, the browser closed): its choice and the MB its photos already saved take. */
+const unfinished = shallowRef<{ scope: PackScope; saved: number; left: number } | null>(null)
 /** A Delete under way (its photos go a while after the pack is off the screen). */
 const removing = ref(false)
 const note = ref<string | null>(null)
@@ -63,6 +87,20 @@ let loadingIndex: Promise<void> | null = null
 /** The installed pack, from the phone (no network). */
 async function loadInstalled() {
   pack.value = await installedPack()
+}
+/** A save cut off before: offered as «Continuar» with what is left (once the list is known). */
+async function loadUnfinished() {
+  const s = getSaving()
+  if (!s || progress.value) return void (unfinished.value = null)
+  // Already the pack on the phone (the save ended but the page closed before it said so): nothing to go on with.
+  if (pack.value && sameScope(pack.value.installed.scope, s) && index.value && pack.value.installed.version === index.value.version && !pack.value.installed.failed) {
+    setSaving(null)
+    return void (unfinished.value = null)
+  }
+  const sizes = index.value ? await savedBytes(index.value, s).catch(() => null) : null
+  // Nothing of it on the phone: no save to go on with (the button offers the choice as usual).
+  if (sizes && !sizes.saved) return void (unfinished.value = null)
+  unfinished.value = { scope: s, saved: sizes?.saved ?? 0, left: sizes?.left ?? 0 }
 }
 /** When the list was last checked against the server. */
 let checkedAt = 0
@@ -100,11 +138,13 @@ async function loadIndex(force = false) {
 async function load(force = false) {
   await loadInstalled()
   await loadIndex(force)
+  await loadUnfinished()
 }
 /** Descargas opened: the installed pack, and the server's list checked again. */
 async function open() {
   await loadInstalled()
   await refreshIndex()
+  await loadUnfinished()
 }
 
 async function install(s: PackScope = scope.value) {
@@ -120,8 +160,11 @@ async function install(s: PackScope = scope.value) {
   // Asked inside the tap (Chrome weighs the gesture): the phone then does not clear the photos when short of space.
   navigator.storage?.persist?.().catch(() => null)
   progress.value = { done: 0, total: 1 }
+  setSaving(s)
+  unfinished.value = null
   try {
-    const out = await installPack(index.value, s, (done, total) => (progress.value = { done, total }))
+    const out = await installPack(index.value, s, (done, total, state) => (progress.value = { done, total, waiting: state === 'waiting' }))
+    setSaving(null)
     pack.value = out.pack
     if (out.pack) setAuto('done')
     if (out.kept) {
@@ -137,6 +180,8 @@ async function install(s: PackScope = scope.value) {
     }
     return out
   } catch (err) {
+    // A full phone: nothing to go on with later. Anything else stays offered («Continuar»).
+    if (/quota/i.test(String((err as Error)?.message))) setSaving(null)
     failedSave.value = { scope: s, failed: 0, total: 0 }
     note.value = /quota/i.test(String((err as Error)?.message)) ? t('No hay espacio suficiente en el teléfono.') : t('Hace falta conexión a internet.')
     return null
@@ -149,6 +194,8 @@ async function install(s: PackScope = scope.value) {
 async function remove() {
   if (progress.value || removing.value) return
   setAuto('done')
+  setSaving(null)
+  unfinished.value = null
   // Off the screen at once; the photos go after (lib/photoPacks.ts removePack: the record first).
   pack.value = null
   note.value = null
@@ -174,6 +221,7 @@ export function usePacks() {
     indexFailed,
     pack,
     progress,
+    unfinished,
     removing,
     note,
     failedSave,

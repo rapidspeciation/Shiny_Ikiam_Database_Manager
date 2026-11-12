@@ -11,7 +11,7 @@ vi.mock('../identify/PackPanel.vue', () => ({ default: { render: () => null } })
 
 let host: HTMLElement | null = null
 const unmounts: (() => void)[] = []
-function show(props: { sex?: SexRow | null; models?: ModelRow[]; download?: { kind: 'small' | 'full'; done: number; total: number } | null }, events: Record<string, () => void> = {}) {
+function show(props: { sex?: SexRow | null; models?: ModelRow[]; download?: { kind: 'small' | 'full'; done: number; total: number; waiting?: boolean } | null }, events: Record<string, () => void> = {}) {
   host = document.createElement('div')
   document.body.append(host)
   const app = createApp({
@@ -132,5 +132,39 @@ describe('Descargas: model versions', () => {
     expect(text(el.querySelector('[data-testid=dl-sex] [role=status]'))).toMatch(/^0 de 172 MB/)
     el = show({ models: [modelRow({ outdated: true })], download: { kind: 'small', done: 0, total: 1 } })
     expect(text(el.querySelector('[data-testid=dl-model-small] [role=status]'))).toMatch(/^Preparando la descarga…/)
+  })
+})
+
+// 12 Nov 2026: a download cut by a network switch waits and goes on by itself; after a reload it offers «Continuar».
+describe('Descargas: a download that outlasts a dropped connection', () => {
+  it('no signal: «Esperando conexión…» with the bar where it was, no error, no button', () => {
+    locale.value = 'es'
+    const el = show({ models: [modelRow({ ready: true, outdated: true })], download: { kind: 'small', done: 12e6, total: 23e6, waiting: true } })
+    const row = el.querySelector('[data-testid=dl-model-small]')!
+    expect(text(row.querySelector('[data-testid=dl-waiting-small]'))).toMatch(/^Esperando conexión…/)
+    expect(text(row.querySelector('[role=status]'))).toContain('12 de 23 MB')
+    expect(row.querySelector('[role=progressbar]')!.getAttribute('aria-valuenow')).toBe('52')
+    expect(el.querySelector('[role=alert]')).toBeNull()
+    expect(row.querySelector('button.btn-primary')).toBeNull()
+    locale.value = 'en'
+    const en = show({ models: [modelRow()], download: { kind: 'small', done: 12e6, total: 23e6, waiting: true } })
+    expect(text(en.querySelector('[data-testid=dl-waiting-small]'))).toMatch(/^Waiting for connection…/)
+  })
+
+  it('after a reload: «Continuar» with what is left, and how much is on the phone', () => {
+    locale.value = 'es'
+    let asked = 0
+    const el = show({ models: [modelRow({ ready: false, partial: { done: 9e6, total: 23e6 } })] }, { onDownload: () => asked++ })
+    const row = el.querySelector('[data-testid=dl-model-small]')!
+    expect(text(row.querySelector('[data-testid=dl-partial-small]'))).toBe('Descarga a medias: 9 de 23 MB en el teléfono.')
+    const go = row.querySelector<HTMLButtonElement>('[data-testid=dl-continue-small]')!
+    expect(text(go)).toBe('Continuar · 14 MB')
+    expect(row.querySelector('[data-testid=dl-get-small]')).toBeNull()
+    go.click()
+    expect(asked).toBe(1)
+    // The sex model too.
+    const sex = show({ sex: sexRow({ ready: false, partial: { done: 20e6, total: 43e6 } }) }).querySelector('[data-testid=dl-sex]')!
+    expect(text(sex.querySelector('[data-testid=sex-continue]'))).toBe('Continuar · 23 MB')
+    expect(text(show({ sex: sexRow({ progress: { done: 20e6, total: 43e6, waiting: true } }) }).querySelector('[data-testid=sex-waiting]'))).toMatch(/^Esperando conexión…/)
   })
 })

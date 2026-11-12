@@ -158,6 +158,25 @@ test('model parts: precompressed zstd/gzip per part, plain without, ETag tied to
     assert.equal(r.body.length, PART_BYTES);
     // Same ETag whatever the encoding: 304 for a weak match.
     assert.equal((await raw(port, `${p}/${enc}?part=1`, { 'if-none-match': plainEtag, 'accept-encoding': 'zstd' })).status, 304);
+    // The rest of a part a dropped connection cut (12 Nov 2026): 206, the plain bytes from that offset within the part,
+    // the same ETag, never compressed (the offsets are the plain bytes'); with If-Range of another ETag, the whole part.
+    const etag0 = plainEtag.replace(/-p1"$/, '-p0"');
+    r = await raw(port, `${p}/${enc}?part=0`, { range: 'bytes=1000000-', 'if-range': etag0, 'accept-encoding': 'zstd, gzip' });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers['content-encoding'], undefined);
+    assert.equal(r.headers['content-range'], `bytes 1000000-${PART_BYTES - 1}/${PART_BYTES}`);
+    assert.equal(r.headers['x-part-bytes'], String(PART_BYTES));
+    assert.equal(r.headers['accept-ranges'], 'bytes');
+    assert.equal(r.headers.etag, etag0);
+    assert.deepEqual(r.body, plainFile.subarray(1000000, PART_BYTES));
+    r = await raw(port, `${p}/${enc}?part=1`, { range: 'bytes=100-199' });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers['content-range'], 'bytes 100-199/12345');
+    assert.deepEqual(r.body, plainFile.subarray(PART_BYTES + 100, PART_BYTES + 200));
+    r = await raw(port, `${p}/${enc}?part=1`, { range: 'bytes=100-', 'if-range': 'W/"other-p1"', 'accept-encoding': 'zstd' });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['content-encoding'], 'zstd');
+    assert.equal((await raw(port, `${p}/${enc}?part=1`, { range: 'bytes=12345-' })).status, 416);
     assert.equal((await raw(port, `${p}/${enc}?part=2`)).status, 416);
     assert.equal((await raw(port, `${p}/${enc}?part=x`)).status, 416);
 

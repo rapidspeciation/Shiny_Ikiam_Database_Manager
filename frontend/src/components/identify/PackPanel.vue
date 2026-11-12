@@ -11,7 +11,7 @@ import { fieldSet } from '../../lib/identifyRefs'
 import { countryName, regionLabel, taxaLabel, usePacks } from '../../lib/usePacks'
 
 const props = defineProps<{ online: boolean }>()
-const { index, indexFailed, pack, progress, removing, note, failedSave, scope, load, open, install, remove, removeLegacy: dropLegacy } = usePacks()
+const { index, indexFailed, pack, progress, unfinished, removing, note, failedSave, scope, load, open, install, remove, removeLegacy: dropLegacy } = usePacks()
 // Opened: the list checked again, so a list the server replaced shows its new sizes (11 Nov 2026, «≈ 131 MB»).
 onMounted(() => open())
 watch(
@@ -94,6 +94,13 @@ async function removeLegacy() {
   legacy.value = null
 }
 const pct = computed(() => (progress.value ? Math.round((100 * progress.value.done) / Math.max(1, progress.value.total)) : 0))
+/** A save cut off before (a reload, the browser closed): its choice again, from the photos it saved. */
+function continueSave() {
+  const u = unfinished.value
+  if (!u) return
+  scope.value = { ...u.scope, region: u.scope.region === 'neotropics' ? 'neotropics' : [...u.scope.region] }
+  install(u.scope)
+}
 </script>
 
 <template>
@@ -121,7 +128,17 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
         <button class="btn-danger min-h-11 px-4" :disabled="!!progress" @click="onRemove">{{ $t('Borrar del teléfono') }}</button>
       </div>
     </div>
-    <div v-else-if="legacy" class="mt-3 rounded-lg border border-border p-3 text-sm">
+    <!-- A save cut off by a reload or a closed browser: what it saved stays, «Continuar» downloads the rest. -->
+    <div v-if="unfinished && !progress" class="mt-3 rounded-lg border-2 border-pending-text/40 bg-surface p-3" data-testid="pack-unfinished">
+      <p class="text-sm font-medium">
+        {{ $t('La descarga de fotos quedó a medias: {taxa} · {region}.', { taxa: taxaLabel(unfinished.scope.taxa), region: regionLabel(unfinished.scope.region) }) }}
+      </p>
+      <p class="text-xs text-fg-muted tabular-nums">{{ $t('{mb} MB ya están en el teléfono.', { mb: mbText(unfinished.saved) }) }}</p>
+      <button class="btn-primary mt-2 min-h-11 px-4" :disabled="!online || removing" data-testid="pack-continue" @click="continueSave">
+        {{ $t('Continuar') }}<template v-if="unfinished.left"> · {{ mbText(unfinished.left) }} MB</template>
+      </button>
+    </div>
+    <div v-if="legacy && !installed" class="mt-3 rounded-lg border border-border p-3 text-sm">
       <p>{{ $t('Fotos guardadas antes (Ithomiini): {n} fotos · {mb} MB', { n: numText(legacy.count), mb: mbText(legacy.bytes) }) }}</p>
       <button class="btn-danger mt-2 min-h-11 px-4" @click="removeLegacy">{{ $t('Borrar del teléfono') }}</button>
     </div>
@@ -207,7 +224,9 @@ const pct = computed(() => (progress.value ? Math.round((100 * progress.value.do
         <div class="h-2.5 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100">
           <div class="h-full bg-brand transition-[width]" :style="{ width: `${pct}%` }" />
         </div>
-        <p class="mt-1 text-sm text-fg-muted tabular-nums">{{ $t('{done} de {total} fotos', { done: numText(progress.done), total: numText(progress.total) }) }}</p>
+        <p class="mt-1 text-sm text-fg-muted tabular-nums">
+          <span v-if="progress.waiting" class="font-medium text-pending-text" data-testid="pack-waiting">{{ $t('Esperando conexión…') }} · </span>{{ $t('{done} de {total} fotos', { done: numText(progress.done), total: numText(progress.total) }) }}
+        </p>
       </div>
       <button
         v-else-if="!current && total"

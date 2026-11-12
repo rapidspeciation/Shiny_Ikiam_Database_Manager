@@ -50,8 +50,10 @@ let served: PackIndex = index
 /** A photo's bytes as the list gives them (the fake server answers with that many). */
 const sizeOfFile = (u: string) => served.taxa.flatMap(t => t.photos).find(p => u.endsWith(`/${p.file}`))?.bytes ?? 100
 const fetched: string[] = []
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules()
+  // Short waits between tries (lib/resumable.ts): a server error is tried again a few times.
+  Object.assign((await import('../resumable')).timing, { base: 5, max: 20, stall: 2000 })
   localStorage.clear()
   served = index
   fetched.length = 0
@@ -174,7 +176,8 @@ describe('replacing a pack safely (review r1)', () => {
       'fetch',
       vi.fn(async (u: string) => {
         fetched.push(String(u))
-        if (bad.test(String(u))) throw new TypeError('network')
+        // Refused (since 12 Nov 2026 a dropped connection is waited for, not counted as failed: packResume.test.ts).
+        if (bad.test(String(u))) return new Response('', { status: 404 })
         return new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } })
       }),
     )
@@ -281,7 +284,7 @@ describe('the one-time save after the first model (review r1)', () => {
     expect(p.autoPending()).toBe(false) // nothing asks for it by itself
     p.askAuto()
     expect(p.autoPending()).toBe(true)
-    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : Promise.reject(new TypeError('network')))))
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : new Response('', { status: 404 }))))
     await p.install()
     expect(p.autoPending()).toBe(true) // nothing came: tried again on the next open
     vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
@@ -301,7 +304,7 @@ describe('the one-time save after the first model (review r1)', () => {
   it('sol-F1: the older field set is retired only after a complete save', async () => {
     fakeCaches()
     localStorage.setItem('identify:field-photos', JSON.stringify({ count: 3, bytes: 10, at: '2026-11-01' }))
-    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : String(u).endsWith('3.webp') ? Promise.reject(new TypeError('x')) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u).endsWith('index.json') ? new Response(JSON.stringify(index)) : String(u).endsWith('3.webp') ? new Response('', { status: 404 }) : new Response(new Uint8Array(sizeOfFile(String(u))), { headers: { 'content-type': 'image/webp' } }))))
     const { usePacks } = await import('../usePacks')
     const p = usePacks()
     await p.install({ taxa: 'ithomiini', region: ['EC'], ssp: true })

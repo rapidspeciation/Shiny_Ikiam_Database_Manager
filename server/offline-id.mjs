@@ -426,6 +426,10 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
  * Part `index` of a model (PART_BYTES of its plain bytes): its precompressed file with Content-Encoding when the
  * request accepts one and the part was made from the model on disk, else the plain range. A weak ETag tied to
  * the plain content; x-part-bytes is the plain length (what the page stores).
+ *
+ * A Range on a part (`bytes=a-` or `bytes=a-b`, offsets within the part) is the rest of a part a dropped connection
+ * cut (frontend/src/lib/offlineEngine.ts fetchPart, 12 Nov 2026): 206 with those plain bytes and the same ETag
+ * (never compressed: its offsets are the plain bytes'). With If-Range naming another ETag, the whole part (200).
  */
 async function sendPart(req, res, identifierDir, model, index) {
   const file = join(identifierDir, model.path);
@@ -456,10 +460,25 @@ async function sendPartOf(req, res, identifierDir, model, index, fh) {
     'cache-control': 'private, no-store, no-transform',
     'content-type': 'application/octet-stream',
     'x-part-bytes': String(end - start + 1),
+    'accept-ranges': 'bytes',
   };
   if (req.headers['if-none-match'] && req.headers['if-none-match'].split(/\s*,\s*/).some(t => t.replace(/^W\//, '') === etag.slice(2))) {
     res.writeHead(304, headers);
     return res.end();
+  }
+  const len = end - start + 1;
+  const ifRange = req.headers['if-range'];
+  const m = req.headers.range && (!ifRange || ifRange.replace(/^W\//, '') === etag.slice(2)) ? /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range).trim()) : null;
+  if (m && (m[1] || m[2])) {
+    let from = m[1] ? Number(m[1]) : Math.max(0, len - Number(m[2]));
+    const to = m[1] && m[2] ? Math.min(Number(m[2]), len - 1) : len - 1;
+    if (from > to || from >= len) {
+      res.writeHead(416, { ...headers, 'content-range': `bytes */${len}` });
+      return res.end();
+    }
+    res.writeHead(206, { ...headers, 'content-range': `bytes ${from}-${to}/${len}`, 'content-length': to - from + 1 });
+    if (req.method === 'HEAD') return res.end();
+    return await pipeline(fh.createReadStream({ start: start + from, end: start + to, highWaterMark: 1 << 20, autoClose: false }), res).catch(() => {});
   }
   const encoding = pickEncoding(req.headers['accept-encoding']);
   let packed = encoding ? (await compressedParts(identifierDir))[model.name] : null;

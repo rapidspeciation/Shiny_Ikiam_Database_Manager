@@ -229,6 +229,20 @@ node tools/lab/load-time.mjs http://127.0.0.1:8795 --login ~/.cache/ithomiini-la
   --paths /inicio,/tablas,/colecta --throttle fast4g
 ```
 
+## Downloads that outlast a dropped signal
+
+`tools/lab/resume-download.mjs` checks Identificar → Descargas in headless Chromium on a throttled network
+(`--throttle` KB/s, default 1500): it starts the fast model, turns the signal off at `--at` % (default 35) with
+`context.setOffline` for `--off` seconds, and checks «Esperando conexión…», the bar kept, the download going on by
+itself with Range requests (206 and an ETag), and the stored files' SHA-256 against the list; `--reload` then reloads
+mid-download and checks «Continuar». Signed in (`--login`), the models come from the app; without, from Hugging Face.
+On a dev app the model route needs `IDENTIFIER_DIR` with the phone models (`--env IDENTIFIER_DIR=…`). It only reads
+pages and downloads models: no AI, no messages.
+
+```sh
+node tools/lab/resume-download.mjs http://127.0.0.1:8823 --login <dev folder>/credentials.json --reload --shots <folder>
+```
+
 ## Cases
 
 `cases.json` in the lab folder:

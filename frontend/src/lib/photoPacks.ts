@@ -20,6 +20,7 @@ import { appRoot } from './appRoot'
 import { intlLocale } from './i18n'
 import { CACHE } from './offlineEngine'
 import { choosePhotos, SHAPES_URL } from './photoCountry'
+import { contentRange, DownloadError, isQuota as quotaError, request, retry, statusError } from './resumable'
 
 export type Group = 'ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'
 export type Rank = 'species' | 'subspecies'
@@ -400,6 +401,20 @@ async function pool<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {
   }))
 }
 
+/**
+ * The bytes of `scope`'s photos already on the phone (a save cut off by a reload kept each photo as it came) and of
+ * those still to download: what «Continuar» downloads.
+ */
+export async function savedBytes(index: PackIndex, scope: PackScope, indexUrl = INDEX_URL()): Promise<{ saved: number; left: number }> {
+  const cache = await caches.open(CACHE)
+  let saved = 0, left = 0
+  await pool(packPhotos(index, scope), 8, async p => {
+    if (await cache.match(photoSrc(index, indexUrl, p.file)).catch(() => undefined)) saved += p.bytes
+    else left += p.bytes
+  })
+  return { saved, left }
+}
+
 /** What a save did: the pack now on the phone, and whether the new choice took (all its photos saved). */
 export interface InstallResult {
   /** The pack on the phone after the save: the new one, or the one before when the new one did not complete. */
@@ -468,45 +483,105 @@ async function sameBytes(file: string, body: Uint8Array): Promise<boolean> {
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', body as Uint8Array<ArrayBuffer>))
   return [...hash.slice(0, 4)].map(b => b.toString(16).padStart(2, '0')).join('') === want
 }
+/** At most `n` of these at once (Cache Storage writes are the slow part on a phone). */
+function limiter(n: number) {
+  let busy = 0
+  const queue: (() => void)[] = []
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (busy >= n) await new Promise<void>(r => queue.push(r))
+    busy++
+    try {
+      return await fn()
+    } finally {
+      busy--
+      queue.shift()?.()
+    }
+  }
+}
+
 /**
- * One range of a bundle, cut into its photos (null: the request or a photo's bytes did not come right). `arrived`
- * hears of each photo whose bytes are in, as they stream (the progress line moves within a range).
+ * One range of a bundle, each photo kept (`keep`) as soon as its bytes are in and match its name, so a reload goes on
+ * from the photos saved. A dropped connection waits for the network (lib/resumable.ts) and asks only for the rest of
+ * the range, from the last byte that came (206); another ETag on the bundle meanwhile (the file changed) goes on from
+ * the first photo not saved. Returns the photos it could not take (bytes that do not match their name three times, a
+ * refusal, a server that keeps failing): they come one by one after. `arrived` hears of each photo saved.
  */
-async function fetchRange(index: Pick<PackIndex, 'bundles'>, indexUrl: string, rg: BundleRange, arrived: (u: string) => void = () => {}): Promise<[string, Blob][] | null> {
+async function fetchRange(
+  index: Pick<PackIndex, 'bundles'>,
+  indexUrl: string,
+  rg: BundleRange,
+  keep: (u: string, body: Blob) => Promise<void>,
+  arrived: (u: string) => void = () => {},
+  waiting: (on: boolean) => void = () => {},
+): Promise<string[]> {
   const b = index.bundles![rg.bundle]
-  // no-store: the browser's own cache does not keep a second copy; a range answer is never kept by the service worker.
-  const r = await fetch(new URL(b.file, indexUrl).href, { credentials: 'same-origin', cache: 'no-store', headers: { range: `bytes=${rg.start}-${rg.end - 1}` } })
-  if (r.status !== 206 && r.status !== 200) return null
-  // A server that ignores ranges sends the whole bundle (200).
-  const base = r.status === 206 ? rg.start : 0
-  const length = r.status === 206 ? rg.end - rg.start : b.bytes
+  const url = new URL(b.file, indexUrl).href
+  const length = rg.end - rg.start
   const buf = new Uint8Array(length)
   let got = 0
   let next = 0
-  const reader = r.body?.getReader()
-  if (reader)
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (got + value.length > length) return null
-      buf.set(value, got)
-      got += value.length
-      while (next < rg.items.length && rg.items[next].offset - base + rg.items[next].bytes <= got) arrived(rg.items[next++].u)
-    }
-  else {
-    const all = new Uint8Array(await r.arrayBuffer())
-    if (all.length > length) return null
-    buf.set(all)
-    got = all.length
+  let tag: string | null = null
+  let bad = 0
+  const saving: Promise<void>[] = []
+  const limit = limiter(8)
+  // Back to the first photo not saved: its bytes again from the server.
+  const back = () => (got = rg.items[next].offset - rg.start)
+  const once = () =>
+    // no-store: the browser's own cache does not keep a second copy; a range answer is never kept by the service worker.
+    request(url, { credentials: 'same-origin', cache: 'no-store', headers: { range: `bytes=${rg.start + got}-${rg.end - 1}` } }, async (r, read): Promise<'again' | void> => {
+      // A server that ignores ranges sends the whole bundle (200): the bytes before the ones wanted are skipped.
+      const fail = statusError(r.status, [200, 206])
+      if (fail) throw fail
+      let skip = r.status === 200 ? rg.start + got : 0
+      if (r.status === 206) {
+        const cr = contentRange(r.headers.get('content-range'))
+        if (cr && (cr.start !== rg.start + got || (cr.total != null && cr.total !== b.bytes))) throw new DownloadError('changed')
+      }
+      const t = r.headers.get('etag')
+      if (t && tag && t !== tag) {
+        tag = t
+        back()
+        return 'again'
+      }
+      if (t) tag = t
+      for (;;) {
+        const { done, value } = await read()
+        if (done) break
+        let chunk = value
+        if (skip) {
+          const drop = Math.min(skip, chunk.length)
+          skip -= drop
+          chunk = chunk.subarray(drop)
+        }
+        const room = length - got
+        if (chunk.length > room) chunk = chunk.subarray(0, room)
+        buf.set(chunk, got)
+        got += chunk.length
+        while (next < rg.items.length && rg.items[next].offset - rg.start + rg.items[next].bytes <= got) {
+          const it = rg.items[next]
+          const body = buf.slice(it.offset - rg.start, it.offset - rg.start + it.bytes)
+          if (!(await sameBytes(it.file, body))) {
+            back()
+            if (++bad >= 3) throw new DownloadError('corrupt')
+            return 'again'
+          }
+          next++
+          saving.push(limit(() => keep(it.u, new Blob([body], { type: typeOf(it.u) }))).then(() => arrived(it.u)))
+        }
+        if (got >= length) break
+      }
+      if (next < rg.items.length) throw new DownloadError('network', 'incomplete')
+    })
+  try {
+    await retry(async () => {
+      while ((await once()) === 'again');
+    }, waiting)
+  } catch (err) {
+    if (quotaError(err)) throw err
+  } finally {
+    await Promise.all(saving)
   }
-  if (got !== length) return null
-  const out: [string, Blob][] = []
-  for (const it of rg.items) {
-    const body = buf.slice(it.offset - base, it.offset - base + it.bytes)
-    if (!(await sameBytes(it.file, body))) return null
-    out.push([it.u, new Blob([body], { type: typeOf(it.u) })])
-  }
-  return out
+  return rg.items.slice(next).map(x => x.u)
 }
 
 /**
@@ -520,7 +595,12 @@ async function fetchRange(index: Pick<PackIndex, 'bundles'>, indexUrl: string, r
  * under the photo's own address (the service worker and Compare see the same photos as before); `progress` still
  * counts photos.
  */
-export async function installPack(index: PackIndex, scope: PackScope, progress: (done: number, total: number) => void, indexUrl = INDEX_URL()): Promise<InstallResult> {
+export async function installPack(
+  index: PackIndex,
+  scope: PackScope,
+  progress: (done: number, total: number, state?: 'waiting') => void,
+  indexUrl = INDEX_URL(),
+): Promise<InstallResult> {
   const take = packTaxa(index, scope).map(t => ({ ...t, photos: chosenPhotos(t, scope) }))
   const cache = await caches.open(CACHE)
   const src = (p: PackPhoto) => photoSrc(index, indexUrl, p.file)
@@ -532,10 +612,17 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   let quota: unknown = null
   // Each photo counted once in the progress line, when its bytes are in (a range tried again counts nothing twice).
   const counted = new Set<string>()
+  // How many ranges or photos wait for the network now: «Esperando conexión…» while any does.
+  let waitingNow = 0
+  const state = () => (waitingNow ? ('waiting' as const) : undefined)
+  const waiting = (on: boolean) => {
+    waitingNow += on ? 1 : -1
+    progress(done, files.length, state())
+  }
   const tick = (u: string) => {
     if (counted.has(u)) return
     counted.add(u)
-    progress(++done, files.length)
+    progress(++done, files.length, state())
   }
   progress(0, files.length)
   // Those on the phone already: a photo's name holds a hash of its bytes (scripts/photo-packs.py), so one on the
@@ -562,33 +649,43 @@ export async function installPack(index: PackIndex, scope: PackScope, progress: 
   const ranges = index.bundles?.length ? bundleRanges(index, todo, want, one) : (one.push(...todo), [])
   // Short ranges (a photo or a few, as when an update adds one photo per taxon beside the one the phone has) are
   // mostly waiting: 8 of them in flight; long ones 3 (r5-fable-F2).
-  const fetchOne = async (rg: BundleRange) => {
-    for (let attempt = 0; attempt < 3 && !quota; attempt++) {
-      if (attempt) await new Promise(r => setTimeout(r, 500 * attempt))
-      const got = await fetchRange(index, indexUrl, rg, tick).catch(() => null)
-      if (!got) continue
-      // A few at a time: Cache Storage writes are the slow part on a phone.
-      await pool(got, 8, async ([u, body]) => keep(u, body))
-      for (const [u] of got) tick(u)
-      return
-    }
-    one.push(...rg.items.map(x => x.u)) // the range failed three times: its photos one by one below
+  const fetchOne = async (rg: BundleRange): Promise<void> => {
+    if (quota) return void one.push(...rg.items.map(x => x.u))
+    const left = await fetchRange(index, indexUrl, rg, keep, tick, waiting).catch(err => {
+      if (isQuota(err)) quota = err
+      return rg.items.map(x => x.u)
+    })
+    one.push(...left) // what the range could not take: one by one below
   }
   const SHORT = 256 * 1024
   await Promise.all([pool(ranges.filter(r => r.end - r.start >= SHORT), 3, fetchOne), pool(ranges.filter(r => r.end - r.start < SHORT), 8, fetchOne)])
-  // One request per photo: a list without bundles, a photo outside them, a range that kept failing.
+  // One request per photo: a list without bundles, a photo outside them, a range that kept failing. A dropped
+  // connection waits for the network as the ranges do; a refusal or wrong bytes count the photo as failed.
   await pool(one, 4, async u => {
-    if (quota) return
+    if (quota || ok.has(u)) return tick(u)
     try {
-      const got = await fetch(u, { credentials: 'same-origin', cache: 'reload' })
-      if (got.ok && (got.headers.get('content-type') ?? 'image/').startsWith('image/')) {
-        // The same checks as a bundle's photos (r4-sol-F3): its size, and the hash in its name; else counted as failed.
-        const p = want.get(u)!
-        const body = new Uint8Array(await got.arrayBuffer())
-        if ((p.missing || !p.bytes || body.length === p.bytes) && (await sameBytes(p.file, body))) await keep(u, new Blob([body], { type: got.headers.get('content-type') ?? typeOf(u) }))
-      }
-    } catch {
-      /* counted as failed: a retry takes it */
+      await retry(
+        () =>
+          request(u, { credentials: 'same-origin', cache: 'reload' }, async (got, read) => {
+            const fail = statusError(got.status, [200])
+            if (fail) throw fail
+            if (!(got.headers.get('content-type') ?? 'image/').startsWith('image/')) return
+            const parts: Uint8Array[] = []
+            for (;;) {
+              const { done: end, value } = await read()
+              if (end) break
+              parts.push(value)
+            }
+            const body = new Uint8Array(await new Blob(parts as BlobPart[]).arrayBuffer())
+            // The same checks as a bundle's photos (r4-sol-F3): its size, and the hash in its name; else counted as failed.
+            const p = want.get(u)!
+            if ((p.missing || !p.bytes || body.length === p.bytes) && (await sameBytes(p.file, body))) await keep(u, new Blob([body], { type: got.headers.get('content-type') ?? typeOf(u) }))
+          }),
+        waiting,
+      )
+    } catch (err) {
+      if (quotaError(err)) quota = err
+      /* else counted as failed: a retry takes it */
     }
     tick(u)
   })

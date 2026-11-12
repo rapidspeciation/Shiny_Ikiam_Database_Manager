@@ -31,6 +31,13 @@ export interface ModelRow {
   versions?: Versions
   /** The model's own note (its manifest's measured facts), in the page's language; null: none. */
   note?: string | null
+  /** A download cut off before (a reload, the browser closed): the bytes it kept and the bytes it needs. */
+  partial?: CutDownload | null
+}
+/** What a cut download left on the phone: «Continuar» downloads the rest. */
+export interface CutDownload {
+  done: number
+  total: number
 }
 export interface SexRow {
   /** How many genera the model covers (its calibration's). */
@@ -39,16 +46,17 @@ export interface SexRow {
   outdated: boolean
   downloadMb: number
   takesMb: number
-  progress: { done: number; total: number } | null
+  progress: { done: number; total: number; waiting?: boolean } | null
   error: string | null
   versions?: Versions
   /** The model's own note (its manifest's: measured cost, speed or memory), in the page's language; null: none. */
   note?: string | null
+  partial?: CutDownload | null
 }
 defineProps<{
   models: ModelRow[]
   active: ModelKind | null
-  download: { kind: ModelKind; done: number; total: number; retrying?: string } | null
+  download: { kind: ModelKind; done: number; total: number; waiting?: boolean } | null
   error: string | null
   lacksSpace: { need: number; free: number } | null
   iosNote: boolean
@@ -66,6 +74,8 @@ const mbDone = (b: number) => Math.round(b / 1e6)
 const checking = (p: { done: number; total: number }) => p.total > 1 && p.done >= p.total
 /** A version worth showing: a name from the model's metadata, not a content hash (the identifier's files). */
 const named = (v: string | null | undefined): v is string => !!v && !v.startsWith('sha256-')
+/** MB still to download of a cut download. */
+const leftMb = (p: CutDownload) => mb(Math.max(0, p.total - p.done))
 </script>
 
 <template>
@@ -104,15 +114,16 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
               <div class="h-full bg-brand transition-[width]" :style="{ width: `${pct(download)}%` }" />
             </div>
             <p class="mt-1 text-sm text-fg-muted tabular-nums">
-              {{
-                download.retrying
-                  ? $t('Se cortó la conexión; reintentando…')
-                  : download.total <= 1
-                    ? $t('Preparando la descarga…')
-                    : checking(download)
-                      ? $t('Comprobando la descarga…')
-                      : $t('{done} de {total} MB', { done: mbDone(download.done), total: mb(download.total) })
-              }}
+              <!-- No signal: the bar stays where it was and the download goes on by itself (lib/resumable.ts). -->
+              <span v-if="download.waiting" class="font-medium text-pending-text" :data-testid="`dl-waiting-${m.kind}`">{{ $t('Esperando conexión…') }}<template v-if="download.total > 1"> · </template></span>
+              <template v-if="download.waiting && download.total > 1">{{ $t('{done} de {total} MB', { done: mbDone(download.done), total: mb(download.total) }) }}</template>
+              <template v-else-if="!download.waiting">{{
+                download.total <= 1
+                  ? $t('Preparando la descarga…')
+                  : checking(download)
+                    ? $t('Comprobando la descarga…')
+                    : $t('{done} de {total} MB', { done: mbDone(download.done), total: mb(download.total) })
+              }}</template>
             </p>
             <p v-if="m.outdated" class="mt-1 text-xs text-fg-subtle">{{ $t('Mientras tanto se sigue usando la versión instalada.') }}</p>
           </div>
@@ -121,11 +132,21 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
           <p v-else-if="m.ready && named(m.versions?.from) && download?.kind !== m.kind" class="mt-1 text-xs text-fg-subtle" :data-testid="`dl-version-${m.kind}`">
             {{ $t('Versión {v}', { v: m.versions!.from! }) }}
           </p>
+          <!-- A download cut off by a reload or a closed browser: what came stays on the phone. -->
+          <div v-if="m.partial && download?.kind !== m.kind && (!m.ready || m.outdated)" class="mt-2" :data-testid="`dl-partial-${m.kind}`">
+            <div class="h-2.5 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" :aria-valuenow="pct(m.partial)" aria-valuemin="0" aria-valuemax="100">
+              <div class="h-full bg-brand/60" :style="{ width: `${pct(m.partial)}%` }" />
+            </div>
+            <p class="mt-1 text-sm text-fg-muted tabular-nums">{{ $t('Descarga a medias: {done} de {total} MB en el teléfono.', { done: mbDone(m.partial.done), total: mb(m.partial.total) }) }}</p>
+          </div>
           <div v-if="download?.kind !== m.kind" class="mt-2 flex flex-wrap gap-2">
-            <button v-if="!m.ready && !m.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-get-${m.kind}`" @click="emit('download', m.kind)">
+            <button v-if="m.partial && (!m.ready || m.outdated)" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-continue-${m.kind}`" @click="emit('download', m.kind)">
+              {{ $t('Continuar · {mb} MB', { mb: leftMb(m.partial) }) }}
+            </button>
+            <button v-else-if="!m.ready && !m.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-get-${m.kind}`" @click="emit('download', m.kind)">
               {{ $t('Descargar') }} · {{ m.downloadMb }} MB
             </button>
-            <button v-if="m.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-refresh-${m.kind}`" @click="emit('download', m.kind)">
+            <button v-else-if="m.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-refresh-${m.kind}`" @click="emit('download', m.kind)">
               {{ $t('Actualizar · {mb} MB', { mb: m.downloadMb }) }}
             </button>
             <button v-if="m.ready && active !== m.kind" class="btn min-h-11 px-4" @click="emit('use', m.kind)">{{ $t('Usar este') }}</button>
@@ -160,23 +181,34 @@ const named = (v: string | null | undefined): v is string => !!v && !v.startsWit
           <div class="h-full bg-brand transition-[width]" :style="{ width: `${pct(sex.progress)}%` }" />
         </div>
         <p class="mt-1 text-sm text-fg-muted tabular-nums">
-          {{
+          <span v-if="sex.progress.waiting" class="font-medium text-pending-text" data-testid="sex-waiting">{{ $t('Esperando conexión…') }}<template v-if="sex.progress.total > 1"> · </template></span>
+          <template v-if="sex.progress.waiting && sex.progress.total > 1">{{ $t('{done} de {total} MB', { done: mbDone(sex.progress.done), total: mb(sex.progress.total) }) }}</template>
+          <template v-else-if="!sex.progress.waiting">{{
             sex.progress.total <= 1
               ? $t('Preparando la descarga…')
               : checking(sex.progress)
                 ? $t('Comprobando la descarga…')
                 : $t('{done} de {total} MB', { done: mbDone(sex.progress.done), total: mb(sex.progress.total) })
-          }}
+          }}</template>
         </p>
         <p v-if="sex.outdated" class="mt-1 text-xs text-fg-subtle">{{ $t('Mientras tanto se sigue usando la versión instalada.') }}</p>
       </div>
       <UpdateNotice v-if="sex.outdated && !sex.progress" :versions="sex.versions" :note="sex.note" data-testid="sex-update" />
       <p v-else-if="sex.ready && !sex.progress && named(sex.versions?.from)" class="mt-1 text-xs text-fg-subtle" data-testid="sex-version">{{ $t('Versión {v}', { v: sex.versions!.from! }) }}</p>
+      <div v-if="sex.partial && !sex.progress && (!sex.ready || sex.outdated)" class="mt-2" data-testid="sex-partial">
+        <div class="h-2.5 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" :aria-valuenow="pct(sex.partial)" aria-valuemin="0" aria-valuemax="100">
+          <div class="h-full bg-brand/60" :style="{ width: `${pct(sex.partial)}%` }" />
+        </div>
+        <p class="mt-1 text-sm text-fg-muted tabular-nums">{{ $t('Descarga a medias: {done} de {total} MB en el teléfono.', { done: mbDone(sex.partial.done), total: mb(sex.partial.total) }) }}</p>
+      </div>
       <div v-if="!sex.progress" class="mt-2 flex flex-wrap gap-2">
-        <button v-if="!sex.ready && !sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-download" @click="emit('sexDownload')">
+        <button v-if="sex.partial && (!sex.ready || sex.outdated)" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-continue" @click="emit('sexDownload')">
+          {{ $t('Continuar · {mb} MB', { mb: leftMb(sex.partial) }) }}
+        </button>
+        <button v-else-if="!sex.ready && !sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-download" @click="emit('sexDownload')">
           {{ $t('Descargar') }} · {{ sex.downloadMb }} MB
         </button>
-        <button v-if="sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-refresh" @click="emit('sexDownload')">
+        <button v-else-if="sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-refresh" @click="emit('sexDownload')">
           {{ $t('Actualizar · {mb} MB', { mb: sex.downloadMb }) }}
         </button>
         <button v-if="sex.ready || sex.outdated" class="btn-danger min-h-11 px-4" @click="emit('sexRemove')">{{ $t('Borrar del teléfono') }}</button>
