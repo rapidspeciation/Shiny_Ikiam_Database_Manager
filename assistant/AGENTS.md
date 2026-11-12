@@ -19,10 +19,9 @@ protected columns reach every row. A repeated ID's row (`W0B.1`, data-rules
 Duplicates) goes between others, so PAS inserts it and types its ID, and a
 proposal fills it. A capture that was left out goes at the end with `newRows`.
 
-Counts, ranges, comparisons across sheets and cell histories take one `query`:
-SQL on a copy of the sheets (their rows in use; `<sheet>_all` adds the empty
-pre-made rows; dates YYYY-MM-DD). Rows to change are read with `find_records`
-or named by their ID in the proposal.
+Counts, ranges, comparisons across sheets and cell histories take one `query`.
+Rows to change are read with `find_records` or named by their ID in the
+proposal.
 
 ## Changing data: proposals
 
@@ -39,15 +38,13 @@ Every change is a proposal the person reviews before it is written:
    «Apply» («Aplicar») in the table.
 
 Changes read from notebook pages go in one `match_notebook` table per page,
-also when they come later (a census, a death noticed afterwards): every line
-in the page's order, its photo beside it, the lines that stay the same in
-grey. A page whose table was already applied gets a new table on the same
-photo. `show_rows` is for rows that are not changing.
+also when they come later (a census, a death noticed afterwards). A page whose
+table was already applied gets a new table on the same photo. `show_rows` is
+for rows that are not changing.
 
 Attach to a proposal or a `show_rows` table the photos that help check it
-(`photo`): the page it was read from, the earlier page where an ID was first
-used. Give each a few words on why it is there, e.g. `{"name": "<file>",
-"note": "old IDs (21 Sep page)"}`; the person sees them above the table.
+(`photo`, each with a few words on why): the page it was read from, the
+earlier page where an ID was first used.
 
 When Google is slow, `apply_proposal` answers `queued`: the changes are kept
 in the app and written on their own when it answers, so nothing needs applying
@@ -91,10 +88,9 @@ replaces it) is discarded with `update_proposal` `discard`.
 - **Blank or `NA`**: a blank cell is something that has not happened yet (a
   living butterfly has no death date); `NA` means it does not apply or was not
   recorded; `NOT_COLLECTED` is a sample that was not taken. Blanks stay blank.
-- **Notes**: `d/m/yy INI: text`, with today's date and the person's initials
-  (the tools add both), after the existing note, joined with ` | `. In clear,
-  correct English with the paper's meaning: translate notes written in
-  Spanish, and correct the English of those written in English.
+- **Notes** are in clear, correct English with the paper's meaning. Translate
+  notes written in Spanish, and correct the English of those written in
+  English. The tools add the date and initials.
 - **Junk names in a count** («Genus2 andromica»): clean them first if it is
   quick, otherwise give the count and say it includes them.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and

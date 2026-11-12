@@ -2,7 +2,7 @@
 
 ## Format
 
-AGENTS.md gives the form (`d/m/yy INI: text`, joined with ` | `, in English).
+The form is `d/m/yy INI: text`, joined with ` | `, in English.
 Besides:
 
 - The date is the day the note is **written**; the event's date goes inside
