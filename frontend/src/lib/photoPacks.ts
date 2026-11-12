@@ -20,7 +20,7 @@ import { appRoot } from './appRoot'
 import { intlLocale } from './i18n'
 import { CACHE } from './offlineEngine'
 import { choosePhotos, SHAPES_URL } from './photoCountry'
-import { contentRange, DownloadError, isQuota as quotaError, request, retry, statusError } from './resumable'
+import { contentRange, DownloadError, isQuota, request, retry, statusError } from './resumable'
 
 export type Group = 'ithomiini' | 'nymphalidae' | 'butterfly' | 'moth'
 export type Rank = 'species' | 'subspecies'
@@ -425,7 +425,6 @@ export interface InstallResult {
   /** The new choice did not complete and the pack before it stays (its record and its photos). */
   kept: boolean
 }
-const isQuota = (err: unknown) => /quota/i.test(`${(err as Error)?.name} ${(err as Error)?.message}`)
 /** Every photo key the phone has under `base` (a pack's photo folder; lists are not photos). */
 async function keysUnder(cache: Cache, base: string): Promise<Request[]> {
   return (await cache.keys()).filter(r => r.url.startsWith(base) && !/\.json(\?|$)/.test(r.url))
@@ -526,7 +525,8 @@ async function fetchRange(
   const limit = limiter(8)
   // Back to the first photo not saved: its bytes again from the server.
   const back = () => (got = rg.items[next].offset - rg.start)
-  const once = () =>
+  let copies = 0
+  const once = (flowing: () => void) =>
     // no-store: the browser's own cache does not keep a second copy; a range answer is never kept by the service worker.
     request(url, { credentials: 'same-origin', cache: 'no-store', headers: { range: `bytes=${rg.start + got}-${rg.end - 1}` } }, async (r, read): Promise<'again' | void> => {
       // A server that ignores ranges sends the whole bundle (200): the bytes before the ones wanted are skipped.
@@ -541,6 +541,7 @@ async function fetchRange(
       if (t && tag && t !== tag) {
         tag = t
         back()
+        if (++copies > 3) throw new DownloadError('changed')
         return 'again'
       }
       if (t) tag = t
@@ -571,13 +572,13 @@ async function fetchRange(
         if (got >= length) break
       }
       if (next < rg.items.length) throw new DownloadError('network', 'incomplete')
-    })
+    }, undefined, flowing)
   try {
-    await retry(async () => {
-      while ((await once()) === 'again');
+    await retry(async flowing => {
+      while ((await once(flowing)) === 'again');
     }, waiting)
   } catch (err) {
-    if (quotaError(err)) throw err
+    if (isQuota(err)) throw err
   } finally {
     await Promise.all(saving)
   }
@@ -665,7 +666,7 @@ export async function installPack(
     if (quota || ok.has(u)) return tick(u)
     try {
       await retry(
-        () =>
+        flowing =>
           request(u, { credentials: 'same-origin', cache: 'reload' }, async (got, read) => {
             const fail = statusError(got.status, [200])
             if (fail) throw fail
@@ -680,11 +681,11 @@ export async function installPack(
             // The same checks as a bundle's photos (r4-sol-F3): its size, and the hash in its name; else counted as failed.
             const p = want.get(u)!
             if ((p.missing || !p.bytes || body.length === p.bytes) && (await sameBytes(p.file, body))) await keep(u, new Blob([body], { type: got.headers.get('content-type') ?? typeOf(u) }))
-          }),
+          }, undefined, flowing),
         waiting,
       )
     } catch (err) {
-      if (quotaError(err)) quota = err
+      if (isQuota(err)) quota = err
       /* else counted as failed: a retry takes it */
     }
     tick(u)
@@ -724,7 +725,8 @@ export async function installPack(
   // session on (lib/photoCountry.ts; the service worker answers with this copy).
   try {
     if (!(await cache.match(SHAPES_URL()))) {
-      const r = await fetch(SHAPES_URL(), { credentials: 'same-origin' })
+      // Bounded: the photos are saved already, a hanging answer must not keep the save from ending.
+      const r = await fetch(SHAPES_URL(), { credentials: 'same-origin', signal: AbortSignal.timeout(20_000) })
       if (r.ok) await cache.put(SHAPES_URL(), r)
     }
   } catch {

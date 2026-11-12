@@ -61,7 +61,7 @@ export default {
   'Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.': 'About {need} MB of free space is needed; this phone has {free} MB.',
   'Identificar una mariposa': 'Identify a butterfly',
   'Instalar en el teléfono': 'Install on the phone',
-  'La descarga se cortó. Toque Descargar para seguir donde quedó.': 'The download was cut. Tap Download to continue where it stopped.',
+  'La descarga se cortó. Toque Continuar para seguir donde quedó.': 'The download was cut off. Tap Continue to pick up where it left off.',
   Lado: 'Side',
   'Lado de los Andes (opcional)': 'Side of the Andes (optional)',
   'la especie no es segura': 'the species is not certain',

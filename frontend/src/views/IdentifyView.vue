@@ -171,7 +171,8 @@ async function refresh() {
   // A download cut off before: what it kept (none while one runs on this page: its own bar shows).
   for (const k of [...KINDS, 'sex'] as const) {
     const cut = files.value && (k !== 'sex' || session.user) && !engine.busy(k) ? await engine.saved(k, files.value).catch(() => null) : null
-    partials.value[k] = cut && cut.done > 0 && cut.done < cut.total ? cut : null
+    // All bytes in but not checked yet (the page closed during «Comprobando…») counts too: «Continuar» checks and swaps.
+    partials.value[k] = cut && cut.done > 0 ? cut : null
   }
   const est = await navigator.storage?.estimate?.().catch(() => null)
   space.value = est?.quota ? { free: Math.max(0, (est.quota ?? 0) - (est.usage ?? 0)) } : null
@@ -244,7 +245,7 @@ async function startDownload(kind: ModelKind = wanted.value) {
             ? t('No hay espacio suficiente en el teléfono.')
             : updating
               ? t('No se pudo actualizar. Sigue la versión instalada; pruebe de nuevo.')
-              : t('La descarga se cortó. Toque Descargar para seguir donde quedó.')
+              : t('La descarga se cortó. Toque Continuar para seguir donde quedó.')
   } finally {
     download.value = null
     await refresh()
@@ -1169,9 +1170,6 @@ onMounted(async () => {
   if (known && !session.user && navigator.onLine) await Promise.all([engine.forgetStock(), engine.forgetSex()])
   if (session.user) stock.value = await engine.stock()
   await refresh()
-  // A download that kept running while this tab was closed (the page did not reload): its bar again.
-  for (const k of KINDS) if (engine.busy(k)) void startDownload(k)
-  if (engine.busy('sex')) void downloadSexModel()
   await restoreLast()
   autoPack()
   startOutbox()
@@ -1304,13 +1302,14 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       <div v-if="download" class="mt-4" role="status">
         <progress class="h-2 w-full accent-[var(--brand)]" :value="download.done" :max="download.total" />
         <p class="mt-1 text-sm text-fg-muted">
-          <span v-if="download.waiting" class="font-medium text-pending-text" data-testid="first-waiting">{{ $t('Esperando conexión…') }} · </span>{{ $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}
+          <span v-if="download.waiting" class="font-medium text-pending-text" data-testid="first-waiting">{{ $t('Esperando conexión…') }}</span>
+          <template v-if="download.total > 1">{{ download.waiting ? ' · ' : '' }}{{ $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}</template>
         </p>
       </div>
       <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
           <!-- A first download cut off by a reload: it goes on from what it kept. -->
-          <Download :size="20" />{{ partials.small ? $t('Continuar la descarga') : $t('Descargar el identificador') }} · {{ partials.small ? mb(partials.small.total - partials.small.done) : firstMb }} MB
+          <Download :size="20" />{{ partials.small ? $t('Continuar la descarga') : $t('Descargar el identificador') }} · {{ partials.small ? mb(Math.max(0, partials.small.total - partials.small.done)) : firstMb }} MB
         </button>
         <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
       </div>

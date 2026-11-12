@@ -22,8 +22,6 @@ export class DownloadError extends Error {
     super(message)
   }
 }
-/** A failure as a DownloadError (a fetch's TypeError, an abort: the network). */
-export const failOf = (err: unknown): DownloadError => (err instanceof DownloadError ? err : new DownloadError('network', String((err as Error)?.message ?? err)))
 /** A full phone: never tried again (the caller says so). */
 export const isQuota = (err: unknown) => /quota/i.test(`${(err as Error)?.name} ${(err as Error)?.message}`)
 
@@ -66,20 +64,23 @@ export function nextTry(attempt: number, signal?: AbortSignal): Promise<void> {
       addEventListener('online', finish)
       if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
     }
-    // Offline: a minute at most (the browser's flag can be wrong), else the backoff.
+    // Offline: until the `online` event, or a minute (the browser's flag can be wrong: a try then), else the backoff.
     timer = setTimeout(finish, offlineNow() ? Math.max(backoff, 60_000) : backoff)
   })
 }
 
 /**
  * One fetch watched for a stall and for the `offline` event. `body` reads the response (each chunk through `read`,
- * which also restarts the stall clock); the request is aborted on a stall, on `offline`, or when `body` throws.
+ * which also restarts the stall clock); the request is aborted on a stall, on `offline`, on `signal`, or when `body`
+ * throws. Only the network's failures (the fetch, a read) become DownloadError('network'); anything else `body`
+ * throws (a storage error) is the caller's. `flowing` hears of the first bytes that come.
  */
 export async function request<T>(
   url: string,
   init: RequestInit,
   body: (r: Response, read: () => Promise<ReadableStreamReadResult<Uint8Array>>) => Promise<T>,
   signal?: AbortSignal,
+  flowing: () => void = () => {},
 ): Promise<T> {
   const ctl = new AbortController()
   const cancel = () => ctl.abort()
@@ -91,24 +92,35 @@ export async function request<T>(
     timer = setTimeout(() => ((stalled = true), ctl.abort()), timing.stall)
   }
   const cut = () => ctl.abort()
+  /** A failure of the network itself (or of the request given up: a stall, offline, cancelled). */
+  const net = (err: unknown) =>
+    signal?.aborted ? new DownloadError('cancelled') : new DownloadError('network', stalled ? 'stalled' : String((err as Error)?.message ?? err))
   if (hasWindow()) addEventListener('offline', cut)
   try {
     if (signal?.aborted) throw new DownloadError('cancelled')
-    if (offlineNow()) throw new DownloadError('network', 'offline')
     arm()
-    const r = await fetch(url, { ...init, signal: ctl.signal })
+    const r = await fetch(url, { ...init, signal: ctl.signal }).catch(err => Promise.reject(net(err)))
     arm()
     const reader = r.body?.getReader()
     let whole: Uint8Array | null = null
+    let first = true
     const read = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-      if (!reader) {
-        // A response without a stream (tests, old engines): its bytes at once.
-        if (whole) return { done: true, value: undefined }
-        whole = new Uint8Array(await r.arrayBuffer())
-        return { done: false, value: whole }
+      let out: ReadableStreamReadResult<Uint8Array>
+      try {
+        if (!reader) {
+          // A response without a stream (tests, old engines): its bytes at once.
+          if (whole) return { done: true, value: undefined }
+          whole = new Uint8Array(await r.arrayBuffer())
+          out = { done: false, value: whole }
+        } else out = await reader.read()
+      } catch (err) {
+        throw net(err)
       }
-      const out = await reader.read()
       arm()
+      if (first && !out.done && out.value.length) {
+        first = false
+        flowing()
+      }
       return out
     }
     try {
@@ -116,11 +128,6 @@ export async function request<T>(
     } finally {
       reader?.cancel().catch(() => {})
     }
-  } catch (err) {
-    if (err instanceof DownloadError) throw err
-    if (isQuota(err)) throw err
-    if (signal?.aborted) throw new DownloadError('cancelled')
-    throw new DownloadError('network', stalled ? 'stalled' : String((err as Error)?.message ?? err))
   } finally {
     clearTimeout(timer)
     ctl.abort()
@@ -139,23 +146,38 @@ export function statusError(status: number, ok: number[]): DownloadError | null 
 /**
  * Runs `step` until it returns: a network error waits (nextTry) and tries again for as long as it takes, a server
  * error up to timing.serverTries times; anything else is thrown. `waiting(true)` when a wait starts, `waiting(false)`
- * when the next try begins; `signal` ends it (DownloadError('cancelled')). `step` is told the try's number and keeps what it got (its next try asks only the rest).
+ * once bytes flow again (the step calls `flowing`, which `request` takes); bytes that flow also start the backoff over.
+ * `step` keeps what it got (its next try asks only the rest); `signal` ends it (DownloadError('cancelled')).
  */
-export async function retry<T>(step: (attempt: number) => Promise<T>, waiting: (on: boolean) => void = () => {}, signal?: AbortSignal): Promise<T> {
+export async function retry<T>(step: (flowing: () => void) => Promise<T>, waiting: (on: boolean) => void = () => {}, signal?: AbortSignal): Promise<T> {
   let server = 0
-  for (let attempt = 1; ; attempt++) {
+  let attempt = 0
+  let waitingNow = false
+  const flowing = () => {
+    attempt = 0
+    if (waitingNow) {
+      waitingNow = false
+      waiting(false)
+    }
+  }
+  for (;;) {
     if (signal?.aborted) throw new DownloadError('cancelled')
     try {
-      return await step(attempt)
+      const out = await step(flowing)
+      flowing()
+      return out
     } catch (err) {
-      if (isQuota(err)) throw err
-      const e = failOf(err)
-      if (e.kind === 'server' && ++server >= timing.serverTries) throw e
-      if (e.kind !== 'network' && e.kind !== 'server') throw err
-      if (signal?.aborted) throw new DownloadError('cancelled')
-      waiting(true)
-      await nextTry(attempt, signal)
-      waiting(false)
+      const again = err instanceof DownloadError && (err.kind === 'network' || (err.kind === 'server' && ++server < timing.serverTries)) && !signal?.aborted
+      if (!again) {
+        // Over (done with an error): the waiting it said ends too.
+        if (waitingNow) waiting(false)
+        throw signal?.aborted && !(err instanceof DownloadError && err.kind === 'cancelled') ? new DownloadError('cancelled') : err
+      }
+      if (!waitingNow) {
+        waitingNow = true
+        waiting(true)
+      }
+      await nextTry(++attempt, signal)
     }
   }
 }

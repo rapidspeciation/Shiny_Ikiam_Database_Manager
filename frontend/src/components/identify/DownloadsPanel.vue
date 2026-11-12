@@ -141,7 +141,7 @@ const leftMb = (p: CutDownload) => mb(Math.max(0, p.total - p.done))
           </div>
           <div v-if="download?.kind !== m.kind" class="mt-2 flex flex-wrap gap-2">
             <button v-if="m.partial && (!m.ready || m.outdated)" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-continue-${m.kind}`" @click="emit('download', m.kind)">
-              {{ $t('Continuar · {mb} MB', { mb: leftMb(m.partial) }) }}
+              {{ m.partial.total > m.partial.done ? $t('Continuar · {mb} MB', { mb: leftMb(m.partial) }) : $t('Continuar') }}
             </button>
             <button v-else-if="!m.ready && !m.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" :data-testid="`dl-get-${m.kind}`" @click="emit('download', m.kind)">
               {{ $t('Descargar') }} · {{ m.downloadMb }} MB
@@ -150,7 +150,8 @@ const leftMb = (p: CutDownload) => mb(Math.max(0, p.total - p.done))
               {{ $t('Actualizar · {mb} MB', { mb: m.downloadMb }) }}
             </button>
             <button v-if="m.ready && active !== m.kind" class="btn min-h-11 px-4" @click="emit('use', m.kind)">{{ $t('Usar este') }}</button>
-            <button v-if="m.ready || m.outdated" class="btn-danger min-h-11 px-4" :disabled="!!download" @click="emit('remove', m.kind)">{{ $t('Borrar del teléfono') }}</button>
+            <!-- Not during the sex model's download either: it shares the detector, which this would remove. -->
+            <button v-if="m.ready || m.outdated" class="btn-danger min-h-11 px-4" :disabled="!!download || !!sex?.progress" @click="emit('remove', m.kind)">{{ $t('Borrar del teléfono') }}</button>
           </div>
         </li>
       </ul>
@@ -203,7 +204,7 @@ const leftMb = (p: CutDownload) => mb(Math.max(0, p.total - p.done))
       </div>
       <div v-if="!sex.progress" class="mt-2 flex flex-wrap gap-2">
         <button v-if="sex.partial && (!sex.ready || sex.outdated)" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-continue" @click="emit('sexDownload')">
-          {{ $t('Continuar · {mb} MB', { mb: leftMb(sex.partial) }) }}
+          {{ sex.partial.total > sex.partial.done ? $t('Continuar · {mb} MB', { mb: leftMb(sex.partial) }) : $t('Continuar') }}
         </button>
         <button v-else-if="!sex.ready && !sex.outdated" class="btn-primary min-h-11 px-4" :disabled="!!download || !online" data-testid="sex-download" @click="emit('sexDownload')">
           {{ $t('Descargar') }} · {{ sex.downloadMb }} MB

@@ -110,7 +110,10 @@ interface Inflight {
   /** Ends it (the model removed, signed out): DownloadError('cancelled'). */
   stop: AbortController
 }
-/** The downloads running on this page, by folder and roles (one engine per view; a view opened again joins them). */
+/**
+ * The downloads running on this page, by folder and roles: another engine of the page (Revisión's sex estimate, the
+ * view's own) that starts the same download joins it instead of downloading it twice.
+ */
 const inflight = new Map<string, Inflight>()
 /** models/begun.json written one change at a time. */
 let begunWrites: Promise<void> = Promise.resolve()
@@ -299,13 +302,31 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   }
 
   /** The page, its scripts and the runtime, for airplane mode (the service worker serves them from this cache). */
-  async function keepPage(cache: Cache) {
+  async function keepPage(cache: Cache, signal?: AbortSignal, flowing?: () => void) {
     const ort = [...ORT_FILES, ...('gpu' in navigator ? ORT_GPU_FILES : [])].map(f => at(`ort/${f}`))
     for (const u of [...pageFiles(), ...ort]) {
-      const r = await fetch(u, { cache: 'no-cache' })
-      // A refusal or a server error is the caller's (retry tries a server error again); no signal: a network error.
-      if (!r.ok) throw statusError(r.status, []) ?? new Error(`${u}: HTTP ${r.status}`)
-      await cache.put(u, r)
+      // Watched like the models' parts (a stall or `offline` is a network error, tried again; lib/resumable.ts).
+      await request(
+        u,
+        { cache: 'no-cache' },
+        async (r, read) => {
+          // A refusal or a server error is the caller's (retry tries a server error again).
+          if (!r.ok) throw statusError(r.status, []) ?? new Error(`${u}: HTTP ${r.status}`)
+          const parts: Uint8Array[] = []
+          for (;;) {
+            const { done, value } = await read()
+            if (done) break
+            parts.push(value)
+          }
+          // Its own headers (type, the page's isolation headers for airplane mode), less those of the bytes on the wire.
+          const headers = new Headers(r.headers)
+          headers.delete('content-encoding')
+          headers.delete('content-length')
+          await cache.put(u, new Response(new Blob(parts as BlobPart[]), { status: r.status, statusText: r.statusText, headers }))
+        },
+        signal,
+        flowing,
+      )
     }
   }
 
@@ -368,10 +389,14 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     }
   }
 
-  /** Removes a file's parts: all, or all but those of the slot kept (`keep.slot` undefined: the plain keys). */
+  /**
+   * Removes a file's parts: all, or all but those of the slot kept (`keep.slot` undefined: the plain keys). Pieces go
+   * in any case (a page closed between a part's write and its pieces' removal left them).
+   */
   async function dropParts(cache: Cache, name: string, keep?: { slot?: string }) {
     for (const r of await partsOf(cache, name)) {
-      if (keep && (new URL(r.url).searchParams.get('v') ?? undefined) === keep.slot) continue
+      const q = new URL(r.url).searchParams
+      if (keep && (q.get('v') ?? undefined) === keep.slot && !q.has('piece')) continue
       await cache.delete(r)
     }
   }
@@ -518,7 +543,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
     }
     count(got())
     let copies = 0
-    async function requestPart(): Promise<'again' | void> {
+    async function requestPart(flowing: () => void): Promise<'again' | void> {
       if (got() === len) return
       const from = got()
       const url = f.url ?? at(partKey(f.name, i))
@@ -571,12 +596,12 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
           }
         }
         if (got() !== len) throw new DownloadError('network', 'incomplete')
-      }, signal)
+      }, signal, flowing)
     }
     for (let bad = 0; ; ) {
-      await retry(async () => {
+      await retry(async flowing => {
         // A part begun again (another copy of the file answered: its bytes from the start) needs no wait.
-        while ((await requestPart()) === 'again');
+        while ((await requestPart(flowing)) === 'again');
       }, waiting, signal)
       const blob = new Blob([...pieces, ...tail])
       // The part's hash when the list gives it (Hugging Face's always, the server's when its parts are made).
@@ -594,7 +619,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
   const sources = new Map<string, string>()
 
   /**
-   * A download of these roles, joined by a second call while it runs (the view left and opened again): one download,
+   * A download of these roles, joined by a second call while it runs (another engine of the page): one download,
    * every caller hears its progress. A file changed on the server meanwhile, or whose whole hash is wrong, starts over
    * cleanly from a new list (twice at most).
    */
@@ -644,7 +669,7 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       waitingNow = on
       progress(done, Math.max(1, total), on ? 'waiting' : undefined)
     }
-    await retry(() => keepPage(cache), tellWait, signal)
+    await retry(flowing => keepPage(cache, signal, flowing), tellWait, signal)
     if (signedIn()) await refreshStock()
     const before = await stored()
     // The files whose listed version is on the phone already (perhaps from the other source: the same bytes): kept
@@ -689,7 +714,9 @@ export function createEngine(base: string, pageFiles: () => string[] = () => [],
       }
       // The whole file against the listed SHA-256 before it may replace anything; a bad copy is thrown away.
       if (f.sha256 && (await storedSha256(cache, f.name, f.bytes, slot)) !== f.sha256) {
-        await dropNew(cache, f.name, old, slot)
+        // Every part of the new bytes goes (the installed version's own slot stays), so the restart fetches them again.
+        await dropParts(cache, f.name, old && old.slot !== slot ? { slot: old.slot } : undefined)
+        sources.delete(f.name)
         throw Object.assign(new DownloadError('corrupt', 'corrupt'), { final: true, whole: true })
       }
       fresh[f.name] = { etag: f.etag, bytes: f.bytes, role: f.role, ...(f.parts ? { parts: f.parts } : {}), ...(slot ? { slot } : {}), ...label(f) }

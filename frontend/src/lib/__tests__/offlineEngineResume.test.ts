@@ -80,10 +80,10 @@ function servers(
     opts.before?.(a)
     if (opts.refuse?.()) return new Response('', { status: 403 })
     if (opts.down?.()) throw new TypeError('Failed to fetch')
-    if (url.includes('/ort/')) return new Response('')
-    if (url.includes('list.json')) return Response.json({ files: listing(now()), partBytes: PART })
     // No answer until the request is given up (the browser's abort).
     if (opts.hang?.(a)) return new Promise<Response>((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    if (url.includes('/ort/')) return new Response('runtime')
+    if (url.includes('list.json')) return Response.json({ files: listing(now()), partBytes: PART })
     const f = now().find(x => url.includes(`/${x.name}`))
     if (!f) return new Response('', { status: 404 })
     let start: number, end: number, total: number, status: number
@@ -264,6 +264,52 @@ async function closedAt10MB(base: string, files: Served[]) {
   expect(String(await run)).toMatch(/403/)
   return true
 }
+
+describe('review r1: what else can hold a download', () => {
+  it('sol-F1: a runtime file that hangs while the download is prepared: «waiting», then it goes on (no endless «Preparando»)', async () => {
+    const base = newBase()
+    const store = memoryCaches()
+    const files = smallModel()
+    let hung = 0
+    servers(base, files, { hang: a => a.url.includes('/ort/') && hung++ < 2 })
+    const engine = createEngine(base, () => [], { signedIn: () => false })
+    const rec = recorder()
+    await engine.download('small', listing(files), rec.progress)
+    expect(rec.calls.some(c => c.state === 'waiting')).toBe(true)
+    expect(storedJson(store, base).files[files[1].name].sha256).toBe(sha(files[1].body))
+    // The runtime kept for airplane mode is the bytes that came.
+    expect(new TextDecoder().decode(store.get(`${base}ort/ort.wasm.min.mjs`)!.body)).toBe('runtime')
+  })
+
+  it('fable-F1: «waiting» stays on through tries that get nothing, and goes once bytes flow again', async () => {
+    const base = newBase()
+    memoryCaches()
+    const files = smallModel()
+    let hung = 0
+    servers(base, files, { hang: a => a.url.includes('student') && hung++ < 3 })
+    const engine = createEngine(base, () => [], { signedIn: () => false })
+    const rec = recorder()
+    await engine.download('small', listing(files), rec.progress)
+    // Three tries hang (each given up after the stall): one «waiting» stretch, no flicker between the tries, and it
+    // ends with the first bytes (the next call counts them).
+    const ends = rec.calls.flatMap((c, i) => (i && rec.calls[i - 1].state === 'waiting' && c.state !== 'waiting' ? [i] : []))
+    expect(ends).toHaveLength(1)
+    expect(rec.calls[ends[0] + 1].done).toBeGreaterThan(rec.calls[ends[0]].done)
+  })
+
+  it('fable-F3: a storage error that is not the network ends the download (no endless «waiting»)', async () => {
+    const base = newBase()
+    const store = memoryCaches()
+    const files = smallModel()
+    servers(base, files)
+    const cache = await caches.open('x')
+    const put = cache.put
+    cache.put = async (k: string, r: Response) => (String(k).includes('&piece=') ? Promise.reject(new Error('disk broke')) : put(k, r))
+    const engine = createEngine(base, () => [], { signedIn: () => false })
+    await expect(engine.download('small', listing(files), () => {})).rejects.toThrow('disk broke')
+    expect(store.has(`${base}models/stored.json`)).toBe(false)
+  })
+})
 
 describe('after a reload: «Continuar» from the pieces kept', () => {
   it('a reload mid-part: saved() counts the pieces, and the next download asks only for the rest', async () => {
