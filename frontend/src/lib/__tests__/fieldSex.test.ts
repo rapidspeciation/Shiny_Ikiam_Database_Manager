@@ -1,12 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { FIELD_SEX_BAND, FIELD_SEX_SPECIES, fieldSexState, type FieldSexAnswer, type FieldSexInput } from '../fieldSex'
+import { FIELD_SEX_BAND, FIELD_SEX_ESTIMATE_MAX, FIELD_SEX_SPECIES, fieldSexState, type FieldSexAnswer, type FieldSexInput } from '../fieldSex'
 import { ITHOMIINI_GENERA } from '../ithomiiniGenera'
 import { SEX_GENERA, sexApplies } from '../sexModel'
 
 // The general sex line on Identificar (lib/fieldSex.ts): when the page shows it and what. No model, no AI.
 
 const block = (o: Partial<FieldSexAnswer> = {}): FieldSexAnswer => ({ species: 'Danaus plexippus', status: 'call', p: 0.03, sex: 'male', sure: true, pct: 97, version: 'field-sex/1', ...o })
+const estimated = (o: Partial<FieldSexAnswer> = {}): FieldSexAnswer => ({
+  species: 'Vanessa cardui', status: 'estimate', p: 0.62, sex: 'female', sure: false, pct: 62, version: 'field-sex/2', verified: false, level: 'species', trainPhotos: 900, ...o,
+})
 const input = (o: Partial<FieldSexInput> = {}): FieldSexInput => ({
   mode: 'online',
   source: 'online',
@@ -18,7 +21,7 @@ const input = (o: Partial<FieldSexInput> = {}): FieldSexInput => ({
 
 describe('fieldSexState', () => {
   it('a Supported answer outside the band: the sex and its %, no question asked', () => {
-    expect(fieldSexState(input())).toEqual({ species: 'Danaus plexippus', status: 'call', p: 0.03, sex: 'male', sure: true, pct: 97, note: null })
+    expect(fieldSexState(input())).toEqual({ species: 'Danaus plexippus', status: 'call', p: 0.03, sex: 'male', sure: true, pct: 97, note: null, verified: true, level: null, trainPhotos: null })
   })
   it('inside the band: the side it leans to and the marker, no %', () => {
     const s = fieldSexState(input({ answer: block({ status: 'band', p: 0.62, sex: 'female', sure: false, pct: undefined }) }))
@@ -54,12 +57,50 @@ describe('fieldSexState', () => {
   })
 })
 
-describe('the Ithomiini keep the in-hand line exactly as it was', () => {
-  it('no general line for any Ithomiini, even with a block', () => {
-    for (const g of [...SEX_GENERA, ...ITHOMIINI_GENERA]) {
+describe('estimated species (every other species of the model)', () => {
+  it('inside the band: the side it leans to and its %; outside: the sex and its %', () => {
+    const named = { topName: 'Vanessa cardui' }
+    expect(fieldSexState(input({ ...named, answer: estimated() }))).toEqual({ species: 'Vanessa cardui', status: 'estimate', p: 0.62, sex: 'female', sure: false, pct: 62, note: null, verified: false, level: 'species', trainPhotos: 900 })
+    expect(fieldSexState(input({ ...named, answer: estimated({ p: 0.08, sex: 'male', sure: true, pct: 92 }) }))).toMatchObject({ sure: true, pct: 92, sex: 'male' })
+  })
+  it('never above 95 % nor under 50 %: a % out of range is dropped, the bar stays', () => {
+    expect(FIELD_SEX_ESTIMATE_MAX).toBe(95)
+    for (const pct of [96, 99, 49, 62.5]) expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ pct }) }))).toMatchObject({ status: 'estimate', pct: null })
+  })
+  it('species unsure or no wings: the bar and the note, no %', () => {
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ status: 'species_unsure' }) }))).toMatchObject({ pct: null, note: 'species', verified: false })
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ status: 'no_wings' }) }))).toMatchObject({ pct: null, note: 'wings' })
+  })
+  it('the level and the training photos come through; an odd level or status shows nothing', () => {
+    for (const level of ['species', 'genus', 'family', 'global'] as const) expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ level, trainPhotos: 3 }) }))).toMatchObject({ level, trainPhotos: 3 })
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ level: 'order' as never }) }))).toBeNull()
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ status: 'call' }) }))).toBeNull()
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated({ species: 'Vanessa atalanta' }) }))).toBeNull()
+  })
+  it('the six are always verified: an estimated block for one of them shows nothing', () => {
+    for (const s of FIELD_SEX_SPECIES) expect(fieldSexState(input({ topName: s, answer: estimated({ species: s }) }))).toBeNull()
+  })
+  it('online only, as the six', () => {
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated(), source: 'phone' }))).toBeNull()
+    expect(fieldSexState(input({ topName: 'Vanessa cardui', answer: estimated(), mode: 'phone' }))).toBeNull()
+  })
+})
+
+describe('the 13 Ithomiini genera keep the in-hand line exactly as it was', () => {
+  it('no general line for the 13 genera, even with a block of either kind', () => {
+    for (const g of SEX_GENERA) {
       const name = `${g} test`
-      expect(sexApplies(name, ITHOMIINI_GENERA)).not.toBe('no')
+      expect(sexApplies(name, ITHOMIINI_GENERA)).toBe('yes')
       expect(fieldSexState(input({ topName: name, answer: block({ species: name }) }))).toBeNull()
+      expect(fieldSexState(input({ topName: name, answer: estimated({ species: name }) }))).toBeNull()
+    }
+  })
+  it('another Ithomiini: never a verified line; an estimated block shows (it replaces the «No aplica» note)', () => {
+    for (const g of ITHOMIINI_GENERA.filter(x => !(SEX_GENERA as readonly string[]).includes(x))) {
+      const name = `${g} test`
+      expect(sexApplies(name, ITHOMIINI_GENERA)).toBe('genus')
+      expect(fieldSexState(input({ topName: name, answer: block({ species: name }) }))).toBeNull()
+      expect(fieldSexState(input({ topName: name, answer: estimated({ species: name }) }))).toMatchObject({ verified: false, species: name })
     }
   })
   it('the in-hand line\'s rule is unchanged: yes for the 13 genera, genus for other Ithomiini, no otherwise', () => {
@@ -69,6 +110,6 @@ describe('the Ithomiini keep the in-hand line exactly as it was', () => {
   })
   it('the general line renders only where the in-hand one does not', () => {
     const view = readFileSync(new URL('../../views/IdentifyView.vue', import.meta.url), 'utf8')
-    expect(view).toContain('<SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />\n            <FieldSexEstimate v-else-if="fieldSexState"')
+    expect(view).toContain('<SexEstimate v-if="sexState && !(sexState.kind === \'genus\' && fieldSexState)" :state="sexState" @download="downloadSexModel" />\n            <FieldSexEstimate v-else-if="fieldSexState"')
   })
 })
