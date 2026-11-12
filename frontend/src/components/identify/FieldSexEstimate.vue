@@ -82,7 +82,7 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
       <template v-else-if="state.level === 'family'">{{ ' ' }}{{ $t('Viene de especies de su familia con un número parecido de fotos de entrenamiento.') }}</template>
       <template v-else>{{ ' ' }}{{ $t('Viene de todas las especies con un número parecido de fotos de entrenamiento.') }}</template>
     </p>
-    <p v-if="!state.verified && state.trainPhotos != null && state.trainPhotos < FEW_PHOTOS" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-few">
+    <p v-if="!state.verified && state.pct != null && state.trainPhotos != null && state.trainPhotos < FEW_PHOTOS" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-few">
       {{ $t('Hay pocas fotos de entrenamiento de esta especie ({n}): el % viene de especies parecidas, no de ella.', { n: state.trainPhotos }) }}
     </p>
     <p v-if="state.status === 'cell_under_90'" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-cell">

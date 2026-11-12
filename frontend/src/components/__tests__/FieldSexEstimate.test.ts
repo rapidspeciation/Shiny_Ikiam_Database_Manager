@@ -103,6 +103,8 @@ describe('FieldSexEstimate', () => {
     expect(text(el.querySelector('[data-testid=field-sex-unverified]'))).toBe('estimated, not verified for this species')
     expect(el.querySelector('[data-testid=field-sex-level]')).toBeNull()
     expect(text(el.querySelector('[data-testid=field-sex-note]'))).toBe('The species is uncertain; the sex may be wrong.')
+    // no % on screen: no note about where the % comes from either
+    expect(show(est({ status: 'species_unsure', pct: null, note: 'species', trainPhotos: 3, level: 'family' })).querySelector('[data-testid=field-sex-few]')).toBeNull()
     const lean = show(est({}))
     expect(text(lean.querySelector('[data-testid=field-sex-call]'))).toBe('Not sure (leans to female, 62 %)')
     expect(text(lean)).toContain('It comes from training photos of this species.')

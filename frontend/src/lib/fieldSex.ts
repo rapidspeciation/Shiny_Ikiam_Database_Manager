@@ -16,7 +16,8 @@
  *   - 'species_unsure' and 'no_wings': the bar, the side or «No seguro», a note that the sex may be wrong; no %.
  * - Estimated, every other species of the model (verified false): the marker at the calibrated P(female); 'estimate'
  *   shows the sex and % outside the band, «No seguro (se inclina a hembra, 62 %)» inside it; 'species_unsure' and
- *   'no_wings' as above, no %. Always with «estimado, sin verificar para esta especie».
+ *   'no_wings' always «No seguro (se inclina a …)» (the server sends sure false), the note, no %. Always with
+ *   «estimado, sin verificar para esta especie».
  * No question about live butterflies (Franz, 11 Nov 2026). The 13 Ithomiini genera keep the in-hand line
  * (SexEstimate.vue) exactly as before.
  *
