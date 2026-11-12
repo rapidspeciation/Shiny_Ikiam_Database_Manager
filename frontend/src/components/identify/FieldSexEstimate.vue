@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /**
- * Identificar's general sex line (team only, «En línea», experimental; lib/fieldSex.ts): butterflies of six species
- * outside the Ithomiini. A bar like the in-hand line's (SexEstimate.vue): macho on the left, hembra on the right, the
- * «no seguro» band in the middle, a marker at the photo's P(female). Above it: the sex and its % for a Supported answer
- * outside the band (the % estimates how often an answer like this is right, never above what the fresh test
- * measured); «No seguro» and the side it leans to inside the band; no % otherwise. The view decides the state; this
- * only shows it.
+ * Identificar's general sex line (team only, «En línea», experimental; lib/fieldSex.ts): butterflies outside the 13
+ * Ithomiini genera of the in-hand line. A bar like the in-hand line's (SexEstimate.vue): macho on the left, hembra on
+ * the right, the «no seguro» band in the middle, a marker at the photo's P(female).
+ * - The six verified species: the sex and its % for a Supported answer outside the band (the % estimates how often an
+ *   answer like this is right, never above what the fresh test measured); «No seguro» and the side it leans to inside
+ *   the band; no % otherwise.
+ * - Every other species: «estimado, sin verificar para esta especie»; the sex and its % outside the band, «No seguro
+ *   (se inclina a hembra, 62 %)» inside it; the % comes from the level table (never above 95 %).
+ * The view decides the state; this only shows it.
  */
 import { computed } from 'vue'
 import { locale } from '../../lib/i18n'
@@ -17,6 +20,8 @@ const at = (p: number) => `${100 * Math.min(1, Math.max(0, p))}%`
 const pct = (n: number) => `${new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { maximumFractionDigits: 0 }).format(n)} %`
 /** The sex is named when it is outside the band; a % only for a call. */
 const named = computed(() => props.state.status !== 'cell_under_90' && props.state.sure)
+/** Under this many training photos the note says the % is cautious on purpose (calibration.json bins B1 and B2). */
+const FEW_PHOTOS = 20
 const colour = computed(() => (props.state.status === 'cell_under_90' || !props.state.sure ? null : props.state.sex))
 </script>
 
@@ -31,6 +36,7 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
       <h2 class="font-semibold">{{ $t('Sexo estimado') }}</h2>
       <span class="rounded border border-border-strong px-1.5 py-0.5 text-xs text-fg-muted">{{ $t('experimental: mariposas vivas') }}</span>
+      <span v-if="!state.verified" class="rounded border border-pending-edge px-1.5 py-0.5 text-xs text-pending-text" data-testid="field-sex-unverified">{{ $t('estimado, sin verificar para esta especie') }}</span>
     </div>
 
     <p
@@ -46,7 +52,8 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
       </template>
       <template v-else>
         {{ $t('No seguro') }}
-        <span class="text-base font-normal" data-testid="field-sex-lean">({{ state.sex === 'female' ? $t('se inclina a hembra') : $t('se inclina a macho') }})</span>
+        <span v-if="state.pct != null" class="text-base font-normal" data-testid="field-sex-lean">({{ state.sex === 'female' ? $t('se inclina a hembra, {pct}', { pct: pct(state.pct) }) : $t('se inclina a macho, {pct}', { pct: pct(state.pct) }) }})</span>
+        <span v-else class="text-base font-normal" data-testid="field-sex-lean">({{ state.sex === 'female' ? $t('se inclina a hembra') : $t('se inclina a macho') }})</span>
       </template>
     </p>
 
@@ -66,14 +73,29 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
       </div>
     </div>
 
-    <p v-if="state.pct != null" class="mt-2 text-xs text-fg-muted">{{ $t('El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.') }}</p>
+    <p v-if="state.pct != null && state.verified" class="mt-2 text-xs text-fg-muted">{{ $t('El % estima cuántas veces acierta una respuesta así; nunca supera lo medido en la prueba.') }}</p>
+    <p v-if="state.pct != null && !state.verified" class="mt-2 text-xs text-fg-muted" data-testid="field-sex-level">
+      {{ $t('El % estima cuántas veces acierta una respuesta así; nunca supera el 95 %.') }}
+      <template v-if="state.level === 'species'">{{ ' ' }}{{ $t('Viene de fotos de entrenamiento de esta especie.') }}</template>
+      <template v-else-if="state.level === 'genus'">{{ ' ' }}{{ $t('Viene de especies de su género con un número parecido de fotos de entrenamiento.') }}</template>
+      <template v-else-if="state.level === 'family'">{{ ' ' }}{{ $t('Viene de especies de su familia con un número parecido de fotos de entrenamiento.') }}</template>
+      <template v-else>{{ ' ' }}{{ $t('Viene de todas las especies con un número parecido de fotos de entrenamiento.') }}</template>
+    </p>
+    <p v-if="!state.verified && state.trainPhotos != null && state.trainPhotos < FEW_PHOTOS" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-few">
+      {{ $t('Hay pocas fotos de entrenamiento de esta especie ({n}), así que el % es prudente.', { n: state.trainPhotos }) }}
+    </p>
     <p v-if="state.status === 'cell_under_90'" class="mt-2 text-sm text-fg-muted" data-testid="field-sex-cell">
       {{ $t('En la prueba, las respuestas de este sexo para esta especie acertaron menos del 90 %.') }}
     </p>
-    <p v-if="state.note === 'species'" class="mt-2 text-sm text-warning-text" data-testid="field-sex-note">{{ $t('La especie no es segura; el sexo puede estar mal.') }}</p>
-    <p v-else-if="state.note === 'wings'" class="mt-2 text-sm text-warning-text" data-testid="field-sex-note">{{ $t('No se encontraron las alas; el sexo puede estar mal.') }}</p>
+    <p v-if="state.note === 'species'" class="mt-2 text-sm text-pending-text" data-testid="field-sex-note">{{ $t('La especie no es segura; el sexo puede estar mal.') }}</p>
+    <p v-else-if="state.note === 'wings'" class="mt-2 text-sm text-pending-text" data-testid="field-sex-note">{{ $t('No se encontraron las alas; el sexo puede estar mal.') }}</p>
 
-    <ul class="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted">
+    <ul v-if="!state.verified" class="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted" data-testid="field-sex-notes-estimated">
+      <li>{{ $t('Solo se comprobó con fotos nuevas en seis especies; esta no es una de ellas.') }}</li>
+      <li>{{ $t('Las hembras suelen reconocerse peor que los machos.') }}</li>
+      <li>{{ $t('No vale para ejemplares de colección ni montados.') }}</li>
+    </ul>
+    <ul v-else class="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted">
       <li data-testid="field-sex-tested">{{ $t('Probado en fotos de mariposas vivas.') }}</li>
       <li>{{ $t('Comprobado en fotos de iNaturalist de seis especies: Danaus plexippus, Hypolimnas bolina, Hypolimnas misippus, Papilio polyxenes, Papilio troilus y Poanes zabulon.') }}</li>
       <li>{{ $t('Las hembras se reconocen peor: en la prueba, cuando respondió, acertó con el 93 % de las hembras y el 99 % de los machos.') }}</li>

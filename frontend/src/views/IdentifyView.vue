@@ -632,7 +632,9 @@ const sexState = computed<SexState | null>(() => {
 
 // ---------------------------------------------------------------- the general sex line (team only, online, experimental)
 
-/** lib/fieldSex.ts: null unless the page names one of the six species and the server's block is for it. */
+/** lib/fieldSex.ts: null unless the server's block is for the species the page names (the six verified, or an estimated
+ * species of the model); never for the 13 Ithomiini genera of the in-hand line. For another Ithomiini it replaces the
+ * in-hand line's «No aplica» note. */
 const fieldSexState = computed<FieldSexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
@@ -969,7 +971,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p class="mt-1 text-xs text-fg-subtle" data-testid="result-source">
               {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
-            <SexEstimate v-if="sexState" :state="sexState" @download="downloadSexModel" />
+            <SexEstimate v-if="sexState && !(sexState.kind === 'genus' && fieldSexState)" :state="sexState" @download="downloadSexModel" />
             <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
 
             <section class="mt-4">

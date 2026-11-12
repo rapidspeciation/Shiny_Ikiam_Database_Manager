@@ -20,8 +20,63 @@ function check() {
   return (memo = JSON.parse(run.stdout.trim().split('\n').pop()));
 }
 const skip = !hasNumpy && 'no Python with numpy';
+const CHECK2 = new URL('./fixtures/field-sex-v2-check.py', import.meta.url).pathname;
+const CALIBRATION = new URL('./fixtures/field-sex-calibration.json', import.meta.url).pathname;
+let memo2 = null;
+function check2() {
+  if (memo2) return memo2;
+  const run = spawnSync(python, ['-I', CHECK2, TOOLS, DISPLAY, CALIBRATION], { encoding: 'utf8', timeout: 120_000 });
+  assert.equal(run.status, 0, run.stderr);
+  return (memo2 = JSON.parse(run.stdout.trim().split('\n').pop()));
+}
 
-test('field sex: only the passing species get a block; the alias maps the head\'s name to the model\'s', { skip }, () => {
+test('all species (field-sex/2): the verified species gives the same block as in a six-species folder', { skip }, () => {
+  const out = check2();
+  assert.deepEqual(out.verified_same_as_v1, [120, 120]);
+  assert.equal(out.verified_flag, true);
+});
+
+test('all species: the kNN pool is the species, its genus under 5 photos, or none (the prior)', { skip }, () => {
+  const out = check2();
+  assert.ok(out.knn_species_diff < 1e-6, String(out.knn_species_diff));
+  assert.ok(out.knn_genus_diff < 1e-6, String(out.knn_genus_diff));
+  assert.equal(out.knn_empty, 0.3);
+});
+
+test('all species: an estimated species gets the level table\'s map, its level and a % inside the band too, never over its cap nor 95', { skip }, () => {
+  const out = check2();
+  const c = out.estimate_checks;
+  assert.equal(c.estimates, 160);
+  for (const k of ['over_cap', 'over_95', 'pct_mismatch', 'marker_mismatch', 'sure_mismatch']) assert.equal(c[k], 0, k);
+  assert.equal(c.inside_band_with_pct, 160, 'made-up photos fall in the band and still get their %');
+  assert.equal(out.estimate_block.status, 'estimate');
+  assert.equal(out.estimate_block.verified, false);
+  assert.equal(out.estimate_block.level, 'species');
+  assert.equal(out.estimate_block.trainPhotos, 30);
+  assert.equal(out.rare_block.level, 'family');
+  assert.equal(out.solo_block.level, 'global');
+  assert.equal(out.alias_block_species, 'Xx hh', 'the block names the species as the page does');
+  assert.equal(out.cap_max, 0.95);
+  assert.deepEqual(out.strong_capped, [[0.95, 'female', 0.95], [0.05, 'male', 0.95]], 'a cap of 0.99 in the table still shows 95');
+  // species unsure or no wings: the bar, no %
+  assert.equal(out.estimate_unsure.status, 'species_unsure');
+  assert.equal(out.estimate_unsure.pct, undefined);
+  assert.equal(out.estimate_no_wings.status, 'no_wings');
+  assert.equal(out.estimate_no_wings.pct, undefined);
+  assert.equal(out.outside, null, 'a species outside the folder (the 13 Ithomiini genera are left out): no block');
+  assert.match(out.missing_row, /no calibration row/);
+});
+
+test('all species: the real level table keeps every % within 50 to 95, and rare species (1 to 4 photos) inside the band', { skip }, () => {
+  const out = check2();
+  assert.equal(out.real.species, 1261);
+  assert.deepEqual(out.real.levels, { family: 918, species: 136, global: 28, genus: 179 });
+  assert.equal(out.real.n_bad, 0, JSON.stringify(out.real.bad));
+  assert.equal(out.real.b1_sure, 0);
+  assert.ok(out.real.b1_max_pct <= 84, String(out.real.b1_max_pct));
+});
+
+test('field sex (six-species folder): only the passing species get a block; the alias maps the head\'s name to the model\'s', { skip }, () => {
   const out = check();
   assert.equal(out.outside, null);
   assert.equal(out.model_name_alias, 'Aa bb');
@@ -161,4 +216,23 @@ test('identifyUpload passes a cleaned fieldSex only when the worker gives one', 
   assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'band', p: 0.5, sex: 'other' }), null);
   assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', p: 0.02, sex: 'male', sure: true, pct: 100 }).status, 'cell_under_90');
   assert.equal(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', p: 0.02, sex: 'male', sure: true, pct: 89 }).pct, undefined);
+});
+
+test('fieldSexBlock: an estimated block keeps its level and training photos, and a % of 50 to 95 only for an estimate', async () => {
+  const { fieldSexBlock } = await import('../server/identify-photos.mjs');
+  const est = { species: 'Danaus gilippus', status: 'estimate', p: 0.3123, pFemale: 0.2, sex: 'male', sure: false, pct: 68, verified: false, level: 'species', trainPhotos: 4489, gateP: 0.97, version: 'field-sex/2' };
+  assert.deepEqual(fieldSexBlock(est), { species: 'Danaus gilippus', status: 'estimate', p: 0.312, sex: 'male', sure: false, version: 'field-sex/2', verified: false, level: 'species', trainPhotos: 4489, pct: 68 });
+  // out of range: the bar stays, the % goes
+  for (const pct of [96, 99, 49, 62.5, null]) assert.equal(fieldSexBlock({ ...est, pct }).pct, undefined, String(pct));
+  assert.equal(fieldSexBlock({ ...est, pct: 96 }).status, 'estimate');
+  // species unsure or no wings: never a %
+  assert.equal(fieldSexBlock({ ...est, status: 'species_unsure' }).pct, undefined);
+  assert.equal(fieldSexBlock({ ...est, status: 'no_wings' }).pct, undefined);
+  // a verified status on an estimated block, an odd level: dropped
+  assert.equal(fieldSexBlock({ ...est, status: 'call' }), null);
+  assert.equal(fieldSexBlock({ ...est, level: 'order' }), null);
+  assert.equal(fieldSexBlock({ ...est, trainPhotos: -3 }).trainPhotos, null);
+  // a verified block is cleaned exactly as before (no new keys)
+  assert.deepEqual(Object.keys(fieldSexBlock({ species: 'Danaus plexippus', status: 'call', p: 0.02, sex: 'male', sure: true, pct: 97, verified: true, level: 'species' })).sort(),
+    ['p', 'pct', 'sex', 'species', 'status', 'sure', 'version']);
 });

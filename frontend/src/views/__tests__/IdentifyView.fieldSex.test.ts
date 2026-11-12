@@ -132,6 +132,13 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
+  it('an Ithomiini of the 13 genera keeps the in-hand line even with an estimated block', async () => {
+    const est = { species: 'Mechanitis messenoides', status: 'estimate', p: 0.6, sex: 'female', sure: false, pct: 60, verified: false, level: 'species', trainPhotos: 30 }
+    const { host } = await mountWith(stored(answer('Mechanitis messenoides', 0.93, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')!.textContent).toContain('experimental: fotos en mano')
+    expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
+  })
+
   it('a Monarch: the answer and its % at once, no question; «En este teléfono» hides the line', async () => {
     const { host, settle } = await mountWith(stored(answer('Danaus plexippus', 0.97, block())))
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
@@ -160,10 +167,32 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=field-sex-p]')).toBeNull()
   })
 
-  it('another species outside the Ithomiini: nothing', async () => {
-    const { host } = await mountWith(stored(answer('Danaus gilippus', 0.97, null)))
+  it('a species outside the model (no block): nothing', async () => {
+    const { host } = await mountWith(stored(answer('Morpho cypris', 0.97, null)))
     expect(host.querySelector('[data-testid=field-sex]')).toBeNull()
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+  })
+
+  it('an unverified species: the bar, its % inside the band, «estimado, sin verificar para esta especie»', async () => {
+    const est = { species: 'Danaus gilippus', status: 'estimate', p: 0.31, sex: 'male', sure: false, pct: 69, version: 'field-sex/2', verified: false, level: 'species', trainPhotos: 4489 }
+    const { host } = await mountWith(stored(answer('Danaus gilippus', 0.97, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+    expect(callText(host)).toBe('No seguro (se inclina a macho, 69 %)')
+    expect(host.querySelector('[data-testid=field-sex-unverified]')!.textContent).toContain('estimado, sin verificar para esta especie')
+    expect(host.querySelector('[data-testid=field-sex-tested]')).toBeNull()
+  })
+
+  it('another Ithomiini (not one of the 13 genera): the general estimate replaces «No aplica»; without a block «No aplica» stays', async () => {
+    const est = { species: 'Melinaea marsaeus', status: 'estimate', p: 0.58, sex: 'female', sure: false, pct: 58, version: 'field-sex/2', verified: false, level: 'family', trainPhotos: 2 }
+    const { host } = await mountWith(stored(answer('Melinaea marsaeus', 0.95, est)))
+    expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
+    expect(callText(host)).toBe('No seguro (se inclina a hembra, 58 %)')
+    expect(host.querySelector('[data-testid=field-sex-few]')!.textContent).toContain('(2)')
+    unmount()
+    document.body.innerHTML = ''
+    const { host: h2 } = await mountWith(stored(answer('Melinaea marsaeus', 0.95, null)))
+    expect(h2.querySelector('[data-testid=sex-na]')!.textContent).toContain('No aplica a Melinaea')
+    expect(h2.querySelector('[data-testid=field-sex]')).toBeNull()
   })
 
   it('a signal drop does not hide a shown answer (the person did not pick «En este teléfono»)', async () => {
