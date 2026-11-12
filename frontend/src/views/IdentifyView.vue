@@ -19,12 +19,13 @@ import FieldPhotosChoice from '../components/identify/FieldPhotosChoice.vue'
 import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
 import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
+import { loadsSince, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { SEX_FILE, sexApplies } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { MODEL_ROLES, sameFile } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
-import { t } from '../lib/i18n'
+import { locale, t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { takePhoto, type Photo } from '../lib/offlinePhoto'
@@ -239,6 +240,8 @@ interface Result {
   side?: Side
   /** The sex estimate (team only): the model's logit, or why it does not apply. */
   sex?: { z: number } | { na: 'nowings' }
+  /** This phone's times for the photo (lib/identifyTiming.ts): loads it needed, the sex model's run. */
+  timing?: PhoneTiming
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
@@ -274,17 +277,19 @@ async function identify(photo: Photo) {
   runError.value = null
   if (!kind) return
   try {
+    const before = { ...engine.lastMs }
     if (!engine.loaded(kind)) {
       busy.value = 'loading'
       await engine.load(kind)
     }
     busy.value = 'analysing'
     const out = await engine.run(photo, kind)
+    const timing = { loadMs: loadsSince(before, engine.lastMs) }
     head.value = engine.head()
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status } }
-    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms }
+    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, timing }
     compared.value = null
     pick.value = null
     keepLast()
@@ -581,9 +586,12 @@ async function estimateSex() {
   sexError.value = null
   try {
     const cut = p.cut ?? (await engine.square(p.photo))
+    const before = { ...engine.lastMs }
     const sex = cut.status !== 'success' ? { na: 'nowings' as const } : { z: await engine.sexLogit(cut.square) }
     if (result.value?.at !== r.at) return
-    result.value = { ...result.value, sex }
+    // the sex model's own time, on this phone's line (it ran only when the wings were found)
+    const timing = 'z' in sex && result.value.timing ? { ...result.value.timing, sexMs: engine.lastMs.sex ?? null, sexLoadMs: loadsSince(before, engine.lastMs, 'sex_load') } : result.value.timing
+    result.value = { ...result.value, sex, timing }
     keepLast()
   } catch (err) {
     if (result.value?.at === r.at)
@@ -629,6 +637,9 @@ const sexState = computed<SexState | null>(() => {
   if (!sexListed.value) return null // not on this server, or no list (offline)
   return { kind: 'download', mb: mb(sexSize.value ?? SEX_FILE.bytes) }
 })
+
+/** The timing line under the result (lib/identifyTiming.ts). */
+const timeText = computed(() => (result.value ? timingLine(result.value, t, locale.value) : null))
 
 // ---------------------------------------------------------------- the general sex line (team only, online, experimental)
 
@@ -971,6 +982,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <p class="mt-1 text-xs text-fg-subtle" data-testid="result-source">
               {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
             </p>
+            <p v-if="timeText" class="mt-0.5 text-xs text-fg-subtle tabular-nums" data-testid="result-time">{{ timeText }}</p>
             <SexEstimate v-if="sexState && !(sexState.kind === 'genus' && fieldSexState)" :state="sexState" @download="downloadSexModel" />
             <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
 

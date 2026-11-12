@@ -144,6 +144,8 @@ describe('IdentifyView: the two sex lines', () => {
     expect(host.querySelector('[data-testid=sex-estimate]')).toBeNull()
     expect(callText(host)).toBe('♂ Macho 96 %')
     expect(host.querySelector('[data-testid=field-sex-tested]')!.textContent).toContain('Probado en fotos de mariposas vivas.')
+    // the timing line under the result: the stored result's ms, comma decimal
+    expect(host.querySelector('[data-testid=result-time]')!.textContent!.trim()).toBe('Tiempo: 0,9 s en el servidor')
     expect(host.querySelector('[data-testid=field-sex] button')).toBeNull()
     const phone = [...host.querySelectorAll<HTMLButtonElement>('[data-testid=mode] button')].find(b => b.textContent!.includes('En este teléfono'))!
     phone.click()
