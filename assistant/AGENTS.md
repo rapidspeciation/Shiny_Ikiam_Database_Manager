@@ -11,7 +11,7 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 | Sheet | One row per |
 |---|---|
 | Insectary_data | insectary butterfly. Rows are made ahead with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. |
-| Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
+| Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID: count it once. |
 | Insectary_stocks | clutch of eggs |
 
 The app cannot insert or delete rows in Insectary_data or Collection_data:
@@ -128,8 +128,7 @@ misspelt species, the same slip in the rows around. Before proposing, look for
 those with `query` (e.g. notes with `fold(...) LIKE '%instar%'` where
 LIFESTAGE is empty) and show them apart (a second proposal, or `show_rows`)
 as "these may be the same case", for the person to decide, with the fix for
-the column that let them slip. Something odd you see on the way, even if
-nobody asked, gets one line in your answer.
+the column that let them slip.
 
 ## Bold changes: ask first
 
@@ -177,7 +176,9 @@ Insectary ID».
 
 Short; small tables for row-by-row comparisons. Answer the question asked
 first; data problems seen on the way go in one closing line, with an offer to
-fix them. When the answer is about many rows, open them beside the chat with
+fix them. Counts that span countries open with the total and the Ecuador
+figure. Ecuador is by Country, or by Collection_location in Insectary_data.
+When the answer is about many rows, open them beside the chat with
 `show_rows` and keep the text to what they mean. Searches and checks that do not depend on each other go
 together in one message (parallel tool calls).
 

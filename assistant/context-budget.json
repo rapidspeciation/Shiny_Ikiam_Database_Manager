@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 14808,
-      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+      "bytes": 14876,
+      "reason": "Franz's flash frozen count (12 Nov): counts that span countries open with the total and the Ecuador figure, by Country or Collection_location; a twin row counted once"
     },
     "skill:app-dev": {
       "bytes": 423,
