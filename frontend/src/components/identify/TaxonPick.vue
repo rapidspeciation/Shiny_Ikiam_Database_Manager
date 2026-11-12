@@ -73,6 +73,6 @@ function key(e: KeyboardEvent) {
         <i>{{ h.name }}</i><span class="text-xs text-fg-subtle">{{ $t(RANK[h.rank]) }}</span>
       </li>
     </ul>
-    <p v-if="unknown" class="mt-1 text-xs text-pending-text" data-testid="taxon-unknown">{{ $t('Nombre no reconocido: lo revisa un experto.') }}</p>
+    <p v-if="unknown" class="mt-1 text-xs text-pending-text" data-testid="taxon-unknown">{{ $t('Nombre no reconocido: la foto queda «sin identificar» para la especie.') }}</p>
   </div>
 </template>

@@ -5,10 +5,12 @@
 //
 // What the server keeps, per item: the photo (at most PHOTO_EDGE px, at most PHOTO_MAX bytes, a JPEG with its
 // APP1-APP15 and comment segments taken out: EXIF, GPS, XMP), an optional thumbnail, the person's labels, what the AI
-// answered (prediction_json, as the phone sent it), the day the photo was taken, the location only when the person
-// ticked it (rounded to POLICY.gpsDecimals), the consent version and the licence. Nothing goes to Drive or the
-// workbook, and nothing goes into training from here: every item starts `received`; a reviewer's verdict (lane D)
-// and the training export with its leak gate (lane E) come later.
+// answered (prediction_json, as the phone sent it), the day the photo was taken, the consent version and the
+// licence. No location: a `gps`, `lat` or `lon` in the request is ignored and never stored (Franz, 12 Nov 2026), and
+// the photo's EXIF (GPS included) is taken out here even though the phone already took it out. Photos stay on this
+// server (claudeclaw): nothing goes to Drive or the workbook, and nothing goes into training from here. Every item
+// starts `received`; a reviewer or admin accepts or rejects it (review()), and an unsure or unrecognised name stays
+// «sin identificar» (`unidentified`) in the pool. The training export with its leak gate (lane E) comes later.
 //
 // Deleting an item (its owner or an admin) removes its files and its row and keeps a tombstone {id, user, sha256,
 // deleted_at}, so a phone that still holds it cannot send it again under its id (410). The same photo under a new id
@@ -24,26 +26,40 @@ import { dirname, join } from 'node:path';
 import { readJpeg } from './clutch-photos.mjs';
 
 /**
- * The choices Franz has not made yet (DESIGN.md §8), as their defaults, in one place:
+ * Franz's answers (12 Nov 2026, DESIGN.md §8), in one place:
  * - `roles`: who may send (Q1: the team, i.e. anyone signed in; the routes sit after the sign-in check);
- * - `gpsDecimals`: the location kept, when the person ticked it (Q5: 0.01°, about 1 km);
- * - `keepTakenDay`: the day the photo was taken is kept (Q5);
- * - `sexForAnySpecies`: sex labels are taken for every species, not only those with a sex model (Q7); false only
- *   requires a species label beside a sex label here (which species have a sex model is the review queue's, lane D).
+ * - `reviewRoles`: who accepts or rejects an item (Q4: any reviewer or admin; no expert step, nobody named);
+ * - `keepTakenDay`: the day the photo was taken is kept (Q5). No location is kept at all (Q5);
+ * - `sexForAnySpecies`: sex labels are taken for every species, not only those with a sex model (Q7).
  */
 export const POLICY = Object.freeze({
   roles: Object.freeze(['observer', 'editor', 'reviewer', 'admin']),
-  gpsDecimals: 2,
+  reviewRoles: Object.freeze(['reviewer', 'admin']),
   keepTakenDay: true,
   sexForAnySpecies: true,
 });
 /**
- * The consent the phone showed (DESIGN.md §6): its version. The text, a DRAFT not checked by IKIAM, is the phone's
- * (frontend/src/lib/contribConfig.ts CONSENT, with the same version), marked as a draft on screen.
+ * The consent the phone showed (DESIGN.md §6): its version. The text is the phone's (frontend/src/lib/contribConfig.ts
+ * CONSENT, with the same version). v2 (12 Nov 2026) replaced the draft v1: no location, Franz Chandi responsible.
+ * Only v2 is taken: an item queued under v1 waits on the phone until its person accepts v2 (lib/contribOutbox.ts).
  */
-export const CONSENT_VERSION = 'v1-draft';
-/** Consent versions an item may carry: a phone that queued items under an older version still sends them. */
+export const CONSENT_VERSION = 'v2';
 export const CONSENTS = new Set([CONSENT_VERSION]);
+/** Who the consent names as responsible for the data. The contact email is the server's config (CONTRIB_CONTACT_EMAIL), never the repo's. */
+export const CONTROLLER = 'Franz Chandi';
+/** A contact address as config gives it: kept when it reads as one address, else null (the consent then says how to ask the team). */
+export function contactEmail(value) {
+  const v = typeof value === 'string' ? value.trim() : '';
+  return v.length <= 254 && /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/.test(v) ? v : null;
+}
+/**
+ * A review's verdicts and the status each leaves (the last verdict counts; all are kept):
+ * accept → accepted; reject → rejected; unsure → unidentified («sin identificar»: kept in the pool without a species
+ * label). Accepting an item whose name the app did not recognise (free text) leaves it unidentified too: its sex
+ * label is accepted, the name is not taken as a label.
+ */
+export const VERDICTS = Object.freeze(['accept', 'reject', 'unsure']);
+const REASON_MAX = 200;
 /** The licence recorded with each item (Q2's default). */
 export const LICENCE = 'training-grant+CC-BY-4.0';
 
@@ -83,13 +99,19 @@ export function initContributions(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS contributions(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT, received_at TEXT NOT NULL,
       sha256 TEXT NOT NULL, phash TEXT, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes INTEGER NOT NULL, thumb_bytes INTEGER NOT NULL,
       file TEXT NOT NULL, photo_kind TEXT, sex_label TEXT, species_label TEXT, species_rank TEXT, species_confirmed INTEGER,
-      free_text_name INTEGER, prediction_json TEXT, gps_lat REAL, gps_lon REAL, gps_acc REAL, taken_at TEXT,
+      free_text_name INTEGER, prediction_json TEXT, taken_at TEXT,
       consent_version TEXT NOT NULL, licence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received');
     CREATE INDEX IF NOT EXISTS contributions_user ON contributions(user_id, received_at);
     CREATE UNIQUE INDEX IF NOT EXISTS contributions_user_sha ON contributions(user_id, sha256);
     CREATE TABLE IF NOT EXISTS contribution_tombstones(id TEXT PRIMARY KEY, user_id TEXT, sha256 TEXT, received_at TEXT,
       deleted_at TEXT NOT NULL, deleted_by TEXT);
-    CREATE INDEX IF NOT EXISTS contribution_tombstones_user ON contribution_tombstones(user_id, sha256);`);
+    CREATE INDEX IF NOT EXISTS contribution_tombstones_user ON contribution_tombstones(user_id, sha256);
+    CREATE TABLE IF NOT EXISTS contribution_verdicts(id INTEGER PRIMARY KEY AUTOINCREMENT, contribution_id TEXT NOT NULL,
+      reviewer_id TEXT NOT NULL, verdict TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS contribution_verdicts_item ON contribution_verdicts(contribution_id, id);`);
+  // v1 kept an opt-in location: the columns go, with whatever a v1 phone sent (no location is kept from v2 on).
+  const columns = new Set(db.prepare('PRAGMA table_info(contributions)').all().map(c => c.name));
+  for (const c of ['gps_lat', 'gps_lon', 'gps_acc']) if (columns.has(c)) db.exec(`ALTER TABLE contributions DROP COLUMN ${c}`);
 }
 
 /** A base64 JPEG (a data: URL too) as bytes, refused past `max` before it is decoded. */
@@ -147,19 +169,14 @@ function cleanCreated(value) {
   if (isBlank(value) || typeof value !== 'string' || value.length > 40 || Number.isNaN(Date.parse(value))) return null;
   return new Date(value).toISOString();
 }
-/** The location, only when sent (the person ticked it): rounded; accuracy in whole metres. */
-function cleanGps(gps) {
-  if (isBlank(gps)) return null;
-  const { lat, lon } = gps;
-  if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw fail('INVALID_GPS', 'gps must have lat and lon');
-  const k = 10 ** POLICY.gpsDecimals;
-  const acc = Number(gps.acc);
-  return { lat: Math.round(lat * k) / k, lon: Math.round(lon * k) / k, acc: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null };
-}
+/** Keys that would hold a location: dropped at any depth of what the phone sends (none is kept, POLICY). */
+const PLACE_KEYS = new Set(['gps', 'lat', 'lon', 'lng', 'latitude', 'longitude', 'location', 'coords', 'coordinates', 'position', 'geo']);
+const withoutPlace = v =>
+  Array.isArray(v) ? v.map(withoutPlace) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !PLACE_KEYS.has(k.toLowerCase())).map(([k, x]) => [k, withoutPlace(x)])) : v;
 function cleanPrediction(value) {
   if (isBlank(value)) return null;
   if (typeof value !== 'object' || Array.isArray(value)) throw fail('INVALID_PREDICTION', 'prediction must be an object');
-  const text = JSON.stringify(value);
+  const text = JSON.stringify(withoutPlace(value));
   if (Buffer.byteLength(text) > PREDICTION_MAX) throw fail('INVALID_PREDICTION', 'prediction is too large', 413);
   return text;
 }
@@ -174,7 +191,6 @@ const shape = r => ({
   sex: r.sex_label,
   species: r.species_label ? { name: r.species_label, rank: r.species_rank, confirmed: !!r.species_confirmed, freeText: !!r.free_text_name } : null,
   takenAt: r.taken_at,
-  gps: r.gps_lat === null ? null : { lat: r.gps_lat, lon: r.gps_lon, acc: r.gps_acc },
   width: r.width,
   height: r.height,
   consentVersion: r.consent_version,
@@ -184,7 +200,7 @@ const shape = r => ({
  * The store. `dir`: where the files go (null: in memory); `freeBytes()`: free space on its disk (statfs by
  * default; Infinity in memory); `minFreeBytes`, `maxBytes`: the low-disk and store caps; `now()`: ms (tests).
  */
-export function createContributions(store, { dir = null, freeBytes = null, minFreeBytes = MIN_FREE_BYTES, maxBytes = MAX_BYTES, limits = LIMITS, now = Date.now } = {}) {
+export function createContributions(store, { dir = null, freeBytes = null, minFreeBytes = MIN_FREE_BYTES, maxBytes = MAX_BYTES, limits = LIMITS, now = Date.now, contact = null } = {}) {
   const db = store.db;
   initContributions(db);
   const memory = new Map();
@@ -235,7 +251,8 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
   }
 
   /**
-   * One item from the phone: `{ id, photo, thumb?, sha256, createdAt?, takenAt?, labels, prediction?, gps?, consent }`.
+   * One item from the phone: `{ id, photo, thumb?, sha256, createdAt?, takenAt?, labels, prediction?, consent }`
+   * (anything else, a `gps` from an old phone too, is ignored).
    * 201 stored; 200 `{ already: true }` for the same id with the same photo, or the same person's same photo under
    * another id: then `id` is the first one's, and the phone keeps that id (to list or delete it); 409 the same id with
    * other bytes; 410 an id deleted before (the phone drops the item).
@@ -269,7 +286,6 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     const labels = cleanLabels(body.labels);
     const t = now();
     const takenAt = cleanTaken(body.takenAt, t);
-    const gps = cleanGps(body.gps);
     const prediction = cleanPrediction(body.prediction);
     checkRate(user.id, t);
     const thumbData = thumb?.clean ?? null;
@@ -282,8 +298,8 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     try {
       db.prepare(
         `INSERT INTO contributions(id, user_id, created_at, received_at, sha256, width, height, bytes, thumb_bytes, file, photo_kind, sex_label,
-           species_label, species_rank, species_confirmed, free_text_name, prediction_json, gps_lat, gps_lon, gps_acc, taken_at, consent_version, licence)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           species_label, species_rank, species_confirmed, free_text_name, prediction_json, taken_at, consent_version, licence)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).run(
         id,
         user.id,
@@ -302,9 +318,6 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
         labels.species ? Number(labels.species.confirmed) : null,
         labels.species ? Number(labels.species.freeText) : null,
         prediction,
-        gps?.lat ?? null,
-        gps?.lon ?? null,
-        gps?.acc ?? null,
         takenAt,
         consent,
         LICENCE,
@@ -345,6 +358,7 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
         user.id,
       );
       if (row) db.prepare('DELETE FROM contributions WHERE id = ?').run(id);
+      db.prepare('DELETE FROM contribution_verdicts WHERE contribution_id = ?').run(id);
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
@@ -368,5 +382,50 @@ export function createContributions(store, { dir = null, freeBytes = null, minFr
     }
   }
 
-  return { accept, mine, remove: removeItem, file, dir };
+  /** What the consent sheet shows from the server: its version, who is responsible, and the contact address (null when unset). */
+  function consentInfo() {
+    return { version: CONSENT_VERSION, controller: CONTROLLER, contact: contactEmail(contact) };
+  }
+
+  /**
+   * The items waiting for review (`received`, oldest first), or those of another status, for a reviewer or admin.
+   * Nobody's name or account is in the list: reviewers judge the photo and its labels only.
+   */
+  function queue(user, { status = 'received', limit = 100 } = {}) {
+    if (!POLICY.reviewRoles.includes(user?.role)) throw fail('FORBIDDEN', 'Reviewer role required', 403);
+    const s = ['received', 'accepted', 'rejected', 'unidentified'].includes(status) ? status : 'received';
+    const n = Math.min(Math.max(Number(limit) || 100, 1), 500);
+    const rows = db.prepare('SELECT * FROM contributions WHERE status = ? ORDER BY received_at LIMIT ?').all(s, n);
+    return { status: s, contributions: rows.map(r => ({ ...shape(r), prediction: r.prediction_json ? JSON.parse(r.prediction_json) : null })) };
+  }
+
+  /**
+   * A reviewer's or admin's verdict on one item: `{ verdict: accept | reject | unsure, reason? }`. Every verdict is
+   * kept (contribution_verdicts) and the last one sets the status (VERDICTS). A deleted item: 410.
+   */
+  function review(rawId, body, user) {
+    if (!POLICY.reviewRoles.includes(user?.role)) throw fail('FORBIDDEN', 'Reviewer role required', 403);
+    const id = String(rawId ?? '').toLowerCase();
+    if (!UUID.test(id)) throw fail('INVALID_ID', 'id must be a UUID');
+    const verdict = String(body?.verdict ?? '');
+    if (!VERDICTS.includes(verdict)) throw fail('INVALID_VERDICT', 'verdict must be accept, reject or unsure');
+    const reason = isBlank(body?.reason) ? null : String(body.reason).trim().slice(0, REASON_MAX) || null;
+    if (db.prepare('SELECT 1 FROM contribution_tombstones WHERE id = ?').get(id)) throw fail('CONTRIBUTION_DELETED', 'This photo was deleted', 410);
+    const row = db.prepare('SELECT * FROM contributions WHERE id = ?').get(id);
+    if (!row) throw fail('NOT_FOUND', 'No such photo', 404);
+    const status = verdict === 'reject' ? 'rejected' : verdict === 'unsure' || (row.species_label && row.free_text_name) ? 'unidentified' : 'accepted';
+    const at = new Date(now()).toISOString();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare('INSERT INTO contribution_verdicts(contribution_id, reviewer_id, verdict, reason, status, at) VALUES(?,?,?,?,?,?)').run(id, user.id, verdict, reason, status, at);
+      db.prepare('UPDATE contributions SET status = ? WHERE id = ?').run(status, id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return { contribution: shape(db.prepare('SELECT * FROM contributions WHERE id = ?').get(id)), verdict, status };
+  }
+
+  return { accept, mine, remove: removeItem, file, dir, consentInfo, queue, review };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { photoMeta, roundGps } from '../exifMeta'
+import { photoMeta, stripJpegMeta } from '../exifMeta'
 
 /**
  * A JPEG with an APP1 EXIF block as cameras write it: IFD0 with DateTime, an Exif IFD with DateTimeOriginal, a GPS
@@ -61,7 +61,20 @@ describe('exifMeta', () => {
     expect(photoMeta(jpeg({ original: '0000:00:00 00:00:00' })).takenAt).toBeNull()
   })
 
-  it('the location rounded to 0.01° (about 1 km)', () => {
-    expect(roundGps({ lat: -0.951234, lon: -77.866 }, 2)).toEqual({ lat: -0.95, lon: -77.87 })
+  it('stripJpegMeta: a camera JPEG with GPS comes out without EXIF (no location, no day), the image data untouched', () => {
+    const before = new Uint8Array(jpeg())
+    expect(photoMeta(before.buffer).gps).not.toBeNull()
+    const after = stripJpegMeta(before)!
+    expect(after.length).toBeLessThan(before.length)
+    expect(photoMeta(after.slice().buffer)).toEqual({ gps: null, takenAt: null })
+    // No APP1 (0xffe1) left; the JFIF header and the scan kept.
+    const text = [...after].map(b => b.toString(16).padStart(2, '0')).join('')
+    expect(text).not.toMatch(/ffe1/)
+    expect(text).toMatch(/^ffd8ffe0/)
+    expect(text.endsWith('ffda0002010203ffd9')).toBe(true)
+    // Nothing to take out: the same bytes. Not a JPEG or a cut one: null.
+    expect(stripJpegMeta(after)).toBe(after)
+    expect(stripJpegMeta(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull()
+    expect(stripJpegMeta(before.slice(0, 60))).toBeNull()
   })
 })

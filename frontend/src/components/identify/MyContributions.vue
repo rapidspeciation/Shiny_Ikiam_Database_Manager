@@ -1,33 +1,52 @@
 <script setup lang="ts">
 /**
  * «Mis envíos»: the photos this person sent (from this phone, and those the server lists from others; lib/contribOutbox.ts),
- * with their status, and «Borrar», which deletes one on the phone and on the server (once there is signal).
+ * with their status, and «Borrar», which deletes one on the phone and on the server (once there is signal). Items
+ * queued under an older consent wait here for the person to accept the current one (ConsentSheet.vue).
  */
+import { ref } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
+import ConsentSheet from './ConsentSheet.vue'
 import { t } from '../../lib/i18n'
-import type { Item } from '../../lib/contribOutbox'
+import { acceptConsent } from '../../lib/contribConfig'
+import { heldForConsent, type Item } from '../../lib/contribOutbox'
 
-defineProps<{ items: Item[]; paused: boolean }>()
-const emit = defineEmits<{ remove: [string] }>()
+defineProps<{ items: Item[]; paused: boolean; contact?: string | null }>()
+const emit = defineEmits<{ remove: [string]; reconsent: [] }>()
+const asking = ref(false)
 
 const SEX = { female: '♀', male: '♂' } as const
 function status(i: Item) {
+  if (heldForConsent(i)) return t('espera que acepte las condiciones nuevas')
   if (i.state === 'pending' || i.state === 'sending') return t('pendiente de envío')
   if (i.state === 'failed') return t('no se pudo enviar: {reason}', { reason: i.lastError ?? '' })
   if (i.serverStatus === 'accepted') return t('aceptada')
   if (i.serverStatus === 'rejected') return t('no usada')
+  if (i.serverStatus === 'unidentified') return t('sin identificar')
   return t('enviada, en revisión')
 }
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 function remove(i: Item) {
   if (confirm(t('¿Borrar este envío del teléfono y del servidor?'))) emit('remove', i.id)
 }
+function accept() {
+  acceptConsent()
+  asking.value = false
+  emit('reconsent')
+}
 </script>
 
 <template>
-  <details class="rounded-lg border border-border bg-surface p-3 text-sm" data-testid="my-contributions">
+  <details class="rounded-lg border border-border bg-surface p-3 text-sm" data-testid="my-contributions" :open="asking || undefined">
     <summary class="cursor-pointer font-medium">{{ $t('Mis envíos') }} <span class="font-normal text-fg-muted">({{ items.length }})</span></summary>
     <p v-if="paused" class="mt-2 text-pending-text">{{ $t('Inicie sesión para enviar.') }}</p>
+    <template v-if="items.some(heldForConsent)">
+      <ConsentSheet v-if="asking" class="mt-2 rounded-md border border-border p-3" :contact="contact ?? null" @accept="accept" @later="asking = false" />
+      <p v-else class="mt-2 text-pending-text" data-testid="contrib-held">
+        {{ $t('Las condiciones de envío cambiaron. Los envíos pendientes salen cuando las acepte.') }}
+        <button class="ml-1 text-brand-text underline underline-offset-2" data-testid="contrib-held-review" @click="asking = true">{{ $t('Ver condiciones') }}</button>
+      </p>
+    </template>
     <ul class="mt-2 space-y-2">
       <li v-for="i in items" :key="i.id" class="flex items-center gap-3" data-testid="contribution">
         <img v-if="i.mini" :src="i.mini" alt="" class="size-10 rounded object-cover" />

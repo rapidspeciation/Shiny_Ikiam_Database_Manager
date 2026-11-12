@@ -1,7 +1,8 @@
 /**
- * The location and the day a photo was taken, read from the camera's own bytes (its EXIF) before the canvas makes
- * the copy that is sent (the canvas writes no EXIF). Only these two are read; nothing else of the EXIF leaves the
- * phone, and the location only if the person ticks «Incluir la ubicación de la foto».
+ * A photo's EXIF, read on the phone: the day it was taken (kept with a photo sent to train the AI) and its location
+ * (only for lib/photoCountry.ts, which orders the reference photos by country on this phone; never sent).
+ * stripJpegMeta takes a JPEG's metadata segments out (EXIF with its GPS, XMP, comments) before a photo leaves the
+ * phone; the server takes them out again on receipt (server/contributions.mjs).
  */
 
 export interface PhotoMeta {
@@ -79,8 +80,48 @@ function readTiff(t: DataView): PhotoMeta {
   return { gps, takenAt: day && day[1] !== '0000' ? `${day[1]}-${day[2]}-${day[3]}` : null }
 }
 
-/** The location rounded to `decimals` (0.01°: about 1 km). */
-export const roundGps = (g: { lat: number; lon: number }, decimals: number) => {
-  const k = 10 ** decimals
-  return { lat: Math.round(g.lat * k) / k, lon: Math.round(g.lon * k) / k }
+/**
+ * The JPEG without its APP1-APP15 and comment segments (EXIF and its GPS, XMP, ICC, maker notes), the image data
+ * untouched; the same bytes when there are none. Not a JPEG, or a cut one: null (nothing is sent rather than a photo
+ * whose metadata could not be checked).
+ */
+export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null
+  const keep: Uint8Array[] = [bytes.subarray(0, 2)]
+  let i = 2
+  let dropped = false
+  while (i < bytes.length) {
+    if (bytes[i] !== 0xff) return null
+    let m = bytes[i + 1]
+    // Fill bytes before a marker.
+    while (m === 0xff && i + 2 < bytes.length) m = bytes[++i + 1]
+    if (m === 0xd9) {
+      keep.push(bytes.subarray(i, i + 2))
+      break
+    }
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+      keep.push(bytes.subarray(i, i + 2))
+      i += 2
+      continue
+    }
+    if (i + 4 > bytes.length) return null
+    const len = (bytes[i + 2] << 8) | bytes[i + 3]
+    if (len < 2 || i + 2 + len > bytes.length) return null
+    if (m === 0xda) {
+      // The image data runs to the end.
+      keep.push(bytes.subarray(i))
+      break
+    }
+    if ((m >= 0xe1 && m <= 0xef) || m === 0xfe) dropped = true
+    else keep.push(bytes.subarray(i, i + 2 + len))
+    i += 2 + len
+  }
+  if (!dropped) return bytes
+  const out = new Uint8Array(keep.reduce((n, k) => n + k.length, 0))
+  let at = 0
+  for (const k of keep) {
+    out.set(k, at)
+    at += k.length
+  }
+  return out
 }

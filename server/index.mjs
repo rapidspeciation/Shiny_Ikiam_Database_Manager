@@ -414,6 +414,8 @@ export function configFromEnv(env = process.env) {
     contributionsDir: env.CONTRIB_DIR,
     contributionsMaxGb: env.CONTRIB_MAX_GB ? Number(env.CONTRIB_MAX_GB) : undefined,
     contributionsMinFreeGb: env.CONTRIB_MIN_FREE_GB ? Number(env.CONTRIB_MIN_FREE_GB) : undefined,
+    // The address the consent gives for deletions and questions (set in service.env on the server, never in the repo).
+    contributionsContact: env.CONTRIB_CONTACT_EMAIL,
     // T3 Code (stock install on its own host), shown inside the Asistente tab.
     t3: env.ITHOMIINI_T3_URL
       ? {
@@ -887,6 +889,7 @@ export async function createApp(config = {}, options = {}) {
     dir: config.contributionsDir || contributionsDir({}, store.db.location?.() ?? null),
     ...(Number.isFinite(config.contributionsMaxGb) ? { maxBytes: config.contributionsMaxGb * 1024 ** 3 } : {}),
     ...(Number.isFinite(config.contributionsMinFreeGb) ? { minFreeBytes: config.contributionsMinFreeGb * 1024 ** 3 } : {}),
+    contact: config.contributionsContact ?? null,
     ...options.contributions,
   });
   const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
@@ -1353,6 +1356,12 @@ export async function createApp(config = {}, options = {}) {
         return json(res, out.status, out.body);
       }
       if (method === 'GET' && path === '/api/identify/contributions/mine') return json(res, 200, contributions.mine(user));
+      if (method === 'GET' && path === '/api/identify/contributions/consent') return json(res, 200, contributions.consentInfo());
+      // Their review (reviewer or admin): the queue, and accept / reject / unsure («sin identificar»).
+      if (method === 'GET' && path === '/api/review/contributions')
+        return json(res, 200, contributions.queue(user, { status: url.searchParams.get('status') ?? 'received', limit: url.searchParams.get('limit') }));
+      if (method === 'POST' && /^\/api\/review\/contributions\/[^/]+\/verdict$/.test(path))
+        return json(res, 200, contributions.review(decodePart(path.split('/')[4]), body, user));
       if (method === 'DELETE' && /^\/api\/identify\/contributions\/[^/]+$/.test(path))
         return json(res, 200, contributions.remove(decodePart(path.split('/')[4]), user));
       if (method === 'PUT' && path === '/api/clutches/notebook/up-to') {

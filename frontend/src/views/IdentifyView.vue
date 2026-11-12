@@ -12,7 +12,8 @@
  * position when it has one, else the side of the Andes (Ecuador) or Descargas' country; then the neighbours, then the
  * rest; a subspecies the model names puts its range first.
  * Behind VITE_CONTRIB=1, the team can also send the photo with their labels to train the AI (ContributeCard,
- * lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them).
+ * lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them). No location
+ * is sent: the photo's EXIF is taken out before it leaves the phone; only the day it was taken goes.
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -48,10 +49,10 @@ import { useSession } from '../stores/session'
 declare const __BUILD_ID__: string
 import ContributeCard, { type Labels, type Outcome } from '../components/identify/ContributeCard.vue'
 import MyContributions from '../components/identify/MyContributions.vue'
-import { CONSENT_VERSION, contribFor, GPS_DECIMALS } from '../lib/contribConfig'
+import { CONSENT_VERSION, contribFor } from '../lib/contribConfig'
 import { AlreadyListed, createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
 import { askPersistence, browserLock, idbStore } from '../lib/contribIdb'
-import { photoMeta, roundGps } from '../lib/exifMeta'
+import { photoMeta, stripJpegMeta } from '../lib/exifMeta'
 import { headSource, listSource, type TaxonSource } from '../lib/taxonPick'
 
 const session = useSession()
@@ -825,8 +826,48 @@ const contribPhoto = computed(() => {
   if (!r) return false
   return r.source === 'online' ? !!r.photo : lastPhoto.value?.at === r.at
 })
-/** The location and day in the photo's EXIF (read before the canvas drops them). */
-const photoInfo = computed(() => (lastPhoto.value && lastPhoto.value.at === result.value?.at ? photoMeta(lastPhoto.value.photo.bytes) : { gps: null, takenAt: null }))
+/** The day in the photo's EXIF (read before the canvas drops it); the EXIF's location is never sent. */
+const photoTaken = computed(() => (lastPhoto.value && lastPhoto.value.at === result.value?.at ? photoMeta(lastPhoto.value.photo.bytes).takenAt : null))
+/**
+ * The consent's contact address, from the server's config (GET …/consent); the last one known when there is no
+ * signal; null (the sheet says how to ask the team) when never known.
+ */
+const CONTACT_KEY = 'identify:contrib-contact'
+const contribContact = ref<string | null>(null)
+try {
+  contribContact.value = localStorage.getItem(CONTACT_KEY)
+} catch {
+  /* private mode */
+}
+let contactAsked = false
+async function loadContact() {
+  if (contactAsked || !contribFor(session.user)) return
+  contactAsked = true
+  const a = await httpSend('GET', 'identify/contributions/consent')
+  if (a.status !== 200) return void (contactAsked = false)
+  const c = typeof a.body?.contact === 'string' ? a.body.contact : null
+  contribContact.value = c
+  try {
+    if (c) localStorage.setItem(CONTACT_KEY, c)
+    else localStorage.removeItem(CONTACT_KEY)
+  } catch {
+    /* private mode */
+  }
+}
+/** The person accepted the current consent: what this phone queued under an older one goes now. */
+async function reconsent() {
+  const uid = session.user?.id
+  if (!outbox || !uid) return
+  if (await outbox.reconsent(uid)) await syncOutbox({ force: true })
+}
+/** Base64 of a JPEG without its metadata (EXIF, GPS); null when it is not a JPEG that can be checked. */
+function cleanBase64(b64: string): string | null {
+  const bytes = stripJpegMeta(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
+  if (!bytes) return null
+  let text = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(text)
+}
 const contribShown = computed(() => {
   if (!ranked.value || !top.value) return null
   if (said.value?.kind === 'genus') return { name: (said.value as { genus: string }).genus, rank: 'genus' as const }
@@ -843,6 +884,7 @@ function startOutbox(): Promise<void> {
   outboxStarting ??= (async () => {
     outbox = createOutbox({ store: await idbStore(), send: httpSend, lock: browserLock })
     syncOutbox({ force: true, status: true }).catch(() => null)
+    loadContact().catch(() => (contactAsked = false))
   })().catch(() => {
     outboxStarting = null
   })
@@ -899,26 +941,28 @@ async function contribute(labels: Labels): Promise<Outcome> {
   const uid = session.user?.id
   await startOutbox()
   if (!r || !uid || !outbox) return 'error'
-  let photo: string
+  // Both are canvas JPEGs (no EXIF); their metadata segments are taken out all the same before they leave the phone.
+  let photo: string | null
+  let thumb: string | null
   try {
-    photo = r.source === 'online' && r.photo ? r.photo : jpegBase64(await photoCanvas(lastPhoto.value!.photo.blob))
+    photo = cleanBase64(r.source === 'online' && r.photo ? r.photo : jpegBase64(await photoCanvas(lastPhoto.value!.photo.blob)))
+    thumb = cleanBase64(r.crop.replace(/^data:image\/jpeg;base64,/, ''))
   } catch {
     return 'error'
   }
+  if (!photo) return 'error'
   const bytes = Uint8Array.from(atob(photo), c => c.charCodeAt(0))
-  const meta = photoInfo.value
   try {
     const item = await outbox.add(uid, {
       photo,
       sha256: hex(await crypto.subtle.digest('SHA-256', bytes)),
-      thumb: r.crop.replace(/^data:image\/jpeg;base64,/, ''),
+      thumb,
       mini: smallThumb.value,
       payload: {
         createdAt: new Date().toISOString(),
-        takenAt: meta.takenAt,
+        takenAt: photoTaken.value,
         labels: { species: labels.species, sex: labels.sex, photoKind: labels.photoKind },
         prediction: prediction(),
-        gps: labels.includeGps && meta.gps ? roundGps(meta.gps, GPS_DECIMALS) : null,
         consent: { version: CONSENT_VERSION },
       },
     })
@@ -1396,10 +1440,11 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
               :shown="contribShown"
               :pick="pick"
               :source="taxa"
-              :has-gps="!!photoInfo.gps"
+              :contact="contribContact"
               :send="contribute"
               :undo="undoContribution"
               :refusal="refusal"
+              @consented="reconsent"
             />
 
             <section class="mt-4">
@@ -1534,7 +1579,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :names-subspecies="result.source === 'online' || !!head?.ssp"
           />
 
-          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" @remove="removeContribution" />
+          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" :contact="contribContact" @remove="removeContribution" @reconsent="reconsent" />
 
           <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">
             <summary class="cursor-pointer font-medium">{{ $t('Mis identificaciones') }} <span class="font-normal text-fg-muted">({{ $t('en este teléfono') }})</span></summary>

@@ -1,19 +1,21 @@
 <script setup lang="ts">
 /**
  * «Ayude a entrenar la IA» on Identificar's result (DESIGN.md §2): the person confirms the species or names another,
- * marks Hembra / Macho / No sé and the kind of photo, and sends it to the team. The first time, the consent sheet
- * (a draft, said on screen). The view keeps the item (lib/contribOutbox.ts) and says whether it went or waits for
- * signal; «Deshacer» for UNDO_MS after. Team only, behind VITE_CONTRIB (lib/contribConfig.ts).
+ * marks Hembra / Macho / No sé and the kind of photo, and sends it to the team. The first time (and once more after
+ * the consent's version changed), the consent sheet (ConsentSheet.vue). No location is offered or sent. The view keeps
+ * the item (lib/contribOutbox.ts) and says whether it went or waits for signal; «Deshacer» for UNDO_MS after. Team
+ * only, behind VITE_CONTRIB (lib/contribConfig.ts).
  * The card never shows the sex model's call next to the buttons, so the person is not nudged.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, CloudOff, HeartHandshake } from 'lucide-vue-next'
 import TaxonPick from './TaxonPick.vue'
-import { CONSENT, CONSENT_DRAFT, CONSENT_VERSION, UNDO_MS } from '../../lib/contribConfig'
+import ConsentSheet from './ConsentSheet.vue'
+import { acceptConsent, consentAccepted, UNDO_MS } from '../../lib/contribConfig'
 import type { Payload } from '../../lib/contribOutbox'
 import type { TaxonHit, TaxonSource } from '../../lib/taxonPick'
 
-export type Labels = Payload['labels'] & { includeGps: boolean }
+export type Labels = Payload['labels']
 export type Outcome = 'sent' | 'queued' | 'already' | 'refused' | 'full' | 'error'
 
 const props = defineProps<{
@@ -22,22 +24,14 @@ const props = defineProps<{
   /** The person's «Se parece a esta», when it is not the shown one: the card opens on «Es otra especie» with it. */
   pick: string | null
   source: TaxonSource
-  /** The photo carries a location (its EXIF): the box to include it is offered. */
-  hasGps: boolean
+  /** The address the consent gives for deletions and questions (the server's config), or null. */
+  contact?: string | null
   send: (labels: Labels) => Promise<Outcome>
   undo: () => Promise<void>
   /** The server's reason when it refused the item (`refused`). */
   refusal?: string | null
 }>()
-
-const CONSENT_KEY = 'identify:contrib-consent'
-const consented = () => {
-  try {
-    return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION
-  } catch {
-    return false
-  }
-}
+const emit = defineEmits<{ consented: [] }>()
 
 const speciesAnswer = ref<'yes' | 'other' | null>(props.pick && props.pick !== props.shown.name ? 'other' : null)
 const other = ref(props.pick && props.pick !== props.shown.name ? props.pick : '')
@@ -61,7 +55,6 @@ watch(
 )
 const sex = ref<'female' | 'male' | 'unknown' | null>(null)
 const kind = ref<'hand' | 'live' | 'collection' | null>(null)
-const includeGps = ref(false)
 const step = ref<'edit' | 'consent' | 'sending' | 'done'>('edit')
 const outcome = ref<Outcome | null>(null)
 const canUndo = ref(false)
@@ -87,12 +80,12 @@ const missing = computed(() => {
 
 async function submit() {
   if (missing.value) return
-  if (!consented()) {
+  if (!consentAccepted()) {
     step.value = 'consent'
     return
   }
   step.value = 'sending'
-  outcome.value = await props.send({ species: species.value, sex: sexLabel.value, photoKind: kind.value, includeGps: includeGps.value && props.hasGps })
+  outcome.value = await props.send({ species: species.value, sex: sexLabel.value, photoKind: kind.value })
   if (outcome.value === 'full' || outcome.value === 'error' || outcome.value === 'refused' || outcome.value === 'already') {
     step.value = 'edit'
     return
@@ -102,11 +95,9 @@ async function submit() {
   undoTimer = setTimeout(() => (canUndo.value = false), UNDO_MS)
 }
 function accept() {
-  try {
-    localStorage.setItem(CONSENT_KEY, CONSENT_VERSION)
-  } catch {
-    /* private mode: asked again next time */
-  }
+  acceptConsent()
+  // Items this phone queued under an older version go now too (the view lets them out of the outbox).
+  emit('consented')
   step.value = 'edit'
   submit()
 }
@@ -140,17 +131,7 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
       </p>
     </template>
 
-    <template v-else-if="step === 'consent'">
-      <h2 class="font-semibold">{{ $t(CONSENT.title) }}</h2>
-      <p v-if="CONSENT_DRAFT" class="mt-1 inline-block rounded bg-cell-pending px-1.5 py-0.5 text-xs font-medium text-pending-text" data-testid="consent-draft">
-        {{ $t('BORRADOR: texto aún no revisado por IKIAM') }}
-      </p>
-      <p v-for="(p, i) in CONSENT.body" :key="i" class="mt-2 text-sm text-fg-muted">{{ $t(p) }}</p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <button class="btn-primary min-h-11 px-5" data-testid="consent-accept" @click="accept">{{ $t('Acepto') }}</button>
-        <button class="btn min-h-11 px-4" @click="step = 'edit'">{{ $t('Ahora no') }}</button>
-      </div>
-    </template>
+    <ConsentSheet v-else-if="step === 'consent'" :contact="contact ?? null" @accept="accept" @later="step = 'edit'" />
 
     <template v-else>
       <h2 class="flex items-center gap-2 font-semibold"><HeartHandshake :size="18" class="text-brand-text" />{{ $t('Ayude a entrenar la IA') }}</h2>
@@ -182,11 +163,6 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
           {{ $t(k.label) }}
         </button>
       </div>
-
-      <label v-if="hasGps" class="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-        <input v-model="includeGps" type="checkbox" class="size-4 accent-[var(--focus)]" data-testid="contrib-gps" />
-        {{ $t('Incluir la ubicación de la foto (redondeada a unos 1 km)') }}
-      </label>
 
       <button class="btn-primary mt-3 min-h-11 w-full text-base" :disabled="!!missing || step === 'sending'" data-testid="contrib-send" @click="submit">
         {{ step === 'sending' ? $t('Enviando…') : $t('Enviar al equipo') }}

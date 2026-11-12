@@ -17,9 +17,12 @@
  * «Borrar» deletes an item on the phone and on the server: one never sent goes at once; one that may have reached the
  * server is kept as `deleting` (without its photo) until the server has deleted it, signal or not.
  * Only the signed-in person's items are sent or listed; another person on the same phone never sees them.
+ * An item queued under an older consent (v1-draft) is held, not sent, until its person accepts the current one
+ * (`reconsent`); the server takes only the current version. No location is ever sent: the request carries exactly the
+ * fields below, so a `gps` an older version of the app kept with an item stays on the phone (and goes with `reconsent`).
  * The storage is behind `OutboxStore` (IndexedDB in the app, lib/contribIdb.ts; memory in tests).
  */
-import { MAX_PENDING } from './contribConfig'
+import { CONSENT_VERSION, MAX_PENDING } from './contribConfig'
 import { apiRoot, csrfToken } from './api'
 
 export type ItemState = 'pending' | 'sending' | 'sent' | 'failed' | 'deleting'
@@ -34,7 +37,6 @@ export interface Payload {
     species: { name: string; rank: 'genus' | 'species' | 'subspecies'; confirmed: boolean; freeText: boolean } | null
   }
   prediction: Record<string, unknown>
-  gps: { lat: number; lon: number } | null
   consent: { version: string }
 }
 
@@ -126,6 +128,9 @@ interface ServerItem {
 }
 const labelsOf = (c: ServerItem): Payload['labels'] => ({ sex: c.sex ?? null, photoKind: c.photoKind ?? null, species: c.species ?? null })
 
+/** Waiting for its person to accept the current consent: it was queued under an older one (held, not sent). */
+export const heldForConsent = (i: Item) => (i.state === 'pending' || i.state === 'sending') && i.payload.consent?.version !== CONSENT_VERSION
+
 export function memoryStore(): OutboxStore & { items: Map<string, Item> } {
   const items = new Map<string, Item>()
   const copy = (i: Item) => structuredClone(i)
@@ -211,8 +216,8 @@ export function createOutbox({
       return a.status === 429 ? 'rate' : 'offline'
     }
     await store.put({ ...item, state: 'sending' })
-    const { payload } = item
-    const a = await send('POST', 'identify/contributions', { id: item.id, photo: item.photo, thumb: item.thumb, sha256: item.sha256, ...payload })
+    const { createdAt, takenAt, labels, prediction, consent } = item.payload
+    const a = await send('POST', 'identify/contributions', { id: item.id, photo: item.photo, thumb: item.thumb, sha256: item.sha256, createdAt, takenAt, labels, prediction, consent })
     // Deleted while it was on its way: the delete follows (the server knows the id now, or refuses it when it comes).
     const now2 = (await store.all()).find(i => i.id === item.id)
     if (!now2) return 'next'
@@ -278,7 +283,7 @@ export function createOutbox({
       for (const { id } of todo) {
         // Read again: «Borrar» may have changed it while the one before was on its way.
         const item = (await store.all()).find(i => i.id === id)
-        if (!item || !(waiting(item) || item.state === 'deleting')) continue
+        if (!item || !(waiting(item) || item.state === 'deleting') || heldForConsent(item)) continue
         const t = now()
         if (!force && item.nextAt > t) continue
         const r = await sendOne(item, t)
@@ -350,7 +355,7 @@ export function createOutbox({
         sha256: null,
         thumb: null,
         mini: '',
-        payload: { createdAt: at, takenAt: c.takenAt ?? null, labels: labelsOf(c), prediction: {}, gps: null, consent: { version: '' } },
+        payload: { createdAt: at, takenAt: c.takenAt ?? null, labels: labelsOf(c), prediction: {}, consent: { version: '' } },
         serverStatus: c.status ?? 'received',
       })
     }
@@ -358,7 +363,7 @@ export function createOutbox({
 
   /** When the next timed send is due (ms), or null. */
   async function nextAt(userId: string): Promise<number | null> {
-    const due = (await mine(userId)).filter(i => waiting(i) || i.state === 'deleting').map(i => i.nextAt)
+    const due = (await mine(userId)).filter(i => (waiting(i) || i.state === 'deleting') && !heldForConsent(i)).map(i => i.nextAt)
     return due.length ? Math.min(...due) : null
   }
 
@@ -367,6 +372,24 @@ export function createOutbox({
     return (await mine(userId)).filter(waiting).length
   }
 
-  return { add, flush, remove, list, refresh, nextAt, pending }
+  /** How many of the person's items wait for them to accept the current consent («Mis envíos» offers it). */
+  async function held(userId: string): Promise<number> {
+    return (await mine(userId)).filter(heldForConsent).length
+  }
+
+  /**
+   * The person accepted the current consent: their held items carry it now and go with the next send. Whatever an
+   * older version kept beside the payload's fields (a location) is dropped from the phone too.
+   */
+  async function reconsent(userId: string): Promise<number> {
+    const items = (await mine(userId)).filter(heldForConsent)
+    for (const item of items) {
+      const { createdAt, takenAt, labels, prediction } = item.payload
+      await store.put({ ...item, state: 'pending', nextAt: 0, payload: { createdAt, takenAt, labels, prediction, consent: { version: CONSENT_VERSION } } })
+    }
+    return items.length
+  }
+
+  return { add, flush, remove, list, refresh, nextAt, pending, held, reconsent }
 }
 export type Outbox = ReturnType<typeof createOutbox>

@@ -10,8 +10,9 @@ import { CONSENT_VERSION } from '../../lib/contribConfig'
 let host: HTMLElement | null = null
 const sent: Labels[] = []
 let undone = 0
+let consentedCalls = 0
 const pickNow = ref<string | null>(null)
-function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' }; pick: string | null; hasGps: boolean; outcome: Outcome }> = {}) {
+function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' }; pick: string | null; contact: string | null; outcome: Outcome }> = {}) {
   host = document.createElement('div')
   document.body.append(host)
   const app = createApp({
@@ -20,7 +21,8 @@ function show(props: Partial<{ shown: { name: string; rank: 'genus' | 'species' 
         shown: props.shown ?? { name: 'Mechanitis polymnia', rank: 'species' },
         pick: props.pick !== undefined ? props.pick : pickNow.value,
         source: listSource(['Mechanitis polymnia', 'Mechanitis lysimnia', 'Oleria onega']),
-        hasGps: props.hasGps ?? false,
+        contact: props.contact ?? null,
+        onConsented: () => void consentedCalls++,
         send: async (l: Labels) => (sent.push(l), props.outcome ?? 'sent'),
         refusal: 'labels.species.name is not a taxon name',
         undo: async () => void undone++,
@@ -40,6 +42,7 @@ beforeEach(() => {
   pickNow.value = null
   sent.length = 0
   undone = 0
+  consentedCalls = 0
   localStorage.setItem('identify:contrib-consent', CONSENT_VERSION)
 })
 afterEach(() => {
@@ -59,7 +62,7 @@ describe('ContributeCard', () => {
     await click('[data-testid=kind-hand]')
     await click('[data-testid=contrib-send]')
     await nextTick()
-    expect(sent).toEqual([{ species: { name: 'Mechanitis polymnia', rank: 'species', confirmed: true, freeText: false }, sex: 'female', photoKind: 'hand', includeGps: false }])
+    expect(sent).toEqual([{ species: { name: 'Mechanitis polymnia', rank: 'species', confirmed: true, freeText: false }, sex: 'female', photoKind: 'hand' }])
     expect($('[data-testid=contrib-done]')!.textContent).toMatch(/Sent|Enviada/)
   })
 
@@ -89,27 +92,71 @@ describe('ContributeCard', () => {
     expect(sent[0].species).toMatchObject({ name: 'Mechanitis', rank: 'genus', confirmed: true })
   })
 
-  it('the first time, the consent sheet (marked as a draft) before anything is sent', async () => {
+  it('the first time, the consent sheet v2 (no draft mark, no location, Franz Chandi with the server\'s address) before anything is sent', async () => {
+    localStorage.clear()
+    show({ contact: 'person@example.org' })
+    await click('[data-testid=species-yes]')
+    await click('[data-testid=contrib-send]')
+    expect(sent).toHaveLength(0)
+    const sheet = $('[data-testid=consent-sheet]')!.textContent!
+    expect(sheet).not.toMatch(/BORRADOR|DRAFT|IKIAM|experto|expert/i)
+    expect(sheet).toMatch(/GPS/)
+    expect(sheet).not.toMatch(/Incluir la ubicación|Include the photo's location|1 km/)
+    expect($('[data-testid=consent-contact]')!.textContent).toMatch(/Franz Chandi.*person@example\.org/)
+    await click('[data-testid=consent-accept]')
+    await nextTick()
+    expect(sent).toHaveLength(1)
+    expect(consentedCalls).toBe(1)
+    expect(localStorage.getItem('identify:contrib-consent')).toBe(CONSENT_VERSION)
+  })
+
+  it('someone who accepted v1 sees v2 once and must accept it again; «Ahora no» sends nothing', async () => {
+    expect(CONSENT_VERSION).toBe('v2')
+    localStorage.setItem('identify:contrib-consent', 'v1-draft')
+    show()
+    await click('[data-testid=species-yes]')
+    await click('[data-testid=contrib-send]')
+    expect($('[data-testid=consent-sheet]')).not.toBeNull()
+    await click('[data-testid=consent-later]')
+    expect(sent).toHaveLength(0)
+    expect(localStorage.getItem('identify:contrib-consent')).toBe('v1-draft')
+    await click('[data-testid=contrib-send]')
+    await click('[data-testid=consent-accept]')
+    await nextTick()
+    expect(sent).toHaveLength(1)
+    host!.remove()
+    // Once accepted, not again.
+    show()
+    await click('[data-testid=species-yes]')
+    await click('[data-testid=contrib-send]')
+    await nextTick()
+    expect($('[data-testid=consent-sheet]')).toBeNull()
+    expect(sent).toHaveLength(2)
+  })
+
+  it('without the server\'s address, the contact line says to ask the team', async () => {
     localStorage.clear()
     show()
     await click('[data-testid=species-yes]')
     await click('[data-testid=contrib-send]')
-    expect(sent).toHaveLength(0)
-    expect($('[data-testid=consent-draft]')).not.toBeNull()
-    await click('[data-testid=consent-accept]')
-    await nextTick()
-    expect(sent).toHaveLength(1)
-    expect(localStorage.getItem('identify:contrib-consent')).toBe(CONSENT_VERSION)
+    expect($('[data-testid=consent-contact]')!.textContent).toMatch(/Franz Chandi/)
+    expect($('[data-testid=consent-contact]')!.textContent).not.toMatch(/@/)
+  })
+
+  it('no location option on the card, and none in what it sends', async () => {
+    show()
+    expect($('[data-testid=contrib-gps]')).toBeNull()
+    expect(host!.textContent).not.toMatch(/ubicaci|location/i)
+    await click('[data-testid=species-yes]')
+    await click('[data-testid=contrib-send]')
+    expect(Object.keys(sent[0]).sort()).toEqual(['photoKind', 'sex', 'species'])
   })
 
   it('without signal it says it waits on the phone; «Deshacer» takes it back', async () => {
-    show({ outcome: 'queued', hasGps: true })
+    show({ outcome: 'queued' })
     await click('[data-testid=species-yes]')
-    ;($('[data-testid=contrib-gps]') as HTMLInputElement).click()
-    await nextTick()
     await click('[data-testid=contrib-send]')
     await nextTick()
-    expect(sent[0].includeGps).toBe(true)
     expect($('[data-testid=contrib-done]')!.textContent).toMatch(/signal|señal/)
     await click('[data-testid=contrib-undo]')
     await nextTick()

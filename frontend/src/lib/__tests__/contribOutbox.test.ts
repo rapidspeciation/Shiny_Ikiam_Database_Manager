@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { AlreadyListed, BACKOFF, backoff, createOutbox, memoryStore, OutboxFull, type Answer, type Draft, type Send } from '../contribOutbox'
-import { MAX_PENDING } from '../contribConfig'
+import { AlreadyListed, BACKOFF, backoff, createOutbox, heldForConsent, memoryStore, OutboxFull, type Answer, type Draft, type Send } from '../contribOutbox'
+import { CONSENT_VERSION, MAX_PENDING } from '../contribConfig'
 
 // The phone's outbox for photos sent to train the AI: what each server answer does to an item.
 
@@ -14,8 +14,7 @@ const draft = (n = 1): Draft => ({
     takenAt: '2026-11-10',
     labels: { sex: 'female', photoKind: 'hand', species: { name: 'Mechanitis polymnia', rank: 'species', confirmed: true, freeText: false } },
     prediction: { source: 'online' },
-    gps: null,
-    consent: { version: 'v1-draft' },
+    consent: { version: CONSENT_VERSION },
   },
 })
 const OK = { contribution: { status: 'received' } }
@@ -42,7 +41,7 @@ describe('contribOutbox', () => {
     expect(await outbox.pending('ana')).toBe(1)
     expect(await outbox.flush('ana')).toEqual({ sent: 1, stopped: null, already: [] })
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({ method: 'POST', path: 'identify/contributions', body: { id: item.id, photo: 'cGhvdG81', sha256: draft().sha256, consent: { version: 'v1-draft' } } })
+    expect(calls[0]).toMatchObject({ method: 'POST', path: 'identify/contributions', body: { id: item.id, photo: 'cGhvdG81', sha256: draft().sha256, consent: { version: 'v2' } } })
     expect((calls[0].body.labels as { sex: string }).sex).toBe('female')
     const kept = store.items.get(item.id)!
     expect(kept).toMatchObject({ state: 'sent', photo: null, thumb: null, serverStatus: 'received' })
@@ -269,5 +268,34 @@ describe('contribOutbox', () => {
     await outbox.flush('ana')
     await outbox.refresh('ana')
     expect(store.items.get(item.id)!.serverStatus).toBe('accepted')
+  })
+  it('an item queued under the draft v1 is held (not sent, no timer) until its person accepts v2; its old location never leaves the phone', async () => {
+    const { outbox, calls, store } = setup()
+    const old = draft(3)
+    // As the v1 app kept it: the draft consent and an opt-in location beside the labels.
+    const v1 = { ...old, payload: { ...old.payload, consent: { version: 'v1-draft' }, gps: { lat: -0.95, lon: -77.86 } } } as unknown as Draft
+    const item = await outbox.add('ana', v1)
+    expect(heldForConsent(store.items.get(item.id)!)).toBe(true)
+    expect(await outbox.held('ana')).toBe(1)
+    expect(await outbox.flush('ana', { force: true })).toEqual({ sent: 0, stopped: null, already: [] })
+    expect(calls).toHaveLength(0)
+    expect(await outbox.nextAt('ana')).toBeNull()
+    // Another person's acceptance does not let it out.
+    expect(await outbox.reconsent('bob')).toBe(0)
+    expect(await outbox.reconsent('ana')).toBe(1)
+    expect(await outbox.held('ana')).toBe(0)
+    expect('gps' in store.items.get(item.id)!.payload).toBe(false)
+    expect(await outbox.flush('ana')).toEqual({ sent: 1, stopped: null, already: [] })
+    expect(calls[0].body.consent).toEqual({ version: 'v2' })
+    expect(Object.keys(calls[0].body).sort()).toEqual(['consent', 'createdAt', 'id', 'labels', 'photo', 'prediction', 'sha256', 'takenAt', 'thumb'])
+  })
+
+  it('no location in any request, even from an item an older app stored with one', async () => {
+    const { outbox, calls, store } = setup()
+    const item = await outbox.add('ana', draft(4))
+    const kept = store.items.get(item.id)!
+    store.items.set(item.id, { ...kept, payload: { ...kept.payload, gps: { lat: -0.95, lon: -77.86 } } as typeof kept.payload })
+    await outbox.flush('ana')
+    expect(JSON.stringify(calls[0].body)).not.toMatch(/gps|lat|lon|-0\.95|-77/)
   })
 })

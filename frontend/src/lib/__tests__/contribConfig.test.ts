@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { CONSENT_DRAFT, contribFor } from '../contribConfig'
+import { describe, expect, it, vi } from 'vitest'
+import { acceptConsent, CONSENT, CONSENT_VERSION, consentAccepted, contribFor, CONTROLLER } from '../contribConfig'
 
 // Who may send photos to train the AI (Franz, 11 Nov 2026): every signed-in team member, never a signed-out visitor.
 describe('contribFor', () => {
@@ -14,7 +14,28 @@ describe('contribFor', () => {
     expect(contribFor({ role: 'admin' }, false)).toBe(false)
     expect(contribFor(null, false)).toBe(false)
   })
-  it('keeps the consent text marked as a draft', () => {
-    expect(CONSENT_DRAFT).toBe(true)
+})
+
+// The consent, v2 (Franz, 12 Nov 2026): no draft, no location, Franz Chandi responsible, the photos on the server only.
+describe('consent v2', () => {
+  it('is v2; a v1 acceptance does not count', () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) })
+    localStorage.setItem('identify:contrib-consent', 'v1-draft')
+    expect(CONSENT_VERSION).toBe('v2')
+    expect(consentAccepted()).toBe(false)
+    acceptConsent()
+    expect(consentAccepted()).toBe(true)
+    vi.unstubAllGlobals()
+  })
+  it('says what Franz decided, and holds no email address', () => {
+    const all = [CONSENT.title, ...CONSENT.body, CONSENT.contact, CONSENT.noContact].join(' ')
+    expect(CONTROLLER).toBe('Franz Chandi')
+    expect(all).not.toMatch(/IKIAM|borrador|experto|1 km|Incluir la ubicación/i)
+    expect(all).toMatch(/No se envía ninguna ubicación/)
+    expect(all).toMatch(/solo en ese servidor/)
+    expect(all).toMatch(/CC BY 4\.0/)
+    expect(all).not.toMatch(/@/)
+    expect(CONSENT.contact).toMatch(/\{email\}/)
   })
 })
