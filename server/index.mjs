@@ -48,7 +48,8 @@ import { holdId, releaseHold } from './holds.mjs';
 import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
-import { fieldPhotos, ithomiiniSpecies, sendRefPhoto } from './identify-photos.mjs';
+import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from './identify-photos.mjs';
+import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, publicPhotoFile } from './public-reads.mjs';
 import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
 import {
@@ -231,14 +232,7 @@ class LoginLimiter {
     this.failures = new Map();
   }
   keys(req, username) {
-    const socket = req.socket.remoteAddress || 'unknown';
-    const local = /^(::1|127\.|::ffff:127\.)/.test(socket);
-    const forwarded = local
-      ? String(req.headers['x-forwarded-for'] || '')
-          .split(',')[0]
-          .trim()
-      : '';
-    return [`user:${String(username || '').toLowerCase()}`, `ip:${forwarded || socket}`];
+    return [`user:${String(username || '').toLowerCase()}`, `ip:${clientAddress(req)}`];
   }
   recent(key) {
     const cutoff = Date.now() - this.windowMs;
@@ -882,6 +876,31 @@ export async function createApp(config = {}, options = {}) {
     enabled: config.speciesPhotos !== false,
     ...(options.fetchInat ? { fetchImpl: options.fetchInat } : {}),
   });
+  // Identificar's and Buscar's public reads without a sign-in (server/public-reads.mjs): what the server lists, and
+  // per address and 15 minutes at most 120 photo lists (20 names each), 900 iNaturalist photos and 600 specimen photos.
+  const publicLists = createPublicLists(store, { webRoot: config.webRoot ?? webRoot, identifierDir: config.identifierDir ?? null, headSpecies });
+  const anonLimits = {
+    speciesPhotos: new AddressLimiter({ limit: 120, ...config.anonLimits?.speciesPhotos }),
+    refPhoto: new AddressLimiter({ limit: 900, ...config.anonLimits?.refPhoto }),
+    photo: new AddressLimiter({ limit: 600, ...config.anonLimits?.photo }),
+  };
+  const refPhotoOptions = options.fetchRefPhoto ? { fetchImpl: options.fetchRefPhoto } : {};
+  /** A specimen photo (server/photos.mjs) to the browser, with its ETag. */
+  async function sendPhoto(req, res, id, width, opts) {
+    const photo = await photos.get(id, width, opts);
+    if (req.headers['if-none-match'] === photo.etag) {
+      res.writeHead(304, { etag: photo.etag, 'cache-control': 'private, max-age=2592000, immutable' });
+      return res.end();
+    }
+    res.writeHead(200, {
+      'content-type': photo.mime,
+      'content-security-policy': 'sandbox; default-src none',
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, max-age=2592000, immutable',
+      etag: photo.etag,
+    });
+    return res.end(photo.data);
+  }
   const clutchPhotos = createClutchPhotos(store, {
     dir: config.clutchPhotoDir || clutchPhotoDir({}, store.db.location?.() ?? null),
   });
@@ -1096,6 +1115,26 @@ export async function createApp(config = {}, options = {}) {
           { user: auth.user, csrf: auth.csrf },
           { 'set-cookie': cookie(auth.token, { path: config.basePath, secure: config.secureCookies }) },
         );
+      }
+      // Public reads without a sign-in (server/public-reads.mjs; .work/public-gates-20261113/GATES.md): reference photos
+      // of a species and the project's specimen photos, with only their public fields, each with its own limits.
+      if (!session) {
+        if (method === 'POST' && path === '/api/species-photos') {
+          anonLimits.speciesPhotos.check(req);
+          return json(res, 200, { species: anonymousSpeciesPhotos({ speciesPhotos, store }, body.names, await publicLists.knownNames()) });
+        }
+        if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') {
+          anonLimits.refPhoto.check(req);
+          const u = url.searchParams.get('u');
+          if (!refPhotoUrl(u) || !(await publicLists.knownPhoto(u))) throw fail('NOT_FOUND', 'Not a photo this server lists', 404);
+          return sendRefPhoto(req, res, u, refPhotoOptions);
+        }
+        if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
+          anonLimits.photo.check(req);
+          const id = path.split('/')[3];
+          if (url.searchParams.has('card') || !publicPhotoFile(store, id)) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
+          return await sendPhoto(req, res, id, Number(url.searchParams.get('w') || 400));
+        }
       }
       if (!session) throw fail('AUTH_REQUIRED', 'Sign in required', 401);
       if (method !== 'GET' && method !== 'HEAD') checkCsrf(session, req.headers['x-csrf-token']);
@@ -1490,7 +1529,7 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'POST' && path === '/api/species-photos')
         return json(res, 200, { species: speciesPhotos.photosOf(body.names) });
       // The Identificar tab's reference photos (server/identify-photos.mjs): iNaturalist's, same origin for its isolated page.
-      if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') return sendRefPhoto(req, res, query.u);
+      if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') return sendRefPhoto(req, res, query.u, refPhotoOptions);
       if (method === 'GET' && path === '/api/identify/field-photos') {
         if (!config.identifierDir) throw fail('NOT_FOUND', 'The identifier is not installed on this server', 404);
         const names = ithomiiniSpecies(await headSpecies(config.identifierDir), ITHOMIINI_GENERA);
@@ -1500,19 +1539,7 @@ export async function createApp(config = {}, options = {}) {
         const id = path.split('/')[3];
         // A photo card's file not listed yet (a new photo of a Photo_links reading): ?card=<its proposal>.
         const listed = !(query.card && assistant?.cardHasFile?.(query.card, id, user));
-        const photo = await photos.get(id, Number(query.w || 400), { listed });
-        if (req.headers['if-none-match'] === photo.etag) {
-          res.writeHead(304, { etag: photo.etag, 'cache-control': 'private, max-age=2592000, immutable' });
-          return res.end();
-        }
-        res.writeHead(200, {
-          'content-type': photo.mime,
-          'content-security-policy': 'sandbox; default-src none',
-          'x-content-type-options': 'nosniff',
-          'cache-control': 'private, max-age=2592000, immutable',
-          etag: photo.etag,
-        });
-        return res.end(photo.data);
+        return await sendPhoto(req, res, id, Number(query.w || 400), { listed });
       }
       // Correcting an Insectary ID after saving: preview, then one undoable save.
       if (method === 'GET' && path === '/api/insectary-ids/plan') {

@@ -24,7 +24,8 @@ const ROUTES = [
   // At most 500 rows: the count is checked once the role is.
   ['POST', '/sheets/Insectary_data/extend', 401, 403, 403, 400, { count: 501 }],
   ['GET', '/review?kind=envelope_sex', 401, 403, 200, 200],
-  ['GET', '/photo/nope?w=400', 401],
+  // Specimen photos are public when Photo_links lists them (tests/public-reads.test.mjs): an unknown one is not found.
+  ['GET', '/photo/nope?w=400', 404],
   ['GET', '/chat/proposals', 401],
   ['GET', '/t3/status', 401],
 ];

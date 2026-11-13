@@ -14,6 +14,8 @@
 //
 // Specimen photos: the Collection_data rows of the species with photos in
 // Photo_links (server/photodata.mjs); the browser gets them from /api/photo.
+// Identificar and Buscar ask too, also without a sign-in (server/public-reads.mjs: 20 names a request, only the
+// public fields, a per-address limit).
 
 import { photoIndex } from './photodata.mjs';
 
@@ -195,8 +197,11 @@ export function createSpeciesPhotos(
     return running;
   }
 
-  /** name → { inat, pending, specimens }; names not cached (or old) are fetched in the background. */
-  function photosOf(names) {
+  /**
+   * name → { inat, pending, specimens }; names not cached (or old) are fetched in the background. `mayFetch(name)`
+   * (a visitor's request, server/public-reads.mjs): false keeps that name to what is cached.
+   */
+  function photosOf(names, { mayFetch = () => true } = {}) {
     if (!Array.isArray(names) || names.length > MAX_NAMES) throw fail('INVALID_NAMES', `names: a list of at most ${MAX_NAMES}`);
     const read = db.prepare('SELECT data_json, fetched_at FROM species_photo_cache WHERE name=?');
     const specimens = specimenIndex(store);
@@ -207,7 +212,7 @@ export function createSpeciesPhotos(
       const row = read.get(name);
       const data = row?.data_json ? JSON.parse(row.data_json) : null;
       const old = !row || now() - row.fetched_at > (data ? ttlMs : missTtlMs);
-      const canFetch = enabled && lookupNames(name) && (failed.get(name) ?? 0) <= now();
+      const canFetch = enabled && lookupNames(name) && (failed.get(name) ?? 0) <= now() && mayFetch(name);
       if (old && canFetch) queue.add(name);
       out[name] = {
         inat: data,

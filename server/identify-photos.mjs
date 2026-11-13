@@ -3,7 +3,8 @@
 // (they send no Cross-Origin-Resource-Policy): they come through here, same origin, and the phone keeps them.
 //
 // - GET /api/identify/ref-photo?u=<url>: one iNaturalist photo, only of iNaturalist's photo hosts and sizes (the URLs
-//   /api/species-photos gives, and «large» for the full-screen viewer), streamed with a size limit. Signed in only, like the rest of the team's API.
+//   /api/species-photos gives, and «large» for the full-screen viewer), streamed with a size limit. Without a sign-in only
+//   the photos the server lists, with a per-address limit (server/public-reads.mjs).
 // - GET /api/identify/field-photos: one photo per Ithomiini species of the identifier's head (the genera the workbook
 //   files under Tribe Ithomiini, server/frozen-stock.mjs) for «Fotos para el campo»: those iNaturalist has at species
 //   level (a genus fallback would show another species), with their credit; `pending` the names still being looked up.
