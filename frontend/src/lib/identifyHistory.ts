@@ -169,3 +169,12 @@ export function downloadPhoto(blob: Blob, name: string, at: string) {
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
+
+/**
+ * «Reprocesar» on a «Mis identificaciones» item: only when something can read the photo now (`reader`: the server in
+ * use, signed in with signal, or a model on this phone), and either an older model read it (`older`) or its kept
+ * result cannot be shown here without reading it again (`unread`). Why it could not be shown is said apart.
+ */
+export function reprocessable({ saved, reader, older, unread }: { saved?: boolean; reader: boolean; older: boolean; unread: boolean }): boolean {
+  return !!saved && reader && (older || unread)
+}

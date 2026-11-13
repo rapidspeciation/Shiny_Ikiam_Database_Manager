@@ -42,7 +42,7 @@ import TaxonPick from '../components/identify/TaxonPick.vue'
 import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerPhoto } from '../lib/bestPhotos'
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
-import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
+import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, reprocessable, type HistoryRecord, type Versions } from '../lib/identifyHistory'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
@@ -1387,14 +1387,13 @@ const currentVersions = computed<Versions>(() => ({
   id: mode.value === 'online' ? listedHead.value : storedHead.value,
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
-/** Something can read a photo now: the server (signed in, with signal) or a model on this phone. */
-const canRead = computed(() => (!!session.user && online.value) || anyReady.value)
 const entries = computed(() =>
   log.value.map(e => {
     const why = unread.value.get(e.at)
-    // why it could not be shown: signed out (read online) or the phone's model gone; Reprocesar only if something can read it
+    // why it could not be shown: signed out (read online) or the phone's model gone (said apart from version age)
     const reason = why === 'online' && !session.user ? t('Inicie sesión para volver a analizarla.') : why === 'phone' && !anyReady.value ? t('El modelo del teléfono que la leyó ya no está.') : null
-    return { ...e, reason, outdated: !!e.saved && ((!!why && canRead.value) || outdated(e.v, currentVersions.value)) }
+    // one gate (round 3): something reads photos now in the mode chosen (canIdentify), and an older model read it or it needs a re-read
+    return { ...e, reason, reprocess: reprocessable({ saved: e.saved, reader: canIdentify.value, older: outdated(e.v, currentVersions.value), unread: !!why }) }
   }),
 )
 /** The sex line's call for the list (♀ 72 %). */

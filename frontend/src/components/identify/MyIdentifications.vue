@@ -11,7 +11,7 @@ import { percent } from '../../lib/identifyResult'
 import { locale } from '../../lib/i18n'
 import type { LogEntry } from '../../lib/identifyLog'
 
-defineProps<{ entries: (LogEntry & { outdated: boolean; reason?: string | null })[]; current: string | null; busy: boolean }>()
+defineProps<{ entries: (LogEntry & { reprocess: boolean; reason?: string | null })[]; current: string | null; busy: boolean }>()
 defineEmits<{ load: [at: string]; reprocess: [at: string]; copy: [at: string]; download: [at: string]; forget: [] }>()
 const when = (iso: string) => new Date(iso).toLocaleString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const SEX = { female: '♀', male: '♂', unsure: '' } as const
@@ -21,7 +21,7 @@ const SEX = { female: '♀', male: '♂', unsure: '' } as const
   <details class="rounded-lg border border-border bg-surface p-3 text-sm" data-testid="my-identifications">
     <summary class="cursor-pointer font-medium">{{ $t('Mis identificaciones') }} <span class="font-normal text-fg-muted">({{ entries.length }})</span></summary>
     <ul class="mt-2 divide-y divide-border">
-      <li v-for="e in entries" :key="e.at" class="flex items-center gap-2 py-1.5" :class="e.at === current ? 'rounded-md bg-brand-soft' : ''" data-testid="my-identification">
+      <li v-for="e in entries" :key="e.at" class="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5" :class="e.at === current ? 'rounded-md bg-brand-soft' : ''" data-testid="my-identification">
         <button
           v-if="e.saved"
           type="button"
@@ -48,9 +48,12 @@ const SEX = { female: '♀', male: '♂', unsure: '' } as const
           </span>
         </span>
         <template v-if="e.saved">
-          <button v-if="e.outdated" class="btn min-h-11 shrink-0 px-2" :disabled="busy" data-testid="history-reprocess" :title="$t('Leer de nuevo con el modelo actual')" @click="$emit('reprocess', e.at)">
-            <RefreshCw :size="15" />{{ $t('Reprocesar') }}
-          </button>
+          <!-- on a phone on its own line under the name and date (a full-width line: they keep the row); inline from sm up -->
+          <span v-if="e.reprocess" class="order-last basis-full pl-[3.75rem] sm:order-none sm:basis-auto sm:pl-0" data-testid="history-reprocess-line">
+            <button class="btn min-h-11 px-2" :disabled="busy" data-testid="history-reprocess" :title="$t('Leer de nuevo con el modelo actual')" @click="$emit('reprocess', e.at)">
+              <RefreshCw :size="15" />{{ $t('Reprocesar') }}
+            </button>
+          </span>
           <button class="btn-ghost size-11 shrink-0" :aria-label="$t('Copiar la foto')" :title="$t('Copiar la foto')" data-testid="history-copy" @click="$emit('copy', e.at)"><Copy :size="16" /></button>
           <button class="btn-ghost size-11 shrink-0" :aria-label="$t('Descargar la foto')" :title="$t('Descargar la foto')" data-testid="history-download" @click="$emit('download', e.at)"><Download :size="16" /></button>
         </template>

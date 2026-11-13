@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { memoryHistory, outdated, prune, versionDay } from '../identifyHistory'
+import { memoryHistory, outdated, prune, reprocessable, versionDay } from '../identifyHistory'
 import { headRelease, IDENTIFIER_HEADS } from '../identifierReleases'
 import { PUBLIC_FILES } from '../publicModels'
 import { readLog, writeLog, writeLogAll, type LogEntry } from '../identifyLog'
@@ -45,6 +45,17 @@ describe('identifyHistory', () => {
     expect([...days].sort()).toEqual(days)
     expect(headRelease('head_6fa6ab78.json')).toBe(IDENTIFIER_HEADS.length - 1)
     expect(headRelease(null)).toBeNull()
+  })
+  it('one gate for «Reprocesar»: a reader in the mode chosen, and an older model or a needed re-read', () => {
+    // an item that cannot be shown (equal version) and something reads now: a re-read, not «older»
+    expect(reprocessable({ saved: true, reader: true, older: false, unread: true })).toBe(true)
+    // an older model read it, but nothing can read now (signed out, no phone model): no button
+    expect(reprocessable({ saved: true, reader: false, older: true, unread: false })).toBe(false)
+    // «En este teléfono» chosen with no model (canIdentify false), even signed in: no button
+    expect(reprocessable({ saved: true, reader: false, older: true, unread: true })).toBe(false)
+    expect(reprocessable({ saved: true, reader: true, older: true, unread: false })).toBe(true)
+    expect(reprocessable({ saved: true, reader: true, older: false, unread: false })).toBe(false)
+    expect(reprocessable({ saved: false, reader: true, older: true, unread: true })).toBe(false)
   })
   it('prune drops the photos of items that left the list', async () => {
     const h = memoryHistory()
