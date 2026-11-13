@@ -391,11 +391,18 @@ function cropUrl(rgb: Uint8Array) {
   return c.toDataURL('image/jpeg', 0.85)
 }
 
+/**
+ * The photos' run: «Borrar fotos» (and «×» on the photo shown) bumps it, so a read still under way when the person
+ * cleared writes nothing when it comes back (no result, no thumbnail, no error), and the rest of a several-photo
+ * queue stops.
+ */
+let run = 0
 async function identify(photo: Photo, known?: Known) {
   if (mode.value === 'online') return identifyOnline(photo, known)
   const kind = active.value
   runError.value = null
   if (!kind) return
+  const mine = run
   try {
     const country = known ? known.country : await photoCountry(photo.bytes).catch(() => null)
     // the load (when needed) and the run, measured once: the runtime and the head count too
@@ -407,6 +414,7 @@ async function identify(photo: Photo, known?: Known) {
       busy.value = 'analysing'
       return engine.run(photo, kind)
     })
+    if (mine !== run) return
     const out = phase.value
     const timing = phoneTiming(phase, out.ms)
     head.value = engine.head()
@@ -420,6 +428,7 @@ async function identify(photo: Photo, known?: Known) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     estimateSex()
   } catch (err) {
+    if (mine !== run) return
     const m = String((err as Error)?.message ?? err)
     runError.value = /memory|allocation|out of/i.test(m)
       ? t('El teléfono se quedó sin memoria. Cierre otras apps y pruebe de nuevo, o use el modelo Rápido y liviano.')
@@ -427,14 +436,16 @@ async function identify(photo: Photo, known?: Known) {
         ? t('Faltan partes del modelo en el teléfono: descárguelo de nuevo.')
         : t('No se pudo analizar la foto. Pruebe con otra.')
   } finally {
-    busy.value = null
+    if (mine === run) busy.value = null
   }
 }
 async function identifyOnline(photo: Photo, known?: Known) {
   runError.value = null
   busy.value = 'sending'
+  const mine = run
   try {
     const canvas = await photoCanvas(photo.blob).catch(() => null)
+    if (mine !== run) return
     if (!canvas) {
       runError.value = t('No se pudo leer la foto. Pruebe con otra.')
       return
@@ -444,6 +455,7 @@ async function identifyOnline(photo: Photo, known?: Known) {
     const side = sideValue.value
     const started = performance.now()
     const out = await identifyOnServer(sent, side)
+    if (mine !== run) return
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, takenAt: known?.takenAt }
@@ -465,10 +477,12 @@ async function identifyOnline(photo: Photo, known?: Known) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     estimateSex()
   } catch (err) {
-    runError.value = onlineError(err)
+    if (mine === run) runError.value = onlineError(err)
   } finally {
-    busy.value = null
-    sideChangedMeanwhile()
+    if (mine === run) {
+      busy.value = null
+      sideChangedMeanwhile()
+    }
   }
 }
 /** A server result read again with the side now chosen (the server applies the side); on failure the side goes back. */
@@ -479,19 +493,23 @@ async function rereadOnline() {
   const side = sideValue.value
   runError.value = null
   busy.value = 'analysing'
+  const mine = run
   try {
     const started = performance.now()
     const out = await identifyOnServer(r.photo, side)
-    if (result.value !== r) return
+    if (result.value !== r || mine !== run) return
     // the timing line shows this read's time, not the first one's
     result.value = { ...r, server: out, status: out.crop ?? r.status, side, ms: Math.round(performance.now() - started) }
     keepLast()
   } catch (err) {
+    if (mine !== run) return
     runError.value = onlineError(err)
     sideFromResult(r)
   } finally {
-    busy.value = null
-    sideChangedMeanwhile()
+    if (mine === run) {
+      busy.value = null
+      sideChangedMeanwhile()
+    }
   }
 }
 /** The side changed while the server was reading: read again with the side now chosen. */
@@ -530,7 +548,9 @@ const onPhoto = async (e: Event) => {
     const photos: Photo[] = []
     for (const f of many) await readPhoto(f).then(p => photos.push(p), unreadable)
     input.value = ''
+    const mine = run
     for (const p of photos) {
+      if (mine !== run) return
       clearResult()
       await identify(p)
     }
@@ -701,8 +721,10 @@ watch(result, r => {
   // What the screen says of it now (another photo may replace it before its thumbnail is drawn).
   const snap = snapshot(r)
   if (thumbs.value[r.at]?.crop === r.crop) return void remember(snap)
+  const mine = run
   const img = new Image()
   img.onload = () => {
+    if (mine !== run) return
     const c = document.createElement('canvas')
     c.width = c.height = 72
     c.getContext('2d')!.drawImage(img, 0, 0, 72, 72)
@@ -1322,6 +1344,8 @@ const shotList = computed(() =>
 )
 /** «Borrar fotos»: the strip and the result on screen; «Mis identificaciones» keeps them. */
 function clearPhotos() {
+  run++
+  busy.value = null
   shots.value = []
   clearResult()
   runError.value = null

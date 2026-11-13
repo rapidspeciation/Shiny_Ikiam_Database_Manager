@@ -164,4 +164,24 @@ describe('IdentifyView: the panel', () => {
     }
     expect(document.querySelector('[data-testid=photo-viewer]')).toBeNull()
   })
+
+  it('«Borrar fotos» while a photo is being read: nothing comes back when the answer arrives', async () => {
+    localStorage.setItem('identify:log', JSON.stringify([{ at: restored.at, thumb: 'data:image/jpeg;base64,AA==', ai: 'Mechanitis polymnia', p: 0.6, pick: null, side: null, saved: true }]))
+    sessionStorage.setItem('identify:shots', JSON.stringify([restored.at]))
+    const { host, settle } = await mountWith(restored)
+    let answer: (v: unknown) => void = () => {}
+    server.answers.push(new Promise(ok => (answer = ok)))
+    host.querySelector<HTMLInputElement>('input[type=file]:not([capture])')!.dispatchEvent(new Event('change'))
+    await settle()
+    expect(server.answers).toHaveLength(0) // sent, waiting for the server
+    host.querySelector<HTMLButtonElement>('[data-testid=clear-photos]')!.click()
+    await settle()
+    expect(host.querySelector('[data-testid=photo-start]')).not.toBeNull()
+    answer({ ...three, species: [['Melinaea ludovica', 0.9]], genus: [['Melinaea', 0.9]] })
+    await settle()
+    expect(host.querySelector('[data-testid=headline]')).toBeNull()
+    expect(host.querySelector('[data-testid=photo-start]')).not.toBeNull()
+    // the buttons work again at once
+    expect(host.querySelector<HTMLButtonElement>('[data-testid=add-photos]')!.disabled).toBe(false)
+  })
 })
