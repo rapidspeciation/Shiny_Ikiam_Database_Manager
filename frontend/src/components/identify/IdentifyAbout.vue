@@ -17,7 +17,7 @@ defineProps<{ team?: boolean }>()
       {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este dispositivo: no se envían a ningún servidor.') }}
     </p>
     <p v-if="team && CONTRIB_ENABLED" class="mt-2 text-fg-muted" data-testid="about-contrib">
-      {{ $t('«Enviar al equipo» (Ayude a entrenar la IA) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».') }}
+      {{ $t('«Enviar» (bajo el sexo) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».') }}
     </p>
     <ul class="mt-2 list-disc space-y-1.5 pl-5">
       <li>

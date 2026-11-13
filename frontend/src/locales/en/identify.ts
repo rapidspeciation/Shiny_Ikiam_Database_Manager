@@ -326,7 +326,7 @@ export default {
   'Los % se fijaron con esa misma prueba: sin validar hasta la próxima.': 'The % were set on that same test: unvalidated until the next one.',
   'También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).':
     'It also estimates the sex, online, on photos of six species outside the Ithomiini (experimental, tested on live butterflies).',
-  // Photos sent to train the AI (components/identify/ContributeCard.vue, MyContributions.vue, TaxonPick.vue; lib/contribConfig.ts).
+  // Photos sent to train the AI (components/identify/SexPanel.vue, MyContributions.vue, TaxonPick.vue; lib/contribConfig.ts).
   "Ayude a entrenar la IA": "Help train the AI",
   "¿Es del género": "Is it of the genus",
   "¿Es": "Is it",
@@ -381,9 +381,39 @@ export default {
   "¿Borrar este envío del teléfono y del servidor?": "Delete this submission from the phone and from the server?",
   "1 envío pendiente": "1 submission waiting",
   "{n} envíos pendientes": "{n} submissions waiting",
-  '«Enviar al equipo» (Ayude a entrenar la IA) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».':
-    '“Send to the team” (Help train the AI) is separate: only then are the photo and what you tell us stored on the server, for the team to review and to train the models. You can delete them in “My submissions”.',
+  '«Enviar» (bajo el sexo) es aparte: solo entonces la foto y lo que usted indique se guardan en el servidor, para que el equipo los revise y entrenen los modelos. Puede borrarlos en «Mis envíos».':
+    '“Send” (under the sex) is separate: only then are the photo and what you tell us stored on the server, for the team to review and to train the models. You can delete them in “My submissions”.',
   'El servidor no aceptó la foto: {reason}': 'The server did not accept the photo: {reason}',
   'Esta foto ya se había enviado, con las etiquetas de entonces. Para cambiarlas, bórrela en «Mis envíos» y envíela de nuevo.':
     'This photo was already sent, with the labels given then. To change them, delete it in “My submissions” and send it again.',
+  // Identificar's panel (13 Nov 2026): the photo strip, the candidates, the zoom, the sex panel, «Mis identificaciones».
+  'Otras posibles especies': 'Other possible species',
+  'Ver {name}': 'Show {name}',
+  'foto no guardada': 'photo not kept',
+  'Leer de nuevo con el modelo actual': 'Read again with the current model',
+  'Reprocesar': 'Reprocess',
+  'Copiar la foto': 'Copy the photo',
+  'Descargar la foto': 'Download the photo',
+  'Sus fotos': 'Your photos',
+  'Añadir fotos': 'Add photos',
+  'Identificada': 'Identified',
+  'Borrar fotos': 'Clear photos',
+  'Ver su foto en grande': 'Show your photo full screen',
+  'Su foto': 'Your photo',
+  'Ver la foto de referencia en grande': 'Show the reference photo full screen',
+  'No aplica a {genus}': 'Not for {genus}',
+  'No aplica: sin alas en la foto': 'Not available: no wings found',
+  'Detalles': 'Details',
+  'Sexo real': 'Real sex',
+  'Enviar': 'Send',
+  'Con la especie': 'With the species',
+  'Analizando en el servidor…': 'Analysing on the server…',
+  'Esta foto ya no está en el teléfono.': 'This photo is no longer on the phone.',
+  'Foto copiada.': 'Photo copied.',
+  'No se pudo copiar la foto en este navegador; use Descargar.': 'This browser could not copy the photo; use Download.',
+  'Puntuación de la IA': "The AI's score",
+  'Comparar': 'Compare',
+  'Comparando con': 'Comparing with',
+  'Es esta': 'It is this one',
+  'Otra especie…': 'Another species…',
 }

@@ -11,13 +11,18 @@
  * Compare and the search show the photos of the person's country first (lib/photoCountry.ts): the photo's GPS
  * position when it has one, else the side of the Andes (Ecuador) or Descargas' country; then the neighbours, then the
  * rest; a subspecies the model names puts its range first.
- * Behind VITE_CONTRIB=1, the team can also send the photo with their labels to train the AI (ContributeCard,
- * lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them). No location
- * is sent: the photo's EXIF is taken out before it leaves the phone; only the day it was taken goes.
+ * Behind VITE_CONTRIB=1, the team can also send the photo with the real sex (and the species they chose) to train the
+ * AI (SexPanel, lib/contribOutbox.ts: kept on the phone until there is signal; «Mis envíos» lists and deletes them). No
+ * location is sent: the photo's EXIF is taken out before it leaves the phone; only the day it was taken goes.
+ * Layout (13 Nov 2026, ui-loop): the photos of this visit at the top (PhotoBar: add, camera, clear); the species and
+ * its % with the person's photo beside the reference photo (lib/bestPhotos.ts), both open full screen with zoom
+ * (PhotoViewer), and the other likely species as thumbnails that switch the comparison in place (CandidateStrip);
+ * then the sex (SexPanel); then the full list, the side of the Andes and the rest. «Mis identificaciones» keeps each
+ * photo and result (lib/identifyHistory.ts), so an item loads again, with the models that read it.
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Camera, Check, ChevronDown, Download, ImageUp, RotateCcw, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
+import { Check, ChevronDown, Download, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
 import { effectiveMode, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, type Mode, type ServerAnswer } from '../lib/identifyOnline'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
@@ -27,11 +32,18 @@ import TaxonSearch from '../components/identify/TaxonSearch.vue'
 import { usePacks } from '../lib/usePacks'
 import { mbText, numText, packHint, scopeSize, toDownload, type PackScope } from '../lib/photoPacks'
 import { regionLabel, taxaLabel } from '../lib/usePacks'
-import SexEstimate, { type SexState } from '../components/identify/SexEstimate.vue'
-import FieldSexEstimate from '../components/identify/FieldSexEstimate.vue'
+import type { SexState } from '../components/identify/SexEstimate.vue'
+import SexPanel, { type Labels, type Outcome } from '../components/identify/SexPanel.vue'
+import PhotoBar from '../components/identify/PhotoBar.vue'
+import CandidateStrip from '../components/identify/CandidateStrip.vue'
+import PhotoViewer, { type ViewerPhoto } from '../components/identify/PhotoViewer.vue'
+import MyIdentifications from '../components/identify/MyIdentifications.vue'
+import TaxonPick from '../components/identify/TaxonPick.vue'
+import { bestPhotos, bestThumb, viewerSrc } from '../lib/bestPhotos'
+import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
-import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
+import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
@@ -39,22 +51,21 @@ import { appRoot } from '../lib/appRoot'
 import { locale, t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
-import { takePhoto, type Photo } from '../lib/offlinePhoto'
+import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, TRIBE_RUNG, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { loadTaxonomy } from '../lib/taxonomy'
-import { orderRefs, referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
+import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
-import { readLog, writeLog, clearLog, type LogEntry } from '../lib/identifyLog'
+import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
 declare const __BUILD_ID__: string
-import ContributeCard, { type Labels, type Outcome } from '../components/identify/ContributeCard.vue'
 import MyContributions from '../components/identify/MyContributions.vue'
 import { CONSENT_VERSION, contribFor } from '../lib/contribConfig'
 import { AlreadyListed, createOutbox, httpSend, OutboxFull, type Item, type Outbox } from '../lib/contribOutbox'
 import { askPersistence, browserLock, idbStore } from '../lib/contribIdb'
 import { photoMeta, stripJpegMeta } from '../lib/exifMeta'
-import { headSource, listSource, type TaxonSource } from '../lib/taxonPick'
+import { headSource, listSource, type TaxonHit, type TaxonSource } from '../lib/taxonPick'
 
 const session = useSession()
 
@@ -69,7 +80,7 @@ function go(p: Place) {
   router.push({ query: { ...rest, ...(p === 'identify' ? {} : { vista: p === 'downloads' ? 'descargas' : 'buscar' }) } })
   window.scrollTo({ top: 0 })
 }
-const PLACES: { id: Place; label: string; icon: typeof Camera }[] = [
+const PLACES: { id: Place; label: string; icon: typeof ScanSearch }[] = [
   { id: 'identify', label: 'Identificar', icon: ScanSearch },
   { id: 'search', label: 'Buscar', icon: Search },
   { id: 'downloads', label: 'Descargas', icon: Download },
@@ -162,6 +173,7 @@ async function refresh() {
     // A result on screen is ranked again with the new JSON.
     if (headTried && result.value) head.value = await engine.loadHead().catch(() => null)
   }
+  storedHead.value = s ? (storedName(s.files, 'head-meta') ?? null) : null
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
   for (const k of KINDS) stored.value[k] = !!s && MODEL_ROLES[k].every(r => storedName(s!.files, r) != null)
   for (const k of KINDS) offers.value[k] = files.value ? engine.offer(k, files.value, s) : null
@@ -185,6 +197,9 @@ async function refresh() {
   }
 }
 let headTried = false
+/** The identifier's head on this phone and the one the server lists (its file name): the version of a result. */
+const storedHead = ref<string | null>(null)
+const listedHead = computed(() => files.value?.find(f => f.role === 'head-meta')?.name ?? null)
 /** Whether this page opens without signal: null while it is being checked (and kept, online). */
 const pageOffline = ref<boolean | null>(null)
 
@@ -343,6 +358,8 @@ interface Result {
   country?: string | null
   /** This phone's times for the photo (lib/identifyTiming.ts): loads it needed, the sex model's run. */
   timing?: PhoneTiming
+  /** The identifier that read it (its head's file: the server's listed one, or this phone's). */
+  idVersion?: string | null
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
@@ -351,10 +368,10 @@ const runError = ref<string | null>(null)
 const firstRun = ref(true)
 const camera = ref<HTMLInputElement | null>(null)
 const picker = ref<HTMLInputElement | null>(null)
-const sideControl = ref<HTMLElement | null>(null)
-function focusSide() {
-  sideControl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  sideControl.value?.querySelector<HTMLElement>('[aria-checked=true]')?.focus({ preventScroll: true })
+/** What a photo loaded from «Mis identificaciones» brings that its kept JPEG no longer has (the canvas dropped the EXIF). */
+interface Known {
+  takenAt: string | null
+  country: string | null
 }
 
 function cropUrl(rgb: Uint8Array) {
@@ -372,13 +389,13 @@ function cropUrl(rgb: Uint8Array) {
   return c.toDataURL('image/jpeg', 0.85)
 }
 
-async function identify(photo: Photo) {
-  if (mode.value === 'online') return identifyOnline(photo)
+async function identify(photo: Photo, known?: Known) {
+  if (mode.value === 'online') return identifyOnline(photo, known)
   const kind = active.value
   runError.value = null
   if (!kind) return
   try {
-    const country = await photoCountry(photo.bytes).catch(() => null)
+    const country = known ? known.country : await photoCountry(photo.bytes).catch(() => null)
     // the load (when needed) and the run, measured once: the runtime and the head count too
     const phase = await timed(engine.loadGeneration, async () => {
       if (!engine.loaded(kind)) {
@@ -393,8 +410,8 @@ async function identify(photo: Photo) {
     head.value = engine.head()
     firstRun.value = false
     const at = new Date().toISOString()
-    lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status } }
-    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country, timing }
+    lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status }, takenAt: known?.takenAt }
+    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country, timing, idVersion: storedHead.value }
     compared.value = null
     pick.value = null
     keepLast()
@@ -411,7 +428,7 @@ async function identify(photo: Photo) {
     busy.value = null
   }
 }
-async function identifyOnline(photo: Photo) {
+async function identifyOnline(photo: Photo, known?: Known) {
   runError.value = null
   busy.value = 'sending'
   try {
@@ -421,15 +438,16 @@ async function identifyOnline(photo: Photo) {
       return
     }
     const sent = jpegBase64(canvas)
-    const country = await photoCountry(photo.bytes).catch(() => null)
+    const country = known ? known.country : await photoCountry(photo.bytes).catch(() => null)
     const side = sideValue.value
     const started = performance.now()
     const out = await identifyOnServer(sent, side)
     firstRun.value = false
     const at = new Date().toISOString()
-    lastPhoto.value = { at, photo }
+    lastPhoto.value = { at, photo, takenAt: known?.takenAt }
     result.value = {
       at,
+      idVersion: listedHead.value,
       source: 'online',
       crop: squareCrop(canvas, out.wingBox),
       status: out.crop ?? 'success',
@@ -489,6 +507,9 @@ function clearResult() {
   sexError.value = null
   compared.value = null
   pick.value = null
+  pickHit.value = null
+  otherOpen.value = false
+  viewer.value = null
   try {
     sessionStorage.removeItem(LAST)
   } catch {
@@ -496,10 +517,25 @@ function clearResult() {
   }
 }
 // A new photo replaces the last result at once: a failed one must not leave the previous butterfly on screen.
-const onPhoto = (e: Event) => {
-  clearResult()
+// Several chosen at once: all read first (Android's grant on a picked file does not last), then identified in turn;
+// each goes to the strip at the top, the last one stays on screen.
+const unreadable = () => (runError.value = t('No se pudo leer la foto. Si está en la nube (Google Fotos), descárguela primero o use Tomar foto.'))
+const onPhoto = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const many = Array.from(input.files ?? [])
   runError.value = null
-  return takePhoto(e.target as HTMLInputElement, identify, () => (runError.value = t('No se pudo leer la foto. Si está en la nube (Google Fotos), descárguela primero o use Tomar foto.')))
+  if (many.length > 1) {
+    const photos: Photo[] = []
+    for (const f of many) await readPhoto(f).then(p => photos.push(p), unreadable)
+    input.value = ''
+    for (const p of photos) {
+      clearResult()
+      await identify(p)
+    }
+    return
+  }
+  clearResult()
+  return takePhoto(input, identify, unreadable)
 }
 
 // A photo pasted (Ctrl+V / ⌘V) or dropped on the page: the same path as «Elegir foto».
@@ -619,46 +655,90 @@ const recordedSides = computed<Map<string, { East: boolean; West: boolean }>>(()
 )
 const noWings = computed(() => !!result.value && result.value.status !== 'success')
 
-function nextCandidate() {
-  const list = ranked.value?.species ?? []
-  const i = list.findIndex(c => c.name === showing.value)
-  compared.value = list[(i + 1) % list.length]?.name ?? null
-}
+/** «Es esta»: the species compared is the person's answer (a tap again takes it back); kept with the item. */
 function choose(name: string) {
   pick.value = pick.value === name ? null : name
+  pickHit.value = null
   keepLast()
-  if (result.value && top.value)
-    log.value = writeLog({ at: result.value.at, thumb: smallThumb.value, ai: top.value.name, p: top.value.p, pick: pick.value, side: sideValue.value }, log.value)
 }
+/** «Otra especie»: a name the list above does not show (the model's names, or free text). */
+const otherOpen = ref(false)
+const otherName = ref('')
+const pickHit = ref<TaxonHit | null>(null)
+function chooseOther(hit: TaxonHit | null) {
+  const name = (hit?.name ?? otherName.value).trim().replace(/\s+/g, ' ')
+  if (name.length < 3) return
+  pick.value = name
+  pickHit.value = hit
+  otherOpen.value = false
+  otherName.value = ''
+  if (ranked.value?.species.some(c => c.name === name)) compared.value = name
+  keepLast()
+}
+/** The species label sent with the sex: the person's choice, confirmed when it is the name the result shows. */
+const speciesLabel = computed<Labels['species']>(() => {
+  const name = pick.value
+  if (!name) return null
+  const shown = contribShown.value
+  const hit = pickHit.value?.name === name ? pickHit.value : taxa.value.search(name, 1).find(h => h.name.toLowerCase() === name.toLowerCase())
+  const words = name.split(' ').length
+  return {
+    name: hit?.name ?? name,
+    rank: hit?.rank ?? (words >= 3 ? 'subspecies' : words === 2 ? 'species' : 'genus'),
+    confirmed: !!shown && shown.name === name,
+    freeText: !hit,
+  }
+})
 
-// The result in the log once ranked (a smaller copy of the square).
-const smallThumb = ref('')
+// The result in the log once ranked (a smaller copy of the square), and its photo kept to load it again.
+// Each result's 72 px square by its time (the strip and the list show it); its crop, to draw it again after a re-read.
+const thumbs = ref<Record<string, { src: string; crop: string }>>({})
+const smallThumb = computed(() => (result.value ? (thumbs.value[result.value.at]?.src ?? '') : ''))
 watch(result, r => {
   if (!r) return
+  // What the screen says of it now (another photo may replace it before its thumbnail is drawn).
+  const snap = snapshot(r)
+  if (thumbs.value[r.at]?.crop === r.crop) return void remember(snap)
   const img = new Image()
   img.onload = () => {
     const c = document.createElement('canvas')
     c.width = c.height = 72
     c.getContext('2d')!.drawImage(img, 0, 0, 72, 72)
-    smallThumb.value = c.toDataURL('image/jpeg', 0.7)
-    if (top.value) log.value = writeLog({ at: r.at, thumb: smallThumb.value, ai: top.value.name, p: top.value.p, pick: pick.value, side: sideValue.value }, log.value)
+    thumbs.value = { ...thumbs.value, [r.at]: { src: c.toDataURL('image/jpeg', 0.7), crop: r.crop } }
+    addShot(r.at)
+    remember(snap)
   }
   img.src = r.crop
 })
+
+/** The result as kept (sessionStorage for a tab switch, the history for «Mis identificaciones»): its feature as base64. */
+function serialResult(r: Result) {
+  let feature: string | undefined
+  if (r.feature) {
+    const f = new Uint8Array(r.feature.buffer.slice(0))
+    let bin = ''
+    for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
+    feature = btoa(bin)
+  }
+  return { ...r, feature }
+}
+/** A kept result back; a phone result needs the phone's head to be ranked (null when no model is on the phone). */
+async function revive(v: Result & { feature?: string | Float32Array }): Promise<Result | null> {
+  if (v.source === 'online') return session.user ? { ...v, feature: undefined } : null
+  if (!anyReady.value || typeof v.feature !== 'string') return null
+  const bin = atob(v.feature)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  head.value = await engine.loadHead()
+  return { ...v, source: 'phone', feature: new Float32Array(bytes.buffer) }
+}
 
 // Kept for this browser session: going to another tab and back shows the result again.
 function keepLast() {
   const r = result.value
   if (!r) return
   try {
-    let feature: string | undefined
-    if (r.feature) {
-      const f = new Uint8Array(r.feature.buffer.slice(0))
-      let bin = ''
-      for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
-      feature = btoa(bin)
-    }
-    sessionStorage.setItem(LAST, JSON.stringify({ ...r, feature, compared: compared.value, pick: pick.value }))
+    sessionStorage.setItem(LAST, JSON.stringify({ ...serialResult(r), compared: compared.value, pick: pick.value }))
   } catch {
     /* no session storage: not restored */
   }
@@ -668,21 +748,22 @@ async function restoreLast() {
     const raw = sessionStorage.getItem(LAST)
     if (!raw) return
     const v = JSON.parse(raw)
-    if (v.source === 'online') {
-      // A server result: shown as it was, its side with it (a session that ended leaves nothing of the team's).
-      if (!session.user) return sessionStorage.removeItem(LAST)
-      result.value = v
-      sideFromResult(v)
-    } else {
-      if (!anyReady.value) return
-      const bin = atob(v.feature)
-      const bytes = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-      head.value = await engine.loadHead()
-      result.value = { ...v, source: 'phone', feature: new Float32Array(bytes.buffer) }
+    const r = await revive(v)
+    if (!r) {
+      // A server result of a session that ended leaves nothing of the team's.
+      if (v.source === 'online') sessionStorage.removeItem(LAST)
+      return
     }
+    result.value = r
+    if (r.source === 'online') sideFromResult(r)
     compared.value = v.compared ?? null
     pick.value = v.pick ?? null
+    // Its photo, when it was kept: the sex can be estimated and sent again after a tab switch.
+    const rec = await (await historyStore()).get(r.at).catch(() => null)
+    if (rec && result.value?.at === r.at) {
+      lastPhoto.value = { at: r.at, photo: await photoOf(rec), takenAt: rec.takenAt }
+      estimateSex()
+    }
   } catch {
     /* gone with the models: nothing to show */
   }
@@ -693,10 +774,7 @@ watch(sideValue, () => rereadOnline())
 // Back to online with a side changed meanwhile: the server's result read again with it.
 watch(mode, m => m === 'online' && sideChangedMeanwhile())
 // The log names what the screen shows first: a change of side rewrites the entry (the same time).
-watch(sideValue, () => {
-  if (result.value && top.value && smallThumb.value)
-    log.value = writeLog({ at: result.value.at, thumb: smallThumb.value, ai: top.value.name, p: top.value.p, pick: pick.value, side: sideValue.value }, log.value)
-})
+watch(sideValue, () => result.value && remember(snapshot(result.value)))
 
 // ---------------------------------------------------------------- the sex estimate (team only, experimental)
 
@@ -707,7 +785,7 @@ const sexDownload = ref<{ done: number; total: number; waiting?: boolean } | nul
 const sexError = ref<string | null>(null)
 let sexBusy = false
 /** The last photo, and its square when this phone read it: in memory only, for the estimate. */
-const lastPhoto = shallowRef<{ at: string; photo: Photo; cut?: { square: Uint8Array; status: string } } | null>(null)
+const lastPhoto = shallowRef<{ at: string; photo: Photo; cut?: { square: Uint8Array; status: string }; takenAt?: string | null } | null>(null)
 /** The server offers a sex model this phone can take (lib/offlineEngine.ts sexFiles: its SHA-256 and calibration). */
 const sexListed = computed(() => !!offers.value.sex && offers.value.sex.state !== 'none')
 const sexStored = ref(false)
@@ -846,7 +924,11 @@ const contribPhoto = computed(() => {
   return r.source === 'online' ? !!r.photo : lastPhoto.value?.at === r.at
 })
 /** The day in the photo's EXIF (read before the canvas drops it); the EXIF's location is never sent. */
-const photoTaken = computed(() => (lastPhoto.value && lastPhoto.value.at === result.value?.at ? photoMeta(lastPhoto.value.photo.bytes).takenAt : null))
+const photoTaken = computed(() => {
+  const p = lastPhoto.value
+  if (!p || p.at !== result.value?.at) return null
+  return p.takenAt !== undefined ? p.takenAt : photoMeta(p.photo.bytes).takenAt
+})
 /**
  * The consent's contact address, from the server's config (GET …/consent); the last one known when there is no
  * signal; null (the sheet says how to ask the team) when never known.
@@ -980,7 +1062,7 @@ async function contribute(labels: Labels): Promise<Outcome> {
       payload: {
         createdAt: new Date().toISOString(),
         takenAt: photoTaken.value,
-        labels: { species: labels.species, sex: labels.sex, photoKind: labels.photoKind },
+        labels: { species: labels.species, sex: labels.sex, photoKind: labels.photoKind ?? null },
         prediction: prediction(),
         consent: { version: CONSENT_VERSION },
       },
@@ -1075,9 +1157,11 @@ const refsShown = computed<Refs | undefined>(() => {
     const i = order.indexOf(taxon)
     return i < 0 ? order.length : i
   }
-  return { ...r, photos: orderRefs(r.photos, photoPlace.value, at) }
+  return { ...r, photos: bestPhotos(showing.value, r.photos, photoPlace.value, at) }
 })
-const thumbOf = (name: string) => refs.value[name]?.photos.find(p => p.level !== 'genus')?.src
+const thumbOf = (name: string) => bestThumb(name, refs.value[name]?.photos, photoPlace.value)
+/** The candidates under the comparison: the AI's most likely species (up to 5), each with its best photo. */
+const candidates = computed(() => (ranked.value?.species ?? []).slice(0, 5).map(c => ({ ...c, thumb: thumbOf(c.name) })))
 
 // The photo packs (lib/usePacks.ts, chosen in Descargas). Only the first screen's button, which says so, saves the
 // chosen pack after the model (without photos a species never looked up online has none in the field: 3 Nov 2026,
@@ -1190,8 +1274,227 @@ function forget() {
   if (!confirm(t('¿Borrar la lista de identificaciones de este teléfono?'))) return
   clearLog()
   log.value = []
+  historyStore().then(h => h.clear()).catch(() => null)
 }
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+// ---------------------------------------------------------------- this visit's photos (the strip at the top)
+
+const SHOTS = 'identify:shots'
+function readShots(): string[] {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(SHOTS) || '[]')
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+const shots = ref<string[]>(readShots())
+watch(shots, v => {
+  try {
+    sessionStorage.setItem(SHOTS, JSON.stringify(v))
+  } catch {
+    /* not kept for a tab switch */
+  }
+})
+const addShot = (at: string) => !shots.value.includes(at) && (shots.value = [...shots.value, at])
+const shotList = computed(() =>
+  shots.value
+    .map(at => ({ at, thumb: thumbs.value[at]?.src || log.value.find(e => e.at === at)?.thumb || '' }))
+    .filter(x => x.thumb),
+)
+/** «Borrar fotos»: the strip and the result on screen; «Mis identificaciones» keeps them. */
+function clearPhotos() {
+  shots.value = []
+  clearResult()
+  runError.value = null
+}
+const busyText = computed(() =>
+  busy.value === 'loading'
+    ? t('Preparando el identificador… la primera foto tarda más.')
+    : busy.value === 'sending'
+      ? t('Analizando en el servidor…')
+      : busy.value === 'analysing'
+        ? t('Analizando la foto…')
+        : null,
+)
+
+// ---------------------------------------------------------------- «Mis identificaciones»: kept, loaded again
+
+/** The models a result was read with, and those that read photos now (Reprocesar when they differ). */
+const versionsOf = (r: Result): Versions => ({
+  id: r.idVersion ?? null,
+  sex: r.sex && 'z' in r.sex ? (r.sex.m?.version ?? r.sex.m?.sha256 ?? null) : null,
+})
+const currentVersions = computed<Versions>(() => ({
+  id: mode.value === 'online' ? listedHead.value : storedHead.value,
+  sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
+}))
+const entries = computed(() => log.value.map(e => ({ ...e, outdated: !!e.saved && outdated(e.v, currentVersions.value) })))
+/** The sex line's call for the list (♀ 72 %). */
+const sexSummary = computed<LogEntry['sex']>(() => {
+  const r = result.value
+  if (fieldSexState.value && (!sexState.value || sexState.value.kind === 'genus')) {
+    const f = fieldSexState.value
+    const named = f.status !== 'cell_under_90' && f.sure
+    return { call: named ? f.sex : 'unsure', pct: named && f.pct != null ? Math.round(f.pct) : null }
+  }
+  if (!r?.sex || !('z' in r.sex)) return null
+  const shown = sexShown(r.sex.z, r.sex.m?.calibration ?? SEX_DEFAULT)
+  return { call: shown.call === 'hembra' ? 'female' : shown.call === 'macho' ? 'male' : 'unsure', pct: shown.call === 'no seguro' ? null : Math.round(Math.min(99, shown.p * 100)) }
+})
+
+/** The photo kept with a result: the server's copy, or this phone's photo as a JPEG of at most 1600 px. */
+const keptPhotos = new Map<string, Blob>()
+async function keptPhoto(r: Result, original: Blob | null): Promise<Blob | null> {
+  const had = keptPhotos.get(r.at)
+  if (had) return had
+  let blob: Blob | null = null
+  if (r.photo) blob = base64Jpeg(r.photo)
+  else if (original) blob = await photoCanvas(original).then(c => canvasJpeg(c), () => null)
+  if (blob) keptPhotos.set(r.at, blob)
+  return blob
+}
+const photoOf = async (rec: HistoryRecord): Promise<Photo> => {
+  const bytes = await rec.photo.arrayBuffer()
+  return { bytes, blob: rec.photo, name: `${rec.at}.jpg`, type: 'image/jpeg', size: bytes.byteLength }
+}
+/** A result and what the screen says of it now: its ranking's first name, the person's choices, the sex, its photo. */
+interface Snapshot {
+  r: Result
+  top: Candidate | undefined
+  compared: string | null
+  pick: string | null
+  side: Side
+  sex: LogEntry['sex']
+  photo: Blob | null
+  takenAt: string | null
+}
+function snapshot(r: Result): Snapshot {
+  const here = lastPhoto.value?.at === r.at
+  return { r, top: top.value, compared: compared.value, pick: pick.value, side: sideValue.value, sex: sexSummary.value, photo: here ? lastPhoto.value!.photo.blob : null, takenAt: here ? photoTaken.value : null }
+}
+/** The result in the list and in the history (its photo, choices, sex and models), once it has a thumbnail. In turn. */
+let remembering: Promise<void> = Promise.resolve()
+function remember(snap: Snapshot) {
+  remembering = remembering.then(() => rememberNow(snap)).catch(() => undefined)
+  return remembering
+}
+async function rememberNow({ r, top: top1, compared: cmp, pick: pk, side: sd, sex, photo: original, takenAt }: Snapshot) {
+  const thumb = thumbs.value[r.at]?.src
+  if (!top1 || !thumb) return
+  const v = versionsOf(r)
+  const before = log.value.find(e => e.at === r.at)
+  let saved = before?.saved ?? false
+  const photo = await keptPhoto(r, original)
+  if (photo) {
+    try {
+      const store = await historyStore()
+      const old = before ? await store.get(r.at) : null
+      await store.put({
+        at: r.at,
+        photo,
+        result: JSON.stringify(serialResult(r)),
+        compared: cmp,
+        pick: pk,
+        takenAt: takenAt ?? old?.takenAt ?? null,
+        country: r.country ?? null,
+        versions: v,
+      })
+      saved = true
+    } catch {
+      /* full or private: the line only */
+    }
+  }
+  log.value = writeLog({ at: r.at, thumb, ai: top1.name, p: top1.p, pick: pk, side: sd, sex: sex ?? before?.sex ?? null, v, saved }, log.value)
+  historyStore()
+    .then(h => prune(h, log.value.map(e => e.at)))
+    .catch(() => null)
+}
+watch([compared, pick, sexSummary], () => result.value && remember(snapshot(result.value)))
+
+const notice = ref<string | null>(null)
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
+function say(text: string) {
+  notice.value = text
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => (notice.value = null), 4000)
+}
+/** An item back in the panel as if its photo had just been added: its result, choices and sex; Reprocesar reads it again. */
+async function loadEntry(at: string, { rerun = false } = {}) {
+  if (busy.value) return
+  const rec = await (await historyStore()).get(at).catch(() => null)
+  if (!rec) return say(t('Esta foto ya no está en el teléfono.'))
+  const photo = await photoOf(rec)
+  const known: Known = { takenAt: rec.takenAt, country: rec.country }
+  const kept = rerun ? null : await revive(JSON.parse(rec.result)).catch(() => null)
+  if (!kept) {
+    // Read again (Reprocesar, or a phone result with no model on the phone now): a new item replaces the old one.
+    clearResult()
+    await identify(photo, known)
+    const now = result.value
+    if (!now || now.at === at) return
+    pick.value = rec.pick
+    shots.value = shots.value.filter(x => x !== at)
+    log.value = log.value.filter(e => e.at !== at)
+    writeLogAll(log.value)
+    ;(await historyStore()).delete(at).catch(() => null)
+    return
+  }
+  clearResult()
+  keptPhotos.set(at, rec.photo)
+  lastPhoto.value = { at, photo, takenAt: rec.takenAt }
+  result.value = kept
+  if (kept.source === 'online') sideFromResult(kept)
+  compared.value = rec.compared
+  pick.value = rec.pick
+  addShot(at)
+  keepLast()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  estimateSex()
+}
+/** The strip's thumbnails: the one on screen stays; another loads from the history. */
+function selectShot(at: string) {
+  if (result.value?.at !== at) loadEntry(at)
+}
+async function photoAction(at: string, what: 'copy' | 'download') {
+  const rec = await (await historyStore()).get(at).catch(() => null)
+  if (!rec) return say(t('Esta foto ya no está en el teléfono.'))
+  const e = log.value.find(x => x.at === at)
+  if (what === 'download') return downloadPhoto(rec.photo, e?.pick ?? e?.ai ?? 'foto', at)
+  say((await copyPhoto(rec.photo)) ? t('Foto copiada.') : t('No se pudo copiar la foto en este navegador; use Descargar.'))
+}
+
+// ---------------------------------------------------------------- full screen with zoom
+
+const viewer = shallowRef<{ photos: ViewerPhoto[]; start: number } | null>(null)
+/** The person's photo, whole, while it is on screen (an object URL of the photo; the square when it is not here). */
+const mineUrl = shallowRef<string | null>(null)
+watch(
+  () => (lastPhoto.value && lastPhoto.value.at === result.value?.at ? lastPhoto.value.photo.blob : null),
+  (blob, _, onCleanup) => {
+    mineUrl.value = blob ? URL.createObjectURL(blob) : null
+    const url = mineUrl.value
+    onCleanup(() => url && URL.revokeObjectURL(url))
+  },
+)
+function openViewer(which: 'mine' | 'ref', src?: string) {
+  const r = result.value
+  if (!r) return
+  const genus = showing.value.split(' ')[0]
+  const mine: ViewerPhoto = { src: mineUrl.value ?? r.crop, name: '', caption: t('Su foto'), credit: '', license: '', source: null }
+  const refPhotos: ViewerPhoto[] = (refsShown.value?.photos ?? []).map(p => ({
+    src: viewerSrc(p.src),
+    name: p.level === 'subspecies' && p.taxon ? p.taxon : showing.value,
+    kicker: p.level === 'genus' ? t('Foto de otra especie del género {genus}', { genus }) : p.level === 'subspecies' ? t('Subespecie') : p.level === 'specimen' ? t('Ejemplar del proyecto') : undefined,
+    credit: p.credit,
+    license: p.license,
+    source: p.source ?? null,
+    country: p.country ?? null,
+    preserved: p.kind === 'preserved' ? (p.specimen ?? '') : null,
+  }))
+  const at = which === 'ref' ? (refsShown.value?.photos ?? []).findIndex(p => p.src === src) : -1
+  viewer.value = { photos: [mine, ...refPhotos], start: which === 'mine' ? 0 : Math.max(0, at) + 1 }
+}
 
 const goOnline = () => {
   online.value = true
@@ -1296,338 +1599,328 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
     />
 
     <template v-else>
-    <!-- Where the photo is read: the server (signed in, with signal) or this phone. Signed out: this phone only. -->
     <p v-if="contribOn && pendingCount" class="mb-3 inline-flex items-center gap-1.5 rounded-full bg-cell-pending px-2.5 py-1 text-xs font-medium text-pending-text" role="status" data-testid="contrib-pending">
       <WifiOff v-if="!outboxPaused" :size="14" />{{ $tn(pendingCount, '1 envío pendiente', '{n} envíos pendientes') }}<template v-if="outboxPaused"> · {{ $t('Inicie sesión para enviar.') }}</template>
     </p>
-    <div v-if="checked && session.user" class="mb-3" data-testid="mode">
-      <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
-        <button
-          role="radio"
-          :aria-checked="mode === 'online'"
-          :disabled="!online"
-          class="rounded-l-md px-3 py-2 text-sm disabled:cursor-not-allowed disabled:text-fg-subtle"
-          :class="mode === 'online' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-stone-100'"
-          @click="chooseMode('online')"
-        >
-          {{ $t('En línea (servidor)') }}<span v-if="!online" class="text-xs"> · {{ $t('sin señal') }}</span>
-        </button>
-        <button
-          role="radio"
-          :aria-checked="mode === 'phone'"
-          class="rounded-r-md px-3 py-2 text-sm"
-          :class="mode === 'phone' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-stone-100'"
-          @click="chooseMode('phone')"
-        >
-          {{ $t('En este teléfono') }}
-        </button>
-      </div>
-      <p class="hint mt-1">
-        {{
-          mode === 'online'
-            ? $t('La foto se envía al servidor del proyecto, que la analiza y no la guarda. No hace falta descargar nada.')
-            : !online
-              ? anyReady
-                ? $t('Sin señal: se usa el modelo de este teléfono.')
-                : $t('Sin señal y sin modelo en este teléfono: conéctese para usar el servidor o descargar el modelo.')
-              : anyReady
-                ? $t('Con el modelo descargado; funciona también sin señal.')
-                : $t('Primero hay que descargar el modelo a este teléfono.')
-        }}
-      </p>
-    </div>
-    <p v-else-if="checked" class="mb-3 text-xs text-fg-subtle" data-testid="mode">
-      {{ $t('La foto se analiza en este teléfono. La opción en línea (servidor) es solo para el equipo, con su cuenta.') }}
-    </p>
 
-    <!-- On the phone: whether it works here without signal, and with which model. -->
-    <div v-if="mode === 'phone' && anyReady" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
-      <span v-else-if="pageOffline === null" class="text-fg-muted">{{ $t('Preparando para usar sin internet…') }}</span>
-      <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
-      <span class="whitespace-nowrap">
-        <span class="text-fg-muted">{{ label(active!) }}</span>
-        <button class="ml-1 min-h-11 px-1 text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Cambiar') }}</button>
-      </span>
-      <span v-if="!online" class="inline-flex items-center gap-1 text-fg-muted"><WifiOff :size="14" />{{ $t('Ahora sin señal') }}</span>
-      <!-- The photos announced with the first download, saving (long enough to walk out of signal meanwhile). -->
-      <span v-if="packs.progress.value" class="basis-full font-medium text-pending-text tabular-nums" role="status" data-testid="pack-saving">
-        {{ $t('Guardando fotos para comparar: {done} de {total}', { done: numText(packs.progress.value.done), total: numText(packs.progress.value.total) }) }}
-      </span>
-    </div>
+    <!-- The photos of this visit: add, camera, clear (the Wings Gallery's strip) -->
+    <PhotoBar
+      v-if="checked && canIdentify"
+      class="mb-4"
+      :shots="shotList"
+      :current="result?.at ?? null"
+      :busy="busyText"
+      :disabled="!!busy"
+      :paste-keys="finePointer ? (isMac ? '⌘V' : 'Ctrl+V') : null"
+      @select="selectShot"
+      @files="picker?.click()"
+      @camera="camera?.click()"
+      @clear="clearPhotos"
+    />
+    <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="onPhoto" />
+    <input ref="picker" type="file" accept="image/*" multiple class="hidden" @change="onPhoto" />
+    <p v-if="runError" class="mb-4 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ runError }}</p>
 
-    <!-- A. No model on the phone yet: the fast one in one tap, the rest in Descargas -->
-    <section v-if="checked && mode === 'phone' && !anyReady" class="max-w-xl" data-testid="first-download">
-      <h1 class="text-xl font-semibold">{{ $t('Identificar una mariposa') }}</h1>
-      <p class="mt-1 text-fg-muted">
-        {{ $t('Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.') }}
-      </p>
-      <div v-if="download" class="mt-4" role="status">
-        <progress class="h-2 w-full accent-[var(--brand)]" :value="download.done" :max="download.total" />
-        <p class="mt-1 text-sm text-fg-muted">
-          <span v-if="download.waiting" class="font-medium text-pending-text" data-testid="first-waiting">{{ $t('Esperando conexión…') }}</span>
-          <template v-if="download.total > 1">{{ download.waiting ? ' · ' : '' }}{{ $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}</template>
-        </p>
-      </div>
-      <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
-          <!-- A first download cut off by a reload: it goes on from what it kept. -->
-          <Download :size="20" />{{ partials.small ? $t('Continuar la descarga') : $t('Descargar el identificador') }} · {{ partials.small ? mb(Math.max(0, partials.small.total - partials.small.done)) : firstMb }} MB
-        </button>
-        <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
-      </div>
-      <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Incluye {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
-      <p v-if="firstLacksSpace" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">{{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', firstLacksSpace) }}</p>
-      <p v-if="!online" class="mt-2 text-sm text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
-      <p v-if="isIos && !installed" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
-        {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
-      </p>
-      <p v-if="dlError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ dlError }}</p>
-      <IdentifyAbout class="mt-4" :team="!!session.user" />
-    </section>
-
-    <!-- B and C: taking a photo, the result -->
-    <template v-else-if="checked && canIdentify">
-      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div class="min-w-0">
-          <template v-if="result && ranked">
-            <p
-              v-if="noWings"
-              class="mb-3 flex gap-2 rounded-md border border-pending-edge bg-cell-pending p-3 text-sm text-pending-text"
-              role="alert"
-            >
-              <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
-              <span>{{ $t('No encontramos las alas con claridad: el resultado puede estar mal. Pruebe otra foto, más cerca y con las alas abiertas.') }}</span>
-            </p>
-            <p class="text-sm text-fg-muted">
-              {{
-                said?.kind === 'genus'
-                  ? $t('Posible género')
-                  : said?.kind === 'tribe'
-                    ? $t('Posible tribu')
-                    : said?.kind === 'subfamily'
-                      ? $t('Posible subfamilia')
-                      : said?.kind === 'unsure'
-                        ? $t('No estamos seguros. Lo más parecido:')
-                        : $t('Posible identificación')
-              }}
-            </p>
-            <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
-            <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p">
-              <template v-if="said?.kind === 'genus'">
-                <i>{{ said.genus }}</i>
-                <span class="block text-base font-normal text-fg-muted">{{ $t('la especie no es segura') }}</span>
-              </template>
-              <template v-else-if="said?.kind === 'tribe' || said?.kind === 'subfamily'">
-                {{ said.kind === 'tribe' ? $t('Tribu {name}', { name: said.name }) : $t('Subfamilia {name}', { name: said.name }) }}
-                <span class="block text-base font-normal text-fg-muted">{{ $t('el género no es seguro') }}</span>
-              </template>
-              <i v-else>{{ top?.name }}</i>
-            </h1>
+    <div v-if="checked" class="grid gap-6" :class="result && ranked ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : 'max-w-xl'">
+      <div v-if="(mode === 'phone' && !anyReady) || (result && ranked)" class="min-w-0">
+        <!-- A. No model on the phone yet: the fast one in one tap, the rest in Descargas -->
+        <section v-if="mode === 'phone' && !anyReady" data-testid="first-download">
+          <h1 class="text-xl font-semibold">{{ $t('Identificar una mariposa') }}</h1>
+          <p class="mt-1 text-fg-muted">
+            {{ $t('Tome una foto y la app sugiere qué especie es. Funciona en este teléfono, también sin internet, después de una descarga.') }}
+          </p>
+          <div v-if="download" class="mt-4" role="status">
+            <progress class="h-2 w-full accent-[var(--brand)]" :value="download.done" :max="download.total" />
             <p class="mt-1 text-sm text-fg-muted">
-              <span v-if="ithomiiniBadge === true" class="mr-2 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">Ithomiini</span>
-              <span v-else-if="ithomiiniBadge === false" class="mr-2">{{ $t('No parece una Ithomiini.') }}</span>
+              <span v-if="download.waiting" class="font-medium text-pending-text" data-testid="first-waiting">{{ $t('Esperando conexión…') }}</span>
+              <template v-if="download.total > 1">{{ download.waiting ? ' · ' : '' }}{{ $t('{done} de {total} MB', { done: mb(download.done), total: mb(download.total) }) }}</template>
+            </p>
+          </div>
+          <div v-else class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button class="btn-primary min-h-12 px-5 text-base" :disabled="!online || !!sexDownload" data-testid="first-get" @click="firstDownload">
+              <!-- A first download cut off by a reload: it goes on from what it kept. -->
+              <Download :size="20" />{{ partials.small ? $t('Continuar la descarga') : $t('Descargar el identificador') }} · {{ partials.small ? mb(Math.max(0, partials.small.total - partials.small.done)) : firstMb }} MB
+            </button>
+            <button class="min-h-11 font-medium text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Más opciones en Descargas') }}</button>
+          </div>
+          <p v-if="firstPack" class="mt-2 text-sm text-fg-muted">{{ $t('Incluye {n} fotos para comparar ({mb} MB).', firstPack) }}</p>
+          <p v-if="firstLacksSpace" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">{{ $t('Hacen falta unos {need} MB libres; este teléfono tiene {free} MB.', firstLacksSpace) }}</p>
+          <p v-if="!online" class="mt-2 text-sm text-fg-muted">{{ $t('Hace falta conexión a internet para descargar.') }}</p>
+          <p v-if="isIos && !installed" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950">
+            {{ $t('En iPhone, primero agregue la app a la pantalla de inicio (Compartir → Agregar a inicio) y descargue desde el ícono: lo descargado en Safari no se ve desde el ícono.') }}
+          </p>
+          <p v-if="dlError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ dlError }}</p>
+        </section>
+
+        <!-- B. The result: the species, the person's photo beside its reference photo, the other candidates, then the sex -->
+        <template v-else-if="result && ranked">
+          <p v-if="noWings" class="mb-3 flex gap-2 rounded-md border border-pending-edge bg-cell-pending p-3 text-sm text-pending-text" role="alert">
+            <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
+            <span>{{ $t('No encontramos las alas con claridad: el resultado puede estar mal. Pruebe otra foto, más cerca y con las alas abiertas.') }}</span>
+          </p>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-sm text-fg-muted">
+                {{
+                  said?.kind === 'genus'
+                    ? $t('Posible género')
+                    : said?.kind === 'tribe'
+                      ? $t('Posible tribu')
+                      : said?.kind === 'subfamily'
+                        ? $t('Posible subfamilia')
+                        : said?.kind === 'unsure'
+                          ? $t('No estamos seguros. Lo más parecido:')
+                          : $t('Posible identificación')
+                }}
+                <span v-if="ithomiiniBadge === true" class="ml-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">Ithomiini</span>
+                <span v-else-if="ithomiiniBadge === false" class="ml-1">· {{ $t('No parece una Ithomiini.') }}</span>
+              </p>
+              <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
+              <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p">
+                <template v-if="said?.kind === 'genus'">
+                  <i>{{ said.genus }}</i>
+                  <span class="block text-base font-normal text-fg-muted">{{ $t('la especie no es segura') }}</span>
+                </template>
+                <template v-else-if="said?.kind === 'tribe' || said?.kind === 'subfamily'">
+                  {{ said.kind === 'tribe' ? $t('Tribu {name}', { name: said.name }) : $t('Subfamilia {name}', { name: said.name }) }}
+                  <span class="block text-base font-normal text-fg-muted">{{ $t('el género no es seguro') }}</span>
+                </template>
+                <i v-else>{{ top?.name }}</i>
+              </h1>
+            </div>
+            <p class="shrink-0 pt-4 text-2xl leading-tight font-semibold text-brand-text tabular-nums" data-testid="headline-p" :title="$t('Puntuación de la IA')">
               {{
                 said?.kind === 'genus'
-                  ? $t('{genus}: {p} en total', { genus: (said as { genus: string }).genus, p: percent(ranked.genus.get((said as { genus: string }).genus) ?? 0) })
+                  ? percent(ranked.genus.get((said as { genus: string }).genus) ?? 0)
                   : said?.kind === 'tribe' || said?.kind === 'subfamily'
-                    ? $t('{genus}: {p} en total', { genus: said.name, p: percent(said.p) })
+                    ? percent(said.p)
                     : percent(top?.p ?? 0)
               }}
-              · {{ $t('puntuación de la IA, no una garantía') }}
             </p>
-            <p v-if="sspHint" class="mt-1 text-sm" data-testid="ssp-hint">
-              <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
-              {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.p) }})</span>
-              <template v-if="sspHint.alt">
-                {{ ' ' }}{{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.alt.p) }})</span>
-              </template>
-              <span v-if="sspHint.only" class="text-fg-muted"> · {{ $t('la única subespecie que conoce el modelo') }}</span>
-            </p>
-            <p class="mt-1 text-sm text-fg-muted">
-              {{ $t('Lado de los Andes') }}: {{ $t(SIDE_OPTIONS.find(o => o.value === side)!.label) }}
-              <button class="ml-1 text-brand-text hover:underline" @click="focusSide">{{ $t('cambiar') }}</button>
-            </p>
-            <p class="mt-1 text-xs text-fg-subtle" data-testid="result-source">
-              {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
-            </p>
-            <p v-if="timeText" class="mt-0.5 text-xs text-fg-subtle tabular-nums" data-testid="result-time">{{ timeText }}</p>
-            <SexEstimate v-if="sexState && !(sexState.kind === 'genus' && fieldSexState)" :state="sexState" @download="downloadSexModel" />
-            <FieldSexEstimate v-else-if="fieldSexState" :state="fieldSexState" />
-            <ContributeCard
-              v-if="contribOn && !noWings && contribPhoto && contribShown"
-              :key="result.at"
-              :shown="contribShown"
-              :pick="pick"
-              :source="taxa"
-              :contact="contribContact"
-              :user-id="session.user!.id"
-              :send="contribute"
-              :undo="undoContribution"
-              :refusal="refusal"
-              @consented="reconsent"
-            />
+          </div>
+          <p v-if="sspHint" class="mt-0.5 text-sm" data-testid="ssp-hint">
+            <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
+            {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.p) }})</span>
+            <template v-if="sspHint.alt">
+              {{ ' ' }}{{ $t('o') }} <i>{{ shortName(sspHint.alt.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.alt.p) }})</span>
+            </template>
+            <span v-if="sspHint.only" class="text-fg-muted"> · {{ $t('la única subespecie que conoce el modelo') }}</span>
+          </p>
 
-            <section class="mt-4">
-              <div class="mb-2 flex items-baseline justify-between gap-2">
-                <h2 class="font-semibold">{{ $t('Compare') }}: <i class="font-normal">{{ showing }}</i></h2>
-                <span v-if="pick === showing" class="text-sm text-success-text">{{ $t('Su elección') }} ✓</span>
-              </div>
-              <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :first="firstLine" @hint="fixGap" />
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button class="btn-primary px-4 py-2" :aria-pressed="pick === showing" @click="choose(showing)">
-                  {{ pick === showing ? $t('Quitar mi elección') : $t('Se parece a esta') }}
-                </button>
-                <button class="btn px-4 py-2" @click="nextCandidate">{{ $t('No se parece: ver la siguiente') }}</button>
-              </div>
-              <p class="mt-1 text-xs text-fg-subtle">{{ $t('Su elección se guarda solo en este teléfono.') }}</p>
-            </section>
-          </template>
-
-          <!-- Taking a photo (first thing when there is no result) -->
-          <section :class="result ? 'mt-6 border-t border-border pt-4' : ''">
-            <h1 v-if="!result" class="mb-3 text-xl font-semibold">{{ $t('Identificar una mariposa') }}</h1>
-            <div class="flex flex-wrap gap-2">
-              <button class="btn-primary px-5 py-3 text-base" :disabled="!!busy" @click="camera?.click()">
-                <Camera :size="20" />{{ result ? $t('Otra foto') : $t('Tomar foto') }}
+          <section class="mt-3" data-testid="compare" :aria-label="$t('Comparar')">
+            <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :first="firstLine" @hint="fixGap" @zoom="openViewer" />
+            <p v-if="showing !== top?.name" class="mt-1 text-sm">{{ $t('Comparando con') }} <i class="font-medium">{{ showing }}</i></p>
+            <CandidateStrip class="mt-2" :candidates="candidates" :showing="showing" :pick="pick" @compare="n => (compared = n)" />
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                class="min-h-11 rounded-md border px-4 text-sm font-medium"
+                :class="pick === showing ? 'border-brand bg-brand-soft text-brand-text' : 'border-brand bg-brand text-on-brand hover:bg-brand-hover'"
+                :aria-pressed="pick === showing"
+                data-testid="pick-this"
+                @click="choose(showing)"
+              >
+                <span class="inline-flex items-center gap-1.5"><Check :size="16" />{{ pick === showing ? $t('Su elección') : $t('Es esta') }}</span>
               </button>
-              <button class="btn px-5 py-3 text-base" :disabled="!!busy" @click="picker?.click()"><ImageUp :size="20" />{{ $t('Elegir foto') }}</button>
-              <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="onPhoto" />
-              <input ref="picker" type="file" accept="image/*" class="hidden" @change="onPhoto" />
+              <button class="btn min-h-11 px-4" :aria-expanded="otherOpen" data-testid="pick-other" @click="otherOpen = !otherOpen">{{ $t('Otra especie…') }}</button>
+              <span v-if="pick && pick !== showing && !candidates.some(c => c.name === pick)" class="text-sm text-success-text" data-testid="pick-named">{{ $t('Su elección') }}: <i>{{ pick }}</i> ✓</span>
             </div>
-            <p v-if="!result" class="mt-2 text-sm text-fg-muted">{{ $t('Alas abiertas, de cerca, que la mariposa llene la foto.') }}</p>
-            <p v-if="finePointer" class="mt-1 text-sm text-fg-subtle">
-              {{ $t('También puede pegar una imagen ({keys}) o arrastrarla a la página.', { keys: isMac ? '⌘V' : 'Ctrl+V' }) }}
-            </p>
-            <p v-if="busy" class="mt-3 text-sm" role="status">
-              {{
-                busy === 'loading'
-                  ? $t('Preparando el identificador… la primera foto tarda más.')
-                  : busy === 'sending'
-                    ? $t('Enviando la foto al servidor y analizándola…')
-                    : $t('Analizando la foto…')
-              }}
-            </p>
-            <p v-if="runError" class="mt-3 rounded-md bg-cell-error p-3 text-sm text-error-text" role="alert">{{ runError }}</p>
-            <div ref="sideControl" class="mt-4">
-              <span class="field-label">{{ $t('Lado de los Andes (opcional)') }}</span>
-              <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Lado de los Andes (opcional)')">
-                <button
-                  v-for="o in SIDE_OPTIONS"
-                  :key="o.value"
-                  role="radio"
-                  :aria-checked="side === o.value"
-                  class="px-3 py-2 text-sm first:rounded-l-md last:rounded-r-md"
-                  :class="side === o.value ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-stone-100'"
-                  @click="side = o.value"
-                >
-                  {{ $t(o.label) }}
-                </button>
-              </div>
-              <p class="hint mt-1">{{ result ? $t('Al cambiarlo, la lista se reordena.') : $t('Ayuda a ordenar los resultados.') }}</p>
+            <div v-if="otherOpen" class="mt-2 flex gap-2">
+              <TaxonPick v-model="otherName" :source="taxa" class="min-w-0 flex-1" @pick="chooseOther" />
+              <button class="btn min-h-11 px-4" :disabled="otherName.trim().length < 3" @click="chooseOther(null)">{{ $t('Usar') }}</button>
             </div>
           </section>
-        </div>
 
-        <div class="min-w-0 space-y-4">
-          <!-- The candidates, one list grouped by genus -->
-          <section v-if="grouped">
-            <h2 class="mb-2 font-semibold">{{ $t('Las más parecidas') }}</h2>
-            <ul class="divide-y divide-border rounded-lg border border-border bg-surface">
-              <li v-for="g in grouped.groups" :key="g.genus">
-                <button
-                  class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-                  :aria-expanded="openGenus === g.genus"
-                  @click="openGenus = openGenus === g.genus ? null : g.genus"
-                >
-                  <span><i class="font-medium">{{ g.genus }}</i></span>
-                  <span class="flex items-center gap-2 text-sm tabular-nums text-fg-muted">
-                    {{ percent(g.p) }}
-                    <ChevronDown :size="16" class="transition-transform" :class="openGenus === g.genus ? 'rotate-180' : ''" />
-                  </span>
-                </button>
-                <ul v-if="openGenus === g.genus" class="pb-1">
-                  <li v-for="c in g.species" :key="c.name">
-                    <div class="flex items-center" :class="showing === c.name ? 'bg-brand-soft' : ''">
-                    <button
-                      class="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-3 text-left hover:bg-surface-sunken"
-                      :class="sspShown(c.name).length ? 'pr-1' : 'pr-3'"
-                      @click="compared = c.name"
-                    >
-                      <img v-if="thumbOf(c.name)" :src="thumbOf(c.name)" alt="" class="size-11 shrink-0 rounded bg-photo-mat object-cover" />
-                      <span v-else class="size-11 shrink-0 rounded bg-surface-sunken" />
-                      <span class="min-w-0 flex-1">
-                        <i>{{ c.name.split(' ').slice(1).join(' ') }}</i>
-                        <span v-if="showing === c.name" class="ml-1 text-xs text-brand-text">{{ $t('comparando') }}</span>
-                        <span v-if="pick === c.name" class="ml-1 text-xs text-success-text">{{ $t('su elección') }} ✓</span>
-                      </span>
-                      <span class="text-sm tabular-nums text-fg-muted">{{ percent(c.p) }}</span>
-                    </button>
-                    <button
-                      v-if="sspShown(c.name).length"
-                      class="flex shrink-0 items-center gap-0.5 self-stretch px-2 text-xs text-brand-text hover:bg-surface-sunken"
-                      :aria-expanded="openSsp === c.name"
-                      :aria-label="$t('Subespecies de {name}', { name: c.name })"
-                      @click="openSsp = openSsp === c.name ? null : c.name"
-                    >
-                      {{ $t('subesp.') }}
-                      <ChevronDown :size="14" class="transition-transform" :class="openSsp === c.name ? 'rotate-180' : ''" />
-                    </button>
-                    </div>
-                    <ul v-if="openSsp === c.name && sspShown(c.name).length" class="mb-1 ml-[4.25rem] mr-3 border-l border-border pl-2 text-sm" :aria-label="$t('Subespecies de {name}', { name: c.name })">
-                      <li v-for="s in sspShown(c.name)" :key="s.name" class="flex justify-between gap-2 py-0.5">
-                        <i>{{ s.name.split(' ').slice(2).join(' ') }}</i><span class="tabular-nums text-fg-muted">{{ percent(s.p) }}</span>
-                      </li>
-                      <li v-if="sspRest(c.name)" class="py-0.5 text-xs text-fg-subtle">{{ $tn(sspRest(c.name), 'otra con menos de 1 %', 'otras {n} con menos de 1 %') }}</li>
-                    </ul>
-                  </li>
-                </ul>
-              </li>
-              <li v-if="grouped.rest >= 0.005" class="flex justify-between px-3 py-2 text-sm text-fg-muted">
-                <span>{{ $t('Otros géneros') }}</span><span class="tabular-nums">{{ percent(grouped.rest) }}</span>
-              </li>
-            </ul>
-          </section>
-
-          <!-- The team: flash-frozen specimens of the species being compared -->
-          <StockPanel
-            v-if="result && stock && session.user && showing"
-            :name="showing"
-            :detail="detailOf(showing)"
-            :recorded="recordedSides.get(showing)"
-            :as-of="stock.asOf"
-            :focus="stockFocus"
-            :names-subspecies="result.source === 'online' || !!head?.ssp"
+          <SexPanel
+            :key="result.at"
+            class="mt-4"
+            :state="sexState"
+            :field="fieldSexState"
+            :can-send="contribOn && !noWings && contribPhoto && !!contribShown"
+            :species="speciesLabel"
+            :user-id="session.user?.id ?? null"
+            :contact="contribContact"
+            :send="contribute"
+            :undo="undoContribution"
+            :refusal="refusal"
+            @download="downloadSexModel"
+            @consented="reconsent"
           />
-
-          <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" :contact="contribContact" :user-id="session.user!.id" @remove="removeContribution" @reconsent="reconsent" />
-
-          <details v-if="log.length" class="rounded-lg border border-border bg-surface p-3 text-sm">
-            <summary class="cursor-pointer font-medium">{{ $t('Mis identificaciones') }} <span class="font-normal text-fg-muted">({{ $t('en este teléfono') }})</span></summary>
-            <ul class="mt-2 space-y-2">
-              <li v-for="e in log" :key="e.at" class="flex items-center gap-3">
-                <img v-if="e.thumb" :src="e.thumb" alt="" class="size-10 rounded object-cover" />
-                <span class="min-w-0 flex-1">
-                  <i>{{ e.pick ?? e.ai }}</i>
-                  <span class="block text-xs text-fg-muted">
-                    {{ when(e.at) }} · {{ e.pick ? (e.pick === e.ai ? $t('coincide con la IA') : $t('la IA sugería {ai}', { ai: e.ai })) : $t('sugerencia de la IA') }}
-                  </span>
-                </span>
-              </li>
-            </ul>
-            <button class="btn mt-3" @click="forget"><RotateCcw :size="14" />{{ $t('Borrar la lista') }}</button>
-          </details>
-
-          <button class="flex min-h-12 w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm font-medium hover:bg-surface-sunken" data-testid="to-downloads" @click="go('downloads')">
-            <Download :size="18" class="shrink-0 text-brand-text" />
-            <span class="flex-1">{{ $t('Descargas') }}</span>
-            <span v-if="!packs.progress.value" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('sin fotos para comparar') }}</span>
-          </button>
-          <IdentifyAbout :team="!!session.user" />
-        </div>
+        </template>
       </div>
-    </template>
-    <p v-else-if="!checked" class="text-fg-muted">{{ $t('Cargando…') }}</p>
+
+      <div class="min-w-0 space-y-4">
+        <!-- The candidates, one list grouped by genus, with where the photo was taken -->
+        <section v-if="grouped" data-testid="closest">
+          <h2 class="mb-2 font-semibold">{{ $t('Las más parecidas') }}</h2>
+          <ul class="divide-y divide-border rounded-lg border border-border bg-surface">
+            <li v-for="g in grouped.groups" :key="g.genus">
+              <button
+                class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                :aria-expanded="openGenus === g.genus"
+                @click="openGenus = openGenus === g.genus ? null : g.genus"
+              >
+                <span><i class="font-medium">{{ g.genus }}</i></span>
+                <span class="flex items-center gap-2 text-sm tabular-nums text-fg-muted">
+                  {{ percent(g.p) }}
+                  <ChevronDown :size="16" class="transition-transform" :class="openGenus === g.genus ? 'rotate-180' : ''" />
+                </span>
+              </button>
+              <ul v-if="openGenus === g.genus" class="pb-1">
+                <li v-for="c in g.species" :key="c.name">
+                  <div class="flex items-center" :class="showing === c.name ? 'bg-brand-soft' : ''">
+                  <button
+                    class="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-3 text-left hover:bg-surface-sunken"
+                    :class="sspShown(c.name).length ? 'pr-1' : 'pr-3'"
+                    @click="compared = c.name"
+                  >
+                    <img v-if="thumbOf(c.name)" :src="thumbOf(c.name)" alt="" class="size-11 shrink-0 rounded bg-photo-mat object-cover" />
+                    <span v-else class="size-11 shrink-0 rounded bg-surface-sunken" />
+                    <span class="min-w-0 flex-1">
+                      <i>{{ c.name.split(' ').slice(1).join(' ') }}</i>
+                      <span v-if="showing === c.name" class="ml-1 text-xs text-brand-text">{{ $t('comparando') }}</span>
+                      <span v-if="pick === c.name" class="ml-1 text-xs text-success-text">{{ $t('su elección') }} ✓</span>
+                    </span>
+                    <span class="text-sm tabular-nums text-fg-muted">{{ percent(c.p) }}</span>
+                  </button>
+                  <button
+                    v-if="sspShown(c.name).length"
+                    class="flex shrink-0 items-center gap-0.5 self-stretch px-2 text-xs text-brand-text hover:bg-surface-sunken"
+                    :aria-expanded="openSsp === c.name"
+                    :aria-label="$t('Subespecies de {name}', { name: c.name })"
+                    @click="openSsp = openSsp === c.name ? null : c.name"
+                  >
+                    {{ $t('subesp.') }}
+                    <ChevronDown :size="14" class="transition-transform" :class="openSsp === c.name ? 'rotate-180' : ''" />
+                  </button>
+                  </div>
+                  <ul v-if="openSsp === c.name && sspShown(c.name).length" class="mb-1 ml-[4.25rem] mr-3 border-l border-border pl-2 text-sm" :aria-label="$t('Subespecies de {name}', { name: c.name })">
+                    <li v-for="s in sspShown(c.name)" :key="s.name" class="flex justify-between gap-2 py-0.5">
+                      <i>{{ s.name.split(' ').slice(2).join(' ') }}</i><span class="tabular-nums text-fg-muted">{{ percent(s.p) }}</span>
+                    </li>
+                    <li v-if="sspRest(c.name)" class="py-0.5 text-xs text-fg-subtle">{{ $tn(sspRest(c.name), 'otra con menos de 1 %', 'otras {n} con menos de 1 %') }}</li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+            <li v-if="grouped.rest >= 0.005" class="flex justify-between px-3 py-2 text-sm text-fg-muted">
+              <span>{{ $t('Otros géneros') }}</span><span class="tabular-nums">{{ percent(grouped.rest) }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- Where it was photographed (it orders the list) and where the photo is read -->
+        <section v-if="canIdentify" class="rounded-lg border border-border bg-surface p-3" data-testid="settings">
+          <span class="field-label">{{ $t('Lado de los Andes (opcional)') }}</span>
+          <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Lado de los Andes (opcional)')">
+            <button
+              v-for="o in SIDE_OPTIONS"
+              :key="o.value"
+              role="radio"
+              :aria-checked="side === o.value"
+              class="min-h-11 px-3 text-sm first:rounded-l-md last:rounded-r-md"
+              :class="side === o.value ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-surface-sunken'"
+              @click="side = o.value"
+            >
+              {{ $t(o.label) }}
+            </button>
+          </div>
+          <p class="hint mt-1">{{ result ? $t('Al cambiarlo, la lista se reordena.') : $t('Ayuda a ordenar los resultados.') }}</p>
+        </section>
+        <section v-if="session.user" class="rounded-lg border border-border bg-surface p-3" data-testid="mode">
+          <span class="field-label">{{ $t('Dónde se analiza la foto') }}</span>
+          <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
+            <button
+              role="radio"
+              :aria-checked="mode === 'online'"
+              :disabled="!online"
+              class="min-h-11 rounded-l-md px-3 text-sm disabled:cursor-not-allowed disabled:text-fg-subtle"
+              :class="mode === 'online' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-surface-sunken'"
+              @click="chooseMode('online')"
+            >
+              {{ $t('En línea (servidor)') }}<span v-if="!online" class="text-xs"> · {{ $t('sin señal') }}</span>
+            </button>
+            <button
+              role="radio"
+              :aria-checked="mode === 'phone'"
+              class="min-h-11 rounded-r-md px-3 text-sm"
+              :class="mode === 'phone' ? 'bg-brand text-on-brand' : 'bg-surface text-fg hover:bg-surface-sunken'"
+              @click="chooseMode('phone')"
+            >
+              {{ $t('En este teléfono') }}
+            </button>
+          </div>
+          <p class="hint mt-1">
+            {{
+              mode === 'online'
+                ? $t('La foto se envía al servidor del proyecto, que la analiza y no la guarda. No hace falta descargar nada.')
+                : !online
+                  ? anyReady
+                    ? $t('Sin señal: se usa el modelo de este teléfono.')
+                    : $t('Sin señal y sin modelo en este teléfono: conéctese para usar el servidor o descargar el modelo.')
+                  : anyReady
+                    ? $t('Con el modelo descargado; funciona también sin señal.')
+                    : $t('Primero hay que descargar el modelo a este teléfono.')
+            }}
+          </p>
+          <!-- On the phone: whether it works here without signal, and with which model. -->
+          <div v-if="mode === 'phone' && anyReady" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span v-if="pageOffline" class="inline-flex items-center gap-1.5 font-medium text-success-text"><Check :size="16" />{{ $t('Listo para usar sin internet') }}</span>
+            <span v-else-if="pageOffline === null" class="text-fg-muted">{{ $t('Preparando para usar sin internet…') }}</span>
+            <span v-else class="font-medium text-pending-text">{{ $t('Abra esta página una vez con internet para usarla sin señal.') }}</span>
+            <span class="whitespace-nowrap">
+              <span class="text-fg-muted">{{ label(active!) }}</span>
+              <button class="ml-1 min-h-11 px-1 text-brand-text underline-offset-2 hover:underline" @click="go('downloads')">{{ $t('Cambiar') }}</button>
+            </span>
+            <span v-if="!online" class="inline-flex items-center gap-1 text-fg-muted"><WifiOff :size="14" />{{ $t('Ahora sin señal') }}</span>
+            <!-- The photos announced with the first download, saving (long enough to walk out of signal meanwhile). -->
+            <span v-if="packs.progress.value" class="basis-full font-medium text-pending-text tabular-nums" role="status" data-testid="pack-saving">
+              {{ $t('Guardando fotos para comparar: {done} de {total}', { done: numText(packs.progress.value.done), total: numText(packs.progress.value.total) }) }}
+            </span>
+          </div>
+        </section>
+        <p v-else class="text-xs text-fg-subtle" data-testid="mode">
+          {{ $t('La foto se analiza en este teléfono. La opción en línea (servidor) es solo para el equipo, con su cuenta.') }}
+        </p>
+
+        <!-- The team: flash-frozen specimens of the species being compared -->
+        <StockPanel
+          v-if="result && stock && session.user && showing"
+          :name="showing"
+          :detail="detailOf(showing)"
+          :recorded="recordedSides.get(showing)"
+          :as-of="stock.asOf"
+          :focus="stockFocus"
+          :names-subspecies="result.source === 'online' || !!head?.ssp"
+        />
+
+        <MyIdentifications
+          v-if="entries.length"
+          :entries="entries"
+          :current="result?.at ?? null"
+          :busy="!!busy"
+          @load="loadEntry"
+          @reprocess="at => loadEntry(at, { rerun: true })"
+          @copy="at => photoAction(at, 'copy')"
+          @download="at => photoAction(at, 'download')"
+          @forget="forget"
+        />
+        <p v-if="notice" class="text-sm text-fg-muted" role="status" data-testid="notice">{{ notice }}</p>
+        <MyContributions v-if="contribOn && (myItems.length || outboxPaused)" :items="myItems" :paused="outboxPaused" :contact="contribContact" :user-id="session.user!.id" @remove="removeContribution" @reconsent="reconsent" />
+
+        <button class="flex min-h-12 w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm font-medium hover:bg-surface-sunken" data-testid="to-downloads" @click="go('downloads')">
+          <Download :size="18" class="shrink-0 text-brand-text" />
+          <span class="flex-1">{{ $t('Descargas') }}</span>
+          <span v-if="!packs.progress.value" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('sin fotos para comparar') }}</span>
+        </button>
+        <IdentifyAbout :team="!!session.user" />
+        <p v-if="result" class="text-xs text-fg-subtle" data-testid="result-source">
+          {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
+          <span v-if="timeText" class="tabular-nums" data-testid="result-time">{{ timeText }}</span>
+        </p>
+      </div>
+    </div>
+    <p v-else class="text-fg-muted">{{ $t('Cargando…') }}</p>
+    <PhotoViewer v-if="viewer" :photos="viewer.photos" :start="viewer.start" back @close="viewer = null" />
     </template>
     <div
       v-if="dragging"

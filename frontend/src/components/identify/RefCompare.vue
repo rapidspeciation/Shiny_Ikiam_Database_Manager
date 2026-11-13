@@ -2,13 +2,14 @@
 // The person's photo beside reference photos of one candidate (views/IdentifyView.vue), with each photo's credit.
 // A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such,
 // a preserved specimen with its ID. Each photo's country follows its credit; `first` says whose country comes first.
+// Tapping either photo opens it full screen with zoom (`zoom`: the person's photo, or the reference photo by its src).
 import { computed, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-vue-next'
 import { licenseUrl, type Refs } from '../../lib/identifyRefs'
 import { countryName } from '../../lib/usePacks'
 
 const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; first?: string | null }>()
-defineEmits<{ hint: [] }>()
+defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref', src?: string] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
 watch(
@@ -29,21 +30,26 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
 <template>
   <div class="grid grid-cols-2 gap-2">
     <figure class="min-w-0">
-      <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover" />
-      <figcaption class="mt-1 text-xs text-fg-muted">{{ $t('Su foto (lo que miró la IA)') }}</figcaption>
+      <button type="button" class="zoomable relative block w-full overflow-hidden rounded-md" :aria-label="$t('Ver su foto en grande')" data-testid="zoom-mine" @click="$emit('zoom', 'mine')">
+        <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover" />
+        <span class="zoom-badge" aria-hidden="true"><ZoomIn :size="16" /></span>
+      </button>
+      <figcaption class="mt-1 text-xs text-fg-muted">{{ $t('Su foto') }}</figcaption>
     </figure>
     <figure class="min-w-0">
       <div class="relative">
-        <img
-          v-if="photo"
-          :key="photo.src"
-          :src="photo.src"
-          alt=""
-          class="aspect-square w-full rounded-md"
-          :class="[loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken', photo.kind === 'preserved' ? 'object-contain' : 'object-cover']"
-          @load="done(photo.src)"
-          @error="failed(photo.src)"
-        />
+        <button v-if="photo" type="button" class="zoomable relative block w-full overflow-hidden rounded-md" :aria-label="$t('Ver la foto de referencia en grande')" data-testid="zoom-ref" @click="$emit('zoom', 'ref', photo.src)">
+          <img
+            :key="photo.src"
+            :src="photo.src"
+            alt=""
+            class="aspect-square w-full rounded-md"
+            :class="[loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken', photo.kind === 'preserved' ? 'object-contain' : 'object-cover']"
+            @load="done(photo.src)"
+            @error="failed(photo.src)"
+          />
+          <span v-if="loaded.has(photo.src)" class="zoom-badge" aria-hidden="true"><ZoomIn :size="16" /></span>
+        </button>
         <div
           v-if="photo && !loaded.has(photo.src)"
           class="pointer-events-none absolute inset-0 grid place-items-center text-xs text-fg-muted"
@@ -61,11 +67,11 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
           </span>
         </div>
         <template v-if="photos.length > 1">
-          <button class="btn-ghost absolute top-1/2 left-1 -translate-y-1/2 bg-surface/80" :aria-label="$t('Foto anterior')" @click="step(-1)">
-            <ChevronLeft :size="18" />
+          <button class="absolute top-1/2 left-1 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white hover:bg-black/75" :aria-label="$t('Foto anterior')" @click="step(-1)">
+            <ChevronLeft :size="20" />
           </button>
-          <button class="btn-ghost absolute top-1/2 right-1 -translate-y-1/2 bg-surface/80" :aria-label="$t('Foto siguiente')" @click="step(1)">
-            <ChevronRight :size="18" />
+          <button class="absolute top-1/2 right-1 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white hover:bg-black/75" :aria-label="$t('Foto siguiente')" @click="step(1)">
+            <ChevronRight :size="20" />
           </button>
         </template>
       </div>
@@ -91,3 +97,34 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
     </figure>
   </div>
 </template>
+
+<style scoped>
+.zoomable {
+  cursor: zoom-in;
+}
+.zoomable img {
+  transition: transform 160ms ease;
+}
+@media (hover: hover) {
+  .zoomable:hover img {
+    transform: scale(1.03);
+  }
+}
+.zoom-badge {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zoomable img {
+    transition: none;
+  }
+}
+</style>

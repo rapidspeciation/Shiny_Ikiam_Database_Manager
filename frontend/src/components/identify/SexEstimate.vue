@@ -18,7 +18,8 @@ export type SexState =
   /** `calibration`: the model's that gave the score (lib/sexModel.ts; model B's when not given). */
   | { kind: 'ready'; z: number; calibration?: SexCalibration }
 
-const props = defineProps<{ state: SexState }>()
+/** `bare`: inside Identificar's sex panel (its own box and title): no box, no title here. */
+const props = defineProps<{ state: SexState; bare?: boolean }>()
 defineEmits<{ download: [] }>()
 
 /** The model's calibration: its cutoff and band (logits) and display. */
@@ -45,13 +46,13 @@ const ticks = computed(() => ({ lo: tick(CUT.value.lo), t: `${t('corte')} ${tick
 
 <template>
   <section
-    class="sex-box mt-4 rounded-md border border-border border-l-4 bg-surface p-3"
-    :class="call === 'hembra' ? 'border-l-fill-pink' : call === 'macho' ? 'border-l-fill-sky' : 'border-l-border-strong'"
+    class="sex-box"
+    :class="bare ? '' : ['mt-4 rounded-md border border-border border-l-4 bg-surface p-3', call === 'hembra' ? 'border-l-fill-pink' : call === 'macho' ? 'border-l-fill-sky' : 'border-l-border-strong']"
     data-testid="sex-estimate"
     :aria-label="$t('Sexo estimado')"
   >
     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-      <h2 class="font-semibold">{{ $t('Sexo estimado') }}</h2>
+      <h2 v-if="!bare" class="font-semibold">{{ $t('Sexo estimado') }}</h2>
       <span class="rounded border border-border-strong px-1.5 py-0.5 text-xs text-fg-muted">{{ $t('experimental: fotos en mano') }}</span>
     </div>
 

@@ -14,7 +14,8 @@ import { computed } from 'vue'
 import { locale } from '../../lib/i18n'
 import { FIELD_SEX_BAND, type FieldSexState } from '../../lib/fieldSex'
 
-const props = defineProps<{ state: FieldSexState }>()
+/** `bare`: inside Identificar's sex panel (its own box and title): no box, no title here. */
+const props = defineProps<{ state: FieldSexState; bare?: boolean }>()
 
 const at = (p: number) => `${100 * Math.min(1, Math.max(0, p))}%`
 const pct = (n: number) => `${new Intl.NumberFormat(locale.value === 'es' ? 'es' : 'en', { maximumFractionDigits: 0 }).format(n)} %`
@@ -28,14 +29,14 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
 
 <template>
   <section
-    class="sex-box mt-4 rounded-md border border-border border-l-4 bg-surface p-3"
-    :class="colour === 'female' ? 'border-l-fill-pink' : colour === 'male' ? 'border-l-fill-sky' : 'border-l-border-strong'"
+    class="sex-box"
+    :class="bare ? '' : ['mt-4 rounded-md border border-border border-l-4 bg-surface p-3', colour === 'female' ? 'border-l-fill-pink' : colour === 'male' ? 'border-l-fill-sky' : 'border-l-border-strong']"
     data-testid="field-sex"
     :data-status="state.status"
     :aria-label="$t('Sexo estimado')"
   >
     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-      <h2 class="font-semibold">{{ $t('Sexo estimado') }}</h2>
+      <h2 v-if="!bare" class="font-semibold">{{ $t('Sexo estimado') }}</h2>
       <span class="rounded border border-border-strong px-1.5 py-0.5 text-xs text-fg-muted">{{ $t('experimental: mariposas vivas') }}</span>
       <span v-if="!state.verified" class="rounded border border-pending-edge px-1.5 py-0.5 text-xs text-pending-text" data-testid="field-sex-unverified">{{ $t('estimado, sin verificar para esta especie') }}</span>
     </div>

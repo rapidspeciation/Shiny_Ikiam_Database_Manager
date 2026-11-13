@@ -2,7 +2,7 @@
 /**
  * The consent for photos sent to train the AI (lib/contribConfig.ts CONSENT, version CONSENT_VERSION), with «Acepto» /
  * «Ahora no». The contact address is the server's (its config), passed in at runtime; without it, a line that says how
- * to ask the team. Shown by ContributeCard on Enviar and by «Mis envíos» when items wait for a newer version.
+ * to ask the team. Shown by SexPanel on Enviar and by «Mis envíos» when items wait for a newer version.
  */
 import { CONSENT, CONTROLLER } from '../../lib/contribConfig'
 

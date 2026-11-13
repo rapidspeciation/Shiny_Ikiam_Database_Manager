@@ -109,7 +109,12 @@ describe('the 13 Ithomiini genera keep the in-hand line exactly as it was', () =
     expect(sexApplies('Danaus plexippus', ITHOMIINI_GENERA)).toBe('no')
   })
   it('the general line renders only where the in-hand one does not', () => {
+    // The view hands both states to its sex panel, which shows the general line only without the in-hand one or in
+    // place of its «No aplica» (a genus outside the 13).
     const view = readFileSync(new URL('../../views/IdentifyView.vue', import.meta.url), 'utf8')
-    expect(view).toContain('<SexEstimate v-if="sexState && !(sexState.kind === \'genus\' && fieldSexState)" :state="sexState" @download="downloadSexModel" />\n            <FieldSexEstimate v-else-if="fieldSexState"')
+    expect(view).toContain(':state="sexState"\n            :field="fieldSexState"')
+    const panel = readFileSync(new URL('../../components/identify/SexPanel.vue', import.meta.url), 'utf8')
+    expect(panel).toContain("const useField = computed(() => !!props.field && (!props.state || props.state.kind === 'genus'))")
+    expect(panel).toContain('<FieldSexEstimate v-if="useField" :state="field!" bare />\n        <SexEstimate v-else-if="state"')
   })
 })
