@@ -95,6 +95,13 @@ const pageFiles = () => [
   ),
 ].filter(Boolean)
 const signedIn = () => !!session.user
+// Signed in (a router navigation, not a reload): the visitors' limit no longer applies, Buscar's line goes too.
+watch(
+  () => session.user,
+  u => {
+    if (u) visitorLimited.value = false
+  },
+)
 const engine = createEngine(new URL('prueba-offline/', appRoot()).href, pageFiles, { signedIn })
 /** The session known (the header asks for it; offline the service worker answers, or it gives up). */
 const sessionKnown = () =>
@@ -1814,7 +1821,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 
           <section class="mt-3" data-testid="compare" :aria-label="$t('Comparar')">
             <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :wing="wingShown" :prefer-museum="museumFirst" @hint="fixGap" @zoom="openViewer" />
-            <p v-if="visitorLimited" class="mt-1 text-sm text-fg-muted" role="status" data-testid="visitor-limit">{{ $t('Muchas visitas desde esta red. Inicie sesión para ver todas las fotos.') }}</p>
+            <p v-if="visitorLimited && !session.user" class="mt-1 text-sm text-fg-muted" role="status" data-testid="visitor-limit">{{ $t('Muchas visitas desde esta red. Inicie sesión para ver todas las fotos.') }}</p>
             <p v-if="showing !== top?.name" class="mt-1 text-sm">{{ $t('Comparando con') }} <i class="font-medium">{{ showing }}</i></p>
             <CandidateStrip class="mt-2" :candidates="candidates" :showing="showing" :pick="pick" @compare="n => (compared = n)" />
             <div class="mt-2 flex flex-wrap items-center gap-2">

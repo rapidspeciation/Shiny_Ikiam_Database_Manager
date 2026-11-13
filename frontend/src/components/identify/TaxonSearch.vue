@@ -22,7 +22,7 @@ import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 import { sexLabel, viewerPhoto } from '../../lib/bestPhotos'
-import { probePhoto, visitorLimited } from '../../lib/visitorLimit'
+import { photoFailed, visitorLimited } from '../../lib/visitorLimit'
 
 const props = withDefaults(defineProps<{ online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
@@ -153,10 +153,12 @@ async function loadPhotos() {
 watch([names, () => props.online], loadPhotos)
 
 const broken = ref(new Set<string>())
-const fail = (src: string) => {
-  broken.value = new Set([...broken.value, src])
-  probePhoto(src)
-}
+/** A photo that did not load: hidden; tried once more after a busy server's wait (lib/visitorLimit.ts), per taxon shown. */
+const fail = (src: string) =>
+  photoFailed(src, `search:${names.value.join('|')}`, {
+    drop: s => (broken.value = new Set([...broken.value, s])),
+    restore: s => (broken.value = new Set([...broken.value].filter(x => x !== s))),
+  })
 /** The person's countries, and a subspecies' range when one is chosen. */
 const place = computed<Place>(() => ({
   home: props.home,
