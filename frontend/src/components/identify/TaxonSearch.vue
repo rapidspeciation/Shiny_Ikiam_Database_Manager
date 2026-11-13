@@ -312,7 +312,14 @@ watch(
       <!-- A species or subspecies: its photo large; a species' best field photo beside its Sanger wing crop -->
       <div v-if="lead" class="mt-3 grid gap-3" :class="wing ? 'sm:grid-cols-2' : 'lg:max-w-xl'">
         <button class="photo-card block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left" data-testid="lead-photo" @click="openCard(lead)">
-          <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat" :class="lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(lead.photo.src)" />
+          <!-- With the wing crop under it on a phone, a little lower: both fit the first screen. -->
+          <img
+            :src="lead.photo.src"
+            alt=""
+            class="w-full bg-photo-mat"
+            :class="[lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover', wing ? 'aspect-[3/2] sm:aspect-[4/3]' : 'aspect-[4/3]']"
+            @error="fail(lead.photo.src)"
+          />
           <span class="block px-3 py-2">
             <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
             <i class="block text-lg font-semibold">{{ lead.name }}</i>
@@ -320,10 +327,9 @@ watch(
           </span>
         </button>
         <button v-if="wing" class="photo-card flex w-full flex-col overflow-hidden rounded-xl border-2 border-brand bg-surface text-left" data-testid="wing-photo" @click="openCard(wing)">
-          <img :src="wing.photo.src" alt="" class="aspect-[5/3] w-full bg-photo-mat object-contain sm:aspect-[4/3]" @error="fail(wing.photo.src)" />
+          <img :src="wing.photo.src" alt="" class="aspect-[2/1] w-full bg-photo-mat object-contain sm:aspect-[4/3]" @error="fail(wing.photo.src)" />
           <span class="mt-auto block px-3 py-2">
-            <span class="block text-xs font-medium text-fg-muted uppercase">{{ $t('Alas de un ejemplar preservado') }}</span>
-            <i class="block text-lg font-semibold">{{ wing.name }}</i>
+            <span class="block text-sm font-semibold">{{ $t('Alas de un ejemplar preservado') }}</span>
             <span class="block truncate text-xs text-fg-muted" data-testid="wing-credit">{{ [wing.photo.specimen, $t('Foto: {who}', { who: wing.photo.credit })].filter(Boolean).join(' · ') }}</span>
           </span>
         </button>
