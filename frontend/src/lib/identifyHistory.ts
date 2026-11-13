@@ -7,6 +7,7 @@
  * Without IndexedDB (some private modes) the records live in memory for the page's life.
  */
 import { LOG_MAX } from './identifyLog'
+import { headRelease } from './identifierReleases'
 
 /** The models that read a photo: the identifier (its head's file, or the head's SHA-256) and the in-hand sex model. */
 export interface Versions {
@@ -44,14 +45,18 @@ export function versionDay(v: string): number | null {
 
 /**
  * `a` is known to be older than `b`: both name a day (the sex models' «B 2026-11-08», the small model's
- * «small-SB-20261111») and a's is earlier. The identifier's head is named by a hash, which says nothing about which
- * came first: unknown, so false (round 2: no order made up on the phone).
+ * «small-SB-20261111») and a's is earlier; or both are identifier head files in the release list
+ * (lib/identifierReleases.ts) and a comes first. Anything else (a head this build does not list, a hash with no day)
+ * is unknown, so false: no order is made up on the phone.
  */
 export function olderThan(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b || a === b) return false
   const da = versionDay(a)
   const db = versionDay(b)
-  return da != null && db != null && da < db
+  if (da != null && db != null) return da < db
+  const ra = headRelease(a)
+  const rb = headRelease(b)
+  return ra != null && rb != null && ra < rb
 }
 
 /**
