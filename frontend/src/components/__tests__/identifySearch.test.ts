@@ -121,6 +121,53 @@ describe('taxon search', () => {
     await settle()
     expect(heading(host)).toBe('Mechanitis')
   })
+
+  it('13 Nov: a curated species leads with its best photo, its Sanger wing crop beside it; both open full screen', async () => {
+    // The pack lists the Ecuador photo first; the review judged it poor and the Peru photo good.
+    const polymnia: PackTaxon = {
+      ...tx('Mechanitis polymnia', '111-0a1b2c3d.webp'),
+      photos: [
+        { file: '111-0a1b2c3d.webp', attribution: '(c) Ecuador', license: 'CC-BY', taxonUrl: null, source: null, bytes: 100, country: 'EC' },
+        { file: '222-0a1b2c3d.webp', attribution: '(c) Peru', license: 'CC-BY', taxonUrl: null, source: null, bytes: 100, country: 'PE' },
+      ],
+    }
+    served = { ...index('v1'), taxa: [polymnia, ...index('v1').taxa.slice(1)] }
+    const curated = {
+      schema: 'ithomiini-curated/1',
+      taxa: {
+        'Mechanitis polymnia': {
+          field: [
+            { id: '111', s: [2, 2, 4, 2], hero: 'no' },
+            { id: '222', s: [5, 5, 5, 4], hero: 'yes' },
+          ],
+          wing: { file: 'CAM1d-0a1b2c3d.webp', specimen: 'CAM1', view: 'dorsal' },
+        },
+      },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string) =>
+        String(u).endsWith('/packs/index.json')
+          ? new Response(JSON.stringify(served))
+          : String(u).endsWith('/curated.json')
+            ? new Response(JSON.stringify(curated))
+            : new Response(new Uint8Array(100), { headers: { 'content-type': 'image/webp' } }),
+      ),
+    )
+    const { default: TaxonSearch } = await import('../identify/TaxonSearch.vue')
+    const { host } = await mount(TaxonSearch, { signedIn: false, online: true, home: ['EC'] }, '/identificar?vista=buscar&taxon=Mechanitis+polymnia')
+    expect(heading(host)).toBe('Mechanitis polymnia')
+    expect(host.querySelector('[data-testid=lead-photo] img')!.getAttribute('src')).toMatch(/\/222-0a1b2c3d\.webp$/)
+    expect(host.querySelector('[data-testid=lead-credit]')!.textContent).toContain('Peru')
+    const wing = host.querySelector<HTMLElement>('[data-testid=wing-photo]')!
+    expect(wing.querySelector('img')!.getAttribute('src')).toMatch(/\/identificar\/wings\/CAM1d-0a1b2c3d\.webp$/)
+    expect(host.querySelector('[data-testid=wing-credit]')!.textContent).toBe('CAM1 · Foto: Ikiam / Wellcome Sanger Institute')
+    // The poor Ecuador photo is under «More photos».
+    expect(host.querySelector('[data-testid=photo-grid-more] img')!.getAttribute('src')).toMatch(/\/111-0a1b2c3d\.webp$/)
+    wing.click()
+    await settle()
+    expect(document.querySelector('[data-testid=photo-viewer] img')?.getAttribute('src')).toMatch(/CAM1d-0a1b2c3d\.webp$/)
+  })
 })
 
 describe('Descargas', () => {
