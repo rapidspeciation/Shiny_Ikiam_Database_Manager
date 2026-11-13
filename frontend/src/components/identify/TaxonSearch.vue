@@ -3,7 +3,9 @@
 // its species with photos; a species its photo, more photos of it and its subspecies' photos; a subspecies its photo
 // and the rest of its species (taxonView). What the phone has comes first (the installed pack's names and photos, no
 // network), then with signal the server's whole list and, signed in, the team's photo search are merged in. A photo
-// opens full screen with the name large (PhotoViewer). Photos from the person's country come first (`home`: the side of
+// opens full screen with the name large (PhotoViewer). A species' photos come in the curated order (lib/curatedPhotos.ts:
+// the clearest view of the wings first; the person's country, `home`, first among photos of similar quality), its best
+// field photo beside its Sanger wing crop. Without curation, photos from the person's country come first (the side of
 // the Andes or Descargas' country, lib/photoCountry.ts), then its neighbours', then the rest; a subspecies chosen puts
 // the photos from its range first. Each photo names its country with its credit.
 // The address holds the state: the taxon (?taxon=, a taxon chosen from another is a new history entry, so Back returns
@@ -13,7 +15,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Search, WifiOff, X } from 'lucide-vue-next'
 import { t } from '../../lib/i18n'
 import { installedPack, numText, onlineIndex } from '../../lib/photoPacks'
-import { orderRefs, referencePhotos, savedPhotos, type Refs } from '../../lib/identifyRefs'
+import { referencePhotos, savedPhotos, type Refs } from '../../lib/identifyRefs'
+import { curatedIndex, orderCurated, wingPhoto, type CuratedIndex } from '../../lib/curatedPhotos'
 import { countryName } from '../../lib/usePacks'
 import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
@@ -154,8 +157,12 @@ const place = computed<Place>(() => ({
   home: props.home,
   range: chosen.value?.rank === 'subspecies' ? (cat.value?.taxa.get(chosen.value.name)?.countries ?? null) : null,
 }))
+/** The curated order (null until read, or without it: the country order). */
+const curated = shallowRef<CuratedIndex | null>(null)
 const shownRefs = computed(() =>
-  Object.fromEntries(Object.entries(refs.value).map(([n, r]) => [n, { photos: orderRefs(r.photos.filter(p => !broken.value.has(p.src)), place.value) }])),
+  Object.fromEntries(
+    Object.entries(refs.value).map(([n, r]) => [n, { photos: orderCurated(r.photos.filter(p => !broken.value.has(p.src)), curated.value?.taxa[n], place.value) }]),
+  ),
 )
 /** «© Ana · CC-BY · Ecuador»: the credit line of a photo (a preserved specimen named first, with its ID). */
 const creditLine = (p: Card['photo'], license = true) =>
@@ -164,8 +171,14 @@ const creditLine = (p: Card['photo'], license = true) =>
     .join(' · ')
 const view = computed(() => (chosen.value && cat.value ? taxonView(cat.value, chosen.value, shownRefs.value) : null))
 const lead = computed(() => view.value?.lead ?? null)
+/** A species shown with a live photo: its Sanger wing crop beside it. */
+const wing = computed<Card | null>(() => {
+  if (chosen.value?.rank !== 'species' || !lead.value || lead.value.photo.kind === 'preserved') return null
+  const photo = wingPhoto(curated.value?.taxa[chosen.value.name])
+  return photo && !broken.value.has(photo.src) ? { key: 'wing', name: chosen.value.name, label: null, viaSsp: null, kicker: null, photo } : null
+})
 const sections = computed(() => view.value?.sections ?? [])
-const cards = computed<Card[]>(() => [...(lead.value ? [lead.value] : []), ...sections.value.flatMap(s => s.cards)])
+const cards = computed<Card[]>(() => [...(lead.value ? [lead.value] : []), ...(wing.value ? [wing.value] : []), ...sections.value.flatMap(s => s.cards)])
 const noPhoto = computed(() => (loading.value ? [] : (view.value?.noPhoto ?? [])))
 const sectionTitle = (id: 'species' | 'more' | 'ssp', n: number) =>
   id === 'species' ? t('Especies con foto ({n})', { n }) : id === 'more' ? t('Más fotos de la especie') : chosen.value?.rank === 'subspecies' ? t('Otras subespecies') : t('Subespecies')
@@ -211,7 +224,10 @@ watch(
 
 const goTo = (name: string) => cat.value && pick(search(cat.value, name, 1)[0])
 
-onMounted(loadCatalog)
+onMounted(() => {
+  loadCatalog()
+  curatedIndex().then(d => (curated.value = d))
+})
 watch(
   () => props.online,
   () => loadCatalog(),
@@ -293,15 +309,25 @@ watch(
         {{ online ? $t('No encontramos fotos de este taxón.') : $t('No hay fotos guardadas de este taxón en el teléfono.') }}
       </p>
 
-      <!-- A species or subspecies: its photo large -->
-      <button v-if="lead" class="photo-card mt-3 block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left lg:max-w-xl" data-testid="lead-photo" @click="openCard(lead)">
-        <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat" :class="lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(lead.photo.src)" />
-        <span class="block px-3 py-2">
-          <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
-          <i class="block text-lg font-semibold">{{ lead.name }}</i>
-          <span class="block text-xs text-fg-muted" :class="lead.photo.kind === 'preserved' ? 'break-words' : 'truncate'" data-testid="lead-credit">{{ creditLine(lead.photo) }}</span>
-        </span>
-      </button>
+      <!-- A species or subspecies: its photo large; a species' best field photo beside its Sanger wing crop -->
+      <div v-if="lead" class="mt-3 grid gap-3" :class="wing ? 'sm:grid-cols-2' : 'lg:max-w-xl'">
+        <button class="photo-card block w-full overflow-hidden rounded-xl border-2 border-brand bg-surface text-left" data-testid="lead-photo" @click="openCard(lead)">
+          <img :src="lead.photo.src" alt="" class="aspect-[4/3] w-full bg-photo-mat" :class="lead.photo.kind === 'preserved' ? 'object-contain' : 'object-cover'" @error="fail(lead.photo.src)" />
+          <span class="block px-3 py-2">
+            <span v-if="lead.name !== chosen.name || lead.kicker === 'specimen'" class="block text-xs font-medium text-fg-muted uppercase">{{ kickerText(lead) }}</span>
+            <i class="block text-lg font-semibold">{{ lead.name }}</i>
+            <span class="block text-xs text-fg-muted" :class="lead.photo.kind === 'preserved' ? 'break-words' : 'truncate'" data-testid="lead-credit">{{ creditLine(lead.photo) }}</span>
+          </span>
+        </button>
+        <button v-if="wing" class="photo-card flex w-full flex-col overflow-hidden rounded-xl border-2 border-brand bg-surface text-left" data-testid="wing-photo" @click="openCard(wing)">
+          <img :src="wing.photo.src" alt="" class="aspect-[5/3] w-full bg-photo-mat object-contain sm:aspect-[4/3]" @error="fail(wing.photo.src)" />
+          <span class="mt-auto block px-3 py-2">
+            <span class="block text-xs font-medium text-fg-muted uppercase">{{ $t('Alas de un ejemplar preservado') }}</span>
+            <i class="block text-lg font-semibold">{{ wing.name }}</i>
+            <span class="block truncate text-xs text-fg-muted" data-testid="wing-credit">{{ [wing.photo.specimen, $t('Foto: {who}', { who: wing.photo.credit })].filter(Boolean).join(' · ') }}</span>
+          </span>
+        </button>
+      </div>
 
       <template v-for="s in sections" :key="s.id">
         <h3 class="mt-5 mb-2 font-semibold">{{ sectionTitle(s.id, s.cards.length) }}</h3>
