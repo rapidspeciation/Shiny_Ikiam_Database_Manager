@@ -63,3 +63,14 @@ What the Wings Gallery publishes (checked 13 Nov 2026 on the live files):
 - tests/auth-routes.test.mjs: `/photo/nope` for a visitor is now 404 (not listed) instead of 401.
 - frontend: identifyRefs.test.ts (signed out and online the server's photos and specimens are asked and shown; a
   refusal falls back to the static set), bestPhotos.test.ts (`viewerPhoto` without `signedIn`).
+
+## Lab and the signed-out check
+
+- Lab copy of this branch: LOCAL_MODE on the lab snapshot (`tools/lab/dev-app.sh --port 8892`, the identifier and
+  photo pack folders of the identify-panel lab), tailnet only at https://franz-gpdwin4.tailf5d2f1.ts.net:9971/identificar/.
+- Signed out, 390x844 (Playwright, headless): Buscar «Mechanitis polymnia» → «Más fotos de la especie» shows 11
+  photos: the adults in the curated order (59300165, 59697583, 2602438, 581501869, 137194978), the project's 4
+  specimens (`/api/photo`, 200), then the caterpillar (156258933) and the pupa (2090393) last. The viewer opens
+  iNaturalist «large» through `/api/identify/ref-photo` (960x960). `POST /api/identify/contributions` signed out: 401.
+- The 4 specimens' CAM_ID, Sex and Drive files were checked against the gallery's live collection.json and
+  photo_lookup.json: all listed.
