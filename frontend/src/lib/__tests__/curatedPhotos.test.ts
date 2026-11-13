@@ -1,7 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { curatedIndex, curatedPhotos, orderCurated, photoId, resetCurated, SIMILAR, wingPhoto, type CuratedIndex, type CuratedTaxon } from '../curatedPhotos'
+import {
+  curatedIndex,
+  curatedPhotos,
+  orderCurated,
+  photoId,
+  resetCurated,
+  SIMILAR,
+  wingPhoto,
+  type CuratedIndex,
+  type CuratedTaxon,
+} from '../curatedPhotos'
 import type { RefPhoto } from '../identifyRefs'
 
 // The Search hero (Franz, 13 Nov 2026: «why the first photo that appeared for polymnia was chosen one with a bad
@@ -47,7 +57,13 @@ describe('the curated order', () => {
   })
 
   it('the person’s country first only among photos of similar quality', () => {
-    const e: CuratedTaxon = { field: [{ id: '1', s: [5, 5, 5, 5], hero: 'yes' }, { id: '2', s: [5, 5, 4, 4], hero: 'yes' }, { id: '3', s: [4, 4, 4, 3], hero: 'yes' }] }
+    const e: CuratedTaxon = {
+      field: [
+        { id: '1', s: [5, 5, 5, 5], hero: 'yes' },
+        { id: '2', s: [5, 5, 4, 4], hero: 'yes' },
+        { id: '3', s: [4, 4, 4, 3], hero: 'yes' },
+      ],
+    }
     const ps = [pack('1', 'BR'), pack('2', 'EC'), pack('3', 'EC')]
     expect(SIMILAR).toBe(2)
     // 18 is within 2 of 20: Ecuador's first. 15 is not within 2 of Brazil's 20: after it.
@@ -56,12 +72,87 @@ describe('the curated order', () => {
     expect(ids(orderCurated(ps, e, { home: [] }))).toEqual(['1', '2', '3'])
   })
 
-  it('photos the review did not see (a caterpillar among the server\'s extras) come after every scored one', () => {
-    const e: CuratedTaxon = { field: [{ id: '1', s: [2, 2, 2, 2], hero: 'no' }, { id: '2', s: [3, 3, 3, 3], hero: 'unsure' }, { id: '3', s: [5, 5, 5, 5], hero: 'yes' }] }
+  it("photos the review did not see (a caterpillar among the server's extras) come after every scored one", () => {
+    const e: CuratedTaxon = {
+      field: [
+        { id: '1', s: [2, 2, 2, 2], hero: 'no' },
+        { id: '2', s: [3, 3, 3, 3], hero: 'unsure' },
+        { id: '3', s: [5, 5, 5, 5], hero: 'yes' },
+      ],
+    }
     const ssp = pack('9', 'EC', { level: 'subspecies', taxon: 'A b c' })
-    const server = { ...pack('8', 'PE'), src: '/api/identify/ref-photo?u=' + encodeURIComponent('https://inaturalist-open-data.s3.amazonaws.com/photos/8/medium.jpg'), source: null }
+    const server = {
+      ...pack('8', 'PE'),
+      src:
+        '/api/identify/ref-photo?u=' + encodeURIComponent('https://inaturalist-open-data.s3.amazonaws.com/photos/8/medium.jpg'),
+      source: null,
+    }
     const specimen: RefPhoto = { src: '/api/photo/CAM1d.JPG?w=400', credit: 'CAM1', license: '', level: 'specimen' }
-    expect(ids(orderCurated([pack('1', 'EC'), pack('2', 'EC'), pack('3', 'BR'), server, ssp, specimen], e, EC))).toEqual(['3', '2', '1', '9', '8', null])
+    expect(ids(orderCurated([pack('1', 'EC'), pack('2', 'EC'), pack('3', 'BR'), server, ssp, specimen], e, EC))).toEqual([
+      '3',
+      '2',
+      '1',
+      '9',
+      '8',
+      null,
+    ])
+  })
+
+  it('round 2: the server’s extras ranked by quality; stage not clear after the adults, caterpillars, pupae and eggs last', () => {
+    // M. polymnia signed in: the pack's four, then the server's taxon photos (a sharp caterpillar and pupa among them).
+    const proxy = (id: string): RefPhoto => ({
+      ...pack(id, null),
+      src:
+        '/api/identify/ref-photo?u=' +
+        encodeURIComponent(`https://inaturalist-open-data.s3.amazonaws.com/photos/${id}/small.jpg`),
+      source: null,
+    })
+    const e: CuratedTaxon = {
+      field: [
+        ...entry.field!,
+        { id: '901', s: [5, 5, 5, 5], hero: 'yes', stage: 'larva' },
+        { id: '902', s: [5, 5, 5, 4], hero: 'yes', stage: 'pupa' },
+        { id: '903', s: [5, 4, 5, 4], hero: 'yes', stage: 'adult' },
+        { id: '904', s: [3, 3, 3, 3], hero: 'unsure', stage: 'unsure' },
+        { id: '905', s: [4, 4, 4, 4], hero: 'yes', stage: 'egg' },
+      ],
+    }
+    const photos = [...polymnia, proxy('901'), proxy('902'), proxy('903'), proxy('904'), proxy('905'), proxy('906')]
+    // Adults: good (Peru 19, the extra adult 18, the taxon photo 17), poor, then the one never reviewed (906);
+    // then the unclear stage; then caterpillar, pupa and egg by quality.
+    expect(ids(orderCurated(photos, e, EC))).toEqual([
+      '477327466',
+      '903',
+      '59300165',
+      '581501869',
+      '137194978',
+      '906',
+      '904',
+      '901',
+      '902',
+      '905',
+    ])
+  })
+
+  it('the published list: M. polymnia’s caterpillars and pupae come after every adult', () => {
+    const doc = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../../public/identificar/curated.json'), 'utf8'),
+    ) as CuratedIndex
+    const e = doc.taxa['Mechanitis polymnia']
+    const young = e.field!.filter(f => f.stage === 'larva' || f.stage === 'pupa' || f.stage === 'egg')
+    expect(young.length).toBeGreaterThan(0)
+    const photos = e.field!.map(f => ({
+      ...pack(f.id, null),
+      src:
+        '/api/identify/ref-photo?u=' +
+        encodeURIComponent(`https://inaturalist-open-data.s3.amazonaws.com/photos/${f.id}/small.jpg`),
+      source: null,
+    }))
+    const order = ids(orderCurated(photos, e, EC))
+    const adults = e.field!.filter(f => !f.stage || f.stage === 'adult').map(f => f.id)
+    const last = order.slice(-young.length)
+    expect(new Set(last)).toEqual(new Set(young.map(f => f.id)))
+    expect(Math.max(...adults.map(a => order.indexOf(a)))).toBeLessThan(order.length - young.length)
   })
 
   it('a species without curation keeps the country order', () => {
@@ -69,9 +160,16 @@ describe('the curated order', () => {
   })
 
   it('reads the photo id wherever the photo comes from', () => {
-    expect(photoId({ src: 'https://a/identificar/packs/photos/59300165-be13e026.webp', source: 'https://www.inaturalist.org/observations/1' })).toBe('59300165')
+    expect(
+      photoId({
+        src: 'https://a/identificar/packs/photos/59300165-be13e026.webp',
+        source: 'https://www.inaturalist.org/observations/1',
+      }),
+    ).toBe('59300165')
     expect(photoId({ src: 'https://a/identificar/field/100974887.jpg' })).toBe('100974887')
-    expect(photoId({ src: '/api/identify/ref-photo?u=' + encodeURIComponent('https://static.inaturalist.org/photos/42/small.jpg') })).toBe('42')
+    expect(
+      photoId({ src: '/api/identify/ref-photo?u=' + encodeURIComponent('https://static.inaturalist.org/photos/42/small.jpg') }),
+    ).toBe('42')
     expect(photoId({ src: 'blob:x', source: 'https://www.inaturalist.org/photos/7' })).toBe('7')
     expect(photoId({ src: '/api/photo/CAM1d.JPG' })).toBeNull()
   })
@@ -79,7 +177,12 @@ describe('the curated order', () => {
   it('the wing crop is a preserved specimen with its ID and the Sanger credit', () => {
     const w = wingPhoto(entry)!
     expect(w.src).toMatch(/\/identificar\/wings\/CAM074396d-9d202dcb\.webp$/)
-    expect(w).toMatchObject({ kind: 'preserved', specimen: 'CAM074396', credit: 'Ikiam / Wellcome Sanger Institute', license: '' })
+    expect(w).toMatchObject({
+      kind: 'preserved',
+      specimen: 'CAM074396',
+      credit: 'Ikiam / Wellcome Sanger Institute',
+      license: '',
+    })
     expect(wingPhoto({ field: entry.field })).toBeNull()
   })
 })
@@ -87,7 +190,10 @@ describe('the curated order', () => {
 describe('curatedPhotos (for the Identify panel)', () => {
   it('orders, gives the hero and the wing; a subspecies uses its species', async () => {
     const doc: CuratedIndex = { schema: 'ithomiini-curated/1', taxa: { 'Mechanitis polymnia': entry } }
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(doc))))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(doc))),
+    )
     const got = await curatedPhotos('Mechanitis polymnia casabranca', polymnia, EC)
     expect(photoId(got.hero!)).toBe('477327466')
     expect(got.wing?.specimen).toBe('CAM074396')
