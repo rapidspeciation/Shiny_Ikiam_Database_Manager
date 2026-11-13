@@ -1246,6 +1246,8 @@ watch(
   },
   { immediate: true },
 )
+/** «Museo» first when the field photos hold none the thumbnail would take (the thumbnail is the wing crop then). */
+const museumFirst = computed(() => !!wingShown.value && thumbOf(showing.value) === wingShown.value.src)
 /** The species' Sanger wing crop beside the reference photo (none for a genus-level photo set). */
 const wingShown = computed(() => (curatedShown.value?.name === showing.value ? curatedShown.value.wing : null))
 /** What the first download brings with it (the chosen pack, saved after the model). */
@@ -1762,7 +1764,10 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </p>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
+              <!-- the badge before the sentence: never after «Lo más parecido:» (round 2) -->
               <p class="text-sm text-fg-muted">
+                <span v-if="ithomiiniBadge === true" class="mr-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text" data-testid="ithomiini-badge">Ithomiini</span>
+                <span v-else-if="ithomiiniBadge === false" class="mr-1" data-testid="not-ithomiini">{{ $t('No parece una Ithomiini.') }}</span>
                 {{
                   said?.kind === 'genus'
                     ? $t('Posible género')
@@ -1774,8 +1779,6 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                           ? $t('No estamos seguros. Lo más parecido:')
                           : $t('Posible identificación')
                 }}
-                <span v-if="ithomiiniBadge === true" class="ml-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text">Ithomiini</span>
-                <span v-else-if="ithomiiniBadge === false" class="ml-1">· {{ $t('No parece una Ithomiini.') }}</span>
               </p>
               <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
               <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p">
@@ -1810,7 +1813,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </p>
 
           <section class="mt-3" data-testid="compare" :aria-label="$t('Comparar')">
-            <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :wing="wingShown" @hint="fixGap" @zoom="openViewer" />
+            <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :wing="wingShown" :prefer-museum="museumFirst" @hint="fixGap" @zoom="openViewer" />
             <p v-if="showing !== top?.name" class="mt-1 text-sm">{{ $t('Comparando con') }} <i class="font-medium">{{ showing }}</i></p>
             <CandidateStrip class="mt-2" :candidates="candidates" :showing="showing" :pick="pick" @compare="n => (compared = n)" />
             <div class="mt-2 flex flex-wrap items-center gap-2">

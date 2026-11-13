@@ -21,7 +21,7 @@ import { countryName } from '../../lib/usePacks'
 import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
-import { viewerPhoto } from '../../lib/bestPhotos'
+import { sexLabel, viewerPhoto } from '../../lib/bestPhotos'
 
 const props = withDefaults(defineProps<{ signedIn: boolean; online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
@@ -184,7 +184,7 @@ const noPhoto = computed(() => (loading.value ? [] : (view.value?.noPhoto ?? [])
 const sectionTitle = (id: 'species' | 'more' | 'ssp', n: number) =>
   id === 'species' ? t('Especies con foto ({n})', { n }) : id === 'more' ? t('Más fotos de la especie') : chosen.value?.rank === 'subspecies' ? t('Otras subespecies') : t('Subespecies')
 const kickerText = (c: Card) =>
-  c.kicker === 'specimen' ? [t('Ejemplar del proyecto'), c.photo.credit, c.photo.sex].filter(Boolean).join(' · ') : c.kicker === 'subspecies' ? t('Subespecie') : c.kicker === 'species' ? t('Especie') : ''
+  c.kicker === 'specimen' ? [t('Ejemplar del proyecto'), c.photo.credit, c.photo.sex ? sexLabel(c.photo.sex) : null].filter(Boolean).join(' · ') : c.kicker === 'subspecies' ? t('Subespecie') : c.kicker === 'species' ? t('Especie') : ''
 
 // ---------------------------------------------------------------- full screen (?foto=)
 

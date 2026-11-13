@@ -21,6 +21,7 @@ const rest = (n: string) => n.split(' ').slice(1).join(' ')
       :key="c.name"
       :src="c.thumb"
       :size="64"
+      :width="72"
       :selected="c.name === showing"
       :label="`${c.name}, ${percent(c.p)}`"
       :data-candidate="c.name"
@@ -28,7 +29,7 @@ const rest = (n: string) => n.split(' ').slice(1).join(' ')
     >
       <span v-if="pick === c.name" class="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-brand text-on-brand"><Check :size="13" /></span>
       <template #caption>
-        <span class="line-clamp-2 block w-full text-xs leading-tight break-words" :class="c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted'">
+        <span class="line-clamp-2 block w-full text-xs leading-tight" :class="c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted'">
           <i>{{ genus(c.name).slice(0, 1) }}. {{ rest(c.name) }}</i>
         </span>
         <span class="block text-xs leading-tight tabular-nums" :class="c.name === showing ? 'text-brand-text font-medium' : 'text-fg-muted'">{{ percent(c.p) }}</span>

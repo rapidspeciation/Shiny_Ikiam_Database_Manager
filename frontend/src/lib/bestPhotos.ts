@@ -13,6 +13,7 @@ import { shallowRef } from 'vue'
 import { orderRefs, refPhotoSrc, type RefPhoto } from './identifyRefs'
 import { curatedIndex, orderCurated, photoId, wingPhoto, type CuratedIndex } from './curatedPhotos'
 import type { Place } from './photoCountry'
+import { t } from './i18n'
 
 /** The curated list once loaded (null: not yet, or not reachable). */
 export const curatedReady = shallowRef<CuratedIndex | null>(null)
@@ -78,4 +79,12 @@ export const isMuseum = (p: RefPhoto) => p.kind === 'preserved' || p.level === '
 export function fieldAndMuseum(photos: RefPhoto[], wing: RefPhoto | null | undefined): { field: RefPhoto[]; museum: RefPhoto[] } {
   const museum = photos.filter(isMuseum).filter(p => p.src !== wing?.src)
   return { field: photos.filter(p => !isMuseum(p)), museum: wing ? [wing, ...museum] : museum }
+}
+
+/** A team specimen's sex as the sheet writes it (female, male, F, M, hembra…), in the app's words: «♀ hembra». */
+export function sexLabel(v: string | null | undefined): string {
+  const x = (v ?? '').trim().toLowerCase()
+  if (/^(f|female|hembra|h|♀)$/.test(x)) return `♀ ${t('hembra')}`
+  if (/^(m|male|macho|♂)$/.test(x)) return `♂ ${t('macho')}`
+  return v ?? ''
 }

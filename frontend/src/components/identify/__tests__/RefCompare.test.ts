@@ -58,4 +58,20 @@ describe('RefCompare', () => {
     await nextTick()
     expect(el.querySelector('[data-testid=ref-sets]')).toBeNull()
   })
+  it('a field set the thumbnail would not take (a plate): «Museo» first; the person can still choose «Campo»', async () => {
+    const wing = { src: '/identificar/wings/CAM2-abcdef12.webp', credit: 'Ikiam / Wellcome Sanger Institute', license: '', level: 'species', kind: 'preserved', specimen: 'CAM2' }
+    const el = mount({ ...base, refs, wing, preferMuseum: true })
+    await nextTick()
+    expect(el.querySelector('[data-testid=ref-set-museum]')!.getAttribute('aria-checked')).toBe('true')
+    expect(el.querySelector('[data-testid=preserved]')!.textContent).toContain('preservado CAM2')
+    el.querySelector<HTMLButtonElement>('[data-testid=ref-set-field]')!.click()
+    await nextTick()
+    expect(el.querySelector('[data-testid=zoom-ref] img')!.getAttribute('src')).toBe('/r/a.jpg')
+  })
+  it('a team specimen\'s sex in the app\'s words', async () => {
+    const el = mount({ ...base, refs: { photos: [{ src: '/s.jpg', credit: 'CAM9', license: '', level: 'specimen', sex: 'female' }] } })
+    await nextTick()
+    expect(el.textContent).toContain('CAM9 · ♀ hembra')
+    expect(el.textContent).not.toContain('female')
+  })
 })

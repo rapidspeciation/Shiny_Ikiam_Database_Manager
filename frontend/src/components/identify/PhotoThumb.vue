@@ -4,6 +4,7 @@
  * identificaciones»): a square photo with a brand outline when it is the one shown, lifted on hover and pressed on
  * click, and an optional caption under it (the `caption` slot). With no photo, the same square on the sunken surface.
  */
+import { ImageOff } from 'lucide-vue-next'
 defineProps<{
   src?: string | null
   /** The button's name for screen readers (the photo is decorative). */
@@ -15,6 +16,8 @@ defineProps<{
   contain?: boolean
   /** Inside a larger button (a list row): drawn the same, but not a button itself. */
   inert?: boolean
+  /** The tile's width when its caption needs more room than the photo (px; default the photo's edge). */
+  width?: number
 }>()
 defineEmits<{ select: [] }>()
 </script>
@@ -24,7 +27,7 @@ defineEmits<{ select: [] }>()
     :is="inert ? 'span' : 'button'"
     :type="inert ? undefined : 'button'"
     class="thumb group flex shrink-0 flex-col items-center gap-1 rounded-md text-center"
-    :style="{ width: `${size ?? 56}px` }"
+    :style="{ width: `${width ?? size ?? 56}px` }"
     :aria-label="inert ? undefined : label"
     :aria-pressed="inert ? undefined : selected ? 'true' : 'false'"
     :aria-hidden="inert ? 'true' : undefined"
@@ -36,7 +39,8 @@ defineEmits<{ select: [] }>()
       :style="{ width: `${size ?? 56}px`, height: `${size ?? 56}px` }"
     >
       <img v-if="src" :src="src" alt="" class="size-full" :class="contain ? 'object-contain' : 'object-cover'" draggable="false" />
-      <span v-else class="block size-full bg-surface-sunken" />
+      <!-- no photo of it: a quiet placeholder, not an empty dark tile -->
+      <span v-else class="grid size-full place-items-center bg-surface-sunken text-fg-subtle" data-testid="thumb-none"><ImageOff :size="Math.round((size ?? 56) / 3)" /></span>
       <slot />
     </span>
     <slot name="caption" />

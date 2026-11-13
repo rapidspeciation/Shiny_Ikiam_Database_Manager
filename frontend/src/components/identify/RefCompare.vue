@@ -8,10 +8,10 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-vue-next'
 import { licenseUrl, type RefPhoto, type Refs } from '../../lib/identifyRefs'
-import { fieldAndMuseum } from '../../lib/bestPhotos'
+import { fieldAndMuseum, sexLabel } from '../../lib/bestPhotos'
 import { countryName } from '../../lib/usePacks'
 
-const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; wing?: RefPhoto | null }>()
+const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; wing?: RefPhoto | null; preferMuseum?: boolean }>()
 defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref', src?: string] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
@@ -20,17 +20,25 @@ const sets = computed(() => {
   const ok = (p: RefPhoto) => !broken.value.has(p.src)
   return { field: s.field.filter(ok), museum: s.museum.filter(ok) }
 })
-const set = ref<'field' | 'museum'>('field')
+/** The person's choice of set for this species (null: the default). */
+const set = ref<'field' | 'museum' | null>(null)
 watch(
   () => props.name,
-  () => ((at.value = 0), (set.value = 'field')),
+  () => ((at.value = 0), (set.value = null)),
 )
 function choose(s: 'field' | 'museum') {
   set.value = s
   at.value = 0
 }
-/** The set shown: «Campo» unless it is empty. */
-const shown = computed(() => (set.value === 'museum' || !sets.value.field.length ? 'museum' : 'field'))
+/**
+ * The set shown: the person's choice; by default «Campo», unless it is empty or has no photo the candidates'
+ * thumbnail would take (`preferMuseum`: e.g. only an old plate of many specimens) and there is a museum photo.
+ */
+const shown = computed(() => {
+  if (!sets.value.museum.length) return 'field'
+  if (!sets.value.field.length) return 'museum'
+  return set.value ?? (props.preferMuseum ? 'museum' : 'field')
+})
 const photos = computed(() => sets.value[shown.value])
 const photo = computed(() => photos.value[Math.min(at.value, photos.value.length - 1)])
 const genus = computed(() => props.name.split(' ')[0])
@@ -113,9 +121,9 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
       <figcaption v-if="photo" class="mt-1 line-clamp-2 text-xs text-fg-muted">
         <span v-if="photo.level === 'genus'" class="font-medium text-amber-800">{{ $t('Foto de otra especie del género {genus}', { genus }) }}. </span>
         <span v-if="photo.level === 'subspecies' && photo.taxon" class="font-medium">{{ $t('Subespecie') }} <i>{{ photo.taxon.split(' ').slice(2).join(' ') }}</i>. </span>
-        <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ photo.sex }}</template></span>
+        <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ sexLabel(photo.sex) }}</template></span>
         <span v-else class="break-words"
-          ><span v-if="photo.kind === 'preserved'" class="font-medium" data-testid="preserved">{{ $t('Ejemplar preservado') }}<template v-if="photo.specimen"> {{ photo.specimen }}</template> · </span
+          ><span v-if="photo.kind === 'preserved'" class="font-medium" data-testid="preserved">{{ $t('Ejemplar preservado') }}{{ photo.specimen ? ` ${photo.specimen}` : '' }} · </span
           ><a v-if="photo.source" :href="photo.source" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">{{ photo.credit }}</a
           ><template v-else>{{ photo.kind === 'preserved' ? $t('Foto: {who}', { who: photo.credit }) : photo.credit }}</template
           ><template v-if="photo.license">

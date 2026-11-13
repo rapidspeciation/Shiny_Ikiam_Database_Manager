@@ -235,4 +235,11 @@ describe('IdentifyView: the panel', () => {
     expect(calls).toBe(0)
     expect(host.querySelector('[data-testid=headline]')).toBeNull()
   })
+
+  it('the Ithomiini badge comes before the kicker sentence, never after a colon', async () => {
+    const { host } = await mountWith(restored)
+    const kicker = host.querySelector('[data-testid=ithomiini-badge]')!.parentElement!
+    expect(kicker.firstElementChild!.getAttribute('data-testid')).toBe('ithomiini-badge')
+    expect(kicker.textContent!.trim()).not.toMatch(/:\s*Ithomiini$/)
+  })
 })
