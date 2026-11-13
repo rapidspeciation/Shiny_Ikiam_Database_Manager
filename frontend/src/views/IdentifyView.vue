@@ -42,7 +42,7 @@ import TaxonPick from '../components/identify/TaxonPick.vue'
 import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerSrc } from '../lib/bestPhotos'
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
-import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, noteSeen, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
+import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
@@ -1385,8 +1385,6 @@ const currentVersions = computed<Versions>(() => ({
   id: mode.value === 'online' ? listedHead.value : storedHead.value,
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
-// The versions in use, recorded the first time this phone sees each (lib/identifyHistory.ts: which one is newer).
-watch(currentVersions, v => noteSeen(v), { immediate: true })
 const entries = computed(() => log.value.map(e => ({ ...e, outdated: !!e.saved && (unread.value.has(e.at) || outdated(e.v, currentVersions.value)) })))
 /** The sex line's call for the list (♀ 72 %). */
 const sexSummary = computed<LogEntry['sex']>(() => {
@@ -1441,7 +1439,6 @@ async function rememberNow({ r, top: top1, compared: cmp, pick: pk, side: sd, se
   const thumb = thumbs.value[r.at]?.src
   if (!top1 || !thumb) return
   const v = versionsOf(r)
-  noteSeen(v)
   const before = log.value.find(e => e.at === r.at)
   let saved = before?.saved ?? false
   const photo = await keptPhoto(r, original)
