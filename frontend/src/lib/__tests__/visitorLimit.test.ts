@@ -5,7 +5,11 @@ import { noteLimit, photoFailed, probePhoto, PROBES, resetVisitorLimit, visitorL
 // The signed-out limits (server/public-reads.mjs): 429 past a network's share, said in one line; 503 BUSY when every
 // visitor's Drive budget is spent for a moment, the photo tried once more after Retry-After.
 beforeEach(() => resetVisitorLimit())
-afterEach(() => vi.useRealTimers())
+// The lib tests share a worker (isolate: false): the fetch stub must not outlive the file (the no-AI guard's test).
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 const answer = (status: number, headers: Record<string, string> = {}) => new Response('', { status, headers })
 

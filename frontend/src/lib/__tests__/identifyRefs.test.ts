@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // «Fotos para el campo»: the choice of what to save, its size, the save itself (a fake Cache Storage) and the
 // subspecies photos after their species' photo.
@@ -41,6 +41,9 @@ beforeEach(() => {
     ),
   )
 })
+
+// The lib tests share a worker (isolate: false): the stubs go with the file.
+afterEach(() => vi.unstubAllGlobals())
 
 describe('field photos', () => {
   it('chooses by scope and counts a shared photo once', async () => {
