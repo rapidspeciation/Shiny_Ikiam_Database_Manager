@@ -168,7 +168,7 @@ describe.skipIf(!hasPillow)('r4-sol-F2: the server list beside a saved pack', ()
     vi.resetModules()
     list = served
     const { referencePhotos, orderRefs } = await import('../identifyRefs')
-    const got = (await referencePhotos(['Mechanitis polymnia'], { signedIn: false })).refs['Mechanitis polymnia']
+    const got = (await referencePhotos(['Mechanitis polymnia'])).refs['Mechanitis polymnia']
     expect(got.photos).toHaveLength(4)
     const ordered = orderRefs(got.photos, { home: ['EC'] })
     expect(ordered.map(p => p.country)).toEqual(['EC', 'CO', 'PE', null])
@@ -183,7 +183,7 @@ describe.skipIf(!hasPillow)('r4-sol-F2: the server list beside a saved pack', ()
     const kept = (await fresh.installedPack())!.index.taxa.find(t => t.name === 'Mechanitis polymnia')!.photos
     vi.resetModules()
     const { referencePhotos } = await import('../identifyRefs')
-    const got = (await referencePhotos(['Mechanitis polymnia'], { signedIn: false })).refs['Mechanitis polymnia']
+    const got = (await referencePhotos(['Mechanitis polymnia'])).refs['Mechanitis polymnia']
     const all = served().taxa.find(t => (t as { name?: string }).name === 'Mechanitis polymnia') as unknown as { photos: { source: string }[] }
     expect([kept.length, all.photos.length]).toEqual([2, 4])
     expect(got.photos.map(p => p.source).sort()).toEqual(all.photos.map(p => p.source).sort())

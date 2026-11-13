@@ -23,7 +23,7 @@ import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '.
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 import { sexLabel, viewerPhoto } from '../../lib/bestPhotos'
 
-const props = withDefaults(defineProps<{ signedIn: boolean; online: boolean; home?: string[] }>(), { home: () => [] })
+const props = withDefaults(defineProps<{ online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
 const route = useRoute()
 const router = useRouter()
@@ -136,7 +136,7 @@ async function loadPhotos() {
       for (let round = 0; round < 3 && part.length; round++) {
         if (round) await new Promise(r => setTimeout(r, 4000))
         // The server's whole list beside the pack for every name: a subspecies outside the pack shows too.
-        const got = await referencePhotos(part, { signedIn: props.signedIn, everySource: true })
+        const got = await referencePhotos(part, { everySource: true })
         if (ticket !== asked) return
         // A name the phone had photos of keeps them first; the server's add to them.
         const merged = { ...refs.value }
@@ -192,8 +192,8 @@ const viewerStart = ref<number | null>(null)
 const viewerOpen = computed(() => route.query.foto != null && viewerStart.value != null)
 const viewerPhotos = computed<ViewerPhoto[]>(() =>
   cards.value.map(c => ({
-    // iNaturalist's «large» signed in and online (lib/bestPhotos.ts viewerPhoto, as Identificar), else the page's
-    ...viewerPhoto(c.photo, { signedIn: props.signedIn, online: props.online }),
+    // iNaturalist's «large» online (lib/bestPhotos.ts viewerPhoto, as Identificar), else the page's
+    ...viewerPhoto(c.photo, { online: props.online }),
     name: c.name,
     kicker: c.kicker === 'specimen' || c.kicker === 'subspecies' ? kickerText(c) : undefined,
     credit: c.photo.credit,

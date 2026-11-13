@@ -1,12 +1,12 @@
 /**
  * Reference photos for the Identificar tab: what a candidate species looks like, to compare with the person's photo.
- * Without an account, and for «Fotos para el campo»: the static field set beside the page (identificar/field/,
+ * For «Fotos para el campo», and without signal when nothing else is kept: the static field set beside the page (identificar/field/,
  * scripts/field-photos.py: one CC-licensed iNaturalist photo per Ithomiini species of the head and, since 4 Nov 2026,
  * per subspecies where iNaturalist has one, each with its credit, its size and whether it is recorded in Ecuador;
  * index.json). The person chooses what to save (FieldScope); a subspecies' photo is shown after its species' photos.
- * Signed in, online, also from /api/species-photos (server/species-photos.mjs: iNaturalist's CC-licensed photos with their credit, and
- * the team's own specimens), the iNaturalist ones through the same-origin proxy (/api/identify/ref-photo: the page is
- * cross-origin isolated). Every list seen and the «Fotos para el campo» set are kept on the phone (Cache Storage, with
+ * Online, also from /api/species-photos (server/species-photos.mjs: iNaturalist's CC-licensed photos with their credit, and
+ * the project's specimens), the iNaturalist ones through the same-origin proxy (/api/identify/ref-photo: the page is
+ * cross-origin isolated). Both are public: signed out too (server/public-reads.mjs, at most 20 names a request). Every list seen and the «Fotos para el campo» set are kept on the phone (Cache Storage, with
  * the models), and the service worker keeps each photo shown, so they work again without signal.
  */
 import { api } from './api'
@@ -170,7 +170,7 @@ async function kept(): Promise<Record<string, Refs>> {
 }
 async function keep(add: Record<string, Refs>) {
   try {
-    // Only iNaturalist's photos are kept (the team's specimens need the sign-in and the network).
+    // Only iNaturalist's photos are kept (the project's specimens need the network).
     const all = { ...(await kept()) }
     for (const [name, refs] of Object.entries(add)) all[name] = { ...refs, photos: refs.photos.filter(p => p.level !== 'specimen') }
     await (await caches.open(CACHE)).put(KEY(), new Response(JSON.stringify(all), { headers: { 'content-type': 'application/json' } }))
@@ -189,18 +189,16 @@ function fromApi(entry: ApiEntry): Refs {
 }
 
 /**
- * The photos of `names`: signed in and online, asked to the server (names it is still looking up come back
- * `pending`); else what the phone kept, then the static field set. `pending`: names to ask again in a few seconds.
+ * The photos of `names` (at most 20: the server's limit without a sign-in): online, asked to the server (names it is
+ * still looking up come back `pending`), signed in or not; else what the phone kept, then the static field set. `pending`: names to ask again in a few seconds.
  * `everySource` (the search): with signal the server's whole photo list beside the installed pack for every name, so
  * the subspecies outside the pack show too; Compare reads that list only for a species the pack lacks.
  */
 export async function referencePhotos(
   names: string[],
-  { signedIn = true, everySource = false }: { signedIn?: boolean; everySource?: boolean } = {},
+  { everySource = false }: { everySource?: boolean } = {},
 ): Promise<{ refs: Record<string, Refs>; pending: string[] }> {
   const pack = async (refs: Record<string, Refs>) => withPack(refs, names, everySource && navigator.onLine ? await packSources().catch(() => []) : undefined)
-  // Without an account only the static set (lists kept from a team session point at the team's photo proxy).
-  if (!signedIn) return { refs: await withField(await pack({}), names), pending: [] }
   const have = await kept()
   if (navigator.onLine) {
     try {

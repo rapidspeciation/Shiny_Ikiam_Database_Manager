@@ -84,7 +84,7 @@ const heading = (host: HTMLElement) => host.querySelector('h2')?.textContent?.tr
 describe('taxon search', () => {
   it('fable-F4: a touch that starts a scroll does not pick; a tap does', async () => {
     const { default: TaxonSearch } = await import('../identify/TaxonSearch.vue')
-    const { host } = await mount(TaxonSearch, { signedIn: false, online: true })
+    const { host } = await mount(TaxonSearch, { online: true })
     await type(host, 'mech')
     const options = host.querySelectorAll('[role=option]')
     expect(options.length).toBeGreaterThan(1)
@@ -100,7 +100,7 @@ describe('taxon search', () => {
 
   it('fable-F5: Back closes the full-screen photo, and from a species returns to its genus', async () => {
     const { default: TaxonSearch } = await import('../identify/TaxonSearch.vue')
-    const { host, router } = await mount(TaxonSearch, { signedIn: false, online: true })
+    const { host, router } = await mount(TaxonSearch, { online: true })
     await type(host, 'Mechanitis')
     host.querySelector<HTMLElement>('[role=option]')!.click()
     await settle()
@@ -155,7 +155,7 @@ describe('taxon search', () => {
       ),
     )
     const { default: TaxonSearch } = await import('../identify/TaxonSearch.vue')
-    const { host } = await mount(TaxonSearch, { signedIn: false, online: true, home: ['EC'] }, '/identificar?vista=buscar&taxon=Mechanitis+polymnia')
+    const { host } = await mount(TaxonSearch, { online: true, home: ['EC'] }, '/identificar?vista=buscar&taxon=Mechanitis+polymnia')
     expect(heading(host)).toBe('Mechanitis polymnia')
     expect(host.querySelector('[data-testid=lead-photo] img')!.getAttribute('src')).toMatch(/\/222-0a1b2c3d\.webp$/)
     expect(host.querySelector('[data-testid=lead-credit]')!.textContent).toContain('Peru')

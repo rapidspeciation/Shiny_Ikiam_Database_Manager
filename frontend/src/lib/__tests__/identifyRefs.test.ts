@@ -34,7 +34,10 @@ beforeEach(() => {
     vi.fn(async (u: string) =>
       String(u).endsWith('index.json')
         ? new Response(JSON.stringify(index))
-        : new Response(new Uint8Array(String(u).includes('/s1') ? 300 : 1000)),
+        : // the server past its limit for visitors (server/public-reads.mjs): the photos the phone can reach instead
+          String(u).includes('api/species-photos')
+          ? new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }), { status: 429 })
+          : new Response(new Uint8Array(String(u).includes('/s1') ? 300 : 1000)),
     ),
   )
 })
@@ -73,10 +76,43 @@ describe('field photos', () => {
     expect(fieldSet()?.scope).toEqual({ species: 'ec', ssp: 'ec' })
   })
 
-  it('shows a species’ subspecies photos after its own, signed out', async () => {
+  it('signed out and online, asks the server: iNaturalist photos through the proxy and the project’s specimens', async () => {
+    fakeCaches()
+    const asked: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string, init?: RequestInit) => {
+        if (String(u).endsWith('index.json')) return new Response(JSON.stringify(index))
+        if (!String(u).includes('api/species-photos')) return new Response(new Uint8Array(10))
+        asked.push(String(init?.body))
+        const thumb = 'https://inaturalist-open-data.s3.amazonaws.com/photos/77/small.jpg'
+        return new Response(
+          JSON.stringify({
+            species: {
+              'Mechanitis lysimnia': {
+                inat: { level: 'species', taxon: { url: 'https://www.inaturalist.org/taxa/1' }, photos: [{ thumb, attribution: '(c) Eva, some rights reserved', license: 'CC-BY' }] },
+                pending: false,
+                specimens: [{ cam: 'CAM000001', sex: 'female', dorsal: '1abcdefghijklmnopqrstuvwxyz0123' }],
+              },
+            },
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+    const { referencePhotos } = await import('../identifyRefs')
+    const { refs } = await referencePhotos(['Mechanitis lysimnia'])
+    expect(JSON.parse(asked[0])).toEqual({ names: ['Mechanitis lysimnia'] })
+    const photos = refs['Mechanitis lysimnia'].photos
+    expect(photos[0]).toMatchObject({ level: 'species', credit: '© Eva', license: 'CC-BY', source: 'https://www.inaturalist.org/photos/77' })
+    expect(photos[0].src).toContain('api/identify/ref-photo?u=')
+    expect(photos.find(p => p.level === 'specimen')).toMatchObject({ credit: 'CAM000001', sex: 'female', src: expect.stringContaining('api/photo/1abcdefghijklmnopqrstuvwxyz0123?w=400') })
+  })
+
+  it('shows a species’ subspecies photos after its own, signed out, when the server does not answer', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
-    const { refs } = await referencePhotos(['Mechanitis polymnia', 'Mechanitis lysimnia'], { signedIn: false })
+    const { refs } = await referencePhotos(['Mechanitis polymnia', 'Mechanitis lysimnia'])
     expect(refs['Mechanitis polymnia'].photos.map(p => [p.level, p.taxon ?? null])).toEqual([
       ['species', null],
       ['subspecies', 'Mechanitis polymnia proceriformis'],

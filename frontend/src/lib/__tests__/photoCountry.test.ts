@@ -270,7 +270,7 @@ describe('a pack of several photos per taxon', () => {
   it('online, the server list: the same order beyond the pack', async () => {
     fakeCaches()
     const { referencePhotos, orderRefs } = await import('../identifyRefs')
-    const got = await referencePhotos(['Mechanitis polymnia'], { signedIn: false, everySource: true })
+    const got = await referencePhotos(['Mechanitis polymnia'], { everySource: true })
     const ordered = orderRefs(got.refs['Mechanitis polymnia'].photos, { home: ['EC'] })
     expect(ordered.slice(0, 2).map(p => p.country)).toEqual(['EC', 'EC'])
     expect(ordered.map(p => p.country)).toContain('PE')
@@ -301,7 +301,7 @@ describe('a pack of several photos per taxon', () => {
   it('a preserved specimen keeps its kind and ID to the screen', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
-    const got = await referencePhotos(['Hyposcada kena'], { signedIn: false, everySource: true })
+    const got = await referencePhotos(['Hyposcada kena'], { everySource: true })
     expect(got.refs['Hyposcada kena'].photos[0]).toMatchObject({ kind: 'preserved', specimen: 'CAM040123', country: 'EC', level: 'species' })
   })
 })

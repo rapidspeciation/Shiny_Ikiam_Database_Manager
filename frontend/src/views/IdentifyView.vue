@@ -1160,7 +1160,7 @@ async function loadRefs(names: string[], tries = 0) {
     const saved = await savedPhotos(names)
     refs.value = { ...refs.value, ...Object.fromEntries(Object.entries(saved).filter(([n]) => !refs.value[n]?.photos.length)) }
   }
-  const { refs: got, pending } = await referencePhotos(names, { signedIn: signedIn() })
+  const { refs: got, pending } = await referencePhotos(names)
   refs.value = { ...refs.value, ...got }
   refsLoading.value = pending.length > 0 && tries < 8
   if (refsLoading.value) refsTimer = setTimeout(() => loadRefs(pending, tries + 1), 4000)
@@ -1576,7 +1576,7 @@ function openViewer(which: 'mine' | 'ref', src?: string) {
   const all = [...field, ...museum]
   const refPhotos: ViewerPhoto[] = all.map(p => ({
     // iNaturalist's «large» in the viewer only, for the wings' detail; the page's own size if it is not there
-    ...viewerPhoto(p, { signedIn: !!session.user, online: online.value }),
+    ...viewerPhoto(p, { online: online.value }),
     name: p.level === 'subspecies' && p.taxon ? p.taxon : showing.value,
     kicker:
       p === wingShown.value
@@ -1680,7 +1680,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       </button>
     </nav>
 
-    <TaxonSearch v-if="place === 'search'" :signed-in="!!session.user" :online="online" :home="settingHome" @downloads="go('downloads')" />
+    <TaxonSearch v-if="place === 'search'" :online="online" :home="settingHome" @downloads="go('downloads')" />
 
     <DownloadsPanel
       v-else-if="place === 'downloads'"

@@ -58,13 +58,13 @@ export function bestThumb(taxon: string, photos: RefPhoto[] | undefined, place: 
 /**
  * The photo the full-screen viewer loads (Identificar's and Buscar's, one rule): for a photo with an iNaturalist id
  * (its proxied URL, its page, or a pack file «<id>-<hash>.webp»), signed in and online, iNaturalist's «large» (about
- * 1024 px: the wings' detail when zoomed in) through the app's photo proxy (server/identify-photos.mjs). Signed out
- * or offline, or a photo with no id (the team's own, a wing crop): its own address. `fallback`: the page's photo,
+ * 1024 px: the wings' detail when zoomed in) through the app's photo proxy (server/identify-photos.mjs), signed in or
+ * not (server/public-reads.mjs). Offline, or a photo with no id (the project's own, a wing crop): its own address. `fallback`: the page's photo,
  * loaded if the large one does not come. Only the viewer's photo; the page keeps its sizes.
  */
-export function viewerPhoto(p: Pick<RefPhoto, 'src' | 'source' | 'level' | 'kind'>, { signedIn, online }: { signedIn: boolean; online: boolean }): { src: string; fallback?: string } {
+export function viewerPhoto(p: Pick<RefPhoto, 'src' | 'source' | 'level' | 'kind'>, { online }: { online: boolean }): { src: string; fallback?: string } {
   const id = p.level !== 'specimen' && p.kind !== 'preserved' ? photoId(p) : null
-  if (!id || !signedIn || !online) return { src: p.src }
+  if (!id || !online) return { src: p.src }
   // the extension as the photo's own address names it (iNaturalist keeps jpg, jpeg or png); jpg for a pack file
   const ext = /photos(?:\/|%2F)\d+(?:\/|%2F)\w+\.(jpe?g|png)/i.exec(p.src)?.[1] ?? 'jpg'
   return { src: refPhotoSrc(`https://inaturalist-open-data.s3.amazonaws.com/photos/${id}/large.${ext}`), fallback: p.src }

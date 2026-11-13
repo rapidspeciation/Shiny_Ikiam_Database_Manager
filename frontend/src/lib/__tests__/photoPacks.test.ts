@@ -323,7 +323,7 @@ describe('Compare from the pack', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     fetched.length = 0
     const { referencePhotos } = await import('../identifyRefs')
-    const { refs } = await referencePhotos(['Mechanitis polymnia', 'Urania leilus', 'Papilio thoas', 'Oleria onega'], { signedIn: false })
+    const { refs } = await referencePhotos(['Mechanitis polymnia', 'Urania leilus', 'Papilio thoas', 'Oleria onega'])
     expect(refs['Mechanitis polymnia'].photos.map(p => [p.level, p.taxon ?? null])).toEqual([
       ['species', null],
       ['subspecies', 'Mechanitis polymnia casabranca'],
@@ -351,7 +351,7 @@ describe('Compare from the pack', () => {
     // The server's list is not reachable here: only the installed pack and the team's photos.
     served = { ...index, taxa: [] }
     const { referencePhotos } = await import('../identifyRefs')
-    const { refs } = await referencePhotos(['Papilio thoas', 'Mechanitis polymnia'], { signedIn: true })
+    const { refs } = await referencePhotos(['Papilio thoas', 'Mechanitis polymnia'])
     expect(refs['Papilio thoas'].photos.map(p => p.credit)).toEqual(['© Bo'])
     // The pack's photo first; the server's copy of the same iNaturalist photo (photos/1) not twice.
     expect(refs['Mechanitis polymnia'].photos.map(p => p.credit)).toEqual(['© Ana 1.webp', '© Cy'])
@@ -374,10 +374,10 @@ describe('Compare from the pack', () => {
     await installPack(index, { taxa: 'ithomiini', region: ['EC'], ssp: true }, () => {})
     fetched.length = 0
     const { referencePhotos } = await import('../identifyRefs')
-    const compare = await referencePhotos(['Mechanitis polymnia'], { signedIn: false })
+    const compare = await referencePhotos(['Mechanitis polymnia'])
     // Compare reads the server's list too with signal (its other countries' photos of a saved taxon: r4-sol-F2).
     expect(compare.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])
-    const search = await referencePhotos(['Mechanitis polymnia'], { signedIn: false, everySource: true })
+    const search = await referencePhotos(['Mechanitis polymnia'], { everySource: true })
     expect(search.refs['Mechanitis polymnia'].photos.map(p => p.taxon ?? p.level)).toEqual(['species', 'Mechanitis polymnia casabranca', 'Mechanitis polymnia proceriformis'])
     // The installed photo first: the pack's copy, not the server's.
     expect(search.refs['Mechanitis polymnia'].photos[0].src).toMatch(/1\.webp$/)
@@ -386,7 +386,7 @@ describe('Compare from the pack', () => {
   it('signed out and online: the server’s whole list beyond the pack', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
-    const { refs } = await referencePhotos(['Heliconius erato'], { signedIn: false })
+    const { refs } = await referencePhotos(['Heliconius erato'])
     expect(refs['Heliconius erato'].photos[0].src).toMatch(/\/identificar\/packs\/photos\/6\.webp$/)
   })
 })
@@ -408,10 +408,10 @@ describe('the pointer offline when Compare has no photo (r2-sol-F7)', () => {
     )
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     const { referencePhotos } = await import('../identifyRefs')
-    expect((await referencePhotos(['Aeria elara'], { signedIn: false })).refs['Aeria elara']).toBeUndefined()
+    expect((await referencePhotos(['Aeria elara'])).refs['Aeria elara']).toBeUndefined()
     // Saved on the phone: shown.
     store.set(`${dir}aeria-elara.jpg`, new Response('x'))
-    expect((await referencePhotos(['Aeria elara'], { signedIn: false })).refs['Aeria elara'].photos[0].src).toBe(`${dir}aeria-elara.jpg`)
+    expect((await referencePhotos(['Aeria elara'])).refs['Aeria elara'].photos[0].src).toBe(`${dir}aeria-elara.jpg`)
   })
 
   it('b: points to a choice that downloads the photo, with what it downloads; says when none can be downloaded', async () => {
