@@ -14,7 +14,7 @@ What the Wings Gallery publishes (checked 13 Nov 2026 on the live files):
 
 | # | Gate (endpoint or code path) | Returns, field by field | Public? (where published) | Decision |
 |---|---|---|---|---|
-| 1 | `POST /api/species-photos` (server/index.mjs; server/species-photos.mjs `photosOf`). Was behind the API's sign-in check. Used by Identificar's candidates and Compare, and by Buscar («Más fotos de la especie», Museo) via lib/identifyRefs.ts `referencePhotos` | per name: `inat.taxon` {id, name, rank, common, url}; `inat.level`; `inat.synonymOf`; `inat.photos[]` {id, thumb, url, attribution, license, observation}; `pending`; `specimens[]` {cam, sex, dorsal, ventral} | iNaturalist part: photos filtered to a CC licence (`license_code` present), shown with their credit (CC licence). Specimens: CAM_ID and Sex are in collection.json; dorsal/ventral are Drive file ids of Photo_links photos, in photo_lookup.json | **Open** (server/public-reads.mjs `anonymousSpeciesPhotos`). Anonymous answer: fields whitelisted (anything a later server adds stays out until listed); specimens only with a public photo (Photo_links, not a raw camera file; the CAM's first public dorsal and ventral, else the specimen is left out); at most **20 names** a request (team: 300), each at most **120 characters**; a name the identifier's head or `identificar/curated.json` knows is read as their exact spelling (case and spacing variants are one name: one cache entry, one job), and only those go to the existing background queue (1 request/s) when not cached; anything else is answered from the cache alone; **120 requests / 15 min per address** |
+| 1 | `POST /api/species-photos` (server/index.mjs; server/species-photos.mjs `photosOf`). Was behind the API's sign-in check. Used by Identificar's candidates and Compare, and by Buscar («Más fotos de la especie», Museo) via lib/identifyRefs.ts `referencePhotos` | per name: `inat.taxon` {id, name, rank, common, url}; `inat.level`; `inat.synonymOf`; `inat.photos[]` {id, thumb, url, attribution, license, observation}; `pending`; `specimens[]` {cam, sex, dorsal, ventral} | iNaturalist part: photos filtered to a CC licence (`license_code` present), shown with their credit (CC licence). Specimens: CAM_ID and Sex are in collection.json; dorsal/ventral are Drive file ids of Photo_links photos, in photo_lookup.json | **Open** (server/public-reads.mjs `anonymousSpeciesPhotos`). Anonymous answer: fields whitelisted (anything a later server adds stays out until listed); specimens only with a public photo (Photo_links, not a raw camera file; the CAM's first public dorsal and ventral, else the specimen is left out); at most **20 names** a request (team: 300), each at most **120 characters**; a name the identifier's head (all of Lepidoptera: **11,965 names**, not only Ithomiini) or `identificar/curated.json` knows is read as their exact spelling (case and spacing variants are one name: one cache entry, one job), and only those may join the existing background queue (1 request/s) when not cached, **only while fewer than 20 names wait and at most 300 a day for all visitors together**; anything else is answered from the cache alone; keyed by each name exactly as sent; **120 requests / 15 min per address** |
 | 2 | `GET /api/identify/ref-photo?u=` (server/identify-photos.mjs `sendRefPhoto`): the same-origin proxy of iNaturalist photos, thumbnails and the viewer's «large» | the image bytes of one iNaturalist photo (iNaturalist's photo hosts and sizes only, 3 MB cap) | CC-licensed iNaturalist photos (the ids come from gate 1's CC-only list or curated.json, itself built from them) | **Open** for photos the server lists: an iNaturalist photo id in `species_photo_cache` or in `curated.json`; any other URL 404 without a fetch (no open proxy). Cache ids count only CC-licensed photos, like the answer. One upstream GET per request, nothing fanned out; **3000 / 15 min per address**. Lets the viewer show «large» signed out |
 | 3 | `GET /api/photo/<driveId>?w=400|1600` (server/photos.mjs): the project's specimen photos (Compare's Museo, Buscar's specimens) | image bytes of a Drive file, resized by Drive, cached | Photo_links files under a CAM name: listed in photo_lookup.json with their Drive URL | **Open** for files whose source is Photo_links (`publicPhotoFile`), except raw camera files (.cr2 .orf .nef .arw .raf .rw2 .dng: 7,414 of the lab's 17,753 Photo_links files, not in photo_lookup.json). Kept for the team: those, files only in the photo archive's manifest (envelope_readings), and `?card=` (a chat card's file not in Photo_links). **1500 / 15 min per address**; a photo not cached yet is fetched from Drive within **one budget shared by every visitor: 2 a second, 20 at once** (503 `BUSY` past it); cached photos are not counted. Same CSP sandbox and widths as for the team |
 | 4 | «Más fotos» extras (frontend: lib/identifyRefs.ts `referencePhotos` returned only the static field set when signed out) | the server's extra iNaturalist photos (gate 1), in the curated order of `curated.json` (adults, then unsure, caterpillars, pupae, eggs) | CC licence | **Open**: `referencePhotos` asks the server online whether signed in or not (the `signedIn` option is gone); TaxonSearch's `signedIn` prop removed |
@@ -50,7 +50,9 @@ What the Wings Gallery publishes (checked 13 Nov 2026 on the live files):
   campus or field-station network shares one address; the browser keeps each photo for 30 days). 429 with
   `Retry-After` past it. Buscar and Identificar then show one line: «Muchas visitas desde esta red. Inicie sesión
   para ver todas las fotos.» (EN «Many visits from this network. Sign in to see every photo.»): a list's 429 through
-  the API, a photo's by asking the first 3 failed photos of a page once more (lib/visitorLimit.ts).
+  the API, a photo's by asking a failed photo of the app's once more, at most 3 per batch (a taxon in Buscar, a
+  candidate compared; lib/visitorLimit.ts). The line hides once signed in. A photo refused with 503 BUSY (the Drive
+  budget below) is shown again once after its Retry-After (2 s), never more.
 - The address: the last X-Forwarded-For entry when the connection is local (the one Caddy sets; a visitor's own
   first entries are never the key), else the connection's (deploy/Caddyfile.fragment notes it). The sign-in limits
   use the same address.
@@ -60,7 +62,9 @@ What the Wings Gallery publishes (checked 13 Nov 2026 on the live files):
 - 20 names a request (Identificar asks its 5 candidates, Buscar batches of 20), each at most 120 characters.
 - No new live fan-out to iNaturalist's API: cached answers, or the existing background queue (1 request a second) for
   names the head or the curated list know, under their exact spelling; a made-up or re-cased name never makes a job
-  of its own. The head's names are read again after a failed or empty read (each minute) and when its file changes
+  of its own. The head is all of Lepidoptera (11,965 names), so a visitor's name joins the queue only while fewer
+  than 20 names wait, and at most 300 a day for all visitors together (a bucket refilled over the day); past either,
+  the cache alone answers (`pending: false`). The team's lookups have neither cap. The head's names are read again after a failed or empty read (each minute) and when its file changes
   (a new release); the curated list every 10 minutes.
 - The photo proxy sends only photos the server lists, one upstream request per request.
 
@@ -71,6 +75,11 @@ uncached one share one job (Sol F1); raw files 404 and a specimen falls back to 
 the shared Drive budget, cached photos not counted (F2); higher photo limits and the 429 line (F3); a spoofed first
 X-Forwarded-For entry (F4); the limiter's sweep and cap (F5); CC-only cache ids (F6); names over 120 characters
 (F7); the head read again after a failure and on a new release (F8); the lookups awaited before teardown (F9).
+
+Round 2 critics (Sol 8/10, Opus 8/10) added: a visitor's name not queued while 20 wait or past the day's 300, the
+team's queued (Opus R1); a BUSY photo shown again once after Retry-After, and a 429 found after earlier 404s of another
+batch (Sol R1, Opus R2); the line hidden once signed in (R3); the answer keyed by each name exactly as sent (R4: the
+frontend sends catalogue spellings, but keying by the name as sent is what `referencePhotos` reads, whatever it sends).
 
 - tests/public-reads.test.mjs: signed out, each opened route (species photos, ref-photo, photo); the 20-name cap (team
   300); the per-address limit with Retry-After, other addresses and the team not held; non-public fields absent
@@ -84,7 +93,7 @@ X-Forwarded-For entry (F4); the limiter's sweep and cap (F5); CC-only cache ids 
 ## Lab and the signed-out check
 
 - Lab copy of this branch: LOCAL_MODE on the lab snapshot (`tools/lab/dev-app.sh --port 8892`, the identifier and
-  photo pack folders of the identify-panel lab), tailnet only at https://franz-gpdwin4.tailf5d2f1.ts.net:9971/identificar/.
+  photo pack folders of the identify-panel lab), tailnet only, on port 9971 of the lab PC (`/identificar/`).
   Since round 1 it is started through `systemd-run --user` (no chat owns it, so the reaper leaves it; 72 h limit).
 - Round 1 on the lab, signed out: «Mechanitis Polymnia» and «mechanitis polymnia» answered from one entry; a 121
   character name 400; a raw `.ORF` of Photo_links 404; the Buscar check below unchanged.
