@@ -212,8 +212,8 @@ export function createSpeciesPhotos(
       const row = read.get(name);
       const data = row?.data_json ? JSON.parse(row.data_json) : null;
       const old = !row || now() - row.fetched_at > (data ? ttlMs : missTtlMs);
-      const canFetch = enabled && lookupNames(name) && (failed.get(name) ?? 0) <= now() && mayFetch(name);
-      if (old && canFetch) queue.add(name);
+      // mayFetch last, and only for a name that would join the queue now (a visitor's names count against a cap).
+      if (old && !queue.has(name) && enabled && lookupNames(name) && (failed.get(name) ?? 0) <= now() && mayFetch(name)) queue.add(name);
       out[name] = {
         inat: data,
         // Still to be asked (no answer yet); an old answer is shown meanwhile.
@@ -225,7 +225,8 @@ export function createSpeciesPhotos(
     return out;
   }
 
-  return { photosOf, lookup, idle: () => running ?? Promise.resolve() };
+  /** queued(): the names waiting for (or in) a lookup. */
+  return { photosOf, lookup, idle: () => running ?? Promise.resolve(), queued: () => queue.size };
 }
 
 const specimenCache = new WeakMap();

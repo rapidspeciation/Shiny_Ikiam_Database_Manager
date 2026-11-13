@@ -86,26 +86,47 @@ export class AddressLimiter {
   }
 }
 
-/**
- * One budget shared by every visitor for the photos that are not cached yet (a Drive fetch each): `perSecond` on
- * average, `burst` at once (a token bucket). take() throws 503 when it is spent; cached photos never ask it.
- */
-export class DriveBudget {
-  constructor({ perSecond = 2, burst = 20, now = () => Date.now() } = {}) {
+/** A token bucket: `perSecond` on average, `burst` at once. tryTake(): whether one was there (and takes it). */
+export class TokenBucket {
+  constructor({ perSecond, burst, now = () => Date.now() } = {}) {
     this.perSecond = perSecond;
     this.burst = burst;
     this.now = now;
     this.tokens = burst;
     this.at = now();
   }
-  take() {
+  tryTake() {
     const t = this.now();
     this.tokens = Math.min(this.burst, this.tokens + ((t - this.at) / 1000) * this.perSecond);
     this.at = t;
-    if (this.tokens < 1)
-      throw Object.assign(fail('BUSY', 'Many photos asked for right now; try again in a moment or sign in', 503), { headers: { 'retry-after': '2' } });
+    if (this.tokens < 1) return false;
     this.tokens -= 1;
+    return true;
   }
+}
+
+/**
+ * One budget shared by every visitor for the photos that are not cached yet (a Drive fetch each): 2 a second on
+ * average, 20 at once. take() throws 503 when it is spent; cached photos never ask it.
+ */
+export class DriveBudget extends TokenBucket {
+  constructor({ perSecond = 2, burst = 20, now } = {}) {
+    super({ perSecond, burst, now });
+  }
+  take() {
+    if (!this.tryTake())
+      throw Object.assign(fail('BUSY', 'Many photos asked for right now; try again in a moment or sign in', 503), { headers: { 'retry-after': '2' } });
+  }
+}
+
+/**
+ * Which of a visitor's names may join the background iNaturalist queue (the head is all of Lepidoptera, 11,965
+ * names: a visitor must not queue it for everyone): only while fewer than `waiting` names wait, and at most `perDay`
+ * a day for all visitors together (a bucket refilled over the day). Past either, the cache alone answers.
+ */
+export function queueAdmission(speciesPhotos, { waiting = 20, perDay = 300, now } = {}) {
+  const day = new TokenBucket({ perSecond: perDay / 86_400, burst: perDay, now });
+  return () => speciesPhotos.queued() < waiting && day.tryTake();
 }
 
 const text = v => (v === null || v === undefined ? '' : String(v));
@@ -145,30 +166,30 @@ const spaced = name => text(name).trim().replace(/\s+/g, ' ');
 
 /**
  * /api/species-photos for a visitor: `names` (at most ANON_MAX_NAMES, each at most ANON_MAX_NAME_LENGTH characters)
- * → { name: { inat, pending, specimens } } with only public fields, keyed by the name as asked. `canonical(name)`:
+ * → { name: { inat, pending, specimens } } with only public fields, keyed by each name exactly as sent. `canonical(name)`:
  * the head's or curated list's exact spelling of a name (any case), or null; only those are looked up and may go to
- * the background queue, so case variants share one cache entry and one job. Specimens only with a public photo
+ * the background queue, when `admit()` agrees (queueAdmission), so case variants share one cache entry and one job. Specimens only with a public photo
  * (publicPhotoFile: the gallery's photo_lookup.json), the first public dorsal and ventral of the CAM, as
  * { cam, sex, dorsal, ventral } (collection.json's CAM_ID and Sex).
  */
-export function anonymousSpeciesPhotos({ speciesPhotos, store }, names, canonical) {
+export function anonymousSpeciesPhotos({ speciesPhotos, store, admit = () => true }, names, canonical) {
   if (!Array.isArray(names) || names.length > ANON_MAX_NAMES)
     throw fail('INVALID_NAMES', `names: a list of at most ${ANON_MAX_NAMES} without signing in`);
   if (names.some(n => typeof n !== 'string' || n.length > ANON_MAX_NAME_LENGTH))
     throw fail('INVALID_NAMES', `names: each a text of at most ${ANON_MAX_NAME_LENGTH} characters`);
-  const asked = names.map(n => ({ key: spaced(n), name: canonical(n) }));
+  const asked = names.map(n => ({ sent: n, key: spaced(n), name: canonical(n) }));
   const fetchable = new Set(asked.map(a => a.name).filter(Boolean));
   const found = speciesPhotos.photosOf(
     [...new Set(asked.map(a => a.name ?? a.key))],
-    { mayFetch: n => fetchable.has(n) },
+    { mayFetch: n => fetchable.has(n) && admit() },
   );
   const index = photoIndex(store);
   const first = list => (list ?? []).find(id => publicPhotoFile(store, id)) ?? null;
   const out = {};
-  for (const { key, name } of asked) {
+  for (const { sent, key, name } of asked) {
     const e = found[name ?? key];
-    if (!key || !e || out[key]) continue;
-    out[key] = {
+    if (!key || !e || out[sent]) continue;
+    out[sent] = {
       inat: publicInat(e.inat),
       pending: e.pending === true,
       specimens: (e.specimens ?? []).flatMap(s => {

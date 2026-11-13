@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/index.mjs';
 import { setPasswordHashCost } from '../server/auth.mjs';
-import { AddressLimiter, ANON_MAX_NAME_LENGTH, ANON_MAX_NAMES, clientAddress, createPublicLists, DriveBudget } from '../server/public-reads.mjs';
+import { AddressLimiter, ANON_MAX_NAME_LENGTH, ANON_MAX_NAMES, clientAddress, createPublicLists, DriveBudget, queueAdmission } from '../server/public-reads.mjs';
 
 setPasswordHashCost(16);
 
@@ -29,15 +29,19 @@ const seed = {
 };
 const INAT = id => `https://inaturalist-open-data.s3.amazonaws.com/photos/${id}/small.jpg`;
 
-async function setup(t, { anonLimits } = {}) {
+async function setup(t, { anonLimits, curated = [], holdInat = false } = {}) {
   const web = mkdtempSync(join(tmpdir(), 'public-reads-'));
   t.after(() => rmSync(web, { recursive: true, force: true }));
   mkdirSync(join(web, 'identificar'));
   // The curated list names Oleria onega and one of its photos (id 222).
-  writeFileSync(join(web, 'identificar', 'curated.json'), JSON.stringify({ schema: 'ithomiini-curated/1', taxa: { 'Oleria onega': { field: [{ id: '222' }] }, 'Godyris zavaleta': { field: [] } } }));
+  writeFileSync(join(web, 'identificar', 'curated.json'), JSON.stringify({ schema: 'ithomiini-curated/1', taxa: { 'Oleria onega': { field: [{ id: '222' }] }, 'Godyris zavaleta': { field: [] }, ...Object.fromEntries(curated.map(n => [n, {}])) } }));
   const inatCalls = [];
+  // holdInat: iNaturalist answers only once released (the queue stays as filled).
+  let release;
+  const held = holdInat ? new Promise(resolve => (release = resolve)) : null;
   const fetchInat = async url => {
     inatCalls.push(url);
+    await held;
     return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
   };
   const photoCalls = [];
@@ -47,7 +51,7 @@ async function setup(t, { anonLimits } = {}) {
   };
   const app = await createApp(
     { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'public-reads-setup', webRoot: web, anonLimits },
-    { seed, fetchInat, fetchRefPhoto, fetchPhoto: async () => new Response(Buffer.alloc(10, 1), { headers: { 'content-type': 'image/jpeg' } }) },
+    { seed, fetchInat, inatIntervalMs: 0, fetchRefPhoto, fetchPhoto: async () => new Response(Buffer.alloc(10, 1), { headers: { 'content-type': 'image/jpeg' } }) },
   );
   await app.ready;
   // A specimen photo from the photo archive's manifest, not listed in Photo_links: the team's only.
@@ -68,6 +72,7 @@ async function setup(t, { anonLimits } = {}) {
   const address = await app.listen(0, '127.0.0.1');
   // The background lookups end before the database closes.
   t.after(async () => {
+    release?.();
     await app.speciesPhotos.idle();
     await app.close();
   });
@@ -114,9 +119,10 @@ test('a visitor gets the reference photos of a species with only the public fiel
 test('case variants of a known name are that name: one cache entry, one lookup, never a job of their own', async t => {
   const { app, call, inatCalls } = await setup(t);
   // Cached under its exact spelling: variants are answered from it, iNaturalist is not asked.
-  const cached = await call('POST', '/species-photos', { body: { names: ['Oleria Onega', 'Oleria oNega', 'OLERIA  ONEGA', 'oleria onega'] } });
+  const cached = await call('POST', '/species-photos', { body: { names: ['Oleria Onega', 'Oleria oNega', 'OLERIA  ONEGA', 'oleria onega '] } });
   assert.equal(cached.status, 200);
-  assert.deepEqual(Object.keys(cached.body.species), ['Oleria Onega', 'Oleria oNega', 'OLERIA ONEGA', 'oleria onega']);
+  // Keyed by each name exactly as sent.
+  assert.deepEqual(Object.keys(cached.body.species), ['Oleria Onega', 'Oleria oNega', 'OLERIA  ONEGA', 'oleria onega ']);
   for (const e of Object.values(cached.body.species)) assert.deepEqual(e.inat.photos.map(p => p.id), [111]);
   await app.speciesPhotos.idle();
   assert.deepEqual(inatCalls, []);
@@ -131,6 +137,33 @@ test('case variants of a known name are that name: one cache entry, one lookup, 
   await call('POST', '/species-photos', { body: { names: ['GoDyRiS zavaleta'] } });
   await app.speciesPhotos.idle();
   assert.equal(inatCalls.length, 2);
+});
+
+test("a visitor's names join the lookup queue only while few wait and within a daily cap; the team's always", async t => {
+  const names = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg'].map(e => `Godyris ${e}`);
+  const { call } = await setup(t, { curated: names, holdInat: true, anonLimits: { queue: { waiting: 3, perDay: 100 } } });
+  const first = await call('POST', '/species-photos', { body: { names: names.slice(0, 4) } });
+  // Three wait now: the fourth is answered from the cache alone.
+  assert.deepEqual(names.slice(0, 4).map(n => first.body.species[n].pending), [true, true, true, false]);
+  const again = await call('POST', '/species-photos', { body: { names: [names[4]] } });
+  assert.equal(again.body.species[names[4]].pending, false);
+  // Asking again for a name already waiting costs nothing and keeps it pending.
+  assert.equal((await call('POST', '/species-photos', { body: { names: [names[0]] } })).body.species[names[0]].pending, true);
+  // The team's lookups are not held by the visitors' cap.
+  const setupDone = await call('POST', '/auth/setup', { body: { token: 'public-reads-setup', username: 'boss', password: 'secret1', displayName: 'Boss' } });
+  const session = { cookie: setupDone.cookie, csrf: setupDone.body.csrf };
+  assert.equal((await call('POST', '/species-photos', { session, body: { names: [names[5]] } })).body.species[names[5]].pending, true);
+});
+
+test("the visitors' daily cap on new lookups, for all of them together", async t => {
+  const names = ['aa', 'bb', 'cc', 'dd'].map(e => `Godyris ${e}`);
+  const { app, call } = await setup(t, { curated: names, anonLimits: { queue: { waiting: 100, perDay: 2 } } });
+  const r = await call('POST', '/species-photos', { ip: '203.0.113.1', body: { names: names.slice(0, 3) } });
+  assert.deepEqual(names.slice(0, 3).map(n => r.body.species[n].pending), [true, true, false]);
+  await app.speciesPhotos.idle();
+  // Another address the same day: the cap is spent.
+  const other = await call('POST', '/species-photos', { ip: '198.51.100.9', body: { names: [names[3]] } });
+  assert.equal(other.body.species[names[3]].pending, false);
 });
 
 test('a visitor asks for at most 20 names; the team keeps 300', async t => {
@@ -309,4 +342,19 @@ test("the head's names are read again after a failed or empty read and when a ne
   const [a, b] = await Promise.all([lists.canonicalNames(), lists.canonicalNames()]);
   assert.equal(a('Oleria baizana'), 'Oleria baizana');
   assert.equal(b('Oleria baizana'), 'Oleria baizana');
+});
+
+test('queue admission: fewer than `waiting` names wait, and the day refills its cap', () => {
+  let now = 0;
+  let size = 0;
+  const admit = queueAdmission({ queued: () => size }, { waiting: 2, perDay: 2, now: () => now });
+  assert.equal(admit(), true);
+  assert.equal(admit(), true);
+  assert.equal(admit(), false, 'the day spent');
+  now = 43_200_000; // half a day: one back
+  size = 2;
+  assert.equal(admit(), false, 'two wait');
+  size = 0;
+  assert.equal(admit(), true);
+  assert.equal(admit(), false);
 });

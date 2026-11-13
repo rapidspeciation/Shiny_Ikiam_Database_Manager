@@ -49,7 +49,7 @@ import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
 import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from './identify-photos.mjs';
-import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, DriveBudget, publicPhotoFile } from './public-reads.mjs';
+import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, DriveBudget, publicPhotoFile, queueAdmission } from './public-reads.mjs';
 import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
 import {
@@ -875,6 +875,7 @@ export async function createApp(config = {}, options = {}) {
   const speciesPhotos = createSpeciesPhotos(store, {
     enabled: config.speciesPhotos !== false,
     ...(options.fetchInat ? { fetchImpl: options.fetchInat } : {}),
+    ...(Number.isFinite(options.inatIntervalMs) ? { intervalMs: options.inatIntervalMs } : {}),
   });
   // Identificar's and Buscar's public reads without a sign-in (server/public-reads.mjs): what the server lists, and
   // per address and 15 minutes at most 120 photo lists (20 names each), 3000 iNaturalist photos and 1500 specimen
@@ -887,6 +888,8 @@ export async function createApp(config = {}, options = {}) {
     photo: new AddressLimiter({ limit: 1500, ...config.anonLimits?.photo }),
   };
   const anonDrive = new DriveBudget({ perSecond: 2, burst: 20, ...config.anonLimits?.drive });
+  // A visitor's names join the iNaturalist queue only while fewer than 20 wait, and 300 a day for all visitors.
+  const anonQueue = queueAdmission(speciesPhotos, { waiting: 20, perDay: 300, ...config.anonLimits?.queue });
   const refPhotoOptions = options.fetchRefPhoto ? { fetchImpl: options.fetchRefPhoto } : {};
   /** A specimen photo (server/photos.mjs) to the browser, with its ETag. */
   async function sendPhoto(req, res, id, width, opts) {
@@ -1124,7 +1127,7 @@ export async function createApp(config = {}, options = {}) {
       if (!session) {
         if (method === 'POST' && path === '/api/species-photos') {
           anonLimits.speciesPhotos.check(req);
-          return json(res, 200, { species: anonymousSpeciesPhotos({ speciesPhotos, store }, body.names, await publicLists.canonicalNames()) });
+          return json(res, 200, { species: anonymousSpeciesPhotos({ speciesPhotos, store, admit: anonQueue }, body.names, await publicLists.canonicalNames()) });
         }
         if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') {
           anonLimits.refPhoto.check(req);
