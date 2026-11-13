@@ -11,7 +11,7 @@
  */
 import { shallowRef } from 'vue'
 import { orderRefs, type RefPhoto } from './identifyRefs'
-import { curatedIndex, orderCurated, type CuratedIndex } from './curatedPhotos'
+import { curatedIndex, orderCurated, photoId, wingPhoto, type CuratedIndex } from './curatedPhotos'
 import type { Place } from './photoCountry'
 
 /** The curated list once loaded (null: not yet, or not reachable). */
@@ -35,8 +35,20 @@ export function bestPhotos(taxon: string, photos: RefPhoto[], place: Place, rank
   return entry?.field?.length ? orderCurated(photos, entry, place) : orderRefs(photos, place, rankOf)
 }
 
-/** The photo shown small for a taxon (a candidate's thumbnail): its best live photo of the taxon itself, as curatedPhotos' hero. */
+/**
+ * The photo shown small for a taxon (a candidate's thumbnail, 64 px: one butterfly must fill it). A curated species: its
+ * best field photo judged good as a main photo (or its only field photo, which nobody judged poor); else its Sanger
+ * wing crop (a plate of many specimens or a poor photo says nothing at 64 px); only then the old order.
+ */
 export function bestThumb(taxon: string, photos: RefPhoto[] | undefined, place: Place): string | undefined {
+  const entry = curatedReady.value?.taxa[speciesOf(taxon)]
+  if (entry) {
+    const ok = new Set((entry.field ?? []).filter(c => c.hero === 'yes' || (!c.s && entry.field!.length === 1)).map(c => c.id))
+    const live = orderCurated(photos ?? [], entry, place).find(p => p.level === 'species' && p.kind !== 'preserved' && ok.has(photoId(p) ?? ''))
+    if (live) return live.src
+    const wing = wingPhoto(entry)
+    if (wing) return wing.src
+  }
   if (!photos?.length) return undefined
   const ordered = bestPhotos(taxon, photos, place)
   return (ordered.find(p => p.level === 'species' && p.kind !== 'preserved') ?? ordered.find(p => p.level !== 'genus'))?.src

@@ -55,4 +55,19 @@ describe('bestPhotos', () => {
     expect(s.museum).toEqual([wing, pres, spec])
     expect(fieldAndMuseum([photos[1]], null).museum).toEqual([])
   })
+  it('a candidate\'s thumbnail: the curated good photo, else the Sanger wing crop, only then the old order', () => {
+    curatedReady.value = {
+      schema: 'ithomiini-curated/1',
+      taxa: {
+        'Hypothyris moebiusi': { wing: { file: 'CAM2-bb.webp', specimen: 'CAM2', view: 'dorsal' } },
+        'Hypothyris anastasia': { field: [{ id: '222', s: [2, 2, 2, 2], hero: 'no' }], wing: { file: 'CAM3-cc.webp', specimen: 'CAM3', view: 'dorsal' } },
+        'Hypothyris ninonia': { field: [{ id: '333333' }], wing: { file: 'CAM4-dd.webp', specimen: 'CAM4', view: 'dorsal' } },
+      },
+    }
+    const plate = [ph('/plate.jpg', 'EC')]
+    expect(bestThumb('Hypothyris moebiusi', plate, place as never)).toMatch(/wings\/CAM2-bb\.webp$/)
+    expect(bestThumb('Hypothyris anastasia', photos, place as never)).toMatch(/wings\/CAM3-cc\.webp$/)
+    expect(bestThumb('Hypothyris ninonia', photos, place as never)).toBe(photos[2].src)
+    expect(bestThumb('Oleria onega', plate, place as never)).toBe('/plate.jpg')
+  })
 })

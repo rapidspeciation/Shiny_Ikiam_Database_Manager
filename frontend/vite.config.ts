@@ -64,7 +64,7 @@ const offlineRuntime = {
 }
 
 // Lib tests that need a page (document, window or localStorage).
-const libWithPage = ['camera', 'cellBar', 'clipboard', 'curatedPhotos', 'disabledReason', 'docReview', 'gridKeys', 'identifyHistory', 'identifyRefs', 'oldReader', 'packBundles', 'photoCountry', 'photoPacks', 'proposalColumns', 'theme'].map(
+const libWithPage = ['bestPhotos', 'camera', 'cellBar', 'clipboard', 'curatedPhotos', 'disabledReason', 'docReview', 'gridKeys', 'identifyHistory', 'identifyRefs', 'oldReader', 'packBundles', 'photoCountry', 'photoPacks', 'proposalColumns', 'theme'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
 )
 
