@@ -1,15 +1,17 @@
 <script setup lang="ts">
 // The person's photo beside reference photos of one candidate (views/IdentifyView.vue), with each photo's credit.
 // A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such,
-// a preserved specimen with its ID. Each photo's country follows its credit; `first` says whose country comes first.
-// Tapping either photo opens it full screen with zoom (`zoom`: the person's photo, or the reference photo by its src).
+// a preserved specimen with its ID. Each photo's country follows its credit. The species' Sanger wing crop (`wing`,
+// lib/curatedPhotos.ts), when it has one, sits under the reference photo, as Buscar shows it beside the hero.
+// Tapping any photo opens it full screen with zoom (`zoom`: the person's photo, the reference photo by its src, the
+// wing crop). On a laptop the photos are 4:3, so the candidates under them stay on the first screen.
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-vue-next'
-import { licenseUrl, type Refs } from '../../lib/identifyRefs'
+import { licenseUrl, type RefPhoto, type Refs } from '../../lib/identifyRefs'
 import { countryName } from '../../lib/usePacks'
 
-const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; first?: string | null }>()
-defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref', src?: string] }>()
+const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; wing?: RefPhoto | null }>()
+defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref' | 'wing', src?: string] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
 watch(
@@ -31,7 +33,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
   <div class="grid grid-cols-2 gap-2">
     <figure class="min-w-0">
       <button type="button" class="zoomable relative block w-full overflow-hidden rounded-md" :aria-label="$t('Ver su foto en grande')" data-testid="zoom-mine" @click="$emit('zoom', 'mine')">
-        <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover" />
+        <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover lg:aspect-[4/3]" />
         <span class="zoom-badge" aria-hidden="true"><ZoomIn :size="16" /></span>
       </button>
       <figcaption class="mt-1 text-xs text-fg-muted">{{ $t('Su foto') }}</figcaption>
@@ -43,7 +45,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
             :key="photo.src"
             :src="photo.src"
             alt=""
-            class="aspect-square w-full rounded-md"
+            class="aspect-square w-full rounded-md lg:aspect-[4/3]"
             :class="[loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken', photo.kind === 'preserved' ? 'object-contain' : 'object-cover']"
             @load="done(photo.src)"
             @error="failed(photo.src)"
@@ -58,7 +60,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         >
           {{ $t('Cargando foto…') }}
         </div>
-        <div v-if="!photo" class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
+        <div v-if="!photo" class="grid aspect-square w-full lg:aspect-[4/3] place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
           <span>
             {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
             <!-- Offline: the choice in Descargas that has its photo (a tap goes there), or that none can be downloaded. -->
@@ -75,7 +77,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
           </button>
         </template>
       </div>
-      <figcaption v-if="photo" class="mt-1 text-xs text-fg-muted">
+      <figcaption v-if="photo" class="mt-1 line-clamp-2 text-xs text-fg-muted">
         <span v-if="photo.level === 'genus'" class="font-medium text-amber-800">{{ $t('Foto de otra especie del género {genus}', { genus }) }}. </span>
         <span v-if="photo.level === 'subspecies' && photo.taxon" class="font-medium">{{ $t('Subespecie') }} <i>{{ photo.taxon.split(' ').slice(2).join(' ') }}</i>. </span>
         <span v-if="photo.level === 'specimen'">{{ $t('Ejemplar del proyecto') }} {{ photo.credit }}<template v-if="photo.sex"> · {{ photo.sex }}</template></span>
@@ -93,7 +95,17 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         >
         <span v-if="photos.length > 1" class="text-fg-subtle"> · {{ Math.min(at, photos.length - 1) + 1 }}/{{ photos.length }}</span>
       </figcaption>
-      <p v-if="first && photos.length > 1" class="mt-0.5 text-xs text-fg-subtle" data-testid="photos-first">{{ first }}</p>
+      <button
+        v-if="wing && !broken.has(wing.src)"
+        type="button"
+        class="zoomable relative mt-1.5 block w-full overflow-hidden rounded-md border border-border"
+        :aria-label="`${$t('Alas de un ejemplar preservado')} ${wing.specimen ?? ''}`"
+        data-testid="zoom-wing"
+        @click="$emit('zoom', 'wing', wing.src)"
+      >
+        <img :src="wing.src" alt="" class="aspect-[2/1] w-full bg-photo-mat object-contain" @error="failed(wing.src)" />
+        <span class="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white" data-testid="wing-chip">{{ $t('Alas, museo') }}<template v-if="wing.specimen"> · {{ wing.specimen }}</template></span>
+      </button>
     </figure>
   </div>
 </template>

@@ -417,4 +417,5 @@ export default {
   'Comparando con': 'Comparing with',
   'Es esta': 'It is this one',
   'Otra especie…': 'Another species…',
+  'Alas, museo': 'Wings, museum',
 }

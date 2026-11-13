@@ -39,7 +39,9 @@ import CandidateStrip from '../components/identify/CandidateStrip.vue'
 import PhotoViewer, { type ViewerPhoto } from '../components/identify/PhotoViewer.vue'
 import MyIdentifications from '../components/identify/MyIdentifications.vue'
 import TaxonPick from '../components/identify/TaxonPick.vue'
-import { bestPhotos, bestThumb, viewerSrc } from '../lib/bestPhotos'
+import { bestPhotos, bestThumb, loadCurated, viewerSrc } from '../lib/bestPhotos'
+import { curatedPhotos } from '../lib/curatedPhotos'
+import type { RefPhoto } from '../lib/identifyRefs'
 import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
@@ -1152,6 +1154,11 @@ watch(
 const refsShown = computed<Refs | undefined>(() => {
   const r = refs.value[showing.value]
   if (!r) return r
+  // The curated order (lib/curatedPhotos.ts), its best field photo first, once it is in for these photos.
+  const c = curatedShown.value
+  if (c && c.name === showing.value && c.of === r.photos && c.place === photoPlace.value) {
+    return { ...r, photos: c.hero ? [c.hero, ...c.photos.filter(p => p !== c.hero)] : c.photos }
+  }
   const order = (subspecies.value.get(showing.value) ?? []).map(c => c.name)
   const at = (taxon: string) => {
     const i = order.indexOf(taxon)
@@ -1196,13 +1203,24 @@ watch(
  * country, its range. The search, where the person picks the subspecies, always takes the range.
  */
 const photoPlace = computed<PhotoPlace>(() => comparePlace(result.value?.country ? [result.value.country] : settingHome.value, sspRange.value))
-/** The line under Compare's photo saying whose photos come first (short: Fable r4-F11). */
-const firstLine = computed(() => {
-  const p = photoPlace.value
-  if (p.home.length) return t('Primero fotos de {country}', { country: regionLabel(p.home) })
-  if (p.range?.length && sspNamed.value) return t('Primero fotos del área de la subespecie {ssp}', { ssp: sspNamed.value.split(' ').slice(2).join(' ') })
-  return null
-})
+/**
+ * The comparison's reference photos from the curation (lane L2, lib/curatedPhotos.ts curatedPhotos: the best field
+ * photo as the hero, the person's country first only among photos of similar quality, the species' Sanger wing crop).
+ * Kept with the photos and place it was made for: until then refsShown keeps the country order.
+ */
+const curatedShown = shallowRef<{ name: string; of: RefPhoto[]; place: PhotoPlace; photos: RefPhoto[]; hero: RefPhoto | null; wing: RefPhoto | null } | null>(null)
+loadCurated()
+watch(
+  () => [showing.value, refs.value[showing.value]?.photos, photoPlace.value] as const,
+  async ([name, photos, place]) => {
+    if (!name || !photos) return void (curatedShown.value = null)
+    const got = await curatedPhotos(name, photos, place)
+    if (showing.value === name && refs.value[name]?.photos === photos && photoPlace.value === place) curatedShown.value = { name, of: photos, place, ...got }
+  },
+  { immediate: true },
+)
+/** The species' Sanger wing crop beside the reference photo (none for a genus-level photo set). */
+const wingShown = computed(() => (curatedShown.value?.name === showing.value ? curatedShown.value.wing : null))
 /** What the first download brings with it (the chosen pack, saved after the model). */
 const firstPack = computed(() => {
   if (!packs.index.value || packs.pack.value || packs.autoDone()) return null
@@ -1477,7 +1495,7 @@ watch(
     onCleanup(() => url && URL.revokeObjectURL(url))
   },
 )
-function openViewer(which: 'mine' | 'ref', src?: string) {
+function openViewer(which: 'mine' | 'ref' | 'wing', src?: string) {
   const r = result.value
   if (!r) return
   const genus = showing.value.split(' ')[0]
@@ -1492,8 +1510,12 @@ function openViewer(which: 'mine' | 'ref', src?: string) {
     country: p.country ?? null,
     preserved: p.kind === 'preserved' ? (p.specimen ?? '') : null,
   }))
+  // The wing crop second, after the hero (as Buscar's viewer has it).
+  const w = wingShown.value
+  const wing: ViewerPhoto[] = w ? [{ src: w.src, name: showing.value, kicker: t('Alas de un ejemplar preservado'), credit: w.credit, license: '', source: null, preserved: w.specimen ?? '' }] : []
+  const list = [mine, ...refPhotos.slice(0, 1), ...wing, ...refPhotos.slice(1)]
   const at = which === 'ref' ? (refsShown.value?.photos ?? []).findIndex(p => p.src === src) : -1
-  viewer.value = { photos: [mine, ...refPhotos], start: which === 'mine' ? 0 : Math.max(0, at) + 1 }
+  viewer.value = { photos: list, start: which === 'mine' ? 0 : which === 'wing' ? 2 : at <= 0 ? 1 : at + 1 + wing.length }
 }
 
 const goOnline = () => {
@@ -1708,7 +1730,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </p>
 
           <section class="mt-3" data-testid="compare" :aria-label="$t('Comparar')">
-            <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :first="firstLine" @hint="fixGap" @zoom="openViewer" />
+            <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :wing="wingShown" @hint="fixGap" @zoom="openViewer" />
             <p v-if="showing !== top?.name" class="mt-1 text-sm">{{ $t('Comparando con') }} <i class="font-medium">{{ showing }}</i></p>
             <CandidateStrip class="mt-2" :candidates="candidates" :showing="showing" :pick="pick" @compare="n => (compared = n)" />
             <div class="mt-2 flex flex-wrap items-center gap-2">

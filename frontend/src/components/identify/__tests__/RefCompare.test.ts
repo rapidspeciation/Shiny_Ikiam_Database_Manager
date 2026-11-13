@@ -36,4 +36,19 @@ describe('RefCompare', () => {
     await nextTick()
     expect(el.textContent).toContain(t('No encontramos fotos de esta especie.'))
   })
+  it('the species\' wing crop sits under the reference photo with its specimen, and opens full screen', async () => {
+    const zooms: unknown[][] = []
+    const wing = { src: '/identificar/wings/CAM1-abcdef12.webp', credit: 'Ikiam / Wellcome Sanger Institute', license: '', level: 'species', kind: 'preserved', specimen: 'CAM1' }
+    const el = mount({ ...base, refs, wing, onZoom: (...a: unknown[]) => zooms.push(a) })
+    await nextTick()
+    expect(el.querySelector('[data-testid=wing-chip]')!.textContent).toContain('CAM1')
+    el.querySelector<HTMLButtonElement>('[data-testid=zoom-wing]')!.click()
+    el.querySelector<HTMLButtonElement>('[data-testid=zoom-ref]')!.click()
+    expect(zooms).toEqual([['wing', wing.src], ['ref', '/r/a.jpg']])
+  })
+  it('no wing crop: no wing card', async () => {
+    const el = mount({ ...base, refs })
+    await nextTick()
+    expect(el.querySelector('[data-testid=zoom-wing]')).toBeNull()
+  })
 })
