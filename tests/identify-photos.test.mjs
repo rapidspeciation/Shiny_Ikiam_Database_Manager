@@ -10,6 +10,8 @@ import { serveOfflineId } from '../server/offline-id.mjs';
 test('refPhotoUrl: only iNaturalist photo hosts and sizes', () => {
   assert.equal(refPhotoUrl('https://inaturalist-open-data.s3.amazonaws.com/photos/123/small.jpg'), 'https://inaturalist-open-data.s3.amazonaws.com/photos/123/small.jpg');
   assert.equal(refPhotoUrl('https://static.inaturalist.org/photos/9/medium.jpeg'), 'https://static.inaturalist.org/photos/9/medium.jpeg');
+  // «large»: the full-screen viewer's size (Identificar's zoom)
+  assert.equal(refPhotoUrl('https://static.inaturalist.org/photos/9/large.jpg'), 'https://static.inaturalist.org/photos/9/large.jpg');
   for (const bad of [
     'http://static.inaturalist.org/photos/9/small.jpg',
     'https://static.inaturalist.org.evil.com/photos/9/small.jpg',

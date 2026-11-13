@@ -1,24 +1,37 @@
 <script setup lang="ts">
 // The person's photo beside reference photos of one candidate (views/IdentifyView.vue), with each photo's credit.
 // A genus fallback is said to be another species, a subspecies' photo names it; the team's specimens are named as such,
-// a preserved specimen with its ID. Each photo's country follows its credit. The species' Sanger wing crop (`wing`,
-// lib/curatedPhotos.ts), when it has one, sits under the reference photo, as Buscar shows it beside the hero.
-// Tapping any photo opens it full screen with zoom (`zoom`: the person's photo, the reference photo by its src, the
-// wing crop). On a laptop the photos are 4:3, so the candidates under them stay on the first screen.
+// a preserved specimen with its ID. Each photo's country follows its credit. As the Wings Gallery's Field / Museum
+// tabs, two chips on the reference photo switch between the live photos («Campo», the default) and the museum ones
+// («Museo»: the species' Sanger wing crop first, lib/curatedPhotos.ts); the arrows browse the chosen set.
+// Tapping either photo opens it full screen with zoom (`zoom`: the person's photo, or a reference photo by its src).
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-vue-next'
 import { licenseUrl, type RefPhoto, type Refs } from '../../lib/identifyRefs'
+import { fieldAndMuseum } from '../../lib/bestPhotos'
 import { countryName } from '../../lib/usePacks'
 
 const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; wing?: RefPhoto | null }>()
-defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref' | 'wing', src?: string] }>()
+defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref', src?: string] }>()
 const at = ref(0)
 const broken = ref(new Set<string>())
+const sets = computed(() => {
+  const s = fieldAndMuseum(props.refs?.photos ?? [], props.wing)
+  const ok = (p: RefPhoto) => !broken.value.has(p.src)
+  return { field: s.field.filter(ok), museum: s.museum.filter(ok) }
+})
+const set = ref<'field' | 'museum'>('field')
 watch(
   () => props.name,
-  () => (at.value = 0),
+  () => ((at.value = 0), (set.value = 'field')),
 )
-const photos = computed(() => (props.refs?.photos ?? []).filter(p => !broken.value.has(p.src)))
+function choose(s: 'field' | 'museum') {
+  set.value = s
+  at.value = 0
+}
+/** The set shown: «Campo» unless it is empty. */
+const shown = computed(() => (set.value === 'museum' || !sets.value.field.length ? 'museum' : 'field'))
+const photos = computed(() => sets.value[shown.value])
 const photo = computed(() => photos.value[Math.min(at.value, photos.value.length - 1)])
 const genus = computed(() => props.name.split(' ')[0])
 const step = (d: number) => (at.value = (at.value + d + photos.value.length) % photos.value.length)
@@ -33,7 +46,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
   <div class="grid grid-cols-2 gap-2">
     <figure class="min-w-0">
       <button type="button" class="zoomable relative block w-full overflow-hidden rounded-md" :aria-label="$t('Ver su foto en grande')" data-testid="zoom-mine" @click="$emit('zoom', 'mine')">
-        <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover lg:aspect-[4/3]" />
+        <img :src="mine" alt="" class="aspect-square w-full rounded-md bg-photo-mat object-cover" />
         <span class="zoom-badge" aria-hidden="true"><ZoomIn :size="16" /></span>
       </button>
       <figcaption class="mt-1 text-xs text-fg-muted">{{ $t('Su foto') }}</figcaption>
@@ -45,7 +58,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
             :key="photo.src"
             :src="photo.src"
             alt=""
-            class="aspect-square w-full rounded-md lg:aspect-[4/3]"
+            class="aspect-square w-full rounded-md"
             :class="[loaded.has(photo.src) ? 'bg-photo-mat' : 'bg-surface-sunken', photo.kind === 'preserved' ? 'object-contain' : 'object-cover']"
             @load="done(photo.src)"
             @error="failed(photo.src)"
@@ -60,7 +73,7 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         >
           {{ $t('Cargando foto…') }}
         </div>
-        <div v-if="!photo" class="grid aspect-square w-full lg:aspect-[4/3] place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
+        <div v-if="!photo" class="grid aspect-square w-full place-items-center rounded-md bg-surface-sunken p-3 text-center text-xs text-fg-muted">
           <span>
             {{ loading ? $t('Buscando fotos…') : online ? $t('No encontramos fotos de esta especie.') : $t('No hay fotos guardadas de esta especie en el teléfono.') }}
             <!-- Offline: the choice in Descargas that has its photo (a tap goes there), or that none can be downloaded. -->
@@ -76,6 +89,26 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
             <ChevronRight :size="20" />
           </button>
         </template>
+        <div
+          v-if="sets.field.length && sets.museum.length"
+          class="absolute top-1.5 left-1.5 flex gap-0.5 rounded-full bg-black/60 p-0.5 text-xs font-medium"
+          role="radiogroup"
+          :aria-label="$t('Fotos de referencia')"
+          data-testid="ref-sets"
+        >
+          <button
+            v-for="k in (['field', 'museum'] as const)"
+            :key="k"
+            role="radio"
+            :aria-checked="shown === k"
+            class="hit-target rounded-full px-2 py-1 whitespace-nowrap"
+            :class="shown === k ? 'bg-white text-black' : 'text-white hover:bg-white/20'"
+            :data-testid="`ref-set-${k}`"
+            @click="choose(k)"
+          >
+            {{ k === 'field' ? $t('Campo') : $t('Museo') }} {{ sets[k].length }}
+          </button>
+        </div>
       </div>
       <figcaption v-if="photo" class="mt-1 line-clamp-2 text-xs text-fg-muted">
         <span v-if="photo.level === 'genus'" class="font-medium text-amber-800">{{ $t('Foto de otra especie del género {genus}', { genus }) }}. </span>
@@ -95,17 +128,6 @@ const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))
         >
         <span v-if="photos.length > 1" class="text-fg-subtle"> · {{ Math.min(at, photos.length - 1) + 1 }}/{{ photos.length }}</span>
       </figcaption>
-      <button
-        v-if="wing && !broken.has(wing.src)"
-        type="button"
-        class="zoomable relative mt-1.5 block w-full overflow-hidden rounded-md border border-border"
-        :aria-label="`${$t('Alas de un ejemplar preservado')} ${wing.specimen ?? ''}`"
-        data-testid="zoom-wing"
-        @click="$emit('zoom', 'wing', wing.src)"
-      >
-        <img :src="wing.src" alt="" class="aspect-[2/1] w-full bg-photo-mat object-contain" @error="failed(wing.src)" />
-        <span class="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white" data-testid="wing-chip">{{ $t('Alas, museo') }}<template v-if="wing.specimen"> · {{ wing.specimen }}</template></span>
-      </button>
     </figure>
   </div>
 </template>

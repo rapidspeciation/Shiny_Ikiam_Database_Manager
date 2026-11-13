@@ -151,9 +151,16 @@ describe('IdentifyView: the panel', () => {
 
   it('the person\'s photo and the reference open full screen; Esc closes', async () => {
     const { host, settle } = await mountWith(restored)
-    host.querySelector<HTMLButtonElement>('[data-testid=zoom-mine]')!.click()
+    const opener = host.querySelector<HTMLButtonElement>('[data-testid=zoom-mine]')!
+    opener.focus()
+    opener.click()
     await settle()
     expect(document.querySelector('[data-testid=photo-viewer]')).not.toBeNull()
+    // the page behind is inert; Tab goes round the viewer's own controls
+    expect(host.closest('[inert]')).not.toBeNull()
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('viewer-close')
+    for (let i = 0; i < 6; i++) dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    expect(document.querySelector('[data-testid=photo-viewer]')!.contains(document.activeElement)).toBe(true)
     expect(document.querySelector('[data-testid=viewer-name]')!.textContent).toContain('Su foto')
     expect(document.body.style.overflow).toBe('hidden')
     dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -163,6 +170,8 @@ describe('IdentifyView: the panel', () => {
       await settle()
     }
     expect(document.querySelector('[data-testid=photo-viewer]')).toBeNull()
+    expect(host.closest('[inert]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
   })
 
   it('«Borrar fotos» while a photo is being read: nothing comes back when the answer arrives', async () => {

@@ -4,7 +4,8 @@
 // wings' detail: pinch, double tap (double click), the mouse wheel or the + and − buttons (keys + − 0); drag to move
 // a zoomed photo (lib/zoomPan.ts). Swipe, the arrows or ← → for the next photo (at full size). Esc or the × close it;
 // the phone's Back too: Buscar opens it as a history entry of its own (?foto=), Identificar passes `back` and the
-// viewer adds one. The page behind does not scroll while it is open.
+// viewer adds one. The page behind does not scroll while it is open, and is inert: Tab stays in the viewer, and
+// closing it gives the focus back to what opened it. A photo's `fallback` loads if its larger size does not.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-vue-next'
 import { licenseUrl } from '../../lib/identifyRefs'
@@ -13,6 +14,8 @@ import { IDENTITY, panBy, pinch, toggleAt, wheel, zoomAt, type View } from '../.
 
 export interface ViewerPhoto {
   src: string
+  /** The address to load if `src` fails (the page's own size of an iNaturalist photo). */
+  fallback?: string
   name: string
   /** Shown instead of the italic name (e.g. «Su foto»): a plain caption. */
   caption?: string
@@ -39,6 +42,13 @@ const step = (d: number) => {
 watch(at, () => (view.value = IDENTITY))
 const closeBtn = ref<HTMLButtonElement | null>(null)
 const frame = ref<HTMLElement | null>(null)
+const root = ref<HTMLElement | null>(null)
+/** Photos whose larger size did not load: their fallback is shown. */
+const failedSrc = ref(new Set<string>())
+const srcOf = (p: ViewerPhoto) => (failedSrc.value.has(p.src) && p.fallback ? p.fallback : p.src)
+const failed = (p: ViewerPhoto) => p.fallback && !failedSrc.value.has(p.src) && (failedSrc.value = new Set([...failedSrc.value, p.src]))
+/** What had the focus when the viewer opened (the photo tapped): it gets it back on close. */
+const opener = (typeof document !== 'undefined' ? document.activeElement : null) as HTMLElement | null
 const size = () => {
   const r = frame.value?.getBoundingClientRect()
   return { w: r?.width || innerWidth, h: r?.height || innerHeight, left: r?.left ?? 0, top: r?.top ?? 0 }
@@ -68,8 +78,17 @@ function zoomBy(k: number) {
   // zooming out ends at the whole photo (no 1.1× left that would stop the swipe)
   view.value = k < 1 && view.value.s * k < 1.2 ? IDENTITY : zoomAt(view.value, view.value.s * k, w / 2, h / 2, w, h)
 }
+/** Tab and Shift+Tab go round the viewer's own controls. */
+function trapTab(e: KeyboardEvent) {
+  const els = [...(root.value?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]') ?? [])].filter(el => el.getClientRects().length)
+  if (!els.length) return
+  const i = els.indexOf(document.activeElement as HTMLElement)
+  e.preventDefault()
+  els[(i < 0 ? 0 : i + (e.shiftKey ? -1 : 1) + els.length) % els.length].focus()
+}
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') close()
+  if (e.key === 'Tab') trapTab(e)
+  else if (e.key === 'Escape') close()
   else if (e.key === 'ArrowRight' && !zoomed.value) step(1)
   else if (e.key === 'ArrowLeft' && !zoomed.value) step(-1)
   else if (e.key === '+' || e.key === '=') zoomBy(1.5)
@@ -145,8 +164,15 @@ function onWheel(e: WheelEvent) {
 
 let overflow = ''
 let overscroll = ''
+/** The page's parts made inert while the viewer is open (those that were not already). */
+const madeInert: Element[] = []
 onMounted(() => {
   addEventListener('keydown', onKey)
+  for (const el of [...document.body.children]) {
+    if (el === root.value || el.contains(root.value) || el.hasAttribute('inert') || el.tagName === 'SCRIPT') continue
+    el.setAttribute('inert', '')
+    madeInert.push(el)
+  }
   overflow = document.body.style.overflow
   overscroll = document.documentElement.style.overscrollBehavior
   document.body.style.overflow = 'hidden'
@@ -160,6 +186,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   removeEventListener('keydown', onKey)
+  for (const el of madeInert.splice(0)) el.removeAttribute('inert')
+  if (opener?.isConnected) opener.focus({ preventScroll: true })
   removeEventListener('popstate', onPop)
   document.body.style.overflow = overflow
   document.documentElement.style.overscrollBehavior = overscroll
@@ -175,7 +203,7 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
 
 <template>
   <Teleport to="body">
-    <div class="viewer fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-modal="true" :aria-label="photo?.caption ?? photo?.name" data-testid="photo-viewer">
+    <div ref="root" class="viewer fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-modal="true" :aria-label="photo?.caption ?? photo?.name" data-testid="photo-viewer">
       <div class="viewer-top flex items-center justify-between gap-2 p-2">
         <span class="px-2 text-sm text-white/80 tabular-nums">{{ photos.length > 1 ? `${at + 1} / ${photos.length}` : '' }}</span>
         <button ref="closeBtn" class="grid size-12 place-items-center rounded-full bg-white/15 hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-white" :aria-label="$t('Cerrar')" data-testid="viewer-close" @click="close">
@@ -194,7 +222,7 @@ const restOf = (name: string) => name.split(' ').slice(1).join(' ')
         @wheel="onWheel"
       >
         <div class="absolute inset-0 origin-top-left will-change-transform" :style="{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }" data-testid="viewer-zoom" :data-scale="view.s.toFixed(2)">
-          <img v-if="photo" :key="photo.src" :src="photo.src" alt="" class="absolute inset-0 size-full object-contain" draggable="false" />
+          <img v-if="photo" :key="photo.src" :src="srcOf(photo)" alt="" class="absolute inset-0 size-full object-contain" draggable="false" @error="failed(photo)" />
         </div>
         <template v-if="photos.length > 1 && !zoomed">
           <button class="absolute top-1/2 left-2 grid size-12 -translate-y-1/2 place-items-center rounded-full bg-black/55 hover:bg-black/75" :aria-label="$t('Foto anterior')" @click="step(-1)">

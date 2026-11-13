@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { bestPhotos, bestThumb, curatedReady, viewerSrc } from '../bestPhotos'
+import { bestPhotos, bestThumb, curatedReady, fieldAndMuseum, viewerSrc } from '../bestPhotos'
 import type { RefPhoto } from '../identifyRefs'
 
 // Identificar's one order for a taxon's photos: by country until the curated list is in, then the curated order
@@ -41,8 +41,18 @@ describe('bestPhotos', () => {
     expect(bestThumb('X y', undefined, place as never)).toBeUndefined()
   })
   it('the viewer\'s larger size for iNaturalist photos only', () => {
-    expect(viewerSrc('https://static.inaturalist.org/photos/222/small.jpg')).toBe('https://static.inaturalist.org/photos/222/medium.jpg')
-    expect(viewerSrc(photos[0].src)).toContain('%2F111%2Fmedium.jpg')
+    expect(viewerSrc('https://static.inaturalist.org/photos/222/small.jpg')).toBe('https://static.inaturalist.org/photos/222/large.jpg')
+    expect(viewerSrc('https://static.inaturalist.org/photos/222/medium.jpeg')).toBe('https://static.inaturalist.org/photos/222/large.jpeg')
+    expect(viewerSrc(photos[0].src)).toContain('%2F111%2Flarge.jpg')
     expect(viewerSrc(photos[2].src)).toBe(photos[2].src)
+  })
+  it('the Field / Museum sets: live photos, then the wing crop first among the museum ones', () => {
+    const wing = { ...ph('/identificar/wings/CAM1-aa.webp', null), kind: 'preserved' as const, specimen: 'CAM1' }
+    const pres = { ...ph('/p.webp', null), kind: 'preserved' as const }
+    const spec = ph('/s.jpg', 'EC', 'specimen')
+    const s = fieldAndMuseum([photos[1], pres, spec, photos[2]], wing)
+    expect(s.field).toEqual([photos[1], photos[2]])
+    expect(s.museum).toEqual([wing, pres, spec])
+    expect(fieldAndMuseum([photos[1]], null).museum).toEqual([])
   })
 })

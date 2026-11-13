@@ -36,19 +36,26 @@ describe('RefCompare', () => {
     await nextTick()
     expect(el.textContent).toContain(t('No encontramos fotos de esta especie.'))
   })
-  it('the species\' wing crop sits under the reference photo with its specimen, and opens full screen', async () => {
+  it('Campo / Museo: two chips switch the reference photo between the live photos and the museum ones (wing crop first)', async () => {
     const zooms: unknown[][] = []
     const wing = { src: '/identificar/wings/CAM1-abcdef12.webp', credit: 'Ikiam / Wellcome Sanger Institute', license: '', level: 'species', kind: 'preserved', specimen: 'CAM1' }
-    const el = mount({ ...base, refs, wing, onZoom: (...a: unknown[]) => zooms.push(a) })
+    const two = { photos: [...refs.photos, { src: '/r/b.jpg', credit: 'y', level: 'species' }] }
+    const el = mount({ ...base, refs: two, wing, onZoom: (...a: unknown[]) => zooms.push(a) })
     await nextTick()
-    expect(el.querySelector('[data-testid=wing-chip]')!.textContent).toContain('CAM1')
-    el.querySelector<HTMLButtonElement>('[data-testid=zoom-wing]')!.click()
+    expect(el.querySelector('[data-testid=ref-set-field]')!.textContent).toMatch(/2/)
+    expect(el.querySelector('[data-testid=ref-set-museum]')!.textContent).toMatch(/1/)
+    expect(el.querySelector('[data-testid=ref-set-field]')!.getAttribute('aria-checked')).toBe('true')
+    expect(el.querySelector('[data-testid=zoom-ref] img')!.getAttribute('src')).toBe('/r/a.jpg')
+    el.querySelector<HTMLButtonElement>('[data-testid=ref-set-museum]')!.click()
+    await nextTick()
+    expect(el.querySelector('[data-testid=zoom-ref] img')!.getAttribute('src')).toBe(wing.src)
+    expect(el.querySelector('[data-testid=preserved]')!.textContent).toContain('CAM1')
     el.querySelector<HTMLButtonElement>('[data-testid=zoom-ref]')!.click()
-    expect(zooms).toEqual([['wing', wing.src], ['ref', '/r/a.jpg']])
+    expect(zooms).toEqual([['ref', wing.src]])
   })
-  it('no wing crop: no wing card', async () => {
+  it('no museum photo: no chips', async () => {
     const el = mount({ ...base, refs })
     await nextTick()
-    expect(el.querySelector('[data-testid=zoom-wing]')).toBeNull()
+    expect(el.querySelector('[data-testid=ref-sets]')).toBeNull()
   })
 })

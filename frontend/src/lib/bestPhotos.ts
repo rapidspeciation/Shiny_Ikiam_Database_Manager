@@ -43,10 +43,22 @@ export function bestThumb(taxon: string, photos: RefPhoto[] | undefined, place: 
 }
 
 /**
- * The photo at a larger size for the full-screen viewer, where there is one: an iNaturalist «small» photo (about
- * 240 px, as lists show it) as its «medium» (about 500 px), also through the app's proxy (server/identify-photos.mjs
- * passes both sizes). Pack photos, wing crops and the team's own keep their address.
+ * The photo at a larger size for the full-screen viewer, where there is one: an iNaturalist «small» or «medium» photo
+ * as its «large» (about 1024 px: the wings' detail when zoomed in), also through the app's proxy
+ * (server/identify-photos.mjs passes it). The page keeps its own size; pack photos, wing crops and the team's own keep
+ * their address. The viewer falls back to the page's address if the large one does not load.
  */
 export function viewerSrc(src: string): string {
-  return src.replace(/(\/photos\/\d+\/)small\.(jpe?g|png|webp)/i, '$1medium.$2').replace(/(%2Fphotos%2F\d+%2F)small\.(jpe?g|png|webp)/i, '$1medium.$2')
+  return src.replace(/(\/photos\/\d+\/)(?:small|medium)\.(jpe?g|png|webp)/i, '$1large.$2').replace(/(%2Fphotos%2F\d+%2F)(?:small|medium)\.(jpe?g|png|webp)/i, '$1large.$2')
+}
+
+/** A museum photo: a preserved specimen (a Sanger wing crop, a pack's preserved photo) or the team's own specimen. */
+export const isMuseum = (p: RefPhoto) => p.kind === 'preserved' || p.level === 'specimen'
+/**
+ * The comparison's two sets, as the Wings Gallery's Field / Museum tabs: the live photos in their order, and the
+ * museum ones with the species' Sanger wing crop first (lib/curatedPhotos.ts wingPhoto).
+ */
+export function fieldAndMuseum(photos: RefPhoto[], wing: RefPhoto | null | undefined): { field: RefPhoto[]; museum: RefPhoto[] } {
+  const museum = photos.filter(isMuseum).filter(p => p.src !== wing?.src)
+  return { field: photos.filter(p => !isMuseum(p)), museum: wing ? [wing, ...museum] : museum }
 }

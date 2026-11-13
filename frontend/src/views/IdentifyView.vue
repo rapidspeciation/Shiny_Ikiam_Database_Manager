@@ -39,7 +39,7 @@ import CandidateStrip from '../components/identify/CandidateStrip.vue'
 import PhotoViewer, { type ViewerPhoto } from '../components/identify/PhotoViewer.vue'
 import MyIdentifications from '../components/identify/MyIdentifications.vue'
 import TaxonPick from '../components/identify/TaxonPick.vue'
-import { bestPhotos, bestThumb, loadCurated, viewerSrc } from '../lib/bestPhotos'
+import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerSrc } from '../lib/bestPhotos'
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
 import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
@@ -1519,27 +1519,37 @@ watch(
     onCleanup(() => url && URL.revokeObjectURL(url))
   },
 )
-function openViewer(which: 'mine' | 'ref' | 'wing', src?: string) {
+function openViewer(which: 'mine' | 'ref', src?: string) {
   const r = result.value
   if (!r) return
   const genus = showing.value.split(' ')[0]
   const mine: ViewerPhoto = { src: mineUrl.value ?? r.crop, name: '', caption: t('Su foto'), credit: '', license: '', source: null }
-  const refPhotos: ViewerPhoto[] = (refsShown.value?.photos ?? []).map(p => ({
+  // Both sets, as RefCompare shows them: the live photos, then the museum ones (the Sanger wing crop first).
+  const { field, museum } = fieldAndMuseum(refsShown.value?.photos ?? [], wingShown.value)
+  const all = [...field, ...museum]
+  const refPhotos: ViewerPhoto[] = all.map(p => ({
+    // iNaturalist's «large» in the viewer only, for the wings' detail; the page's own size if it is not there
     src: viewerSrc(p.src),
+    fallback: p.src,
     name: p.level === 'subspecies' && p.taxon ? p.taxon : showing.value,
-    kicker: p.level === 'genus' ? t('Foto de otra especie del género {genus}', { genus }) : p.level === 'subspecies' ? t('Subespecie') : p.level === 'specimen' ? t('Ejemplar del proyecto') : undefined,
+    kicker:
+      p === wingShown.value
+        ? t('Alas de un ejemplar preservado')
+        : p.level === 'genus'
+          ? t('Foto de otra especie del género {genus}', { genus })
+          : p.level === 'subspecies'
+            ? t('Subespecie')
+            : p.level === 'specimen'
+              ? t('Ejemplar del proyecto')
+              : undefined,
     credit: p.credit,
     license: p.license,
     source: p.source ?? null,
     country: p.country ?? null,
     preserved: p.kind === 'preserved' ? (p.specimen ?? '') : null,
   }))
-  // The wing crop second, after the hero (as Buscar's viewer has it).
-  const w = wingShown.value
-  const wing: ViewerPhoto[] = w ? [{ src: w.src, name: showing.value, kicker: t('Alas de un ejemplar preservado'), credit: w.credit, license: '', source: null, preserved: w.specimen ?? '' }] : []
-  const list = [mine, ...refPhotos.slice(0, 1), ...wing, ...refPhotos.slice(1)]
-  const at = which === 'ref' ? (refsShown.value?.photos ?? []).findIndex(p => p.src === src) : -1
-  viewer.value = { photos: list, start: which === 'mine' ? 0 : which === 'wing' ? 2 : at <= 0 ? 1 : at + 1 + wing.length }
+  const at = which === 'ref' ? all.findIndex(p => p.src === src) : -1
+  viewer.value = { photos: [mine, ...refPhotos], start: which === 'mine' ? 0 : Math.max(0, at) + 1 }
 }
 
 const goOnline = () => {
