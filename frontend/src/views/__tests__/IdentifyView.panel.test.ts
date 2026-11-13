@@ -71,7 +71,7 @@ afterEach(() => {
   locale.value = 'en'
 })
 
-async function mountWith(stored: Record<string, unknown>) {
+async function mountWith(stored: Record<string, unknown>, { signedOut = false } = {}) {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('fetch', async () => new Response('{}', { status: 404 }))
   // jsdom has no canvas: the page's small thumbnail is drawn on a stand-in
@@ -84,7 +84,7 @@ async function mountWith(stored: Record<string, unknown>) {
   setActivePinia(pinia)
   const session = useSession()
   session.ready = true
-  session.user = { id: 7, username: 'lab', displayName: 'Lab', role: 'admin' } as never
+  session.user = signedOut ? null : ({ id: 7, username: 'lab', displayName: 'Lab', role: 'admin' } as never)
   const { default: IdentifyView } = await import('../IdentifyView.vue')
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/identificar', component: IdentifyView }, { path: '/:p(.*)', component: { template: '<div />' } }] })
   await router.push('/identificar')
@@ -217,5 +217,22 @@ describe('IdentifyView: the panel', () => {
     expect(calls).toBe(0)
     expect(host.querySelector('[data-testid=headline]')).toBeNull()
     expect(host.querySelector('[data-testid=photo-start]')).not.toBeNull()
+  })
+
+  it('a history item read by the server, tapped signed out: no viewer, the reason by the item, nothing sent', async () => {
+    const at = '2026-11-12T10:00:00.000Z'
+    const { historyStore } = await import('../../lib/identifyHistory')
+    await (await historyStore()).put({ at, photo: new Blob(['x'], { type: 'image/jpeg' }), result: JSON.stringify({ ...restored, at }), compared: null, pick: null, takenAt: null, country: null, versions: { id: null, sex: null } })
+    localStorage.setItem('identify:log', JSON.stringify([{ at, thumb: 'data:image/jpeg;base64,AA==', ai: 'Mechanitis polymnia', p: 0.6, pick: null, side: null, saved: true }]))
+    let calls = 0
+    server.onCall = () => void calls++
+    const { host, settle } = await mountWith({}, { signedOut: true })
+    host.querySelector<HTMLButtonElement>('[data-testid=history-load]')!.click()
+    for (let i = 0; i < 3; i++) await settle()
+    server.onCall = null
+    expect(document.querySelector('[data-testid=photo-viewer]')).toBeNull()
+    expect(host.querySelector('[data-testid=history-reason]')!.textContent).toContain('Inicie sesión para volver a analizarla.')
+    expect(calls).toBe(0)
+    expect(host.querySelector('[data-testid=headline]')).toBeNull()
   })
 })

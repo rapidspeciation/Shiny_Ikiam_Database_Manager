@@ -11,7 +11,7 @@ import { percent } from '../../lib/identifyResult'
 import { locale } from '../../lib/i18n'
 import type { LogEntry } from '../../lib/identifyLog'
 
-defineProps<{ entries: (LogEntry & { outdated: boolean })[]; current: string | null; busy: boolean }>()
+defineProps<{ entries: (LogEntry & { outdated: boolean; reason?: string | null })[]; current: string | null; busy: boolean }>()
 defineEmits<{ load: [at: string]; reprocess: [at: string]; copy: [at: string]; download: [at: string]; forget: [] }>()
 const when = (iso: string) => new Date(iso).toLocaleString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const SEX = { female: '♀', male: '♂', unsure: '' } as const
@@ -37,6 +37,7 @@ const SEX = { female: '♀', male: '♂', unsure: '' } as const
             <span class="block text-xs text-fg-muted">
               {{ when(e.at) }} · {{ percent(e.p) }}<template v-if="e.pick && e.pick !== e.ai"> · {{ $t('la IA sugería {ai}', { ai: e.ai }) }}</template><template v-if="e.sex && e.sex.call !== 'unsure'"> · <span class="whitespace-nowrap">{{ SEX[e.sex.call] }}<template v-if="e.sex.pct != null"> {{ e.sex.pct }} %</template></span></template>
             </span>
+            <span v-if="e.reason" class="block text-xs font-medium text-pending-text" role="status" data-testid="history-reason">{{ e.reason }}</span>
           </span>
         </button>
         <span v-else class="flex min-w-0 flex-1 items-center gap-3 pl-1">
@@ -48,7 +49,7 @@ const SEX = { female: '♀', male: '♂', unsure: '' } as const
         </span>
         <template v-if="e.saved">
           <button v-if="e.outdated" class="btn min-h-11 shrink-0 px-2" :disabled="busy" data-testid="history-reprocess" :title="$t('Leer de nuevo con el modelo actual')" @click="$emit('reprocess', e.at)">
-            <RefreshCw :size="15" /><span class="hidden sm:inline">{{ $t('Reprocesar') }}</span><span class="sr-only sm:hidden">{{ $t('Reprocesar') }}</span>
+            <RefreshCw :size="15" />{{ $t('Reprocesar') }}
           </button>
           <button class="btn-ghost size-11 shrink-0" :aria-label="$t('Copiar la foto')" :title="$t('Copiar la foto')" data-testid="history-copy" @click="$emit('copy', e.at)"><Copy :size="16" /></button>
           <button class="btn-ghost size-11 shrink-0" :aria-label="$t('Descargar la foto')" :title="$t('Descargar la foto')" data-testid="history-download" @click="$emit('download', e.at)"><Download :size="16" /></button>

@@ -1385,7 +1385,16 @@ const currentVersions = computed<Versions>(() => ({
   id: mode.value === 'online' ? listedHead.value : storedHead.value,
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
-const entries = computed(() => log.value.map(e => ({ ...e, outdated: !!e.saved && (unread.value.has(e.at) || outdated(e.v, currentVersions.value)) })))
+/** Something can read a photo now: the server (signed in, with signal) or a model on this phone. */
+const canRead = computed(() => (!!session.user && online.value) || anyReady.value)
+const entries = computed(() =>
+  log.value.map(e => {
+    const why = unread.value.get(e.at)
+    // why it could not be shown: signed out (read online) or the phone's model gone; Reprocesar only if something can read it
+    const reason = why === 'online' && !session.user ? t('Inicie sesión para volver a analizarla.') : why === 'phone' && !anyReady.value ? t('El modelo del teléfono que la leyó ya no está.') : null
+    return { ...e, reason, outdated: !!e.saved && ((!!why && canRead.value) || outdated(e.v, currentVersions.value)) }
+  }),
+)
 /** The sex line's call for the list (♀ 72 %). */
 const sexSummary = computed<LogEntry['sex']>(() => {
   const r = result.value
@@ -1469,7 +1478,7 @@ async function rememberNow({ r, top: top1, compared: cmp, pick: pk, side: sd, se
 watch([compared, pick, sexSummary], () => result.value && remember(snapshot(result.value)))
 
 /** Items whose kept result could not be shown here (no model for it now): «Reprocesar» is offered on them. */
-const unread = ref(new Set<string>())
+const unread = ref(new Map<string, 'online' | 'phone'>())
 const when = (iso: string) => new Date(iso).toLocaleString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 /** A laptop (the two columns side by side, Tailwind lg). */
 const wideQuery = matchMedia('(min-width: 1024px)')
@@ -1493,20 +1502,21 @@ async function loadEntry(at: string, { rerun = false } = {}) {
   const known: Known = { takenAt: rec.takenAt, country: rec.country }
   const kept = rerun ? null : await revive(JSON.parse(rec.result)).catch(() => null)
   if (!kept && !rerun) {
-    // Its result cannot be ranked here now (read on the phone, whose model is gone; or the team's, signed out): never
-    // read it again by itself (online that would send it to the server). Its photo full screen with its line, and
-    // «Reprocesar» on the item for the person to choose.
-    const e = log.value.find(x => x.at === at)
-    unread.value = new Set([...unread.value, at])
-    const url = URL.createObjectURL(rec.photo)
-    viewer.value = { photos: [{ src: url, name: e?.pick ?? e?.ai ?? '', credit: '', license: '', source: null, kicker: e ? `${percent(e.p)} · ${when(at)}` : undefined }], start: 0 }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    say(t('El modelo que la leyó ya no está en este teléfono: Reprocesar la lee de nuevo.'))
+    // Its result cannot be shown here now (read by the server and signed out, or read on the phone whose model is
+    // gone): never read it again by itself (online that would send it to the server). The item says why, and
+    // offers «Reprocesar» when something can read it.
+    let source: 'online' | 'phone' = 'phone'
+    try {
+      source = JSON.parse(rec.result).source === 'online' ? 'online' : 'phone'
+    } catch {
+      /* an old record: as the phone's */
+    }
+    unread.value = new Map([...unread.value, [at, source]])
     return
   }
   if (!kept) {
     // Reprocesar: read again with the models in use now; a new item replaces the old one.
-    unread.value = new Set([...unread.value].filter(x => x !== at))
+    unread.value = new Map([...unread.value].filter(([x]) => x !== at))
     clearResult()
     await identify(photo, known)
     const now = result.value
