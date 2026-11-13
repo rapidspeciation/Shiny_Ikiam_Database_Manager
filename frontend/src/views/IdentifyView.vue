@@ -39,7 +39,7 @@ import CandidateStrip from '../components/identify/CandidateStrip.vue'
 import PhotoViewer, { type ViewerPhoto } from '../components/identify/PhotoViewer.vue'
 import MyIdentifications from '../components/identify/MyIdentifications.vue'
 import TaxonPick from '../components/identify/TaxonPick.vue'
-import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerSrc } from '../lib/bestPhotos'
+import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerPhoto } from '../lib/bestPhotos'
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
 import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
@@ -1565,8 +1565,7 @@ function openViewer(which: 'mine' | 'ref', src?: string) {
   const all = [...field, ...museum]
   const refPhotos: ViewerPhoto[] = all.map(p => ({
     // iNaturalist's «large» in the viewer only, for the wings' detail; the page's own size if it is not there
-    src: viewerSrc(p.src),
-    fallback: p.src,
+    ...viewerPhoto(p, { signedIn: !!session.user, online: online.value }),
     name: p.level === 'subspecies' && p.taxon ? p.taxon : showing.value,
     kicker:
       p === wingShown.value

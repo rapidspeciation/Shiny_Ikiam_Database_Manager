@@ -21,6 +21,7 @@ import { countryName } from '../../lib/usePacks'
 import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
+import { viewerPhoto } from '../../lib/bestPhotos'
 
 const props = withDefaults(defineProps<{ signedIn: boolean; online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
@@ -191,7 +192,8 @@ const viewerStart = ref<number | null>(null)
 const viewerOpen = computed(() => route.query.foto != null && viewerStart.value != null)
 const viewerPhotos = computed<ViewerPhoto[]>(() =>
   cards.value.map(c => ({
-    src: c.photo.src,
+    // iNaturalist's «large» signed in and online (lib/bestPhotos.ts viewerPhoto, as Identificar), else the page's
+    ...viewerPhoto(c.photo, { signedIn: props.signedIn, online: props.online }),
     name: c.name,
     kicker: c.kicker === 'specimen' || c.kicker === 'subspecies' ? kickerText(c) : undefined,
     credit: c.photo.credit,

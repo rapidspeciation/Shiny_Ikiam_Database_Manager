@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { bestPhotos, bestThumb, curatedReady, fieldAndMuseum, viewerSrc } from '../bestPhotos'
+import { bestPhotos, bestThumb, curatedReady, fieldAndMuseum, viewerPhoto } from '../bestPhotos'
 import type { RefPhoto } from '../identifyRefs'
 
 // Identificar's one order for a taxon's photos: by country until the curated list is in, then the curated order
@@ -40,11 +40,17 @@ describe('bestPhotos', () => {
     expect(bestThumb('X y', g, place as never)).toBe('/s.jpg')
     expect(bestThumb('X y', undefined, place as never)).toBeUndefined()
   })
-  it('the viewer\'s larger size for iNaturalist photos only', () => {
-    expect(viewerSrc('https://static.inaturalist.org/photos/222/small.jpg')).toBe('https://static.inaturalist.org/photos/222/large.jpg')
-    expect(viewerSrc('https://static.inaturalist.org/photos/222/medium.jpeg')).toBe('https://static.inaturalist.org/photos/222/large.jpeg')
-    expect(viewerSrc(photos[0].src)).toContain('%2F111%2Flarge.jpg')
-    expect(viewerSrc(photos[2].src)).toBe(photos[2].src)
+  it('the viewer\'s photo: iNaturalist «large» through the proxy signed in and online, the page\'s photo otherwise', () => {
+    const on = { signedIn: true, online: true }
+    const packPhoto = photos[2]
+    expect(viewerPhoto(packPhoto, on)).toEqual({ src: expect.stringContaining('%2Fphotos%2F333333%2Flarge.jpg'), fallback: packPhoto.src })
+    expect(viewerPhoto(packPhoto, on).src).toContain('api/identify/ref-photo?u=')
+    expect(viewerPhoto(photos[1], on).src).toContain('%2Fphotos%2F222%2Flarge.jpg')
+    expect(viewerPhoto({ ...photos[1], src: 'https://static.inaturalist.org/photos/222/small.jpeg' }, on).src).toContain('large.jpeg')
+    expect(viewerPhoto(packPhoto, { signedIn: false, online: true })).toEqual({ src: packPhoto.src })
+    expect(viewerPhoto(packPhoto, { signedIn: true, online: false })).toEqual({ src: packPhoto.src })
+    const wing = { ...ph('/identificar/wings/CAM1-aa.webp', null), kind: 'preserved' as const }
+    expect(viewerPhoto(wing, on)).toEqual({ src: wing.src })
   })
   it('the Field / Museum sets: live photos, then the wing crop first among the museum ones', () => {
     const wing = { ...ph('/identificar/wings/CAM1-aa.webp', null), kind: 'preserved' as const, specimen: 'CAM1' }
