@@ -13,7 +13,7 @@ import type { LogEntry } from '../../lib/identifyLog'
 defineProps<{ entries: (LogEntry & { outdated: boolean })[]; current: string | null; busy: boolean }>()
 defineEmits<{ load: [at: string]; reprocess: [at: string]; copy: [at: string]; download: [at: string]; forget: [] }>()
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-const SEX = { female: '♀', male: '♂', unsure: '?' } as const
+const SEX = { female: '♀', male: '♂', unsure: '' } as const
 </script>
 
 <template>
@@ -34,7 +34,7 @@ const SEX = { female: '♀', male: '♂', unsure: '?' } as const
           <span class="min-w-0 flex-1">
             <i class="font-medium">{{ e.pick ?? e.ai }}</i>
             <span class="block text-xs text-fg-muted">
-              {{ when(e.at) }} · {{ percent(e.p) }}<template v-if="e.pick && e.pick !== e.ai"> · {{ $t('la IA sugería {ai}', { ai: e.ai }) }}</template><template v-if="e.sex"> · <span class="whitespace-nowrap">{{ SEX[e.sex.call] }}<template v-if="e.sex.pct != null"> {{ e.sex.pct }} %</template></span></template>
+              {{ when(e.at) }} · {{ percent(e.p) }}<template v-if="e.pick && e.pick !== e.ai"> · {{ $t('la IA sugería {ai}', { ai: e.ai }) }}</template><template v-if="e.sex && e.sex.call !== 'unsure'"> · <span class="whitespace-nowrap">{{ SEX[e.sex.call] }}<template v-if="e.sex.pct != null"> {{ e.sex.pct }} %</template></span></template>
             </span>
           </span>
         </button>

@@ -23,7 +23,7 @@ defineEmits<{ select: [at: string]; files: []; camera: []; clear: [] }>()
 <template>
   <section class="rounded-lg border border-border bg-surface p-2" data-testid="photo-bar" :aria-label="$t('Sus fotos')">
     <template v-if="shots.length">
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-1.5 sm:gap-2">
       <!-- the thumbnails scroll by themselves; the buttons stay in view -->
       <div class="flex min-w-12 items-center gap-2 overflow-x-auto py-0.5" data-testid="photo-bar-thumbs">
         <PhotoThumb
@@ -45,7 +45,7 @@ defineEmits<{ select: [at: string]; files: []; camera: []; clear: [] }>()
       <span v-if="busy" class="hidden shrink-0 items-center gap-1 text-sm text-fg-muted sm:flex" role="status"><LoaderCircle :size="16" class="animate-spin" />{{ busy }}</span>
       <span v-else-if="current" class="hidden shrink-0 items-center gap-1 text-sm text-success-text sm:flex"><Check :size="16" />{{ $t('Identificada') }}</span>
       <button class="ml-auto flex min-h-12 shrink-0 items-center gap-1 rounded-md px-1 text-sm font-medium text-brand-text underline-offset-2 hover:underline" data-testid="clear-photos" @click="$emit('clear')">
-        <X :size="16" />{{ $t('Borrar fotos') }}
+        <X :size="16" /><span class="max-[379px]:hidden">{{ $t('Borrar fotos') }}</span><span class="hidden max-[379px]:inline">{{ $t('Borrar') }}</span>
       </button>
     </div>
     <p v-if="busy" class="mt-1 flex items-center gap-1 px-1 text-sm text-fg-muted sm:hidden" role="status"><LoaderCircle :size="16" class="animate-spin" />{{ busy }}</p>
