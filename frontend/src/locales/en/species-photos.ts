@@ -2,6 +2,7 @@
 export default {
   'Ver fotos de {name}': 'See photos of {name}',
   'Buscando fotos…': 'Looking for photos…',
+  'Muchas visitas desde esta red. Inicie sesión para ver todas las fotos.': 'Many visits from this network. Sign in to see every photo.',
   // RefCompare: a reference photo still loading.
   'Cargando foto…': 'Loading photo…',
   ejemplar: 'specimen',

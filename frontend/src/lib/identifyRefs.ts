@@ -14,6 +14,7 @@ import { appRoot } from './appRoot'
 import { CACHE } from './offlineEngine'
 import { installedSources, onlineSources, packSources, photosFrom, rangeOf, type PackLookup, type PhotoKind, type TaxonPhoto } from './photoPacks'
 import { byPlace, type Place } from './photoCountry'
+import { noteLimit } from './visitorLimit'
 
 export interface RefPhoto {
   src: string
@@ -214,8 +215,9 @@ export async function referencePhotos(
       }
       await keep(Object.fromEntries(Object.entries(refs).filter(([, r]) => r.photos.length)))
       return { refs: await withField(await pack(refs), names), pending }
-    } catch {
-      /* offline after all: what the phone kept */
+    } catch (err) {
+      // offline after all, or the visitors' limit (said by the page): what the phone kept
+      noteLimit(err)
     }
   }
   return { refs: await withField(await pack(Object.fromEntries(names.filter(n => have[n]).map(n => [n, have[n]]))), names), pending: [] }

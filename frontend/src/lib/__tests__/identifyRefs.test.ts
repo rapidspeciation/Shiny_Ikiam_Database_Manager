@@ -112,7 +112,10 @@ describe('field photos', () => {
   it('shows a species’ subspecies photos after its own, signed out, when the server does not answer', async () => {
     fakeCaches()
     const { referencePhotos } = await import('../identifyRefs')
+    const { visitorLimited } = await import('../visitorLimit')
     const { refs } = await referencePhotos(['Mechanitis polymnia', 'Mechanitis lysimnia'])
+    // the refusal was the visitors' limit: the page says so
+    expect(visitorLimited.value).toBe(true)
     expect(refs['Mechanitis polymnia'].photos.map(p => [p.level, p.taxon ?? null])).toEqual([
       ['species', null],
       ['subspecies', 'Mechanitis polymnia proceriformis'],

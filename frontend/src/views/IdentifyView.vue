@@ -61,6 +61,7 @@ import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
+import { visitorLimited } from '../lib/visitorLimit'
 declare const __BUILD_ID__: string
 import MyContributions from '../components/identify/MyContributions.vue'
 import { CONSENT_VERSION, contribFor } from '../lib/contribConfig'
@@ -1813,6 +1814,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 
           <section class="mt-3" data-testid="compare" :aria-label="$t('Comparar')">
             <RefCompare :mine="result.crop" :name="showing" :refs="refsShown" :loading="refsLoading && !refs[showing]" :online="online" :hint="gapHint" :wing="wingShown" :prefer-museum="museumFirst" @hint="fixGap" @zoom="openViewer" />
+            <p v-if="visitorLimited" class="mt-1 text-sm text-fg-muted" role="status" data-testid="visitor-limit">{{ $t('Muchas visitas desde esta red. Inicie sesión para ver todas las fotos.') }}</p>
             <p v-if="showing !== top?.name" class="mt-1 text-sm">{{ $t('Comparando con') }} <i class="font-medium">{{ showing }}</i></p>
             <CandidateStrip class="mt-2" :candidates="candidates" :showing="showing" :pick="pick" @compare="n => (compared = n)" />
             <div class="mt-2 flex flex-wrap items-center gap-2">

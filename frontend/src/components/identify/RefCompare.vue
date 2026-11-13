@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-vue-next'
 import { licenseUrl, type RefPhoto, type Refs } from '../../lib/identifyRefs'
 import { fieldAndMuseum, sexLabel } from '../../lib/bestPhotos'
 import { countryName } from '../../lib/usePacks'
+import { probePhoto } from '../../lib/visitorLimit'
 
 const props = defineProps<{ mine: string; name: string; refs: Refs | undefined; loading: boolean; online: boolean; hint?: { text: string; go: boolean } | null; wing?: RefPhoto | null; preferMuseum?: boolean }>()
 defineEmits<{ hint: []; zoom: [which: 'mine' | 'ref', src?: string] }>()
@@ -44,7 +45,10 @@ const photo = computed(() => photos.value[Math.min(at.value, photos.value.length
 const genus = computed(() => props.name.split(' ')[0])
 const step = (d: number) => (at.value = (at.value + d + photos.value.length) % photos.value.length)
 // A photo the phone does not have and cannot fetch (no signal): left out.
-const failed = (src: string) => (broken.value = new Set([...broken.value, src]))
+const failed = (src: string) => {
+  broken.value = new Set([...broken.value, src])
+  probePhoto(src)
+}
 // Until a reference photo is in: a light surface saying it loads, not a black box beside the person's photo.
 const loaded = ref(new Set<string>())
 const done = (src: string) => (loaded.value = new Set([...loaded.value, src]))

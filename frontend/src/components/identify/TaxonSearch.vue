@@ -22,6 +22,7 @@ import type { Place } from '../../lib/photoCountry'
 import { catalog, search, taxonView, type Card, type Catalog, type Hit } from '../../lib/taxonSearch'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 import { sexLabel, viewerPhoto } from '../../lib/bestPhotos'
+import { probePhoto, visitorLimited } from '../../lib/visitorLimit'
 
 const props = withDefaults(defineProps<{ online: boolean; home?: string[] }>(), { home: () => [] })
 const emit = defineEmits<{ downloads: [] }>()
@@ -152,7 +153,10 @@ async function loadPhotos() {
 watch([names, () => props.online], loadPhotos)
 
 const broken = ref(new Set<string>())
-const fail = (src: string) => (broken.value = new Set([...broken.value, src]))
+const fail = (src: string) => {
+  broken.value = new Set([...broken.value, src])
+  probePhoto(src)
+}
 /** The person's countries, and a subspecies' range when one is chosen. */
 const place = computed<Place>(() => ({
   home: props.home,
@@ -306,6 +310,7 @@ watch(
         <h2 class="text-2xl leading-tight font-semibold"><i>{{ chosen.name }}</i></h2>
         <span class="text-sm text-fg-muted">{{ rankWord(chosen.rank) }}<template v-if="familyOf(chosen)"> · {{ familyOf(chosen) }}</template></span>
       </header>
+      <p v-if="visitorLimited" class="mt-3 text-sm text-fg-muted" role="status" data-testid="visitor-limit">{{ $t('Muchas visitas desde esta red. Inicie sesión para ver todas las fotos.') }}</p>
       <p v-if="loading && !cards.length" class="mt-3 text-fg-muted" role="status">{{ $t('Buscando fotos…') }}</p>
       <p v-else-if="!loading && !cards.length" class="mt-3 rounded-lg border border-border bg-surface p-3 text-fg-muted">
         {{ online ? $t('No encontramos fotos de este taxón.') : $t('No hay fotos guardadas de este taxón en el teléfono.') }}
