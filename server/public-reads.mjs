@@ -1,55 +1,81 @@
 // What Identificar, Buscar, Descargas and Compare read that is public, answered without a sign-in (Franz, 13 Nov 2026:
 // «if all info we are showing is public»). Public: what the Wings Gallery publishes (its data/collection.json and
-// data/photo_lookup.json: each butterfly's CAM_ID, Sex and its Photo_links photos by Drive file), and iNaturalist's
-// photos under a Creative Commons licence with their credit. Writes, Monitoreo, the team's frozen stock, the sex model
-// and the online identifier stay behind the sign-in (.work/public-gates-20261113/GATES.md).
+// data/photo_lookup.json: each butterfly's CAM_ID, Sex and its Photo_links photos by Drive file, JPEG/HEIC/PNG, not
+// the raw camera files), and iNaturalist's photos under a Creative Commons licence with their credit. Writes,
+// Monitoreo, the team's frozen stock, the sex model and the online identifier stay behind the sign-in
+// (.work/public-gates-20261113/GATES.md).
 //
 // The anonymous answers have their own limits (signed-in people keep theirs):
-// - a per-address limit per route (the same address as the sign-in limits: the proxy's forwarded one);
-// - /api/species-photos: at most ANON_MAX_NAMES names a request; a name iNaturalist was not asked about yet is
-//   looked up by the existing background queue (one request a second) only when the identifier's head or the
-//   curated list names it, so a visitor cannot fill the queue with made-up names; the answer keeps only the fields
-//   listed below (anything added to the server's answer later is not public until listed here);
-// - /api/identify/ref-photo: only photos the server already lists (an iNaturalist photo id in its species cache or in
-//   the curated list): no open proxy;
-// - /api/photo/<id>: only files Photo_links lists under a CAM name (what the gallery's photo_lookup.json lists),
-//   400 px or 1600 px as for the team; a photo card's ?card= is the team's.
+// - a per-address limit per route (the address the local proxy saw, clientAddress);
+// - /api/species-photos: at most ANON_MAX_NAMES names a request, each at most ANON_MAX_NAME_LENGTH characters; a name
+//   the identifier's head or the curated list knows is read as their exact spelling (case variants are one name), and
+//   only such a name goes to the existing background queue (one request a second) when not cached yet: a visitor
+//   cannot fill the queue with made-up or re-cased names. The answer keeps only the fields listed below (anything
+//   added to the server's answer later is not public until listed here);
+// - /api/identify/ref-photo: only photos the server already lists (a CC-licensed iNaturalist photo id in its species
+//   cache, or an id in the curated list): no open proxy;
+// - /api/photo/<id>: only files Photo_links lists under a CAM name, not raw camera files (what the gallery's
+//   photo_lookup.json lists), 400 px or 1600 px as for the team; a photo card's ?card= is the team's. A photo not
+//   cached yet is fetched from Drive within one budget shared by every visitor (DriveBudget).
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { MODELS } from './offline-id.mjs';
 import { photoIndex } from './photodata.mjs';
 
 export const ANON_MAX_NAMES = 20;
+export const ANON_MAX_NAME_LENGTH = 120;
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
 
-/** The client's address: the connection's, or the proxy's forwarded one when the connection is local (the reverse proxy). */
+/**
+ * The client's address: the last X-Forwarded-For entry when the connection is local (the one the local reverse proxy
+ * added: Caddy replaces a visitor's own header, tailscale serve appends to it; deploy/Caddyfile.fragment), else the
+ * connection's own. A visitor's spoofed first entries are never the key.
+ */
 export function clientAddress(req) {
   const socket = req.socket?.remoteAddress || 'unknown';
   const local = /^(::1|127\.|::ffff:127\.)/.test(socket);
-  const forwarded = local ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() : '';
+  const forwarded = local
+    ? String(req.headers['x-forwarded-for'] || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .at(-1) ?? ''
+    : '';
   return forwarded || socket;
 }
 
 /**
  * At most `limit` requests per address in each window of `windowMs` (a fixed window: one count per address, so a
- * flood costs no memory beyond its address). check() counts the request and throws 429 past the limit.
+ * flood costs no memory beyond its address). check() counts the request and throws 429 past the limit. Expired
+ * windows are swept at most once a minute; past `maxEntries` addresses the oldest windows go first.
  */
 export class AddressLimiter {
-  constructor({ limit, windowMs = 15 * 60_000, now = () => Date.now() } = {}) {
+  constructor({ limit, windowMs = 15 * 60_000, maxEntries = 50_000, now = () => Date.now() } = {}) {
     this.limit = limit;
     this.windowMs = windowMs;
+    this.maxEntries = maxEntries;
     this.now = now;
     this.counts = new Map();
+    this.swept = now();
   }
   check(req) {
     const t = this.now();
     const key = clientAddress(req);
+    if (t - this.swept >= 60_000) {
+      this.swept = t;
+      for (const [k, v] of this.counts) if (t - v.start >= this.windowMs) this.counts.delete(k);
+    }
     let c = this.counts.get(key);
     if (!c || t - c.start >= this.windowMs) {
-      // Old windows go when a new one starts somewhere (bounded by the addresses of one window).
-      if (this.counts.size > 10_000) for (const [k, v] of this.counts) if (t - v.start >= this.windowMs) this.counts.delete(k);
+      // A new window goes to the end: the map stays in the order the windows started.
+      this.counts.delete(key);
       c = { start: t, n: 0 };
       this.counts.set(key, c);
+      for (const k of this.counts.keys()) {
+        if (this.counts.size <= this.maxEntries) break;
+        this.counts.delete(k);
+      }
     }
     if (++c.n > this.limit) {
       const left = c.start + this.windowMs - t;
@@ -60,8 +86,32 @@ export class AddressLimiter {
   }
 }
 
+/**
+ * One budget shared by every visitor for the photos that are not cached yet (a Drive fetch each): `perSecond` on
+ * average, `burst` at once (a token bucket). take() throws 503 when it is spent; cached photos never ask it.
+ */
+export class DriveBudget {
+  constructor({ perSecond = 2, burst = 20, now = () => Date.now() } = {}) {
+    this.perSecond = perSecond;
+    this.burst = burst;
+    this.now = now;
+    this.tokens = burst;
+    this.at = now();
+  }
+  take() {
+    const t = this.now();
+    this.tokens = Math.min(this.burst, this.tokens + ((t - this.at) / 1000) * this.perSecond);
+    this.at = t;
+    if (this.tokens < 1)
+      throw Object.assign(fail('BUSY', 'Many photos asked for right now; try again in a moment or sign in', 503), { headers: { 'retry-after': '2' } });
+    this.tokens -= 1;
+  }
+}
+
 const text = v => (v === null || v === undefined ? '' : String(v));
 const str = v => (typeof v === 'string' ? v : null);
+/** A raw camera file (Photo_links lists them beside the JPEG; the gallery does not publish them). */
+const RAW = /\.(cr2|orf|nef|arw|raf|rw2|dng)$/i;
 
 /** An iNaturalist photo's fields as /api/species-photos gives them, only those that are public (CC photo, credit). */
 const publicInatPhoto = p => ({
@@ -85,33 +135,52 @@ function publicInat(inat) {
   };
 }
 
-/**
- * /api/species-photos for a visitor: `names` (at most ANON_MAX_NAMES) → { name: { inat, pending, specimens } } with
- * only public fields; specimens only with a photo Photo_links lists (the gallery's photo_lookup.json), as
- * { cam, sex, dorsal, ventral } (collection.json's CAM_ID and Sex, photo_lookup.json's files).
- * `known(name)`: whether a name not cached yet may go to the background queue.
- */
-export function anonymousSpeciesPhotos({ speciesPhotos, store }, names, known) {
-  if (!Array.isArray(names) || names.length > ANON_MAX_NAMES)
-    throw fail('INVALID_NAMES', `names: a list of at most ${ANON_MAX_NAMES} without signing in`);
-  const found = speciesPhotos.photosOf(names, { mayFetch: known });
-  const files = photoIndex(store).files;
-  const listed = id => typeof id === 'string' && files.get(id)?.source === 'Photo_links';
-  const out = {};
-  for (const [name, e] of Object.entries(found))
-    out[name] = {
-      inat: publicInat(e.inat),
-      pending: e.pending === true,
-      specimens: (e.specimens ?? [])
-        .filter(s => listed(s.dorsal))
-        .map(s => ({ cam: text(s.cam), sex: str(s.sex), dorsal: s.dorsal, ventral: listed(s.ventral) ? s.ventral : null })),
-    };
-  return out;
+/** Whether a visitor may have a Drive photo: a file Photo_links lists under a CAM name, not a raw camera file. */
+export function publicPhotoFile(store, id) {
+  const f = typeof id === 'string' ? photoIndex(store).files.get(id) : null;
+  return f?.source === 'Photo_links' && !RAW.test(f.name);
 }
 
-/** Whether a visitor may have a Drive photo: a file Photo_links lists under a CAM name (not one from elsewhere). */
-export function publicPhotoFile(store, id) {
-  return photoIndex(store).files.get(id)?.source === 'Photo_links';
+const spaced = name => text(name).trim().replace(/\s+/g, ' ');
+
+/**
+ * /api/species-photos for a visitor: `names` (at most ANON_MAX_NAMES, each at most ANON_MAX_NAME_LENGTH characters)
+ * → { name: { inat, pending, specimens } } with only public fields, keyed by the name as asked. `canonical(name)`:
+ * the head's or curated list's exact spelling of a name (any case), or null; only those are looked up and may go to
+ * the background queue, so case variants share one cache entry and one job. Specimens only with a public photo
+ * (publicPhotoFile: the gallery's photo_lookup.json), the first public dorsal and ventral of the CAM, as
+ * { cam, sex, dorsal, ventral } (collection.json's CAM_ID and Sex).
+ */
+export function anonymousSpeciesPhotos({ speciesPhotos, store }, names, canonical) {
+  if (!Array.isArray(names) || names.length > ANON_MAX_NAMES)
+    throw fail('INVALID_NAMES', `names: a list of at most ${ANON_MAX_NAMES} without signing in`);
+  if (names.some(n => typeof n !== 'string' || n.length > ANON_MAX_NAME_LENGTH))
+    throw fail('INVALID_NAMES', `names: each a text of at most ${ANON_MAX_NAME_LENGTH} characters`);
+  const asked = names.map(n => ({ key: spaced(n), name: canonical(n) }));
+  const fetchable = new Set(asked.map(a => a.name).filter(Boolean));
+  const found = speciesPhotos.photosOf(
+    [...new Set(asked.map(a => a.name ?? a.key))],
+    { mayFetch: n => fetchable.has(n) },
+  );
+  const index = photoIndex(store);
+  const first = list => (list ?? []).find(id => publicPhotoFile(store, id)) ?? null;
+  const out = {};
+  for (const { key, name } of asked) {
+    const e = found[name ?? key];
+    if (!key || !e || out[key]) continue;
+    out[key] = {
+      inat: publicInat(e.inat),
+      pending: e.pending === true,
+      specimens: (e.specimens ?? []).flatMap(s => {
+        const photos = index.byCam.get(text(s.cam).toUpperCase());
+        const dorsal = publicPhotoFile(store, s.dorsal) ? s.dorsal : first(photos?.dorsal);
+        if (!dorsal) return [];
+        const ventral = publicPhotoFile(store, s.ventral) ? s.ventral : first(photos?.ventral);
+        return [{ cam: text(s.cam), sex: str(s.sex), dorsal, ventral }];
+      }),
+    };
+  }
+  return out;
 }
 
 const INAT_ID = /\/photos\/(\d+)\//;
@@ -119,30 +188,49 @@ const INAT_ID = /\/photos\/(\d+)\//;
 export const inatPhotoId = url => INAT_ID.exec(text(url))?.[1] ?? null;
 
 /**
- * The iNaturalist photos the server lists (the ids in its species cache and in the curated list), for the anonymous
- * photo proxy; and the names a visitor's request may send to the background queue (the head's species, the curated
- * list's). Both read again when their source changed.
+ * The iNaturalist photos the server lists (the CC-licensed ids in its species cache, and the ids of the curated list),
+ * for the anonymous photo proxy; and the exact spelling of the names a visitor's request may look up (the head's
+ * species, the curated list's). The curated list is read again every 10 minutes; the head again when its file
+ * changes (a new identifier release), and a failed or empty read is tried again after `retryMs`.
  */
-export function createPublicLists(store, { webRoot, identifierDir = null, headSpecies = null } = {}) {
+export function createPublicLists(store, { webRoot, identifierDir = null, retryMs = 60_000, curatedMs = 600_000, now = () => Date.now() } = {}) {
   let ids = { stamp: null, set: new Set() };
-  let curated = { at: 0, ids: new Set(), names: new Set() };
-  let head = new Set();
-  let headTried = false;
-  async function loadCurated() {
-    // Read again at most every 10 minutes (a deploy replaces the file).
-    if (Date.now() - curated.at < 600_000) return curated;
-    const next = { at: Date.now(), ids: new Set(), names: new Set() };
+  let curated = { at: -Infinity, ids: new Set(), names: [] };
+  let head = { at: -Infinity, stamp: null, names: [] };
+  let spellings = { from: null, map: new Map() };
+  const headPath = identifierDir ? join(identifierDir, MODELS.find(m => m.role === 'head-meta').path) : null;
+  // One read at a time: requests that come during a read wait for it (none sees an empty list meanwhile).
+  let reading = { curated: null, head: null };
+  const once = (k, fn) => (reading[k] ??= fn().finally(() => (reading[k] = null)));
+  const loadCurated = () => once('curated', readCurated);
+  const loadHead = () => once('head', readHead);
+  async function readCurated() {
+    if (now() - curated.at < (curated.names.length ? curatedMs : retryMs)) return curated;
+    const next = { at: now(), ids: new Set(), names: [] };
     try {
       const d = JSON.parse(await readFile(join(webRoot, 'identificar', 'curated.json'), 'utf8'));
       for (const [name, taxon] of Object.entries(d?.taxa ?? {})) {
-        next.names.add(name);
+        next.names.push(name);
         for (const p of taxon?.field ?? []) if (/^\d+$/.test(text(p.id))) next.ids.add(text(p.id));
       }
     } catch {
-      // not built here: the species cache alone
+      // not built here: the species cache alone, and tried again after retryMs
     }
     curated = next;
     return curated;
+  }
+  async function readHead() {
+    if (!headPath || now() - head.at < retryMs) return head;
+    try {
+      const s = await stat(headPath);
+      const stamp = `${s.size}:${s.mtimeMs}`;
+      if (stamp === head.stamp && head.names.length) return (head = { ...head, at: now() });
+      const names = JSON.parse(await readFile(headPath, 'utf8'))?.species;
+      head = { at: now(), stamp, names: Array.isArray(names) ? names.filter(n => typeof n === 'string') : [] };
+    } catch {
+      head = { at: now(), stamp: null, names: [] };
+    }
+    return head;
   }
   function cacheIds() {
     const s = store.db.prepare('SELECT count(*) n, max(fetched_at) f FROM species_photo_cache').get();
@@ -151,9 +239,11 @@ export function createPublicLists(store, { webRoot, identifierDir = null, headSp
     const set = new Set();
     for (const r of store.db.prepare('SELECT data_json FROM species_photo_cache WHERE data_json IS NOT NULL').all()) {
       try {
+        // Only the photos a visitor's answer lists: those with a licence.
         for (const p of JSON.parse(r.data_json)?.photos ?? []) {
-          if (p?.id != null) set.add(String(p.id));
-          for (const u of [p?.thumb, p?.url]) {
+          if (!p?.license) continue;
+          if (p.id != null) set.add(String(p.id));
+          for (const u of [p.thumb, p.url]) {
             const id = inatPhotoId(u);
             if (id) set.add(id);
           }
@@ -172,22 +262,19 @@ export function createPublicLists(store, { webRoot, identifierDir = null, headSp
       if (!id) return false;
       return cacheIds().has(id) || (await loadCurated()).ids.has(id);
     },
-    /** A predicate: the names a visitor may send to the background queue. */
-    async knownNames() {
-      if (!headTried && identifierDir && headSpecies) {
-        headTried = true;
-        try {
-          head = new Set((await headSpecies(identifierDir)).map(n => text(n).toLowerCase()));
-        } catch {
-          head = new Set();
+    /** name → its exact spelling in the head or the curated list (any case, spaces as one), or null. */
+    async canonicalNames() {
+      const [h, c] = await Promise.all([loadHead(), loadCurated()]);
+      if (spellings.from?.[0] !== h.names || spellings.from?.[1] !== c.names) {
+        const map = new Map();
+        for (const n of [...h.names, ...c.names]) {
+          const k = spaced(n).toLowerCase();
+          if (k && !map.has(k)) map.set(k, spaced(n));
         }
+        spellings = { from: [h.names, c.names], map };
       }
-      const c = await loadCurated();
-      const lower = new Set([...c.names].map(n => n.toLowerCase()));
-      return name => {
-        const n = text(name).trim().replace(/\s+/g, ' ').toLowerCase();
-        return head.has(n) || lower.has(n);
-      };
+      const map = spellings.map;
+      return name => map.get(spaced(name).toLowerCase()) ?? null;
     },
   };
 }

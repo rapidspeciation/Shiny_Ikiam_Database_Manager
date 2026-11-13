@@ -122,9 +122,10 @@ export function createPhotoService(
 
   /**
    * The photo as { mime, data, etag }, from the cache or Drive. `listed: false`: a file not in Photo_links,
-   * whose caller has checked it may be shown (a photo card's row).
+   * whose caller has checked it may be shown (a photo card's row). `beforeDownload`: called (and may throw) only when
+   * the photo has to come from Drive (a visitor's shared budget, server/public-reads.mjs DriveBudget).
    */
-  async function get(id, width, { listed = true } = {}) {
+  async function get(id, width, { listed = true, beforeDownload = null } = {}) {
     if (!isFileId(id)) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
     if (!PHOTO_WIDTHS.includes(width)) throw fail('INVALID_WIDTH', `w must be ${PHOTO_WIDTHS.join(' or ')}`, 400);
     if (listed && !photoIndex(store).files.has(id)) throw fail('PHOTO_NOT_FOUND', 'Photo not in Photo_links', 404);
@@ -137,6 +138,7 @@ export function createPhotoService(
     // Several cards asking for the same photo share one download.
     let pending = inFlight.get(key);
     if (!pending) {
+      beforeDownload?.();
       pending = slot()
         .then(() => download(id, width))
         .then(

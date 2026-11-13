@@ -49,7 +49,7 @@ import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
 import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from './identify-photos.mjs';
-import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, publicPhotoFile } from './public-reads.mjs';
+import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, DriveBudget, publicPhotoFile } from './public-reads.mjs';
 import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
 import {
@@ -877,13 +877,16 @@ export async function createApp(config = {}, options = {}) {
     ...(options.fetchInat ? { fetchImpl: options.fetchInat } : {}),
   });
   // Identificar's and Buscar's public reads without a sign-in (server/public-reads.mjs): what the server lists, and
-  // per address and 15 minutes at most 120 photo lists (20 names each), 900 iNaturalist photos and 600 specimen photos.
-  const publicLists = createPublicLists(store, { webRoot: config.webRoot ?? webRoot, identifierDir: config.identifierDir ?? null, headSpecies });
+  // per address and 15 minutes at most 120 photo lists (20 names each), 3000 iNaturalist photos and 1500 specimen
+  // photos (one campus network is one address; the browser keeps each photo); specimen photos not cached yet come
+  // from Drive within one budget for every visitor together (2 a second, 20 at once).
+  const publicLists = createPublicLists(store, { webRoot: config.webRoot ?? webRoot, identifierDir: config.identifierDir ?? null });
   const anonLimits = {
     speciesPhotos: new AddressLimiter({ limit: 120, ...config.anonLimits?.speciesPhotos }),
-    refPhoto: new AddressLimiter({ limit: 900, ...config.anonLimits?.refPhoto }),
-    photo: new AddressLimiter({ limit: 600, ...config.anonLimits?.photo }),
+    refPhoto: new AddressLimiter({ limit: 3000, ...config.anonLimits?.refPhoto }),
+    photo: new AddressLimiter({ limit: 1500, ...config.anonLimits?.photo }),
   };
+  const anonDrive = new DriveBudget({ perSecond: 2, burst: 20, ...config.anonLimits?.drive });
   const refPhotoOptions = options.fetchRefPhoto ? { fetchImpl: options.fetchRefPhoto } : {};
   /** A specimen photo (server/photos.mjs) to the browser, with its ETag. */
   async function sendPhoto(req, res, id, width, opts) {
@@ -1121,7 +1124,7 @@ export async function createApp(config = {}, options = {}) {
       if (!session) {
         if (method === 'POST' && path === '/api/species-photos') {
           anonLimits.speciesPhotos.check(req);
-          return json(res, 200, { species: anonymousSpeciesPhotos({ speciesPhotos, store }, body.names, await publicLists.knownNames()) });
+          return json(res, 200, { species: anonymousSpeciesPhotos({ speciesPhotos, store }, body.names, await publicLists.canonicalNames()) });
         }
         if ((method === 'GET' || method === 'HEAD') && path === '/api/identify/ref-photo') {
           anonLimits.refPhoto.check(req);
@@ -1133,7 +1136,7 @@ export async function createApp(config = {}, options = {}) {
           anonLimits.photo.check(req);
           const id = path.split('/')[3];
           if (url.searchParams.has('card') || !publicPhotoFile(store, id)) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
-          return await sendPhoto(req, res, id, Number(url.searchParams.get('w') || 400));
+          return await sendPhoto(req, res, id, Number(url.searchParams.get('w') || 400), { beforeDownload: () => anonDrive.take() });
         }
       }
       if (!session) throw fail('AUTH_REQUIRED', 'Sign in required', 401);
@@ -2013,8 +2016,8 @@ export async function createApp(config = {}, options = {}) {
       throw fail('NOT_FOUND', 'Route not found', 404);
     } catch (e) {
       const status = Number(e.status) || 500;
-      // A full contributions store (507) is said in one line: every phone's retry would print a stack.
-      if (e.code === 'STORE_FULL' || e.code === 'CONSENT_OUTDATED') console.warn(`[${requestId}] ${e.message}`);
+      // A full contributions store (507) and the visitors' spent Drive budget (503) are said in one line: every retry would print a stack.
+      if (e.code === 'STORE_FULL' || e.code === 'CONSENT_OUTDATED' || e.code === 'BUSY') console.warn(`[${requestId}] ${e.message}`);
       else if (status >= 500) console.error(`[${requestId}]`, e.stack || e.message);
       return json(res, status, {
         error: {
@@ -2119,6 +2122,8 @@ export async function createApp(config = {}, options = {}) {
     ready,
     drain,
     writingNow,
+    // tests: the background iNaturalist lookups (idle() before closing)
+    speciesPhotos,
     listen: async (port = config.port, host = config.host) => {
       if (t3Bridge && config.t3.proxyPort && !t3Proxy)
         t3Proxy = await t3Bridge.listen(config.t3.proxyPort).then(

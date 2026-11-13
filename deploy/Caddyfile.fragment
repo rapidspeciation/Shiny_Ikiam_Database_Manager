@@ -1,4 +1,8 @@
 # The app's own sites (appended to /etc/caddy/Caddyfile).
+# The app takes a visitor's address from the LAST X-Forwarded-For entry (server/public-reads.mjs clientAddress: the
+# sign-in limits and the signed-out photo limits). Caddy 2.5 or later without trusted_proxies replaces a visitor's own
+# X-Forwarded-For with the address it saw, so that entry is the visitor's. A proxy in front of Caddy (a CDN) would
+# need trusted_proxies here, or every visitor would share the CDN's address.
 ithomiini-ikiam.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8794
