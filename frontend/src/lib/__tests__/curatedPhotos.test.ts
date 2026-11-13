@@ -56,12 +56,12 @@ describe('the curated order', () => {
     expect(ids(orderCurated(ps, e, { home: [] }))).toEqual(['1', '2', '3'])
   })
 
-  it('photos the review did not see come after those judged good or unsure, before those judged poor', () => {
+  it('photos the review did not see (a caterpillar among the server\'s extras) come after every scored one', () => {
     const e: CuratedTaxon = { field: [{ id: '1', s: [2, 2, 2, 2], hero: 'no' }, { id: '2', s: [3, 3, 3, 3], hero: 'unsure' }, { id: '3', s: [5, 5, 5, 5], hero: 'yes' }] }
     const ssp = pack('9', 'EC', { level: 'subspecies', taxon: 'A b c' })
     const server = { ...pack('8', 'PE'), src: '/api/identify/ref-photo?u=' + encodeURIComponent('https://inaturalist-open-data.s3.amazonaws.com/photos/8/medium.jpg'), source: null }
     const specimen: RefPhoto = { src: '/api/photo/CAM1d.JPG?w=400', credit: 'CAM1', license: '', level: 'specimen' }
-    expect(ids(orderCurated([pack('1', 'EC'), pack('2', 'EC'), pack('3', 'BR'), server, ssp, specimen], e, EC))).toEqual(['3', '2', '9', '8', null, '1'])
+    expect(ids(orderCurated([pack('1', 'EC'), pack('2', 'EC'), pack('3', 'BR'), server, ssp, specimen], e, EC))).toEqual(['3', '2', '1', '9', '8', null])
   })
 
   it('a species without curation keeps the country order', () => {

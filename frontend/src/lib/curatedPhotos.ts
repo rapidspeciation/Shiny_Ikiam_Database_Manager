@@ -6,8 +6,9 @@
  * whether each makes a good main photo, and the species' best Sanger photo cropped to its four wings
  * (identificar/wings/).
  *
- * The order: photos judged good as the main photo first, then those the review was unsure of, then photos it did
- * not see (the server's extra iNaturalist photos, the team's specimens, subspecies), then those judged poor. Inside
+ * The order: photos judged good as the main photo first, then those the review was unsure of, then those judged poor,
+ * then photos it did not see (the server's extra iNaturalist photos, among them caterpillars and pupae, the team's
+ * specimens, subspecies: round 1 review, scored photos first). Inside
  * each group by quality (the sum of the four scores, 4 to 20); the person's country (lib/photoCountry.ts) comes first
  * only among photos within SIMILAR points of the best one left. Photos it did not see keep the country order.
  * A species without curation keeps the country order alone (orderRefs).
@@ -79,8 +80,8 @@ export function photoId(p: Pick<RefPhoto, 'src' | 'source'>): string | null {
 }
 
 const quality = (c: CuratedPhoto | undefined) => (c?.s ? c.s.reduce((a, b) => a + b, 0) : null)
-/** 0 judged good, 1 unsure, 2 not seen, 3 judged poor. */
-const band = (c: CuratedPhoto | undefined) => (!c?.s ? 2 : c.hero === 'yes' ? 0 : c.hero === 'no' ? 3 : 1)
+/** 0 judged good, 1 unsure, 2 judged poor, 3 not seen. */
+const band = (c: CuratedPhoto | undefined) => (!c?.s ? 3 : c.hero === 'yes' ? 0 : c.hero === 'no' ? 2 : 1)
 
 /**
  * `photos` (one species' reference photos) in the curated order for `place`; without `entry` the country order.
@@ -98,7 +99,7 @@ export function orderCurated(photos: RefPhoto[], entry: CuratedTaxon | null | un
   const out: RefPhoto[] = []
   for (const b of [0, 1, 2, 3]) {
     const left = items.filter(x => x.b === b)
-    if (b === 2) {
+    if (b === 3) {
       out.push(...left.map(x => x.p))
       continue
     }
