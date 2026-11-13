@@ -157,4 +157,16 @@ describe('SexPanel', () => {
     show({ canSend: false, state: null })
     expect($('[data-testid=sex-panel]')).toBeNull()
   })
+
+  it('no sex model on the phone: one line, the download behind «Detalles»; «Enviar» neutral until a sex is chosen', async () => {
+    show({ state: { kind: 'download', mb: 54 } })
+    expect($('[data-testid=sex-no-model]')).not.toBeNull()
+    expect($('details')!.hasAttribute('open')).toBe(false)
+    expect($('details [data-testid=sex-download]')).not.toBeNull()
+    const send = $('[data-testid=contrib-send]') as HTMLButtonElement
+    expect(send.className).not.toMatch(/btn-primary/)
+    expect(send.getAttribute('aria-label')).toMatch(/entrenar|training/)
+    await click('[data-testid=sex-female]')
+    expect(($('[data-testid=contrib-send]') as HTMLButtonElement).className).toMatch(/btn-primary/)
+  })
 })

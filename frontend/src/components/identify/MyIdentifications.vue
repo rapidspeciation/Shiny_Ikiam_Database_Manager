@@ -8,11 +8,12 @@
 import { Copy, Download, RefreshCw, RotateCcw } from 'lucide-vue-next'
 import PhotoThumb from './PhotoThumb.vue'
 import { percent } from '../../lib/identifyResult'
+import { locale } from '../../lib/i18n'
 import type { LogEntry } from '../../lib/identifyLog'
 
 defineProps<{ entries: (LogEntry & { outdated: boolean })[]; current: string | null; busy: boolean }>()
 defineEmits<{ load: [at: string]; reprocess: [at: string]; copy: [at: string]; download: [at: string]; forget: [] }>()
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const when = (iso: string) => new Date(iso).toLocaleString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const SEX = { female: '♀', male: '♂', unsure: '' } as const
 </script>
 

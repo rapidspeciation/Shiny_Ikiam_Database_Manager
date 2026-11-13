@@ -1,21 +1,34 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { memoryHistory, outdated, prune } from '../identifyHistory'
+import { memoryHistory, noteSeen, outdated, prune, readSeen, versionDay } from '../identifyHistory'
 import { readLog, writeLog, writeLogAll, type LogEntry } from '../identifyLog'
 
 // «Mis identificaciones»: Reprocesar only when a newer model reads photos now; the list keeps an item's place.
 afterEach(() => localStorage.clear())
 
 describe('identifyHistory', () => {
-  it('outdated: a stored version that differs from the current one (both known)', () => {
-    expect(outdated({ id: 'head_a.json', sex: 'v1' }, { id: 'head_a.json', sex: 'v1' })).toBe(false)
-    expect(outdated({ id: 'head_a.json', sex: null }, { id: 'head_b.json', sex: 'v1' })).toBe(true)
-    expect(outdated({ id: 'head_a.json', sex: 'v1' }, { id: 'head_a.json', sex: 'v2' })).toBe(true)
-    // nothing known now (no signal, no model): no Reprocesar
-    expect(outdated({ id: 'head_a.json', sex: 'v1' }, { id: null, sex: null })).toBe(false)
-    // read before versions were kept: older once the current one is known
-    expect(outdated(undefined, { id: 'head_a.json', sex: null })).toBe(true)
-    // no sex estimate kept: a sex model alone does not ask for Reprocesar
-    expect(outdated({ id: 'head_a.json', sex: null }, { id: 'head_a.json', sex: 'v2' })).toBe(false)
+  it('outdated only when the stored version is known to be older', () => {
+    const seen = { 'head_a.json': '2026-11-01T00:00:00Z', 'head_b.json': '2026-11-10T00:00:00Z' }
+    expect(outdated({ id: 'head_a.json', sex: null }, { id: 'head_a.json', sex: null }, seen)).toBe(false)
+    // a newer head came later to this phone: older
+    expect(outdated({ id: 'head_a.json', sex: null }, { id: 'head_b.json', sex: null }, seen)).toBe(true)
+    // the server went back to an older head: the item is newer, no button
+    expect(outdated({ id: 'head_b.json', sex: null }, { id: 'head_a.json', sex: null }, seen)).toBe(false)
+    // a version never seen, or none kept: unknown, no button
+    expect(outdated({ id: 'head_x.json', sex: null }, { id: 'head_b.json', sex: null }, seen)).toBe(false)
+    expect(outdated({ id: null, sex: null }, { id: 'head_b.json', sex: null }, seen)).toBe(false)
+    expect(outdated(undefined, { id: 'head_b.json', sex: null }, seen)).toBe(false)
+    // sex models carry their day
+    expect(outdated({ id: 'head_b.json', sex: 'B 2026-11-08' }, { id: 'head_b.json', sex: 'C 2026-11-20' }, seen)).toBe(true)
+    expect(outdated({ id: 'head_b.json', sex: 'C 2026-11-20' }, { id: 'head_b.json', sex: 'B 2026-11-08' }, seen)).toBe(false)
+    // nothing known now (no signal, no model): no button
+    expect(outdated({ id: 'head_a.json', sex: 'B 2026-11-08' }, { id: null, sex: null }, seen)).toBe(false)
+  })
+  it('the versions seen are kept with the time they first came', () => {
+    noteSeen({ id: 'head_a.json', sex: null }, '2026-11-01T00:00:00Z')
+    noteSeen({ id: 'head_a.json', sex: 'B 2026-11-08' }, '2026-11-05T00:00:00Z')
+    expect(readSeen()).toEqual({ 'head_a.json': '2026-11-01T00:00:00Z', 'B 2026-11-08': '2026-11-05T00:00:00Z' })
+    expect(versionDay('small-SB-20261111')).toBe(20261111)
+    expect(versionDay('sha256-9c0845ecc74a')).toBeNull()
   })
   it('prune drops the photos of items that left the list', async () => {
     const h = memoryHistory()

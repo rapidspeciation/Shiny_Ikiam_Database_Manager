@@ -56,6 +56,9 @@
   --error-text: #991b1b;
   --error-edge: #c62828;
   --success-text: #065f46;
+  /* The sex as text (Identificar's sex line): the fills' hue; on the dark surface lighter, so it reads at ≥ 4.5:1. */
+  --sex-female-text: oklch(52.5% 0.223 3.958);
+  --sex-male-text: oklch(50% 0.134 242.749);
   --danger: #b91c1c;
   --on-danger: #ffffff;
   /* Toasts and a picked neutral chip: dark on light, light on dark. */
@@ -120,6 +123,8 @@
   --error-text: #fca5a5;
   --error-edge: #f87171;
   --success-text: #6ee7b7;
+  --sex-female-text: oklch(75% 0.15 3.958);
+  --sex-male-text: oklch(75% 0.11 242.749);
   --danger: #c62828;
   --on-danger: #ffffff;
   --inverse: #dde1de;
@@ -210,6 +215,8 @@
   --color-error-text: var(--error-text);
   --color-error-edge: var(--error-edge);
   --color-success-text: var(--success-text);
+  --color-sex-female: var(--sex-female-text);
+  --color-sex-male: var(--sex-male-text);
   --color-danger: var(--danger);
   --color-on-danger: var(--on-danger);
   --color-inverse: var(--inverse);

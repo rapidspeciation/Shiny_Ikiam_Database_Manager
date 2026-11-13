@@ -43,7 +43,7 @@ const colour = computed(() => (props.state.status === 'cell_under_90' || !props.
 
     <p
       class="mt-2 text-xl font-semibold"
-      :class="colour === 'female' ? 'text-fill-pink' : colour === 'male' ? 'text-fill-sky' : 'text-fg-muted'"
+      :class="colour === 'female' ? 'text-sex-female' : colour === 'male' ? 'text-sex-male' : 'text-fg-muted'"
       data-testid="field-sex-call"
     >
       <template v-if="state.status === 'cell_under_90'">{{ $t('Sin respuesta') }}</template>

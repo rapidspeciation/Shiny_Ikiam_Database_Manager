@@ -58,7 +58,7 @@ const ticks = computed(() => ({ lo: tick(CUT.value.lo), t: `${t('corte')} ${tick
 
     <template v-if="state.kind === 'ready' && z != null">
       <div class="mt-2">
-        <p class="text-xl font-semibold" :class="call === 'hembra' ? 'text-fill-pink' : call === 'macho' ? 'text-fill-sky' : 'text-fg-muted'" data-testid="sex-call">
+        <p class="text-xl font-semibold" :class="call === 'hembra' ? 'text-sex-female' : call === 'macho' ? 'text-sex-male' : 'text-fg-muted'" data-testid="sex-call">
           <template v-if="call === 'hembra'">♀ {{ $t('Hembra') }} <span class="tabular-nums" data-testid="sex-p">{{ pct(shown!.p) }}</span></template>
           <template v-else-if="call === 'macho'">♂ {{ $t('Macho') }} <span class="tabular-nums" data-testid="sex-p">{{ pct(shown!.p) }}</span></template>
           <template v-else>{{ $t('No seguro') }} <span class="tabular-nums" data-testid="sex-p">({{ shown!.sign }} {{ pct(shown!.p) }})</span></template>

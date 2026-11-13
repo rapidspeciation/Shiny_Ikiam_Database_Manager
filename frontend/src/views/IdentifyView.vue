@@ -42,7 +42,7 @@ import TaxonPick from '../components/identify/TaxonPick.vue'
 import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerSrc } from '../lib/bestPhotos'
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
-import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
+import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, noteSeen, outdated, prune, type HistoryRecord, type Versions } from '../lib/identifyHistory'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
@@ -392,7 +392,7 @@ function cropUrl(rgb: Uint8Array) {
 }
 
 /**
- * The photos' run: «Borrar fotos» (and «×» on the photo shown) bumps it, so a read still under way when the person
+ * The photos' run: «Borrar fotos» bumps it, so a read still under way when the person
  * cleared writes nothing when it comes back (no result, no thumbnail, no error), and the rest of a several-photo
  * queue stops.
  */
@@ -1342,6 +1342,15 @@ const shotList = computed(() =>
     .map(at => ({ at, thumb: thumbs.value[at]?.src || log.value.find(e => e.at === at)?.thumb || '' }))
     .filter(x => x.thumb),
 )
+/** «×» on the photo shown: just it off the strip; the one before it (or none) is shown. History keeps it. */
+function removeShot(at: string) {
+  const i = shots.value.indexOf(at)
+  shots.value = shots.value.filter(x => x !== at)
+  if (result.value?.at !== at) return
+  clearResult()
+  const next = shots.value[Math.max(0, i - 1)]
+  if (next) loadEntry(next)
+}
 /** «Borrar fotos»: the strip and the result on screen; «Mis identificaciones» keeps them. */
 function clearPhotos() {
   run++
@@ -1371,7 +1380,9 @@ const currentVersions = computed<Versions>(() => ({
   id: mode.value === 'online' ? listedHead.value : storedHead.value,
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
-const entries = computed(() => log.value.map(e => ({ ...e, outdated: !!e.saved && outdated(e.v, currentVersions.value) })))
+// The versions in use, recorded the first time this phone sees each (lib/identifyHistory.ts: which one is newer).
+watch(currentVersions, v => noteSeen(v), { immediate: true })
+const entries = computed(() => log.value.map(e => ({ ...e, outdated: !!e.saved && (unread.value.has(e.at) || outdated(e.v, currentVersions.value)) })))
 /** The sex line's call for the list (♀ 72 %). */
 const sexSummary = computed<LogEntry['sex']>(() => {
   const r = result.value
@@ -1425,6 +1436,7 @@ async function rememberNow({ r, top: top1, compared: cmp, pick: pk, side: sd, se
   const thumb = thumbs.value[r.at]?.src
   if (!top1 || !thumb) return
   const v = versionsOf(r)
+  noteSeen(v)
   const before = log.value.find(e => e.at === r.at)
   let saved = before?.saved ?? false
   const photo = await keptPhoto(r, original)
@@ -1454,6 +1466,15 @@ async function rememberNow({ r, top: top1, compared: cmp, pick: pk, side: sd, se
 }
 watch([compared, pick, sexSummary], () => result.value && remember(snapshot(result.value)))
 
+/** Items whose kept result could not be shown here (no model for it now): «Reprocesar» is offered on them. */
+const unread = ref(new Set<string>())
+const when = (iso: string) => new Date(iso).toLocaleString(locale.value === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+/** A laptop (the two columns side by side, Tailwind lg). */
+const wideQuery = matchMedia('(min-width: 1024px)')
+const wide = ref(wideQuery.matches)
+const onWide = (e: MediaQueryListEvent) => (wide.value = e.matches)
+wideQuery.addEventListener?.('change', onWide)
+onBeforeUnmount(() => wideQuery.removeEventListener?.('change', onWide))
 const notice = ref<string | null>(null)
 let noticeTimer: ReturnType<typeof setTimeout> | null = null
 function say(text: string) {
@@ -1469,8 +1490,21 @@ async function loadEntry(at: string, { rerun = false } = {}) {
   const photo = await photoOf(rec)
   const known: Known = { takenAt: rec.takenAt, country: rec.country }
   const kept = rerun ? null : await revive(JSON.parse(rec.result)).catch(() => null)
+  if (!kept && !rerun) {
+    // Its result cannot be ranked here now (read on the phone, whose model is gone; or the team's, signed out): never
+    // read it again by itself (online that would send it to the server). Its photo full screen with its line, and
+    // «Reprocesar» on the item for the person to choose.
+    const e = log.value.find(x => x.at === at)
+    unread.value = new Set([...unread.value, at])
+    const url = URL.createObjectURL(rec.photo)
+    viewer.value = { photos: [{ src: url, name: e?.pick ?? e?.ai ?? '', credit: '', license: '', source: null, kicker: e ? `${percent(e.p)} · ${when(at)}` : undefined }], start: 0 }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    say(t('El modelo que la leyó ya no está en este teléfono: Reprocesar la lee de nuevo.'))
+    return
+  }
   if (!kept) {
-    // Read again (Reprocesar, or a phone result with no model on the phone now): a new item replaces the old one.
+    // Reprocesar: read again with the models in use now; a new item replaces the old one.
+    unread.value = new Set([...unread.value].filter(x => x !== at))
     clearResult()
     await identify(photo, known)
     const now = result.value
@@ -1669,6 +1703,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
       :disabled="!!busy"
       :paste-keys="finePointer ? (isMac ? '⌘V' : 'Ctrl+V') : null"
       @select="selectShot"
+      @remove="removeShot"
       @files="picker?.click()"
       @camera="camera?.click()"
       @clear="clearPhotos"
@@ -1744,7 +1779,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <i v-else>{{ top?.name }}</i>
               </h1>
             </div>
-            <p class="shrink-0 pt-4 text-2xl leading-tight font-semibold text-brand-text tabular-nums" data-testid="headline-p" :title="$t('Puntuación de la IA')">
+            <p class="shrink-0 pt-4 text-2xl leading-tight font-semibold tabular-nums" :class="said?.kind === 'unsure' ? 'text-fg-muted' : 'text-brand-text'" data-testid="headline-p" :title="$t('Puntuación de la IA')">
               {{
                 said?.kind === 'genus'
                   ? percent(ranked.genus.get((said as { genus: string }).genus) ?? 0)
@@ -1800,6 +1835,19 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             :refusal="refusal"
             @download="downloadSexModel"
             @consented="reconsent"
+          />
+          <!-- on a laptop the third task sits under the sex, so the two columns balance -->
+          <MyIdentifications
+            v-if="entries.length && wide"
+            class="mt-4"
+            :entries="entries"
+            :current="result?.at ?? null"
+            :busy="!!busy"
+            @load="loadEntry"
+            @reprocess="at => loadEntry(at, { rerun: true })"
+            @copy="at => photoAction(at, 'copy')"
+            @download="at => photoAction(at, 'download')"
+            @forget="forget"
           />
         </template>
       </div>
@@ -1950,7 +1998,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
         />
 
         <MyIdentifications
-          v-if="entries.length"
+          v-if="entries.length && !(wide && result && ranked)"
           :entries="entries"
           :current="result?.at ?? null"
           :busy="!!busy"
@@ -1966,7 +2014,8 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
         <button class="flex min-h-12 w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm font-medium hover:bg-surface-sunken" data-testid="to-downloads" @click="go('downloads')">
           <Download :size="18" class="shrink-0 text-brand-text" />
           <span class="flex-1">{{ $t('Descargas') }}</span>
-          <span v-if="!packs.progress.value" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('sin fotos para comparar') }}</span>
+          <!-- what is on the phone for no signal; with signal and nothing saved, nothing to say -->
+          <span v-if="!packs.progress.value && (packs.pack.value || !online)" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('nada descargado') }}</span>
         </button>
         <IdentifyAbout :team="!!session.user" />
         <p v-if="result" class="text-xs text-fg-subtle" data-testid="result-source">

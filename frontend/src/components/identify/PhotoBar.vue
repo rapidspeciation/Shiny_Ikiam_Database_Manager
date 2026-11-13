@@ -17,7 +17,7 @@ defineProps<{
   /** Paste and drop work here (a mouse and keyboard): the start says so. */
   pasteKeys: string | null
 }>()
-defineEmits<{ select: [at: string]; files: []; camera: []; clear: [] }>()
+defineEmits<{ select: [at: string]; remove: [at: string]; files: []; camera: []; clear: [] }>()
 </script>
 
 <template>
@@ -25,16 +25,21 @@ defineEmits<{ select: [at: string]; files: []; camera: []; clear: [] }>()
     <template v-if="shots.length">
     <div class="flex items-center gap-1.5 sm:gap-2">
       <!-- the thumbnails scroll by themselves; the buttons stay in view -->
-      <div class="flex min-w-12 items-center gap-2 overflow-x-auto py-0.5" data-testid="photo-bar-thumbs">
-        <PhotoThumb
-          v-for="(s, i) in shots"
-          :key="s.at"
-          :src="s.thumb"
-          :size="48"
-          :selected="s.at === current"
-          :label="$t('Foto {n}', { n: i + 1 })"
-          @select="$emit('select', s.at)"
-        />
+      <div class="flex min-w-12 items-center gap-2 overflow-x-auto py-1 pr-1" data-testid="photo-bar-thumbs">
+        <span v-for="(s, i) in shots" :key="s.at" class="relative shrink-0">
+          <PhotoThumb :src="s.thumb" :size="48" :selected="s.at === current" :label="$t('Foto {n}', { n: i + 1 })" @select="$emit('select', s.at)" />
+          <!-- the photo shown: × takes just it off the strip (Mis identificaciones keeps it) -->
+          <button
+            v-if="s.at === current"
+            type="button"
+            class="hit-target absolute -top-1 -right-1 grid size-5 place-items-center rounded-full border border-border-strong bg-surface text-fg shadow-sm hover:bg-surface-sunken"
+            :aria-label="$t('Quitar esta foto')"
+            data-testid="remove-photo"
+            @click="$emit('remove', s.at)"
+          >
+            <X :size="12" />
+          </button>
+        </span>
       </div>
       <button class="btn min-h-12 shrink-0 border-brand px-2.5 text-brand-text" :disabled="disabled" data-testid="add-photos" @click="$emit('files')">
         <ImagePlus :size="18" />{{ $t('Añadir fotos') }}

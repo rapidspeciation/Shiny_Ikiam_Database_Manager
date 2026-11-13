@@ -36,13 +36,56 @@ export interface HistoryStore {
   clear(): Promise<void>
 }
 
+/** A version's day when its name carries one («B 2026-11-08», «small-SB-20261111»), as YYYYMMDD; null otherwise. */
+export function versionDay(v: string): number | null {
+  const m = /(20\d{2})-?(0[1-9]|1[0-2])-?(0[1-9]|[12]\d|3[01])(?!\d)/.exec(v)
+  return m ? Number(m[1] + m[2] + m[3]) : null
+}
+
 /**
- * Whether a newer model reads photos now than the one that read this item: a stored version that differs from the
- * current one (both known). An item read before versions were kept counts as older once the current one is known.
+ * When this phone first saw each model version in use (localStorage `identify:models-seen`, version → ISO time). The
+ * identifier's version is its head file (a hash, no date): which of two is newer is the order they came to this phone.
  */
-export function outdated(saved: Partial<Versions> | null | undefined, now: Versions): boolean {
-  const differs = (a: string | null | undefined, b: string | null) => !!b && a !== b
-  return differs(saved?.id, now.id) || (!!saved?.sex && differs(saved.sex, now.sex))
+const SEEN = 'identify:models-seen'
+export function readSeen(): Record<string, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEEN) || '{}')
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+  } catch {
+    return {}
+  }
+}
+/** Records the versions in use now (the first time each is seen). */
+export function noteSeen(v: Partial<Versions>, at = new Date().toISOString()): void {
+  const seen = readSeen()
+  let changed = false
+  for (const x of [v.id, v.sex]) if (x && !seen[x]) ((seen[x] = at), (changed = true))
+  if (!changed) return
+  try {
+    localStorage.setItem(SEEN, JSON.stringify(seen))
+  } catch {
+    /* private mode: no order known */
+  }
+}
+
+/**
+ * `a` is known to be older than `b`: both named, different, and either both carry a day (a's earlier) or this phone
+ * saw `a` first. Unknown (no version kept, never seen) or newer: false.
+ */
+export function olderThan(a: string | null | undefined, b: string | null | undefined, seen: Record<string, string>): boolean {
+  if (!a || !b || a === b) return false
+  const da = versionDay(a)
+  const db = versionDay(b)
+  if (da != null && db != null) return da < db
+  return !!seen[a] && !!seen[b] && seen[a] < seen[b]
+}
+
+/**
+ * «Reprocesar»: a newer identifier or sex model reads photos now than the one that read this item. Only when known
+ * (a server rolled back to an older model, or a version never recorded, shows no button).
+ */
+export function outdated(saved: Partial<Versions> | null | undefined, now: Versions, seen: Record<string, string> = readSeen()): boolean {
+  return olderThan(saved?.id, now.id, seen) || olderThan(saved?.sex, now.sex, seen)
 }
 
 export function memoryHistory(): HistoryStore & { items: Map<string, HistoryRecord> } {

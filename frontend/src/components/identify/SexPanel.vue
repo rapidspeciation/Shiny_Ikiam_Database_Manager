@@ -57,8 +57,8 @@ const colour = computed<'female' | 'male' | null>(() => {
   return c === 'hembra' ? 'female' : c === 'macho' ? 'male' : null
 })
 const hasLine = computed(() => useField.value || !!props.state)
-/** Details open on a tap (the scale, the notes): only for an answer or a «No aplica». */
-const hasDetails = computed(() => useField.value || props.state?.kind === 'ready' || props.state?.kind === 'genus' || props.state?.kind === 'nowings')
+/** Downloading the in-hand model: how far, for the one line. */
+const dlPct = computed(() => (props.state?.kind === 'downloading' ? Math.round((100 * props.state.done) / Math.max(1, props.state.total)) : 0))
 
 // ---------------------------------------------------------------- the person's answer
 const sex = ref<'female' | 'male' | null>(null)
@@ -113,10 +113,11 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
     data-testid="sex-panel"
     :aria-label="$t('Sexo')"
   >
-    <details v-if="hasLine && hasDetails" class="sex-details group">
+    <!-- One line; the scale, the notes, or the model's download behind «Detalles». -->
+    <details v-if="hasLine" class="sex-details group">
       <summary class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 py-0.5" data-testid="sex-summary">
         <span class="text-sm text-fg-muted">{{ $t('Sexo') }}</span>
-        <span class="text-lg font-semibold" :class="colour === 'female' ? 'text-fill-pink' : colour === 'male' ? 'text-fill-sky' : 'text-fg-muted'" data-testid="sex-line">
+        <span class="text-lg font-semibold" :class="colour === 'female' ? 'text-sex-female' : colour === 'male' ? 'text-sex-male' : 'text-fg-muted'" data-testid="sex-line">
           <template v-if="useField">
             <template v-if="field!.status === 'cell_under_90'">{{ $t('Sin respuesta') }}</template>
             <template v-else-if="fieldNamed">{{ field!.sex === 'female' ? `♀ ${$t('Hembra')}` : `♂ ${$t('Macho')}` }}<template v-if="field!.pct != null"> {{ fmt(field!.pct) }} %</template></template>
@@ -127,7 +128,12 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
             <template v-else-if="inHand.call === 'macho'">♂ {{ $t('Macho') }} {{ pct(inHand.p) }}</template>
             <template v-else>{{ $t('No seguro') }}</template>
           </template>
-          <span v-else class="text-sm font-normal">{{ state?.kind === 'genus' ? $t('No aplica a {genus}', { genus: (state as { genus: string }).genus }) : $t('No aplica: sin alas en la foto') }}</span>
+          <span v-else-if="state?.kind === 'genus'" class="text-sm font-normal">{{ $t('No aplica a {genus}', { genus: state.genus }) }}</span>
+          <span v-else-if="state?.kind === 'nowings'" class="text-sm font-normal">{{ $t('No aplica: sin alas en la foto') }}</span>
+          <span v-else-if="state?.kind === 'download'" class="text-sm font-normal" data-testid="sex-no-model">{{ $t('modelo sin descargar') }}</span>
+          <span v-else-if="state?.kind === 'downloading'" class="text-sm font-normal tabular-nums">{{ $t('Descargando: {p} %', { p: dlPct }) }}</span>
+          <span v-else-if="state?.kind === 'running'" class="text-sm font-normal">{{ $t('Calculando…') }}</span>
+          <span v-else-if="state?.kind === 'error'" class="text-sm font-normal text-error-text">{{ $t('No se pudo estimar') }}</span>
         </span>
         <span class="ml-auto flex items-center gap-0.5 text-sm text-brand-text">{{ $t('Detalles') }}<ChevronDown :size="16" class="transition-transform group-open:rotate-180" /></span>
       </summary>
@@ -136,9 +142,6 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
         <SexEstimate v-else-if="state" :state="state" bare @download="emit('download')" />
       </div>
     </details>
-    <div v-else-if="hasLine && state" class="px-3 py-1">
-      <SexEstimate :state="state" bare class="sex-plain" @download="emit('download')" />
-    </div>
 
     <div v-if="canSend" class="px-3 py-1.5" :class="hasLine ? 'border-t border-border' : ''" data-testid="sex-send">
       <template v-if="step === 'done'">
@@ -156,7 +159,16 @@ const seg = (on: boolean) => (on ? 'border-brand bg-brand text-on-brand' : 'bord
             <button role="radio" :aria-checked="sex === 'female'" :aria-label="$t('Hembra')" :title="$t('Hembra')" class="grid size-11 place-items-center rounded-md border text-xl" :class="seg(sex === 'female')" data-testid="sex-female" @click="sex = sex === 'female' ? null : 'female'">♀</button>
             <button role="radio" :aria-checked="sex === 'male'" :aria-label="$t('Macho')" :title="$t('Macho')" class="grid size-11 place-items-center rounded-md border text-xl" :class="seg(sex === 'male')" data-testid="sex-male" @click="sex = sex === 'male' ? null : 'male'">♂</button>
           </div>
-          <button class="btn-primary ml-auto min-h-11 px-4" :disabled="!ready || step === 'sending'" data-testid="contrib-send" @click="submit">
+          <!-- a neutral outline until a sex (or a species above) is chosen: it does not look tappable before -->
+          <button
+            class="ml-auto min-h-11 px-4"
+            :class="ready ? 'btn-primary' : 'btn text-fg-muted'"
+            :disabled="!ready || step === 'sending'"
+            :aria-label="$t('Enviar para entrenar')"
+            :title="$t('Enviar para entrenar')"
+            data-testid="contrib-send"
+            @click="submit"
+          >
             <Send :size="16" />{{ step === 'sending' ? $t('Enviando…') : $t('Enviar') }}
           </button>
         </div>

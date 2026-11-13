@@ -418,5 +418,12 @@ export default {
   'Es esta': 'It is this one',
   'Otra especie…': 'Another species…',
   'Museo': 'Museum',
+  'modelo sin descargar': 'model not downloaded',
+  'Descargando: {p} %': 'Downloading: {p} %',
+  'No se pudo estimar': 'Could not estimate',
+  'Enviar para entrenar': 'Send for training',
+  'Quitar esta foto': 'Remove this photo',
+  'nada descargado': 'nothing downloaded',
+  'El modelo que la leyó ya no está en este teléfono: Reprocesar la lee de nuevo.': 'The model that read it is no longer on this phone: Reprocess reads it again.',
   'Fotos de referencia': 'Reference photos',
 }
