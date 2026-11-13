@@ -544,11 +544,16 @@ const onPhoto = async (e: Event) => {
   const input = e.target as HTMLInputElement
   const many = Array.from(input.files ?? [])
   runError.value = null
+  // The run when the photos were chosen: «Borrar fotos» while they are still being read (a large file, a slow phone)
+  // stops them too, before anything is identified.
+  const mine = run
   if (many.length > 1) {
     const photos: Photo[] = []
-    for (const f of many) await readPhoto(f).then(p => photos.push(p), unreadable)
+    for (const f of many) {
+      await readPhoto(f).then(p => photos.push(p), () => mine === run && unreadable())
+      if (mine !== run) return void (input.value = '')
+    }
     input.value = ''
-    const mine = run
     for (const p of photos) {
       if (mine !== run) return
       clearResult()
@@ -557,7 +562,7 @@ const onPhoto = async (e: Event) => {
     return
   }
   clearResult()
-  return takePhoto(input, identify, unreadable)
+  return takePhoto(input, p => (mine === run ? identify(p) : undefined), () => mine === run && unreadable())
 }
 
 // A photo pasted (Ctrl+V / ⌘V) or dropped on the page: the same path as «Elegir foto».

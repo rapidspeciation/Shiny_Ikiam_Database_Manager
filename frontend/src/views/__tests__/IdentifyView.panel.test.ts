@@ -193,4 +193,29 @@ describe('IdentifyView: the panel', () => {
     // the buttons work again at once
     expect(host.querySelector<HTMLButtonElement>('[data-testid=add-photos]')!.disabled).toBe(false)
   })
+
+  it('«Borrar fotos» while chosen photos are still being read: none of them is identified', async () => {
+    localStorage.setItem('identify:log', JSON.stringify([{ at: restored.at, thumb: 'data:image/jpeg;base64,AA==', ai: 'Mechanitis polymnia', p: 0.6, pick: null, side: null, saved: true }]))
+    sessionStorage.setItem('identify:shots', JSON.stringify([restored.at]))
+    const { host, settle } = await mountWith(restored)
+    let calls = 0
+    server.onCall = () => void calls++
+    // two photos whose bytes come late (a slow phone decoding large files)
+    const reads: ((b: ArrayBuffer) => void)[] = []
+    const late = (name: string) => ({ name, type: 'image/jpeg', arrayBuffer: () => new Promise<ArrayBuffer>(ok => reads.push(ok)) })
+    const input = host.querySelector<HTMLInputElement>('input[type=file][multiple]')!
+    Object.defineProperty(input, 'files', { configurable: true, value: [late('a.jpg'), late('b.jpg')] })
+    input.dispatchEvent(new Event('change'))
+    await settle()
+    host.querySelector<HTMLButtonElement>('[data-testid=clear-photos]')!.click()
+    await settle()
+    reads.forEach(ok => ok(new ArrayBuffer(4)))
+    await settle()
+    reads.forEach(ok => ok(new ArrayBuffer(4)))
+    await settle()
+    server.onCall = null
+    expect(calls).toBe(0)
+    expect(host.querySelector('[data-testid=headline]')).toBeNull()
+    expect(host.querySelector('[data-testid=photo-start]')).not.toBeNull()
+  })
 })
