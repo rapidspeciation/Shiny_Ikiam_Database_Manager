@@ -98,3 +98,23 @@ test('count_records subtotals: the rows per value of each groupBy column, over a
   assert.deepEqual(cut.Sex, { female: 31, male: 30 });
   assert.match(cut._omitted, /SPECIES: over 60 values/);
 });
+
+test('the shared brief (app chat and every WhatsApp voice) says figures are copied and totals come from a tool', async () => {
+  const { readdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { composeBrief, GENERIC_PERSON, SERVER_PATHS } = await import('../server/brief.mjs');
+  const { RECORD_TOOLS } = await import('../server/records-tool.mjs');
+  const { QUERY_TOOL } = await import('../server/query-tool.mjs');
+  const root = join(import.meta.dirname, '..');
+  const wa = join(root, 'assistant/voice/whatsapp-d3l');
+  const voices = [null, readdirSync(wa).filter(f => f.endsWith('.md')).map(f => join(wa, f))];
+  for (const voice of voices) {
+    const brief = composeBrief(GENERIC_PERSON, { ...SERVER_PATHS, voice }).replace(/\s+/g, ' ');
+    assert.match(brief, /never add, subtract or work out a share in your head/, voice ? 'WhatsApp' : 'app');
+    assert.match(brief, /`count_records` `subtotals`, the totals `query` prints for COUNT and SUM columns/);
+    assert.match(brief, /Only a tool's total may come before the list it sums/);
+  }
+  // The names the rule cites are the tools'.
+  assert.match(RECORD_TOOLS.find(t => t.function.name === 'count_records').function.description, /`subtotals`/);
+  assert.match(QUERY_TOOL.function.description, /COUNT and SUM columns come with their totals/);
+});
