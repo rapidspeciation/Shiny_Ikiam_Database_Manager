@@ -143,5 +143,6 @@ shown without «Incierto». The lead therefore ships, for both app engines:
 - genus «Incierto» below **0.80** (unchanged): genus right 97 to 98 % from 0.80, 86 to 94 % from 0.50 to 0.80 (table
   C). The rule's 0.95 is an artifact of scoring the genus rung only on photos the 0.35 species cut leaves over;
 - tribe and subfamily 0.80 (unchanged; 100 % right where they answered).
+The 0.05-band figures: measure_20261116T0331Z/narrow_bands.md (narrow_bands.py, from results.json).
 These values were chosen with the numbers in view, so they are development grade, not checked on unseen photos.
 The rule's own result (0.35 / 0.95) stays in thresholds.json and REPORT.md.

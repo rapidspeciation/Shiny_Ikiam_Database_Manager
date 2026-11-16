@@ -24,3 +24,5 @@ Started 15 Nov 2026. claudeAgent meter at start: 61 % (reset Wed 18 Nov 19:59 EC
 - Ask 5 approved: ui-loop + sol-loop rounds before the lab link; names read through the guide's name lookup (current and renamed leaves).
 - Ask 4 parked: 364f2daf on t3/merge-taxonomy-leaf-names (script only). Handoff sent.
 - UI worker done: 2762ee82 (always-guess + Incierto, tribe label, THRESHOLDS 0.80). Lab https://franz-gpdwin4.tailf5d2f1.ts.net:9975/identificar/ (stop: tools/lab/dev-app.sh --stop --port 8893; sudo tailscale serve --https=9975 off). sol-loop r1 (Sol medium, Opus high) on 9f0a37e7..2762ee82 running.
+- 2026-11-16 Confirmar MVP done: branch t3/identify-trait-confirmation-panel fb499bd5 (worktree t3-8ea555e5-0ed41c4f36e3dc63), flag VITE_CONFIRM_TRAITS, lab https://franz-gpdwin4.tailf5d2f1.ts.net:9981/identificar/ (stop: dev-app.sh --stop --port 8885; tailscale serve --https=9981 off). done: lab link sent to parent. Narrow r3 critics on 3fce2288..28b1a988 running. Deploy only after Franz tries it.
+- Identificar guess: r3 Sol 10/10 approve; Opus r3 pending. Then smoke, merge main, deploy.
