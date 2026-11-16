@@ -87,9 +87,10 @@ editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
   and the app tools that write without review (`apply_proposal`, `undo_edits`, `invite_person`, …), because anyone in the
   group could prompt the chat. Franz, 16 Nov: every member of the group has an account in the app, so a loose rule
   replaces the hard block. Its `.claude/ithomiini-workspace.json` has `"denyRules": false`, so `t3-provision.mjs`
-  (`--refresh`, `--refresh-all`) writes there only the trims of `scripts/claude-lean.mjs` (unused Claude Code built-ins:
-  `Workflow`, `ScheduleWakeup`, `ReportFindings`, `ListAgents` and seven built-in subagent types, about 6.5k tokens per
-  call; not a restriction, and none of them is the app's own, so they can only be hidden, not deleted). The old file is
+  (`--refresh`, `--refresh-all`) gives it a deny list of only the trims of `scripts/claude-lean.mjs` (unused Claude Code
+  built-ins: `Workflow`, `ScheduleWakeup`, `ReportFindings`, `ListAgents` and seven built-in subagent types, about 6.5k
+  tokens per call; not a restriction, and none of them is the app's own, so they can only be hidden, not deleted). The
+  Artifact tool and the bundled skills stay off there too, as in every workspace. The old file is
   kept beside it as `settings.json.bak-<time>`. Unlike every other workspace, the group's chat may read
   `~/.config/ithomiini` and edit `releases/` and `current/` (Franz, 16 Nov: no restrictions there).
   Deploy the helper (`t3-turn.mjs`, with `t3-progress.mjs`) to claudeclaw before a bridge that sends `who`: an older

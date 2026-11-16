@@ -233,6 +233,12 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     const sandbox = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).sandbox;
     assert.equal(sandbox.enabled, true);
     assert.equal(sandbox.allowUnsandboxedCommands, false);
+    // A lab workspace marked `denyRules: false` keeps the trims and the no-deploy rules (the lab guard adds its own).
+    writeFileSync(join(workspace, '.claude', 'ithomiini-workspace.json'), JSON.stringify({ denyRules: false }));
+    execFileSync(process.execPath, [script, '--refresh', 'lab'], { env, encoding: 'utf8' });
+    const loose = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
+    assert.ok(LEAN_DENY.every(rule => loose.includes(rule)) && loose.includes('Bash(scripts/deploy.sh:*)') && loose.includes('Bash(*wacli*)'));
+    assert.ok(!loose.some(rule => /^Read\(.*ithomiini\/(service\.env|\*\.json)/.test(rule)) && !loose.includes('Bash(rm -rf /:*)'));
     assert.ok(sandbox.filesystem.denyRead.includes(join(home, '.wacli')) && sandbox.filesystem.denyRead.includes(join(home, '.local', 'bin', 'wacli')));
     assert.ok(sandbox.filesystem.allowWrite.includes('/work/ithomiini'));
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
@@ -311,6 +317,7 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps only the 
     run('grupo');
     run('ana');
     assert.ok(settingsOf('grupo').permissions.deny.length > 0, 'an ordinary workspace has its deny list');
+    const anaDeny = settingsOf('ana').permissions.deny;
     const onlyTrims = deny => assert.deepEqual(deny, LEAN_DENY);
     // The group's old hand-made block, then the flag: the next refresh-all keeps only the trims and the rest of the file.
     const settingsFile = join(workspaces, 'grupo', '.claude', 'settings.json');
@@ -330,7 +337,8 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps only the 
     run('--refresh', 'grupo');
     onlyTrims(settingsOf('grupo').permissions.deny);
     assert.deepEqual(JSON.parse(readFileSync(join(workspaces, 'grupo', '.claude', 'ithomiini-workspace.json'), 'utf8')), { denyRules: false });
-    assert.ok(settingsOf('ana').permissions.deny.some(rule => rule.startsWith('Read(')), 'other workspaces keep the secrets rules');
+    assert.deepEqual([...settingsOf('ana').permissions.deny].sort(), [...anaDeny].sort(), 'other workspaces keep their whole list');
+    assert.ok(anaDeny.some(rule => rule.startsWith('Read(')) && LEAN_DENY.every(rule => anaDeny.includes(rule)));
     // The lean rollback (ITHOMIINI_CLAUDE_LEAN=0) leaves the group with no deny list at all.
     execFileSync(process.execPath, [script, '--refresh', 'grupo'], { env: { ...env, ITHOMIINI_CLAUDE_LEAN: '0' }, encoding: 'utf8' });
     assert.equal(settingsOf('grupo').permissions.deny, undefined);

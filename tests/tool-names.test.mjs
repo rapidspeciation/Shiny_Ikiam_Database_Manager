@@ -2,14 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { TOOL_ALIASES, createAssistant, currentTool, mcpTools } from '../server/assistant.mjs';
-import { MAIN_TOOLS } from '../server/assistant-host.mjs';
+import { createAssistant, mcpTools } from '../server/assistant.mjs';
 import { allIssues } from '../server/checks.mjs';
 import { setVerdicts } from '../server/review.mjs';
 import { signIn } from './helpers/assistant.mjs';
 
-// Renamed and merged tools: a chat that loaded the earlier list still calls them by their old
-// names (TOOL_ALIASES), and gets what the tool they became answers.
+// The tools' names: the earlier names of tools renamed or merged on 9 Oct 2026 (search_records, record_history,
+// queue_wikiloc, check_data, list_suggested_edits, list_agreed_fixes, get_alerts) answered as the tools they became
+// until 16 Nov 2026, when they were taken out: no chat had called one since at least 12 Oct.
+const OLD_NAMES = ['search_records', 'record_history', 'queue_wikiloc', 'check_data', 'list_suggested_edits', 'list_agreed_fixes', 'get_alerts'];
 
 const editor = { id: 'u-ana', username: 'ana', displayName: 'Ana', role: 'editor' };
 
@@ -28,44 +29,29 @@ async function setup() {
   return { store, assistant, ...signIn(store, assistant, editor) };
 }
 
-test('tools/list gives only the new names; every old name maps to a listed tool', () => {
+test('tools/list gives the current names only', () => {
   const names = new Set(mcpTools().map(t => t.name));
-  for (const [old, alias] of Object.entries(TOOL_ALIASES)) {
-    assert.ok(!names.has(old), `${old} is not listed`);
-    assert.ok(names.has(alias.name), `${old} → ${alias.name} is listed`);
-  }
+  for (const old of OLD_NAMES) assert.ok(!names.has(old), `${old} is not listed`);
+  for (const now of ['search_text', 'row_history', 'queue_walk', 'review_issues', 'review_suggestions']) assert.ok(names.has(now), now);
   // Loaded with every chat: the identifier and SQL readers stay, counting and free text are found on demand.
   const always = mcpTools()
     .filter(t => t._meta?.['anthropic/alwaysLoad'])
     .map(t => t.name);
   assert.ok(always.includes('query') && always.includes('find_records'));
   assert.ok(!always.includes('count_records') && !always.includes('search_text'));
-  // A renamed tool runs where it ran: the Wikiloc queue in the app's thread.
-  assert.equal(currentTool('queue_wikiloc').name, 'queue_walk');
-  assert.ok(MAIN_TOOLS.has(currentTool('queue_wikiloc').name));
-  assert.deepEqual(currentTool('find_records', { a: 1 }), { name: 'find_records', args: { a: 1 } });
 });
 
-test('old names answer as the tools they became', async () => {
-  const { store, call, raw } = await setup();
+test('an old name is an unknown tool now', async () => {
+  const { store, call } = await setup();
   try {
-    const a0a = store.getRecordBySheetRow('Insectary_data', 2).id;
-    const same = async (old, now, args = {}, nowArgs = args) => assert.equal(await raw(old, args), await raw(now, nowArgs), `${old} = ${now}`);
-    await same('search_records', 'search_text', { query: 'Oleria' });
-    await same('record_history', 'row_history', { recordId: a0a });
-    await same('check_data', 'review_issues', { kind: 'repeat' });
-    await same('list_suggested_edits', 'review_suggestions');
-    await same('queue_wikiloc', 'queue_walk', { url: 'https://example.com/123' });
-    assert.match((await call('queue_wikiloc', { url: 'https://example.com/123' })).error, /No Wikiloc trail link/);
-    await same('get_alerts', 'review_issues', {}, { show: 'alerts' });
-    assert.ok(Array.isArray((await call('get_alerts', {})).camPools));
+    for (const old of OLD_NAMES) assert.equal((await call(old, {})).error, 'Unknown tool', old);
   } finally {
     store.close();
   }
 });
 
-test('review_issues: the agreed fixes (show "agreed") and the alerts (show "alerts") as the removed tools gave them, counted in the overview', async () => {
-  const { store, call, raw } = await setup();
+test('review_issues: the agreed fixes (show "agreed") and the alerts (show "alerts"), counted in the overview', async () => {
+  const { store, call } = await setup();
   try {
     const issue = allIssues(store).issues.find(i => i.kind === 'repeat' && i.recordId);
     assert.ok(issue, 'the fixture has a repeated CAM');
@@ -76,9 +62,7 @@ test('review_issues: the agreed fixes (show "agreed") and the alerts (show "aler
     assert.equal(agreed.fixes[0].issueId, issue.id);
     assert.deepEqual(Object.values(agreed.fixes[0].values), ['CAM000002']);
     assert.match(agreed.howTo, /propose_changes/);
-    // list_agreed_fixes took kind and limit: the same answer.
-    assert.equal(await raw('list_agreed_fixes', { kind: 'repeat', limit: 5 }), await raw('review_issues', { show: 'agreed', kind: 'repeat', limit: 5 }));
-    assert.equal((await call('list_agreed_fixes', { kind: 'date_order' })).total, 0);
+    assert.equal((await call('review_issues', { show: 'agreed', kind: 'date_order' })).total, 0);
 
     const alerts = await call('review_issues', { show: 'alerts' });
     assert.ok(['alerts', 'camPools', 'preserveRule', 'missingSamples'].every(k => k in alerts), Object.keys(alerts).join());

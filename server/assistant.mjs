@@ -673,26 +673,6 @@ const ALWAYS_LOADED = new Set([
   'send_sheet_photos',
 ]);
 
-/**
- * Earlier names of renamed or merged tools. A chat keeps the tool list it loaded, so these still
- * answer in tools/call (tools/list gives only the new names): `name` is the tool now, `args` turns
- * the old arguments into its own where it was merged into another one.
- */
-export const TOOL_ALIASES = {
-  search_records: { name: 'search_text' },
-  record_history: { name: 'row_history' },
-  queue_wikiloc: { name: 'queue_walk' },
-  check_data: { name: 'review_issues' },
-  list_suggested_edits: { name: 'review_suggestions' },
-  list_agreed_fixes: { name: 'review_issues', args: a => ({ show: 'agreed', kind: a.kind, limit: a.limit }) },
-  get_alerts: { name: 'review_issues', args: () => ({ show: 'alerts' }) },
-};
-/** A tool call by its name now: { name, args }. */
-export function currentTool(name, args = {}) {
-  const alias = Object.hasOwn(TOOL_ALIASES, name) ? TOOL_ALIASES[name] : null;
-  return alias ? { name: alias.name, args: alias.args ? alias.args(args ?? {}) : args } : { name, args };
-}
-
 /** Each tool's input schema by its name (server/tool-input.mjs checks the calls against it). */
 const TOOL_SCHEMAS = new Map(TOOLS.map(t => [t.function.name, t.function.parameters]));
 
@@ -6302,22 +6282,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * A tool call with the one input check of every tool (server/tool-input.mjs): keys the tool does not
    * know named with the closest it has, an empty input that fails told what it needs.
    */
-  async function executeTool(called, given, context) {
-    const { name, args } = currentTool(called, given);
+  async function executeTool(name, args, context) {
     let out;
     try {
-      out = await runTool(called, given, context);
+      out = await runTool(name, args, context);
     } catch (e) {
       out = { error: clip(e.message, 300) };
     }
-    // An alias that turns old arguments into new ones (TOOL_ALIASES `args`): those are checked.
-    const checked = Object.hasOwn(TOOL_ALIASES, called) && TOOL_ALIASES[called].args ? args : given;
-    return withInputNotes(name, TOOL_SCHEMAS.get(name), checked, out);
+    return withInputNotes(name, TOOL_SCHEMAS.get(name), args, out);
   }
 
-  async function runTool(called, given, context) {
-    // An earlier name (TOOL_ALIASES) runs the tool it became.
-    const { name, args } = currentTool(called, given);
+  async function runTool(name, args, context) {
     if (name === 'query') return queryCopy(args);
     if (name === 'search_text') {
       // `text` and `q` are names chats guess for the query (failed calls in the 4 Nov eval): accept them.
@@ -6725,7 +6700,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // Pictures a tool answers with (rename_photos_look) go beside its text.
       const pictures = out?.[IMAGES] ?? [];
       out = fitResult(out, {
-        narrow: HISTORY_TOOL_NAMES.has(currentTool(String(body.params?.name ?? '')).name)
+        narrow: HISTORY_TOOL_NAMES.has(String(body.params?.name ?? ''))
           ? 'narrow it with recordId, field(s), text or dates, or a smaller maxChanges or limit'
           : 'ask for less (filters, fewer columns, a smaller limit) or page with offset',
       });
