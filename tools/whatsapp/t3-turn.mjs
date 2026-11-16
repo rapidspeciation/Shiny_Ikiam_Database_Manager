@@ -113,7 +113,8 @@ export function senderRole(who, { readMap = file => JSON.parse(readFileSync(file
     return `app account ${username} (records unreadable): guest`;
   }
   if (!user || !user.active) return `app account ${username} (not an active account): guest`;
-  const name = user.display_name ? ` (${user.display_name})` : '';
+  const display = String(user.display_name ?? '').replace(/[\s«»[\]·,:()]+/g, ' ').trim().slice(0, 40);
+  const name = display ? ` (${display})` : '';
   return user.role === 'admin' ? `app account ${username}${name}, admin` : `app account ${username}${name}, ${user.role}: guest`;
 }
 

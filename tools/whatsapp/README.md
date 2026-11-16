@@ -88,11 +88,16 @@ editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
   group could prompt the chat. Franz, 16 Nov: every member of the group has an account in the app, so a loose rule
   replaces the hard block. Its `.claude/ithomiini-workspace.json` has `"denyRules": false`, so `t3-provision.mjs`
   (`--refresh`, `--refresh-all`) writes no deny rules there. The old file is kept beside it as
-  `settings.json.bak-<time>`.
+  `settings.json.bak-<time>`. The whole list went, so the group's chat also lost the deny rules every other workspace has
+  (reading `~/.config/ithomiini`, editing `releases/` and `current/`, and the unused tools of `scripts/claude-lean.mjs`).
+  Deploy the helper (`t3-turn.mjs`, with `t3-progress.mjs`) to claudeclaw before a bridge that sends `who`: an older
+  helper leaves the token in the header, which the skill reads as a guest.
 - **Who is who.** Each group turn's header names the sender's app account and whether it is an active admin, e.g.
-  `[WhatsApp · group «…» · Ana · app account ana (Ana Pérez), admin · 09:15]`, or `…: guest`. The bridge puts a random
+  `[WhatsApp · group «…» · app account ana (Ana Pérez), admin · WhatsApp name «Ana» · 09:15]`, or `…: guest` (the role
+  first, the WhatsApp name quoted and cleaned, so a name cannot pose as a role). The bridge puts a random
   token there; `t3-turn.mjs` on claudeclaw replaces it at turn time (config `chats.group.people`: `{ map, database }`):
-  the private map links the sender's WhatsApp JID (`"self"`: Franz's own number) to an app username, and the account's
+  the private map links the sender's WhatsApp JID, exactly as wacli's `SenderJID` gives it (a phone JID, or a `…@lid`:
+  list both for one person; `"self"`: Franz's own number), to an app username, and the account's
   role and `active` come live from the app's `users` table (read only). Unlinked, unknown, inactive or unreadable: guest.
   The map is `/home/ubuntu/.config/ithomiini-wa-bridge/people.json` on claudeclaw (mode 600, never in git or a
   release); `{}` means everyone is a guest. Check one sender without a turn: op `whois` (`{ "op": "whois", "who": {…} }`).

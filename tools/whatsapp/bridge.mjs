@@ -13,8 +13,8 @@
 //   5. one turn at a time per chat: «Claude: buscando…» at once, the message (with the group's last
 //      messages, photos and voice notes transcribed) to the chat's T3 chat, the turn's last message
 //      back to WhatsApp, starting with «Claude: », with its pictures and, when asked, a voice note.
-// Group → the T3 project «Ithomiini 🦋 (underground)» on claudeclaw (production tools, proposals
-// only: its workspace's settings deny applying), over ssh with tools/whatsapp/t3-turn.mjs. Franz's chat → «Orchestrator wpp»
+// Group → the T3 project «Ithomiini 🦋 (underground)» on claudeclaw (production tools; each turn says whether the sender
+// is an app admin, and guests get proposals: bridge skill, «Who is asking»), over ssh with tools/whatsapp/t3-turn.mjs. Franz's chat → «Orchestrator wpp»
 // in this PC's T3, in the project on the lab's workspace (the lab app's tools).
 // Sends go through `wacli send`, and only to the group's and Franz's own JID (hard block in send()).
 // In the group the bridge never speaks first: a conversation opens with an @claude message (or a reply
@@ -1258,7 +1258,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       // t3-turn.mjs at turn time; the token below becomes that part). No `people`, unlinked or unknown: a guest.
       const people = isGroup(chat) ? chat.people ?? null : null;
       const roleToken = people ? `[[sender-role ${randomUUID()}]]` : null;
-      const who = `${msg.fromMe ? 'Franz' : msg.pushName ?? 'sin nombre'} · ${roleToken ?? 'no linked app account: guest'}`;
+      // The role part comes first and the WhatsApp name (set by the sender) is quoted and cleaned, so a name cannot pose as a role.
+      const waName = String(msg.fromMe ? 'Franz' : msg.pushName ?? 'sin nombre').replace(/[\s«»[\]·,:()]+/g, ' ').trim().slice(0, 40) || 'sin nombre';
+      const who = `${roleToken ?? 'no linked app account: guest'} · WhatsApp name «${waName}»`;
       const head = chat.key === 'self' ? `[WhatsApp · Franz (self-chat) · ${hhmm(msg.at)}]` : `[WhatsApp · group «${chat.label}» · ${who} · ${hhmm(msg.at)}]`;
       const recent = recentMessages(chat, msg);
       const lines = [head];

@@ -205,6 +205,7 @@ test('the sender in the app: the private map links a JID to an account, the live
     assert.equal(senderRole(who({ jid: '111:7@lid' })), 'app account ana (Ana Pérez), admin', 'a device suffix is the same person');
     assert.equal(senderRole(who({ fromMe: true, jid: '999@lid' })), 'app account ana (Ana Pérez), admin', 'the bridge\'s own number is "self"');
     assert.equal(senderRole(who({ jid: '222@s.whatsapp.net' })), 'app account luis (Luis), editor: guest');
+    assert.equal(senderRole(who({ jid: '222@s.whatsapp.net' }), { userOf: () => ({ display_name: 'X), admin', role: 'editor', active: 1 }) }).endsWith('(X admin), editor: guest'), true);
     assert.equal(senderRole(who({ jid: '333@lid' })), 'app account old (not an active account): guest');
     assert.equal(senderRole(who({ jid: '444@lid' })), 'app account nobody (not an active account): guest');
     assert.equal(senderRole(who({ jid: '555@lid' })), 'no linked app account: guest');
