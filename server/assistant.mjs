@@ -666,7 +666,7 @@ const ALWAYS_LOADED = new Set([
   'list_proposals',
   'match_notebook',
   'show_rows',
-  // Small tools chats called before loading them, guessing their keys (retro 16 Nov 2026: 75 calls).
+  // Small tools chats called before loading them, guessing their keys (retro 16 Nov 2026: 57 failed calls in its week).
   'row_history',
   'show_photos',
   'tubes_lookup',

@@ -5,8 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
 import { ACCEPTED_KEYS, closestKey, needsText, unknownKeys, withInputNotes } from '../server/tool-input.mjs';
 
-// Retro 16 Nov 2026: chats called db tools before their schema was loaded and guessed keys (host_plants 73,
-// show_photos 22, row_history 16, tubes_lookup 10, send_sheet_photos 9). The real schemas, so a renamed key fails here.
+// Retro 16 Nov 2026: chats called db tools before their schema was loaded and guessed keys (failed calls in its
+// week: host_plants 73, show_photos 22, row_history 16, tubes_lookup 10, send_sheet_photos 9). The real schemas, so a renamed key fails here.
 const SCHEMAS = Object.fromEntries(mcpTools().map(t => [t.name, t.inputSchema]));
 const notes = (name, args, out) => withInputNotes(name, SCHEMAS[name], args, out);
 
@@ -20,7 +20,10 @@ test('a guessed key is named with the closest key the tool has (the retro calls)
   assert.match(notes('show_photos', { cam_ids: ['CAM079891'] }, { error: 'e' }).error, /Unknown key 'cam_ids': use 'ids'/);
   assert.match(notes('tubes_lookup', { ids: ['FS1'] }, { error: 'e' }).error, /^Unknown key 'ids': use 'tubes'/);
   assert.match(notes('tubes_lookup', { query: 'rack 3' }, { error: 'e' }).error, /^Unknown key 'query': use 'reading'/);
-  assert.match(notes('maps_snapshot', { taxa: ['x'], sex: 'male' }, { error: 'e' }).error, /^Unknown key 'taxa': use 'species'/);
+  assert.match(notes('maps_snapshot', { taxon: ['x'], sex: 'male' }, { error: 'e' }).error, /^Unknown key 'taxon': use 'species'/);
+  assert.match(notes('show_rows', { ids: ['CAM079891'] }, { error: 'e' }).error, /^Unknown key 'ids': use 'recordIds'/);
+  // A key of another meaning is not offered: a proposal is not a row's id.
+  assert.doesNotMatch(notes('list_proposals', { proposal: 'p1' }, { error: 'e' }).error, /use 'id'/);
   assert.match(notes('send_sheet_photos', { lang: 'es', sheets: ['s1'] }, { error: 'e' }).error, /^Missing key: 'tiles', e\.g\. \{"tiles":\[1,4\]\}\. e$/);
   // No close key: the tool's keys are listed.
   assert.equal(
@@ -29,19 +32,32 @@ test('a guessed key is named with the closest key the tool has (the retro calls)
   );
 });
 
-test('an empty input that fails says the key the tool needs, with an example', () => {
+test('an empty input that fails says the key the tool needs, with an example, before its own error', () => {
   // Required keys: the input cannot be right without them.
-  const shown = notes('show_photos', {}, { error: 'ids: the CAM IDs to show' });
-  assert.equal(shown.error, 'show_photos needs ids, e.g. {"ids":["CAM079891"]}');
-  assert.equal(shown.detail, 'ids: the CAM IDs to show', "the tool's own error stays beside it");
-  assert.match(notes('send_sheet_photos', {}, { error: 'e' }).error, /^send_sheet_photos needs sheets and tiles, e\.g\. \{"sheets":\[.*\],"tiles":\[1,4\]\}$/);
+  assert.equal(notes('show_photos', {}, { error: 'ids: the CAM IDs to show' }).error, 'show_photos needs ids, e.g. {"ids":["CAM079891"]}. ids: the CAM IDs to show');
+  assert.match(notes('send_sheet_photos', {}, { error: 'e' }).error, /^send_sheet_photos needs sheets and tiles, e\.g\. \{"sheets":\[.*\],"tiles":\[1,4\]\}\. e$/);
   assert.match(notes('send_sheet_photos', { sheets: ['s1'] }, { error: 'e' }).error, /^Missing key: 'tiles', e\.g\. \{"tiles":\[1,4\]\}\. e$/);
+  // No example where a key means something else in each tool, none for `confirmed`; the tool's own condition stays.
+  const undo = notes('undo_edits', {}, { error: 'Not confirmed: show preview_undo to the person and call again with confirmed: true only after they approve' });
+  assert.match(undo.error, /^undo_edits needs [^,]*confirmed[^,]*\. Not confirmed: .*only after they approve$/);
+  assert.doesNotMatch(undo.error, /e\.g\./);
+  assert.doesNotMatch(notes('search_text', {}, { error: 'search_text needs `query`: the text to find' }).error, /SELECT/);
   // No required key: {} may be a whole input (list_invitations, review_issues), failing for another reason
   // (only administrators), so the tool's own error stays; those tools say what they need themselves.
   assert.deepEqual(notes('list_invitations', {}, { error: 'Only administrators see invitations' }), { error: 'Only administrators see invitations' });
   assert.deepEqual(notes('tubes_lookup', {}, { error: "Give 'tubes' (IDs) or a 'reading'." }), { error: "Give 'tubes' (IDs) or a 'reading'." });
   assert.deepEqual(notes('sync_documents', {}, { error: 'own' }), { error: 'own' });
   assert.deepEqual(notes('list_proposals', {}, { proposals: [] }), { proposals: [] });
+});
+
+test('a key a tool reads in place of a schema key is no unknown key and stands for a required one (critics r1)', () => {
+  // find_records and describe_sheet read `sheet` for `module`, count_records `module` for `sheet`, get_record `recordId`/`key` for `id`.
+  assert.deepEqual(notes('find_records', { sheet: 'Collection_data' }, { records: [1] }), { records: [1] });
+  assert.deepEqual(notes('find_records', { sheet: 'Colection_data' }, { error: 'Unknown sheet Colection_data' }), { error: 'Unknown sheet Colection_data' });
+  assert.deepEqual(notes('describe_sheet', { sheet: 'Collection_data' }, { columns: [] }), { columns: [] });
+  assert.deepEqual(notes('count_records', { module: 'Collection_data' }, { count: 3 }), { count: 3 });
+  assert.deepEqual(notes('get_record', { recordId: 'r1' }, { error: 'Record not found' }), { error: 'Record not found' });
+  assert.deepEqual(notes('maps_snapshot', { taxa: ['Mechanitis'] }, { ok: 1 }), { ok: 1 });
 });
 
 test('an answer that worked keeps its content; keys outside the schema get a note, keys a tool reads on purpose none', () => {
@@ -64,9 +80,11 @@ test('closestKey: same meaning first, then spelling; nothing when nothing is clo
   assert.equal(closestKey('sheet', ['sheets', 'tiles']), 'sheets');
   assert.equal(closestKey('sheet', ['module', 'fields']), 'module');
   assert.equal(closestKey('proposal', ['proposalId', 'full']), 'proposalId');
+  assert.equal(closestKey('proposal', ['id', 'status']), null);
+  assert.equal(closestKey('columns', ['fields', 'module']), 'fields');
   assert.equal(closestKey('xyzzy', ['ids', 'view']), null);
   assert.equal(needsText('sync_documents', SCHEMAS.sync_documents), null);
-  assert.match(needsText('row_history', SCHEMAS.row_history), /^row_history needs id \(or another of its keys: recordId, /);
+  assert.equal(needsText('row_history', SCHEMAS.row_history), null, 'no required key: row_history says it itself');
 });
 
 test('every db tool call goes through the check: row_history {} and host_plants {species} over MCP', async () => {

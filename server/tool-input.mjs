@@ -1,17 +1,28 @@
 // One input check for every db tool (MCP tools/call, server/assistant.mjs executeTool).
 //
 // Chats call a deferred tool before its schema is loaded and guess its keys (retro 16 Nov 2026: about
-// 130 failed calls, e.g. host_plants with `species`, show_photos with `cams`, tubes_lookup with `{}`).
+// 130 failed calls in a week, e.g. host_plants with `species`, show_photos with `cams`, tubes_lookup with `{}`).
 // The tool still runs as before (some tools read keys their schema leaves out on purpose, ACCEPTED
 // below); its answer then names each key it does not know with the closest one it has, and an empty
 // input that fails says which key the tool needs, with an example.
 
-/** Keys a tool reads that its schema leaves out (fewer bytes in the chats' context): never "unknown". */
+/**
+ * Keys a tool reads that its schema leaves out (fewer bytes in the chats' context, or an older call
+ * shape): never "unknown", and given they may stand for a required key. From an audit of the handlers (16 Nov).
+ */
 export const ACCEPTED_KEYS = {
   search_text: ['text', 'q'],
   get_record: ['key', 'recordId'],
+  find_records: ['sheet', 'groupBy'],
+  describe_sheet: ['sheet'],
+  count_records: ['module', 'field', 'fields'],
   host_plants: ['auto_pick'],
+  maps_snapshot: ['taxa', 'near'],
+  send_sheet_photos: ['sheet'],
   rack_deposit: ['leave_out', 'restore'],
+  rack_report: ['racks', 'responsable', 'ultracongelador'],
+  update_websites: ['fresh'],
+  list_history: ['formulas'],
 };
 
 /**
@@ -20,7 +31,7 @@ export const ACCEPTED_KEYS = {
  */
 const SAME_MEANING = [
   ['butterfly', 'species', 'taxon', 'taxa', 'taxa_names', 'name', 'butterflies', 'genus', 'scientific_name'],
-  ['ids', 'cams', 'cam_ids', 'camids', 'cam', 'cam_id', 'specimens', 'records', 'id_list', 'tubes'],
+  ['ids', 'cams', 'cam_ids', 'camids', 'cam', 'cam_id', 'specimens', 'records', 'id_list', 'recordIds'],
   ['tubes', 'tube_ids', 'tube', 'ids', 'codes'],
   ['id', 'recordId', 'record_id', 'record', 'cam', 'cam_id', 'row', 'key'],
   ['reading', 'query', 'q', 'text', 'search', 'rack', 'rack_reading'],
@@ -30,16 +41,18 @@ const SAME_MEANING = [
   ['tiles', 'tile', 'picks', 'chosen', 'numbers', 'photos'],
   ['plant', 'host_plant', 'hostplant', 'plants'],
   ['area', 'region', 'province', 'location', 'place'],
-  ['proposalId', 'proposal', 'proposal_id', 'id'],
+  ['proposalId', 'proposal', 'proposal_id'],
+  ['fields', 'columns', 'cols', 'field'],
   ['limit', 'max', 'max_results', 'n', 'count', 'top'],
   ['lang', 'language', 'locale'],
 ];
 
-/** Example values by key name, for "needs …, e.g. …" (the same for every tool that has the key). */
+/**
+ * Example values for "needs …, e.g. …", only for keys that mean the same in every tool that has them
+ * (an `id` or `query` differs from tool to tool: no example; `confirmed` never gets one).
+ */
 const EXAMPLES = {
-  id: 'CAM079891',
   ids: ['CAM079891'],
-  recordId: 'CAM079891',
   butterfly: 'Mechanitis messenoides',
   species: ['Mechanitis messenoides'],
   taxon: 'Mechanitis messenoides',
@@ -47,8 +60,6 @@ const EXAMPLES = {
   tubes: ['FS50849233'],
   sheets: ['<a sheet id from photo_sheets>'],
   tiles: [1, 4],
-  query: 'SELECT …',
-  proposalId: '<a proposalId from list_proposals>',
 };
 
 const norm = key => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -90,31 +101,24 @@ export function closestKey(guess, keys) {
 
 const isEmpty = args => !args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length === 0;
 
-/** Example values of some of a schema's keys: { key: value }. */
+/** Example values of some keys, for those that have one (EXAMPLES, an enum): { key: value }, maybe empty. */
 function exampleOf(schema, keys) {
   const props = schema?.properties ?? {};
   return Object.fromEntries(
-    keys.map(k => {
-      const p = props[k] ?? {};
-      if (Object.hasOwn(EXAMPLES, k)) return [k, EXAMPLES[k]];
-      if (p.enum?.length) return [k, p.enum[0]];
-      if (p.type === 'array') return [k, ['…']];
-      if (p.type === 'integer' || p.type === 'number') return [k, 1];
-      if (p.type === 'boolean') return [k, true];
-      return [k, '…'];
-    }),
+    keys
+      .map(k => (Object.hasOwn(EXAMPLES, k) ? [k, EXAMPLES[k]] : props[k]?.enum?.length && k !== 'confirmed' ? [k, props[k].enum[0]] : null))
+      .filter(Boolean),
   );
 }
+const eg = (schema, keys) => {
+  const example = exampleOf(schema, keys);
+  return Object.keys(example).length ? `, e.g. ${JSON.stringify(example)}` : '';
+};
 
-/** "row_history needs id, e.g. {"id":"CAM079891"}": the required keys, else the schema's first one. */
+/** "show_photos needs ids, e.g. {"ids":["CAM079891"]}": its required keys, or null without any. */
 export function needsText(name, schema) {
-  const props = schema?.properties ?? {};
-  const keys = Object.keys(props);
-  if (!keys.length) return null;
-  const need = schema.required?.length ? schema.required : [keys[0]];
-  const example = exampleOf(schema, need);
-  const or = !schema.required?.length && keys.length > 1 ? ` (or another of its keys: ${keys.slice(1, 8).join(', ')}${keys.length > 8 ? ', …' : ''})` : '';
-  return `${name} needs ${need.join(' and ')}${or}, e.g. ${JSON.stringify(example)}`;
+  const need = schema?.required ?? [];
+  return need.length ? `${name} needs ${need.join(' and ')}${eg(schema, need)}` : null;
 }
 
 /** The keys given that the tool does not know, each with the closest it has: [{ key, use }]. */
@@ -127,9 +131,11 @@ export function unknownKeys(name, schema, args) {
     .map(key => ({ key, use: closestKey(key, keys) }));
 }
 
-/** The required keys missing from a non-empty input. */
-const missingKeys = (schema, args) =>
-  isEmpty(args) ? [] : (schema?.required ?? []).filter(k => args[k] === undefined || args[k] === null);
+/** The required keys missing from a non-empty input; none when it has a key the tool reads in their place (ACCEPTED_KEYS). */
+const missingKeys = (name, schema, args) =>
+  isEmpty(args) || (ACCEPTED_KEYS[name] ?? []).some(k => args[k] !== undefined)
+    ? []
+    : (schema?.required ?? []).filter(k => args[k] === undefined || args[k] === null);
 
 const unknownLine = (name, schema, unknown) => {
   const keys = Object.keys(schema?.properties ?? {});
@@ -144,29 +150,28 @@ const unknownLine = (name, schema, unknown) => {
 
 /**
  * A tool's answer with the input notes: an error starts with what was wrong in the input (unknown
- * keys, missing required keys, or what an empty input needs, the tool's own error in `detail`); an
+ * keys, missing required keys, or what an empty input needs; then the tool's own error); an
  * answer that worked keeps its content and says in `inputWarning` which keys were not the tool's.
  * `out`: the tool's answer (an object, or text for query).
  */
 export function withInputNotes(name, schema, args, out) {
   if (!schema) return out;
   const unknown = unknownKeys(name, schema, args);
-  const missing = missingKeys(schema, args);
+  const missing = missingKeys(name, schema, args);
   const failed = out && typeof out === 'object' && out.error !== undefined && out.error !== null;
   if (failed) {
     const own = typeof out.error === 'string' ? out.error : JSON.stringify(out.error);
     if (unknown.length || missing.length) {
       const parts = [];
       if (unknown.length) parts.push(unknownLine(name, schema, unknown));
-      if (missing.length) parts.push(`Missing key${missing.length > 1 ? 's' : ''}: ${missing.map(k => `'${k}'`).join(', ')}, e.g. ${JSON.stringify(exampleOf(schema, missing))}.`);
+      if (missing.length) parts.push(`Missing key${missing.length > 1 ? 's' : ''}: ${missing.map(k => `'${k}'`).join(', ')}${eg(schema, missing)}.`);
       return { ...out, error: `${parts.join(' ')} ${own}`.trim() };
     }
-    // An empty input fails a tool with required keys for want of them; a tool without (list_invitations) may fail
-    // for another reason (only administrators), so its own error stays.
-    if (isEmpty(args) && schema.required?.length) {
-      const needs = needsText(name, schema);
-      if (needs) return { ...out, error: needs, detail: own };
-    }
+    // An empty input fails a tool with required keys for want of them: what it needs goes first, the tool's own
+    // error after (undo_edits keeps its "only after they approve"). A tool without (list_invitations) may fail
+    // for another reason (only administrators), so its own error stays alone.
+    const needs = isEmpty(args) ? needsText(name, schema) : null;
+    if (needs) return { ...out, error: `${needs}. ${own}` };
     return out;
   }
   if (!unknown.length) return out;
