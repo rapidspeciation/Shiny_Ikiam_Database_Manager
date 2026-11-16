@@ -137,7 +137,9 @@ label «Incierto». A cut is then a claim about each single answer, so it should
 not only on average. By the rule's own numbers, a species at 0.35 to 0.5 is right 56 to 67 % of the time, yet would be
 shown without «Incierto». The lead therefore ships, for both app engines:
 - species «Incierto» below **0.70**: narrow bands reach about 90 % right from 0.70 to 0.80 for all three engines
-  (0.60 to 0.70: 79 to 88 %); 0.80 and up 97.8 to 97.9 %;
+  (0.60 to 0.70: 79 to 88 %); 0.80 and up 97.8 to 97.9 %. This holds for field and in-hand photos pooled
+  (0.70 to 0.80: small 91.5 %, BioCLIP 87.7 %, gallery 87.7 %); on in-hand photos alone it is lower for BioCLIP
+  (78 %, n 27) and the gallery (81 %, n 37), small 91 % (n 35), with wide intervals;
 - genus «Incierto» below **0.80** (unchanged): genus right 97 to 98 % from 0.80, 86 to 94 % from 0.50 to 0.80 (table
   C). The rule's 0.95 is an artifact of scoring the genus rung only on photos the 0.35 species cut leaves over;
 - tribe and subfamily 0.80 (unchanged; 100 % right where they answered).

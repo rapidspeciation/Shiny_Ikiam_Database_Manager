@@ -21,7 +21,7 @@ export interface Cuts {
  * The cuts per engine: below them the species (genus) is shown as «Incierto», and the tribe or subfamily is not
  * shown as certain. Measured 16 Nov 2026 on 2,872 photos no model trained on (.work/identify-answers-20261115/
  * measure_20261116T0331Z/REPORT.md, PREREG.md D5): a species is right about 9 times in 10 from a score of 0.70 for
- * both engines (0.50 to 0.70: 79 to 88 %), a genus 97 % from 0.80 (0.50 to 0.80: 86 to 94 %). A new value: change this
+ * both engines (0.60 to 0.70: 79 to 88 %; 0.50 to 0.60: 60 to 87 %), a genus 97 % from 0.80 (0.50 to 0.80: 86 to 94 %). A new value: change this
  * one line and the test that names the values.
  */
 // prettier-ignore

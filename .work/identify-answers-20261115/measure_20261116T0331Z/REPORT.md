@@ -4,8 +4,9 @@
 
 **Franz asked:** the Wings Gallery reaches genus and species where the phone often stops at tribe or genus. Is that fixed?
 
-1. **It is the threshold, not a weaker phone model.** At today's cut (0.80), the phone's small model names a species
-   about as often as BioCLIP and the gallery's own model would at that cut, and with the same precision:
+1. **It is the threshold.** At today's cut (0.80), the phone's small model names a species about as often as BioCLIP
+   and the gallery's own model would at that cut, and with the same precision (its first choice is a little weaker on
+   field photos, item 2, mostly when the score is low):
    - field photos: small 60 %, BioCLIP 61 %, gallery model 62 % of photos (all about 98 % right);
    - team photos held in the hand: small 46 %, BioCLIP 41 %, gallery model 40 % (97 to 99 % right).
 
@@ -18,7 +19,13 @@
 3. **The gallery's always-named species** is right on 86.4 % of all photos (field 86.8 %, in-hand 81.4 %), and its
    genus on 93.1 %. **When its score is below 0.5, the named species is right on 53.9 %** (field 52.9 %, in-hand
    60.8 %; 1 photo in 5 is in that range), and its genus is right on 77.9 %.
-4. **New cuts by the preregistered rule** (species precision at least 90 % on the FIT half; CHECK half read once,
+4. **What ships (PREREG.md D5, chosen by the lead after reading these scores, so not checked on unseen photos):**
+   the top species is always shown; «Incierto» below a species score of **0.70** and a genus total of **0.80**; tribe
+   and subfamily 0.80. Reason: once the guess is always shown, the cut labels each single answer, and a species at
+   0.35 to 0.5 is right only 56 to 67 % of the time (item 5). The rule's own result, below, is the preregistered
+   alternative and is not what ships.
+
+   **Cuts by the preregistered rule (not shipped)** (species precision at least 90 % on the FIT half; CHECK half read once,
    all species checks passed):
    - species from **0.35** for the phone's small model and for BioCLIP (server and «Más preciso», one set: their
      answers differ on 2 of 2,872 photos);
