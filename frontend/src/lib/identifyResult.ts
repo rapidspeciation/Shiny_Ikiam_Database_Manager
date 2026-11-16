@@ -19,11 +19,13 @@ export interface Cuts {
 }
 /**
  * The cuts per engine: below them the species (genus) is shown as «Incierto», and the tribe or subfamily is not
- * shown as certain. The species and genus values are 0.80 until the measurement of 15 Nov 2026
- * (.work/identify-answers-20261115/PREREG.md) gives its own: change this one line and the tests that name the values.
+ * shown as certain. Measured 16 Nov 2026 on 2,872 photos no model trained on (.work/identify-answers-20261115/
+ * measure_20261116T0331Z/REPORT.md, PREREG.md D5): a species is right about 9 times in 10 from a score of 0.70 for
+ * both engines (0.50 to 0.70: 79 to 88 %), a genus 97 % from 0.80 (0.50 to 0.80: 86 to 94 %). A new value: change this
+ * one line and the test that names the values.
  */
 // prettier-ignore
-export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.8, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.8, genus: 0.8, higher: 0.8 } }
+export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8 } }
 
 /** The engine of an answer: the server's and the phone's «Más preciso» (`full`) are BioCLIP; the rest the small one. */
 export const engineOf = (source: 'online' | 'phone', kind?: 'full' | 'small' | null): IdEngine =>

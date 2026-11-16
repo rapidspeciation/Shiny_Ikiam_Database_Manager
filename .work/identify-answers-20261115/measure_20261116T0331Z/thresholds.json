@@ -1,0 +1,10 @@
+{
+  "_about": "PREREG.md rule (9f0a37e7) with deviations D1-D4. Scoring: strict leaf names as shipped (D2), no geographic prior. Primary pool: 2,636 iNaturalist field photos + 236 team in-hand photos, none in any training or selection set. t_s / t_g: the app names the species from t_s and the genus (species not named) from t_g; below them the guess is labelled «Incierto (NN %)». E2 covers the server and the phone's «Más preciso»: their named answers differ on 2 of 2,872 photos (0.07 %), so one set (PREREG: one set unless > 1 %).",
+  "E1": {"t_s": 0.35, "t_g": 0.95, "check_pass": {"species": true, "genus": true}, "scoring": "strict", "prior": "none",
+         "notes": "t_g: no grid value qualified on FIT (flagged, 0.95 by the rule). CHECK genus rung n = 4."},
+  "E2": {"t_s": 0.35, "t_g": 0.95, "check_pass": {"species": true, "genus": true}, "scoring": "strict", "prior": "none",
+         "notes": "t_s rule value 0.30, raised to 0.35 by the in-hand guard. t_g: none qualified (flagged). CHECK genus rung n = 2."},
+  "E3": {"t_s": 0.30, "t_g": 0.95, "check_pass": {"species": true, "genus": false}, "scoring": "strict", "prior": "none",
+         "notes": "Gallery: descriptive (it names its top species at any score). t_g none qualified (flagged); the CHECK genus rung had 0 photos, so it cannot pass; the fail rule max(t, 0.80) gives the same 0.95."},
+  "merged_secondary": {"E1": {"t_s": 0.35, "t_g": 0.95}, "E2": {"t_s": 0.35, "t_g": 0.95}, "E3": {"t_s": 0.30, "t_g": 0.95}, "check_pass": "same as strict"}
+}
