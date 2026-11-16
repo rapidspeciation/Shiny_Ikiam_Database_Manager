@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { named, command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { createBridge } from '../tools/whatsapp/bridge.mjs';
 
 test('@claude wakes only as a whole word', () => {
@@ -128,14 +129,16 @@ test('the group: untagged, loop guard, tagged, limit', async () => {
   assert.equal(post('G@g.us', '@claude y otra más').decision, 'limited');
 });
 
-test('the edit mode: one message that becomes the answer', async () => {
+test('the edit mode: one message that becomes the answer, with the 👀 and ✅ reactions too', async () => {
   const { post, outbox, settle } = setup();
   post('G@g.us', '@claude /ack edit', { FromMe: true });
   await settle();
   post('G@g.us', '@claude cuántos hay?');
   await settle();
   const sent = outbox().slice(1);
-  assert.deepEqual(sent.map(s => s.kind), ['status', 'reply']);
+  assert.deepEqual(sent.map(s => s.kind), ['react', 'status', 'reply', 'react']);
+  assert.deepEqual(sent.map(s => s.react?.emoji ?? null), ['👀', null, null, '✅']);
+  sent.splice(0, 1);
   assert.equal(sent[0].text, 'Claude: pensando…');
   assert.equal(sent[1].edit, sent[0].id);
   assert.equal(sent[1].text, 'Claude: Hay 12.');
@@ -754,7 +757,46 @@ test('/tono: per chat, without a model, and named in every envelope', async () =
   assert.equal(bridge.state().tono.group, 'gracioso');
 });
 
-test('only the two live routes make real sends; any other chat or route goes to the outbox, whatever its dryRun says', async () => {
+test('a chat with its own soulFile gets that voice (and no tone line with toneLine false); the others keep the global one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-chatsoul-'));
+  const script = join(dir, 'turn.mjs');
+  const seen = join(dir, 'envelopes');
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r.text)+'\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const file = (name, text) => { const f = join(dir, name); writeFileSync(f, text); return f; };
+  const config = {
+    soulFile: [file('wa.md', 'VOZ PRODUCCIÓN cabecera.'), file('core.md', 'VOZ PRODUCCIÓN núcleo.')],
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
+      self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15, toneLine: false,
+        soulFile: [file('d3-wa.md', 'VOZ D3 cabecera.'), file('d3-core.md', 'VOZ D3 núcleo.'), file('d3-humor.md', 'VOZ D3 humor.')] },
+    },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const envelopes = () => readFileSync(seen, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  let n = 0;
+  const post = (chat, text, fromMe = false) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: fromMe ? 'S@s.whatsapp.net' : 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: fromMe, Text: text, PushName: 'Persona Tres' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  post('G@g.us', '@claude cuántos hay?');
+  await settle();
+  post('S@s.whatsapp.net', '@claude cuántos hay?', true);
+  await settle();
+  const [group, self] = envelopes();
+  assert.match(group, /VOZ PRODUCCIÓN cabecera\.\n\nVOZ PRODUCCIÓN núcleo\./);
+  assert.doesNotMatch(group, /VOZ D3/);
+  assert.match(group, /Tone in this chat \(\/tono\): normal/);
+  assert.match(self, /VOZ D3 cabecera\.\n\nVOZ D3 núcleo\.\n\nVOZ D3 humor\./);
+  assert.doesNotMatch(self, /VOZ PRODUCCIÓN/);
+  assert.doesNotMatch(self, /Tone in this chat/);
+  const sent = bridge.state().soulSent;
+  assert.notEqual(sent.self.hash, sent.group.hash);
+});
+
+test('only the live routes make real sends; any other chat or route goes to the outbox, whatever its dryRun says', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-live-'));
   const stub = join(dir, 'wacli');
   writeFileSync(stub, `#!/bin/sh\necho "$@" >> ${join(dir, 'wacli-calls')}\necho '{"data":{"id":"WAID"}}'\n`, { mode: 0o755 });
@@ -765,6 +807,7 @@ test('only the two live routes make real sends; any other chat or route goes to 
     },
     routes: {
       claudeclaw: { ssh: 'claudeclaw' },
+      'claudeclaw-franz': { ssh: 'claudeclaw', home: '/home/ubuntu/.t3', projectId: 'franz' },
       local: { home: '/home/x/.t3-orchestrator-v2', local: 'http://127.0.0.1:3774' },
       labsim: { home: '/home/x/.t3-ithomiini-lab', local: 'http://127.0.0.1:3775' },
     },
@@ -784,19 +827,25 @@ test('only the two live routes make real sends; any other chat or route goes to 
   await live.send(chatOf(config, 'group'), { kind: 'reply', text: 'Claude: a', trigger });
   await live.send(chatOf(config, 'self'), { kind: 'reply', text: 'Claude: b', trigger });
   assert.equal(calls(), 2);
+  // Franz's own chat on his claudeclaw project (since 4 Nov 2026) sends too; local stays allowed for a rollback.
+  const moved = make(c => { c.chats.self.route = 'claudeclaw-franz'; });
+  await moved.send(chatOf({ chats: { self: { ...config.chats.self, route: 'claudeclaw-franz' } } }, 'self'), { kind: 'reply', text: 'Claude: c', trigger });
+  assert.equal(calls(), 3);
   // The group on a lab route, a route renamed, a lab T3 home behind the live name, and a chat of another name: outbox, no wacli call.
   const cases = [
     c => { c.chats.group.route = 'labsim'; },
     c => { c.chats.group.route = 'other'; c.routes.other = { ssh: 'claudeclaw' }; },
     c => { c.routes.claudeclaw = { home: '/home/x/.t3-ithomiini-lab', local: 'http://127.0.0.1:3775' }; },
     c => { c.chats.self.route = 'labsim'; },
+    c => { c.chats.self.route = 'claudeclaw'; }, // the group's route is not Franz's
+    c => { c.chats.group.route = 'claudeclaw-franz'; }, // nor Franz's the group's
     c => { c.chats.labgroup = { ...c.chats.group, key: undefined, route: 'labsim' }; },
   ];
   for (const patch of cases) {
     const b = make(patch);
     const c = JSON.parse(JSON.stringify(config));
     patch(c);
-    const key = c.chats.labgroup ? 'labgroup' : c.chats.group.route !== 'claudeclaw' ? 'group' : c.chats.self.route !== 'local' ? 'self' : 'group';
+    const key = c.chats.labgroup ? 'labgroup' : c.chats.group.route !== 'claudeclaw' ? 'group' : !['local', 'claudeclaw-franz'].includes(c.chats.self.route) ? 'self' : 'group';
     const before = calls();
     await b.send(chatOf(c, key), { kind: 'reply', text: 'Claude: no', trigger });
     assert.equal(calls(), before, JSON.stringify(patch.toString()));
@@ -965,4 +1014,237 @@ test('personal chat streams public assistant output into its status then replace
   const sent = readFileSync(join(dir, 'state/outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.ok(sent.some(s => s.kind === 'status' && s.edit && s.text.includes('Checking the records')));
   assert.ok(sent.some(s => s.kind === 'reply' && s.edit && s.text === 'Claude: Hay 12.'));
+});
+
+test('personal status: only the chat\'s own notes, never the tools it uses', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-personal-notes-'));
+  const script = join(dir, 'turn.mjs');
+  // Steps as t3-turn streams them: tools, a note growing while it streams, more tools, a second note.
+  writeFileSync(script, `let s='';for await (const c of process.stdin) s+=c;
+    const p = x => console.log(JSON.stringify({ progress: x })); const wait = () => new Promise(r => setTimeout(r, 3200));
+    p({ tool: 'Skill' }); p({ tool: 'Bash' }); p({ tool: 'mcp__db__query' });
+    p({ kind: 'assistant', text: 'Revisando las actas' }); await wait();
+    p({ kind: 'assistant', text: 'Revisando las actas recientes y la base.' }); p({ tool: 'Bash' }); await wait();
+    p({ kind: 'assistant', text: 'Ya tengo los temas del 29/10.' }); await wait();
+    console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 3 temas.'}));`);
+  const config = {
+    chats: { self: { jid: 'ME@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, ack: 'edit' } },
+    routes: { r: { script } }, wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {} } });
+  bridge.handle({ Chat: 'ME@s.whatsapp.net', ID: 'P1', SenderJID: 'ME@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: '@claude temas?' });
+  for (let i = 0; i < 400 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 200));
+  const sent = readFileSync(join(dir, 'state/outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const statuses = sent.filter(s => s.kind === 'status').map(s => s.text);
+  for (const t of statuses) assert.doesNotMatch(t, /leyendo su guía|ejecutando un comando|consultando la base|usando/);
+  assert.ok(statuses.includes('Claude: pensando…\n- Revisando las actas recientes y la base.\n- Ya tengo los temas del 29/10.'), JSON.stringify(statuses));
+  assert.equal(sent.find(s => s.kind === 'reply').text, 'Claude: Hay 3 temas.');
+  assert.deepEqual(sent.filter(s => s.kind === 'react').map(s => s.react.emoji), ['👀', '✅']);
+  const turn = readFileSync(join(dir, 'state/bridge.log.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).find(e => e.dir === 'turn');
+  assert.equal(turn.steps, 4); // the tools are still counted in the log
+});
+
+test('a chat moved to another route starts a new thread there with the skill and its voice; moving back resumes the old one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-move-'));
+  const script = join(dir, 'turn.mjs');
+  const seen = join(dir, 'requests');
+  // The stand-in makes a thread named after the route's project when it gets none.
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r)+'\\n'); console.log(JSON.stringify({ok:true,threadId:r.threadId ?? ('T-' + r.create.projectId),status:'completed',text:'Hay 12.'}));`);
+  const file = (name, text) => { const f = join(dir, name); writeFileSync(f, text); return f; };
+  const voice = [file('d3-wa.md', 'VOZ D3 cabecera.'), file('d3-core.md', 'VOZ D3 núcleo.')];
+  const config = {
+    soulFile: [file('wa.md', 'VOZ PRODUCCIÓN.')],
+    chats: {
+      self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'local', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0, toneLine: false, soulFile: voice },
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'cc', enabled: true, dryRun: true, repliesHour: 50, contextLines: 0, toneLine: false, soulFile: voice },
+    },
+    routes: { local: { script, projectId: 'lab' }, franz: { script, projectId: 'franz' }, cc: { script, projectId: 'group' } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const stateDir = join(dir, 'state');
+  const requests = () => readFileSync(seen, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const settle = async b => {
+    for (let i = 0; i < 100 && !b.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  let n = 0;
+  const ask = async (b, jid, fromMe = true) => {
+    b.handle({ Chat: jid, ID: `M${++n}`, SenderJID: fromMe ? 'S@s.whatsapp.net' : 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: fromMe, Text: '@claude cuántos hay?', PushName: 'Persona Tres' });
+    await settle(b);
+    return requests().at(-1);
+  };
+  let b = createBridge({ config, stateDir, log: { error() {}, info() {} } });
+  assert.equal((await ask(b, 'S@s.whatsapp.net')).threadId, null);
+  assert.equal((await ask(b, 'S@s.whatsapp.net')).threadId, 'T-lab');
+  assert.equal((await ask(b, 'G@g.us', false)).threadId, null);
+  // Franz's chat moves to his project: a new thread, with the skill line and the voice again; the group is untouched.
+  config.chats.self.route = 'franz';
+  b = createBridge({ config, stateDir, log: { error() {}, info() {} } });
+  const first = await ask(b, 'S@s.whatsapp.net');
+  assert.equal(first.threadId, null);
+  assert.equal(first.create.projectId, 'franz');
+  assert.match(first.text, /^Read the whatsapp-bridge skill first\./);
+  assert.match(first.text, /VOZ D3 cabecera\.\n\nVOZ D3 núcleo\./);
+  assert.doesNotMatch(first.text, /Tone in this chat/);
+  const next = await ask(b, 'S@s.whatsapp.net');
+  assert.equal(next.threadId, 'T-franz');
+  assert.doesNotMatch(next.text, /VOZ D3/);
+  assert.equal(b.state().parkedThreads['self@local'], 'T-lab');
+  const group = await ask(b, 'G@g.us', false);
+  assert.equal(group.threadId, 'T-group');
+  assert.doesNotMatch(group.text, /VOZ D3|Read the whatsapp-bridge skill/); // its voice already went, no resend
+  // The rollback: back to local resumes the old thread, and keeps the claudeclaw one parked.
+  config.chats.self.route = 'local';
+  b = createBridge({ config, stateDir, log: { error() {}, info() {} } });
+  const back = await ask(b, 'S@s.whatsapp.net');
+  assert.equal(back.threadId, 'T-lab');
+  assert.match(back.text, /VOZ D3 cabecera/); // the voice again, once
+  assert.equal(b.state().parkedThreads['self@franz'], 'T-franz');
+});
+
+test('/tono in a chat with one fixed voice (toneLine false) says so and changes nothing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-tono-fixed-'));
+  const config = {
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15, toneLine: false },
+      other: { jid: 'H@g.us', label: 'Otro', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15 },
+    },
+    routes: { r: { script: '/bin/false' } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  let n = 0;
+  const post = (chat, text) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  for (const t of ['@claude /tono', '@claude /tono picante']) {
+    post('G@g.us', t);
+    await settle();
+    assert.equal(outbox().at(-1).text, 'Claude: Este chat usa una sola voz ahora; /tono ya no cambia nada aquí.');
+  }
+  assert.equal(bridge.state().tono?.group, undefined);
+  post('H@g.us', '@claude /tono gracioso');
+  await settle();
+  assert.equal(outbox().at(-1).text, 'Claude: Tono aquí: gracioso.');
+});
+
+test('steering (Franz\'s chat, steer: true): a message during an answer goes into it; one answer, 👀 and ✅ on both; T3 starting a run instead gives a normal answer; the group still queues', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-steer-'));
+  const script = join(dir, 'turn.mjs');
+  const seen = join(dir, 'requests');
+  // The stand-in: a plain turn takes 1.5 s; a steered one is taken into it, unless the file `ended` says the run is over.
+  writeFileSync(script, `import { appendFileSync, existsSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s);
+    appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r)+'\\n');
+    if (r.steer && !existsSync(${JSON.stringify(join(dir, 'ended'))})) console.log(JSON.stringify({ok:true,threadId:'T1',steered:true}));
+    else { await new Promise(x => setTimeout(x, 1500)); console.log(JSON.stringify({ok:true,threadId:'T1',...(r.steer?{steered:false}:{}),status:'completed',text:r.steer?'Respuesta aparte.':'Respuesta a las dos.'})); }`);
+  const file = (name, text) => { const f = join(dir, name); writeFileSync(f, text); return f; };
+  const config = {
+    chats: {
+      self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0, steer: true, toneLine: false, soulFile: [file('v.md', 'VOZ D3.')] },
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0 },
+    },
+    routes: { r: { script } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  const outbox = () => readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const requests = () => readFileSync(seen, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  let n = 0;
+  const post = (jid, text, fromMe = true) => bridge.handle({ Chat: jid, ID: `M${++n}`, SenderJID: fromMe ? 'S@s.whatsapp.net' : 'P@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: fromMe, Text: text, PushName: 'Persona Tres' });
+  const settle = async () => {
+    for (let i = 0; i < 200 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 150));
+  };
+  const pause = ms => new Promise(r => setTimeout(r, ms));
+
+  // 0. The chat's very first turn: its thread id is not known until it ends, so a second message waits in the queue.
+  assert.equal(post('S@s.whatsapp.net', '@claude hola').decision, 'queued');
+  await pause(400);
+  assert.equal(post('S@s.whatsapp.net', '@claude sigues?').decision, 'queued');
+  await settle();
+  assert.equal(requests().filter(r => r.steer).length, 0);
+  writeFileSync(seen, '');
+  writeFileSync(join(dir, 'state', 'outbox.jsonl'), '');
+
+  // 1. Steered into the answer under way.
+  assert.equal(post('S@s.whatsapp.net', '@claude temas para mañana?').decision, 'queued');
+  await pause(400);
+  assert.equal(post('S@s.whatsapp.net', '@claude y agrega el clima').decision, 'steered');
+  await settle();
+  let [first, second] = requests();
+  assert.equal(first.steer, undefined);
+  assert.equal(second.steer, true);
+  assert.match(second.text, /while you were still answering/);
+  assert.doesNotMatch(second.text, /VOZ D3/); // the voice is not resent into a run under way
+  let sent = outbox();
+  assert.equal(sent.filter(s => s.kind === 'reply').length, 1);
+  assert.equal(sent.find(s => s.kind === 'reply').text, 'Claude: Respuesta a las dos.');
+  const reacts = sent.filter(s => s.kind === 'react').map(s => `${s.react.id}${s.react.emoji}`);
+  assert.deepEqual(reacts.toSorted(), ['M3✅', 'M3👀', 'M4✅', 'M4👀']);
+  assert.ok(reacts.indexOf('M4✅') > reacts.indexOf('M3✅')); // with the answer, not before
+
+  // 2. The run ended as the message arrived: T3 gave it a run of its own; it gets its own answer and marks.
+  writeFileSync(join(dir, 'ended'), '1');
+  const before = outbox().length;
+  post('S@s.whatsapp.net', '@claude otra cosa');
+  await pause(400);
+  assert.equal(post('S@s.whatsapp.net', '@claude y esto').decision, 'steered');
+  await settle();
+  sent = outbox().slice(before);
+  assert.deepEqual(sent.filter(s => s.kind === 'reply').map(s => s.text).toSorted(), ['Claude: Respuesta a las dos.', 'Claude: Respuesta aparte.']);
+  assert.deepEqual(sent.filter(s => s.kind === 'react' && s.react.emoji === '✅').map(s => s.react.id).toSorted(), ['M5', 'M6']);
+
+  // 3. The group (no steer): the second message waits in the queue and gets its own turn.
+  const count = requests().length;
+  assert.equal(post('G@g.us', '@claude uno', false).decision, 'queued');
+  await pause(400);
+  assert.equal(post('G@g.us', '@claude dos', false).decision, 'queued');
+  await settle();
+  const group = requests().slice(count);
+  assert.equal(group.length, 2);
+  assert.ok(group.every(r => !r.steer));
+});
+
+test('a chat with soulInWorkspace sends no soul in its messages (its voice is in the workspace brief); voice-push puts it there in order', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-wsoul-'));
+  const script = join(dir, 'turn.mjs');
+  const seen = join(dir, 'envelopes');
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; const r=JSON.parse(s); appendFileSync(${JSON.stringify(seen)}, JSON.stringify(r.text)+'\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const file = (name, text) => { mkdirSync(join(dir, 'd3i'), { recursive: true }); const f = join(dir, 'd3i', name); writeFileSync(f, text); return f; };
+  const soulFile = [file('whatsapp.md', 'VOZ D3i cabecera.'), file('core.md', 'VOZ D3i núcleo.'), file('humor.md', 'VOZ D3i humor.')];
+  const workspace = join(dir, 'ws', 'franz.chandi-whatsapp');
+  const provision = join(dir, 'provision.mjs');
+  writeFileSync(provision, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(join(dir, 'provisioned'))}, process.argv.slice(2).join(' ')+'\\n'); console.log('Refreshed');`);
+  const config = {
+    chats: {
+      self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'wa', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15, toneLine: false, soulInWorkspace: true, soulFile },
+    },
+    routes: { wa: { script, attachmentsDir: join(dir, 'att'), workspace, provision: [process.execPath, provision] } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  let n = 0;
+  const post = text => bridge.handle({ Chat: 'S@s.whatsapp.net', ID: `M${++n}`, SenderJID: 'S@s.whatsapp.net', Timestamp: new Date().toISOString(), FromMe: true, Text: text, PushName: 'Franz' });
+  const settle = async () => {
+    for (let i = 0; i < 100 && !bridge.idle(); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+  };
+  post('@claude cuántos hay?');
+  await settle();
+  const [first] = readFileSync(seen, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.doesNotMatch(first, /VOZ D3i|Your voice/);
+  assert.match(first, /^Read the whatsapp-bridge skill first\.\n\[WhatsApp · Franz \(self-chat\) · \d\d:\d\d\]\nMessage to answer:/);
+
+  const configFile = join(dir, 'config.json');
+  writeFileSync(configFile, JSON.stringify(config));
+  const bridgeScript = new URL('../tools/whatsapp/bridge.mjs', import.meta.url).pathname;
+  execFileSync(process.execPath, [bridgeScript, 'voice-push', 'self'], { env: { ...process.env, WA_BRIDGE_CONFIG: configFile }, encoding: 'utf8' });
+  const voice = join(workspace, '.claude', 'voice');
+  assert.deepEqual(JSON.parse(readFileSync(join(voice, 'voice.json'), 'utf8')).files, ['whatsapp.md', 'core.md', 'humor.md']);
+  assert.equal(readFileSync(join(voice, 'humor.md'), 'utf8'), 'VOZ D3i humor.');
+  assert.equal(readFileSync(join(dir, 'provisioned'), 'utf8'), '--refresh franz.chandi-whatsapp\n');
 });

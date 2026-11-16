@@ -2,6 +2,7 @@
 // message wakes the assistant, the relay's own commands, the reply's picture and voice blocks, the
 // hourly limit, the payload of wacli's webhook and the decryption of WhatsApp media.
 import { createDecipheriv, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 /** `@claude` as a whole word, anywhere in the text (case ignored). */
 export const TRIGGER = /(^|[^\w@.])@claude(?![\w@])/i;
@@ -80,9 +81,9 @@ export const bareJid = jid => String(jid ?? '').replace(/:\d+(?=@)/, '');
 
 /**
  * The chat's final message split into what the bridge sends: { text, images: [{ src, caption }], files (same shape),
- * voice, silent }. Pictures come from an [images] … [/images] block, one per line as
- * "<path or https URL> | <caption>" (at most `max`); `[voice]` asks for a voice note; `[silent]`
- * alone means no answer. Pure.
+ * voice, textOnly, silent }. Pictures come from an [images] … [/images] block, one per line as
+ * "<path or https URL> | <caption>" (at most `max`); `[voice]` asks for a voice note; `[text]` asks for text only (it
+ * wins over [voice] and over a voice note's default); `[silent]` alone means no answer. Pure.
  */
 export function parseReply(raw, { max = 5 } = {}) {
   let text = String(raw ?? '');
@@ -104,9 +105,11 @@ export function parseReply(raw, { max = 5 } = {}) {
     return '';
   });
   const voice = /^\s*\[voice\]\s*$/im.test(text);
-  text = text.replace(/^\s*\[voice\]\s*$/gim, '').trim();
+  // [text]: the answer goes as text only, even to a voice note (the person asked for text).
+  const textOnly = /^\s*\[text\]\s*$/im.test(text);
+  text = text.replace(/^\s*\[(voice|text)\]\s*$/gim, '').trim();
   const silent = /^\[silent\]$/i.test(text);
-  return { text: silent ? '' : text, images, files, voice, silent };
+  return { text: silent ? '' : text, images, files, voice: voice && !textOnly, textOnly, silent };
 }
 
 /**
@@ -190,14 +193,185 @@ export function toWhatsApp(md) {
     .trim();
 }
 
-/** Text for a voice note: no formatting, no links. Pure. */
+/** A word with a digit that reads fine aloud (its core, without surrounding punctuation): a number (1.05, 10.050, 2,5,
+ * 0.001, -0.05, +12, 1,234.5678), a time (9:05, 08:15), a range (10-15, 2019-2024, 35.5-42.0), a fraction (1/3), or a
+ * number with a short unit or ending (1500m, 3km, 3.5km/h, 2h, 5x, 1er, 2º, 7mo, 25°C, 50%). */
+const NUM = String.raw`[-−+]?(?:0|[1-9]\d{0,5})(?:[.,]\d{3})*(?:[.,]\d+)?`;
+const UNIT = String.raw`(?:mm|cm|m|km|km\/h|m\/s|g|kg|mg|ha|h|min|s|x|er|ra|ro|do|da|to|ta|vo|va|mo|ma|no|na|º|ª|°c|°|%)`;
+const SPOKEN_NUMBER = [
+  new RegExp(`^${NUM}${UNIT}?$`, 'i'),
+  /^\d{1,2}:\d{2}$/,
+  new RegExp(`^(?:0|[1-9]\\d{0,3})(?:[.,]\\d+)?-(?:0|[1-9]\\d{0,3})(?:[.,]\\d+)?${UNIT}?$`, 'i'),
+  /^\d{1,2}\/\d{1,2}$/,
+];
+const COORD_WORDS = /^(coordenadas?|latitud|longitud|lat|lon|lng|ubicaci[oó]n|posici[oó]n|gps|coordinates?|latitude|longitude|location)$/i;
+// A word's core: without the punctuation around it, but a «.» or «,» right before a digit stays («.25» is not «25»).
+const EDGE = /^(?:[«»"'“”‘’()[\]¿¡;:!?…]|[.,](?!\d))+|[«»"'“”‘’()[\]¿¡,;:.!?…]+$/gu;
+const core = w => w.replace(EDGE, '');
+/** Marks where something was taken off, so a number touching it is dropped whole. */
+const CUT = '';
+/** Opening punctuation and a sign that may stand before the first group of a number («(3 000», «+5 000», «−10 000»). */
+const HEAD = String.raw`^[«"'“‘(\[¿¡:;…]*[-−+]?`;
+const decimals = c => (/^[-−+]?\d{1,3}[.,](\d+)°?$/.exec(c)?.[1]?.length ?? 0);
+
+/**
+ * The spoken part of an answer. Whatever is taken off becomes a space, so two numbers can never run together; then each
+ * word is judged on its own, so a number is kept whole or dropped whole, never in part. Taken off: formatting, emojis,
+ * code, links, e-mail addresses, file names, coordinates (pairs of decimals with 4+ places, both signed with 2+, or after
+ * «coordenadas», «lat»…; lone signed decimals with 4+ places; degrees with minutes), phone numbers (+593 99 123 4567,
+ * 099 123 4567) and every word whose digits do not read as a number (CAM034567, CAM-123, B2, 2026-11-12, 12/11/2026,
+ * 0991234567). Thousands grouped with a no-break or thin space, or with a group starting with 0 («10 000»), are joined.
+ * Nothing (empty) when a removal leaves a single word («Ver»). Pure.
+ */
 export function speakable(text, max = 600) {
-  const t = String(text ?? '')
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/[*_~`#>]/g, '')
-    .replace(/^\s*-\s+/gm, '')
+  let cut = false;
+  const gap = () => ((cut = true), CUT);
+  const raw = String(text ?? '')
+    .replace(/```[\s\S]*?```/g, gap)
+    .replace(/`[^`\n]*`/g, gap)
+    .replace(/(?:https?:\/\/|www\.)\S*[^\s)\]»".,;:!?]/g, gap)
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, gap)
+    .replace(/(?<![\w.,])[a-z][\w-]*(?:\.[a-z][\w-]*)*\.[a-z]{2,}\/\S*[^\s.,;:!?)]/gi, gap) // a bare domain with a path
+    .replace(/(?<!\S)\S+\.(?:xlsx|xls|csv|pdf|docx?|txt|png|jpe?g|gpx|kml|json|zip)\b/gi, gap) // file names
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]+/gu, ` ${CUT} `) // a word of its own: never glues two numbers
+    .replace(/^[^\S\n]*>[^\S\n]+/gm, '') // a quote mark (not «>1000»)
+    .replace(/^[^\S\n]*[-•*][^\S\n]+/gm, '') // list markers
+    .replace(/^[^\S\n]*\|?[\s|:-]*-{3,}[\s|:-]*$/gm, ' ') // table rules
+    // Signs between or before numbers keep their meaning as words: 2~3 → 2-3, 5*120 → 5 × 120, 12|15 → 12, 15, >1000 → > 1000,
+    // «machos/15», «Total:12» → two words.
+    .replace(/(?<=\d)[~–](?=\d)/g, '-')
+    .replace(/(?<![\p{L}\d])–(?=\d)/gu, CUT) // an en dash before a number may be a minus or a pause: the number goes
+    .replace(/\s*[–—]\s*/g, ', ')
+    .replace(/(?<=\d)(?:[*×]|\s+[*×]\s+)(?=\d)/g, ' × ')
+    .replace(/\s*\|\s*/g, ', ')
+    .replace(/([<>≤≥=≈])(?=[-−+]?\d)/g, '$1 ')
+    .replace(/(?<=\p{L})([:/])(?=\d)|(?<=\d)([:/])(?=\p{L})/gu, '$1$2 ')
+    .replace(/#(?=\d)/g, CUT)
+    .replace(/[*_~`#]+/g, ` ${CUT} `); // formatting: a word of its own, so it neither glues nor joins numbers
+  // Words with the spaces between them (a no-break or thin space is kept as such, to tell grouped thousands).
+  const parts = raw.split(/([^\S\n      ]+|\n)/);
+  const words = [];
+  for (let k = 0; k < parts.length; k += 2) words.push({ w: parts[k], sp: parts[k + 1] ?? '' });
+  const drop = k => {
+    if (words[k].w) cut = true;
+    words[k].w = (/[.!?]$/.test(words[k].w) ? '.' : /[,;:]$/.test(words[k].w) ? ',' : '');
+    words[k].done = true;
+  };
+  // Phone numbers first (their digit groups must not be joined as thousands).
+  for (let k = 0; k < words.length; k++) {
+    const c = core(words[k].w);
+    if (!/\d/.test(c) || words[k].w.includes(CUT)) continue;
+    // A phone number: «+593 …» or a number starting with 0, and the digit groups after it.
+    // (A group like «000» right after a number is a thousands group, not a phone number.)
+    const afterNumber = k > 0 && new RegExp(`${HEAD}\\d[\\d      ]*$`).test(words[k - 1].w) && /^[ \t\u00A0\u202F]$/.test(words[k - 1].sp);
+    if (/^\+\d{2,}$/.test(c) || (!afterNumber && /^\(?0\d{1,3}\)?(?:-\d+)*$/.test(words[k].w.replace(/[,;:.]$/, '')))) {
+      let n = k;
+      while (n + 1 < words.length && !/\n/.test(words[n].sp) && /^\d{1,4}(?:-\d{1,4})*[,;:.]?$/.test(words[n + 1].w) && !/[,;:.]$/.test(words[n].w)) n++;
+      const digits = words.slice(k, n + 1).map(x => x.w).join('').replace(/\D/g, '').length;
+      if (digits >= (c.startsWith('+') ? 8 : 7)) {
+        for (let x = k; x <= n; x++) drop(x);
+      }
+    }
+  }
+  for (const x of words) x.grp = /^\d{3}(?!\d)/.test(x.w); // may continue the number before it
+  // Thousands grouped with spaces: «10 000», «1 050», «12 000,5», or with no-break/thin spaces inside one word.
+  for (let k = 0; k < words.length; k++) {
+    const thin = /^[-−+]?[1-9]\d{0,2}(?:[      ]\d{3})+(?:[.,]\d+)?$/.test(core(words[k].w));
+    if (thin) {
+      words[k].w = words[k].w.replace(/[      ]/g, '');
+      words[k].joined = true;
+    }
+    if (words[k].done) continue;
+    if (!new RegExp(`${HEAD}[1-9]\\d{0,2}$`).test(words[k].w) && !(words[k].joined && new RegExp(`${HEAD}[1-9]\\d{3,}$`).test(words[k].w))) continue;
+    let n = k;
+    // Only while the group so far ends in a digit (a comma or full stop after a group ends the number).
+    while (n + 1 < words.length && /\d$/.test(words[n].w) && /^[ \t]$/.test(words[n].sp) && /^\d{3}(?:[.,]\d+)?[«»"'“”)\],;:.!?]*$/.test(words[n + 1].w) && !/[.,]\d/.test(core(words[n].w))) n++;
+    if (n > k && (words[k].joined || words.slice(k + 1, n + 1).some(x => x.w.startsWith('0')))) {
+      words[k].w = words.slice(k, n + 1).map(x => x.w).join('');
+      words[k].sp = words[n].sp;
+      words[k].joined = true;
+      words.splice(k + 1, n - k);
+    }
+  }
+  const orig = words.map(x => x.w);
+  for (let k = 0; k < words.length; k++) {
+    const c = core(words[k].w);
+    if (words[k].done) continue;
+    if (words[k].w.includes(CUT)) {
+      if (/\d/.test(words[k].w)) drop(k);
+      else (words[k].w = words[k].w.replaceAll(CUT, '')), (words[k].mark = true);
+      continue;
+    }
+    if (!/\d/.test(c)) continue;
+    // Coordinates: a pair of decimals.
+    const d1 = decimals(c);
+    const next = words[k + 1] ? core(words[k + 1].w) : '';
+    const d2 = decimals(next);
+    if (d1 && d2 && !/[.!?]$/.test(words[k].w)) {
+      const signed = /^[-−+]/.test(c) && /^[-−+]/.test(next);
+      const context = words.slice(Math.max(0, k - 4), k).some(x => COORD_WORDS.test(core(x.w)));
+      const wide = /^[-−+]?\d{2,3}[.,]/.test(c) || /^[-−+]?\d{2,3}[.,]/.test(next); // a longitude (75–81 in Ecuador)
+      if (((d1 >= 4 || d2 >= 4) && (wide || /^[-−+]/.test(c) || /^[-−+]/.test(next))) || (signed && d1 >= 2 && d2 >= 2) || context || /°$/.test(c)) {
+        drop(k);
+        drop(k + 1);
+        words[k + 1].done = true;
+        for (const x of [k + 2]) if (words[x] && /^[NSEWO][,.;]?$/.test(words[x].w)) drop(x);
+        continue;
+      }
+    }
+    if (d1 >= 4 && (/^[-−+]/.test(c) || /°$/.test(c) || words.slice(Math.max(0, k - 4), k).some(x => COORD_WORDS.test(core(x.w))))) {
+      drop(k);
+      if (words[k + 1] && /^[NSEWO][,.;]?$/.test(words[k + 1].w)) drop(k + 1);
+      continue;
+    }
+    // A number followed by a group with a leading zero («1000 000») is one value we cannot read: both go.
+    if (/^[-−+]?\d+$/.test(c) && words[k + 1] && /^[ \t]+$/.test(words[k].sp) && /^0\d/.test(words[k + 1].w)) {
+      drop(k);
+      drop(k + 1);
+      words[k + 1].done = true;
+      continue;
+    }
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(c) || (!(words[k].joined && /^[-−+]?[1-9]\d{3,11}(?:[.,]\d+)?$/.test(c)) && !SPOKEN_NUMBER.some(r => r.test(c)))) {
+      drop(k);
+      // A degree value's hemisphere letter («1234°38' N») goes with it.
+      if (/°/.test(c) && words[k + 1] && /^[NSEWO][,.;]?$/.test(words[k + 1].w)) drop(k + 1);
+    }
+  }
+  // A word starting with a three-digit group right after a word ending in a digit may be one number with it
+  // («1 500-2 000», «900-1 000», «$1 500», «1 500/ha»): when one of the two goes, the other goes too.
+  for (let again = true; again; ) {
+    again = false;
+    for (let k = 1; k < words.length; k++) {
+      if (!/^[ \t]$/.test(words[k - 1].sp) || !/\d$/.test(orig[k - 1]) || !words[k].grp) continue;
+      if (!!words[k - 1].done === !!words[k].done) continue;
+      drop(words[k].done ? k - 1 : k);
+      again = true;
+    }
+  }
+  // Two numbers that a removal or a line break now leaves side by side get a comma, so «12 300» is not read as one.
+  let out = '';
+  let prevDigit = false;
+  let between = false;
+  for (const x of words) {
+    const w = x.w.replaceAll(CUT, '');
+    if (/[\p{L}\d]/u.test(w)) {
+      if (prevDigit && between && /^[-−+]?\d/.test(w)) out = out.replace(/\s*$/, ', ');
+      prevDigit = /\d$/.test(w);
+      between = false;
+    } else if (x.w.includes(CUT) || x.done || x.mark) between = true;
+    out += x.w + x.sp;
+    if (/\n/.test(x.sp)) between = true;
+  }
+  let t = out
+    .replace(/\(\s*(?:(?:ver|see|en|link|enlace|mapa|map)\s*:?)?\s*[,;:]?\s*\)/gi, ' ')
+    .replaceAll(CUT, ' ')
+    .replace(/\s+([,.;:!?])(?!\d)/g, '$1')
+    .replace(/([,;:])\s*(?=[,;:.](?!\d))/g, '')
+    .replace(/^[\s,;:.]+/, '')
     .replace(/\s+/g, ' ')
+    .replace(/\s*[,;:]\s*$/, '')
     .trim();
+  if (!/[\p{L}\d]/u.test(t) || (cut && (t.match(/[\p{L}\d]+/gu) ?? []).length < 2)) return '';
   return t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t;
 }
 
@@ -224,6 +398,115 @@ export const KEYTERMS = [
   'Placidina', 'Pseudoscada', 'Pteronymia', 'Sais', 'Scada', 'Thyridia', 'Tithorea', 'Veladyris', 'Velamysta', 'Heliconius',
   'Ikiam', 'CAM', 'Claude',
 ];
+
+/** A voice note (WhatsApp's `audio` and push-to-talk `ptt`). */
+export const isVoice = type => ['audio', 'ptt'].includes(String(type ?? '').toLowerCase());
+
+const fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Claude's name and the ways speech engines mishear it. Not Claudio, Claudia, Clodomiro or claudette: whole words only. */
+const CLAUDE_WORDS = new Set(['claude', 'claud', 'klaud', 'clod']);
+/** «Cloud» (and, in Franz's own chat, «Claudia») counts only as a call: the first word, or right after greetings («oye cloud, …»), and followed by a comma, ? or ! («Cloud, …», «¿Cloud?»), never as a noun («cloud computing», «ok cloud storage», «a cloud of»). */
+const GREETINGS = new Set(['oye', 'oiga', 'hey', 'hola', 'ok', 'okay', 'oki', 'ya', 'bueno', 'eh', 'mira', 'hi', 'hello', 'buenas']);
+
+/**
+ * Whether a voice note's transcript calls Claude, so it counts as an @claude mention. `personal` (Franz's own chat):
+ * the name anywhere. The group: only among the first `window` words («Claude, …», «oye Claude …»); a note that talks
+ * about Claude later («le dije a Ana que Claude…») does not wake it, and one that talks about it early («ayer Claude me
+ * dijo…») wakes it but the turn is told to stay [silent] when the note is not for it. «Cloud» only as a call (above). Pure.
+ */
+export function voiceAddressed(transcript, { personal = false, window = 6 } = {}) {
+  const folded = fold(transcript);
+  const words = folded.match(/[a-z0-9]+/g) ?? [];
+  for (const [i, w] of words.entries()) {
+    if (!personal && i >= window) break;
+    if (CLAUDE_WORDS.has(w)) return true;
+  }
+  const lead = words.findIndex(w => !GREETINGS.has(w));
+  // Parakeet often hears «Claude» as «Claudia» (13 Nov): in Franz's own chat a leading «Claudia,» is a call too.
+  const callWord = words[lead] === 'cloud' || (personal && words[lead] === 'claudia') ? words[lead] : null;
+  if (!callWord || (!personal && lead >= window)) return false;
+  return new RegExp(`^[^a-z0-9]*(?:[a-z0-9]+[^a-z0-9]+){${lead}}${callWord}\\s*[,?!]`).test(folded);
+}
+
+/** A spelling-free key: how a Spanish speaker says the word (h silent, y = i, th = t, ph = f, c/qu/k, ge/gi = je/ji, z = s, v = b, ll = l, no doubles, no plural s). */
+const soundKey = w => {
+  let s = fold(w).replace(/[^a-z]/g, '');
+  s = s.replace(/ph/g, 'f').replace(/th/g, 't').replace(/ch/g, 'X').replace(/h/g, '').replace(/y/g, 'i');
+  s = s.replace(/qu(?=[ei])/g, 'k').replace(/c(?=[ei])/g, 's').replace(/c/g, 'k').replace(/g(?=[ei])/g, 'j').replace(/z/g, 's').replace(/v/g, 'b');
+  s = s.replace(/(.)\1+/g, '$1').replace(/s$/, '');
+  return s;
+};
+/** Genera that are also common words or names (Patricia, Greta, Sais, Scada, Aeria): never «corrected». */
+const GENUS_FIX_SKIP = new Set(['Patricia', 'Greta', 'Sais', 'Scada', 'Aeria', 'Ithomiini', 'Ikiam', 'CAM', 'Claude']);
+const GENUS_BY_KEY = new Map(KEYTERMS.filter(g => !GENUS_FIX_SKIP.has(g) && g.length >= 6).map(g => [soundKey(g), g]));
+
+/**
+ * Parakeet has no custom vocabulary and writes genera as they sound («hiposcada», «callitomia», «olería»). A word of six
+ * or more letters whose sound key is exactly a genus's becomes that genus (its plural «s» kept); anything else is left as
+ * it was. Only for Parakeet's text; Scribe gets the genera as keyterms. Pure.
+ */
+export const fixGenera = text =>
+  String(text ?? '').replace(/[\p{L}]{6,}/gu, w => {
+    const g = GENUS_BY_KEY.get(soundKey(w));
+    if (!g) return w;
+    return /s$/i.test(w) && !/s$/i.test(g) ? g + 's' : g;
+  });
+
+/**
+ * The shared dictation word list (tools/whatsapp/dictation-words.json, the same entries as T3's shared dictionary):
+ * `[{ term, aliases: [...] }]`. Several files merge in order (the first spelling of a key wins); a missing or broken file
+ * is skipped, so the bridge never fails on it. Person names live only in the untracked `dictation-words.local.json`
+ * beside it (this repo is public).
+ */
+export function loadWords(files) {
+  const out = [];
+  for (const f of files ?? []) {
+    try {
+      const j = JSON.parse(readFileSync(f, 'utf8'));
+      const list = Array.isArray(j) ? j : j?.words;
+      if (Array.isArray(list)) out.push(...list.filter(w => w && typeof w.term === 'string' && w.term.trim()));
+    } catch {}
+  }
+  return out;
+}
+
+const WORD_CHAR = '[\\p{L}\\p{M}\\p{N}_]';
+/**
+ * Applies a word list to a transcript: each alias, and each term in any case, written as a whole word or phrase (case and
+ * accents ignored, the longest spelling first) becomes the term. «claudia revisa la hiposcada del cam 234» → «Claude
+ * revisa la Hyposcada del CAM 234». Pure.
+ */
+export function applyWords(text, words) {
+  const s = String(text ?? '');
+  const lookup = new Map();
+  for (const { term, aliases } of words ?? []) {
+    for (const spelling of [term, ...(Array.isArray(aliases) ? aliases : [])]) {
+      const k = fold(String(spelling ?? '').replace(/\s+/g, ' ').trim());
+      if (k && !lookup.has(k)) lookup.set(k, term.trim());
+    }
+  }
+  if (!lookup.size) return s;
+  const esc = v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+  const keys = [...lookup.keys()].sort((a, b) => b.length - a.length);
+  // Matched on the accent-folded text (same length as the original for precomposed letters), cut from the original.
+  const nfc = s.normalize('NFC');
+  const folded = [...nfc].map(ch => {
+    const f = fold(ch);
+    return f.length === ch.length ? f : ch.length === 1 ? f[0] ?? ch : ch;
+  }).join('');
+  if (folded.length !== nfc.length) return s;
+  const re = new RegExp(`(?<!${WORD_CHAR})(?:${keys.map(esc).join('|')})(?!${WORD_CHAR})`, 'gu');
+  let out = '';
+  let cursor = 0;
+  for (const m of folded.matchAll(re)) {
+    out += nfc.slice(cursor, m.index) + (lookup.get(m[0].replace(/\s+/g, ' ')) ?? nfc.slice(m.index, m.index + m[0].length));
+    cursor = m.index + m[0].length;
+  }
+  return out + nfc.slice(cursor);
+}
+
+/** Parakeet's raw text as the bridge keeps it: sound-alike genera fixed (fixGenera), then the shared word list. Pure. */
+export const parakeetText = (raw, words) => applyWords(fixGenera(String(raw ?? '').trim()), words);
 
 const MEDIA_INFO = {
   image: 'WhatsApp Image Keys',
@@ -316,7 +599,7 @@ export const slug = label =>
 export const mediaTag = type => ({ image: 'foto', audio: 'audio', ptt: 'audio', video: 'video', sticker: 'sticker', document: 'documento' })[String(type ?? '').toLowerCase()] ?? (type ? String(type).toLowerCase() : null);
 
 /**
- * Appends the JSON lines whose "id" (or "of", for a transcript) is not in the file yet; returns how
+ * Appends the JSON lines whose "id" (or "of" and "engine", for a transcript) is not in the file yet; returns how
  * many it wrote. Self-contained: it is also sent to claudeclaw as source (node -e), so it reaches
  * only for the built-in modules.
  */
@@ -324,7 +607,8 @@ export function appendNew(file, text) {
   const fs = process.getBuiltinModule('node:fs');
   const path = process.getBuiltinModule('node:path');
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o750 });
-  const key = o => (o.t === 'transcript' ? 'T:' + o.of : 'M:' + o.id);
+  // A transcript per note and engine: Scribe's upgrade of a Parakeet transcript is a second line, not a duplicate.
+  const key = o => (o.t === 'transcript' ? 'T:' + o.of + (o.engine ? ':' + o.engine : '') : 'M:' + o.id);
   const seen = new Set();
   if (fs.existsSync(file))
     for (const line of fs.readFileSync(file, 'utf8').split('\n'))
