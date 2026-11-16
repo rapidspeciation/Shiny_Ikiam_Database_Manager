@@ -125,6 +125,22 @@
       "bytes": 4260,
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
+    "mcp:row_history": {
+      "bytes": 1074,
+      "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 75 eval calls were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
+    },
+    "mcp:show_photos": {
+      "bytes": 959,
+      "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 75 eval calls were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
+    },
+    "mcp:tubes_lookup": {
+      "bytes": 561,
+      "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 75 eval calls were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
+    },
+    "mcp:send_sheet_photos": {
+      "bytes": 922,
+      "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 75 eval calls were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
+    },
     "mcp:show_rows": {
       "bytes": 1199,
       "reason": "baseline after R15 (6-7 Nov 2026)"
@@ -146,11 +162,11 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp always-loaded (total)": {
-      "bytes": 21784,
-      "reason": "main's own growth since the budget was recorded: propose_changes refuses a row the app cannot insert (a5878f34, ab3715ce, +66 bytes); recorded at release rel1"
+      "bytes": 25300,
+      "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 75 eval calls were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
     },
     "mcp deferred names": {
-      "bytes": 1291,
+      "bytes": 1200,
       "reason": "doc_threads, reply_doc_thread, propose_doc_change, revise_doc_change: comments on the instructions (#/instrucciones), deferred"
     },
     "mcp server instructions": {

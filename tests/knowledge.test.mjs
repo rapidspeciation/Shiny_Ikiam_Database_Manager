@@ -196,16 +196,45 @@ test('the document tools reach T3 Code and Claude through MCP, and /api/knowledg
 
 test('sync_documents on a server without a documents folder says so (retro 8 Nov: "path" undefined, 11 calls)', async () => {
   // The app without KNOWLEDGE_DIR (server/index.mjs: knowledgeRoots []), or with only single files: nothing to bring from Drive.
-  // The KNOWLEDGE_DIR parenthesis only when no root is set at all (critic F5).
+  // The setting by name, and where to read instead (retro 16 Nov).
   for (const [knowledgeRoots, why] of [
-    [[], ' (KNOWLEDGE_DIR is not set)'],
-    [[join(tmpdir(), 'only-a-file.md')], ''],
+    [[], 'KNOWLEDGE_DIR is not set'],
+    [[join(tmpdir(), 'only-a-file.md')], 'KNOWLEDGE_DIR names files (only-a-file.md), not a folder'],
   ]) {
     const knowledge = createKnowledge({ knowledgeRoots, systemctl: '/nonexistent/systemctl' });
     const out = await runKnowledgeTool(knowledge, 'sync_documents', {}, { sources: new Map() });
-    assert.deepEqual(out, {
-      error: `This server has no documents folder${why}, so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.`,
+    assert.equal(out.error, `documents folder not configured for this workspace: ${why}, so there is no Drive copy to bring up to date here.`);
+    assert.match(out.instead, /file tools in the documents' folder your instructions name/);
+  }
+});
+
+test('sync_documents with {} in an eval app (no KNOWLEDGE_DIR) answers by name through MCP, never a Node path error (retro 16 Nov)', async () => {
+  // The eval run-* apps start server/index.mjs without KNOWLEDGE_DIR: knowledgeRoots [] (tools/assistant-eval/eval-app.mjs).
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec('CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, display_name TEXT, role TEXT, active INTEGER)');
+    db.prepare("INSERT INTO users VALUES ('u1','lab','Lab','editor',1)").run();
+    const assistant = createAssistant({
+      store: { db, getRecord: () => null },
+      config: { knowledgeRoots: [], systemctl: '/nonexistent/systemctl' },
     });
+    const token = 'token-for-lab';
+    db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(
+      createHash('sha256').update(token).digest('hex'),
+      'u1',
+    );
+    const reply = await assistant.mcp(
+      { authorization: `Bearer ${token}` },
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'sync_documents', arguments: {} } },
+    );
+    const out = JSON.parse(reply.body.result.content[0].text);
+    assert.equal(reply.body.result.isError, true);
+    assert.equal(out.error, 'documents folder not configured for this workspace: KNOWLEDGE_DIR is not set, so there is no Drive copy to bring up to date here.');
+    assert.match(out.instead, /documents' folder your instructions name/);
+    assert.doesNotMatch(reply.body.result.content[0].text, /argument must be of type string/);
+    assert.equal(out.detail, undefined, 'a tool without keys gets no "needs" line');
+  } finally {
+    db.close();
   }
 });
 

@@ -37,6 +37,7 @@ import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
 import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
+import { withInputNotes } from './tool-input.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
 import { PHOTO_TOOLS, brief as readingBrief, createPhotoLinksTool } from './photo-links-tool.mjs';
@@ -665,6 +666,11 @@ const ALWAYS_LOADED = new Set([
   'list_proposals',
   'match_notebook',
   'show_rows',
+  // Small tools chats called before loading them, guessing their keys (retro 16 Nov 2026: 75 calls).
+  'row_history',
+  'show_photos',
+  'tubes_lookup',
+  'send_sheet_photos',
 ]);
 
 /**
@@ -686,6 +692,9 @@ export function currentTool(name, args = {}) {
   const alias = Object.hasOwn(TOOL_ALIASES, name) ? TOOL_ALIASES[name] : null;
   return alias ? { name: alias.name, args: alias.args ? alias.args(args ?? {}) : args } : { name, args };
 }
+
+/** Each tool's input schema by its name (server/tool-input.mjs checks the calls against it). */
+const TOOL_SCHEMAS = new Map(TOOLS.map(t => [t.function.name, t.function.parameters]));
 
 /** The tools as MCP's tools/list gives them to T3 Code's chats (and the app's AI instructions page shows them). */
 export const mcpTools = () =>
@@ -6289,7 +6298,24 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return withQueryNote(formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending }), sql, out.columns);
   }
 
+  /**
+   * A tool call with the one input check of every tool (server/tool-input.mjs): keys the tool does not
+   * know named with the closest it has, an empty input that fails told what it needs.
+   */
   async function executeTool(called, given, context) {
+    const { name, args } = currentTool(called, given);
+    let out;
+    try {
+      out = await runTool(called, given, context);
+    } catch (e) {
+      out = { error: clip(e.message, 300) };
+    }
+    // An alias that turns old arguments into new ones (TOOL_ALIASES `args`): those are checked.
+    const checked = Object.hasOwn(TOOL_ALIASES, called) && TOOL_ALIASES[called].args ? args : given;
+    return withInputNotes(name, TOOL_SCHEMAS.get(name), checked, out);
+  }
+
+  async function runTool(called, given, context) {
     // An earlier name (TOOL_ALIASES) runs the tool it became.
     const { name, args } = currentTool(called, given);
     if (name === 'query') return queryCopy(args);

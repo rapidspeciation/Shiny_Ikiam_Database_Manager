@@ -447,10 +447,14 @@ export function createKnowledge(config = {}) {
     const systemctl = config.systemctl ?? 'systemctl';
     // The Drive mirror is the drive/ folder of the first folder among the roots; without one there is nothing to sync.
     const folder = roots.find(r => !/\.(md|txt)$/i.test(r));
+    // Named by its setting, with where to read instead (retro 16 Nov: eval apps run without one).
     if (!folder)
       return {
-        error:
-          `This server has no documents folder${roots.length ? '' : ' (KNOWLEDGE_DIR is not set)'}, so there is nothing to bring from Drive here. sync_documents takes no arguments: calling it again gives the same answer.`,
+        error: roots.length
+          ? `documents folder not configured for this workspace: KNOWLEDGE_DIR names files (${roots.map(r => basename(r)).join(', ')}), not a folder, so there is no Drive copy to bring up to date here.`
+          : 'documents folder not configured for this workspace: KNOWLEDGE_DIR is not set, so there is no Drive copy to bring up to date here.',
+        instead:
+          "Read the documents with your file tools in the documents' folder your instructions name (Files: the project's Drive documents), if it is there; a document that is not there cannot be brought from here. sync_documents takes no arguments: calling it again gives the same answer.",
       };
     const manifest = join(folder, 'drive', 'manifest.json');
     const syncedAt = async () => JSON.parse(await readFile(manifest, 'utf8').catch(() => '{}')).syncedAt ?? null;

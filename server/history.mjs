@@ -1405,6 +1405,9 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       return answer(max);
     }
     if (name === 'row_history') {
+      // No row named (a chat that called it before its schema was loaded, retro 16 Nov): which key it needs, not "No row found for ".
+      if (!String(args.id ?? '').trim() && !String(args.recordId ?? '').trim())
+        return { error: 'row_history needs id, e.g. {"id":"CAM079891"} (a CAM ID, an Insectary ID like A0D or a clutch number like 1014), or recordId', code: 'RECORD_NOT_FOUND' };
       const out = recordHistory(store, {
         id: args.id,
         recordId: args.recordId,
