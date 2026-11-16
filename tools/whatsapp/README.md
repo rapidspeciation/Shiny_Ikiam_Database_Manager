@@ -38,7 +38,32 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
   - the message's own, the quoted message's, and the sender's media of the last 3 minutes;
   - media are downloaded from WhatsApp's CDN with the store's media key and decrypted, so the running sync is never interrupted;
   - photos are copied into the route's T3 attachments folder, where `identify_species` finds them by name;
-  - voice notes are transcribed: ElevenLabs Scribe v2 with the genera as keyterms, faster-whisper `small` as fallback.
+  - voice notes: see **Voice notes** below.
+- **Voice notes (since 12 Nov 2026).** Every voice note (audio, ptt) in an enabled chat (not a read-only source) is
+  transcribed as it arrives (also one delivered late, up to two days old), whether it wakes Claude or not, one at a
+  time, on this PC. Config `voice.parakeet`: `module` (transcribe-cpp's `dist/index.js`, a copy outside T3's runtime),
+  `model` (the GGUF), `device` (the eGPU's PCI id), `memoryMax`; without it the arrival engine is whisper alone.
+  - on arrival: Parakeet Ultra (transcribe.cpp, the engine T3 uses; `tools/whatsapp/asr-parakeet.mjs` as a child process
+    under `systemd-run --user --scope -p MemoryMax=3G`, on the eGPU named by its PCI id in `voice.parakeet.device`, never
+    the iGPU, no fallback to another device), then faster-whisper `small` if it fails (its own `MemoryMax=2G` scope, and
+    no «Claude» in its prompt, which it could echo); never Scribe (other members'
+    notes go outside only when a turn needs them, as before). Parakeet has no custom vocabulary, so `fixGenera` turns
+    sound-alike genera («hiposcada», «callitomia») into the genus, and the shared word list turns its aliases into the
+    term (`dictation-words.json`, copied by `install`, plus the untracked `dictation-words.local.json` beside it for
+    person names, placed by hand; config `voice.wordsFiles` names others);
+  - the transcript is kept in the state file and, where the chat's text history already goes, as a history line
+    `{ t: 'transcript', of, engine, text }`; the context lines show it (`[audio: «…»]`);
+  - a turn that needs a note (its own, the quoted one, the sender's last minutes) reuses the stored transcript (waiting
+    for it if still in the queue) and upgrades a non-Scribe one once with ElevenLabs Scribe v2 (the genera as keyterms;
+    Parakeet if Scribe fails, then whisper); after a failed Scribe upgrade later turns reuse the stored transcript;
+  - a note whose transcript calls Claude counts as @claude (`voiceAddressed`): in Franz's chat «Claude» anywhere, in the
+    group only among the first six words («Claude, …», «oye Claude …»); also Claud, Klaud, Clod, and «Cloud» only as a
+    call followed by a comma, ? or ! («Cloud, …», «oye cloud, …»), never as a noun («ok cloud storage»); never Claudio, and «Claudia» only in Franz's chat as a call («Claudia, …», a Parakeet mishearing of Claude). A group note that only talks about Claude
+    early («ayer Claude me dijo…») does wake it, and the turn is told to end in [silent] (👀, then the silent mark). The
+    hourly limit, /stop and the ack apply; the answer starts with «🎙️ «what was heard (80 characters)»»;
+  - the bridge's own voice replies (they come back as Franz's audio) are skipped by id; a voice send that gives back no
+    id mutes that chat's next own audio (one note, within 2 minutes); a fresh note goes ahead of a backlog of late ones;
+  - `node tools/whatsapp/bridge.mjs voice-check <audio> [engine…]` transcribes a local file (default Parakeet), nothing else.
 - Where it goes:
   - the group: the chat «Ithomiini 🦋 (underground) · WhatsApp» in the claudeclaw T3 project of the same name, over ssh;
   - the self-chat: «Orchestrator wpp» in this PC's T3, project «Ithomiini lab · WhatsApp» (the lab workspace, the lab app's tools).
@@ -46,7 +71,13 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
 - **Reply path.** The bridge waits for the turn and sends the chat's last message, starting with «Claude: ».
   - `[files]` … `[/files]` lines (`<path or app rack-report link> | caption`, up to 3) become documents (`wacli send file --as document`), one after another, through send()'s group guard. Only files under the route's `rackReportsDir` (and `fileDirs`), by real path (symlinks and `..` resolved; over ssh with `realpath` on the route's host), of type xlsx/csv/pdf/docx/txt/png/jpg/gpx/kml, at most 25 MB, written in the last 3 hours; anything else is refused and logged (`refused`).
   - `[images]` … `[/images]` lines (`<path or https URL> | caption`) become up to 5 pictures, each at most 2048 px on its long side as JPEG. wacli 0.22 has no HD flag; it uploads the file as given. Every picture's first bytes are checked to be an image.
-  - `[voice]`, or a voice note in the question, adds an Edge TTS voice note (es-EC / en-US).
+  - Voice replies (12 Nov 2026): the person sent a voice note → the answer also goes as a voice note, unless the turn adds
+    `[text]` (they asked for text); a text message → text only, unless the turn adds `[voice]` (they asked to hear it).
+    The written answer always goes first. The spoken part is `speakable()` of it: numbers stay whole (counts, decimals,
+    times, ranges, units); links, code, e-mails, coordinates, phone numbers and codes such as CAM034567 or dates go. Engine: ElevenLabs (`voice.tts`: `model` eleven_v4_turbo, `format` opus_48000_64,
+    which is a WhatsApp voice note as it is; `voiceEs` / `voiceEn`), about 0.22 credits per spoken character; when it
+    fails, Edge TTS (es-EC / en-US); after a 401/402 ElevenLabs is skipped for an hour, after any other failure 5 minutes. Each voice reply's engine
+    and credit cost are in the log. Without `voice.tts`, Edge TTS alone.
   - `[silent]` sends nothing.
 - **Hard block.** `send()` sends with wacli only to the config's group and self-chat JIDs, whatever else the config says. Dry-run chats write to `outbox.jsonl` instead.
 
@@ -61,6 +92,26 @@ the group. With `soulFile` in the config (a file or a list, read in order), the 
 the file changes and every 20 turns. Every envelope names the chat's humour level, `Tone in this chat (/tono): …`.
 `/tono normal | gracioso | picante` (anyone in the chat, with `@claude` in the group) sets it per chat, without a model;
 `/tono` alone shows it. Normal is the default (`chats.<key>.tono` changes it).
+
+**The live voice (D3l, since 4 Nov 2026).** The team group and Franz's chat use `assistant/voice/whatsapp-d3l/`
+(`whatsapp.md`, `core.md`, `humor.md`, in that order) as their `soulFile`, with `toneLine: false` (one fixed voice, so
+`/tono` changes nothing there). The config names a copy of that folder outside the install (`install` does not copy
+it); change it as below, with `voice-push`. The example config keeps the plain voice above. The live copy's meeting
+examples name a real teammate where this one has a made-up name; otherwise the text is the same.
+
+**The voice in the workspace (`soulInWorkspace`, since 4 Nov 2026).** A chat with `soulInWorkspace: true` gets no soul
+in its messages: its voice is in its workspace's brief (AGENTS.md, CLAUDE.md a link to it), which Claude Code loads into
+the system context when a session starts, keeps cached and loads again after a compaction. The chat's `soulFile` list
+stays the source: `node tools/whatsapp/bridge.mjs voice-push <chat>` copies the files to `<route.workspace>/.claude/voice`
+(with `voice.json`: their order, the source folder, a hash) and runs the app's `scripts/t3-provision.mjs --refresh
+<folder>` (`route.provision`: node and script), so the brief ends with that voice instead of the app's (`app.md`,
+`core.md`); a deploy's `--refresh-all` keeps it. A running Claude process keeps the brief it started with: the new voice
+reaches the thread with its next process (T3 stops an idle one; a compaction loads the brief again), or at once with
+`voice-push <chat> --restart` (archives the chat's thread when it is idle, which stops the process; the next message
+resumes the same chat). Changing a chat's voice: point its `soulFile` at the new folder, `voice-push <chat> --restart`,
+then restart the bridge. Franz's own chat has its own workspace for this (`franz.chandi-whatsapp`, project «Franz ·
+WhatsApp», route `claudeclaw-franz-wa`), so his app chats in `franz.chandi` keep the app voice; the group's is
+`wa-underground`. Chats without the flag (the lab's) still get the soul in the envelope as above.
 
 **Logs.** `~/.local/state/ithomiini-wa-bridge/bridge.log.jsonl`: each message's decision, each send
 (kind, length, ok), each turn (time, steps). No message text; dropped chats appear without id or sender.

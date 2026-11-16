@@ -26,6 +26,9 @@
   },
   "voice": {
     "elevenlabsEnv": "/home/franz/.config/videos-runner/elevenlabs.env", "whisperPython": "/home/franz/Projects/hermes-agent/venv/bin/python",
-    "edgeTts": "/home/franz/.local/bin/edge-tts", "ttsVoiceEs": "es-EC-AndreaNeural", "ttsVoiceEn": "en-US-AvaNeural"
+    "edgeTts": "/home/franz/.local/bin/edge-tts", "ttsVoiceEs": "es-EC-AndreaNeural", "ttsVoiceEn": "en-US-AvaNeural",
+    "tts": { "model": "eleven_v4_turbo", "format": "opus_48000_64", "voiceEs": "m7yTemJqdIqrcNleANfX", "voiceEn": "JBFqnCBsd6RMkjVDRZzb" },
+    "parakeet": { "module": "/home/franz/.local/share/ithomiini-wa-bridge/asr-20261112/node_modules/transcribe-cpp/dist/index.js",
+      "model": "/home/franz/.local/share/ithomiini-wa-bridge/asr-20261112/models/parakeet-ultra-Q8_0.gguf", "device": "0000:03:00.0", "memoryMax": "3G" }
   }
 }

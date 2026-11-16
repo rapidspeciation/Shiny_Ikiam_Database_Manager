@@ -1,5 +1,5 @@
 {
- "about": "Routing cases (8 Nov 2026, lessons L1/L3 from T3's tool-description hill-climb): cheap cases graded only on the chat's first tool calls (which tool, its arguments, which skill it loads, what it must not call). run.mjs interrupts the run after `stopAfter` calls (default 3), so a case costs a few model calls instead of a full answer. Seeded from logged failures (HILLCLIMB_R15_plus.md, MINED_PATTERNS.md); prompts are new, in the style of the logged ones, on species and records not used by the dev or held-out sets. Ground truth (columns, CAMs) read from the eval app (frozen lab copy of 19 Oct) with direct query calls. Controls are ordinary work: they catch a fix that over-routes (maps-gallery, a draft or a ToolSearch where none belongs). S01–S17 (lesson L2, 8 Nov): one guard per project skill whose listing had no routing case, so a cut to a skill description or to the brief's skills table shows up as a skill no longer loaded; the held-out set files were not opened, so overlap with them was not checked.",
+ "about": "Routing cases (8 Nov 2026, lessons L1/L3 from T3's tool-description hill-climb): cheap cases graded only on the chat's first tool calls (which tool, its arguments, which skill it loads, what it must not call). run.mjs interrupts the run after `stopAfter` calls (default 3), so a case costs a few model calls instead of a full answer. Seeded from logged failures (HILLCLIMB_R15_plus.md, MINED_PATTERNS.md); prompts are new, in the style of the logged ones, on species and records not used by the dev or held-out sets. Ground truth (columns, CAMs) read from the eval app (frozen lab copy of 19 Oct) with direct query calls. Controls are ordinary work: they catch a fix that over-routes (maps-gallery, a draft or a ToolSearch where none belongs). S01–S17 (lesson L2, 8 Nov): one guard per project skill whose listing had no routing case, so a cut to a skill description or to the brief's skills table shows up as a skill no longer loaded; the held-out set files were not opened, so overlap with them was not checked. T01–T05 (8 Nov 2026): one case per tool error class of the weekly retro (2026-11-08, app assistant), each graded so the logged behaviour fails (tests/fixtures/assistant-eval/tool-errors-20261108.json); prompts newly written, on IDs and species no other task uses (4EA, CAM070635), checked in the eval app's frozen copy. T06 (9 Nov 2026): the retro of 2026-11-09's query on a tubes table the eval copy lacks (main's copy has one), on a tube no other task uses (FS3886683).",
  "tasks": [
   {
    "id": "R01",
@@ -456,6 +456,102 @@
    "checks": [
     { "skill": "meeting-agenda", "w": 2, "why": "the meeting-agenda skill is loaded" },
     { "noTool": ["propose_changes"] }
+   ]
+  },
+  {
+   "id": "T01",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-08 propose_changes view error: view.columns TAXON_ID refused, so the whole draft failed (16 calls in the week; R05's D08 twin)",
+   "stopAfter": 8,
+   "about": "a species correction whose view asks for a column proposals never show (TAXON_ID): drafted, that column left out",
+   "prompt": "El CAM070635 quedó como Napeogenes sylphis corena pero revisando las alas es Napeogenes inachia pozziana. Prepárame la corrección para revisarla y en la tabla muéstrame también el Genus y el TAXON_ID para comparar. No apliques nada.",
+   "checks": [
+    { "toolArgs": { "tool": "propose_changes", "match": { "changes": "inachia" } }, "w": 2, "why": "the correction is drafted" },
+    { "noToolErrors": true, "w": 2, "why": "a view column the table cannot show does not refuse the draft" },
+    { "noTool": ["apply_proposal", "Bash"] }
+   ]
+  },
+  {
+   "id": "T02",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-08 get_record row not found: an F1/F2_MutationRate ID asked in Insectary_data (3FE, 8 calls); the chats then grepped the skills and never reached the row",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "an ID that is only in F1/F2_MutationRate (4EA, CAM075244 in the eval copy): the row is reached, not lost after a refusal",
+   "prompt": "no encuentro la 4EA en Insectary_data, ¿en qué hoja está y qué CAM tiene?",
+   "checks": [
+    { "anyOf": [{ "noToolErrors": true }, { "toolArgs": { "tool": "get_record", "match": { "id": "^[0-9a-f]{8}-[0-9a-f]{4}-" } } }], "w": 2, "why": "no failed look-up, or the recordId the refusal named is followed" },
+    { "toolAny": ["get_record", "query", "find_records"], "why": "answers from the database" },
+    { "noTool": ["Bash"], "why": "no shell search after a refusal" }
+   ]
+  },
+  {
+   "id": "T03",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-08 query no such column (30 calls in the week): Transect_ID guessed with nothing close, then a _columns look-up before the query that worked",
+   "channel": "wa",
+   "stopAfter": 4,
+   "about": "captures per day on a transect by cloud cover: after a guessed column's error, the next query without a look-up of the columns (_columns, describe_sheet) first",
+   "prompt": "en el monitoreo de Ikiam, ¿cuántas capturas por día salen en el transecto 2 cuando está soleado comparado con cuando está nublado?",
+   "checks": [
+    { "anyOf": [{ "noToolErrors": true }, { "noToolArgs": { "tool": "query", "match": { "sql": "_columns|sqlite_master|pragma_table" } } }], "w": 2, "why": "the error lists the table's columns: no look-up after it" },
+    { "anyOf": [{ "noToolErrors": true }, { "noTool": "describe_sheet" }], "why": "nor describe_sheet after it" },
+    { "okAfterErrors": ["query", "count_records", "find_records"], "w": 2, "why": "a database call that worked, after the failed one" },
+    { "noTool": ["Bash", "ToolSearch"] }
+   ]
+  },
+  {
+   "id": "T04",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-08 query no such column (30 calls in the week): Sampling_protocol guessed on Collection_data (the column is Purpose), no near given, then Bash searches",
+   "stopAfter": 3,
+   "about": "captures by sampling protocol (the column is Purpose): after a guessed column's error, the next query without a look-up of the columns (_columns, describe_sheet) first",
+   "prompt": "De las capturas que tenemos en Collection_data, ¿cuántas son del monitoreo y cuántas de otros muestreos? Sepáralas por protocolo de muestreo.",
+   "checks": [
+    { "anyOf": [{ "noToolErrors": true }, { "noToolArgs": { "tool": "query", "match": { "sql": "_columns|sqlite_master|pragma_table" } } }], "w": 2, "why": "the error lists the table's columns: no look-up after it" },
+    { "anyOf": [{ "noToolErrors": true }, { "noTool": "describe_sheet" }], "why": "nor describe_sheet after it" },
+    { "okAfterErrors": ["query", "count_records", "find_records"], "w": 2, "why": "a database call that worked, after the failed one" },
+    { "noTool": ["Bash", "ToolSearch"], "why": "query is always loaded; no shell search after an error" }
+   ]
+  },
+  {
+   "id": "T05",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-08 sync_documents \"path\" argument undefined (11 calls): a server without a documents folder; the chats then tried gog through the google-account skill or the Drive connector",
+   "channel": "wa",
+   "stopAfter": 5,
+   "about": "documents refreshed on request: sync_documents; when the server cannot, no Drive work-around in the shell or a connector",
+   "prompt": "acabo de subir al drive el acta de la reunión de hoy, actualiza los documentos para que la puedas leer",
+   "checks": [
+    { "tool": "sync_documents", "w": 2, "why": "the documents' own tool" },
+    { "noToolArgs": { "tool": "Bash", "match": { "command": "\\bgog\\b|google-account" } }, "w": 2, "why": "no gog work-around after its answer" },
+    { "noToolArgs": { "tool": "ToolSearch", "match": { "query": "Google_Drive" } }, "why": "nor the Drive connector" }
+   ]
+  },
+  {
+   "id": "T06",
+   "tier": "routing",
+   "split": "dev",
+   "kind": "bad",
+   "source": "retro 2026-11-09 query no such table: tubes (6 calls), a table of main's copy the eval's lacks; the chats then searched with search_text and never called tubes_lookup",
+   "channel": "wa",
+   "stopAfter": 6,
+   "about": "where one tube is (FS3886683: Insectary_data row 13005, B2C, CAM078166 in the eval copy): tubes_lookup, or after a query on a missing tubes table, the tool its error names",
+   "prompt": "el tubo FS3886683 ¿en qué hoja y fila está y de qué mariposa es?",
+   "checks": [
+    { "anyOf": [{ "noToolErrors": true }, { "tool": "tubes_lookup" }], "w": 2, "why": "no failed call, or the tool the error names is called" },
+    { "okAfterErrors": ["query", "tubes_lookup", "search_text", "find_records", "get_record"], "w": 2, "why": "a look-up that worked, after any failed one" },
+    { "noTool": ["Bash"] }
    ]
   }
  ]

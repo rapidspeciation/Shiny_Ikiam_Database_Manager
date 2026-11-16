@@ -73,6 +73,20 @@ test('skill / noSkill read Skill calls and SKILL.md reads', () => {
   assert.equal(grade({ checks: [{ noSkill: 'photos' }] }, { tools }).score, 1);
 });
 
+test('okAfterErrors: a call of these tools that worked after the last one that failed', () => {
+  const ok = (name, input = {}) => call(name, input);
+  const bad = name => ({ ...call(name), failed: true });
+  const check = { okAfterErrors: ['query', 'find_records'] };
+  const score = tools => grade({ checks: [check] }, { tools }).score;
+  assert.equal(score([bad('query'), ok('query')]), 1, 'recovered');
+  assert.equal(score([ok('query')]), 1, 'no failure');
+  assert.equal(score([bad('query'), ok('find_records')]), 1, 'another of the tools');
+  assert.equal(score([bad('query')]), 0, 'one failed query, then nothing');
+  assert.equal(score([ok('query'), bad('query')]), 0, 'the one that worked came before the failure');
+  assert.equal(score([bad('query'), ok('Bash')]), 0, 'a call of another tool does not count');
+  assert.equal(score([]), 0, 'no call');
+});
+
 test('maxCalls and noToolArgs', () => {
   const tools = [call('ToolSearch', { query: 'select:mcp__db__host_plants' }), call('ToolSearch', { query: 'select:mcp__db__send_sheet_photos' }), call('host_plants', { butterfly: 'Scada zibia' })];
   assert.equal(grade({ checks: [{ maxCalls: { tool: 'ToolSearch', max: 1 } }] }, { tools }).score, 0);
@@ -105,3 +119,17 @@ test('a stored routing row is re-graded on the calls it was stopped after', () =
   assert.match(regradeRouting(task, { stopped: true, stopAfter: 5 }, [...tools.slice(0, 4), { ...call('propose_changes'), cut: true }]).invalid, /cut by the interrupt: propose_changes/);
   assert.deepEqual(regradeRouting({ tier: 'e2e' }, {}, tools), { task: { tier: 'e2e' } });
 });
+
+// The routing cases from the weekly retros of 8 and 9 Nov (T01–T06): each fails on the logged behaviour and passes on what the
+// tool fixes allow, graded offline as run.mjs grades a routing sample (its first stopAfter calls).
+const TE = JSON.parse(readFileSync(new URL('./fixtures/assistant-eval/tool-errors-20261108.json', import.meta.url), 'utf8'));
+for (const [id, { fail, pass }] of Object.entries(TE.cases)) {
+  test(`${id} (weekly retro) fails on the logged calls and passes on the fixed ones`, () => {
+    const task = taskOf('routing.json', id);
+    assert.equal(task.kind, 'bad');
+    assert.match(task.source, /^retro 2026-11-0[89] /);
+    const rows = fx => ({ finalText: '', tools: fx.tools.map(t => ({ ...t, input: JSON.stringify(t.input) })), proposals: [] });
+    for (const fx of fail) assert.ok(grade(task, rows(fx), { checkFiles: false }).score < (task.passAt ?? 1), `${id} should fail: ${fx.from}`);
+    for (const fx of pass) assert.equal(grade(task, rows(fx), { checkFiles: false }).score, 1, `${id} should pass: ${fx.from}`);
+  });
+}

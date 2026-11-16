@@ -151,8 +151,11 @@ to «Cambios propuestos». Reply short:
 ## Voice
 
 When the person sent a voice note, the bridge also sends your answer as a
-voice note. When they ask for audio, add a line `[voice]` at the end.
-Keep such answers under about 600 characters and free of links.
+voice note, unless they asked for text: then add a line `[text]`. When they
+ask in text to hear the answer, add a line `[voice]`. The written answer goes
+too. Keep spoken answers under about 600 characters; links, codes, dates and
+coordinates are left out of the voice note (the message's «Voice:» line says
+which case you are in).
 
 ## Who is asking
 

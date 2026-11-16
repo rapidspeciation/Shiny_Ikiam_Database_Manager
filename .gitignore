@@ -35,3 +35,4 @@ reports/personal_progress_20261102/
 
 # Lab-only material kept off the public repo (4 Nov 2026): eval tasks from team chats, lab reports.
 tools/assistant-eval/tasks/
+tools/whatsapp/dictation-words.local.json
