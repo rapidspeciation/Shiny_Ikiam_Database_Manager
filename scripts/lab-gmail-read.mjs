@@ -7,7 +7,8 @@
 //  - the sandbox keeps gog's binary, its keyring and its OAuth files out of the chat's reach (lab-guard.mjs): the
 //    project account's token can send mail (gmail.modify), and Google gives no read-only token from that grant;
 //  - this hook runs a gog Gmail read itself, here, with gog's own guards (--readonly, --gmail-no-send, only these
-//    commands enabled) on the project account, and hands the chat its output (`cat` of a file under /tmp);
+//    commands enabled) on the project account, and hands the chat its output (`cat` of a file the sandbox reads
+//    but cannot write, ~/.local/state/ithomiini-lab/gmail-out);
 //  - any other gog command (send, reply, drafts, labels changes, trash, Drive, Calendar…) is refused with a reason.
 // A command that does not run gog passes untouched.
 // The hook runs from a read-only copy outside the sandbox's writable folders (lab-guard.mjs installs it), and it
@@ -28,7 +29,9 @@ export const ACCOUNT = process.env.ITHOMIINI_LAB_GMAIL_ACCOUNT || 'jmithominii@g
 export const CLIENT = process.env.ITHOMIINI_LAB_GMAIL_CLIENT || 'ithomiini';
 const GOG = process.env.ITHOMIINI_LAB_GMAIL_GOG || join(HOME, '.local', 'bin', 'gog');
 const PASSWORD_FILE = process.env.ITHOMIINI_LAB_GMAIL_PASSWORD_FILE || join(HOME, '.config', 'gogcli', '.hermes-keyring-password');
-const OUT_ROOT = process.env.ITHOMIINI_LAB_GMAIL_TMP || '/tmp';
+// The output: a folder the sandbox reads but cannot write (not /tmp: a chat could swap the folder for a link while gog runs).
+export const OUT_DEFAULT = join(HOME, '.local', 'state', 'ithomiini-lab', 'gmail-out');
+const OUT_ROOT = process.env.ITHOMIINI_LAB_GMAIL_TMP || OUT_DEFAULT;
 // Outside every folder the lab's sandbox may write (a link planted there would make this hook write elsewhere).
 const LOG = process.env.ITHOMIINI_LAB_GMAIL_LOG || join(HOME, '.local', 'state', 'ithomiini-lab', 'gmail-reads.log');
 
@@ -48,13 +51,13 @@ const ENABLED = READS.map(r => ['gmail', ...r.path].join('.')).join(',');
 const FLAGS = {
   '--readonly': false, '--gmail-no-send': false, '--no-input': false, '--json': false, '-j': false, '--plain': false, '-p': false,
   '--results-only': false, '--wrap-untrusted': false, '--select': true, '--color': true, '--account': true, '-a': true, '--client': true,
-  '--max': true, '--page': true, '--all': false, '--fail-empty': false, '--count': false, '--oldest': false, '--timezone': true, '-z': true,
+  '--max': true, '--page': true, '--all': false, '--count': false, '--oldest': false, '--timezone': true, '-z': true,
   '--local': false, '--include-body': false, '--body-format': true, '--full': false, '--include-attachments': false,
   '--include-recipients': false, '--sanitize-content': false, '--use-indexed-attachment-ids': false, '--format': true, '--headers': true,
-  '--verbose': false, '-v': false, '--fields': true,
+  '--verbose': false, '-v': false, '--fields': true, '--help': false, '-h': false,
 };
 
-const REFUSE_GOG = 'In the lab and the assistant eval the project\'s Gmail is read-only: gog runs only `gog gmail search|get|thread get|labels list|labels get|messages search …` (one gog call per command, values written out, no $ or `…`). Sending, replies, drafts, label or message changes, attachments and the other Google services are off here.';
+const REFUSE_GOG = 'In the lab and the assistant eval the project\'s Gmail is read-only: gog runs only `gog gmail search|get|thread get|labels list|labels get|messages search …` (one gog call per command, values written out, no $ or `…`; after it only `| head`, `tail`, `grep`, `jq`, `wc`, `cut` or `tr`). Sending, replies, drafts, label or message changes, attachments and the other Google services are off here.';
 const REFUSE_SECRET = 'gog\'s keyring, tokens and OAuth files are off limits in the lab.';
 
 /** Shell words and operators of `cmd` (a small POSIX lexer): {w: word, raw} | {op}. Unquoted or "…" `$`/backtick → {bad}. */
@@ -227,6 +230,12 @@ export function classify(cmd) {
     pos.push(w);
   }
   if (!SERVICE.includes(pos[0])) return { deny: REFUSE_GOG };
+  // --help (the skill says `gog <service> --help`): gmail's own, or a read's, with the same guards; no Google call.
+  if (flags.some(([n]) => n === '--help' || n === '-h')) {
+    const path = pos.length === 1 ? [] : READS.find(r => r.words.length === pos.length - 1 && r.words.every((alts, n) => alts.includes(pos[1 + n])))?.path;
+    if (!path) return { deny: REFUSE_GOG };
+    return { read: { argv: ['--readonly', '--gmail-no-send', '--no-input', `--enable-commands-exact=${ENABLED}`, 'gmail', ...path, '--help'], tail, stderr: true, command: ['gmail', ...path, '--help'].join(' ') } };
+  }
   const read = READS.find(r => r.words.every((alts, n) => alts.includes(pos[1 + n])));
   if (!read) return { deny: REFUSE_GOG };
   const args = pos.slice(1 + read.words.length);
@@ -278,6 +287,7 @@ const q = s => `'${String(s).replaceAll("'", "'\\''")}'`;
 
 /** Runs the read with gog here and returns the sandboxed command that shows its output. */
 export function runRead(plan, { workspace = '' } = {}) {
+  mkdirSync(OUT_ROOT, { recursive: true, mode: 0o700 });
   sweep();
   const dir = mkdtempSync(join(OUT_ROOT, 'ithomiini-gmail-'));
   const file = join(dir, 'out.txt');
@@ -297,8 +307,8 @@ export function runRead(plan, { workspace = '' } = {}) {
     closeSync(fd);
   } catch {}
   const show = `cat ${q(file)}`;
-  // A failed read fails the call, also behind a filter (whose own status counts otherwise).
-  return plan.tail ? `${show} | ${plan.tail}${status ? `; exit ${status}` : ''}` : `${show}; exit ${status}`;
+  // The call's status is gog's, also behind a filter (a grep that finds nothing does not fail a read that worked).
+  return plan.tail ? `${show} | ${plan.tail}; exit ${status}` : `${show}; exit ${status}`;
 }
 
 /** Output folders older than a day go (they hold mail text). */
@@ -338,7 +348,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } catch {
     process.exit(0);
   }
-  const answer = decide(event);
+  let answer;
+  try {
+    answer = decide(event);
+  } catch (e) {
+    // A hook that fails lets the command run as written: refuse instead (gog without the guards, where unsandboxed).
+    answer = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `lab Gmail hook error: ${e.message}` } };
+  }
   if (answer) process.stdout.write(JSON.stringify(answer));
   process.exit(0);
 }
