@@ -29,7 +29,7 @@ test('P1: «41 ♀» added up from 10, 13, 9, 12 and 4 fails; 48 from a tool tot
   const wrong = `En octubre hubo *98* emergidas en la base: *41 ♀*, *49 ♂* y 1 sin sexo.\n\n${LIST}`;
   const bad = numbersCheck(run(wrong, [WITH_TOTALS]), wrong);
   assert.equal(bad.pass, false);
-  assert.match(bad.detail, /: 41$/);
+  assert.match(bad.detail, /^not in the tool results: 41; parts 41 \+ 49 \+ 1 = 91, not 98$/);
   const right = `${LIST}\n\nEn total *98*: *48 ♀*, *49 ♂* y 1 sin sexo.`;
   assert.equal(numbersCheck(run(right, [WITH_TOTALS]), right).pass, true);
   // The same right reply without the tool's totals: 98, 48 and 49 were added up, so it fails too.
@@ -60,4 +60,24 @@ test('numbers in the prompt, in allow, and in any tool result are supported; no 
   const turns = { ...run('Son 48.', [WITH_TOTALS]), turnTexts: ['Son 41.', 'Son 48.'] };
   assert.equal(grade({ checks: [{ numbers: true, turn: 1 }] }, turns).score, 0);
   assert.equal(grade({ checks: [{ numbers: true, turn: 2 }] }, turns).score, 1);
+});
+
+test('parts against their whole: «98: 41 ♀, 49 ♂ y 1 sin sexo» is 91, caught without any data', async () => {
+  const { partsMismatch } = await import('../tools/assistant-eval/grade.mjs');
+  const wrong = `En octubre hubo *98* emergidas en la base: *41 ♀*, *49 ♂* y 1 sin sexo.\n\n${LIST}`;
+  assert.deepEqual(partsMismatch(wrong), [{ whole: 98, parts: [41, 49, 1], sum: 91 }]);
+  // Every species line adds up; so does the right total.
+  assert.deepEqual(partsMismatch(`${LIST}\n\nEn total 98: 48 hembras, 49 machos y 1 sin sexo.`), []);
+  // Parts that add up to another number of the line belong to it.
+  assert.deepEqual(partsMismatch('Del clutch 997 salieron 172 filas (96 ♀, 76 ♂).'), []);
+  // Through the numbers check, even when every number is in the tool results.
+  const r = run(wrong, [`${WITH_TOTALS}\n41`]);
+  const out = numbersCheck(r, wrong);
+  assert.equal(out.pass, false);
+  assert.match(out.detail, /parts 41 \+ 49 \+ 1 = 91, not 98/);
+});
+
+test('«el 14» naming a day is not a number (r11 false positive)', () => {
+  assert.deepEqual(numbersIn('Sí, octubre se acabó el 14. Las fechas van del 3 al 14, y desde el 2 y el 5.'), []);
+  assert.deepEqual(numbersIn('Hay 14 hembras y el 14 % sin sexo').map(n => n.value), [14, 14]);
 });

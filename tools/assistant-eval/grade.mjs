@@ -25,7 +25,8 @@
 //   proposalOnly: { sheet, rows?, ids?, fields }   every drafted change stays inside these rows/ids and fields
 //   numbers: true | { allow: [n..], turn?, scope? }   every number the answer writes is in a tool result of the chat
 //                         (all its calls, not only the graded ones), a prompt or `allow`; dates, times, years, IDs
-//                         and codes excepted (numbersIn). A total added up in the head fails.
+//                         and codes excepted (numbersIn). A total added up in the head fails, and so do ♀/♂ parts
+//                         that do not add up to the number they follow on their line (partsMismatch).
 // Routing cases (tier 'routing') are graded on their first `stopAfter` tool calls only (default 3): the run is
 // interrupted there (run.mjs), and calls the model started before the stop took effect are not graded.
 // Text checks read the chat's final answer (the last message of the last run: what WhatsApp sends);
@@ -163,6 +164,8 @@ const DATE_PATTERNS = [
   // «14-oct», «1 al 14-oct», «del 1 al 14 de octubre», «31 Oct»; «octubre 31», «Oct 31».
   new RegExp(`\\b\\d{1,2}(?:\\s*(?:al|a|y|-|–|to|and)\\s*\\d{1,2})?(?:\\s*-\\s*|\\s+de\\s+|\\s+)${MONTH}`, 'gi'),
   new RegExp(`\\b${MONTH}\\s+\\d{1,2}\\b`, 'gi'),
+  // A day named alone at the end of a clause: «octubre se acabó el 14.», «del 3 al 14,».
+  /\b(?:el|del|al)\s+(?:[12]?\d|3[01])(?=\s*(?:[.,;:)!?]|$|\s+(?:y|al|a|hasta)\s+(?:el\s+)?\d))/gim,
 ];
 /** A token with letters and digits together (CAM070903, A7E.1, 5VB, FS90415684, T2, n=3) is an ID or code. */
 const CODE = /[\p{L}_#=][\p{L}\p{N}_.#=/-]*\p{N}[\p{L}\p{N}_.#=/-]*|\p{N}+[\p{L}_][\p{L}\p{N}_.#=/-]*/gu;
@@ -174,19 +177,56 @@ function numberValue(text) {
   return Number(t.replace(',', '.'));
 }
 
-/** The numbers a text writes, with dates, times, years (1900–2100), IDs, codes and list markers ("1. ") left out. */
+const blank = m => ' '.repeat(m.length);
+/** The text without markup, and the same text with dates, times, IDs, codes and list markers blanked (same length). */
+function masked(text) {
+  const plain = String(text ?? '').replace(/[*_`~]/g, '');
+  let s = plain;
+  for (const re of DATE_PATTERNS) s = s.replace(re, blank);
+  return { plain, s: s.replace(CODE, blank).replace(/^(\s*)(\d+[.)])(?=\s)/gm, (_, a, b) => a + blank(b)) };
+}
+
+/** The numbers a text writes (text, value, index), with dates, times, years (1900–2100), IDs, codes and list markers ("1. ") left out. */
 export function numbersIn(text, { years = false } = {}) {
-  let s = String(text ?? '').replace(/[*_`~]/g, '');
-  for (const re of DATE_PATTERNS) s = s.replace(re, ' ');
-  s = s.replace(CODE, ' ').replace(/^\s*\d+[.)]\s/gm, ' ');
+  const { s } = masked(text);
   const out = [];
   for (const m of s.matchAll(NUMBER)) {
     const v = numberValue(m[0]);
     if (!Number.isFinite(v)) continue;
     if (!years && Number.isInteger(v) && v >= 1900 && v <= 2100 && /^\d{4}$/.test(m[0])) continue;
-    out.push({ text: m[0], value: v });
+    out.push({ text: m[0], value: v, index: m.index });
   }
   return out;
+}
+
+const SEX_UNIT = [['female', /^(?:♀|females?\b|hembras?\b)/i], ['male', /^(?:♂|males?\b|machos?\b)/i], ['na', /^(?:sin\s+sexo\b|NA\b)/]];
+/**
+ * Parts against their whole, needing no data: in one line, a number followed by its ♀, ♂ (and sin sexo) parts that
+ * do not add up to it («98 emergidas: 41 ♀, 49 ♂ y 1 sin sexo» is 91). Parts that add up to another number of the
+ * line belong to that one. → [{ whole, parts, sum }]
+ */
+export function partsMismatch(text) {
+  const { plain } = masked(text);
+  const bad = [];
+  for (const line of plain.split('\n')) {
+    const nums = numbersIn(line).map(n => {
+      const after = line.slice(n.index + n.text.length).replace(/^\s+/, '');
+      return { ...n, unit: SEX_UNIT.find(([, re]) => re.test(after))?.[0] ?? null };
+    });
+    nums.forEach((whole, i) => {
+      if (whole.unit || !Number.isInteger(whole.value)) return;
+      const parts = [];
+      for (const x of nums.slice(i + 1)) {
+        if (!x.unit || parts.some(p => p.unit === x.unit)) break;
+        parts.push(x);
+      }
+      const units = new Set(parts.map(p => p.unit));
+      if (parts.length < 2 || !units.has('female') || !units.has('male') || parts[0].index - whole.index > 60) return;
+      const sum = parts.reduce((n, p) => n + p.value, 0);
+      if (sum !== whole.value && !nums.some(x => x.value === sum)) bad.push({ whole: whole.value, parts: parts.map(p => p.value), sum });
+    });
+  }
+  return bad;
 }
 
 /** Every number the sources hold (tool results, prompts), as values; IDs' digits do not count. */
@@ -207,10 +247,12 @@ export function numbersCheck(run, text, spec = {}) {
   for (const a of allow) supported.add(a);
   const bad = numbersIn(text).filter(n => !supported.has(n.value));
   const noResults = !(run.tools ?? []).some(t => t.result);
-  return {
-    pass: bad.length === 0,
-    detail: bad.length ? `not in the tool results${noResults ? ' (no tool result recorded)' : ''}: ${[...new Set(bad.map(n => n.text))].join(', ')}` : undefined,
-  };
+  const parts = partsMismatch(text);
+  const details = [
+    ...(bad.length ? [`not in the tool results${noResults ? ' (no tool result recorded)' : ''}: ${[...new Set(bad.map(n => n.text))].join(', ')}`] : []),
+    ...parts.map(p => `parts ${p.parts.join(' + ')} = ${p.sum}, not ${p.whole}`),
+  ];
+  return { pass: details.length === 0, detail: details.length ? details.join('; ') : undefined };
 }
 
 /** Whether a tool call loaded skill `name`: the Skill tool with that skill, or a Read of its SKILL.md. */
