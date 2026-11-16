@@ -66,7 +66,7 @@ const historyLine = ({ id, at, name, text, media, replyTo = null, replyName = nu
 /**
  * Chats nothing is ever sent to, whatever the config says (Franz, 4 Nov 2026): «Ithomiini Ikiam», the team's group with
  * the UK side. Its history may be read (a read-only source); the agenda is shared there by Franz himself, never by the bridge.
- * Kept as slow (scrypt) hashes of the bare JID, so this public file names no chat; each JID is hashed once.
+ * Kept as slow (scrypt) hashes of the bare JID, so this public file holds no JID; each JID is hashed once.
  */
 const NEVER_SEND_HASHES = new Set(['57a6516ac97d641afbd07a273ef89dcf31aa9d64dabeef2cd585fc3ddf784188']);
 const neverSendSeen = new Map();

@@ -48,7 +48,9 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
     the iGPU, no fallback to another device), then faster-whisper `small` if it fails (its own `MemoryMax=2G` scope, and
     no «Claude» in its prompt, which it could echo); never Scribe (other members'
     notes go outside only when a turn needs them, as before). Parakeet has no custom vocabulary, so `fixGenera` turns
-    sound-alike genera («hiposcada», «callitomia») into the genus;
+    sound-alike genera («hiposcada», «callitomia») into the genus, and the shared word list turns its aliases into the
+    term (`dictation-words.json`, copied by `install`, plus the untracked `dictation-words.local.json` beside it for
+    person names, placed by hand; config `voice.wordsFiles` names others);
   - the transcript is kept in the state file and, where the chat's text history already goes, as a history line
     `{ t: 'transcript', of, engine, text }`; the context lines show it (`[audio: «…»]`);
   - a turn that needs a note (its own, the quoted one, the sender's last minutes) reuses the stored transcript (waiting
@@ -90,6 +92,12 @@ the group. With `soulFile` in the config (a file or a list, read in order), the 
 the file changes and every 20 turns. Every envelope names the chat's humour level, `Tone in this chat (/tono): …`.
 `/tono normal | gracioso | picante` (anyone in the chat, with `@claude` in the group) sets it per chat, without a model;
 `/tono` alone shows it. Normal is the default (`chats.<key>.tono` changes it).
+
+**The live voice (D3l, since 4 Nov 2026).** The team group and Franz's chat use `assistant/voice/whatsapp-d3l/`
+(`whatsapp.md`, `core.md`, `humor.md`, in that order) as their `soulFile`, with `toneLine: false` (one fixed voice, so
+`/tono` changes nothing there). The config names a copy of that folder outside the install (`install` does not copy
+it); change it as below, with `voice-push`. The example config keeps the plain voice above. The live copy's meeting
+examples name a real teammate where this one has a made-up name; otherwise the text is the same.
 
 **The voice in the workspace (`soulInWorkspace`, since 4 Nov 2026).** A chat with `soulInWorkspace: true` gets no soul
 in its messages: its voice is in its workspace's brief (AGENTS.md, CLAUDE.md a link to it), which Claude Code loads into

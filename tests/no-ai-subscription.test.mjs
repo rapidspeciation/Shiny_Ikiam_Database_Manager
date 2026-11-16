@@ -23,7 +23,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -152,8 +152,11 @@ test('run.mjs refuses under node --test before any chat: no out dir made, exit n
 });
 
 test('t3-turn.mjs refuses under node --test without reading its request', () => {
-  // A turn request whose commands module would leave a mark if it were ever loaded (steer and stopAfterTools too).
+  // A turn request whose commands module would leave a mark if it were ever loaded (steer and stopAfterTools too); the
+  // home has a state database, so without the refusal the helper would get as far as loading that module.
   const dir = mkdtempSync(join(tmpdir(), 'no-ai-turn-'));
+  mkdirSync(join(dir, 'userdata'));
+  writeFileSync(join(dir, 'userdata', 'statev2.sqlite'), '');
   const mark = join(dir, 'loaded');
   const commandsModule = join(dir, 'commands.mjs');
   writeFileSync(commandsModule, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(mark)}, '1'); export const t3Commands = () => async () => {};`);
