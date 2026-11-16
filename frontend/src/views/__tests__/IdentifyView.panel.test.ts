@@ -281,11 +281,12 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'headline-p')).toBe('60 %')
     expect(text(host, 'species-unsure')).toBe('Incierto')
     expect(rows(host)).toEqual([['Género Mechanitis 80 %', 'true']])
+    // The genus is clear: the green badge.
     expect(text(host, 'ithomiini-badge')).toBe('Ithomiini · Danainae')
     expect(host.querySelector('[data-testid=likeliest]')).toBeNull()
   })
 
-  it('both uncertain, tribe clear: the guess is the tribe\'s own top species, the genus «Incierto», the tribe clear, no label', async () => {
+  it('both uncertain, tribe clear: the top species stays the guess, its genus «Incierto», the tribe said of the photo, no label', async () => {
     const { host, settle } = await mountWith(
       answer({
         species: [['Heliconius erato', 0.12], ['Mechanitis polymnia', 0.1], ['Oleria onega', 0.08]],
@@ -294,18 +295,16 @@ describe('IdentifyView: the answer', () => {
         subfamily: [['Danainae', 0.87]],
       }),
     )
-    // Heliconius erato is the top species but not an Ithomiini: the guess is the tribe's own (once the taxonomy file is in).
-    await vi.waitFor(async () => {
-      await settle()
-      expect(text(host, 'headline')).toBe('Mechanitis polymnia')
-    })
-    expect(host.querySelector('[data-testid=headline]')!.getAttribute('data-top')).toBe('Heliconius erato')
-    expect(text(host, 'headline-p')).toBe('10 %')
+    // Heliconius erato is the top species, outside the clear tribe: still the guess (Franz: always the top species).
+    await settle()
+    expect(text(host, 'headline')).toBe('Heliconius erato')
+    expect(text(host, 'headline-p')).toBe('12 %')
     expect(text(host, 'species-unsure')).toBe('Incierto')
     expect(rows(host)).toEqual([
-      ['Género Mechanitis 30 % Incierto', 'false'],
-      ['Tribu Ithomiini 86 %', 'true'],
+      ['Género Heliconius 12 % Incierto', 'false'],
+      ['La foto muestra la tribu Ithomiini 86 %', 'true'],
     ])
+    expect(host.querySelector('[data-testid=rung-tribe] svg')!.getAttribute('aria-label')).toBe('Seguro')
     // The tribe row names Ithomiini: no label saying it again.
     expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
   })
@@ -322,7 +321,7 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'headline')).toBe('Mechanitis polymnia')
     expect(rows(host)).toEqual([
       ['Género Mechanitis 35 % Incierto', 'false'],
-      ['Subfamilia Danainae 90 %', 'true'],
+      ['La foto muestra la subfamilia Danainae 90 %', 'true'],
     ])
     expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
   })
@@ -334,6 +333,15 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'species-unsure')).toBe('Incierto')
     expect(rows(host)).toEqual([['Género Mechanitis 45 % Incierto', 'false']])
     expect(host.textContent).not.toContain('No estamos seguros')
+    // Nothing clear: the ranks as a grey label, never the green badge.
+    expect(text(host, 'ranks-above')).toBe('Ithomiini · Danainae')
+    expect(host.querySelector('[data-testid=ithomiini-badge]')).toBeNull()
+  })
+
+  it('nothing clear on a non-Ithomiini: a grey label and no «No parece una Ithomiini.»', async () => {
+    const { host } = await mountWith(answer({ species: [['Heliconius erato', 0.4], ['Oleria onega', 0.3]], genus: [['Heliconius', 0.45], ['Oleria', 0.3]], tribe: [['Heliconiini', 0.5]], subfamily: [] }))
+    expect(text(host, 'ranks-above')).toBe('Heliconiini')
+    expect(host.querySelector('[data-testid=not-ithomiini]')).toBeNull()
   })
 
   it('an uncertain species: a subspecies only as «if it is this species»', async () => {

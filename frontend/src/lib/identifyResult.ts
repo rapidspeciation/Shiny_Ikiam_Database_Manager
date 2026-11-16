@@ -3,7 +3,7 @@
  * genus, and the flash-frozen gap against the reference-genome target. Pure functions, tested on their own.
  *
  * The scores are the head's probabilities, not calibrated on people's photos: the tab never turns them into words
- * like «muy probable». It always names its guess, the most probable species and its genus, as the Wings Gallery does
+ * like «muy probable». It always names its guess, the top species and its genus, as the Wings Gallery does
  * (Franz, 15 Nov 2026), each with its score and marked «Incierto» below the engine's cut (THRESHOLDS); `headline` is
  * the most specific level that does clear its cut (species, genus, tribe, subfamily, or none), shown as the certain one.
  */
@@ -146,49 +146,10 @@ export function taxonOf(species: string, tax: Taxonomy | null): TaxonLabel | nul
   const pair = tax?.species[species]
   return pair ? { tribe: nameAt(tax!.tribes, pair[0]), subfamily: nameAt(tax!.subfamilies, pair[1]) } : null
 }
-/** Each rank's name shared by every species of the file that `match` keeps, else null for that rank (none listed, or they differ). */
-function shared(tax: Taxonomy, match: (species: string, label: TaxonLabel) => boolean): TaxonLabel | null {
-  let out: { tribe: string | null | undefined; subfamily: string | null | undefined } | null = null
-  for (const sp of Object.keys(tax.species)) {
-    const l = taxonOf(sp, tax)!
-    if (!match(sp, l)) continue
-    out ??= { tribe: l.tribe, subfamily: l.subfamily }
-    if (out.tribe !== l.tribe) out.tribe = null
-    if (out.subfamily !== l.subfamily) out.subfamily = null
-  }
-  return out && (out.tribe || out.subfamily) ? { tribe: out.tribe ?? null, subfamily: out.subfamily ?? null } : null
-}
-
-/**
- * The ranks above the answer, for the small label by the headline: a species' tribe and subfamily, a genus's (shared
- * by all its species in the file), a tribe's subfamily. None for a subfamily or «not sure», nor when the file does
- * not list the name.
- */
-export function ranksAbove(said: Headline | null, tax: Taxonomy | null): TaxonLabel | null {
-  if (!said || !tax) return null
-  if (said.kind === 'species') {
-    const l = taxonOf(said.name, tax)
-    return l && (l.tribe || l.subfamily) ? l : null
-  }
-  if (said.kind === 'genus') return shared(tax, sp => sp.split(' ')[0] === said.genus)
-  if (said.kind === 'tribe') {
-    const l = shared(tax, (_, label) => label.tribe === said.name)
-    return l?.subfamily ? { tribe: null, subfamily: l.subfamily } : null
-  }
-  return null
-}
-
-/**
- * The guess the headline names: the most probable species, except when a tribe or subfamily is the clear level and
- * that species is not in it (its many species share the score): then the most probable listed species within it, so
- * the guess never contradicts what is certain. The first candidate when the file `tax` cannot tell.
- */
-export function guessOf(said: Headline | null, candidates: Candidate[], tax: Taxonomy | null): Candidate | undefined {
-  const top = candidates[0]
-  if (!said || !top || (said.kind !== 'tribe' && said.kind !== 'subfamily') || !tax) return top
-  const kind = said.kind
-  const inside = (c: Candidate) => taxonOf(c.name, tax)?.[kind] === said.name
-  return inside(top) ? top : (candidates.find(inside) ?? top)
+/** A species' tribe and subfamily for the small label by the headline; null when the file names neither (or not the species). */
+export function ranksAbove(species: string, tax: Taxonomy | null): TaxonLabel | null {
+  const l = taxonOf(species, tax)
+  return l && (l.tribe || l.subfamily) ? l : null
 }
 
 /** A rank shown under an uncertain species: its name, its total, and whether it clears its cut. */
@@ -199,9 +160,9 @@ export interface Rung {
   sure: boolean
 }
 /**
- * The ranks under the guessed species: none when the species is clear (its name says the genus); else its genus
+ * The ranks under the guessed (top) species: none when the species is clear (its name says the genus); else its genus
  * (sure when it clears its cut, else «Incierto»), then the tribe or subfamily that clears its cut, when the genus does
- * not.
+ * not. That last one is a total over all its species, a statement about the photo: the guess may lie outside it.
  */
 export function rungs(said: Headline | null, guess: Candidate | undefined, genus: Map<string, number>): Rung[] {
   if (!said || !guess || said.kind === 'species') return []

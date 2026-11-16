@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { engineOf, guessOf, headline, higherRanks, ranksAbove, rungs, shownTaxon, subspeciesHint, taxonOf, THRESHOLDS, type Cuts, type Taxonomy } from '../identifyResult'
+import { engineOf, headline, higherRanks, ranksAbove, rungs, shownTaxon, subspeciesHint, taxonOf, THRESHOLDS, type Cuts, type Taxonomy } from '../identifyResult'
 import { serverRanking, type ServerAnswer } from '../identifyOnline'
 import { isIthomiiniGenus } from '../ithomiiniGenera'
 
@@ -161,49 +161,21 @@ describe('tribe and subfamily answer', () => {
   })
 })
 
-describe('the ranks above the answer, the guess and its ranks', () => {
+describe('the top species\' ranks: the label and the rows under it', () => {
   it('names a species\' tribe and subfamily, never a placeholder; none for a species the file does not list', () => {
     expect(taxonOf('Mechanitis polymnia', tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
-    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
+    expect(ranksAbove('Mechanitis polymnia', tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
     // No tribe: the subfamily alone.
-    expect(ranksAbove({ kind: 'species', name: 'Hypothyris anastasia' }, tax)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
+    expect(ranksAbove('Hypothyris anastasia', tax)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
     // A placeholder tribe (UNKNOWN_tribe_Chetone) is never shown, even if a file holds one.
-    expect(ranksAbove({ kind: 'species', name: 'Chetone angulosa' }, tax)).toEqual({ tribe: null, subfamily: 'Nymphalinae' })
+    expect(ranksAbove('Chetone angulosa', tax)).toEqual({ tribe: null, subfamily: 'Nymphalinae' })
     // A placeholder subfamily and no tribe: nothing to show.
-    expect(ranksAbove({ kind: 'species', name: 'Athis inca' }, tax)).toBeNull()
-    expect(ranksAbove({ kind: 'species', name: 'Morpho helenor' }, tax)).toBeNull()
-    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, null)).toBeNull()
+    expect(ranksAbove('Athis inca', tax)).toBeNull()
+    expect(ranksAbove('Morpho helenor', tax)).toBeNull()
+    expect(ranksAbove('Mechanitis polymnia', null)).toBeNull()
   })
 
-  it('a genus\' ranks are those all its species share; a tribe answer gets its subfamily; none above a subfamily or «not sure»', () => {
-    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
-    const mixed: Taxonomy = { ...tax, species: { ...tax.species, 'Mechanitis odd': [0, 0] } }
-    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, mixed)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
-    expect(ranksAbove({ kind: 'genus', genus: 'Morpho' }, tax)).toBeNull()
-    expect(ranksAbove({ kind: 'tribe', name: 'Ithomiini', p: 0.85 }, tax)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
-    expect(ranksAbove({ kind: 'subfamily', name: 'Ithomiinae', p: 0.85 }, tax)).toBeNull()
-    expect(ranksAbove({ kind: 'unsure' }, tax)).toBeNull()
-  })
-
-  it('the guess is the top species; under a clear tribe or subfamily that does not hold it, the top listed one inside', () => {
-    const list = [
-      { name: 'Danaus plexippus', p: 0.3 },
-      { name: 'Mechanitis lysimnia', p: 0.25 },
-      { name: 'Oleria onega', p: 0.2 },
-      { name: 'Hypothyris anastasia', p: 0.1 },
-    ]
-    for (const said of [{ kind: 'species', name: 'Danaus plexippus' }, { kind: 'genus', genus: 'Danaus' }, { kind: 'unsure' }] as const) expect(guessOf(said, list, tax)).toBe(list[0])
-    expect(guessOf({ kind: 'tribe', name: 'Danaini', p: 0.8 }, list, tax)).toBe(list[0])
-    // Ithomiini is clear but the top species is a Danaini: the guess is the tribe's own top species.
-    expect(guessOf({ kind: 'tribe', name: 'Ithomiini', p: 0.8 }, list, tax)).toBe(list[1])
-    expect(guessOf({ kind: 'subfamily', name: 'Ithomiinae', p: 0.8 }, list, tax)).toBe(list[1])
-    // No listed species inside, or no file: the top one.
-    expect(guessOf({ kind: 'tribe', name: 'Heliconiini', p: 0.8 }, list, tax)).toBe(list[0])
-    expect(guessOf({ kind: 'tribe', name: 'Ithomiini', p: 0.8 }, list, null)).toBe(list[0])
-    expect(guessOf({ kind: 'unsure' }, [], tax)).toBeUndefined()
-  })
-
-  it('the ranks under an uncertain guess: its genus (sure or not), then the clear tribe or subfamily', () => {
+  it('the rows under an uncertain top species: its genus (sure or not), then the clear tribe or subfamily (a total, even when the top species lies outside it)', () => {
     const genus = new Map([['Mechanitis', 0.38], ['Oleria', 0.3]])
     const guess = { name: 'Mechanitis polymnia', p: 0.31 }
     expect(rungs({ kind: 'species', name: guess.name }, guess, genus)).toEqual([])
@@ -215,15 +187,18 @@ describe('the ranks above the answer, the guess and its ranks', () => {
     expect(rungs({ kind: 'subfamily', name: 'Danainae', p: 0.9 }, guess, genus)[1]).toEqual({ kind: 'subfamily', name: 'Danainae', p: 0.9, sure: true })
     expect(rungs({ kind: 'unsure' }, guess, genus)).toEqual([{ kind: 'genus', name: 'Mechanitis', p: 0.38, sure: false }])
     expect(rungs({ kind: 'unsure' }, undefined, genus)).toEqual([])
+    // The top species outside the clear tribe stays the guess: its own genus, and the tribe's total beside it.
+    expect(rungs({ kind: 'tribe', name: 'Ithomiini', p: 0.86 }, { name: 'Heliconius erato', p: 0.12 }, new Map([['Heliconius', 0.12]]))).toEqual([
+      { kind: 'genus', name: 'Heliconius', p: 0.12, sure: false },
+      { kind: 'tribe', name: 'Ithomiini', p: 0.86, sure: true },
+    ])
   })
 
-  it('the live file names Ithomiini and Danainae for Mechanitis, and a tribe\'s subfamily', () => {
+  it('the live file names Ithomiini and Danainae for Mechanitis, Dismorphiinae alone for a Dismorphia', () => {
     const file = new URL('../../../../tools/identifier/taxonomy_6fa6ab78.json', import.meta.url)
     const t = JSON.parse(readFileSync(file, 'utf8')) as Taxonomy
-    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, t)).toEqual({ tribe: 'Ithomiini', subfamily: 'Danainae' })
-    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, t)).toEqual({ tribe: 'Ithomiini', subfamily: 'Danainae' })
-    expect(ranksAbove({ kind: 'tribe', name: 'Ithomiini', p: 0.9 }, t)).toEqual({ tribe: null, subfamily: 'Danainae' })
+    expect(ranksAbove('Mechanitis polymnia', t)).toEqual({ tribe: 'Ithomiini', subfamily: 'Danainae' })
     const dismorphia = Object.keys(t.species).find(sp => sp.startsWith('Dismorphia '))!
-    expect(ranksAbove({ kind: 'species', name: dismorphia }, t)).toEqual({ tribe: null, subfamily: 'Dismorphiinae' })
+    expect(ranksAbove(dismorphia, t)).toEqual({ tribe: null, subfamily: 'Dismorphiinae' })
   })
 })
