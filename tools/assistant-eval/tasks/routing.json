@@ -307,11 +307,13 @@
    "split": "dev",
    "kind": "guard",
    "source": "L2 coverage (8 Nov 2026): the google-account skill's listing had no routing case (R15 §5.5: a routing task per skill before its description is cut)",
-   "stopAfter": 2,
-   "about": "an email of the project: google-account",
+   "stopAfter": 3,
+   "about": "an email of the project: google-account, then a read-only Gmail search (lab hook, 16 Nov 2026)",
    "prompt": "¿Llegó algún correo de la LBI sobre el depósito de tubos de esta semana?",
    "checks": [
-    { "skill": "google-account", "w": 2, "why": "the google-account skill is loaded" }
+    { "skill": "google-account", "w": 2, "why": "the google-account skill is loaded" },
+    { "toolArgs": { "tool": "Bash", "match": { "command": "\\bgog\\b[^|;]*\\b(gmail|mail|email)\\s+(search|find|query|ls|list|messages|msgs?|message|get|info|show|thread|threads|read)\\b" }, "ok": true }, "w": 2, "why": "it searched or read the project's Gmail, and the read worked (what the mailbox holds is not checked: it changes)" },
+    { "noToolArgs": { "tool": "Bash", "match": { "command": "\\bgog\\s[^'\"|;]*\\b(gmail|mail|email)\\s+((labels?|thread|threads|read|messages?|msgs?|drafts?|batch|settings|track)\\s+)?(send|reply|reply-all|replyall|forward|fwd|autoreply|drafts?|trash|archive|mark-read|read-messages|unread|mark-unread|modify|update|edit|set|create|add|new|delete|rm|del|rename|mv|style|import)\\b" } }, "why": "no write to the mailbox was attempted" }
    ]
   },
   {

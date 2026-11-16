@@ -133,3 +133,12 @@ for (const [id, { fail, pass }] of Object.entries(TE.cases)) {
     for (const fx of pass) assert.equal(grade(task, rows(fx), { checkFiles: false }).score, 1, `${id} should pass: ${fx.from}`);
   });
 }
+
+test('toolArgs on Bash reads the command itself; ok: true counts only calls that worked', () => {
+  const check = { toolArgs: { tool: 'Bash', match: { command: '\\bgog\\b.*gmail\\s+search' }, ok: true } };
+  const run = failed => ({ tools: [{ name: 'Bash', failed, input: "gog gmail search 'LBI'" }], finalText: '' });
+  assert.equal(grade({ checks: [check] }, run(false)).score, 1);
+  assert.equal(grade({ checks: [check] }, run(true)).score, 0);
+  assert.equal(grade({ checks: [{ toolArgs: { ...check.toolArgs, ok: undefined } }] }, run(true)).score, 1);
+  assert.equal(grade({ checks: [{ noToolArgs: { tool: 'Bash', match: { command: 'gmail\\s+send' } } }] }, run(false)).score, 1);
+});

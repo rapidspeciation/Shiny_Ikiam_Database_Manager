@@ -9,7 +9,8 @@
 //   lab snapshot: in-memory sheets, LocalDrive sandbox, no Google writes, no WhatsApp sender), its DB a fresh copy of
 //   a frozen base (VACUUM INTO of the lab's offline DB) with the eval's own MCP token for the admin `lab`.
 // - Workspace: ~/.t3-ithomiini-lab/workspaces-eval/eval, a copy of the lab workspace's layout written from the
-//   checkout's assistant/ (brief, skills, subagents), MCP pointing at this app, Google CLIs and wacli denied.
+//   checkout's assistant/ (brief, skills, subagents), MCP pointing at this app, gcloud and wacli denied, the
+//   project's Gmail read-only (scripts/lab-gmail-read.mjs).
 //   Its T3 project in the lab T3 is made once (`t3 project add`).
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -17,6 +18,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evalSettings } from './eval-settings.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LAB = '/home/franz/.cache/ithomiini-lab';
@@ -74,13 +76,8 @@ async function workspace() {
     mkdirSync(join(WS, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true });
     cpSync(bridgeSkill, join(WS, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'));
   }
-  // The lab's settings, plus the eval's denies (Google CLIs: this PC's gog holds the project account's token).
-  const settings = JSON.parse(readFileSync(join(LAB_WS, '.claude', 'settings.json'), 'utf8'));
-  const extra = ['Bash(gog*)', 'Bash(*gog *)', 'Bash(*/gog*)', 'Bash(gcloud*)', 'Bash(*gcloud*)', 'Bash(*gsutil*)', 'Read(//home/franz/.config/gogcli/**)', 'Read(//home/franz/.config/gcloud/**)'];
-  settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...extra])];
-  settings.sandbox ??= {};
-  settings.sandbox.filesystem ??= {};
-  settings.sandbox.filesystem.denyRead = [...new Set([...(settings.sandbox.filesystem.denyRead ?? []), '/home/franz/.config/gogcli', '/home/franz/.config/gcloud', '/home/franz/.local/bin/gog'])];
+  // The lab's settings, plus the eval's Google rules (eval-settings.mjs: gcloud denied, the project's Gmail read-only).
+  const settings = await evalSettings(JSON.parse(readFileSync(join(LAB_WS, '.claude', 'settings.json'), 'utf8')), { checkout: CHECKOUT });
   settings.disableClaudeAiConnectors = true;
   // The eval folder is under /home/franz, so Claude Code also loads /home/franz/.claude/CLAUDE.md (Franz's own notes,
   // about 1.0k tokens) as a parent folder's CLAUDE.md. Production's /home/ubuntu has none (checked 6 Nov 2026).
