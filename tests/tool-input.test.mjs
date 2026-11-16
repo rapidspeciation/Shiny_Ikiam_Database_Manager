@@ -58,6 +58,10 @@ test('a key a tool reads in place of a schema key is no unknown key and stands f
   assert.deepEqual(notes('count_records', { module: 'Collection_data' }, { count: 3 }), { count: 3 });
   assert.deepEqual(notes('get_record', { recordId: 'r1' }, { error: 'Record not found' }), { error: 'Record not found' });
   assert.deepEqual(notes('maps_snapshot', { taxa: ['Mechanitis'] }, { ok: 1 }), { ok: 1 });
+  // Only for the key it stands for (critic r2): another required key is still named, and an optional accepted key stands for none.
+  assert.match(notes('send_sheet_photos', { sheet: 'S1' }, { error: 'e' }).error, /^Missing key: 'tiles'/);
+  assert.match(notes('find_records', { groupBy: 'Sex' }, { error: 'Unknown sheet ' }).error, /^Missing key: 'module'\. Unknown sheet$/);
+  assert.match(notes('maps_snapshot', { near: { lat: 0, lng: 0 } }, { error: 'e' }).error, /^Missing key: 'species'/);
 });
 
 test('an answer that worked keeps its content; keys outside the schema get a note, keys a tool reads on purpose none', () => {

@@ -8,7 +8,7 @@
 
 /**
  * Keys a tool reads that its schema leaves out (fewer bytes in the chats' context, or an older call
- * shape): never "unknown", and given they may stand for a required key. From an audit of the handlers (16 Nov).
+ * shape): never "unknown". From an audit of the handlers (16 Nov).
  */
 export const ACCEPTED_KEYS = {
   search_text: ['text', 'q'],
@@ -23,6 +23,17 @@ export const ACCEPTED_KEYS = {
   rack_report: ['racks', 'responsable', 'ultracongelador'],
   update_websites: ['fresh'],
   list_history: ['formulas'],
+};
+
+/** The accepted keys a tool reads in place of one of its required keys (`module ?? sheet`): given, that key is not missing. */
+const STANDS_FOR = {
+  find_records: { sheet: 'module' },
+  describe_sheet: { sheet: 'module' },
+  count_records: { module: 'sheet' },
+  get_record: { key: 'id', recordId: 'id' },
+  search_text: { text: 'query', q: 'query' },
+  maps_snapshot: { taxa: 'species' },
+  send_sheet_photos: { sheet: 'sheets' },
 };
 
 /**
@@ -131,11 +142,13 @@ export function unknownKeys(name, schema, args) {
     .map(key => ({ key, use: closestKey(key, keys) }));
 }
 
-/** The required keys missing from a non-empty input; none when it has a key the tool reads in their place (ACCEPTED_KEYS). */
-const missingKeys = (name, schema, args) =>
-  isEmpty(args) || (ACCEPTED_KEYS[name] ?? []).some(k => args[k] !== undefined)
-    ? []
-    : (schema?.required ?? []).filter(k => args[k] === undefined || args[k] === null);
+/** The required keys missing from a non-empty input, but for one given by a key the tool reads in its place (STANDS_FOR). */
+const missingKeys = (name, schema, args) => {
+  if (isEmpty(args)) return [];
+  const given = key => args[key] !== undefined && args[key] !== null;
+  const standIns = Object.entries(STANDS_FOR[name] ?? {});
+  return (schema?.required ?? []).filter(k => !given(k) && !standIns.some(([alias, req]) => req === k && given(alias)));
+};
 
 const unknownLine = (name, schema, unknown) => {
   const keys = Object.keys(schema?.properties ?? {});
@@ -150,7 +163,7 @@ const unknownLine = (name, schema, unknown) => {
 
 /**
  * A tool's answer with the input notes: an error starts with what was wrong in the input (unknown
- * keys, missing required keys, or what an empty input needs; then the tool's own error); an
+ * keys, missing required keys (STANDS_FOR aside), or what an empty input needs; then the tool's own error); an
  * answer that worked keeps its content and says in `inputWarning` which keys were not the tool's.
  * `out`: the tool's answer (an object, or text for query).
  */
