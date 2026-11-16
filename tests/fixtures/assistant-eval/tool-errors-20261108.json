@@ -1,0 +1,725 @@
+{
+ "about": "Offline grading of the routing cases T01–T06 (T06 from the retro of 2026-11-09) (tools/assistant-eval/tasks/routing.json) on the behaviour the weekly retro of 2026-11-08 logged (`fail`: each must score below 1, so the case fails on it) and on the behaviour the tool fixes of branch tool-errors-20261108 allow (`pass`: score 1). Calls from the app assistant's Claude transcripts the retro cites (session id prefix and the call numbers, transcript duplicates dropped), inputs cut to the keys the checks read; `hand-built` rows put a logged sequence on the case's own prompt (its CAM, ID or column). T03/T04 also fail on one failed query with nothing after it (okAfterErrors). The tools' answers are not stored: only name, input and whether the call failed, as run.mjs records them.",
+ "cases": {
+  "T01": {
+   "fail": [
+    {
+     "from": "6058857a (eval chat) calls 1, 3, 5 and 6: the draft refused for view.columns TAXON_ID, then sent again without it",
+     "tools": [
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT _row, _id, * FROM Collection_data WHERE CAM_ID LIKE '%72661%'"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT at, field, before, after FROM history WHERE id_label LIKE '%72661%'"
+       }
+      },
+      {
+       "name": "propose_changes",
+       "input": {
+        "changes": [
+         {
+          "values": {
+           "SPECIES": "Hypothyris euclea"
+          }
+         }
+        ],
+        "view": {
+         "columns": [
+          "CAM_ID",
+          "Genus",
+          "SPECIES",
+          "Subspecies_Form",
+          "TAXON_ID",
+          "Sex",
+          "Collection_date"
+         ]
+        }
+       },
+       "failed": true
+      },
+      {
+       "name": "propose_changes",
+       "input": {
+        "changes": [
+         {
+          "values": {
+           "SPECIES": "Hypothyris euclea"
+          }
+         }
+        ],
+        "view": {
+         "columns": [
+          "CAM_ID",
+          "Genus",
+          "SPECIES",
+          "Subspecies_Form",
+          "Sex",
+          "Collection_date"
+         ]
+        }
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: 6058857a's two drafts on T01's CAM070635",
+     "tools": [
+      {
+       "name": "get_record",
+       "input": {
+        "id": "CAM070635"
+       }
+      },
+      {
+       "name": "propose_changes",
+       "input": {
+        "changes": [
+         {
+          "values": {
+           "SPECIES": "Napeogenes inachia",
+           "Subspecies_Form": "pozziana"
+          }
+         }
+        ],
+        "view": {
+         "columns": [
+          "Genus",
+          "TAXON_ID"
+         ]
+        }
+       },
+       "failed": true
+      },
+      {
+       "name": "propose_changes",
+       "input": {
+        "changes": [
+         {
+          "values": {
+           "SPECIES": "Napeogenes inachia",
+           "Subspecies_Form": "pozziana"
+          }
+         }
+        ],
+        "view": {
+         "columns": [
+          "Genus"
+         ]
+        }
+       }
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the same draft accepted with TAXON_ID left out (viewLeftOut)",
+     "tools": [
+      {
+       "name": "get_record",
+       "input": {
+        "id": "CAM070635"
+       }
+      },
+      {
+       "name": "propose_changes",
+       "input": {
+        "changes": [
+         {
+          "values": {
+           "SPECIES": "Napeogenes inachia",
+           "Subspecies_Form": "pozziana"
+          }
+         }
+        ],
+        "view": {
+         "columns": [
+          "Genus",
+          "TAXON_ID"
+         ]
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "T02": {
+   "fail": [
+    {
+     "from": "0d59bce5 (lab WhatsApp) calls 0-3: get_record 3FE in Insectary_data refused, a Bash search of the skills, Insectary_data_all with no rows",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "get_record",
+       "input": {
+        "id": "3FE",
+        "sheet": "Insectary_data"
+       },
+       "failed": true
+      },
+      {
+       "name": "Bash",
+       "input": {
+        "command": "grep -rniE \"sobre|envelope\" data-rules/"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT _row, Insectary_ID, SPECIES, CAM_ID FROM Insectary_data_all WHERE Insectary_ID LIKE '3FE%'"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: 0d59bce5's calls on T02's 4EA, without the Bash call",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "get_record",
+       "input": {
+        "id": "4EA",
+        "sheet": "Insectary_data"
+       },
+       "failed": true
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT _row, Insectary_ID, CAM_ID FROM Insectary_data_all WHERE Insectary_ID LIKE '4EA%'"
+       }
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the refusal names the F1/F2_MutationRate row and its recordId, which is followed",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "get_record",
+       "input": {
+        "id": "4EA",
+        "sheet": "Insectary_data"
+       },
+       "failed": true
+      },
+      {
+       "name": "get_record",
+       "input": {
+        "id": "e3a1c0de-5a1e-4c0d-9a7e-000000000530"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: get_record without a sheet finds it at once",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "get_record",
+       "input": {
+        "id": "4EA"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "T03": {
+   "fail": [
+    {
+     "from": "hand-built: 79e43f92 (lab WhatsApp) calls 6-8 after the bridge skill: Transect_ID refused with no near, a _columns look-up, the query again",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(DISTINCT Collection_date) days, COUNT(*) caps FROM Collection_data WHERE Transect_ID LIKE '%T1%' GROUP BY Cloud_cover"
+       },
+       "failed": true
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT column FROM _columns WHERE sheet='Collection_data' AND (column LIKE '%ransect%' OR column LIKE '%Cloud%')"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) caps FROM Collection_data WHERE Transect_section = '1' GROUP BY Cloud_cover"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: the same with describe_sheet as the look-up",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_ID = '2' GROUP BY 1"
+       },
+       "failed": true
+      },
+      {
+       "name": "describe_sheet",
+       "input": {
+        "module": "Collection_data"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_section = '2' GROUP BY 1"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: one failed query, then nothing (the run stopped or the chat answered without the data)",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_ID = '2' GROUP BY 1"
+       },
+       "failed": true
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the error lists Collection_data's columns; the next query uses Transect_section",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_ID = '2' GROUP BY 1"
+       },
+       "failed": true
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_section = '2' GROUP BY 1"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: the columns looked up first, no error",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT column FROM _columns WHERE sheet = 'Collection_data'"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Cloud_cover, COUNT(*) FROM Collection_data WHERE Transect_section = '2' GROUP BY 1"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "T04": {
+   "fail": [
+    {
+     "from": "hand-built: 7331d8bc (lab WhatsApp) calls 2, 4 and 7 in an app chat: Sampling_protocol refused, a _columns look-up, the query by Purpose",
+     "tools": [
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol,'')) LIKE '%monitor%') FROM Collection_data"
+       },
+       "failed": true
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT column FROM _columns WHERE sheet='Collection_data' AND (fold(column) LIKE '%protocol%' OR fold(column) LIKE '%method%')"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Purpose, count(*) n FROM Collection_data GROUP BY Purpose ORDER BY n DESC"
+       }
+      }
+     ]
+    },
+    {
+     "from": "7331d8bc calls 2-3: Sampling_protocol refused, then a Bash search",
+     "tools": [
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT count(*) n, sum(fold(coalesce(Sampling_protocol,'')) LIKE '%monitor%') FROM Collection_data"
+       },
+       "failed": true
+      },
+      {
+       "name": "Bash",
+       "input": {
+        "command": "grep -rli \"transect\" knowledge/"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: one failed query, then nothing",
+     "tools": [
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Sampling_protocol, count(*) FROM Collection_data GROUP BY 1"
+       },
+       "failed": true
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the error lists Collection_data's columns; the next query groups by Purpose",
+     "tools": [
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Sampling_protocol, count(*) FROM Collection_data GROUP BY 1"
+       },
+       "failed": true
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT Purpose, count(*) n FROM Collection_data GROUP BY Purpose ORDER BY n DESC"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "T05": {
+   "fail": [
+    {
+     "from": "1a8baf5f (lab WhatsApp) calls 0-4: sync_documents fails on \"path\" undefined, then the google-account skill's gog",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "Bash",
+       "input": {
+        "command": "cd knowledge; grep -ril \"resumen\\|reuni\\|meeting\" ."
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__sync_documents,mcp__db__search_text",
+        "max_results": 2
+       }
+      },
+      {
+       "name": "sync_documents",
+       "input": {},
+       "failed": true
+      },
+      {
+       "name": "Bash",
+       "input": {
+        "command": "grep -n \"gog\\|account\" .claude/skills/google-account/SKILL.md"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: 1a91b80b (lab WhatsApp) calls 3-5: the Drive connector after the failure",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__sync_documents",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "sync_documents",
+       "input": {},
+       "failed": true
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__claude_ai_Google_Drive__search_files",
+        "max_results": 1
+       }
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the clear refusal (no documents folder on this server) is told, nothing else tried",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__sync_documents",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "sync_documents",
+       "input": {},
+       "failed": true
+      }
+     ]
+    },
+    {
+     "from": "hand-built: production, where the sync works and the new minutes are searched in the folder",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__sync_documents",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "sync_documents",
+       "input": {}
+      },
+      {
+       "name": "Bash",
+       "input": {
+        "command": "grep -ril \"acta\" \"$KNOWLEDGE_DIR/drive\" | head"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "T06": {
+   "fail": [
+    {
+     "from": "3f150c9b (eval chat) calls 1, 4, 5, 7-9: query on tubes refused, then search_text",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__search_text",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "search_text",
+       "input": {
+        "query": "FS99990002"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT tube, sheet, field, entered FROM tubes WHERE tube LIKE 'FS9999%' ORDER BY tube LIMIT 20"
+       },
+       "failed": true
+      },
+      {
+       "name": "search_text",
+       "input": {
+        "query": "CAM078427"
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: the failed query on tubes, then nothing",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT * FROM tubes WHERE tube = 'FS3886683'"
+       },
+       "failed": true
+      }
+     ]
+    }
+   ],
+   "pass": [
+    {
+     "from": "hand-built: the error names tubes_lookup, which is loaded and called",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT * FROM tubes WHERE tube = 'FS3886683'"
+       },
+       "failed": true
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__tubes_lookup",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "tubes_lookup",
+       "input": {
+        "tubes": [
+         "FS3886683"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: tubes_lookup at once",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "ToolSearch",
+       "input": {
+        "query": "select:mcp__db__tubes_lookup",
+        "max_results": 1
+       }
+      },
+      {
+       "name": "tubes_lookup",
+       "input": {
+        "tubes": [
+         "FS3886683"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "from": "hand-built: main's copy, where the tubes table is there",
+     "tools": [
+      {
+       "name": "Skill",
+       "input": {
+        "skill": "whatsapp-bridge"
+       }
+      },
+      {
+       "name": "query",
+       "input": {
+        "sql": "SELECT tube, sheet, field FROM tubes WHERE tube = 'FS3886683'"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

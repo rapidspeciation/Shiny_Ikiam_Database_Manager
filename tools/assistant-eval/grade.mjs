@@ -12,6 +12,7 @@
 //   anyOf: [checks]       at least one of these checks passes
 //   maxTools: n           at most n tool calls (Bash counted)
 //   noToolErrors: true    no failed tool call
+//   okAfterErrors: name | [names]   a call of these tools that worked, after the last one of them that failed
 //   toolArgs: { tool | [tools], match: {arg: regex} }   a call of that tool (one of them) whose arguments match
 //   noToolArgs: { tool | [tools], match }   no such call
 //   skill: name           the chat loaded that skill (a Skill call, or a Read of skills/<name>/SKILL.md)
@@ -207,7 +208,12 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
     }
     else if (c.noTool) pass = !tools.some(t => [c.noTool].flat().includes(t.name));
     else if (c.maxTools != null) pass = tools.length <= c.maxTools;
-    else if (c.noToolErrors) {
+    else if (c.okAfterErrors) {
+      const calls = tools.filter(t => [c.okAfterErrors].flat().includes(t.name));
+      const lastFailed = calls.map(t => !!t.failed).lastIndexOf(true);
+      pass = calls.some((t, i) => !t.failed && i > lastFailed);
+      detail = pass ? undefined : calls.length ? 'nothing worked after the last failed call' : 'no call';
+    } else if (c.noToolErrors) {
       const bad = tools.filter(t => t.failed);
       pass = bad.length === 0;
       detail = bad.length ? bad.map(t => t.name).join(', ') : undefined;
