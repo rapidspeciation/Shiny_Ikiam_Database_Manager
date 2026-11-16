@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15056,
-      "reason": "Counting fix (16 Nov, Franz: a reply said 41 females where the counts add up to 48): any arithmetic is done with a tool (query or python), never in the head; a worked-out total goes after its list"
+      "bytes": 15059,
+      "reason": "Counting fix (16 Nov, Franz: a reply said 41 females where the counts add up to 48): do any arithmetic with bash or python, never in the head; a total no tool printed goes after its list"
     },
     "skill:app-dev": {
       "bytes": 423,

@@ -23,10 +23,13 @@
 //   proposal: { sheet, row | id, field, equals | matches | blank }   a drafted (not discarded) change has it
 //   noApply: true         no proposal of the chat was applied
 //   proposalOnly: { sheet, rows?, ids?, fields }   every drafted change stays inside these rows/ids and fields
-//   numbers: true | { allow: [n..], turn?, scope? }   every number the answer writes is in a tool result of the chat
+//   numbers: true | { allow: [n..] }   (turn / scope on the check, as for the text checks) every number the answer
+//                         writes is in a tool result of the chat
 //                         (all its calls, not only the graded ones), a prompt or `allow`; dates, times, years, IDs
 //                         and codes excepted (numbersIn). A total added up in the head fails, and so do ♀/♂ parts
-//                         that do not add up to the number they follow on their line (partsMismatch).
+//                         that do not add up to the number they follow on their line (partsMismatch). A rounded
+//                         value (21,7 for 21.6667) or a share as a percent (25 % for 0.25) is not the tool's number:
+//                         it fails too, unless a tool printed it.
 // Routing cases (tier 'routing') are graded on their first `stopAfter` tool calls only (default 3): the run is
 // interrupted there (run.mjs), and calls the model started before the stop took effect are not graded.
 // Text checks read the chat's final answer (the last message of the last run: what WhatsApp sends);
@@ -168,9 +171,9 @@ const DATE_PATTERNS = [
   /\b(?:el|del|al)\s+(?:[12]?\d|3[01])(?=\s*(?:[.,;:)!?]|$|\s+(?:y|al|a|hasta)\s+(?:el\s+)?\d))/gim,
 ];
 /** A token with letters and digits together (CAM070903, A7E.1, 5VB, FS90415684, T2, n=3) is an ID or code. */
-const CODE = /[\p{L}_#=][\p{L}\p{N}_.#=/-]*\p{N}[\p{L}\p{N}_.#=/-]*|\p{N}+[\p{L}_][\p{L}\p{N}_.#=/-]*/gu;
-/** A number as written: 2.752 / 2,752 / 2 752 thousands, 0,8 / 0.8 decimals. */
-const NUMBER = /(?<![\p{L}\p{N}.,])\d{1,3}(?:(?:[.,]|\s(?=\d{3}\b))\d{3})+(?![\p{N}]|[.,]\d)|(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)?(?![\p{L}\p{N}]|[.,]\d)/gu;
+const CODE = /[\p{L}_#][\p{L}\p{N}_.#/-]*\p{N}[\p{L}\p{N}_.#/-]*|\p{N}+[\p{L}_][\p{L}\p{N}_.#/-]*/gu;
+/** A number as written: 2.752 / 2,752 thousands, 0,8 / 0.8 decimals. (Not "2 752": tool output separates numbers with spaces and tabs.) */
+const NUMBER = /(?<![\p{L}\p{N}.,])\d{1,3}(?:[.,]\d{3})+(?![\p{N}]|[.,]\d)|(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)?(?![\p{L}\p{N}]|[.,]\d)/gu;
 function numberValue(text) {
   const t = text.replace(/\s/g, '');
   if (/^\d{1,3}([.,])\d{3}(\1\d{3})*$/.test(t) && !/^0[.,]/.test(t)) return Number(t.replace(/[.,]/g, ''));
@@ -222,6 +225,8 @@ export function partsMismatch(text) {
       }
       const units = new Set(parts.map(p => p.unit));
       if (parts.length < 2 || !units.has('female') || !units.has('male') || parts[0].index - whole.index > 60) return;
+      // A label or a span before the parts («Jaula 2: 4 ♀ y 5 ♂», «En 30 días hubo 48 ♀») is no whole.
+      if (whole.value < Math.max(...parts.map(p => p.value))) return;
       const sum = parts.reduce((n, p) => n + p.value, 0);
       if (sum !== whole.value && !nums.some(x => x.value === sum)) bad.push({ whole: whole.value, parts: parts.map(p => p.value), sum });
     });
@@ -232,13 +237,17 @@ export function partsMismatch(text) {
 /** Every number the sources hold (tool results, prompts), as values; IDs' digits do not count. */
 export function sourceNumbers(texts) {
   const set = new Set();
-  for (const t of texts) for (const { value } of numbersIn(t, { years: true })) set.add(value);
+  for (const t of texts) {
+    for (const { value } of numbersIn(t, { years: true })) set.add(value);
+    // Also every run of digits, so compact output (a list [10,13,9], CSV 48,49) supports its numbers.
+    for (const m of masked(t).s.matchAll(/\d+/g)) set.add(Number(m[0]));
+  }
   return set;
 }
 
 /**
- * `numbers` check: the numbers of the graded text that no source supports. spec: true or { allow: [numbers],
- * turn, scope } (`allow`: figures the brief or a document gives). Sources: every settled tool result of the chat
+ * `numbers` check: the numbers of the graded text that no source supports. spec: true or { allow: [numbers] }
+ * (`allow`: figures the brief or a document gives; the turn graded is the caller's, `turn` / `scope` on the check). Sources: every settled tool result of the chat
  * (`run.tools[].result`) and the prompts (`run.prompts`). → { pass, detail }.
  */
 export function numbersCheck(run, text, spec = {}) {
@@ -351,7 +360,7 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
       detail = r.detail;
     } else if (c.numbers) {
       const raw = c.scope === 'all' ? run.allText ?? run.finalText : c.turn ? run.turnTexts?.[c.turn - 1] : run.finalText;
-      const r = numbersCheck({ ...run, tools: run.tools ?? [] }, raw ?? '', c.numbers);
+      const r = numbersCheck(run, raw ?? '', c.numbers);
       pass = r.pass;
       detail = r.detail;
     } else throw new Error(`unknown check ${JSON.stringify(c)}`);

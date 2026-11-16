@@ -173,7 +173,6 @@ function transcriptUsage(db, threadId, instance) {
   return u;
 }
 
-/** Metrics of one chat, read-only from the lab T3 state DB. */
 /** A settled call's result as text for the number check (grade.mjs numbers): MCP text parts joined, else JSON. */
 const RESULT_KEPT = 60000;
 function resultText(output) {
@@ -182,6 +181,7 @@ function resultText(output) {
   return text.slice(0, RESULT_KEPT);
 }
 
+/** Metrics of one chat, read-only from the lab T3 state DB. */
 function chatMetrics(threadId, instance = RUN.instance) {
   const db = new DatabaseSync(join(LAB.home, 'userdata', 'statev2.sqlite'), { readOnly: true, timeout: 5000 });
   try {
