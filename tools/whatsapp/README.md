@@ -56,7 +56,7 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
     Parakeet if Scribe fails, then whisper); after a failed Scribe upgrade later turns reuse the stored transcript;
   - a note whose transcript calls Claude counts as @claude (`voiceAddressed`): in Franz's chat «Claude» anywhere, in the
     group only among the first six words («Claude, …», «oye Claude …»); also Claud, Klaud, Clod, and «Cloud» only as a
-    call followed by a comma, ? or ! («Cloud, …», «oye cloud, …»), never as a noun («ok cloud storage»); never Claudio or Claudia. A group note that only talks about Claude
+    call followed by a comma, ? or ! («Cloud, …», «oye cloud, …»), never as a noun («ok cloud storage»); never Claudio, and «Claudia» only in Franz's chat as a call («Claudia, …», a Parakeet mishearing of Claude). A group note that only talks about Claude
     early («ayer Claude me dijo…») does wake it, and the turn is told to end in [silent] (👀, then the silent mark). The
     hourly limit, /stop and the ack apply; the answer starts with «🎙️ «what was heard (80 characters)»»;
   - the bridge's own voice replies (they come back as Franz's audio) are skipped by id; a voice send that gives back no
