@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 14876,
-      "reason": "Franz's flash frozen count (12 Nov): counts that span countries open with the total and the Ecuador figure, by Country or Collection_location; a twin row counted once"
+      "bytes": 15059,
+      "reason": "Counting fix (16 Nov, Franz: a reply said 41 females where the counts add up to 48): any arithmetic is done with a tool (query or python), never in the head; a worked-out total goes after its list"
     },
     "skill:app-dev": {
       "bytes": 423,
