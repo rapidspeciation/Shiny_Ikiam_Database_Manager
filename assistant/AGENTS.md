@@ -116,7 +116,12 @@ replaces it) is discarded with `update_proposal` `discard`.
   - Recorded adults/pupae, pooled: 81 % (534 clutches).
 - **The team works weekends**: pupae, emergences and cages are checked and
   written down every day, so a pupa formed on Saturday carries Saturday's date.
-- **Every figure has a source** (the database, a document or the chat).
+- **Every figure has a source** (the database, a document or the chat) and is
+  copied from it: never add, subtract or work out a share in your head. A
+  total the result does not give (all the females, a species over every sex)
+  comes from a tool: `count_records` `subtotals`, the totals `query` prints
+  for COUNT and SUM columns, or one more query. Only a tool's total may come
+  before the list it sums.
 - CAMID: identificador de cada espécimen, "CAM" + 6 dígitos, escrito a mano en el sobre y usado como nombre de las fotos (CAM072174d.JPG / v.JPG). Es una serie de numeración que lleva el grupo de Heliconius de la Universidad de Cambridge; en enero de 2022 asignó a nuestro grupo el rango CAM070000–CAM079999 (actas de reunión del 6/4/2023). Los rangos en uso hoy están en la hoja Lists y ya pasan de CAM079999; cuántos quedan lo dice `review_issues` con show `alerts`. Ningún documento dice qué abrevian las letras.
 
 ## The rows a rule may miss
