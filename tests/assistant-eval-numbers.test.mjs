@@ -92,4 +92,7 @@ test('numbers next to each other in tool output stay apart; n=48 is a number; a 
   assert.equal(numbersCheck(run('Son 48 hembras.', ['n=48']), 'Son 48 hembras.').pass, true);
   // «Jaula 2: 4 ♀ y 5 ♂», «En 30 días hubo 48 ♀ y 49 ♂»: the parts are not of the number before them.
   assert.deepEqual(partsMismatch('Jaula 2: 4 ♀ y 5 ♂\nRack 12: 10 hembras, 15 machos\nEn 30 días hubo 48 ♀ y 49 ♂'), []);
+  assert.deepEqual(partsMismatch('Jaula 12: 4 ♀ y 5 ♂\nEl clutch 997 dio 40 ♀ y 30 ♂'), []);
+  const cage = numbersCheck({ tools: [{ result: 'Jaula 12: 4 ♀ y 5 ♂' }] }, 'Jaula 12: 4 ♀ y 5 ♂');
+  assert.equal(cage.pass, true);
 });

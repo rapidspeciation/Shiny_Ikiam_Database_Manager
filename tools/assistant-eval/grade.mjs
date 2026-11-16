@@ -27,9 +27,9 @@
 //                         writes is in a tool result of the chat
 //                         (all its calls, not only the graded ones), a prompt or `allow`; dates, times, years, IDs
 //                         and codes excepted (numbersIn). A total added up in the head fails, and so do ♀/♂ parts
-//                         that do not add up to the number they follow on their line (partsMismatch). A rounded
-//                         value (21,7 for 21.6667) or a share as a percent (25 % for 0.25) is not the tool's number:
-//                         it fails too, unless a tool printed it.
+//                         that do not add up to the number they follow on their line (partsMismatch). Every digit
+//                         run of a tool result counts, so a truncation (21 for 21.6667) or a decimal's digits (25
+//                         from 0.25) pass; a rounded value (21,7 or 22) fails, and so does «2 752» (read as 2 and 752).
 // Routing cases (tier 'routing') are graded on their first `stopAfter` tool calls only (default 3): the run is
 // interrupted there (run.mjs), and calls the model started before the stop took effect are not graded.
 // Text checks read the chat's final answer (the last message of the last run: what WhatsApp sends);
@@ -202,6 +202,8 @@ export function numbersIn(text, { years = false } = {}) {
   return out;
 }
 
+/** Words that make the number after them a label (a cage, a rack, a clutch), not a count. */
+const LABEL = /(?:jaulas?|cages?|racks?|cajas?|box|clutch(?:es)?|familias?|family|parejas?|pairs?|tubos?|tubes?|p[aá]ginas?|pages?|filas?|rows?|transectos?|lotes?|batch|n\.?º|no\.|#)\s*$/i;
 const SEX_UNIT = [['female', /^(?:♀|females?\b|hembras?\b)/i], ['male', /^(?:♂|males?\b|machos?\b)/i], ['na', /^(?:sin\s+sexo\b|NA\b)/]];
 /**
  * Parts against their whole, needing no data: in one line, a number followed by its ♀, ♂ (and sin sexo) parts that
@@ -225,8 +227,9 @@ export function partsMismatch(text) {
       }
       const units = new Set(parts.map(p => p.unit));
       if (parts.length < 2 || !units.has('female') || !units.has('male') || parts[0].index - whole.index > 60) return;
-      // A label or a span before the parts («Jaula 2: 4 ♀ y 5 ♂», «En 30 días hubo 48 ♀») is no whole.
+      // A label or a span before the parts («Jaula 12: 4 ♀ y 5 ♂», «En 30 días hubo 48 ♀») is no whole.
       if (whole.value < Math.max(...parts.map(p => p.value))) return;
+      if (LABEL.test(line.slice(0, whole.index))) return;
       const sum = parts.reduce((n, p) => n + p.value, 0);
       if (sum !== whole.value && !nums.some(x => x.value === sum)) bad.push({ whole: whole.value, parts: parts.map(p => p.value), sum });
     });
