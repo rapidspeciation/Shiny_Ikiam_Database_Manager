@@ -113,9 +113,9 @@ export function senderRole(who, { readMap = file => JSON.parse(readFileSync(file
     return `app account ${username} (records unreadable): guest`;
   }
   if (!user || !user.active) return `app account ${username} (not an active account): guest`;
-  const display = String(user.display_name ?? '').replace(/[\s«»[\]·,:()]+/g, ' ').trim().slice(0, 40);
-  const name = display ? ` (${display})` : '';
-  return user.role === 'admin' ? `app account ${username}${name}, admin` : `app account ${username}${name}, ${user.role}: guest`;
+  const display = String(user.display_name ?? '').replace(/[\s«»[\]·,:()]+/g, ' ').trim();
+  const name = display ? ` (${[...display].slice(0, 40).join('')})` : '';
+  return user.role === 'admin' ? `app account ${username}${name}, admin` : `app account ${username}${name}, ${user.role || 'no role'}: guest`;
 }
 
 function defaultUserOf(database, username) {

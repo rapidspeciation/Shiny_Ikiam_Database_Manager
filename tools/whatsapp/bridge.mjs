@@ -1259,7 +1259,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       const people = isGroup(chat) ? chat.people ?? null : null;
       const roleToken = people ? `[[sender-role ${randomUUID()}]]` : null;
       // The role part comes first and the WhatsApp name (set by the sender) is quoted and cleaned, so a name cannot pose as a role.
-      const waName = String(msg.fromMe ? 'Franz' : msg.pushName ?? 'sin nombre').replace(/[\s«»[\]·,:()]+/g, ' ').trim().slice(0, 40) || 'sin nombre';
+      const waNameAll = String(msg.fromMe ? 'Franz' : msg.pushName ?? 'sin nombre').replace(/[\s«»[\]·,:()]+/g, ' ').trim();
+      const waName = [...waNameAll].slice(0, 40).join('') || 'sin nombre';
       const who = `${roleToken ?? 'no linked app account: guest'} · WhatsApp name «${waName}»`;
       const head = chat.key === 'self' ? `[WhatsApp · Franz (self-chat) · ${hhmm(msg.at)}]` : `[WhatsApp · group «${chat.label}» · ${who} · ${hhmm(msg.at)}]`;
       const recent = recentMessages(chat, msg);
