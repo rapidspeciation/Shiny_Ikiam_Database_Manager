@@ -11,6 +11,7 @@ import { evalSettings, GOG_DENY } from '../tools/assistant-eval/eval-settings.mj
 mkdirSync(join(homedir(), '.cache', 'ithomiini-test'), { recursive: true });
 const hookDir = mkdtempSync(join(homedir(), '.cache', 'ithomiini-test', 'lab-hooks-'));
 after(() => rmSync(hookDir, { recursive: true, force: true }));
+const runShape = (plan, status) => `cat '/o' | ${plan.tail}\nexit ${status}`;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The google-account skill's command, as the S07 chat wrote it (8 Nov 2026 eval run).
 const SKILL_READ = `set -a; . ~/.config/ithomiini/gog.env; set +a\ngog --readonly --account ${ACCOUNT} --client ithomiini gmail search 'LBI OR depósito newer_than:10d' 2>&1 | head -40`;
@@ -88,7 +89,7 @@ test('the eval workspace allows a gog Gmail read (run by the hook, outside the s
   const read = ask(SKILL_READ);
   assert.equal(read.permissionDecision, 'allow');
   assert.equal(read.updatedInput.description, 'x');
-  assert.match(read.updatedInput.command, /^cat '.+\/out\.txt' \| head -40; exit 0$/);
+  assert.match(read.updatedInput.command, /^cat '.+\/out\.txt' \| head -40\nexit 0$/);
   const shown = execFileSync('/bin/sh', ['-c', read.updatedInput.command], { encoding: 'utf8' });
   assert.match(shown, /^fake gog: --readonly --gmail-no-send --no-input --enable-commands-exact=\S+ --account=\S+ --client=ithomiini gmail search -- LBI OR depósito/);
   assert.match(readFileSync(join(dir, 'reads.log'), 'utf8'), /gmail search\texit 0/);
@@ -126,6 +127,7 @@ test('review round 2: the output folder is one the lab sandbox reads but cannot 
   const sk = { name: 'Skill', input: '{"skill":"google-account"}' };
   assert.equal(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ }], finalText: '' }).score, 1);
   assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: 'echo "gog gmail search LBI"' }], finalText: '' }).score < 1);
+  for (const help of ['gog gmail search --help', 'gog gmail thread get --help', 'gog gmail -h']) assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: help }], finalText: '' }).score < 1, `${help} is no read`);
   assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ.replace("'LBI", "'is:unread LBI") }], finalText: '' }).score === 1, 'a read of unread mail is no write');
 });
 
@@ -134,6 +136,6 @@ test('review round 2: --help works as in production, and the call\'s status is g
   assert.deepEqual(classify('gog gmail search --help').read.argv.slice(-3), ['gmail', 'search', '--help']);
   assert.ok(classify('gog gmail send --help').deny);
   assert.ok(classify('gog gmail search x --fail-empty').deny);
-  const ok = decide({ tool_name: 'Bash', tool_input: { command: 'gog gmail search x | grep -i lbi' } }, plan => `cat '/o' | ${plan.tail}; exit 0`);
-  assert.match(ok.hookSpecificOutput.updatedInput.command, /\| grep -i lbi; exit 0$/);
+  const ok = decide({ tool_name: 'Bash', tool_input: { command: 'gog gmail search x | grep -i lbi' } }, plan => runShape(plan, 0));
+  assert.match(ok.hookSpecificOutput.updatedInput.command, /\| grep -i lbi\nexit 0$/);
 });

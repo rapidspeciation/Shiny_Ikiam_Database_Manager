@@ -308,7 +308,8 @@ export function runRead(plan, { workspace = '' } = {}) {
   } catch {}
   const show = `cat ${q(file)}`;
   // The call's status is gog's, also behind a filter (a grep that finds nothing does not fail a read that worked).
-  return plan.tail ? `${show} | ${plan.tail}; exit ${status}` : `${show}; exit ${status}`;
+  // On its own line: a `#` in the filter cannot comment it out.
+  return plan.tail ? `${show} | ${plan.tail}\nexit ${status}` : `${show}; exit ${status}`;
 }
 
 /** Output folders older than a day go (they hold mail text). */
