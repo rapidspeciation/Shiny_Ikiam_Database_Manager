@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { labAppDev } from '../server/brief.mjs';
+import { LEAN_DENY } from '../scripts/claude-lean.mjs';
 
 const script = new URL('../scripts/t3-provision.mjs', import.meta.url).pathname;
 
@@ -291,7 +292,7 @@ test('A WhatsApp workspace: a second one of the same person with its own token, 
   }
 });
 
-test('A workspace marked `denyRules: false` (the WhatsApp group) keeps no deny list: a refresh does not put it back', () => {
+test('A workspace marked `denyRules: false` (the WhatsApp group) keeps only the claude-lean trims as its deny list: a refresh does not put the other rules back', () => {
   const home = mkdtempSync(join(tmpdir(), 't3-provision-nodeny-'));
   try {
     const shared = join(home, 'ithomiini', 'shared');
@@ -310,7 +311,8 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps no deny l
     run('grupo');
     run('ana');
     assert.ok(settingsOf('grupo').permissions.deny.length > 0, 'an ordinary workspace has its deny list');
-    // The group's old hand-made block, then the flag: the next refresh-all drops the whole list and keeps the rest.
+    const onlyTrims = deny => assert.deepEqual(deny, LEAN_DENY);
+    // The group's old hand-made block, then the flag: the next refresh-all keeps only the trims and the rest of the file.
     const settingsFile = join(workspaces, 'grupo', '.claude', 'settings.json');
     const old = settingsOf('grupo');
     old.permissions.deny.push('Bash', 'Edit', 'Write', 'mcp__db__apply_proposal');
@@ -318,20 +320,29 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps no deny l
     writeFileSync(join(workspaces, 'grupo', '.claude', 'ithomiini-workspace.json'), JSON.stringify({ denyRules: false }));
     run('--refresh-all');
     const refreshed = settingsOf('grupo');
-    assert.equal(refreshed.permissions.deny, undefined);
+    onlyTrims(refreshed.permissions.deny);
+    assert.ok(!refreshed.permissions.deny.some(rule => /^(Read|Edit|Write)\(|^Bash|^mcp__/.test(rule)), 'no secrets, release or write rule');
+    assert.equal(refreshed.enableArtifact, false);
+    assert.equal(refreshed.disableBundledSkills, true);
     assert.ok(refreshed.permissions.allow.includes('mcp__db'));
     assert.equal(refreshed.enableAllProjectMcpServers, true);
     // A second refresh keeps it that way; the flag file is kept; other workspaces keep their rules.
     run('--refresh', 'grupo');
-    assert.equal(settingsOf('grupo').permissions.deny, undefined);
+    onlyTrims(settingsOf('grupo').permissions.deny);
     assert.deepEqual(JSON.parse(readFileSync(join(workspaces, 'grupo', '.claude', 'ithomiini-workspace.json'), 'utf8')), { denyRules: false });
-    assert.ok(settingsOf('ana').permissions.deny.length > 0);
+    assert.ok(settingsOf('ana').permissions.deny.some(rule => rule.startsWith('Read(')), 'other workspaces keep the secrets rules');
+    // The lean rollback (ITHOMIINI_CLAUDE_LEAN=0) leaves the group with no deny list at all.
+    execFileSync(process.execPath, [script, '--refresh', 'grupo'], { env: { ...env, ITHOMIINI_CLAUDE_LEAN: '0' }, encoding: 'utf8' });
+    assert.equal(settingsOf('grupo').permissions.deny, undefined);
+    assert.equal(settingsOf('grupo').enableArtifact, undefined);
+    run('--refresh', 'grupo');
+    onlyTrims(settingsOf('grupo').permissions.deny);
     // A second workspace of a person (folder not named after them) keeps the flag when it is refreshed.
     run('ana', '--workspace', 'ana-wa', '--title', 'Ana · WhatsApp');
     const own = join(workspaces, 'ana-wa', '.claude', 'ithomiini-workspace.json');
     writeFileSync(own, JSON.stringify({ ...JSON.parse(readFileSync(own, 'utf8')), denyRules: false }));
     run('--refresh', 'ana-wa');
-    assert.equal(settingsOf('ana-wa').permissions.deny, undefined);
+    onlyTrims(settingsOf('ana-wa').permissions.deny);
     assert.equal(JSON.parse(readFileSync(own, 'utf8')).denyRules, false);
   } finally {
     rmSync(home, { recursive: true, force: true });

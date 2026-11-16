@@ -83,13 +83,15 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
 
 **The group's workspace on claudeclaw** (`shared/t3-workspaces/wa-underground`, app user `wa-underground`,
 editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
-- No deny list (since 16 Nov 2026). Until then its `.claude/settings.json` denied `Bash`, `Edit`, `Write`, `NotebookEdit`
+- No restricting deny rule (since 16 Nov 2026). Until then its `.claude/settings.json` denied `Bash`, `Edit`, `Write`, `NotebookEdit`
   and the app tools that write without review (`apply_proposal`, `undo_edits`, `invite_person`, …), because anyone in the
   group could prompt the chat. Franz, 16 Nov: every member of the group has an account in the app, so a loose rule
   replaces the hard block. Its `.claude/ithomiini-workspace.json` has `"denyRules": false`, so `t3-provision.mjs`
-  (`--refresh`, `--refresh-all`) writes no deny rules there. The old file is kept beside it as
-  `settings.json.bak-<time>`. The whole list went, so the group's chat also lost the deny rules every other workspace has
-  (reading `~/.config/ithomiini`, editing `releases/` and `current/`, and the unused tools of `scripts/claude-lean.mjs`).
+  (`--refresh`, `--refresh-all`) writes there only the trims of `scripts/claude-lean.mjs` (unused Claude Code built-ins:
+  `Workflow`, `ScheduleWakeup`, `ReportFindings`, `ListAgents` and seven built-in subagent types, about 6.5k tokens per
+  call; not a restriction, and none of them is the app's own, so they can only be hidden, not deleted). The old file is
+  kept beside it as `settings.json.bak-<time>`. Unlike every other workspace, the group's chat may read
+  `~/.config/ithomiini` and edit `releases/` and `current/` (Franz, 16 Nov: no restrictions there).
   Deploy the helper (`t3-turn.mjs`, with `t3-progress.mjs`) to claudeclaw before a bridge that sends `who`: an older
   helper leaves the token in the header, which the skill reads as a guest.
 - **Who is who.** Each group turn's header names the sender's app account and whether it is an active admin, e.g.

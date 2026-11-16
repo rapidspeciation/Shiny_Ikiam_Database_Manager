@@ -11,14 +11,18 @@
 // With these trims the photo tasks (G01, M02, N02) often skipped the maps-gallery skill and took gallery_specimens
 // instead of taxon_photos (3 of 12 runs right, against 3 of 3 on the full workspace). The maps-gallery row in the
 // brief's skills table and the bridge skill's "load maps-gallery first" brought it to 12 of 12 (R15, 6-7 Nov 2026).
+// Every one of them is a Claude Code built-in (tool, subagent type or bundled skill), not one of the app's: none is
+// defined in this repo, so none can be deleted here, only hidden through these settings (checked 16 Nov 2026).
 export const UNUSED_TOOLS = ['Workflow', 'ScheduleWakeup', 'ReportFindings', 'ListAgents'];
 export const UNUSED_AGENTS = ['Explore', 'Plan', 'general-purpose', 'claude-code-guide', 'web-fetch', 'statusline-setup', 'claude'];
+/** The deny rules leanClaude adds: the unused tools and subagent types. */
+export const LEAN_DENY = [...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)];
 
 export function leanClaude(settings) {
   settings.enableArtifact = false;
   settings.disableBundledSkills = true;
   settings.permissions ??= {};
-  settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)])];
+  settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...LEAN_DENY])];
   return settings;
 }
 
@@ -26,7 +30,7 @@ export function leanClaude(settings) {
 export function unleanClaude(settings) {
   delete settings.enableArtifact;
   delete settings.disableBundledSkills;
-  const ours = new Set([...UNUSED_TOOLS, ...UNUSED_AGENTS.map(a => `Agent(${a})`)]);
+  const ours = new Set(LEAN_DENY);
   if (settings.permissions?.deny) settings.permissions.deny = settings.permissions.deny.filter(rule => !ours.has(rule));
   return settings;
 }
