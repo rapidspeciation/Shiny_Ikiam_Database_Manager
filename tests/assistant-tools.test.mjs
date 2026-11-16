@@ -627,17 +627,6 @@ test('count_records counts by filters, place and groups', async () => {
     const byYear = await call('count_records', { sheet: 'Collection_data', groupBy: ['Collection_date:year', 'Preservation_medium'] });
     assert.deepEqual(byYear.groups.find(g => g['Collection_date:year'] === '2026' && g.Preservation_medium === 'Flash frozen').n, 2);
     assert.ok(byYear.groups.some(g => g['Collection_date:year'] === '(empty)'));
-    // Each groupBy column's totals over the groups, adding up to the total.
-    for (const column of ['Collection_date:year', 'Preservation_medium']) {
-      const sub = byYear.subtotals[column];
-      assert.equal(Object.values(sub).reduce((a, b) => a + b, 0), byYear.total, column);
-      for (const [value, n] of Object.entries(sub))
-        assert.equal(n, byYear.groups.filter(g => String(g[column]) === value).reduce((a, g) => a + g.n, 0), `${column} ${value}`);
-    }
-    assert.equal(bySpecies.subtotals, undefined, 'one column: its groups are the totals');
-    const report = await call('run_report', { kind: 'counts', module: 'Collection_data' });
-    assert.equal(report.rowsTotal, report.rows.reduce((a, r) => a + r.count, 0));
-    assert.ok(report.rowsTotal > 0);
     assert.match((await call('count_records', { sheet: 'Collection_data', groupBy: 'SPECIES:year' })).error, /only date columns/);
   } finally {
     store.close();

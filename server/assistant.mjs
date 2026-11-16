@@ -6344,9 +6344,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (response.status !== 200) return response.body;
       for (const item of response.body.sources) context.sources.set(item.id, { ...item, type: 'record' });
       // The chart's series repeats the rows: the model reads the rows.
-      // A total over every row (also those cut below), so a sum of the rows is read, not added up.
-      const counted = ['counts', 'daily', 'weekly'].includes(args.kind) && response.body.rows.every(r => Number.isInteger(r.count));
-      const result = { ...response.body, series: undefined, sources: response.body.sources.slice(0, 30), ...(counted ? { rowsTotal: response.body.rows.reduce((n, r) => n + r.count, 0) } : {}) };
+      const result = { ...response.body, series: undefined, sources: response.body.sources.slice(0, 30) };
       context.results.push(result);
       const more = kept =>
         kept < result.rows.length ? { truncated: true, next: `${result.rows.length - kept} more rows not shown: count_records with filters and groupBy gives them in parts` } : {};
