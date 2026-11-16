@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
+import { MAIN_TOOLS } from '../server/assistant-host.mjs';
 import { allIssues } from '../server/checks.mjs';
 import { setVerdicts } from '../server/review.mjs';
 import { signIn } from './helpers/assistant.mjs';
@@ -38,6 +39,8 @@ test('tools/list gives the current names only', () => {
     .filter(t => t._meta?.['anthropic/alwaysLoad'])
     .map(t => t.name);
   assert.ok(always.includes('query') && always.includes('find_records'));
+  // The Wikiloc queue runs in the app's thread, not the tools worker.
+  assert.ok(MAIN_TOOLS.has('queue_walk'));
   assert.ok(!always.includes('count_records') && !always.includes('search_text'));
 });
 
