@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
 import { applyLabGuard } from './lab-guard.mjs';
-import { leanClaude, unleanClaude } from './claude-lean.mjs';
+import { LEAN_DENY, leanClaude, unleanClaude } from './claude-lean.mjs';
 import { overlaidFiles, overlayReader } from '../server/doc-review.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -326,6 +326,8 @@ function provision(user, { freshToken, addProject, folder = user.username, title
     else delete settings.hooks.PreToolUse;
     if (!Object.keys(settings.hooks).length) delete settings.hooks;
   }
+  // The lab never deploys to the live server.
+  const labDeny = labUrl ? ['Bash(scripts/deploy.sh:*)', 'Bash(./scripts/deploy.sh:*)', `Bash(${join(source, 'scripts/deploy.sh')}:*)`] : [];
   // Secrets and built releases are off limits (code changes go through ~/ithomiini/src); the database
   // is not (an older release denied it: taken out).
   settings.permissions.deny = [
@@ -344,18 +346,23 @@ function provision(user, { freshToken, addProject, folder = user.username, title
         const file = /[*?]/.test(clean) || (existsSync(clean) && !statSync(clean).isDirectory());
         return file ? `Read(/${clean})` : `Read(/${clean}/**)`;
       }),
-      // The lab never deploys to the live server.
-      ...(labUrl ? ['Bash(scripts/deploy.sh:*)', 'Bash(./scripts/deploy.sh:*)', `Bash(${join(source, 'scripts/deploy.sh')}:*)`] : []),
+      ...labDeny,
     ]),
   ];
   // Claude Code features these chats never use, each sent with every model call (scripts/claude-lean.mjs).
   // ITHOMIINI_CLAUDE_LEAN=0 takes them out again (the rollback: then --refresh-all).
   if (process.env.ITHOMIINI_CLAUDE_LEAN === '0') unleanClaude(settings);
   else leanClaude(settings);
-  // A workspace whose .claude/ithomiini-workspace.json has `"denyRules": false` keeps no deny list at all (the WhatsApp
-  // group's, since 16 Nov 2026: every member has an app account, so its chat has a loose rule in the bridge skill
-  // instead of a hard block). A refresh does not put the rules back.
-  if (workspaceSettings(folder).denyRules === false) delete settings.permissions.deny;
+  // A workspace whose .claude/ithomiini-workspace.json has `"denyRules": false` keeps no restricting deny rule (the
+  // WhatsApp group's, since 16 Nov 2026: every member has an app account, so its chat has a loose rule in the bridge
+  // skill instead of a hard block): its deny list is exactly the claude-lean trims (unused Claude Code built-ins, not a
+  // restriction; none with ITHOMIINI_CLAUDE_LEAN=0), plus in the lab its no-deploy rules. A refresh does not put the
+  // other rules back.
+  if (workspaceSettings(folder).denyRules === false) {
+    const deny = [...(process.env.ITHOMIINI_CLAUDE_LEAN === '0' ? [] : LEAN_DENY), ...labDeny];
+    if (deny.length) settings.permissions.deny = deny;
+    else delete settings.permissions.deny;
+  }
   // The lab's chats can neither send WhatsApp nor make timers (scripts/lab-guard.mjs).
   if (labUrl) applyLabGuard(settings, { home: process.env.HOME, source, cache: join(process.env.HOME, '.cache', 'ithomiini-lab') });
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));

@@ -12,7 +12,7 @@
 // (server/worker-slot.mjs).
 // No worker (the work in the app's thread): an in-memory database (tests), ASSISTANT_WORKER=0, or
 // a configuration that cannot be handed to a thread.
-import { createAssistant, currentTool } from './assistant.mjs';
+import { createAssistant } from './assistant.mjs';
 import { layoutsFeed, workerMode, workerPool, workerSlot } from './worker-slot.mjs';
 
 /** Tools that run in the app's thread. */
@@ -156,8 +156,7 @@ export function createAssistantHost({
     inFlight: () => tools.inFlight(),
     status: () => ({ ...tools.status(), views: views.status() }),
     async mcp(headers, body) {
-      // By its name now: an earlier name (TOOL_ALIASES) runs where its tool runs.
-      const name = body?.method === 'tools/call' ? currentTool(String(body.params?.name ?? '')).name : null;
+      const name = body?.method === 'tools/call' ? String(body.params?.name ?? '') : null;
       if (name === null || MAIN_TOOLS.has(name) || tools.degraded) return main.mcp(headers, body);
       const id = body?.id ?? null;
       // Stopping (a deploy): no new calls; those running finish first.

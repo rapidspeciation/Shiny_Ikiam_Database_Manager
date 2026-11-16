@@ -165,8 +165,7 @@ or one strip per page.
 - Read a single page yourself (splitting one page across readers was slower
   and not more accurate).
 - Several pages in one message: cut every page's strips, then start one
-  `notebook-reader` subagent per page (`general-purpose` told to follow
-  `.claude/agents/notebook-reader.md` if that type is missing), **all in one
+  `notebook-reader` subagent per page, **all in one
   message** (`run_in_background: false`). Each prompt holds only the kind,
   the photo path and `rotate`, the strip paths with their lines, and the
   output file `work/<today>-<topic>/<page>.json`. The reading is blind: none
@@ -198,7 +197,7 @@ re-read only what is likely wrong:
      lines with their IDs.
 2. Tell the person in one line that the proposal is in Cambios propuestos and
    that you are checking those cells.
-3. Start the `notebook-reviewer` subagents (`general-purpose` if missing)
+3. Start the `notebook-reviewer` subagents
    **all in one message** (`run_in_background: false`): one per block of
    lines, each with only its strips, the photo path (for `--zoom`), the
    proposal id, the lines (by ID) and columns to read, and the line on how
