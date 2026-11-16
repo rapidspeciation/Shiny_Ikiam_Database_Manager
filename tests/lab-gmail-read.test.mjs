@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ACCOUNT, classify, runsGog } from '../scripts/lab-gmail-read.mjs';
+import { ACCOUNT, classify, decide, runsGog } from '../scripts/lab-gmail-read.mjs';
 import { evalSettings, GOG_DENY } from '../tools/assistant-eval/eval-settings.mjs';
 
+mkdirSync(join(homedir(), '.cache', 'ithomiini-test'), { recursive: true });
+const hookDir = mkdtempSync(join(homedir(), '.cache', 'ithomiini-test', 'lab-hooks-'));
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The google-account skill's command, as the S07 chat wrote it (8 Nov 2026 eval run).
 const SKILL_READ = `set -a; . ~/.config/ithomiini/gog.env; set +a\ngog --readonly --account ${ACCOUNT} --client ithomiini gmail search 'LBI OR depósito newer_than:10d' 2>&1 | head -40`;
@@ -62,18 +64,18 @@ test('the eval workspace allows a gog Gmail read (run by the hook, outside the s
   chmodSync(gog, 0o755);
   // The lab workspace's settings as provisioning leaves them (no Gmail hook in an older one), then the eval's.
   const lab = { permissions: { allow: ['Skill', 'mcp__db'], deny: ['Bash(*wacli*)', 'Bash(gog*)'] }, sandbox: { enabled: true, filesystem: { denyRead: ['/home/x/.wacli'], allowWrite: ['/tmp'] } } };
-  const settings = await evalSettings(lab, { checkout: ROOT, home: '/home/x' });
+  const settings = await evalSettings(lab, { checkout: ROOT, home: '/home/x', hookDir: hookDir });
   for (const rule of GOG_DENY) assert.ok(!settings.permissions.deny.includes(rule), `no blanket ${rule}`);
   assert.ok(settings.permissions.deny.includes('Bash(*wacli*)') && settings.permissions.deny.includes('Bash(*gcloud*)'));
   for (const p of ['/home/x/.local/bin/gog', '/home/x/.config/gogcli', '/home/x/.local/share/gogcli']) assert.ok(settings.sandbox.filesystem.denyRead.includes(p), p);
   assert.equal(settings.sandbox.allowUnsandboxedCommands, false);
-  const entries = settings.hooks.PreToolUse.filter(e => e.hooks.some(h => h.command.includes('lab-gmail-read.mjs')));
+  const entries = settings.hooks.PreToolUse.filter(e => e.hooks.some(h => h.command.includes('lab-gmail-read-')));
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].matcher, 'Bash');
+  assert.equal(entries[0].matcher, 'Bash|Monitor');
   const hook = entries[0].hooks[0].command;
-  assert.ok(hook.includes(join(ROOT, 'scripts', 'lab-gmail-read.mjs')));
+  assert.ok(hook.includes(join(hookDir, 'lab-gmail-read-')), 'the read-only copy, outside the sandbox\'s writable folders');
   // Applying it again (a second `workspace`) keeps one hook.
-  await evalSettings(settings, { checkout: ROOT, home: '/home/x' });
+  await evalSettings(settings, { checkout: ROOT, home: '/home/x', hookDir: hookDir });
   assert.equal(settings.hooks.PreToolUse.length, 1);
 
   const env = { ...process.env, ITHOMIINI_LAB_GMAIL_GOG: gog, ITHOMIINI_LAB_GMAIL_TMP: dir, ITHOMIINI_LAB_GMAIL_LOG: join(dir, 'reads.log'), ITHOMIINI_LAB_GMAIL_PASSWORD_FILE: join(dir, 'none') };
@@ -97,4 +99,17 @@ test('the eval workspace allows a gog Gmail read (run by the hook, outside the s
   assert.equal(readFileSync(calls, 'utf8'), before, 'gog never ran for the send');
   assert.equal(ask('ls -la'), null, 'other commands pass untouched');
   assert.ok(existsSync(gog));
+});
+
+test('review round 1 (16 Nov 2026): filters that write files refused; harmless variants of the skill\'s read accepted; Monitor refuses gog', () => {
+  for (const cmd of ['gog gmail search x | sort -o /home/x/.bashrc', 'gog gmail search x | uniq - /home/x/f', 'gog gmail search x | cat /home/x/.wacli/db', 'gog gmail search x | tee f'])
+    assert.ok(classify(cmd).deny, cmd);
+  for (const cmd of [`${SKILL_READ}\n`, SKILL_READ.replace(/\n/g, '\r\n'), SKILL_READ.replace('gog.env;', 'gog.env 2>/dev/null;'), `gog -a ${ACCOUNT.toUpperCase()} gmail search x`, 'gog gmail search x --json --fields id'])
+    assert.ok(classify(cmd).read, JSON.stringify(cmd));
+  const monitor = decide({ tool_name: 'Monitor', tool_input: { command: 'gog gmail search x' } }, () => assert.fail('no read from Monitor'));
+  assert.equal(monitor.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(decide({ tool_name: 'Monitor', tool_input: { command: 'tail -f log' } }), null);
+  // a failed read behind a filter still fails the call
+  const failed = decide({ tool_name: 'Bash', tool_input: { command: 'gog gmail search x | head' } }, () => "cat '/tmp/o' | head; exit 1");
+  assert.match(failed.hookSpecificOutput.updatedInput.command, /; exit 1$/);
 });

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 export const GOG_DENY = ['Bash(gog*)', 'Bash(*gog *)', 'Bash(*/gog*)'];
 
 /** `settings` (the lab workspace's, parsed) for the eval of `checkout`; changed in place and returned. */
-export async function evalSettings(settings, { checkout, home = '/home/franz' }) {
+export async function evalSettings(settings, { checkout, home = '/home/franz', hookDir }) {
   const hook = join(checkout, 'scripts', 'lab-gmail-read.mjs');
   const readHook = existsSync(hook) && existsSync(join(checkout, 'scripts', 'lab-guard.mjs'));
   const extra = ['Bash(gcloud*)', 'Bash(*gcloud*)', 'Bash(*gsutil*)', `Read(/${home}/.config/gogcli/**)`, `Read(/${home}/.config/gcloud/**)`];
@@ -19,6 +19,6 @@ export async function evalSettings(settings, { checkout, home = '/home/franz' })
   settings.sandbox.filesystem ??= {};
   settings.sandbox.filesystem.denyRead = [...new Set([...(settings.sandbox.filesystem.denyRead ?? []), ...['.config/gogcli', '.local/share/gogcli', '.config/gcloud', '.local/bin/gog'].map(p => join(home, p))])];
   // An older checkout under test has no read hook: gog stays denied there (above).
-  if (readHook) (await import(join(checkout, 'scripts', 'lab-guard.mjs'))).applyLabGuard(settings, { home, source: null, hook });
+  if (readHook) (await import(join(checkout, 'scripts', 'lab-guard.mjs'))).applyLabGuard(settings, { home, source: null, hook, hookDir });
   return settings;
 }

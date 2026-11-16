@@ -17,15 +17,30 @@
 // (the account's token could send mail), and a PreToolUse hook (scripts/lab-gmail-read.mjs) runs gog's Gmail reads
 // itself, outside the sandbox, with gog's own guards; every other gog command is refused.
 // scripts/t3-provision.mjs applies the same to every workspace it writes for the lab (ITHOMIINI_LAB_URL set).
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const GMAIL_HOOK = join(dirname(fileURLToPath(import.meta.url)), 'lab-gmail-read.mjs');
-/** The hook entry of a lab workspace (`hook`: the lab-gmail-read.mjs to run, by default this checkout's). */
-export const gmailHook = (hook = GMAIL_HOOK) => ({ matcher: 'Bash', hooks: [{ type: 'command', command: `${JSON.stringify(process.execPath)} ${JSON.stringify(hook)}`, timeout: 120 }] });
-const ownHook = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('lab-gmail-read.mjs'));
+// The hook runs on the host, so it runs from a read-only copy outside every folder the sandbox writes (the lab's
+// source, its cache, /tmp): a chat that edited the source's copy would otherwise run its own code outside the sandbox.
+const HOOK_DIR = () => process.env.ITHOMIINI_LAB_HOOK_DIR || join(homedir(), '.local', 'share', 'ithomiini-lab', 'hooks');
+/** `hook` copied (read-only) into the hooks folder; its path there. */
+export function installHook(hook = GMAIL_HOOK, dir = HOOK_DIR()) {
+  mkdirSync(dir, { recursive: true, mode: 0o755 });
+  // One copy per source checkout (the lab and an eval of another checkout do not overwrite each other's).
+  const dest = join(dir, `lab-gmail-read-${createHash('sha256').update(resolve(hook)).digest('hex').slice(0, 10)}.mjs`);
+  const tmp = `${dest}.${process.pid}.tmp`;
+  copyFileSync(hook, tmp);
+  chmodSync(tmp, 0o444);
+  renameSync(tmp, dest);
+  return dest;
+}
+/** The hook entry of a lab workspace (`hook`: the installed lab-gmail-read.mjs to run). */
+export const gmailHook = hook => ({ matcher: 'Bash|Monitor', hooks: [{ type: 'command', command: `${JSON.stringify(process.execPath)} ${JSON.stringify(hook)}`, timeout: 120 }] });
+const ownHook = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('lab-gmail-read'));
 
 /** The rules and the sandbox for a lab workspace. `home`: the user's home; `source`: the lab's checkout; `cache`: the lab's data folder. */
 export function labGuard({ home = homedir(), source = null, cache = join(home, '.cache', 'ithomiini-lab'), sandboxOn = true, hook = GMAIL_HOOK } = {}) {
@@ -67,17 +82,22 @@ export function labGuard({ home = homedir(), source = null, cache = join(home, '
       allowWrite: [source, cache, '/tmp'].filter(Boolean),
     },
   };
-  return { deny, sandbox, hook: gmailHook(hook) };
+  return { deny, sandbox, hook };
 }
 
 /** `settings` (a parsed settings.json) with the guard added; other settings and rules are kept. */
 export function applyLabGuard(settings, options) {
   const guard = labGuard(options);
+  const installed = installHook(guard.hook, options?.hookDir);
+  const hook = gmailHook(installed);
+  for (const w of guard.sandbox?.filesystem.allowWrite ?? []) if (hook.hooks[0].command.includes(`"${w.replace(/\/+$/, '')}/`)) throw new Error(`lab guard: the Gmail hook would run from a folder the sandbox writes (${w})`);
   settings.permissions ??= {};
-  settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...guard.deny])];
+  const hookDir = dirname(installed);
+  // (without the sandbox, the rules are all that keep the copy as it is)
+  settings.permissions.deny = [...new Set([...(settings.permissions.deny ?? []), ...guard.deny, `Edit(/${hookDir}/**)`, 'Bash(*ithomiini-lab/hooks*)'])];
   // The Gmail read hook first, once (an older one of another checkout replaced); other hooks are kept.
   settings.hooks ??= {};
-  settings.hooks.PreToolUse = [guard.hook, ...(settings.hooks.PreToolUse ?? []).filter(e => !ownHook(e))];
+  settings.hooks.PreToolUse = [hook, ...(settings.hooks.PreToolUse ?? []).filter(e => !ownHook(e))];
   if (!guard.sandbox) return settings; // the permission rules only (a workspace whose chats need the lab app's loopback address)
   const own = settings.sandbox ?? {};
   settings.sandbox = {

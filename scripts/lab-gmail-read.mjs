@@ -10,12 +10,14 @@
 //    commands enabled) on the project account, and hands the chat its output (`cat` of a file under /tmp);
 //  - any other gog command (send, reply, drafts, labels changes, trash, Drive, Calendar…) is refused with a reason.
 // A command that does not run gog passes untouched.
+// The hook runs from a read-only copy outside the sandbox's writable folders (lab-guard.mjs installs it), and it
+// imports nothing but Node's own modules, so a chat cannot change what runs on the host.
 //
 // Reads:  gmail search | messages search | get | thread get | labels list | labels get   (and gog's aliases)
 // Shape:  [set -a; . ~/.config/ithomiini/gog.env; set +a]  gog <flags> gmail <read> <args>  [2>&1] [| <filter>…]
 //         The filter after `|` runs in the sandbox on the output; a second gog there finds no gog to run.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +29,8 @@ export const CLIENT = process.env.ITHOMIINI_LAB_GMAIL_CLIENT || 'ithomiini';
 const GOG = process.env.ITHOMIINI_LAB_GMAIL_GOG || join(HOME, '.local', 'bin', 'gog');
 const PASSWORD_FILE = process.env.ITHOMIINI_LAB_GMAIL_PASSWORD_FILE || join(HOME, '.config', 'gogcli', '.hermes-keyring-password');
 const OUT_ROOT = process.env.ITHOMIINI_LAB_GMAIL_TMP || '/tmp';
-const LOG = process.env.ITHOMIINI_LAB_GMAIL_LOG || join(HOME, '.cache', 'ithomiini-lab', 'gmail-reads.log');
+// Outside every folder the lab's sandbox may write (a link planted there would make this hook write elsewhere).
+const LOG = process.env.ITHOMIINI_LAB_GMAIL_LOG || join(HOME, '.local', 'state', 'ithomiini-lab', 'gmail-reads.log');
 
 // Canonical read command → gog's names for each word (gog gmail --help, v0.45).
 const SERVICE = ['gmail', 'mail', 'email'];
@@ -48,7 +51,7 @@ const FLAGS = {
   '--max': true, '--page': true, '--all': false, '--fail-empty': false, '--count': false, '--oldest': false, '--timezone': true, '-z': true,
   '--local': false, '--include-body': false, '--body-format': true, '--full': false, '--include-attachments': false,
   '--include-recipients': false, '--sanitize-content': false, '--use-indexed-attachment-ids': false, '--format': true, '--headers': true,
-  '--verbose': false, '-v': false,
+  '--verbose': false, '-v': false, '--fields': true,
 };
 
 const REFUSE_GOG = 'In the lab and the assistant eval the project\'s Gmail is read-only: gog runs only `gog gmail search|get|thread get|labels list|labels get|messages search …` (one gog call per command, values written out, no $ or `…`). Sending, replies, drafts, label or message changes, attachments and the other Google services are off here.';
@@ -168,6 +171,7 @@ export const touchesSecrets = cmd => /gogcli|hermes-keyring|GOG_KEYRING_PASSWORD
  * guards and the project account added), tail the sandboxed rest after `|` (or ''), stderr whether 2>&1 was asked.
  */
 export function classify(cmd) {
+  cmd = String(cmd).replace(/\r\n/g, '\n').replace(/[\s;]+$/, '');
   if (touchesSecrets(cmd)) return { deny: REFUSE_SECRET };
   if (!runsGog(cmd)) return { pass: true };
   const toks = lex(cmd);
@@ -178,8 +182,8 @@ export function classify(cmd) {
   for (;;) {
     const end = toks.findIndex((t, j) => j >= k && t.op && t.op !== 'stderr');
     const words = toks.slice(k, end < 0 ? toks.length : end);
-    const ws = words.map(t => t.w);
-    const prefix = (ws.length === 2 && ws[0] === 'set' && /^[-+]a$/.test(ws[1])) || (ws.length === 2 && ['.', 'source'].includes(ws[0]) && /(^|\/)gog\.env$/.test(ws[1])) || ws.length === 0;
+    const ws = words.filter(t => !t.op).map(t => t.w);
+    const prefix = ws.length === words.length - words.filter(t => t.op === 'stderr').length && ((ws.length === 2 && ws[0] === 'set' && /^[-+]a$/.test(ws[1])) || (ws.length === 2 && ['.', 'source'].includes(ws[0]) && /(^|\/)gog\.env$/.test(ws[1])) || ws.length === 0);
     if (prefix && end >= 0 && [';', '&&'].includes(toks[end].op)) { k = end + 1; continue; }
     seg.push(...words);
     k = end < 0 ? toks.length : end;
@@ -227,7 +231,7 @@ export function classify(cmd) {
   if (!read) return { deny: REFUSE_GOG };
   const args = pos.slice(1 + read.words.length);
   for (const [name, value] of flags) {
-    if ((name === '--account' || name === '-a') && value !== ACCOUNT) return { deny: `${REFUSE_GOG} Only the project's account (${ACCOUNT}).` };
+    if ((name === '--account' || name === '-a') && String(value).toLowerCase() !== ACCOUNT.toLowerCase()) return { deny: `${REFUSE_GOG} Only the project's account (${ACCOUNT}).` };
     if (name === '--client' && value !== CLIENT) return { deny: REFUSE_GOG };
   }
   const keep = flags.filter(([n]) => !['--account', '-a', '--client', '--readonly', '--gmail-no-send', '--no-input'].includes(n)).flatMap(([n, v]) => (v == null ? [n] : [`${n}=${v}`]));
@@ -237,7 +241,8 @@ export function classify(cmd) {
 
 // What may read the output after `|`: text filters only (the hook allows the rewritten command, so nothing that runs
 // or writes anything: no sed/awk, no redirect).
-const FILTERS = new Set(['head', 'tail', 'grep', 'egrep', 'fgrep', 'jq', 'wc', 'sort', 'uniq', 'cut', 'tr', 'cat', 'column', 'nl', 'fold']);
+// Each reads stdin and writes stdout only (sort -o, uniq's output operand, tee and cat's files are not here).
+const FILTERS = new Set(['head', 'tail', 'grep', 'egrep', 'fgrep', 'jq', 'wc', 'cut', 'tr']);
 function plainFilters(tail) {
   const toks = lex(tail);
   if (toks[0]?.bad) return false;
@@ -283,13 +288,17 @@ export function runRead(plan, { workspace = '' } = {}) {
   const status = r.status ?? 124;
   // gog's errors go with the output when 2>&1 was asked or the read failed (the chat sees why).
   const text = (r.stdout ?? '') + (plan.stderr || status !== 0 ? (r.stderr ?? '') : '') + (r.error ? `\n${r.error.message}\n` : '');
-  writeFileSync(file, text, { mode: 0o600 });
+  // wx: never through a link a sandboxed command planted in the (same user's) folder meanwhile.
+  writeFileSync(file, text, { mode: 0o600, flag: 'wx' });
   try {
     mkdirSync(join(LOG, '..'), { recursive: true });
-    appendFileSync(LOG, `${new Date().toISOString()}\t${workspace}\t${plan.command}\texit ${status}\t${text.length} bytes\n`);
+    const fd = openSync(LOG, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+    writeSync(fd, `${new Date().toISOString()}\t${String(workspace).replace(/[\x00-\x1f;|&`$]/g, '_')}\t${plan.command}\texit ${status}\t${text.length} bytes\n`);
+    closeSync(fd);
   } catch {}
   const show = `cat ${q(file)}`;
-  return plan.tail ? `${show} | ${plan.tail}` : `${show}; exit ${status}`;
+  // A failed read fails the call, also behind a filter (whose own status counts otherwise).
+  return plan.tail ? `${show} | ${plan.tail}${status ? `; exit ${status}` : ''}` : `${show}; exit ${status}`;
 }
 
 /** Output folders older than a day go (they hold mail text). */
@@ -305,9 +314,10 @@ function sweep() {
 
 /** The hook's answer for one PreToolUse event (null: no opinion). */
 export function decide(event, run = runRead) {
-  if (event?.tool_name !== 'Bash') return null;
+  if (!['Bash', 'Monitor'].includes(event?.tool_name)) return null;
   const command = String(event.tool_input?.command ?? '');
-  const plan = classify(command);
+  // Monitor: no reads (one-off reads are Bash's); gog and its secrets refused there too.
+  const plan = event.tool_name === 'Monitor' ? (touchesSecrets(command) ? { deny: REFUSE_SECRET } : runsGog(command) ? { deny: REFUSE_GOG } : { pass: true }) : classify(command);
   if (plan.pass) return null;
   if (plan.deny) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: plan.deny } };
   const shown = run(plan.read, { workspace: event.cwd ?? '' });

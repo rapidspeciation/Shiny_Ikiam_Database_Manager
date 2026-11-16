@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -204,6 +204,8 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
       ITHOMIINI_DENY_READ: `${join(lab, 'google.json')}:${join(lab, 'run-*.log')}:/secret/answers/`,
       ITHOMIINI_LAB_URL: 'http://127.0.0.1:8795/',
       T3_BIN: '/bin/true',
+      // The Gmail read hook's read-only copy: never under /tmp (the lab's sandbox writes there), so the tests' cache.
+      ITHOMIINI_LAB_HOOK_DIR: join(homedir(), '.cache', 'ithomiini-test', 'lab-hooks'),
     };
     writeFileSync(join(lab, 'google.json'), '{}');
     // a workspace made when the lab denied its whole folder
