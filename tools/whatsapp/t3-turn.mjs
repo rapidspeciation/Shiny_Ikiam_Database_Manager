@@ -3,28 +3,45 @@
 // request on stdin, sends the message the way the app does (server/t3commands.mjs, with an admin
 // token kept in a file), waits for the chat's run to end and prints the chat's last message as JSON.
 // It runs on the machine of the T3 it talks to: on this PC directly, on claudeclaw over ssh
-// (the bridge copies it to ~/ithomiini/work/wa-bridge/). Only node's own modules and the app's
-// t3commands.mjs (path in the request), so it runs beside any release.
+// (a copy in ~/ithomiini/work/wa-bridge/, with t3-progress.mjs beside it). Only node's own modules, ./t3-progress.mjs
+// and the app's t3commands.mjs (path in the request), so it runs beside any release.
 //
-// Request: { op: 'turn' | 'busy' | 'thread', home, local, tokenFile, commandsModule,
-//   threadId?, text?, timeoutMs?, instanceId?, create?: { projectId, title, model, effort } }
+// Request: { op: 'turn' | 'busy' | 'thread' | 'archive' | 'stop', home, local, tokenFile, commandsModule,
+//   threadId?, text?, timeoutMs?, instanceId?, steer?, stopAfterTools?, graceMs?, newThreadId?, progress?,
+//   personalProgress?, create?: { projectId, title, model, effort } }
 // - instanceId: the T3 provider instance the chat runs on (default 'claudeAgent'). WhatsApp chats use
 //   their own Claude instance so T3's per-instance settings (compacting an idle chat just before its
 //   prompt cache expires) reach them and no other chat. A chat on another instance is moved to it with
 //   its next message, keeping its model and options; T3 resumes the same Claude session.
 // - op 'turn': the message to `threadId` (made first with `create` when it is missing or gone);
 //   waits until the chat is idle, then for its run to end. → { ok, threadId, status, text, ms }
+//   With `stopAfterTools: k` (the assistant eval's routing cases) the run is interrupted once its first k tool
+//   calls (Bash counted) have settled (result, error or cancelled), so none of them is cut; ok is then true for any end status
+//   and `stopped` says it was cut. If the run is still going `graceMs` (default 60 s) after the interrupt, the
+//   answer is { ok: false, error: 'interrupt not taken' }. `newThreadId`: the id a chat made here gets (the
+//   eval picks it first, so it can stop and clean up a chat whose turn failed).
+// - steer: true (op 'turn'): when the chat is answering, the message goes INTO that run (T3's steering;
+//   the run's one answer then covers both) and the helper returns at once → { ok, threadId, steered: true }.
+//   If the run ended meanwhile, T3 starts (or queues) a run for it instead, and the helper waits for that
+//   run like any turn → { ok, threadId, steered: false, status, text, ms }.
 // - op 'busy': → { ok, busy, exists }
 // - op 'thread': → { ok, exists, title, projectId }
 // - op 'archive': archives `threadId` (an idle chat keeps a Claude process for 30 min) → { ok, threadId }
+// - op 'stop': interrupts `threadId`'s runs under way and waits up to `graceMs` for them to end → { ok, stopped, busy }
+//
+// Run as a script only (`node t3-turn.mjs`, request on stdin). Importing it starts nothing: tests call `turn()` with a
+// stand-in database and `send`. As a script it refuses to run under node --test.
 import { progressUpdates } from './t3-progress.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const UNDER_WAY = ['queued', 'preparing', 'starting', 'running', 'waiting'];
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** A tool call (turn item) still without its result; any other status (completed, failed, cancelled…) is settled. */
+const ITEM_UNDER_WAY = ['idle', 'pending', 'running', 'waiting'];
+const pause = ms => new Promise(r => setTimeout(r, ms));
 
 async function readStdin() {
   let s = '';
@@ -65,9 +82,11 @@ function moveTo(row, instanceId) {
   return current?.model ? { ...current, instanceId } : modelSelection({}, instanceId);
 }
 
-async function main() {
-  const req = await readStdin();
-  const db = openDb(req.home);
+/**
+ * One request (see the top of this file) against the T3 state database `db` (read only), sending T3 commands with
+ * `send(...commands)`; `sleep` waits between polls. Returns the answer object.
+ */
+export async function turn(req, { db, send, sleep = pause }) {
   if (req.op === 'busy') {
     const row = req.threadId ? threadRow(db, req.threadId) : null;
     return { ok: true, exists: Boolean(row && !row.deleted_at), busy: row ? busy(db, req.threadId) : false };
@@ -76,29 +95,47 @@ async function main() {
     const row = req.threadId ? threadRow(db, req.threadId) : null;
     return { ok: true, exists: Boolean(row && !row.deleted_at), title: row?.title ?? null, projectId: row?.project_id ?? null };
   }
-  const { t3Commands } = await import(req.commandsModule);
-  const send = t3Commands({ local: req.local, tokenFile: req.tokenFile, timeout: 20_000 });
   if (req.op === 'archive') {
     const row = req.threadId ? threadRow(db, req.threadId) : null;
     if (!row || row.deleted_at) return { ok: false, threadId: req.threadId ?? null, error: 'no such chat' };
     if (!row.archived_at) await send({ type: 'thread.archive', threadId: req.threadId });
     return { ok: true, threadId: req.threadId };
   }
+  if (req.op === 'stop') {
+    const runs = db.prepare(`SELECT run_id FROM orchestration_v2_projection_runs WHERE thread_id = ? AND status IN (${UNDER_WAY.map(() => '?').join(',')})`).all(req.threadId ?? '', ...UNDER_WAY);
+    for (const r of runs) await send({ type: 'run.interrupt', threadId: req.threadId, runId: r.run_id, reason: 'stopped by the caller' });
+    const until = Date.now() + (req.graceMs ?? 60_000);
+    while (runs.length && busy(db, req.threadId) && Date.now() < until) await sleep(1000);
+    return { ok: true, stopped: runs.length, busy: busy(db, req.threadId ?? '') };
+  }
   if (req.op !== 'turn') throw new Error(`Unknown op ${req.op}`);
   const started = Date.now();
-  const deadline = started + (req.timeoutMs ?? 15 * 60_000);
+  let deadline = started + (req.timeoutMs ?? 15 * 60_000);
   let threadId = req.threadId ?? null;
   const row = threadId ? threadRow(db, threadId) : null;
   const message = { messageId: randomUUID(), role: 'user', text: String(req.text ?? ''), attachments: [] };
   let before = 0;
+  let runOf = null;
   if (!row || row.deleted_at) {
     if (!req.create?.projectId) throw new Error('The chat is missing and no project to make it in');
-    threadId = randomUUID();
+    threadId = req.newThreadId ?? randomUUID();
     const selection = modelSelection(req.create, req.instanceId ?? 'claudeAgent');
     await send(
       { type: 'thread.create', threadId, projectId: req.create.projectId, title: req.create.title ?? 'WhatsApp', modelSelection: selection, runtimeMode: 'full-access', interactionMode: 'default', branch: null, worktreePath: null },
       { type: 'thread.turn.start', threadId, message, modelSelection: selection, runtimeMode: 'full-access', interactionMode: 'default' },
     );
+  } else if (req.steer && busy(db, threadId)) {
+    // Into the running turn: T3's own message command with deliveryIntent 'steer' (an idle chat starts a run instead).
+    await send({ type: 'message.dispatch', createdBy: 'user', creationSource: 'web', threadId, messageId: message.messageId, text: message.text, attachments: [],
+      deliveryIntent: 'steer', dispatchMode: { type: 'queue_after_active' } });
+    let item = null;
+    for (const until = Date.now() + 30_000; !item && Date.now() < until; ) {
+      await sleep(500);
+      item = db.prepare("SELECT run_id, json_extract(payload_json, '$.inputIntent') intent FROM orchestration_v2_projection_turn_items WHERE thread_id = ? AND type = 'user_message' AND json_extract(payload_json, '$.messageId') = ?").get(threadId, message.messageId) ?? null;
+    }
+    if (!item) return { ok: false, threadId, error: 'steer not seen' };
+    if (/steer/.test(String(item.intent))) return { ok: true, threadId, steered: true };
+    runOf = item.run_id; // it started (or queued) a run of its own: wait for that one
   } else {
     // A message while the chat answers would cut in: wait for it to be idle.
     while (busy(db, threadId)) {
@@ -116,34 +153,67 @@ async function main() {
   const steps = db.prepare(
     "SELECT ordinal, type, payload_json FROM orchestration_v2_projection_turn_items WHERE run_id = ? AND type IN ('dynamic_tool', 'command_execution', 'subagent', 'assistant_message') ORDER BY ordinal",
   );
+  // The run's tool calls in order (Bash counted, the workspace setup not): the first k must have settled.
+  const firstCalls = db.prepare(
+    "SELECT status FROM orchestration_v2_projection_turn_items WHERE run_id = ? AND (type = 'dynamic_tool' OR (type = 'command_execution' AND coalesce(json_extract(payload_json, '$.title'), '') != 'Workspace ready')) ORDER BY ordinal LIMIT ?",
+  );
+  const settled = runId => {
+    const calls = firstCalls.all(runId, req.stopAfterTools);
+    return calls.length >= req.stopAfterTools && calls.every(c => !ITEM_UNDER_WAY.includes(c.status));
+  };
+  let stopped = false;
   while (Date.now() < deadline) {
-    await sleep(1500);
-    run = db
-      .prepare('SELECT run_id, status FROM orchestration_v2_projection_runs WHERE thread_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 1')
-      .get(threadId, before);
+    await sleep(req.stopAfterTools ? 500 : 1500);
+    run = runOf
+      ? db.prepare('SELECT run_id, status FROM orchestration_v2_projection_runs WHERE run_id = ?').get(runOf)
+      : db.prepare('SELECT run_id, status FROM orchestration_v2_projection_runs WHERE thread_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 1').get(threadId, before);
     if (run && req.progress)
       for (const progress of progressUpdates(steps.all(run.run_id), seen, { personal: req.personalProgress === true }))
         process.stdout.write(JSON.stringify({ progress }) + '\n');
     if (run && !UNDER_WAY.includes(run.status)) break;
+    if (run && req.stopAfterTools && !stopped && settled(run.run_id)) {
+      await send({ type: 'run.interrupt', threadId, runId: run.run_id, reason: `stop after ${req.stopAfterTools} tool calls` });
+      stopped = true;
+      deadline = Math.min(deadline, Date.now() + (req.graceMs ?? 60_000));
+    }
   }
   if (!run) return { ok: false, threadId, error: 'no run started' };
-  if (UNDER_WAY.includes(run.status)) return { ok: false, threadId, error: 'timeout', status: run.status };
+  if (UNDER_WAY.includes(run.status)) return { ok: false, threadId, error: stopped ? 'interrupt not taken' : 'timeout', status: run.status };
   const last = db
     .prepare("SELECT payload_json FROM orchestration_v2_projection_messages WHERE run_id = ? AND role = 'assistant' AND streaming = 0 ORDER BY created_at DESC LIMIT 1")
     .get(run.run_id);
   const text = last ? String(JSON.parse(last.payload_json).text ?? '') : '';
-  return { ok: run.status === 'completed', threadId, status: run.status, text, ms: Date.now() - started };
+  return { ok: run.status === 'completed' || stopped, threadId, ...(req.steer ? { steered: false } : {}), status: run.status, text, ms: Date.now() - started, ...(stopped ? { stopped } : {}) };
 }
 
-// Tests never start or touch a real chat (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
-if (process.env.NODE_TEST_CONTEXT) {
-  process.stderr.write('t3-turn.mjs: refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions\n');
-  process.stdout.write(JSON.stringify({ ok: false, error: 'refused under node --test' }) + '\n');
-  process.exit(3);
+async function main() {
+  const req = await readStdin();
+  const db = openDb(req.home);
+  // T3's commands only for the ops that send any (busy and thread only read).
+  const send = req.op === 'busy' || req.op === 'thread' ? null : (await import(req.commandsModule)).t3Commands({ local: req.local, tokenFile: req.tokenFile, timeout: 20_000 });
+  return turn(req, { db, send });
 }
-main()
-  .then(out => process.stdout.write(JSON.stringify(out) + '\n'))
-  .catch(e => {
-    process.stdout.write(JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }) + '\n');
-    process.exitCode = 1;
-  });
+
+/** Whether this file is the script node was started with (not an import). */
+function isScript() {
+  try {
+    return Boolean(process.argv[1]) && pathToFileURL(realpathSync(process.argv[1])).href === pathToFileURL(realpathSync(new URL(import.meta.url))).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isScript()) {
+  // Tests never start or touch a real chat (Franz, 9 Nov: no test uses the AI subscriptions); node --test sets NODE_TEST_CONTEXT for its children.
+  if (process.env.NODE_TEST_CONTEXT) {
+    process.stderr.write('t3-turn.mjs: refusing to run under node --test (NODE_TEST_CONTEXT is set): tests never use the AI subscriptions\n');
+    process.stdout.write(JSON.stringify({ ok: false, error: 'refused under node --test' }) + '\n');
+    process.exit(3);
+  }
+  main()
+    .then(out => process.stdout.write(JSON.stringify(out) + '\n'))
+    .catch(e => {
+      process.stdout.write(JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }) + '\n');
+      process.exitCode = 1;
+    });
+}

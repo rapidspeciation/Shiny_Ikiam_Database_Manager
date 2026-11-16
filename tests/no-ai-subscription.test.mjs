@@ -2,9 +2,9 @@
 // from the manual eval runner, never from the test suite, scripts/deploy.sh, CI or a timer.
 //
 // Static guard: the test files (tests/*.test.mjs with their helpers and fixtures, frontend __tests__ and *.test.*)
-// must not reference the eval runner (run.mjs, iterate.sh, stop-check.mjs), tools/whatsapp/t3-turn.mjs or
-// calibrate-gate.mjs; may import soul-run.mjs only statically (its helpers; its chat-starting main runs only as a
-// script); must not spawn or exec `claude`, `codex`, a path ending in /claude or /codex, or `ssh`; must not call
+// must not reference the eval runner (run.mjs, iterate.sh, stop-check.mjs) or calibrate-gate.mjs; may import
+// soul-run.mjs and tools/whatsapp/t3-turn.mjs only statically (their helpers, and t3-turn's turn() with a stand-in
+// database and send; their chat-starting mains run only as scripts); must not spawn or exec `claude`, `codex`, a path ending in /claude or /codex, or `ssh`; must not call
 // haikuGate without an injected spawnImpl; and must not name a real T3 (127.0.0.1:3774 main, :3775 lab).
 // Deploy, package scripts, CI workflows and systemd units must not reference the eval runner, iterate.sh or soul-run.
 //
@@ -14,6 +14,7 @@
 //  - whatsapp-bridge.test.mjs: turns run stand-in scripts written to a temp dir, wacli is a shell stub; the
 //    127.0.0.1:3774/3775 strings in «only the two live routes…» are route labels for the live-route check, which
 //    calls send() only (wacli stub), never a turn (allowed below by exact count).
+//  - t3-turn.test.mjs (15 Nov): turn() with an in-memory database and a send that plays T3; never the script.
 //  - t3commands.test.mjs, t3projects.test.mjs: injected fetchImpl, fake URLs (127.0.0.1:9, *.test).
 //  - t3admin / t3-update / t3-provision / t3bridge / t3chats / t3-progress: fake fetch, local stand-in servers on
 //    port 0, T3_BIN=/bin/true, or stored rows; 'claude' only as process-table text or config names.
@@ -25,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ function testFiles() {
 
 const EVAL_REF = /assistant-eval\/(run\.mjs|iterate\.sh|stop-check\.mjs)|['"`/](run\.mjs|iterate\.sh|stop-check\.mjs)['"`]|t3-turn\.mjs|calibrate-gate\.mjs/;
 const SOUL_STATIC_IMPORT = /^\s*import\s+[^;]*?from\s+['"][^'"]*soul-run\.mjs['"];?\s*$/gm;
+const TURN_STATIC_IMPORT = /^\s*import\s+\{[^;]*?\}\s*from\s+['"][^'"]*\/tools\/whatsapp\/t3-turn\.mjs['"];?\s*$/gm;
 const SPAWN_CALL = /\b(spawn|spawnSync|exec|execSync|execFile|execFileSync|fork|execa)\s*\(\s*(['"`])((?:(?!\2).)*)\2/g;
 const AI_BIN = /(^|[\s/;&|(])(claude|codex|ssh)(\s|$)/;
 const REAL_T3 = /(127\.0\.0\.1|localhost|\[::1\]):377[45]\b/g;
@@ -64,7 +66,7 @@ export function problems(rel, source) {
   // Whole-line and block comments are prose («a stand-in for t3-turn.mjs»), not code.
   const text = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const out = [];
-  const m = text.match(EVAL_REF);
+  const m = text.replace(TURN_STATIC_IMPORT, '').match(EVAL_REF);
   if (m) out.push(`references the eval runner or a chat starter (${m[0]})`);
   if (/soul-run\.mjs/.test(text.replace(SOUL_STATIC_IMPORT, ''))) out.push('uses soul-run.mjs other than a static import of its helpers');
   for (const [, fn, , arg] of text.matchAll(SPAWN_CALL)) if (AI_BIN.test(arg)) out.push(`${fn}(${JSON.stringify(arg)}) starts claude, codex or ssh`);
@@ -99,6 +101,9 @@ test('the guard catches the patterns it is for, and lets the stand-ins through',
     'haikuGate({ bin: "claude" });',
     "await fetch('http://127.0.0.1:3775/api/orchestration/dispatch');",
     "spawn(process.execPath, [t]); // runs t3-turn.mjs",
+    "await import('../tools/whatsapp/t3-turn.mjs');",
+    "import '../tools/whatsapp/t3-turn.mjs';",
+    "const T = join(ROOT, 'tools/whatsapp/t3-turn.mjs');",
   ];
   for (const t of bad) assert.notDeepEqual(problems('tests/x.test.mjs', t), [], t);
   const good = [
@@ -109,6 +114,7 @@ test('the guard catches the patterns it is for, and lets the stand-ins through',
     "t3Admin({ local: 'http://t3-045.test', spawnImpl });",
     "spawn(process.execPath, [script]);",
     "import { progressUpdates } from '../tools/whatsapp/t3-progress.mjs';",
+    "import { turn } from '../tools/whatsapp/t3-turn.mjs';",
     '  // A stand-in for t3-turn.mjs: answers with what the chat would.',
   ];
   for (const t of good) assert.deepEqual(problems('tests/x.test.mjs', t), [], t);
@@ -146,15 +152,25 @@ test('run.mjs refuses under node --test before any chat: no out dir made, exit n
 });
 
 test('t3-turn.mjs refuses under node --test without reading its request', () => {
-  const r = spawnSync(process.execPath, [join(ROOT, 'tools/whatsapp/t3-turn.mjs')], {
-    env: UNDER_TEST,
-    input: JSON.stringify({ op: 'busy', home: '/nonexistent', local: 'http://t3-guard.test', threadId: 'T' }),
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-  assert.equal(r.status, 3);
-  assert.match(r.stderr, REFUSED);
-  assert.equal(JSON.parse(r.stdout).ok, false);
+  // A turn request whose commands module would leave a mark if it were ever loaded (steer and stopAfterTools too).
+  const dir = mkdtempSync(join(tmpdir(), 'no-ai-turn-'));
+  const mark = join(dir, 'loaded');
+  const commandsModule = join(dir, 'commands.mjs');
+  writeFileSync(commandsModule, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(mark)}, '1'); export const t3Commands = () => async () => {};`);
+  for (const req of [
+    { op: 'busy', home: '/nonexistent', local: 'http://t3-guard.test', threadId: 'T' },
+    { op: 'turn', home: dir, local: 'http://t3-guard.test', commandsModule, threadId: 'T', text: 'hola', steer: true, stopAfterTools: 1 },
+  ]) {
+    const r = spawnSync(process.execPath, [join(ROOT, 'tools/whatsapp/t3-turn.mjs')], { env: UNDER_TEST, input: JSON.stringify(req), encoding: 'utf8', timeout: 20_000 });
+    assert.equal(r.status, 3);
+    assert.match(r.stderr, REFUSED);
+    assert.equal(JSON.parse(r.stdout).ok, false);
+  }
+  assert.ok(!existsSync(mark));
+  // Imported (as tests/t3-turn.test.mjs does), it starts nothing and does not exit: only its script entry runs a request.
+  const imp = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(join(ROOT, 'tools/whatsapp/t3-turn.mjs')).href)}); console.log('imported');`], { env: UNDER_TEST, input: '', encoding: 'utf8', timeout: 20_000 });
+  assert.equal(imp.status, 0, imp.stderr);
+  assert.equal(imp.stdout.trim(), 'imported');
 });
 
 test("soul-run's chat-starting entry refuses under node --test", () => {
