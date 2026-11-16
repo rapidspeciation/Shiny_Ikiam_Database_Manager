@@ -1,15 +1,17 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ACCOUNT, classify, decide, runsGog } from '../scripts/lab-gmail-read.mjs';
+import { ACCOUNT, classify, decide, OUT_DEFAULT, runsGog } from '../scripts/lab-gmail-read.mjs';
 import { evalSettings, GOG_DENY } from '../tools/assistant-eval/eval-settings.mjs';
 
 mkdirSync(join(homedir(), '.cache', 'ithomiini-test'), { recursive: true });
 const hookDir = mkdtempSync(join(homedir(), '.cache', 'ithomiini-test', 'lab-hooks-'));
+after(() => rmSync(hookDir, { recursive: true, force: true }));
+const runShape = (plan, status) => `cat '/o' | ${plan.tail}\nexit ${status}`;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The google-account skill's command, as the S07 chat wrote it (8 Nov 2026 eval run).
 const SKILL_READ = `set -a; . ~/.config/ithomiini/gog.env; set +a\ngog --readonly --account ${ACCOUNT} --client ithomiini gmail search 'LBI OR depósito newer_than:10d' 2>&1 | head -40`;
@@ -87,7 +89,7 @@ test('the eval workspace allows a gog Gmail read (run by the hook, outside the s
   const read = ask(SKILL_READ);
   assert.equal(read.permissionDecision, 'allow');
   assert.equal(read.updatedInput.description, 'x');
-  assert.match(read.updatedInput.command, /^cat '.+\/out\.txt' \| head -40$/);
+  assert.match(read.updatedInput.command, /^cat '.+\/out\.txt' \| head -40\nexit 0$/);
   const shown = execFileSync('/bin/sh', ['-c', read.updatedInput.command], { encoding: 'utf8' });
   assert.match(shown, /^fake gog: --readonly --gmail-no-send --no-input --enable-commands-exact=\S+ --account=\S+ --client=ithomiini gmail search -- LBI OR depósito/);
   assert.match(readFileSync(join(dir, 'reads.log'), 'utf8'), /gmail search\texit 0/);
@@ -112,4 +114,28 @@ test('review round 1 (16 Nov 2026): filters that write files refused; harmless v
   // a failed read behind a filter still fails the call
   const failed = decide({ tool_name: 'Bash', tool_input: { command: 'gog gmail search x | head' } }, () => "cat '/tmp/o' | head; exit 1");
   assert.match(failed.hookSpecificOutput.updatedInput.command, /; exit 1$/);
+});
+
+test('review round 2: the output folder is one the lab sandbox reads but cannot write; S07 counts a gog read, not a command that only names one', async () => {
+  const { labGuard } = await import('../scripts/lab-guard.mjs');
+  const { sandbox } = labGuard({ home: homedir(), source: '/src', cache: join(homedir(), '.cache', 'ithomiini-lab') });
+  assert.ok(!sandbox.filesystem.allowWrite.some(w => OUT_DEFAULT.startsWith(w.replace(/\/+$/, '') + '/')), OUT_DEFAULT);
+  assert.ok(!sandbox.filesystem.denyRead.some(p => OUT_DEFAULT.startsWith(p + '/')), 'the chat can read it');
+  const { grade } = await import('../tools/assistant-eval/grade.mjs');
+  const tasks = JSON.parse(readFileSync(join(ROOT, 'tools/assistant-eval/tasks/routing.json'), 'utf8'));
+  const s07 = (tasks.tasks ?? tasks).find(t => t.id === 'S07');
+  const sk = { name: 'Skill', input: '{"skill":"google-account"}' };
+  assert.equal(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ }], finalText: '' }).score, 1);
+  assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: 'echo "gog gmail search LBI"' }], finalText: '' }).score < 1);
+  for (const help of ['gog gmail search --help', 'gog gmail thread get --help', 'gog gmail -h']) assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: help }], finalText: '' }).score < 1, `${help} is no read`);
+  assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ.replace("'LBI", "'is:unread LBI") }], finalText: '' }).score === 1, 'a read of unread mail is no write');
+});
+
+test('review round 2: --help works as in production, and the call\'s status is gog\'s, not the filter\'s', () => {
+  assert.deepEqual(classify('gog gmail --help').read.argv.slice(-2), ['gmail', '--help']);
+  assert.deepEqual(classify('gog gmail search --help').read.argv.slice(-3), ['gmail', 'search', '--help']);
+  assert.ok(classify('gog gmail send --help').deny);
+  assert.ok(classify('gog gmail search x --fail-empty').deny);
+  const ok = decide({ tool_name: 'Bash', tool_input: { command: 'gog gmail search x | grep -i lbi' } }, plan => runShape(plan, 0));
+  assert.match(ok.hookSpecificOutput.updatedInput.command, /\| grep -i lbi\nexit 0$/);
 });

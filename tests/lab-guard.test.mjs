@@ -1,11 +1,12 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 // The hook's copy may not sit under /tmp (the sandbox writes there): a folder of the tests' own cache.
 mkdirSync(join(homedir(), '.cache', 'ithomiini-test'), { recursive: true });
 const hookDir = mkdtempSync(join(homedir(), '.cache', 'ithomiini-test', 'lab-hooks-'));
+after(() => rmSync(hookDir, { recursive: true, force: true }));
 import { join } from 'node:path';
 import { applyLabGuard, labGuard } from '../scripts/lab-guard.mjs';
 
