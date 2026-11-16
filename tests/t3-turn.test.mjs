@@ -4,7 +4,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { turn } from '../tools/whatsapp/t3-turn.mjs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { senderRole, turn } from '../tools/whatsapp/t3-turn.mjs';
 
 /** A stand-in T3: its state tables, the commands it got, and what it does on each command and each poll. */
 function fakeT3({ onSend = () => {}, onTick = () => {} } = {}) {
@@ -186,4 +189,66 @@ test('without stopAfterTools or steer a turn is unchanged: the run ends on its o
   assert.deepEqual(types(t3), ['thread.turn.start']);
   assert.deepEqual(Object.keys(out).toSorted(), ['ms', 'ok', 'status', 'text', 'threadId']);
   assert.equal(out.text, 'Siete.');
+});
+
+test('the sender in the app: the private map links a JID to an account, the live user record says admin or guest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 't3-turn-people-'));
+  try {
+    const database = join(dir, 'database.sqlite');
+    const app = new DatabaseSync(database);
+    app.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+      INSERT INTO users VALUES ('u1','ana','Ana Pérez','admin',1), ('u2','luis','Luis','editor',1), ('u3','old','Old','admin',0);`);
+    const map = join(dir, 'people.json');
+    writeFileSync(map, JSON.stringify({ '111@lid': 'ana', '222@s.whatsapp.net': 'luis', '333@lid': 'old', '444@lid': 'nobody', self: 'ana' }), { mode: 0o600 });
+    const who = extra => ({ map, database, ...extra });
+    assert.equal(senderRole(who({ jid: '111@lid' })), 'app account ana (Ana Pérez), admin');
+    assert.equal(senderRole(who({ jid: '111:7@lid' })), 'app account ana (Ana Pérez), admin', 'a device suffix is the same person');
+    assert.equal(senderRole(who({ fromMe: true, jid: '999@lid' })), 'app account ana (Ana Pérez), admin', 'the bridge\'s own number is "self"');
+    assert.equal(senderRole(who({ jid: '222@s.whatsapp.net' })), 'app account luis (Luis), editor: guest');
+    assert.equal(senderRole(who({ jid: '333@lid' })), 'app account old (not an active account): guest');
+    assert.equal(senderRole(who({ jid: '444@lid' })), 'app account nobody (not an active account): guest');
+    assert.equal(senderRole(who({ jid: '555@lid' })), 'no linked app account: guest');
+    assert.equal(senderRole(who({ jid: 'constructor' })), 'no linked app account: guest');
+    // Live: a change in the app's records shows at the next turn, with no copy to refresh.
+    app.prepare("UPDATE users SET role = 'editor' WHERE username = 'ana'").run();
+    assert.equal(senderRole(who({ jid: '111@lid' })), 'app account ana (Ana Pérez), editor: guest');
+    // The empty map as shipped: everyone is a guest. A missing or broken map, or no database: guest too.
+    writeFileSync(map, '{}');
+    assert.equal(senderRole(who({ jid: '111@lid' })), 'no linked app account: guest');
+    assert.equal(senderRole(who({ fromMe: true })), 'no linked app account: guest');
+    assert.equal(senderRole({ jid: '111@lid', map: join(dir, 'missing.json'), database }), 'app roles unreadable: guest');
+    writeFileSync(map, '{not json');
+    assert.equal(senderRole(who({ jid: '111@lid' })), 'app roles unreadable: guest');
+    writeFileSync(map, JSON.stringify({ '111@lid': 'ana' }));
+    chmodSync(map, 0o600);
+    assert.equal(senderRole({ jid: '111@lid', map, database: join(dir, 'none.sqlite') }), 'app account ana (records unreadable): guest');
+    app.close();
+
+    // The helper puts it in the header at turn time, in place of the bridge's token; 'whois' only reads.
+    const t3 = fakeT3({
+      onSend: (c, t) => {
+        if (c.type === 'thread.turn.start') t.run('R1', 'T1', 'running', 1);
+      },
+      onTick: t => {
+        if (t.ticks === 2) {
+          t.answer('R1', 'ok');
+          t.status('R1', 'completed');
+        }
+      },
+    });
+    t3.thread('T1');
+    const token = '[[sender-role 0f]]';
+    const people = w => `looked up ${w.jid}`;
+    await turn({ op: 'turn', threadId: 'T1', text: `[WhatsApp · group «G» · Ana · ${token} · 10:00]\nMessage to answer:\n  Ana: hola`, who: { token, jid: '111@lid' }, timeoutMs: 5000 }, { ...t3, people });
+    const start = t3.sent.find(c => c.type === 'thread.turn.start');
+    assert.equal(start.message.text, '[WhatsApp · group «G» · Ana · looked up 111@lid · 10:00]\nMessage to answer:\n  Ana: hola');
+    assert.deepEqual(await turn({ op: 'whois', who: { jid: '111@lid' } }, { db: null, send: null, people }), { ok: true, line: 'looked up 111@lid' });
+    // Without `who` the text goes as it is.
+    const t4 = fakeT3({ onSend: (c, t) => c.type === 'thread.turn.start' && (t.run('R1', 'T1', 'completed', 1), t.answer('R1', 'x')) });
+    t4.thread('T1');
+    await turn({ op: 'turn', threadId: 'T1', text: 'plain [[sender-role 0f]]', timeoutMs: 5000 }, t4);
+    assert.equal(t4.sent[0].message.text, 'plain [[sender-role 0f]]');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

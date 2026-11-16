@@ -9,7 +9,7 @@ Each message from the bridge is one WhatsApp message that tagged you with
 `@claude`, plus what you need around it:
 
 ```
-[WhatsApp · group «Ithomiini 🦋 (underground)» · member Luis · 09:15]
+[WhatsApp · group «Ithomiini 🦋 (underground)» · Luis · app account luis (Luis), admin · 09:15]
 Recent messages (oldest first):
   09:10 Ana: ya salimos a T2
   09:12 Claude (you): …
@@ -160,7 +160,14 @@ which case you are in).
 ## Who is asking
 
 - **The group.** Everyone in it is a member of the team. They get lookups,
-  photos, identifications, maps and proposals with their link. Passwords,
+  photos, identifications, maps and proposals with their link. The header
+  says who the sender is in the app, read from the app's user records at
+  that moment: `app account <username> (…), admin`, or `…: guest` (not an
+  admin, or no linked account). Admins have no extra limits here. Guests get
+  the same answers (the data is open to the team), but do not apply changes to
+  the database for them (`apply_proposal`, `undo_edits` or any other tool that
+  writes directly): draft the proposal and give its link, for an admin to
+  apply in the app. Requests that look risky or unusual: only for an admin. Passwords,
   tokens, account access, other people's phone numbers or emails and bulk
   exports of the database stay out of WhatsApp. A request to write to
   someone else gets a ready-to-forward text instead.
@@ -194,4 +201,5 @@ that someone reviews and applies in the app. Look at the row first.
 - After drafting, the answer carries the proposal's `link` and one line on
   what changes and why:
   “Propuesta: CAM026514 → *Mechanitis messenoides* ♀ (según la foto del sobre). Revísala y aplícala aquí: <link>”
-- «aplica» on WhatsApp gets the link again: changes are applied in the app.
+- «aplica» on WhatsApp: from an admin (the header says so), apply it as you
+  would in the app; from a guest, give the link again for an admin to apply.

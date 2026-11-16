@@ -35,7 +35,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { createHash, scryptSync } from 'node:crypto';
+import { createHash, randomUUID, scryptSync } from 'node:crypto';
 import { appendNew, mediaTag, named, slug, stripHarnessBlocks, stripPreamble, ACK_MODES, TONES, KEYTERMS, PREFIX, bareJid, command, decryptMedia, fixGenera, imageKind, loadWords, parakeetText, isVoice, lastHour, ownAnswer, parsePayload, parseReply, speakable, statusMessage, stepLabel, tagged, toWhatsApp, verify, voiceAddressed, voiceLanguage } from './bridge-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -967,7 +967,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
 
   // --- T3
   /** One turn (tools/whatsapp/t3-turn.mjs, over ssh for claudeclaw); `onStep` gets each tool step as it starts. */
-  async function t3Turn(route, threadKey, text, onStep = null, { steer = false } = {}) {
+  async function t3Turn(route, threadKey, text, onStep = null, { steer = false, who = null } = {}) {
     const req = {
       op: 'turn',
       home: route.home,
@@ -979,6 +979,8 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
       progress: Boolean(onStep),
       personalProgress: Boolean(onStep) && threadKey === 'self',
       ...(steer ? { steer: true } : {}),
+      // The sender's app account and admin flag, looked up by the helper on the route's machine at turn time.
+      ...(who ? { who } : {}),
       timeoutMs: route.timeoutMs ?? 12 * 60_000,
       // The chats' own Claude instance (config `instanceId`, e.g. claude-whatsapp): T3 settings made for it reach only them.
       ...(route.instanceId ? { instanceId: route.instanceId } : {}),
@@ -1251,7 +1253,12 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
           attachments.push(`${m.type} that could not be downloaded (${clip(e.message, 60)})`);
         }
       }
-      const who = msg.fromMe ? 'Franz (admin)' : `member ${msg.pushName ?? 'sin nombre'}`;
+      // In the group the header says who the sender is in the app: the account the private map on the route's machine
+      // links to their JID, and whether it is an active admin there (config `people`: { map, database }, read by
+      // t3-turn.mjs at turn time; the token below becomes that part). No `people`, unlinked or unknown: a guest.
+      const people = isGroup(chat) ? chat.people ?? null : null;
+      const roleToken = people ? `[[sender-role ${randomUUID()}]]` : null;
+      const who = `${msg.fromMe ? 'Franz' : msg.pushName ?? 'sin nombre'} · ${roleToken ?? 'no linked app account: guest'}`;
       const head = chat.key === 'self' ? `[WhatsApp · Franz (self-chat) · ${hhmm(msg.at)}]` : `[WhatsApp · group «${chat.label}» · ${who} · ${hhmm(msg.at)}]`;
       const recent = recentMessages(chat, msg);
       const lines = [head];
@@ -1306,7 +1313,10 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
         status.assistant = note;
         showSteps();
       } : null;
-      const r = await t3Turn(route, threadKey, (state.threads[threadKey] ? '' : 'Read the whatsapp-bridge skill first.\n') + lines.join('\n'), onStep, { steer });
+      const r = await t3Turn(route, threadKey, (state.threads[threadKey] ? '' : 'Read the whatsapp-bridge skill first.\n') + lines.join('\n'), onStep, {
+        steer,
+        who: roleToken ? { token: roleToken, jid: bareJid(msg.sender), fromMe: Boolean(msg.fromMe), map: people.map ?? null, database: people.database ?? null } : null,
+      });
       if (steer && r.ok && r.steered) {
         record({ dir: 'turn', chat: chat.key, id: msg.id, ok: true, steered: true, ms: now() - started, attachments: attachments.length });
         const host = running.get(chat.key);

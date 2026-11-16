@@ -10,7 +10,7 @@ the app server, for a future project number; it sends nothing.
 |---|---|
 | Receiver: signature, chat filter, loop guard, commands, @claude trigger, hourly limit, one turn at a time per chat, media, voice, sends | `tools/whatsapp/bridge.mjs` (`serve`; `install` copies it to `~/.local/share/ithomiini-wa-bridge` and writes `ithomiini-wa-bridge.service`) |
 | Pure parts (trigger, commands, reply blocks, step lines, media decryption) | `tools/whatsapp/bridge-lib.mjs` |
-| One T3 turn: send, wait, last message (and tool steps as they start) | `tools/whatsapp/t3-turn.mjs` (copied to claudeclaw's `~/ithomiini/work/wa-bridge/`) |
+| One T3 turn: send, wait, last message (and tool steps as they start); the group sender's app account and admin flag, read at turn time | `tools/whatsapp/t3-turn.mjs` (copied to claudeclaw's `~/ithomiini/work/wa-bridge/`) |
 | The chats' guide | `tools/whatsapp/bridge-skill/SKILL.md` (copied into both workspaces' `.claude/skills/whatsapp-bridge`) |
 | Simulator for dry-run chats | `tools/whatsapp/bridge-sim.mjs` |
 | Config shape | `tools/whatsapp/bridge-config.example.json` (the real one: `~/.config/ithomiini-wa-bridge/config.json`, 600) |
@@ -83,8 +83,22 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
 
 **The group's workspace on claudeclaw** (`shared/t3-workspaces/wa-underground`, app user `wa-underground`,
 editor, no password; made by `t3-provision.mjs`, kept by `--refresh-all`).
-- Its `.claude/settings.json` denies `Bash`, `Edit`, `Write`, `NotebookEdit` and the app tools that write without review: `apply_proposal`, `undo_edits`, `invite_person`, `list_invitations`, `organize_photos`, `sync_photo_links`, `update_websites`, `queue_walk`, `rename_photos_edit`, `drive_photos_edit`.
-- Proposals are drafted with the link and applied in the app by a person.
+- No deny list (since 16 Nov 2026). Until then its `.claude/settings.json` denied `Bash`, `Edit`, `Write`, `NotebookEdit`
+  and the app tools that write without review (`apply_proposal`, `undo_edits`, `invite_person`, …), because anyone in the
+  group could prompt the chat. Franz, 16 Nov: every member of the group has an account in the app, so a loose rule
+  replaces the hard block. Its `.claude/ithomiini-workspace.json` has `"denyRules": false`, so `t3-provision.mjs`
+  (`--refresh`, `--refresh-all`) writes no deny rules there. The old file is kept beside it as
+  `settings.json.bak-<time>`.
+- **Who is who.** Each group turn's header names the sender's app account and whether it is an active admin, e.g.
+  `[WhatsApp · group «…» · Ana · app account ana (Ana Pérez), admin · 09:15]`, or `…: guest`. The bridge puts a random
+  token there; `t3-turn.mjs` on claudeclaw replaces it at turn time (config `chats.group.people`: `{ map, database }`):
+  the private map links the sender's WhatsApp JID (`"self"`: Franz's own number) to an app username, and the account's
+  role and `active` come live from the app's `users` table (read only). Unlinked, unknown, inactive or unreadable: guest.
+  The map is `/home/ubuntu/.config/ithomiini-wa-bridge/people.json` on claudeclaw (mode 600, never in git or a
+  release); `{}` means everyone is a guest. Check one sender without a turn: op `whois` (`{ "op": "whois", "who": {…} }`).
+- **The rule (bridge skill, «Who is asking»).** Guests get the same answers (the data is open to the team) and may ask
+  for proposals, which an admin applies in the app; the chat does not apply changes to the database for them
+  (`apply_proposal`, `undo_edits` or other direct writes). Admins have no extra limits. A prompt rule, not a block.
 
 **Voice and `/tono`.** `assistant/voice/whatsapp.md` (the WhatsApp header and `/tono`) and `assistant/voice/core.md`
 (shared with the app's assistant) are the chats' voice: tone only, the skill keeps the rules on facts, evidence and

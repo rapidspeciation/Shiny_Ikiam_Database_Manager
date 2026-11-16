@@ -24,6 +24,12 @@
 //   the run's one answer then covers both) and the helper returns at once → { ok, threadId, steered: true }.
 //   If the run ended meanwhile, T3 starts (or queues) a run for it instead, and the helper waits for that
 //   run like any turn → { ok, threadId, steered: false, status, text, ms }.
+// - who (op 'turn'): { token, jid, fromMe, map, database }: the sender's place in the app, read at turn time on this
+//   machine. Every `token` in `text` becomes one line part (senderRole below): the app account the private map file
+//   (`map`, JSON { "<jid>": "<username>", "self": "<username>" }; "self" is the bridge's own number) links to the JID,
+//   and whether that account is an active admin in the app's user records (`database`, read only). Anyone else, or
+//   anything that cannot be read, is a guest.
+// - op 'whois': { who } → { ok, line } (the same lookup, nothing sent; for checks)
 // - op 'busy': → { ok, busy, exists }
 // - op 'thread': → { ok, exists, title, projectId }
 // - op 'archive': archives `threadId` (an idle chat keeps a Claude process for 30 min) → { ok, threadId }
@@ -34,7 +40,7 @@
 import { progressUpdates } from './t3-progress.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -82,11 +88,55 @@ function moveTo(row, instanceId) {
   return current?.model ? { ...current, instanceId } : modelSelection({}, instanceId);
 }
 
+const bare = jid => String(jid ?? '').replace(/:\d+(?=@)/, '');
+
+/**
+ * The sender's place in the app, as a header part: «app account pato (Patricio), admin» or «… : guest». The map file
+ * links WhatsApp JIDs to app usernames; the admin flag is the account's live record (role 'admin', active). An unlinked,
+ * unknown or inactive sender, or a map or database that cannot be read, is a guest.
+ */
+export function senderRole(who, { readMap = file => JSON.parse(readFileSync(file, 'utf8')), userOf = defaultUserOf } = {}) {
+  let username = null;
+  try {
+    const map = who?.map ? readMap(who.map) : {};
+    const key = who?.fromMe ? 'self' : bare(who?.jid);
+    const v = map && typeof map === 'object' && key && Object.hasOwn(map, key) ? map[key] : null;
+    username = typeof v === 'string' && v.trim() ? v.trim() : null;
+  } catch {
+    return 'app roles unreadable: guest';
+  }
+  if (!username) return 'no linked app account: guest';
+  let user = null;
+  try {
+    user = userOf(who.database, username);
+  } catch {
+    return `app account ${username} (records unreadable): guest`;
+  }
+  if (!user || !user.active) return `app account ${username} (not an active account): guest`;
+  const name = user.display_name ? ` (${user.display_name})` : '';
+  return user.role === 'admin' ? `app account ${username}${name}, admin` : `app account ${username}${name}, ${user.role}: guest`;
+}
+
+function defaultUserOf(database, username) {
+  if (!database || !existsSync(database)) throw new Error('no app database');
+  const db = new DatabaseSync(database, { readOnly: true, timeout: 5000 });
+  try {
+    return db.prepare('SELECT username, display_name, role, active FROM users WHERE username = ?').get(username) ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+/** The request's text with every `who.token` replaced by the sender's place in the app. */
+const withSender = (req, people) =>
+  req.who?.token ? String(req.text ?? '').split(String(req.who.token)).join(people(req.who)) : String(req.text ?? '');
+
 /**
  * One request (see the top of this file) against the T3 state database `db` (read only), sending T3 commands with
  * `send(...commands)`; `sleep` waits between polls. Returns the answer object.
  */
-export async function turn(req, { db, send, sleep = pause }) {
+export async function turn(req, { db, send, sleep = pause, people = senderRole }) {
+  if (req.op === 'whois') return { ok: true, line: people(req.who ?? {}) };
   if (req.op === 'busy') {
     const row = req.threadId ? threadRow(db, req.threadId) : null;
     return { ok: true, exists: Boolean(row && !row.deleted_at), busy: row ? busy(db, req.threadId) : false };
@@ -113,7 +163,7 @@ export async function turn(req, { db, send, sleep = pause }) {
   let deadline = started + (req.timeoutMs ?? 15 * 60_000);
   let threadId = req.threadId ?? null;
   const row = threadId ? threadRow(db, threadId) : null;
-  const message = { messageId: randomUUID(), role: 'user', text: String(req.text ?? ''), attachments: [] };
+  const message = { messageId: randomUUID(), role: 'user', text: withSender(req, people), attachments: [] };
   let before = 0;
   let runOf = null;
   if (!row || row.deleted_at) {
@@ -188,6 +238,7 @@ export async function turn(req, { db, send, sleep = pause }) {
 
 async function main() {
   const req = await readStdin();
+  if (req.op === 'whois') return turn(req, { db: null, send: null });
   const db = openDb(req.home);
   // T3's commands only for the ops that send any (busy and thread only read).
   const send = req.op === 'busy' || req.op === 'thread' ? null : (await import(req.commandsModule)).t3Commands({ local: req.local, tokenFile: req.tokenFile, timeout: 20_000 });

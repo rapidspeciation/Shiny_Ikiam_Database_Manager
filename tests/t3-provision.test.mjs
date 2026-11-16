@@ -290,3 +290,50 @@ test('A WhatsApp workspace: a second one of the same person with its own token, 
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('A workspace marked `denyRules: false` (the WhatsApp group) keeps no deny list: a refresh does not put it back', () => {
+  const home = mkdtempSync(join(tmpdir(), 't3-provision-nodeny-'));
+  try {
+    const shared = join(home, 'ithomiini', 'shared');
+    mkdirSync(shared, { recursive: true });
+    const db = new DatabaseSync(join(shared, 'database.sqlite'));
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE ai_tokens(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+      INSERT INTO users VALUES ('u1','grupo','El grupo','editor',1), ('u2','ana','Ana Pérez','admin',1);`);
+    mkdirSync(join(home, '.config', 'ithomiini'), { recursive: true });
+    writeFileSync(join(home, '.claude.json'), '{}');
+    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), T3CODE_HOME: join(home, '.t3'), ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
+    const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+    const workspaces = join(shared, 't3-workspaces');
+    const settingsOf = folder => JSON.parse(readFileSync(join(workspaces, folder, '.claude', 'settings.json'), 'utf8'));
+
+    run('grupo');
+    run('ana');
+    assert.ok(settingsOf('grupo').permissions.deny.length > 0, 'an ordinary workspace has its deny list');
+    // The group's old hand-made block, then the flag: the next refresh-all drops the whole list and keeps the rest.
+    const settingsFile = join(workspaces, 'grupo', '.claude', 'settings.json');
+    const old = settingsOf('grupo');
+    old.permissions.deny.push('Bash', 'Edit', 'Write', 'mcp__db__apply_proposal');
+    writeFileSync(settingsFile, JSON.stringify(old));
+    writeFileSync(join(workspaces, 'grupo', '.claude', 'ithomiini-workspace.json'), JSON.stringify({ denyRules: false }));
+    run('--refresh-all');
+    const refreshed = settingsOf('grupo');
+    assert.equal(refreshed.permissions.deny, undefined);
+    assert.ok(refreshed.permissions.allow.includes('mcp__db'));
+    assert.equal(refreshed.enableAllProjectMcpServers, true);
+    // A second refresh keeps it that way; the flag file is kept; other workspaces keep their rules.
+    run('--refresh', 'grupo');
+    assert.equal(settingsOf('grupo').permissions.deny, undefined);
+    assert.deepEqual(JSON.parse(readFileSync(join(workspaces, 'grupo', '.claude', 'ithomiini-workspace.json'), 'utf8')), { denyRules: false });
+    assert.ok(settingsOf('ana').permissions.deny.length > 0);
+    // A second workspace of a person (folder not named after them) keeps the flag when it is refreshed.
+    run('ana', '--workspace', 'ana-wa', '--title', 'Ana · WhatsApp');
+    const own = join(workspaces, 'ana-wa', '.claude', 'ithomiini-workspace.json');
+    writeFileSync(own, JSON.stringify({ ...JSON.parse(readFileSync(own, 'utf8')), denyRules: false }));
+    run('--refresh', 'ana-wa');
+    assert.equal(settingsOf('ana-wa').permissions.deny, undefined);
+    assert.equal(JSON.parse(readFileSync(own, 'utf8')).denyRules, false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

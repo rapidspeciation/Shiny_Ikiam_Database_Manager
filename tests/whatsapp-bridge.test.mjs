@@ -1248,3 +1248,86 @@ test('a chat with soulInWorkspace sends no soul in its messages (its voice is in
   assert.equal(readFileSync(join(voice, 'humor.md'), 'utf8'), 'VOZ D3i humor.');
   assert.equal(readFileSync(join(dir, 'provisioned'), 'utf8'), '--refresh franz.chandi-whatsapp\n');
 });
+
+/** The live config's shape: the group and Franz's chat answer; the lab and check copies are off; «Ikiam» is only mirrored. */
+function liveShape({ people = null } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-bridge-live-'));
+  const script = join(dir, 'turn.mjs');
+  const requests = join(dir, 'requests.jsonl');
+  // A stand-in for t3-turn.mjs that keeps each request (what the chat would get) and answers.
+  writeFileSync(script, `import { appendFileSync } from 'node:fs'; let s='';for await (const c of process.stdin) s+=c; appendFileSync(${JSON.stringify(requests)}, s + '\\n'); console.log(JSON.stringify({ok:true,threadId:'T1',status:'completed',text:'Hay 12.'}));`);
+  const config = {
+    chats: {
+      group: { jid: 'G@g.us', label: 'Grupo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 15, ack: 'reaction', ...(people ? { people } : {}) },
+      self: { jid: 'ME@s.whatsapp.net', aliases: ['ME@lid'], label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 60, contextLines: 0, ack: 'reaction' },
+      labgroup: { jid: 'LAB@g.us', label: 'Grupo [simulación]', route: 'r', enabled: false, dryRun: true, repliesHour: 20, contextLines: 15 },
+      groupcheck: { jid: 'CHECK@g.us', label: 'Grupo', route: 'r', enabled: false, dryRun: true, repliesHour: 20, contextLines: 15 },
+      ikiam: { jid: 'IKIAM@g.us', label: 'Otro grupo', route: 'r', enabled: true, readOnly: true, history: { dir: join(dir, 'hist'), slug: 'otro' } },
+    },
+    routes: { r: { script, attachmentsDir: join(dir, 'att') } },
+    wacli: { bin: '/bin/false', store: dir },
+  };
+  const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} } });
+  let n = 0;
+  const post = (chat, text, extra = {}) => bridge.handle({ Chat: chat, ID: `M${++n}`, SenderJID: 'P:3@lid', Timestamp: new Date().toISOString(), FromMe: false, Text: text, PushName: 'Persona Tres', ...extra });
+  const sent = () => (existsSync(requests) ? readFileSync(requests, 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  const log = () => readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const outbox = () => (existsSync(join(dir, 'state', 'outbox.jsonl')) ? readFileSync(join(dir, 'state', 'outbox.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []);
+  return { bridge, post, sent, log, outbox, dir };
+}
+
+test('only the group and Franz\'s chat get turns: any other chat, even with @claude, is dropped as «chat not enabled»', async () => {
+  const { bridge, post, sent, log, outbox } = liveShape();
+  for (const chat of ['STRANGER@g.us', 'SOMEONE@s.whatsapp.net', 'LAB@g.us', 'CHECK@g.us']) {
+    assert.equal(post(chat, '@claude cuántos hay? secreto').decision, 'drop', chat);
+    assert.equal(post(chat, '@claude /status').decision, 'drop', chat);
+  }
+  const drops = log().filter(e => e.decision === 'drop');
+  assert.equal(drops.length, 8);
+  assert.ok(drops.every(e => e.reason === 'chat not enabled' && !e.chat && !e.id));
+  assert.ok(!JSON.stringify(log()).includes('secreto') && !JSON.stringify(log()).includes('STRANGER'));
+  // The read-only source is mirrored, never answered, even with @claude.
+  assert.equal(post('IKIAM@g.us', '@claude hola').reason, 'read-only source');
+  assert.ok(await bridge.settled());
+  assert.deepEqual(sent(), []);
+  assert.deepEqual(outbox(), []);
+  // The two answering chats do get their turn.
+  assert.equal(post('G@g.us', '@claude cuántos hay?').decision, 'queued');
+  assert.ok(await bridge.settled());
+  post('ME@lid', '@claude cuántos hay?', { FromMe: true });
+  assert.ok(await bridge.settled());
+  assert.equal(sent().length, 2);
+});
+
+test('the group header names the sender\'s app account and admin or guest, looked up by the turn helper at turn time', async () => {
+  const people = { map: '/srv/private/people.json', database: '/srv/app/database.sqlite' };
+  const live = liveShape({ people });
+  live.post('G@g.us', '@claude cuántos hay?');
+  assert.ok(await live.bridge.settled());
+  const [req] = live.sent();
+  const head = req.text.split('\n').find(l => l.startsWith('[WhatsApp'));
+  // The token the helper replaces is random per turn, so a message cannot spell it.
+  const token = /\[\[sender-role [0-9a-f-]{36}\]\]/.exec(head)?.[0];
+  assert.ok(token, head);
+  assert.match(head, /^\[WhatsApp · group «Grupo» · Persona Tres · \[\[sender-role [0-9a-f-]{36}\]\] · \d\d:\d\d\]$/);
+  assert.deepEqual(req.who, { token, jid: 'P@lid', fromMe: false, map: people.map, database: people.database });
+  // Franz's own message in the group: the map's "self".
+  live.post('G@g.us', '@claude y ahora?', { FromMe: true, SenderJID: 'ME@lid' });
+  assert.ok(await live.bridge.settled());
+  const mine = live.sent()[1];
+  assert.equal(mine.who.fromMe, true);
+  assert.match(mine.text, /· Franz · \[\[sender-role /);
+  assert.notEqual(mine.who.token, token);
+  // Franz's own chat has no role part and no lookup.
+  live.post('ME@s.whatsapp.net', '@claude hola', { FromMe: true });
+  assert.ok(await live.bridge.settled());
+  const self = live.sent()[2];
+  assert.equal(self.who, undefined);
+  assert.match(self.text, /\[WhatsApp · Franz \(self-chat\) · /);
+  // A group without `people`: everyone is a guest, said in the header itself.
+  const plain = liveShape();
+  plain.post('G@g.us', '@claude cuántos hay?');
+  assert.ok(await plain.bridge.settled());
+  assert.equal(plain.sent()[0].who, undefined);
+  assert.match(plain.sent()[0].text, /· Persona Tres · no linked app account: guest · /);
+});

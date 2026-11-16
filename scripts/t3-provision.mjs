@@ -352,6 +352,10 @@ function provision(user, { freshToken, addProject, folder = user.username, title
   // ITHOMIINI_CLAUDE_LEAN=0 takes them out again (the rollback: then --refresh-all).
   if (process.env.ITHOMIINI_CLAUDE_LEAN === '0') unleanClaude(settings);
   else leanClaude(settings);
+  // A workspace whose .claude/ithomiini-workspace.json has `"denyRules": false` keeps no deny list at all (the WhatsApp
+  // group's, since 16 Nov 2026: every member has an app account, so its chat has a loose rule in the bridge skill
+  // instead of a hard block). A refresh does not put the rules back.
+  if (workspaceSettings(folder).denyRules === false) delete settings.permissions.deny;
   // The lab's chats can neither send WhatsApp nor make timers (scripts/lab-guard.mjs).
   if (labUrl) applyLabGuard(settings, { home: process.env.HOME, source, cache: join(process.env.HOME, '.cache', 'ithomiini-lab') });
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));

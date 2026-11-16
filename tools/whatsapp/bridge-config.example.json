@@ -4,7 +4,8 @@
   "secretFile": "/home/franz/.config/ithomiini-wa-bridge/webhook-secret",
   "wacli": { "bin": "/home/franz/.local/bin/wacli", "store": "/home/franz/.wacli" },
   "chats": {
-    "group": { "jid": "<group>@g.us", "label": "Ithomiini 🦋 (underground)", "route": "claudeclaw", "enabled": true, "repliesHour": 20, "contextLines": 15, "ack": "reaction" },
+    "group": { "jid": "<group>@g.us", "label": "Ithomiini 🦋 (underground)", "route": "claudeclaw", "enabled": true, "repliesHour": 20, "contextLines": 15, "ack": "reaction",
+      "people": { "map": "/home/ubuntu/.config/ithomiini-wa-bridge/people.json", "database": "/home/ubuntu/ithomiini/shared/database.sqlite" } },
     "self": { "jid": "<own number>@s.whatsapp.net", "aliases": ["<own LID>@lid"], "label": "tu chat contigo mismo", "route": "local", "enabled": true, "repliesHour": 60, "contextLines": 0, "ack": "reaction" },
     "labgroup": { "jid": "120363999999999999@g.us", "label": "Ithomiini 🦋 (underground) [simulación]", "route": "labsim", "enabled": false, "dryRun": true, "repliesHour": 20, "contextLines": 15 }
   },
