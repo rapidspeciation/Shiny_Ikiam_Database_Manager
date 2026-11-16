@@ -54,8 +54,8 @@ import { locale, t } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
-import { epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, TRIBE_RUNG, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
-import { loadTaxonomy } from '../lib/taxonomy'
+import { engineOf, epithet, groupByGenus, headline, higherRanks, isIthomiini, guessOf, percent, rank, ranksAbove, rungs, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
+import { forHead, loadTaxonomy } from '../lib/taxonomy'
 import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
@@ -637,41 +637,61 @@ const sspRest = (name: string) => (subspecies.value.get(name)?.length ?? 0) - ss
 const openSsp = ref<string | null>(null)
 const grouped = computed(() => (ranked.value ? groupByGenus(ranked.value.species, ranked.value.genus) : null))
 const top = computed(() => ranked.value?.species[0])
-/** With the flag (TRIBE_RUNG): the head's tribe and subfamily per species, for the phone's totals. */
+/** The head's tribe and subfamily per species (lib/taxonomy.ts), loaded with the first result. */
 const taxonomy = shallowRef<Taxonomy | null>(null)
 watch(
-  () => head.value?.meta.head_sha256,
-  sha => {
-    if (TRIBE_RUNG && sha && !taxonomy.value) loadTaxonomy(sha).then(t => (taxonomy.value = t))
+  () => !!result.value,
+  has => {
+    if (has && !taxonomy.value) loadTaxonomy().then(t => (taxonomy.value = t))
   },
   { immediate: true },
 )
 const higher = computed<Higher | null>(() => {
-  if (!TRIBE_RUNG) return null
   if (fromServer.value) return fromServer.value.higher
-  return scores.value && head.value && taxonomy.value ? higherRanks(scores.value, head.value.meta.species, taxonomy.value) : null
+  const tax = forHead(taxonomy.value, head.value?.meta.head_sha256)
+  return scores.value && head.value && tax ? higherRanks(scores.value, head.value.meta.species, tax) : null
 })
-const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus, higher.value) : null))
+/** The cuts of the model that read the photo (THRESHOLDS): the server and «Más preciso» are BioCLIP. */
+const cuts = computed(() => THRESHOLDS[engineOf(result.value?.source ?? 'phone', result.value?.kind)])
+const said = computed(() => (ranked.value ? headline(top.value, ranked.value.genus, higher.value, cuts.value) : null))
 /**
- * The Ithomiini badge under the headline: from the top species, except under a tribe answer (the tribe says it) or a
- * subfamily answer (Danainae holds Ithomiini and others: neither the badge nor «No parece una Ithomiini.»).
+ * The guess the headline always names (lib/identifyResult.ts guessOf): the most probable species, marked «Incierto»
+ * below the species cut; `ladder` its genus (and the tribe or subfamily that is clear) under it.
+ */
+const guess = computed(() => (ranked.value ? guessOf(said.value, ranked.value.species, taxonomy.value) : undefined))
+const speciesSure = computed(() => said.value?.kind === 'species')
+const ladder = computed(() => (ranked.value ? rungs(said.value, guess.value, ranked.value.genus) : []))
+/**
+ * The guess's tribe and subfamily, the small label by the headline; not when a tribe or subfamily is the clear level
+ * (its row under the headline names it, with its score).
+ */
+const above = computed(() =>
+  guess.value && said.value?.kind !== 'tribe' && said.value?.kind !== 'subfamily' ? ranksAbove({ kind: 'species', name: guess.value.name }, taxonomy.value) : null,
+)
+/**
+ * Whether the photo looks like an Ithomiini, for the label by the headline: under a clear tribe only «No parece una
+ * Ithomiini.» when it is another (its row names it), else the guess's tribe
+ * when the file gives it, else from the guess's genus; nothing when the subfamily is the clear level (Danainae holds
+ * Ithomiini and others). A label naming Ithomiini is the badge; «No parece una Ithomiini.» otherwise.
  */
 const ithomiiniBadge = computed<boolean | null>(() => {
-  if (said.value?.kind === 'tribe') return said.value.name === 'Ithomiini'
+  // A clear tribe has its own row: no badge repeating «Ithomiini», only the warning when it is another tribe.
+  if (said.value?.kind === 'tribe') return said.value.name === 'Ithomiini' ? null : false
   if (said.value?.kind === 'subfamily') return null
-  return isIthomiini(top.value?.name ?? '', ITHOMIINI_GENERA)
+  if (above.value?.tribe) return above.value.tribe === 'Ithomiini'
+  return isIthomiini(guess.value?.name ?? '', ITHOMIINI_GENERA)
 })
 const sspHint = computed(() => {
-  const hint = top.value ? subspeciesHint(said.value, top.value, subspecies.value.get(top.value.name)) : null
+  const hint = guess.value ? subspeciesHint(said.value, guess.value, subspecies.value.get(guess.value.name)) : null
   // The server lists only its 5 most probable subspecies: one listed does not mean the model knows only one.
   return hint && fromServer.value ? { ...hint, only: false } : hint
 })
 /** The line's score: of the whole photo when the species is clear; «if it is this species», its share of the species. */
 const sspPercent = (p: number) =>
-  sspHint.value?.kind === 'if' && top.value?.p ? t('{p} de esa especie', { p: percent(p / top.value.p) }) : percent(p)
+  sspHint.value?.kind === 'if' && guess.value?.p ? t('{p} de esa especie', { p: percent(p / guess.value.p) }) : percent(p)
 const compared = ref<string | null>(null)
 const pick = ref<string | null>(null)
-const showing = computed(() => compared.value ?? top.value?.name ?? '')
+const showing = computed(() => compared.value ?? guess.value?.name ?? '')
 const openGenus = ref<string | null>(null)
 watch(grouped, g => (openGenus.value = g?.groups[0]?.genus ?? null))
 watch(top, c => (openSsp.value = c?.name ?? null))
@@ -1671,7 +1691,6 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
 
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 pt-3 pb-16 sm:px-6">
-    <p v-if="TRIBE_RUNG" class="mb-2 text-xs text-fg-subtle" data-testid="tribe-rung-on">{{ $t('Respuesta de tribu y subfamilia activada para pruebas') }}</p>
     <!-- The three places: identify a photo, look a taxon up, what the phone keeps -->
     <nav class="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-border-strong bg-surface-sunken p-1" :aria-label="$t('Identificar')" data-testid="places">
       <button
@@ -1771,46 +1790,48 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </p>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <!-- the badge before the sentence: never after «Lo más parecido:» (round 2) -->
+              <!-- the label before the sentence: never after «Lo más parecido:» (round 2). The ranks above the answer
+                   (tribe · subfamily) are the Ithomiini badge when the tribe is Ithomiini, so the page never says it twice; a
+                   subfamily alone says «Subfamilia», never to be read as the tribe of «Posible tribu». -->
               <p class="text-sm text-fg-muted">
-                <span v-if="ithomiiniBadge === true" class="mr-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text" data-testid="ithomiini-badge">Ithomiini</span>
-                <span v-else-if="ithomiiniBadge === false" class="mr-1" data-testid="not-ithomiini">{{ $t('No parece una Ithomiini.') }}</span>
-                {{
-                  said?.kind === 'genus'
-                    ? $t('Posible género')
-                    : said?.kind === 'tribe'
-                      ? $t('Posible tribu')
-                      : said?.kind === 'subfamily'
-                        ? $t('Posible subfamilia')
-                        : said?.kind === 'unsure'
-                          ? $t('No estamos seguros. Lo más parecido:')
-                          : $t('Posible identificación')
-                }}
+                <span
+                  v-if="above"
+                  class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium"
+                  :class="above.tribe === 'Ithomiini' ? 'bg-brand-soft text-brand-text' : 'bg-surface-sunken text-fg'"
+                  :data-testid="above.tribe === 'Ithomiini' ? 'ithomiini-badge' : 'ranks-above'"
+                  :title="[above.tribe && $t('Tribu {name}', { name: above.tribe }), above.subfamily && $t('Subfamilia {name}', { name: above.subfamily })].filter(Boolean).join(' · ')"
+                  >{{ above.tribe ? [above.tribe, above.subfamily].filter(Boolean).join(' · ') : $t('Subfamilia {name}', { name: above.subfamily }) }}</span
+                >
+                <span v-else-if="ithomiiniBadge === true" class="mr-1 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand-text" data-testid="ithomiini-badge">Ithomiini</span>
+                <span v-if="ithomiiniBadge === false" class="mr-1" data-testid="not-ithomiini">{{ $t('No parece una Ithomiini.') }}</span>
+                {{ $t('Posible identificación') }}
               </p>
-              <!-- data-top: the top species whatever the headline says (browser checks: tools, lab notes). -->
-              <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p">
-                <template v-if="said?.kind === 'genus'">
-                  <i>{{ said.genus }}</i>
-                  <span class="block text-base font-normal text-fg-muted">{{ $t('la especie no es segura') }}</span>
-                </template>
-                <template v-else-if="said?.kind === 'tribe' || said?.kind === 'subfamily'">
-                  {{ said.kind === 'tribe' ? $t('Tribu {name}', { name: said.name }) : $t('Subfamilia {name}', { name: said.name }) }}
-                  <span class="block text-base font-normal text-fg-muted">{{ $t('el género no es seguro') }}</span>
-                </template>
-                <i v-else>{{ top?.name }}</i>
+              <!-- Always the guess, as the Wings Gallery (Franz, 15 Nov 2026). data-top: the top species (browser checks: tools, lab notes). -->
+              <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p" :data-sure="speciesSure">
+                <i>{{ guess?.name }}</i>
               </h1>
             </div>
-            <p class="shrink-0 pt-4 text-2xl leading-tight font-semibold tabular-nums" :class="said?.kind === 'unsure' ? 'text-fg-muted' : 'text-brand-text'" data-testid="headline-p" :title="$t('Puntuación de la IA')">
-              {{
-                said?.kind === 'genus'
-                  ? percent(ranked.genus.get((said as { genus: string }).genus) ?? 0)
-                  : said?.kind === 'tribe' || said?.kind === 'subfamily'
-                    ? percent(said.p)
-                    : percent(top?.p ?? 0)
-              }}
-            </p>
+            <div class="flex shrink-0 flex-col items-end pt-4">
+              <p class="text-2xl leading-tight font-semibold tabular-nums" :class="speciesSure ? 'text-brand-text' : 'text-fg-muted'" data-testid="headline-p" :title="$t('Puntuación de la IA')">
+                {{ percent(guess?.p ?? 0) }}
+              </p>
+              <span v-if="!speciesSure" class="unsure-tag mt-1" data-testid="species-unsure">{{ $t('Incierto') }}</span>
+            </div>
           </div>
-          <p v-if="sspHint" class="mt-0.5 text-sm" data-testid="ssp-hint">
+          <!-- Under an uncertain species: its genus («Incierto» below its cut), then the tribe or subfamily that is clear -->
+          <ul v-if="ladder.length" class="mt-2 divide-y divide-border rounded-md border border-border bg-surface text-sm" data-testid="rungs">
+            <li v-for="r in ladder" :key="r.kind" class="flex min-h-9 items-center gap-2 px-3 py-1" :data-testid="`rung-${r.kind}`" :data-sure="r.sure">
+              <span class="w-20 shrink-0 text-fg-muted">{{ r.kind === 'genus' ? $t('Género') : r.kind === 'tribe' ? $t('Tribu') : $t('Subfamilia') }}</span>
+              <i v-if="r.kind === 'genus'" class="min-w-0 flex-1 truncate font-medium">{{ r.name }}</i>
+              <span v-else class="min-w-0 flex-1 truncate font-medium">{{ r.name }}</span>
+              <span class="tabular-nums" :class="r.sure ? 'font-semibold text-brand-text' : 'text-fg-muted'">{{ percent(r.p) }}</span>
+              <span class="flex w-[4.75rem] shrink-0 justify-end">
+                <Check v-if="r.sure" :size="18" class="text-brand-text" :aria-label="$t('Por encima del umbral')" role="img" />
+                <span v-else class="unsure-tag">{{ $t('Incierto') }}</span>
+              </span>
+            </li>
+          </ul>
+          <p v-if="sspHint" class="mt-1.5 text-sm" data-testid="ssp-hint">
             <span class="text-fg-muted">{{ sspHint.kind === 'species' ? $t('Subespecie más probable:') : $t('Si fuera esta especie, la subespecie más parecida:') }}</span>
             {{ ' ' }}<i class="font-medium">{{ shortName(sspHint.name) }}</i>&nbsp;<span class="whitespace-nowrap tabular-nums">({{ sspPercent(sspHint.p) }})</span>
             <template v-if="sspHint.alt">
@@ -2058,3 +2079,17 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
     </div>
   </div>
 </template>
+
+<style scoped>
+.unsure-tag {
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-pending-edge);
+  background: var(--color-cell-pending);
+  color: var(--color-pending-text);
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+</style>

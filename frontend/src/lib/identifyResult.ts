@@ -3,13 +3,31 @@
  * genus, and the flash-frozen gap against the reference-genome target. Pure functions, tested on their own.
  *
  * The scores are the head's probabilities, not calibrated on people's photos: the tab never turns them into words
- * like «muy probable». It only names the genus instead of the species when the species is unclear and the genus is
- * not (CLEAR, a cut not yet checked against held-out photos: DESIGN.md, «Not in this version»); with the flag
- * TRIBE_RUNG, then the tribe and the subfamily.
+ * like «muy probable». It always names its guess, the most probable species and its genus, as the Wings Gallery does
+ * (Franz, 15 Nov 2026), each with its score and marked «Incierto» below the engine's cut (THRESHOLDS); `headline` is
+ * the most specific level that does clear its cut (species, genus, tribe, subfamily, or none), shown as the certain one.
  */
 import type { StockCount } from './frozenStock'
 
-export const CLEAR = 0.8
+/** Which model read the photo: the phone's small model, or BioCLIP (the server, and the phone's «Más preciso»). */
+export type IdEngine = 'small' | 'bioclip'
+export interface Cuts {
+  species: number
+  genus: number
+  /** The tribe and the subfamily (WingsClassificator X-A8, S1-confirmed at 0.80). */
+  higher: number
+}
+/**
+ * The cuts per engine: below them the species (genus) is shown as «Incierto», and the tribe or subfamily is not
+ * shown as certain. The species and genus values are 0.80 until the measurement of 15 Nov 2026
+ * (.work/identify-answers-20261115/PREREG.md) gives its own: change this one line and the tests that name the values.
+ */
+// prettier-ignore
+export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.8, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.8, genus: 0.8, higher: 0.8 } }
+
+/** The engine of an answer: the server's and the phone's «Más preciso» (`full`) are BioCLIP; the rest the small one. */
+export const engineOf = (source: 'online' | 'phone', kind?: 'full' | 'small' | null): IdEngine =>
+  source === 'online' || kind === 'full' ? 'bioclip' : 'small'
 
 export interface Candidate {
   name: string
@@ -52,13 +70,6 @@ export type Headline =
   | { kind: 'tribe' | 'subfamily'; name: string; p: number }
   | { kind: 'unsure' }
 
-/**
- * The tribe and subfamily answer (WingsClassificator X-A8, S1-confirmed with the same CLEAR): on (Franz, 11 Nov 2026:
- * deploy it to test in production), with a line saying it is there for testing. A page built with VITE_TRIBE_RUNG=0
- * keeps the old ladder: species, genus, «not sure».
- */
-export const TRIBE_RUNG = import.meta.env.VITE_TRIBE_RUNG !== '0'
-
 /** Every tribe's and subfamily's total: the sum of its species' scores (all of them, not only the listed ones). */
 export interface Higher {
   tribe: Map<string, number>
@@ -79,19 +90,20 @@ function best(totals: Map<string, number> | undefined): { name: string; p: numbe
 }
 
 /**
- * The species when its score is clear, else its genus when that is, else (with the flag `on` and the totals
- * `higher`) the tribe, then the subfamily, whose total is clear, else «not sure». Used for both the server's answer
- * and the phone's.
+ * The level that is clear: the species when its score clears `cuts.species`, else its genus when the genus total
+ * clears `cuts.genus`, else (with the totals `higher`) the tribe, then the subfamily, whose total clears
+ * `cuts.higher`, else «not sure». Used for both the server's answer and the phone's, with the cuts of the engine that
+ * read the photo.
  */
-export function headline(top: Candidate | undefined, genus: Map<string, number>, higher: Higher | null = null, on = TRIBE_RUNG): Headline {
+export function headline(top: Candidate | undefined, genus: Map<string, number>, higher: Higher | null = null, cuts: Cuts = THRESHOLDS.bioclip): Headline {
   if (!top) return { kind: 'unsure' }
-  if (top.p >= CLEAR) return { kind: 'species', name: top.name }
+  if (top.p >= cuts.species) return { kind: 'species', name: top.name }
   const g = top.name.split(' ')[0]
-  if ((genus.get(g) ?? 0) >= CLEAR) return { kind: 'genus', genus: g }
-  if (on && higher) {
+  if ((genus.get(g) ?? 0) >= cuts.genus) return { kind: 'genus', genus: g }
+  if (higher) {
     for (const kind of ['tribe', 'subfamily'] as const) {
       const b = best(higher[kind])
-      if (b && b.p >= CLEAR) return { kind, ...b }
+      if (b && b.p >= cuts.higher) return { kind, ...b }
     }
   }
   return { kind: 'unsure' }
@@ -124,13 +136,88 @@ export function higherRanks(scores: ArrayLike<number>, species: string[], tax: T
   return out
 }
 
+/** A species' tribe and subfamily as the page may show them (placeholders already left out of the file): null for none. */
+export interface TaxonLabel {
+  tribe: string | null
+  subfamily: string | null
+}
+const nameAt = (list: string[], i: number | undefined) => (i !== undefined && i >= 0 && shownTaxon(list[i]) ? list[i] : null)
+export function taxonOf(species: string, tax: Taxonomy | null): TaxonLabel | null {
+  const pair = tax?.species[species]
+  return pair ? { tribe: nameAt(tax!.tribes, pair[0]), subfamily: nameAt(tax!.subfamilies, pair[1]) } : null
+}
+/** Each rank's name shared by every species of the file that `match` keeps, else null for that rank (none listed, or they differ). */
+function shared(tax: Taxonomy, match: (species: string, label: TaxonLabel) => boolean): TaxonLabel | null {
+  let out: { tribe: string | null | undefined; subfamily: string | null | undefined } | null = null
+  for (const sp of Object.keys(tax.species)) {
+    const l = taxonOf(sp, tax)!
+    if (!match(sp, l)) continue
+    out ??= { tribe: l.tribe, subfamily: l.subfamily }
+    if (out.tribe !== l.tribe) out.tribe = null
+    if (out.subfamily !== l.subfamily) out.subfamily = null
+  }
+  return out && (out.tribe || out.subfamily) ? { tribe: out.tribe ?? null, subfamily: out.subfamily ?? null } : null
+}
+
+/**
+ * The ranks above the answer, for the small label by the headline: a species' tribe and subfamily, a genus's (shared
+ * by all its species in the file), a tribe's subfamily. None for a subfamily or «not sure», nor when the file does
+ * not list the name.
+ */
+export function ranksAbove(said: Headline | null, tax: Taxonomy | null): TaxonLabel | null {
+  if (!said || !tax) return null
+  if (said.kind === 'species') {
+    const l = taxonOf(said.name, tax)
+    return l && (l.tribe || l.subfamily) ? l : null
+  }
+  if (said.kind === 'genus') return shared(tax, sp => sp.split(' ')[0] === said.genus)
+  if (said.kind === 'tribe') {
+    const l = shared(tax, (_, label) => label.tribe === said.name)
+    return l?.subfamily ? { tribe: null, subfamily: l.subfamily } : null
+  }
+  return null
+}
+
+/**
+ * The guess the headline names: the most probable species, except when a tribe or subfamily is the clear level and
+ * that species is not in it (its many species share the score): then the most probable listed species within it, so
+ * the guess never contradicts what is certain. The first candidate when the file `tax` cannot tell.
+ */
+export function guessOf(said: Headline | null, candidates: Candidate[], tax: Taxonomy | null): Candidate | undefined {
+  const top = candidates[0]
+  if (!said || !top || (said.kind !== 'tribe' && said.kind !== 'subfamily') || !tax) return top
+  const kind = said.kind
+  const inside = (c: Candidate) => taxonOf(c.name, tax)?.[kind] === said.name
+  return inside(top) ? top : (candidates.find(inside) ?? top)
+}
+
+/** A rank shown under an uncertain species: its name, its total, and whether it clears its cut. */
+export interface Rung {
+  kind: 'genus' | 'tribe' | 'subfamily'
+  name: string
+  p: number
+  sure: boolean
+}
+/**
+ * The ranks under the guessed species: none when the species is clear (its name says the genus); else its genus
+ * (sure when it clears its cut, else «Incierto»), then the tribe or subfamily that clears its cut, when the genus does
+ * not.
+ */
+export function rungs(said: Headline | null, guess: Candidate | undefined, genus: Map<string, number>): Rung[] {
+  if (!said || !guess || said.kind === 'species') return []
+  const g = guess.name.split(' ')[0]
+  const out: Rung[] = [{ kind: 'genus', name: g, p: genus.get(g) ?? guess.p, sure: said.kind === 'genus' && said.genus === g }]
+  if (said.kind === 'tribe' || said.kind === 'subfamily') out.push({ kind: said.kind, name: said.name, p: said.p, sure: true })
+  return out
+}
+
 /**
  * The subspecies named under the headline (views/IdentifyView.vue): the most probable subspecies leaf of the top
  * species (worker.py's subspecies scores, after the side's prior), `ssp` most probable first, every subspecies leaf
- * the head has for that species. None when the head names no subspecies (schema 1), when only the genus is clear
- * (no species to hang it on), or when the subspecies carries little of the species' score (the species' own leaf,
- * «subspecies not given», holds the rest: naming one would overclaim). `kind` 'if' when the species itself is not
- * clear: the line then says «if it is this species». `alt`: the second when it is close (at least half the first).
+ * the head has for that species. None when the head names no subspecies (schema 1), or when the subspecies carries
+ * little of the species' score (the species' own leaf, «subspecies not given», holds the rest: naming one would
+ * overclaim). `kind` 'if' whenever the species itself is not clear (an uncertain guess: never a confident
+ * subspecies under it): the line then says «if it is this species». `alt`: the second when it is close (at least half the first).
  * `only`: the head knows just this one subspecies of the species, so naming it says little.
  */
 export const SSP_MIN = 0.005
@@ -143,7 +230,7 @@ export interface SubspeciesHint {
   only: boolean
 }
 export function subspeciesHint(said: Headline | null, top: Candidate | undefined, ssp: Candidate[] | undefined): SubspeciesHint | null {
-  if (!said || said.kind === 'genus' || said.kind === 'tribe' || said.kind === 'subfamily' || !top || !ssp?.length) return null
+  if (!said || !top || !ssp?.length) return null
   const [first, second] = ssp
   if (first.p < SSP_MIN || first.p < SSP_SHARE * top.p) return null
   const alt = second && second.p >= SSP_MIN && second.p >= first.p / 2 ? second : undefined

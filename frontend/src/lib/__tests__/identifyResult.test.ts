@@ -91,11 +91,12 @@ describe('photo credits', async () => {
 
 describe('subspecies line', () => {
   const ssp = [{ name: 'Mechanitis messenoides deceptus', p: 0.3 }, { name: 'Mechanitis messenoides messenoides', p: 0.1 }]
-  it('says «if it is this species» when the species is not clear, and nothing when only the genus is', () => {
+  it('says «if it is this species» whenever the species is not clear', () => {
     const top = { name: 'Mechanitis messenoides', p: 0.43 }
     expect(subspeciesHint({ kind: 'unsure' }, top, ssp)).toEqual({ kind: 'if', name: ssp[0].name, p: 0.3, alt: undefined, only: false })
     expect(subspeciesHint({ kind: 'species', name: top.name }, { ...top, p: 0.9 }, ssp)?.kind).toBe('species')
-    expect(subspeciesHint({ kind: 'genus', genus: 'Mechanitis' }, top, ssp)).toBeNull()
+    // The species always named, an uncertain one too: «if it is this species», never a confident subspecies.
+    expect(subspeciesHint({ kind: 'genus', genus: 'Mechanitis' }, top, ssp)?.kind).toBe('if')
   })
   it('names no subspecies that carries little of the species, and gives a close second', () => {
     const top = { name: 'Mechanitis messenoides', p: 0.9 }

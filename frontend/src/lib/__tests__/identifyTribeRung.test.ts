@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CLEAR, headline, higherRanks, shownTaxon, subspeciesHint, TRIBE_RUNG, type Taxonomy } from '../identifyResult'
+import { engineOf, guessOf, headline, higherRanks, ranksAbove, rungs, shownTaxon, subspeciesHint, taxonOf, THRESHOLDS, type Cuts, type Taxonomy } from '../identifyResult'
 import { serverRanking, type ServerAnswer } from '../identifyOnline'
 import { isIthomiiniGenus } from '../ithomiiniGenera'
 
-// The tribe / subfamily answer (WingsClassificator X-A8): species >= CLEAR, genus >= CLEAR, tribe >= CLEAR,
-// subfamily >= CLEAR, else «not sure»; TRIBE_RUNG on unless built with VITE_TRIBE_RUNG=0.
+// The answer ladder (WingsClassificator X-A8): species >= cuts.species, genus >= cuts.genus, tribe >= cuts.higher,
+// subfamily >= cuts.higher, else «not sure»; the cuts per engine (THRESHOLDS).
 const species = ['Mechanitis polymnia', 'Mechanitis lysimnia', 'Oleria onega', 'Hypothyris anastasia', 'Danaus plexippus', 'Heliconius erato', 'Chetone angulosa', 'Athis inca']
 const tax: Taxonomy = {
   head: 'h',
@@ -28,24 +28,37 @@ const answer = (scores: number[]) => {
   const order = scores.map((p, i) => ({ name: species[i], p })).sort((a, b) => b.p - a.p)
   return { top: order[0], genus, higher: higherRanks(scores, species, tax) }
 }
-const say = (scores: number[], on = true) => {
+const say = (scores: number[], cuts: Cuts = THRESHOLDS.bioclip) => {
   const a = answer(scores)
-  return headline(a.top, a.genus, a.higher, on)
+  return headline(a.top, a.genus, a.higher, cuts)
 }
 
 describe('tribe and subfamily answer', () => {
-  it('is on unless the page is built with VITE_TRIBE_RUNG=0', () => {
-    expect(TRIBE_RUNG).toBe(true)
-    const a = answer([0.3, 0.2, 0.3, 0, 0.1, 0, 0.1, 0])
-    // Flag off: the old ladder, even with the totals given.
-    expect(headline(a.top, a.genus, a.higher, false)).toEqual({ kind: 'unsure' })
-    expect(headline(a.top, a.genus, null, true)).toEqual({ kind: 'unsure' })
+  it('is always on: without totals (an older server) the ladder stops at the genus', () => {
+    const a = answer([0.4, 0.1, 0.35, 0, 0.15, 0, 0, 0])
+    expect(headline(a.top, a.genus, a.higher).kind).toBe('tribe')
+    expect(headline(a.top, a.genus, null)).toEqual({ kind: 'unsure' })
   })
 
-  it('keeps the species and genus rungs first, at the same cut', () => {
-    expect(CLEAR).toBe(0.8)
+  it('has one set of cuts per engine, all 0.80 until the measurement gives its own', () => {
+    // The values of 15 Nov 2026 (PREREG.md): when the lead applies the measured ones, these lines change with them.
+    expect(THRESHOLDS).toEqual({ small: { species: 0.8, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.8, genus: 0.8, higher: 0.8 } })
+    expect(engineOf('online')).toBe('bioclip')
+    expect(engineOf('online', 'small')).toBe('bioclip')
+    expect(engineOf('phone', 'full')).toBe('bioclip')
+    expect(engineOf('phone', 'small')).toBe('small')
+    expect(engineOf('phone')).toBe('small')
+  })
+
+  it('keeps the species and genus rungs first, each at its own cut', () => {
     expect(say([0.85, 0.05, 0.05, 0, 0.05, 0, 0, 0])).toEqual({ kind: 'species', name: 'Mechanitis polymnia' })
     expect(say([0.5, 0.35, 0.1, 0, 0.05, 0, 0, 0])).toEqual({ kind: 'genus', genus: 'Mechanitis' })
+    // Separate cuts: a lower species cut names the species, a higher genus cut skips to the tribe.
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.55, genus: 0.8, higher: 0.8 })).toEqual({ kind: 'species', name: 'Mechanitis polymnia' })
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.8 })).toMatchObject({ kind: 'tribe', name: 'Ithomiini' })
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.99 })).toEqual({ kind: 'unsure' })
+    // The tribe cut is its own too.
+    expect(say([0.4, 0.1, 0.35, 0, 0.15, 0, 0, 0], { species: 0.8, genus: 0.8, higher: 0.9 })).toEqual({ kind: 'unsure' })
   })
 
   it('names the tribe when its total is clear and the genus is not', () => {
@@ -81,16 +94,17 @@ describe('tribe and subfamily answer', () => {
     // A placeholder in the server's list is skipped too.
     const top = { name: 'Chetone angulosa', p: 0.4 }
     const genus = new Map([['Chetone', 0.5]])
-    expect(headline(top, genus, { tribe: new Map([['UNKNOWN_tribe_Chetone', 0.9]]), subfamily: new Map([['incertae sedis', 0.9]]) }, true)).toEqual({ kind: 'unsure' })
+    expect(headline(top, genus, { tribe: new Map([['UNKNOWN_tribe_Chetone', 0.9]]), subfamily: new Map([['incertae sedis', 0.9]]) })).toEqual({ kind: 'unsure' })
     expect(shownTaxon('UNKNOWN_subfamily_Athis')).toBe(false)
     expect(shownTaxon('Ithomiini')).toBe(true)
   })
 
-  it('names no subspecies under a tribe or subfamily answer', () => {
+  it('names a subspecies under an uncertain species only as «if it is this species»', () => {
     const top = { name: 'Mechanitis polymnia', p: 0.4 }
     const ssp = [{ name: 'Mechanitis polymnia casabranca', p: 0.3 }]
-    expect(subspeciesHint({ kind: 'tribe', name: 'Ithomiini', p: 0.85 }, top, ssp)).toBeNull()
-    expect(subspeciesHint({ kind: 'subfamily', name: 'Ithomiinae', p: 0.85 }, top, ssp)).toBeNull()
+    for (const said of [{ kind: 'genus', genus: 'Mechanitis' }, { kind: 'tribe', name: 'Ithomiini', p: 0.85 }, { kind: 'subfamily', name: 'Ithomiinae', p: 0.85 }, { kind: 'unsure' }] as const)
+      expect(subspeciesHint(said, top, ssp)?.kind).toBe('if')
+    expect(subspeciesHint({ kind: 'species', name: top.name }, { ...top, p: 0.9 }, ssp)?.kind).toBe('species')
   })
 
   it('reads the server answer with the same rule', () => {
@@ -103,11 +117,10 @@ describe('tribe and subfamily answer', () => {
       crop: null, wingBox: null, prior: null, ms: null,
     }
     const r = serverRanking(a)
-    expect(headline(r.species[0], r.genus, r.higher, true)).toMatchObject({ kind: 'tribe', name: 'Ithomiini' })
-    expect(headline(r.species[0], r.genus, r.higher, false)).toEqual({ kind: 'unsure' })
+    expect(headline(r.species[0], r.genus, r.higher)).toMatchObject({ kind: 'tribe', name: 'Ithomiini' })
     // An older server sends no totals: no tribe answer.
     const old = serverRanking({ ...a, tribe: undefined, subfamily: undefined })
-    expect(headline(old.species[0], old.genus, old.higher, true)).toEqual({ kind: 'unsure' })
+    expect(headline(old.species[0], old.genus, old.higher)).toEqual({ kind: 'unsure' })
   })
 
   it('ships a map of the live head without placeholder names', () => {
@@ -145,5 +158,72 @@ describe('tribe and subfamily answer', () => {
     for (const sp of dismorphia) expect(name(sp)).toEqual([null, 'Dismorphiinae'])
     expect(t.tribes.filter(n => !/^[A-Z][a-z]+ini$/.test(n))).toEqual([])
     expect(t.subfamilies.filter(n => !/^[A-Z][a-z]+inae$/.test(n))).toEqual([])
+  })
+})
+
+describe('the ranks above the answer, the guess and its ranks', () => {
+  it('names a species\' tribe and subfamily, never a placeholder; none for a species the file does not list', () => {
+    expect(taxonOf('Mechanitis polymnia', tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
+    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
+    // No tribe: the subfamily alone.
+    expect(ranksAbove({ kind: 'species', name: 'Hypothyris anastasia' }, tax)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
+    // A placeholder tribe (UNKNOWN_tribe_Chetone) is never shown, even if a file holds one.
+    expect(ranksAbove({ kind: 'species', name: 'Chetone angulosa' }, tax)).toEqual({ tribe: null, subfamily: 'Nymphalinae' })
+    // A placeholder subfamily and no tribe: nothing to show.
+    expect(ranksAbove({ kind: 'species', name: 'Athis inca' }, tax)).toBeNull()
+    expect(ranksAbove({ kind: 'species', name: 'Morpho helenor' }, tax)).toBeNull()
+    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, null)).toBeNull()
+  })
+
+  it('a genus\' ranks are those all its species share; a tribe answer gets its subfamily; none above a subfamily or «not sure»', () => {
+    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, tax)).toEqual({ tribe: 'Ithomiini', subfamily: 'Ithomiinae' })
+    const mixed: Taxonomy = { ...tax, species: { ...tax.species, 'Mechanitis odd': [0, 0] } }
+    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, mixed)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
+    expect(ranksAbove({ kind: 'genus', genus: 'Morpho' }, tax)).toBeNull()
+    expect(ranksAbove({ kind: 'tribe', name: 'Ithomiini', p: 0.85 }, tax)).toEqual({ tribe: null, subfamily: 'Ithomiinae' })
+    expect(ranksAbove({ kind: 'subfamily', name: 'Ithomiinae', p: 0.85 }, tax)).toBeNull()
+    expect(ranksAbove({ kind: 'unsure' }, tax)).toBeNull()
+  })
+
+  it('the guess is the top species; under a clear tribe or subfamily that does not hold it, the top listed one inside', () => {
+    const list = [
+      { name: 'Danaus plexippus', p: 0.3 },
+      { name: 'Mechanitis lysimnia', p: 0.25 },
+      { name: 'Oleria onega', p: 0.2 },
+      { name: 'Hypothyris anastasia', p: 0.1 },
+    ]
+    for (const said of [{ kind: 'species', name: 'Danaus plexippus' }, { kind: 'genus', genus: 'Danaus' }, { kind: 'unsure' }] as const) expect(guessOf(said, list, tax)).toBe(list[0])
+    expect(guessOf({ kind: 'tribe', name: 'Danaini', p: 0.8 }, list, tax)).toBe(list[0])
+    // Ithomiini is clear but the top species is a Danaini: the guess is the tribe's own top species.
+    expect(guessOf({ kind: 'tribe', name: 'Ithomiini', p: 0.8 }, list, tax)).toBe(list[1])
+    expect(guessOf({ kind: 'subfamily', name: 'Ithomiinae', p: 0.8 }, list, tax)).toBe(list[1])
+    // No listed species inside, or no file: the top one.
+    expect(guessOf({ kind: 'tribe', name: 'Heliconiini', p: 0.8 }, list, tax)).toBe(list[0])
+    expect(guessOf({ kind: 'tribe', name: 'Ithomiini', p: 0.8 }, list, null)).toBe(list[0])
+    expect(guessOf({ kind: 'unsure' }, [], tax)).toBeUndefined()
+  })
+
+  it('the ranks under an uncertain guess: its genus (sure or not), then the clear tribe or subfamily', () => {
+    const genus = new Map([['Mechanitis', 0.38], ['Oleria', 0.3]])
+    const guess = { name: 'Mechanitis polymnia', p: 0.31 }
+    expect(rungs({ kind: 'species', name: guess.name }, guess, genus)).toEqual([])
+    expect(rungs({ kind: 'genus', genus: 'Mechanitis' }, guess, new Map([['Mechanitis', 0.86]]))).toEqual([{ kind: 'genus', name: 'Mechanitis', p: 0.86, sure: true }])
+    expect(rungs({ kind: 'tribe', name: 'Ithomiini', p: 0.88 }, guess, genus)).toEqual([
+      { kind: 'genus', name: 'Mechanitis', p: 0.38, sure: false },
+      { kind: 'tribe', name: 'Ithomiini', p: 0.88, sure: true },
+    ])
+    expect(rungs({ kind: 'subfamily', name: 'Danainae', p: 0.9 }, guess, genus)[1]).toEqual({ kind: 'subfamily', name: 'Danainae', p: 0.9, sure: true })
+    expect(rungs({ kind: 'unsure' }, guess, genus)).toEqual([{ kind: 'genus', name: 'Mechanitis', p: 0.38, sure: false }])
+    expect(rungs({ kind: 'unsure' }, undefined, genus)).toEqual([])
+  })
+
+  it('the live file names Ithomiini and Danainae for Mechanitis, and a tribe\'s subfamily', () => {
+    const file = new URL('../../../../tools/identifier/taxonomy_6fa6ab78.json', import.meta.url)
+    const t = JSON.parse(readFileSync(file, 'utf8')) as Taxonomy
+    expect(ranksAbove({ kind: 'species', name: 'Mechanitis polymnia' }, t)).toEqual({ tribe: 'Ithomiini', subfamily: 'Danainae' })
+    expect(ranksAbove({ kind: 'genus', genus: 'Mechanitis' }, t)).toEqual({ tribe: 'Ithomiini', subfamily: 'Danainae' })
+    expect(ranksAbove({ kind: 'tribe', name: 'Ithomiini', p: 0.9 }, t)).toEqual({ tribe: null, subfamily: 'Danainae' })
+    const dismorphia = Object.keys(t.species).find(sp => sp.startsWith('Dismorphia '))!
+    expect(ranksAbove({ kind: 'species', name: dismorphia }, t)).toEqual({ tribe: null, subfamily: 'Dismorphiinae' })
   })
 })

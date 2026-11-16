@@ -1,0 +1,344 @@
+[
+ {
+  "size": "phone",
+  "case": "restored:species:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "91 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": null,
+  "rungs": [],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.91",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "phone",
+  "case": "restored:genus:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "55 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 86 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.55",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "phone",
+  "case": "restored:genus:en",
+  "kicker": "Ithomiini · Danainae Possible identification",
+  "headline": "Mechanitis polymnia",
+  "p": "55 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Mechanitis 86 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.55",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "phone",
+  "case": "restored:tribe:es",
+  "kicker": "Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "31 %",
+  "label": null,
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 38 % Incierto",
+   "Tribu Ithomiini 88 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.31",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "phone",
+  "case": "restored:unsure:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "34 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 40 % Incierto"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.34",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "phone",
+  "case": "restored:notIthomiini:es",
+  "kicker": "HeliconiiniNo parece una Ithomiini. Posible identificación",
+  "headline": "Heliconius erato",
+  "p": "93 %",
+  "label": "Heliconiini",
+  "notIthomiini": "No parece una Ithomiini.",
+  "speciesUnsure": null,
+  "rungs": [],
+  "ssp": null,
+  "top": "Heliconius erato",
+  "topP": "0.93",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:mpolymnia",
+  "kicker": "Ithomiini · Danainae Possible identification",
+  "headline": "Mechanitis polymnia",
+  "p": "8 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Mechanitis 15 % Uncertain"
+  ],
+  "ssp": "If it is this species, the closest subspecies: M. polymnia kayei (34 % of that species)",
+  "top": "Mechanitis polymnia",
+  "topP": "0.0789",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:herato",
+  "kicker": "HeliconiiniDoes not look like an Ithomiini. Possible identification",
+  "headline": "Heliconius erato",
+  "p": "55 %",
+  "label": "Heliconiini",
+  "notIthomiini": "Does not look like an Ithomiini.",
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Heliconius 93 % ✓"
+  ],
+  "ssp": "If it is this species, the closest subspecies: H. erato lativitta (32 % of that species) or H. erato emma (30 % of that species)",
+  "top": "Heliconius erato",
+  "topP": "0.5484",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:oonega",
+  "kicker": "Possible identification",
+  "headline": "Hyposcada illinissa",
+  "p": "39 %",
+  "label": null,
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Hyposcada 44 % Uncertain",
+   "Tribe Ithomiini 97 % ✓"
+  ],
+  "ssp": "If it is this species, the closest subspecies: H. illinissa ida (78 % of that species)",
+  "top": "Hyposcada illinissa",
+  "topP": "0.3856",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:mmenophilus",
+  "kicker": "Nymphalini · NymphalinaeDoes not look like an Ithomiini. Possible identification",
+  "headline": "Tigridia acesta",
+  "p": "14 %",
+  "label": "Nymphalini · Nymphalinae",
+  "notIthomiini": "Does not look like an Ithomiini.",
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Tigridia 14 % Uncertain"
+  ],
+  "ssp": "If it is this species, the closest subspecies: T. acesta tapajona (46 % of that species)",
+  "top": "Tigridia acesta",
+  "topP": "0.1381",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:hanastasia",
+  "kicker": "Possible identification",
+  "headline": "Mechanitis messenoides",
+  "p": "36 %",
+  "label": null,
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Mechanitis 45 % Uncertain",
+   "Tribe Ithomiini 87 % ✓"
+  ],
+  "ssp": "If it is this species, the closest subspecies: M. messenoides deceptus (96 % of that species)",
+  "top": "Mechanitis messenoides",
+  "topP": "0.3596",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "real:dismorphia",
+  "kicker": "Subfamily DismorphiinaeDoes not look like an Ithomiini. Possible identification",
+  "headline": "Dismorphia theucharila",
+  "p": "91 %",
+  "label": "Subfamily Dismorphiinae",
+  "notIthomiini": "Does not look like an Ithomiini.",
+  "speciesUnsure": null,
+  "rungs": [],
+  "ssp": "Most likely subspecies: D. theucharila fortunata (88 %)",
+  "top": "Dismorphia theucharila",
+  "topP": "0.9134",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "phone-model",
+  "error": "Error: phone model: This model is not available for now."
+ },
+ {
+  "size": "desktop",
+  "case": "restored:species:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "91 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": null,
+  "rungs": [],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.91",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:genus:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "55 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 86 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.55",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:genus:en",
+  "kicker": "Ithomiini · Danainae Possible identification",
+  "headline": "Mechanitis polymnia",
+  "p": "55 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Mechanitis 86 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.55",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:tribe:es",
+  "kicker": "Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "31 %",
+  "label": null,
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 38 % Incierto",
+   "Tribu Ithomiini 88 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.31",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:tribe:en",
+  "kicker": "Possible identification",
+  "headline": "Mechanitis polymnia",
+  "p": "31 %",
+  "label": null,
+  "notIthomiini": null,
+  "speciesUnsure": "Uncertain",
+  "rungs": [
+   "Genus Mechanitis 38 % Uncertain",
+   "Tribe Ithomiini 88 % ✓"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.31",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:unsure:es",
+  "kicker": "Ithomiini · Danainae Posible identificación",
+  "headline": "Mechanitis polymnia",
+  "p": "34 %",
+  "label": "Ithomiini · Danainae",
+  "notIthomiini": null,
+  "speciesUnsure": "Incierto",
+  "rungs": [
+   "Género Mechanitis 40 % Incierto"
+  ],
+  "ssp": null,
+  "top": "Mechanitis polymnia",
+  "topP": "0.34",
+  "testingLine": false,
+  "overflowX": false
+ },
+ {
+  "size": "desktop",
+  "case": "restored:notIthomiini:es",
+  "kicker": "HeliconiiniNo parece una Ithomiini. Posible identificación",
+  "headline": "Heliconius erato",
+  "p": "93 %",
+  "label": "Heliconiini",
+  "notIthomiini": "No parece una Ithomiini.",
+  "speciesUnsure": null,
+  "rungs": [],
+  "ssp": null,
+  "top": "Heliconius erato",
+  "topP": "0.93",
+  "testingLine": false,
+  "overflowX": false
+ }
+]

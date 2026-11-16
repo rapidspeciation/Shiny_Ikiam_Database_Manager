@@ -243,3 +243,115 @@ describe('IdentifyView: the panel', () => {
     expect(kicker.textContent!.trim()).not.toMatch(/:\s*Ithomiini$/)
   })
 })
+
+// The answer's wording (15 Nov 2026): the guess always named, as the Wings Gallery (the species and its genus, each
+// «Incierto» with its score below the engine's cut), the level that is clear beside it, the tribe and subfamily rung
+// always on (no «para pruebas» line), and the guess's tribe and subfamily as one small label (the Ithomiini badge when
+// the tribe is Ithomiini). The tribe names come from the head's taxonomy file.
+describe('IdentifyView: the answer', () => {
+  const answer = (server: Record<string, unknown>) => ({ ...restored, server: { ...three, ...server } })
+  // The words shown (an icon's own label left out).
+  const text = (host: HTMLElement, id: string) => {
+    const el = host.querySelector(`[data-testid=${id}]`)?.cloneNode(true) as HTMLElement | undefined
+    el?.querySelectorAll('svg').forEach(s => s.remove())
+    return el?.textContent?.replace(/\s+/g, ' ').trim() ?? null
+  }
+  const rows = (host: HTMLElement) =>
+    [...host.querySelectorAll('[data-testid=rungs] li')].map(li => [
+      [...li.children].map(c => c.textContent!.trim()).filter(Boolean).join(' '),
+      li.getAttribute('data-sure'),
+    ])
+
+  it('species clear: the species, its score, the tribe · subfamily as the Ithomiini badge; nothing uncertain; no testing line', async () => {
+    const { host } = await mountWith(answer({ species: [['Mechanitis polymnia', 0.9], ['Mechanitis lysimnia', 0.05]], genus: [['Mechanitis', 0.95]], tribe: [['Ithomiini', 0.97]], subfamily: [['Danainae', 0.98]] }))
+    expect(text(host, 'headline')).toBe('Mechanitis polymnia')
+    expect(text(host, 'headline-p')).toBe('90 %')
+    expect(host.querySelector('[data-testid=species-unsure]')).toBeNull()
+    expect(host.querySelector('[data-testid=rungs]')).toBeNull()
+    expect(text(host, 'ithomiini-badge')).toBe('Ithomiini · Danainae')
+    expect(host.querySelector('[data-testid=ithomiini-badge]')!.getAttribute('title')).toBe('Tribu Ithomiini · Subfamilia Danainae')
+    expect(host.querySelectorAll('[data-testid=ithomiini-badge], [data-testid=ranks-above]').length).toBe(1)
+    expect(host.querySelector('[data-testid=tribe-rung-on]')).toBeNull()
+    expect(host.textContent).not.toMatch(/para pruebas|for testing|Lo más probable/)
+  })
+
+  it('species uncertain, genus clear: the species named «Incierto» with its score, the genus as the clear level', async () => {
+    const { host } = await mountWith(restored)
+    expect(text(host, 'headline')).toBe('Mechanitis polymnia')
+    expect(text(host, 'headline-p')).toBe('60 %')
+    expect(text(host, 'species-unsure')).toBe('Incierto')
+    expect(rows(host)).toEqual([['Género Mechanitis 80 %', 'true']])
+    expect(text(host, 'ithomiini-badge')).toBe('Ithomiini · Danainae')
+    expect(host.querySelector('[data-testid=likeliest]')).toBeNull()
+  })
+
+  it('both uncertain, tribe clear: the guess is the tribe\'s own top species, the genus «Incierto», the tribe clear, no label', async () => {
+    const { host, settle } = await mountWith(
+      answer({
+        species: [['Heliconius erato', 0.12], ['Mechanitis polymnia', 0.1], ['Oleria onega', 0.08]],
+        genus: [['Mechanitis', 0.3], ['Oleria', 0.25], ['Heliconius', 0.12]],
+        tribe: [['Ithomiini', 0.86], ['Heliconiini', 0.12]],
+        subfamily: [['Danainae', 0.87]],
+      }),
+    )
+    // Heliconius erato is the top species but not an Ithomiini: the guess is the tribe's own (once the taxonomy file is in).
+    await vi.waitFor(async () => {
+      await settle()
+      expect(text(host, 'headline')).toBe('Mechanitis polymnia')
+    })
+    expect(host.querySelector('[data-testid=headline]')!.getAttribute('data-top')).toBe('Heliconius erato')
+    expect(text(host, 'headline-p')).toBe('10 %')
+    expect(text(host, 'species-unsure')).toBe('Incierto')
+    expect(rows(host)).toEqual([
+      ['Género Mechanitis 30 % Incierto', 'false'],
+      ['Tribu Ithomiini 86 %', 'true'],
+    ])
+    // The tribe row names Ithomiini: no label saying it again.
+    expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
+  })
+
+  it('subfamily clear: its row, no label', async () => {
+    const { host } = await mountWith(
+      answer({
+        species: [['Mechanitis polymnia', 0.3], ['Danaus plexippus', 0.25]],
+        genus: [['Mechanitis', 0.35], ['Danaus', 0.3]],
+        tribe: [['Ithomiini', 0.5], ['Danaini', 0.35]],
+        subfamily: [['Danainae', 0.9]],
+      }),
+    )
+    expect(text(host, 'headline')).toBe('Mechanitis polymnia')
+    expect(rows(host)).toEqual([
+      ['Género Mechanitis 35 % Incierto', 'false'],
+      ['Subfamilia Danainae 90 %', 'true'],
+    ])
+    expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
+  })
+
+  it('nothing clear: the species and the genus both «Incierto» with their scores, nothing shown as certain', async () => {
+    const { host } = await mountWith(answer({ species: [['Mechanitis polymnia', 0.4], ['Oleria onega', 0.3]], genus: [['Mechanitis', 0.45], ['Oleria', 0.3]], tribe: [['Ithomiini', 0.75]], subfamily: [['Danainae', 0.78]] }))
+    expect(text(host, 'headline')).toBe('Mechanitis polymnia')
+    expect(text(host, 'headline-p')).toBe('40 %')
+    expect(text(host, 'species-unsure')).toBe('Incierto')
+    expect(rows(host)).toEqual([['Género Mechanitis 45 % Incierto', 'false']])
+    expect(host.textContent).not.toContain('No estamos seguros')
+  })
+
+  it('an uncertain species: a subspecies only as «if it is this species»', async () => {
+    const { host } = await mountWith(answer({ subspecies: [['Mechanitis polymnia casabranca', 0.4]] }))
+    expect(text(host, 'ssp-hint')).toMatch(/^Si fuera esta especie, la subespecie más parecida: M\. polymnia casabranca \(67 % de esa especie\)/)
+  })
+
+  it('a species with a subfamily and no tribe: «Subfamilia …» as the label', async () => {
+    const { host } = await mountWith(answer({ species: [['Dismorphia theucharila', 0.91]], genus: [['Dismorphia', 0.95]], tribe: [], subfamily: [['Dismorphiinae', 0.97]] }))
+    expect(text(host, 'ranks-above')).toBe('Subfamilia Dismorphiinae')
+    expect(text(host, 'not-ithomiini')).toBe('No parece una Ithomiini.')
+  })
+
+  it('a species outside Ithomiini: its tribe as a plain label, then «No parece una Ithomiini.»', async () => {
+    const { host } = await mountWith(answer({ species: [['Heliconius erato', 0.92]], genus: [['Heliconius', 0.95]], tribe: [['Heliconiini', 0.96]], subfamily: [['Heliconiinae', 0.97]] }))
+    // The file leaves out a subfamily it does not trust: the tribe alone.
+    expect(text(host, 'ranks-above')).toBe('Heliconiini')
+    expect(text(host, 'not-ithomiini')).toBe('No parece una Ithomiini.')
+    expect(host.querySelector('[data-testid=ithomiini-badge]')).toBeNull()
+  })
+})
