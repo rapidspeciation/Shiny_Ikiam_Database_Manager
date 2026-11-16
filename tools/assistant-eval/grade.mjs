@@ -23,6 +23,9 @@
 //   proposal: { sheet, row | id, field, equals | matches | blank }   a drafted (not discarded) change has it
 //   noApply: true         no proposal of the chat was applied
 //   proposalOnly: { sheet, rows?, ids?, fields }   every drafted change stays inside these rows/ids and fields
+//   numbers: true | { allow: [n..], turn?, scope? }   every number the answer writes is in a tool result of the chat
+//                         (all its calls, not only the graded ones), a prompt or `allow`; dates, times, years, IDs
+//                         and codes excepted (numbersIn). A total added up in the head fails.
 // Routing cases (tier 'routing') are graded on their first `stopAfter` tool calls only (default 3): the run is
 // interrupted there (run.mjs), and calls the model started before the stop took effect are not graded.
 // Text checks read the chat's final answer (the last message of the last run: what WhatsApp sends);
@@ -147,6 +150,69 @@ function blockCheck(text, spec, checkFiles = true) {
   return { pass: bad.length === 0, detail: bad.length ? bad.join('; ') : undefined };
 }
 
+// The number check (no AI): every number a reply writes must be one the chat's tool results (or the prompts, or
+// `allow`) hold, so a total added up in the model's head fails (16 Nov 2026: «41 ♀» where the per-species counts
+// 10, 13, 9, 12 and 4 make 48). Dates, times, years, IDs and codes are not numbers here.
+const MONTH = '(?:ene|enero|feb|febrero|mar|marzo|abr|abril|may|mayo|jun|junio|jul|julio|ago|agosto|sep|sept|septiembre|set|oct|octubre|nov|noviembre|dic|diciembre|jan|january|february|apr|april|june|july|aug|august|september|october|november|dec|december)\\b\\.?';
+const DATE_PATTERNS = [
+  /https?:\/\/\S+/gi,
+  /\b\d{4}-\d{1,2}-\d{1,2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?Z?)?/g,
+  /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g,
+  /\b\d{1,2}\/\d{1,2}\b/g,
+  /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,
+  // «14-oct», «1 al 14-oct», «del 1 al 14 de octubre», «31 Oct»; «octubre 31», «Oct 31».
+  new RegExp(`\\b\\d{1,2}(?:\\s*(?:al|a|y|-|–|to|and)\\s*\\d{1,2})?(?:\\s*-\\s*|\\s+de\\s+|\\s+)${MONTH}`, 'gi'),
+  new RegExp(`\\b${MONTH}\\s+\\d{1,2}\\b`, 'gi'),
+];
+/** A token with letters and digits together (CAM070903, A7E.1, 5VB, FS90415684, T2, n=3) is an ID or code. */
+const CODE = /[\p{L}_#=][\p{L}\p{N}_.#=/-]*\p{N}[\p{L}\p{N}_.#=/-]*|\p{N}+[\p{L}_][\p{L}\p{N}_.#=/-]*/gu;
+/** A number as written: 2.752 / 2,752 / 2 752 thousands, 0,8 / 0.8 decimals. */
+const NUMBER = /(?<![\p{L}\p{N}.,])\d{1,3}(?:(?:[.,]|\s(?=\d{3}\b))\d{3})+(?![\p{N}]|[.,]\d)|(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)?(?![\p{L}\p{N}]|[.,]\d)/gu;
+function numberValue(text) {
+  const t = text.replace(/\s/g, '');
+  if (/^\d{1,3}([.,])\d{3}(\1\d{3})*$/.test(t) && !/^0[.,]/.test(t)) return Number(t.replace(/[.,]/g, ''));
+  return Number(t.replace(',', '.'));
+}
+
+/** The numbers a text writes, with dates, times, years (1900–2100), IDs, codes and list markers ("1. ") left out. */
+export function numbersIn(text, { years = false } = {}) {
+  let s = String(text ?? '').replace(/[*_`~]/g, '');
+  for (const re of DATE_PATTERNS) s = s.replace(re, ' ');
+  s = s.replace(CODE, ' ').replace(/^\s*\d+[.)]\s/gm, ' ');
+  const out = [];
+  for (const m of s.matchAll(NUMBER)) {
+    const v = numberValue(m[0]);
+    if (!Number.isFinite(v)) continue;
+    if (!years && Number.isInteger(v) && v >= 1900 && v <= 2100 && /^\d{4}$/.test(m[0])) continue;
+    out.push({ text: m[0], value: v });
+  }
+  return out;
+}
+
+/** Every number the sources hold (tool results, prompts), as values; IDs' digits do not count. */
+export function sourceNumbers(texts) {
+  const set = new Set();
+  for (const t of texts) for (const { value } of numbersIn(t, { years: true })) set.add(value);
+  return set;
+}
+
+/**
+ * `numbers` check: the numbers of the graded text that no source supports. spec: true or { allow: [numbers],
+ * turn, scope } (`allow`: figures the brief or a document gives). Sources: every settled tool result of the chat
+ * (`run.tools[].result`) and the prompts (`run.prompts`). → { pass, detail }.
+ */
+export function numbersCheck(run, text, spec = {}) {
+  const allow = (spec === true ? [] : spec.allow ?? []).map(Number);
+  const supported = sourceNumbers([...(run.tools ?? []).map(t => t.result ?? ''), ...(run.prompts ?? [])]);
+  for (const a of allow) supported.add(a);
+  const bad = numbersIn(text).filter(n => !supported.has(n.value));
+  const noResults = !(run.tools ?? []).some(t => t.result);
+  return {
+    pass: bad.length === 0,
+    detail: bad.length ? `not in the tool results${noResults ? ' (no tool result recorded)' : ''}: ${[...new Set(bad.map(n => n.text))].join(', ')}` : undefined,
+  };
+}
+
 /** Whether a tool call loaded skill `name`: the Skill tool with that skill, or a Read of its SKILL.md. */
 function loadsSkill(t, name) {
   if (t.name === 'Skill') {
@@ -239,6 +305,11 @@ export function grade(task, run, { today = new Date().toLocaleDateString('en-CA'
       detail = pass ? undefined : 'a matching call was made';
     } else if (c.block) {
       const r = blockCheck(run.finalText ?? '', c.block, checkFiles);
+      pass = r.pass;
+      detail = r.detail;
+    } else if (c.numbers) {
+      const raw = c.scope === 'all' ? run.allText ?? run.finalText : c.turn ? run.turnTexts?.[c.turn - 1] : run.finalText;
+      const r = numbersCheck({ ...run, tools: run.tools ?? [] }, raw ?? '', c.numbers);
       pass = r.pass;
       detail = r.detail;
     } else throw new Error(`unknown check ${JSON.stringify(c)}`);

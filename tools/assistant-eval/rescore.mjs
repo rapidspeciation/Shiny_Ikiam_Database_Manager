@@ -4,7 +4,8 @@
 // Old check results are kept as stored; only checks not in the stored list are graded, and only text and
 // tool checks (they read the stored finalText, turnTexts and tools). Then the score and the sample's pass
 // (samples.mjs: score ≥ passAt) are recomputed, and the per-case pass counts printed. Every row (sample) is
-// re-scored on its own, so folders with and without samples both work.
+// re-scored on its own, so folders with and without samples both work. A `numbers` check needs rows whose tools
+// carry `result` (runs from 16 Nov 2026 on); older rows fail it with "no tool result recorded".
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { grade } from './grade.mjs';
@@ -21,7 +22,7 @@ const fresh = rows.map(r => {
   const added = t.checks.filter(c => !have.has(key(c)));
   if (!added.length) return r;
   if (added.some(c => c.proposal || c.proposalOnly || c.noApply)) throw new Error(`${r.id}: added proposal check needs --regrade`);
-  const g = grade({ ...t, checks: added }, { finalText: r.finalText, turnTexts: r.turnTexts, tools: r.tools ?? [] });
+  const g = grade({ ...t, checks: added }, { finalText: r.finalText, turnTexts: r.turnTexts, tools: r.tools ?? [], prompts: t.turns ?? [t.prompt] });
   const checks = [...r.checks, ...g.results];
   const total = checks.reduce((s, c) => s + c.w, 0);
   const score = checks.filter(c => c.pass).reduce((s, c) => s + c.w, 0) / total;

@@ -174,6 +174,14 @@ function transcriptUsage(db, threadId, instance) {
 }
 
 /** Metrics of one chat, read-only from the lab T3 state DB. */
+/** A settled call's result as text for the number check (grade.mjs numbers): MCP text parts joined, else JSON. */
+const RESULT_KEPT = 60000;
+function resultText(output) {
+  if (output == null) return undefined;
+  const text = Array.isArray(output) && output.every(o => o?.type === 'text') ? output.map(o => o.text).join('\n') : typeof output === 'string' ? output : JSON.stringify(output);
+  return text.slice(0, RESULT_KEPT);
+}
+
 function chatMetrics(threadId, instance = RUN.instance) {
   const db = new DatabaseSync(join(LAB.home, 'userdata', 'statev2.sqlite'), { readOnly: true, timeout: 5000 });
   try {
@@ -192,7 +200,7 @@ function chatMetrics(threadId, instance = RUN.instance) {
     for (const it of items) {
       const p = JSON.parse(it.payload_json);
       if (it.type === 'dynamic_tool') {
-        tools.push({ name: String(p.toolName ?? '?').replace(/^mcp__db__/, ''), failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined });
+        tools.push({ name: String(p.toolName ?? '?').replace(/^mcp__db__/, ''), failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined, ...(it.status === 'completed' ? { result: resultText(p.output) } : {}) });
         // Proposals are attributed only to this chat's drafting calls (never to ids seen in list/get answers).
         if (DRAFTING.test(String(p.toolName ?? ''))) {
           if (p.nativeItemRef?.nativeId) toolUseIds.push(p.nativeItemRef.nativeId);
@@ -201,7 +209,7 @@ function chatMetrics(threadId, instance = RUN.instance) {
       }
       else if (it.type === 'command_execution' && p.title !== 'Workspace ready') {
         commands++;
-        tools.push({ name: 'Bash', failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: String(p.input ?? '').slice(0, 200) });
+        tools.push({ name: 'Bash', failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: String(p.input ?? '').slice(0, 200), ...(it.status === 'completed' ? { result: resultText(p.output) } : {}) });
       } else if (it.type === 'subagent') subagents++;
       else if (it.type === 'error') errors++;
       else if (it.type === 'assistant_message') {
@@ -339,7 +347,7 @@ async function runChat(task, sample = 1) {
     }
     const metrics = chatMetrics(threadId);
     const proposals = proposalsOf(threadId, metrics.toolUseIds, metrics.uuids, new Date(t0).toISOString());
-    const g = grade(task, { ...metrics, proposals }, { today: TODAY });
+    const g = grade(task, { ...metrics, proposals, prompts }, { today: TODAY });
     const cut = routing ? cutGraded(task, metrics.tools) : [];
     result = {
       id: task.id,
@@ -444,7 +452,7 @@ if (argv.includes('--regrade')) {
     const proposals = proposalsOf(r.threadId, metrics.toolUseIds, metrics.uuids, r.startedAt ?? runStarted);
     // A routing row is graded on the calls it was stopped after; a task whose k grew since cannot be re-graded.
     const { task: gradeTask, invalid } = regradeRouting(byId[r.id], r, metrics.tools);
-    const g = grade(gradeTask, { ...metrics, proposals }, { today: r.today ?? runDay });
+    const g = grade(gradeTask, { ...metrics, proposals, prompts: byId[r.id]?.turns ?? [byId[r.id]?.prompt] }, { today: r.today ?? runDay });
     // Routing reasons (cut call, stopped too early) are recomputed for the task's current k; others (app down) stay.
     const { invalid: stored, ...rest } = r;
     const keep = stored && !/^(graded call cut|stopped after)/.test(stored) ? stored : null;
