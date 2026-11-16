@@ -34,7 +34,8 @@ tribe / subfamily fallback, and "I prefer getting the guess even at low model co
   parecida: … (NN % de esa especie)» (before it was dropped under genus / tribe answers); a confident «Subespecie más
   probable» only under a clear species.
 - Unchanged on purpose: the sex panel and what is kept with an identification (`contribShown`) still use the clear
-  level (genus when only the genus is clear).
+  level (genus when only the genus is clear). *Corrected in round 2 (ui_20261116T034311Z/NOTES.md): both now use the
+  top species.*
 
 Files: frontend/src/lib/identifyResult.ts, lib/taxonomy.ts, views/IdentifyView.vue, locales/en/identify.ts, tests
 (lib/__tests__/identifyTribeRung.test.ts, identifyResult.test.ts, views/__tests__/IdentifyView.panel.test.ts),

@@ -931,7 +931,9 @@ async function downloadSexModel() {
 const sexState = computed<SexState | null>(() => {
   const r = result.value
   if (!session.user || !r || !ranked.value) return null
-  const name = said.value?.kind === 'genus' ? (said.value as { genus: string }).genus : top.value?.name
+  // The top species, as the headline. sexApplies reads only its genus: 'genus' is the sex model's own limit (an
+  // Ithomiini genus it was not trained on), not the answer's level.
+  const name = top.value?.name
   const applies = sexApplies(name, ithomiiniGenera, sexCalibration.value.genera)
   if (applies === 'no') return null
   if (applies === 'genus') return { kind: 'genus', genus: name!.split(' ')[0] }
@@ -1022,9 +1024,9 @@ function cleanBase64(b64: string): string | null {
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return btoa(text)
 }
+/** The answer shown: the headline's top species, whatever its level (so «Es esta» on it is sent as confirmed). */
 const contribShown = computed(() => {
   if (!ranked.value || !top.value) return null
-  if (said.value?.kind === 'genus') return { name: (said.value as { genus: string }).genus, rank: 'genus' as const }
   return { name: top.value.name, rank: 'species' as const }
 })
 
@@ -1788,7 +1790,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
             <div class="min-w-0">
               <!-- the label before the sentence: never after «Lo más parecido:» (round 2). The ranks above the answer
                    (tribe · subfamily) are the Ithomiini badge when the tribe is Ithomiini, so the page never says it twice; a
-                   subfamily alone says «Subfamilia», never to be read as the tribe of «Posible tribu». -->
+                   subfamily alone says «Subfamilia», never to be read as a tribe. -->
               <p class="text-sm text-fg-muted">
                 <span
                   v-if="above"
@@ -1822,10 +1824,10 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
                 <i class="min-w-0 flex-1 truncate font-medium">{{ r.name }}</i>
               </template>
               <!-- a total over all its species: said of the photo, not of the guess above (which may lie outside it) -->
-              <span v-else class="min-w-0 flex-1">{{ r.kind === 'tribe' ? $t('La foto muestra la tribu {name}', { name: r.name }) : $t('La foto muestra la subfamilia {name}', { name: r.name }) }}</span>
+              <span v-else class="min-w-0 flex-1">{{ r.kind === 'tribe' ? $t('La foto parece de la tribu {name}', { name: r.name }) : $t('La foto parece de la subfamilia {name}', { name: r.name }) }}</span>
               <span class="tabular-nums" :class="r.sure ? 'font-semibold text-brand-text' : 'text-fg-muted'">{{ percent(r.p) }}</span>
               <span class="flex w-[4.75rem] shrink-0 justify-end">
-                <Check v-if="r.sure" :size="18" class="text-brand-text" :aria-label="$t('Seguro')" role="img" />
+                <Check v-if="r.sure" :size="18" class="text-brand-text" :aria-label="$t('Probable')" role="img" />
                 <span v-else class="unsure-tag">{{ $t('Incierto') }}</span>
               </span>
             </li>

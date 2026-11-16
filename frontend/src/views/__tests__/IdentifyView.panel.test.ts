@@ -302,9 +302,9 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'species-unsure')).toBe('Incierto')
     expect(rows(host)).toEqual([
       ['Género Heliconius 12 % Incierto', 'false'],
-      ['La foto muestra la tribu Ithomiini 86 %', 'true'],
+      ['La foto parece de la tribu Ithomiini 86 %', 'true'],
     ])
-    expect(host.querySelector('[data-testid=rung-tribe] svg')!.getAttribute('aria-label')).toBe('Seguro')
+    expect(host.querySelector('[data-testid=rung-tribe] svg')!.getAttribute('aria-label')).toBe('Probable')
     // The tribe row names Ithomiini: no label saying it again.
     expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
   })
@@ -321,7 +321,7 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'headline')).toBe('Mechanitis polymnia')
     expect(rows(host)).toEqual([
       ['Género Mechanitis 35 % Incierto', 'false'],
-      ['La foto muestra la subfamilia Danainae 90 %', 'true'],
+      ['La foto parece de la subfamilia Danainae 90 %', 'true'],
     ])
     expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
   })
@@ -342,6 +342,15 @@ describe('IdentifyView: the answer', () => {
     const { host } = await mountWith(answer({ species: [['Heliconius erato', 0.4], ['Oleria onega', 0.3]], genus: [['Heliconius', 0.45], ['Oleria', 0.3]], tribe: [['Heliconiini', 0.5]], subfamily: [] }))
     expect(text(host, 'ranks-above')).toBe('Heliconiini')
     expect(host.querySelector('[data-testid=not-ithomiini]')).toBeNull()
+  })
+
+  it('«Es esta» on the headline species is sent confirmed, also when only the genus is clear', async () => {
+    const { host, settle } = await mountWith(restored)
+    host.querySelector<HTMLButtonElement>('[data-testid=pick-this]')!.click()
+    await settle()
+    // The label handed to the sex panel (what it sends with the sex), read from the panel's own props.
+    const panel = host.querySelector('section.border-l-4') as HTMLElement & { __vueParentComponent?: { props: Record<string, unknown> } }
+    expect(panel.__vueParentComponent!.props.species).toMatchObject({ name: 'Mechanitis polymnia', confirmed: true })
   })
 
   it('an uncertain species: a subspecies only as «if it is this species»', async () => {

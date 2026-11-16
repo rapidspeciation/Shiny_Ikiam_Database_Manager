@@ -40,8 +40,8 @@ describe('tribe and subfamily answer', () => {
     expect(headline(a.top, a.genus, null)).toEqual({ kind: 'unsure' })
   })
 
-  it('has one set of cuts per engine, all 0.80 until the measurement gives its own', () => {
-    // The values of 15 Nov 2026 (PREREG.md): when the lead applies the measured ones, these lines change with them.
+  it('has one set of cuts per engine: species 0.70 (measured), genus and higher ranks 0.80', () => {
+    // The shipped values (15 Nov 2026, PREREG.md): when the cuts change, these lines change with them.
     expect(THRESHOLDS).toEqual({ small: { species: 0.7, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8 } })
     expect(engineOf('online')).toBe('bioclip')
     expect(engineOf('online', 'small')).toBe('bioclip')
