@@ -170,7 +170,7 @@ const DATE_PATTERNS = [
   // A day named alone at the end of a clause: «octubre se acabó el 14.», «del 3 al 14,».
   /\b(?:el|del|al)\s+(?:[12]?\d|3[01])(?=\s*(?:[.,;:)!?]|$|\s+(?:y|al|a|hasta)\s+(?:el\s+)?\d))/gim,
 ];
-/** A token with letters and digits together (CAM070903, A7E.1, 5VB, FS90415684, T2, n=3) is an ID or code. */
+/** A token with letters and digits together (CAM070903, A7E.1, 5VB, FS90415684, T2) is an ID or code; n=48 is a number. */
 const CODE = /[\p{L}_#][\p{L}\p{N}_.#/-]*\p{N}[\p{L}\p{N}_.#/-]*|\p{N}+[\p{L}_][\p{L}\p{N}_.#/-]*/gu;
 /** A number as written: 2.752 / 2,752 thousands, 0,8 / 0.8 decimals. (Not "2 752": tool output separates numbers with spaces and tabs.) */
 const NUMBER = /(?<![\p{L}\p{N}.,])\d{1,3}(?:[.,]\d{3})+(?![\p{N}]|[.,]\d)|(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)?(?![\p{L}\p{N}]|[.,]\d)/gu;
