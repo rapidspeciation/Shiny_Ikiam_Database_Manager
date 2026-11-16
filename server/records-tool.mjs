@@ -650,7 +650,30 @@ export function countRecords(db, args) {
   const more = kept => (sorted.length > kept ? { truncated: true, next: `${sorted.length - kept} more groups not shown (the smallest): add filters` } : {});
   // Up to 300 groups, fewer when they are long texts (notes).
   const shown = Math.min(sorted.length, 300);
-  return fitList({ ...out, groupBy: names, groups: groupsOf(sorted.slice(0, shown)), ...more(shown) }, 'groups', RESULT_BUDGET - 500, more).out;
+  const subtotals = groupSubtotals(names, sorted);
+  return fitList({ ...out, groupBy: names, ...(subtotals ? { subtotals } : {}), groups: groupsOf(sorted.slice(0, shown)), ...more(shown) }, 'groups', RESULT_BUDGET - 500, more).out;
+}
+
+/** At most this many values per column in `subtotals`: a column with more (every species of a big sheet) is left out. */
+export const SUBTOTAL_VALUES = 60;
+
+/**
+ * With 2 or 3 groupBy columns, the rows per value of each column over all the groups (shown or cut), so a total
+ * (all the females, one species over every sex) is read, not added up: { Sex: { female: 48, male: 49 }, … }, most
+ * first. A column with over SUBTOTAL_VALUES values is left out and named in `_omitted`.
+ */
+export function groupSubtotals(names, groups) {
+  if (names.length < 2) return null;
+  const out = {};
+  const omitted = [];
+  names.forEach((name, i) => {
+    const sums = new Map();
+    for (const g of groups) sums.set(g.values[i], (sums.get(g.values[i]) ?? 0) + g.n);
+    if (sums.size > SUBTOTAL_VALUES) omitted.push(name);
+    else out[name] = Object.fromEntries([...sums].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))));
+  });
+  if (omitted.length) out._omitted = `${omitted.join(', ')}: over ${SUBTOTAL_VALUES} values; filter on one of them or group by fewer columns`;
+  return out;
 }
 
 export const FILTERS_DOC =
@@ -698,7 +721,7 @@ export const RECORD_TOOLS = [
     function: {
       name: 'count_records',
       description: [
-        'Count the rows of one sheet matching `filters` and/or `near` (as in find_records), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"; empty cells as "(empty)"). Pre-made rows are not counted. Across sheets, or conditions between columns: `query`.',
+        'Count the rows of one sheet matching `filters` and/or `near` (as in find_records), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"; empty cells as "(empty)"). With 2 or 3 columns, `subtotals` gives the rows per value of each column (all the females, a species over every sex). Pre-made rows are not counted. Across sheets, or conditions between columns: `query`.',
         '- A text column as groupBy (e.g. Notes) gives each distinct text once with its count: a quick way to read and classify notes.',
       ].join('\n'),
       parameters: {

@@ -25,7 +25,7 @@ export const QUERY_TOOL = {
   function: {
     name: 'query',
     description: [
-      "One read-only SQLite statement (SELECT or WITH) on a copy of the workbook and the app's save history, refreshed within a minute of a save; the rows come back as text, tab-separated under a header line. For counts, ranges, comparisons across sheets, cell histories and anything over many rows.",
+      "One read-only SQLite statement (SELECT or WITH) on a copy of the workbook and the app's save history, refreshed within a minute of a save; the rows come back as text, tab-separated under a header line. For counts, ranges, comparisons across sheets, cell histories and anything over many rows. COUNT and SUM columns come with their totals over all rows, overall and per value of the other columns.",
       '- A table per sheet, named as the sheet (Insectary_data, Collection_data, Insectary_stocks, "F1/F2_MutationRate"…): its rows in use. <sheet>_all also holds the pre-made rows (made ahead with their ID, or holding only NA or a default; _premade = 1).',
       "- Their columns are the sheet's headers (describe_sheet lists them, or SELECT column FROM _columns WHERE sheet = '…'); a header with spaces or signs in double quotes (\"CLUTCH NUMBER\"). Date columns are named per sheet (only File_notes has a plain Date): Collection_data has Collection_date, Death_date, Preservation_date; Insectary_data has Intro2Insectary_date, Death_date, Preservation_date. Subspecies_Form is in Collection_data (and Barcoding_DNA), not in Insectary_data. Wild_Reared and LIFESTAGE are in Insectary_data, not in Collection_data. The notes column carries its sheet's name (Notes_Insectary_data, Notes_Collection_data; NOTES in Insectary_stocks). Also _row (the sheet's row) and _id (the recordId proposals take). Values as the sheet shows them (formulas computed); times H:MM; ID columns compare without case; text values in single quotes.",
       "- A date column (type date in _columns) holds only dates (YYYY-MM-DD), so comparisons, MAX and ORDER BY see dates alone; a cell with anything else is NULL there and its text is in <column>_text beside it (Death_date_text 'NA': no death date applies, as for a disappearance; '9/30': a date typed incompletely). Both NULL: the cell is empty. So an empty cell (e.g. still alive) is `Death_date IS NULL AND Death_date_text IS NULL`; `Death_date IS NULL` alone also matches NA.",
@@ -217,29 +217,124 @@ export function openCopy(path) {
 /** Counting the rows past the limit stops here (the total is then "more than"). */
 const COUNT_MS = 1500;
 
-/** One query on an open copy: the first `limit` rows and how many there are. */
+/** One query on an open copy: the first `limit` rows, how many there are and `sums` (sumsOf) over all of them. */
 export function runQuery(db, sql, limit) {
   const max = Math.min(Math.max(Number(limit) || QUERY_LIMIT, 1), QUERY_MAX);
   try {
     const statement = db.prepare(sql);
     statement.setReturnArrays(true);
     const columns = statement.columns().map(c => c.name);
+    const sums = createSums(columns, sumColumns(sql, columns));
     const rows = [];
     let total = 0;
     let more = false;
     const started = Date.now();
     for (const row of statement.iterate()) {
       if (rows.length < max) rows.push(row);
+      sums?.add(row);
       total++;
       if (total > max && total % 1000 === 0 && Date.now() - started > COUNT_MS) {
         more = true;
         break;
       }
     }
-    return { columns, rows, total, ...(more ? { more } : {}) };
+    const summed = more ? null : sums?.result(total);
+    return { columns, rows, total, ...(more ? { more } : {}), ...(summed ? { sums: summed } : {}) };
   } catch (e) {
     return { error: e.message, ...nearNames(db, e.message, sql) };
   }
+}
+
+// Words that can follow COUNT(…) or SUM(…) and are not its alias.
+const NOT_ALIAS = new Set(['from', 'where', 'group', 'order', 'having', 'limit', 'union', 'except', 'intersect', 'and', 'or', 'not', 'is', 'in', 'then', 'else', 'end', 'when', 'between', 'like', 'over', 'filter', 'asc', 'desc', 'window', 'collate']);
+const unquoted = name => (/^["`[]/.test(name) ? name.slice(1, -1).replaceAll('""', '"') : name);
+
+/**
+ * The result columns that hold row counts or sums, whose totals add up: a column named COUNT(…), SUM(…) or
+ * TOTAL(…), or the alias such a call gets in `sql` (`COUNT(*) AS n`, `SUM(Sex = 'female') hembras`). COUNT(DISTINCT …)
+ * is left out: distinct counts of two groups do not add up. → column indexes.
+ */
+export function sumColumns(sql, columns) {
+  const text = String(sql ?? '');
+  const aliases = new Set();
+  for (const m of text.matchAll(/\b(count|sum|total)\s*\(/gi)) {
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    for (; i < text.length; i++) {
+      if (text[i] === '(') depth++;
+      else if (text[i] === ')' && --depth === 0) break;
+    }
+    if (/^\(\s*distinct\b/i.test(text.slice(m.index + m[0].length - 1))) continue;
+    const alias = /^\s*(?:as\s+)?("(?:[^"]|"")+"|`[^`]+`|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_]*)/i.exec(text.slice(i + 1));
+    if (alias && !NOT_ALIAS.has(alias[1].toLowerCase())) aliases.add(unquoted(alias[1]).toLowerCase());
+  }
+  return columns
+    .map((name, i) => ({ name: String(name), i }))
+    .filter(({ name }) => aliases.has(name.toLowerCase()) || (/^(count|sum|total)\s*\(/i.test(name) && !/^count\s*\(\s*distinct\b/i.test(name)))
+    .map(({ i }) => i);
+}
+
+/** Values per grouping column in the sums; a column with more is not broken down. */
+export const SUM_GROUP_VALUES = 30;
+
+/**
+ * Totals of the sum columns (`sumIdx`) over every row added, overall and per value of each other column with
+ * repeated values (female and male across species: the sexes' totals). A column whose values are not all whole
+ * numbers is not summed. → { add(row), result(rows) } or null when there is nothing to sum.
+ */
+function createSums(columns, sumIdx) {
+  if (!sumIdx.length) return null;
+  let summed = sumIdx.map(i => ({ i, total: 0, ok: true }));
+  const groups = columns.map((name, i) => ({ name, i })).filter(({ i }) => !sumIdx.includes(i)).map(g => ({ ...g, values: new Map(), over: false }));
+  const whole = v => v === null || (typeof v === 'number' && Number.isInteger(v)) || typeof v === 'bigint';
+  const num = v => (v === null ? 0 : Number(v));
+  return {
+    add(row) {
+      for (const s of summed) {
+        if (!s.ok) continue;
+        if (!whole(row[s.i])) s.ok = false;
+        else s.total += num(row[s.i]);
+      }
+      for (const g of groups) {
+        if (g.over) continue;
+        const v = row[g.i] instanceof Uint8Array ? '(blob)' : row[g.i];
+        let hit = g.values.get(v);
+        if (!hit) {
+          if (g.values.size >= SUM_GROUP_VALUES) {
+            g.over = true;
+            continue;
+          }
+          hit = { rows: 0, sums: sumIdx.map(() => 0) };
+          g.values.set(v, hit);
+        }
+        hit.rows++;
+        sumIdx.forEach((i, k) => (hit.sums[k] += whole(row[i]) ? num(row[i]) : 0));
+      }
+    },
+    result(rows) {
+      summed = summed.filter(s => s.ok);
+      if (rows < 2 || !summed.length) return null;
+      const keep = sumIdx.map(i => summed.some(s => s.i === i));
+      const by = groups
+        .filter(g => !g.over && g.values.size < rows && g.values.size > 1)
+        .map(g => ({
+          column: g.name,
+          values: [...g.values].map(([value, hit]) => [value, hit.sums.filter((_, k) => keep[k])]).sort((a, b) => b[1][0] - a[1][0]),
+        }));
+      return { columns: summed.map(s => columns[s.i]), totals: summed.map(s => s.total), rows, by };
+    },
+  };
+}
+
+/** The sums' lines of the answer: the totals over every row, then per value of each grouping column. */
+export function sumsText(sums) {
+  if (!sums) return [];
+  const label = v => (v === null || v === undefined ? '(empty)' : show(v).slice(0, 80));
+  const of = list => (sums.columns.length === 1 ? String(list[0]) : `(${sums.columns.map((c, k) => `${c} ${list[k]}`).join(', ')})`);
+  return [
+    `(Totals over all ${sums.rows} rows: ${sums.columns.map((c, k) => `${c} ${sums.totals[k]}`).join(', ')}.)`,
+    ...sums.by.map(b => `(${sums.columns.length === 1 ? `${sums.columns[0]} by ${b.column}` : `By ${b.column}`}: ${b.values.map(([v, list]) => `${label(v)} ${of(list)}`).join(', ')}.)`),
+  ];
 }
 
 /** A name compared loosely: no case, accents, spaces or signs ("Field ID" = field_id). */
@@ -581,7 +676,9 @@ const age = (builtAt, now) => {
 /** The answer's text: the columns, a line per row, what was left out and the copy's age. */
 export function formatRows(result, { limit = QUERY_LIMIT, pending = false, now = Date.now(), budget = RESULT_BUDGET - 300 } = {}) {
   const lines = [result.columns.map(show).join('\t')];
-  let size = lines[0].length;
+  // The totals hold over every row, also those cut for size: their room is kept first.
+  const totals = sumsText(result.sums);
+  let size = lines[0].length + totals.reduce((n, line) => n + line.length + 1, 0);
   let shown = 0;
   for (const row of result.rows) {
     const line = row.map(show).join('\t');
@@ -592,7 +689,7 @@ export function formatRows(result, { limit = QUERY_LIMIT, pending = false, now =
   }
   const max = Math.min(Math.max(Number(limit) || QUERY_LIMIT, 1), QUERY_MAX);
   const total = result.more ? `more than ${result.total}` : String(result.total);
-  const notes = [];
+  const notes = [...totals];
   if (!result.total) notes.push('(no rows)');
   else if (shown < result.rows.length)
     notes.push(`(${shown} of ${total} rows shown: size limit. Ask for fewer columns or rows, or for counts.)`);

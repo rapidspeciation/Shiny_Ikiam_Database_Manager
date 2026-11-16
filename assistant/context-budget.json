@@ -106,8 +106,8 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp:query": {
-      "bytes": 3764,
-      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+      "bytes": 3868,
+      "reason": "Counting fix (16 Nov): query says its COUNT and SUM columns come with totals, so a reply reads a total instead of adding one up"
     },
     "mcp:get_record": {
       "bytes": 451,
@@ -146,8 +146,8 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp always-loaded (total)": {
-      "bytes": 21784,
-      "reason": "main's own growth since the budget was recorded: propose_changes refuses a row the app cannot insert (a5878f34, ab3715ce, +66 bytes); recorded at release rel1"
+      "bytes": 21888,
+      "reason": "Counting fix (16 Nov): query says its COUNT and SUM columns come with totals, so a reply reads a total instead of adding one up"
     },
     "mcp deferred names": {
       "bytes": 1291,
