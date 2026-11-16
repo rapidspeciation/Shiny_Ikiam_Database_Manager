@@ -127,8 +127,9 @@ test('review round 2: the output folder is one the lab sandbox reads but cannot 
   const sk = { name: 'Skill', input: '{"skill":"google-account"}' };
   assert.equal(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ }], finalText: '' }).score, 1);
   assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: 'echo "gog gmail search LBI"' }], finalText: '' }).score < 1);
-  for (const help of ['gog gmail search --help', 'gog gmail thread get --help', 'gog gmail -h']) assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: help }], finalText: '' }).score < 1, `${help} is no read`);
+  for (const help of ['gog gmail search --help', 'gog gmail thread get --help', 'gog gmail search -h', 'gog gmail search --help;', 'gog gmail thread get -h;', 'gog gmail search "--help"', 'gog gmail search --help&&ls']) assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: help }], finalText: '' }).score < 1, `${help} is no read`);
   assert.ok(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: SKILL_READ.replace("'LBI", "'is:unread LBI") }], finalText: '' }).score === 1, 'a read of unread mail is no write');
+  assert.equal(grade(s07, { tools: [sk, { name: 'Bash', failed: false, input: "gog gmail search 'LBI' | grep -h lbi" }], finalText: '' }).score, 1, 'a -h in the filter is no help call');
 });
 
 test('review round 2: --help works as in production, and the call\'s status is gog\'s, not the filter\'s', () => {
