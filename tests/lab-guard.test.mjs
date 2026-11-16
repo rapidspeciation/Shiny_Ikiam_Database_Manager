@@ -13,6 +13,13 @@ test('the lab guard: commands, files, scheduling tools, and the sandbox that clo
   assert.equal(sandbox.allowUnsandboxedCommands, false);
   assert.deepEqual(sandbox.filesystem.allowWrite, ['/src', '/cache', '/tmp']);
   assert.ok(['/home/x/.wacli', '/home/x/.local/bin/wacli', '/home/x/.config/ithomiini-wa-bridge'].every(p => sandbox.filesystem.denyRead.includes(p)));
+  // gog: its binary, keyring and OAuth files out of the sandbox, the Gmail read hook in (scripts/lab-gmail-read.mjs)
+  assert.ok(['/home/x/.local/bin/gog', '/home/x/.config/gogcli', '/home/x/.local/share/gogcli'].every(p => sandbox.filesystem.denyRead.includes(p)));
+  assert.ok(deny.includes('Read(//home/x/.config/gogcli/**)') && deny.includes('Bash(*gogcli*)'));
+  const settings = applyLabGuard({ hooks: { PreToolUse: [{ matcher: 'Edit', hooks: [{ type: 'command', command: 'mine' }] }] } }, { home: '/home/x', source: '/src' });
+  assert.equal(settings.hooks.PreToolUse.length, 2);
+  assert.match(settings.hooks.PreToolUse[0].hooks[0].command, /lab-gmail-read\.mjs"$/);
+  assert.equal(settings.hooks.PreToolUse[1].hooks[0].command, 'mine');
 });
 
 test('applying it keeps the workspace\'s own rules and sandbox settings, and is repeatable', () => {

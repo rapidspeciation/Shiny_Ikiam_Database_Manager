@@ -13,7 +13,8 @@
 //   maxTools: n           at most n tool calls (Bash counted)
 //   noToolErrors: true    no failed tool call
 //   okAfterErrors: name | [names]   a call of these tools that worked, after the last one of them that failed
-//   toolArgs: { tool | [tools], match: {arg: regex} }   a call of that tool (one of them) whose arguments match
+//   toolArgs: { tool | [tools], match: {arg: regex}, ok }   a call of that tool (one of them) whose arguments match
+//                         (Bash: `command` is the command); `ok: true` counts only calls that did not fail
 //   noToolArgs: { tool | [tools], match }   no such call
 //   skill: name           the chat loaded that skill (a Skill call, or a Read of skills/<name>/SKILL.md)
 //   noSkill: name | [names]   it loaded none of them
@@ -102,14 +103,16 @@ function proposalHas(proposals, spec, today) {
  * matched as JSON; a truncated input falls back to the raw text after "key":). */
 function toolArgsHit(tools, spec) {
   const names = [spec.tool].flat();
-  const calls = tools.filter(t => names.includes(t.name));
-  if (!calls.length) return { pass: false, detail: `no ${names.join('/')} call` };
+  const calls = tools.filter(t => names.includes(t.name) && !(spec.ok && t.failed));
+  if (!calls.length) return { pass: false, detail: `no ${spec.ok ? 'working ' : ''}${names.join('/')} call` };
   for (const t of calls) {
     let args = null;
     try {
       args = JSON.parse(t.input ?? '');
       if (typeof args === 'string') args = JSON.parse(args);
     } catch {}
+    // A Bash call's input is the command itself (run.mjs reads the lab T3's command items).
+    if (t.name === 'Bash' && (args == null || typeof args !== 'object')) args = { command: t.input ?? '' };
     const ok = Object.entries(spec.match ?? {}).every(([k, re]) => {
       const rx = new RegExp(re, 'i');
       if (args && typeof args === 'object') return args[k] != null && rx.test(typeof args[k] === 'string' ? args[k] : JSON.stringify(args[k]));
