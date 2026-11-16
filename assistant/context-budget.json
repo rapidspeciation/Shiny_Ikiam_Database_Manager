@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15213,
-      "reason": "Counting fix (16 Nov, Franz: a reply said 41 females where the per-species counts add up to 48): every figure is copied from a source, a missing total comes from a tool (count_records subtotals, query totals), only a tool's total comes before its list"
+      "bytes": 14876,
+      "reason": "Franz's flash frozen count (12 Nov): counts that span countries open with the total and the Ecuador figure, by Country or Collection_location; a twin row counted once"
     },
     "skill:app-dev": {
       "bytes": 423,
