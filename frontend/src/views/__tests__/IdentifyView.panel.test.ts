@@ -351,7 +351,7 @@ describe('IdentifyView: the answer', () => {
   })
 
   // The genus not clear (17 Nov 2026): two genera, each with its best species and its total (the server: BioCLIP cuts,
-  // a pair from 0.20 summed, the second at least 0.15). The screenshot's photo (9981 lab, 16 Nov 2026).
+  // the two totals summing to at least 0.70, the second at least 0.15). The screenshot's photo (9981 lab, 16 Nov 2026).
   const twoGenera = {
     species: [['Mechanitis messenoides', 0.4], ['Melinaea isocomma', 0.37], ['Melinaea menophilus', 0.05], ['Mechanitis polymnia', 0.04]],
     genus: [['Mechanitis', 0.47], ['Melinaea', 0.43], ['Oleria', 0.02]],
@@ -361,7 +361,9 @@ describe('IdentifyView: the answer', () => {
 
   it('genus not clear: «X sp o Y sp» with each genus\'s total, «Incierto», the tribe as the small label, no rows', async () => {
     const { host } = await mountWith(answer(twoGenera))
-    expect(text(host, 'headline')).toBe('Mechanitis messenoides 47 % o Melinaea isocomma 43 %')
+    // each number said to be the genus's total
+    expect(text(host, 'pair-0')).toBe('Mechanitis messenoides género 47 %')
+    expect(text(host, 'pair-1')).toBe('o Melinaea isocomma género 43 %')
     const h = host.querySelector('[data-testid=headline]')!
     expect(h.getAttribute('data-pair')).toBe('Mechanitis|Melinaea')
     expect(h.getAttribute('data-top')).toBe('Mechanitis messenoides')
@@ -401,6 +403,36 @@ describe('IdentifyView: the answer', () => {
     ])
   })
 
+  it('two genera of different tribes under a clear tribe: no shared label; the tribe as its own row about the photo', async () => {
+    const { host } = await mountWith(
+      answer({
+        species: [['Mechanitis messenoides', 0.4], ['Heliconius erato', 0.25], ['Oleria onega', 0.1]],
+        genus: [['Mechanitis', 0.5], ['Heliconius', 0.25], ['Oleria', 0.15]],
+        tribe: [['Ithomiini', 0.85]],
+        subfamily: [],
+      }),
+    )
+    expect(host.querySelector('[data-testid=headline]')!.getAttribute('data-pair')).toBe('Mechanitis|Heliconius')
+    expect(host.querySelector('[data-testid=ranks-above], [data-testid=ithomiini-badge], [data-testid=not-ithomiini]')).toBeNull()
+    expect(rows(host)).toEqual([['La foto parece de la tribu Ithomiini 85 %', 'true']])
+  })
+
+  it('under two genera the subspecies line names its species in full', async () => {
+    const { host } = await mountWith(answer({ ...twoGenera, subspecies: [['Mechanitis messenoides deceptus', 0.388]] }))
+    expect(text(host, 'ssp-hint')).toBe('Si fuera Mechanitis messenoides, la subespecie más parecida: deceptus (97 % de esa especie)')
+  })
+
+  it('BioCLIP, the two totals summing under 0.70: the top species and its rows as before', async () => {
+    const { host } = await mountWith(
+      answer({ ...twoGenera, species: [['Mechanitis messenoides', 0.3], ['Melinaea isocomma', 0.2]], genus: [['Mechanitis', 0.4], ['Melinaea', 0.25]] }),
+    )
+    expect(host.querySelector('[data-testid=headline]')!.getAttribute('data-pair')).toBeNull()
+    expect(rows(host)).toEqual([
+      ['Género Mechanitis 40 % Incierto', 'false'],
+      ['La foto parece de la tribu Ithomiini 96 %', 'true'],
+    ])
+  })
+
   it('genus clear or species clear: no pair', async () => {
     const { host } = await mountWith(restored)
     expect(host.querySelector('[data-testid=headline]')!.getAttribute('data-pair')).toBeNull()
@@ -411,7 +443,8 @@ describe('IdentifyView: the answer', () => {
     const { host, settle } = await mountWith(answer(twoGenera))
     locale.value = 'en'
     await settle()
-    expect(text(host, 'headline')).toBe('Mechanitis messenoides 47 % or Melinaea isocomma 43 %')
+    expect(text(host, 'pair-0')).toBe('Mechanitis messenoides genus 47 %')
+    expect(text(host, 'pair-1')).toBe('or Melinaea isocomma genus 43 %')
     expect(text(host, 'pair-note')).toBe('Uncertain Each percentage is for the whole genus (the sum of its species).')
   })
 

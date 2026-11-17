@@ -3,7 +3,7 @@ import { genusPair, rank, stripNames, THRESHOLDS, type Candidate, type Cuts, typ
 
 // The genus not clear (17 Nov 2026, .work/two-genera-20261117/PREREG_two_genera.md): two genera named, each with its
 // best species and its total, when the top two totals sum to at least cuts.pair and the second is at least cuts.second;
-// else the top species and its genus as before («tribe only» when the sum is low, «one genus» when the second is tiny).
+// else today's line: the top species, its genus «Incierto» and the clear tribe's row (the sum low, or the second small).
 const tribe: Headline = { kind: 'tribe', name: 'Ithomiini', p: 0.96 }
 const cuts: Cuts = { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.15 }
 const c = (name: string, p: number): Candidate => ({ name, p })
@@ -32,15 +32,15 @@ describe('genusPair', () => {
     expect(genusPair(tribe, undefined, genus, species, cuts)).toBeNull()
   })
 
-  it('tribe only: the two totals sum to less than cuts.pair (at the cut: the pair)', () => {
+  it('today\'s line when the two totals sum to less than cuts.pair (at the cut: the pair)', () => {
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.35], ['Melinaea', 0.34]), species, cuts)).toBeNull()
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.36], ['Melinaea', 0.34]), species, cuts)).not.toBeNull()
   })
 
-  it('one genus: the second total below cuts.second keeps the top species and its genus (at the cut: the pair)', () => {
+  it('today\'s line when the second total is below cuts.second (at the cut: the pair)', () => {
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.7], ['Melinaea', 0.14]), species, cuts)).toBeNull()
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.7], ['Melinaea', 0.15]), species, cuts)).not.toBeNull()
-    // second 0 (the small model): any second genus makes a pair
+    // second 0: any second genus makes a pair
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.7], ['Melinaea', 0.01]), species, { ...cuts, second: 0 })).not.toBeNull()
     // a single genus listed: nothing to pair
     expect(genusPair(tribe, species[0], g(['Mechanitis', 0.75]), species, { ...cuts, second: 0 })).toBeNull()
@@ -72,8 +72,9 @@ describe('genusPair', () => {
   })
 
   it('has the measured cuts per engine', () => {
-    // RESULT.md (17 Nov 2026): small: pair from 0.70, always two; BioCLIP: pair from 0.20, one genus below 0.15.
-    expect([THRESHOLDS.small.pair, THRESHOLDS.small.second, THRESHOLDS.bioclip.pair, THRESHOLDS.bioclip.second]).toEqual([0.7, 0, 0.2, 0.15])
+    // RESULT.md (17 Nov 2026): both engines name two genera only from a summed 0.70; the second genus at least 0.02
+    // (small, the lead's display choice) or 0.15 (BioCLIP, chosen and checked); below either, today's line.
+    expect([THRESHOLDS.small.pair, THRESHOLDS.small.second, THRESHOLDS.bioclip.pair, THRESHOLDS.bioclip.second]).toEqual([0.7, 0.02, 0.7, 0.15])
   })
 })
 

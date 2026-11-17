@@ -27,12 +27,15 @@ export interface Cuts {
  * measure_20261116T0331Z/REPORT.md, PREREG.md D5): a species is right about 9 times in 10 from a score of 0.70 for
  * both engines (0.60 to 0.70: 79 to 88 %; 0.50 to 0.60: 60 to 87 %), a genus 97 % from 0.80 (0.50 to 0.80: 86 to 94 %). A new value: change this
  * one line and the test that names the values.
- * `pair` and `second` (17 Nov 2026, same photos, chosen on one half and checked once on the other:
- * .work/two-genera-20261117/RESULT.md): where two genera are named, the true genus is one of them on 93 % (small) and
- * 91 % (BioCLIP) of the checking half's photos.
+ * `pair` and `second` (17 Nov 2026, same photos, .work/two-genera-20261117/RESULT.md): the summed share 0.70 was
+ * chosen for the small model on one half and checked once on the other; BioCLIP takes the same 0.70 (the lead's
+ * stricter choice after the numbers: its preregistered 0.20 never bound a shown pair, and its pairs summing under 0.70
+ * held the truth only 79 % of the time). `second`: BioCLIP 0.15 (chosen and checked), small 0.02 (the lead's display
+ * choice: no «o Y 1 %»). Where two genera are named, the true genus is one of them on 92 % (small) and 98 %
+ * (BioCLIP) of the checking half's photos.
  */
 // prettier-ignore
-export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.2, second: 0.15 } }
+export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.02 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.15 } }
 
 /** The engine of an answer: the server's and the phone's «Más preciso» (`full`) are BioCLIP; the rest the small one. */
 export const engineOf = (source: 'online' | 'phone', kind?: 'full' | 'small' | null): IdEngine =>

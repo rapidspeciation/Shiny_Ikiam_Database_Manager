@@ -145,6 +145,8 @@ export default {
   'Ya está en este teléfono.': 'Already on this phone.',
   'Subespecie más probable:': 'Most likely subspecies:',
   'Si fuera esta especie, la subespecie más parecida:': 'If it is this species, the closest subspecies:',
+  'Si fuera': 'If it is',
+  ', la subespecie más parecida:': ', the closest subspecies:',
   'o': 'or',
   'la única subespecie que conoce el modelo': 'the only subspecies the model knows',
   'Subespecies de {name}': 'Subspecies of {name}',
