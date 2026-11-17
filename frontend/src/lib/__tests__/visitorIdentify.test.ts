@@ -2,7 +2,7 @@
 // while it waits, the answer, a ticket the server dropped queued once more, and the place given up on failure.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api'
-import { identifyAsVisitor, onlineError, visitorServer, type VisitorPlace } from '../identifyOnline'
+import { choiceOrDefault, identifyAsVisitor, onlineError, visitorServer, type VisitorPlace } from '../identifyOnline'
 
 const answer = { species: [['Oleria onega', 0.9]], subspecies: [], genus: [['Oleria', 0.95]], crop: 'success', wingBox: null, prior: null, ms: 400 }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -74,6 +74,19 @@ describe('identifyAsVisitor', () => {
     expect(calls.at(-1)).toMatchObject({ method: 'DELETE' })
   })
 
+  it('given up (the page left, Borrar fotos) while waiting: the ticket is DELETEd and polling stops', async () => {
+    vi.useFakeTimers()
+    const calls = serve([() => json(202, { ticket: 'd', state: 'waiting', place: 2, ahead: 1, waitS: 2 }), () => json(200, { ok: true })])
+    const ctl = new AbortController()
+    const out = identifyAsVisitor('/9j/AAAA', null, { signal: ctl.signal }).catch(e => e)
+    await vi.advanceTimersByTimeAsync(100)
+    ctl.abort()
+    await vi.runAllTimersAsync()
+    await out
+    expect(calls.map(c => c.method)).toEqual(['POST', 'DELETE'])
+    expect(calls[1].url).toContain('visitor/identify/d')
+  })
+
   it('a full queue says so plainly', () => {
     expect(onlineError(new ApiError(503, { code: 'BUSY', message: 'busy' }))).toMatch(/ocupado|busy/i)
     expect(onlineError(new ApiError(429, { code: 'RATE_LIMITED', message: 'x' }))).toMatch(/red|network/i)
@@ -92,5 +105,14 @@ describe('visitorServer', () => {
       },
     ])
     expect((await visitorServer()).on).toBe(false)
+  })
+})
+
+describe('choiceOrDefault', () => {
+  it('a visitor with a model on the phone stays on the phone; otherwise online; a kept choice wins', () => {
+    expect(choiceOrDefault(null, false, true)).toBe('phone')
+    expect(choiceOrDefault(null, false, false)).toBe(null)
+    expect(choiceOrDefault(null, true, true)).toBe(null)
+    expect(choiceOrDefault('online', false, true)).toBe('online')
   })
 })

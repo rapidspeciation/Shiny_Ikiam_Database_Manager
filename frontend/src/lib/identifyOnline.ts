@@ -38,6 +38,14 @@ export function effectiveMode(choice: Mode | null, server: boolean, online: bool
   return choice === 'phone' ? 'phone' : 'online'
 }
 
+/**
+ * The choice used when the person made none: a visitor whose phone already has a model keeps reading on the phone (their
+ * photos never left it before); the team, and a visitor with nothing downloaded, start online (null).
+ */
+export function choiceOrDefault(choice: Mode | null, signedIn: boolean, phoneReady: boolean): Mode | null {
+  return choice ?? (!signedIn && phoneReady ? 'phone' : null)
+}
+
 /** The answer as the tab's ranking: the species, every listed genus's total, and the subspecies per species. */
 export function serverRanking(a: ServerAnswer): { species: Candidate[]; genus: Map<string, number>; ssp: Map<string, Candidate[]>; higher: Higher } {
   const species = a.species.map(([name, p]) => ({ name, p }))
@@ -144,8 +152,9 @@ export async function visitorServer(): Promise<{ on: boolean; waitS?: number }> 
 const POLL_MS = 1500
 const wait = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true })
+    const stop = () => (clearTimeout(timer), reject(signal!.reason))
+    const timer = setTimeout(() => (signal?.removeEventListener('abort', stop), resolve()), ms)
+    signal?.addEventListener('abort', stop, { once: true })
   })
 
 /** Tickets of this page still in the queue: given up when the page closes (pagehide), so the next person moves up. */
@@ -157,6 +166,8 @@ if (typeof window !== 'undefined')
     for (const id of open) fetch(`${apiRoot}api/visitor/identify/${id}`, { method: 'DELETE', keepalive: true, credentials: 'same-origin' }).catch(() => {})
     open.clear()
   })
+// Back from the browser's page cache: the page lives on, and its later failures give their places up again.
+if (typeof window !== 'undefined') window.addEventListener('pageshow', e => e.persisted && (leaving = false))
 
 /**
  * A visitor's photo read by the server: in its queue (one photo at a time for everyone), its place told through

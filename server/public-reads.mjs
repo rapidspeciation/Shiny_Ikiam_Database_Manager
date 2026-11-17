@@ -84,6 +84,11 @@ export class AddressLimiter {
       });
     }
   }
+  /** Gives back the last check()'s count of this address (a request refused after it was counted, in the same window). */
+  refund(req) {
+    const c = this.counts.get(clientAddress(req));
+    if (c && c.n > 0 && this.now() - c.start < this.windowMs) c.n -= 1;
+  }
 }
 
 /** A token bucket: `perSecond` on average, `burst` at once. tryTake(): whether one was there (and takes it). */

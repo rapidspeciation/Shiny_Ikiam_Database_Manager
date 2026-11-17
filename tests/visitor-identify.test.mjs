@@ -10,6 +10,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/index.mjs';
 import { createIdentifier } from '../server/identifier.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 const FAKE = new URL('./fixtures/fake-identifier.mjs', import.meta.url).pathname;
 /** A "JPEG" the stand-in reads: FF D8, then what it should answer. */
@@ -20,7 +23,7 @@ const b64 = text => jpeg(text).toString('base64');
 function fakeIdentifier(t) {
   const dir = mkdtempSync(join(tmpdir(), 'visitor-ident-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const seen = { now: 0, most: 0, sent: [] };
+  const seen = { now: 0, most: 0, sent: [], answered: [] };
   const spawnImpl = (exe, argv, opts) => {
     const proc = spawn(exe, argv, opts);
     const write = proc.stdin.write.bind(proc.stdin);
@@ -35,7 +38,11 @@ function fakeIdentifier(t) {
       buf += d;
       const lines = buf.split('\n');
       buf = lines.pop();
-      for (const line of lines) if (/"id":/.test(line)) seen.now -= 1;
+      for (const line of lines)
+        if (/"id":/.test(line)) {
+          seen.now -= 1;
+          seen.answered.push(JSON.parse(line).species?.[0]?.[0] ?? null);
+        }
     });
     return proc;
   };
@@ -67,13 +74,13 @@ async function setup(t, { on = true, anonIdentify = {}, anonLimits = {} } = {}) 
     await app.close();
   });
   const base = `http://127.0.0.1:${address.port}/ithomiini/api`;
-  const call = async (method, path, { body, ip } = {}) => {
+  const call = async (method, path, { body, ip, session } = {}) => {
     const r = await fetch(base + path, {
       method,
-      headers: { 'content-type': 'application/json', ...(ip ? { 'x-forwarded-for': ip } : {}) },
+      headers: { 'content-type': 'application/json', ...(ip ? { 'x-forwarded-for': ip } : {}), ...(session ? { cookie: session.cookie, 'x-csrf-token': session.csrf } : {}) },
       body: body && JSON.stringify(body),
     });
-    return { status: r.status, headers: r.headers, body: await r.json() };
+    return { status: r.status, headers: r.headers, body: await r.json(), cookie: r.headers.get('set-cookie')?.split(';')[0] };
   };
   /** Polls a ticket until it has an answer (or 404). */
   const answer = async ticket => {
@@ -144,10 +151,10 @@ test('one photo at a time: places 1, 2, 3 in order, answers in order, never two 
   assert.deepEqual([a.body.place, b.body.place, c.body.place], [1, 2, 3]);
   assert.equal(b.body.ahead, 1);
   assert.ok(c.body.waitS >= b.body.waitS, 'a later place waits at least as long');
-  const order = [];
-  const answers = await Promise.all([a, b, c].map(x => answer(x.body.ticket).then(r => (order.push(r.body.answer.species[0][0]), r))));
+  const answers = await Promise.all([a, b, c].map(x => answer(x.body.ticket)));
   assert.deepEqual(answers.map(r => r.body.state), ['done', 'done', 'done']);
-  assert.deepEqual(order, ['Oleria onega', 'Mechanitis polymnia', 'Hypothyris anastasia']);
+  // The order the worker answered them (the pollers may notice in another order).
+  assert.deepEqual(seen.answered, ['Oleria onega', 'Mechanitis polymnia', 'Hypothyris anastasia']);
   assert.equal(seen.most, 1);
   assert.equal(seen.sent.length, 3);
 });
@@ -229,4 +236,59 @@ test('an identifier error answers the visitor and leaves no temp file; a timeout
   assert.equal(late.body.status, 504);
   await app.visitorIdentify.idle();
   assert.deepEqual(readdirSync(scratch), []);
+});
+
+test('by default an address may send well over 10 photos in 10 minutes while the queue drains (a class on one campus address)', async t => {
+  const { call, answer } = await setup(t);
+  for (let i = 0; i < 12; i++) {
+    const r = await call('POST', '/visitor/identify', { body: { photo: b64('Oleria onega 0.9') }, ip: '203.0.113.7' });
+    assert.equal(r.status, 202, `photo ${i + 1}: ${JSON.stringify(r.body)}`);
+    assert.equal((await answer(r.body.ticket)).body.state, 'done');
+  }
+});
+
+test('only photos the queue takes count: a BUSY refusal is given back, the limit refuses after the accepted ones', async t => {
+  const { call, answer } = await setup(t, { anonIdentify: { perWindow: 3, maxWaiting: 1 } });
+  const send = text => call('POST', '/visitor/identify', { body: { photo: b64(text) }, ip: '203.0.113.8' });
+  const slow = await send('sleep 150 Oleria onega 0.9');
+  assert.equal(slow.status, 202);
+  // Three refusals while the queue is full: none of them uses the address's budget.
+  for (let i = 0; i < 3; i++) assert.equal((await send('Oleria onega 0.9')).body.error.code, 'BUSY');
+  await answer(slow.body.ticket);
+  for (let i = 0; i < 2; i++) {
+    const r = await send('Oleria onega 0.9');
+    assert.equal(r.status, 202, `accepted ${i + 2}`);
+    await answer(r.body.ticket);
+  }
+  const over = await send('Oleria onega 0.9');
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error.code, 'RATE_LIMITED');
+});
+
+test('cancelled while being read: the read ends on its own, its temp file goes, the next photo goes on', async t => {
+  const { call, answer, seen, scratch, app } = await setup(t);
+  const a = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 200 Oleria onega 0.9') } });
+  const b = await call('POST', '/visitor/identify', { body: { photo: b64('Mechanitis polymnia 0.8') } });
+  // a is being read (in the worker) when it is cancelled.
+  for (let i = 0; i < 100 && seen.sent.length < 1; i++) await new Promise(r => setTimeout(r, 5));
+  assert.equal((await call('GET', `/visitor/identify/${a.body.ticket}`)).body.state, 'running');
+  assert.equal((await call('DELETE', `/visitor/identify/${a.body.ticket}`)).status, 200);
+  assert.equal((await call('GET', `/visitor/identify/${a.body.ticket}`)).status, 404);
+  assert.deepEqual((await answer(b.body.ticket)).body.answer.species[0], ['Mechanitis polymnia', 0.8]);
+  await app.visitorIdentify.idle();
+  assert.equal(seen.most, 1);
+  assert.deepEqual(readdirSync(scratch), []);
+});
+
+test('a visitor who signed in meanwhile (another tab) still gets their ticket; the queue route stays the visitors\'', async t => {
+  const { call, answer } = await setup(t);
+  const sent = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 50 Oleria onega 0.9') } });
+  const setupDone = await call('POST', '/auth/setup', { body: { token: 'visitor-identify-setup', username: 'boss', password: 'secret1', displayName: 'Boss' } });
+  const session = { cookie: setupDone.cookie, csrf: setupDone.body.csrf };
+  const r = await call('GET', `/visitor/identify/${sent.body.ticket}`, { session });
+  assert.equal(r.status, 200);
+  assert.match(r.body.state, /waiting|running|done/);
+  if (r.body.state !== 'done') assert.equal((await answer(sent.body.ticket)).body.state, 'done');
+  // Signed in, a new photo goes the team's way, not into the visitors' route.
+  assert.notEqual((await call('POST', '/visitor/identify', { session, body: { photo: b64('Oleria onega 0.9') } })).status, 202);
 });

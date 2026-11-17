@@ -360,7 +360,8 @@ export function configFromEnv(env = process.env) {
     publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
     // Identificar's «En línea (servidor)» for visitors without a sign-in (server/visitor-identify.mjs): off unless
     // ANON_SERVER_IDENTIFY=1. One photo at a time through the app's one identifier, at most ANON_IDENTIFY_QUEUE waiting
-    // (20), ANON_IDENTIFY_PER_10MIN photos per address in 10 minutes (10).
+    // (20), ANON_IDENTIFY_PER_10MIN photos the queue took per address in 10 minutes (60: a class behind one campus
+    // address; the queue's cap and the one worker bound the load, not this).
     anonServerIdentify: env.ANON_SERVER_IDENTIFY === '1',
     anonIdentify: {
       ...(env.ANON_IDENTIFY_QUEUE ? { maxWaiting: Number(env.ANON_IDENTIFY_QUEUE) } : {}),
@@ -949,7 +950,7 @@ export async function createApp(config = {}, options = {}) {
   };
   const anonDrive = new DriveBudget({ perSecond: 2, burst: 20, ...config.anonLimits?.drive });
   // Visitors' photos for the server's identifier (server/visitor-identify.mjs), when ANON_SERVER_IDENTIFY is on and the
-  // identifier is here: per address 10 photos in 10 minutes, and the queue's polls (one a second and a half).
+  // identifier is here: per address 60 photos the queue took in 10 minutes, and the queue's polls (one a second and a half).
   const visitorIdentify =
     config.anonServerIdentify && assistant?.identifyPhoto && assistant.identifier
       ? createVisitorIdentify({
@@ -966,7 +967,7 @@ export async function createApp(config = {}, options = {}) {
       : null;
   const visitorLimits = visitorIdentify
     ? {
-        submit: new AddressLimiter({ limit: config.anonIdentify?.perWindow ?? 10, windowMs: 10 * 60_000, ...config.anonLimits?.visitorIdentify }),
+        submit: new AddressLimiter({ limit: config.anonIdentify?.perWindow ?? 60, windowMs: 10 * 60_000, ...config.anonLimits?.visitorIdentify }),
         poll: new AddressLimiter({ limit: 1500, windowMs: 10 * 60_000, ...config.anonLimits?.visitorPoll }),
       }
     : null;
@@ -1226,7 +1227,8 @@ export async function createApp(config = {}, options = {}) {
       }
       // Identificar's «En línea (servidor)» for visitors (ANON_SERVER_IDENTIFY; server/visitor-identify.mjs): GET what the
       // queue holds, POST a photo (202 a ticket), GET a ticket (its place, then its answer once), DELETE it (leaving).
-      if (!session && visitorIdentify && (path === '/api/visitor/identify' || path.startsWith('/api/visitor/identify/'))) {
+      // A ticket's GET and DELETE whatever the session: a visitor who signed in meanwhile in another tab still gets it.
+      if (visitorIdentify && (path.startsWith('/api/visitor/identify/') || (!session && path === '/api/visitor/identify'))) {
         if (path === '/api/visitor/identify' && method === 'GET') {
           visitorLimits.poll.check(req);
           // on: the identifier's files are here (otherwise the page keeps the phone's models only).
@@ -1237,10 +1239,12 @@ export async function createApp(config = {}, options = {}) {
           const checked = checkPhoto(body);
           if (checked.error) return json(res, checked.error.status, checked.error.body);
           if (!assistant.identifier.status().installed) throw fail('UNAVAILABLE', 'The identifier is not installed on this server', 503);
+          // Counted only when the queue takes the photo: a refusal (busy, closing) is given back.
           visitorLimits.submit.check(req);
           try {
             return json(res, 202, visitorIdentify.submit(checked), { 'cache-control': 'no-store' });
           } catch (e) {
+            visitorLimits.submit.refund(req);
             if (e.code === 'BUSY') return json(res, 503, { error: { code: 'BUSY', message: e.message } }, { 'retry-after': '60' });
             throw e;
           }

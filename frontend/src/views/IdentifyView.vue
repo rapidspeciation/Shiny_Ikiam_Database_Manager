@@ -23,7 +23,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, ChevronDown, Download, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
-import { effectiveMode, identifyAsVisitor, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, visitorServer, type Mode, type ServerAnswer, type VisitorPlace } from '../lib/identifyOnline'
+import { choiceOrDefault, effectiveMode, identifyAsVisitor, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, visitorServer, type Mode, type ServerAnswer, type VisitorPlace } from '../lib/identifyOnline'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
@@ -145,6 +145,8 @@ const online = ref(navigator.onLine)
 const listing = ref<Listing | null>(null)
 const files = computed<ModelFile[] | null>(() => (listing.value && 'files' in listing.value ? listing.value.files : null))
 const ready = ref<Record<ModelKind, boolean>>({ small: false, full: false })
+/** A model on the phone can read photos (declared here: the mode, below, reads it as the page is set up). */
+const anyReady = computed(() => ready.value.small || ready.value.full)
 const checked = ref(false)
 const wanted = ref<ModelKind>((store.get(CHOSEN) as ModelKind | null) === 'full' ? 'full' : 'small')
 const active = computed(() => chooseModel(wanted.value, ready.value))
@@ -336,7 +338,7 @@ const modeChoice = ref<Mode | null>(((m: string | null) => (m === 'online' || m 
 const visitorOn = ref(false)
 /** Who may send the photo to the server now: the team, or a visitor when the server takes visitors' photos. */
 const serverOpen = computed(() => !!session.user || visitorOn.value)
-const mode = computed<Mode>(() => effectiveMode(modeChoice.value, serverOpen.value, online.value))
+const mode = computed<Mode>(() => effectiveMode(choiceOrDefault(modeChoice.value, !!session.user, anyReady.value), serverOpen.value, online.value))
 function chooseMode(m: Mode) {
   if (m === 'online' && (!serverOpen.value || !online.value)) return
   modeChoice.value = m
@@ -1415,17 +1417,18 @@ function clearPhotos() {
   runError.value = null
 }
 const busyText = computed(() =>
-  busy.value === 'loading'
-    ? t('Preparando el identificador… la primera foto tarda más.')
-    : busy.value === 'sending' && queuePlace.value && queuePlace.value.place > 1
-      ? tn(queuePlace.value.ahead, 'En cola: 1 foto antes que la suya, unos {s} s.', 'En cola: {n} fotos antes que la suya, unos {s} s.', { s: numText(queuePlace.value.waitS) })
-      : busy.value === 'sending' && queuePlace.value
+  // A visitor's photo in the server's queue (a new photo or a side change read again): its place and wait.
+  queuePlace.value && queuePlace.value.place > 1
+    ? tn(queuePlace.value.ahead, 'En cola: 1 foto antes que la suya, unos {s} s.', 'En cola: {n} fotos antes que la suya, unos {s} s.', { s: numText(queuePlace.value.waitS) })
+    : queuePlace.value
       ? t('Analizando en el servidor… unos {s} s.', { s: numText(queuePlace.value.waitS) })
-      : busy.value === 'sending'
-      ? t('Analizando en el servidor…')
-      : busy.value === 'analysing'
-        ? t('Analizando la foto…')
-        : null,
+      : busy.value === 'loading'
+        ? t('Preparando el identificador… la primera foto tarda más.')
+        : busy.value === 'sending'
+          ? t('Analizando en el servidor…')
+          : busy.value === 'analysing'
+            ? t('Analizando la foto…')
+            : null,
 )
 
 // ---------------------------------------------------------------- «Mis identificaciones»: kept, loaded again
@@ -1695,7 +1698,8 @@ onMounted(async () => {
   // Signed out (the server said so): the team's inventory a session left on this phone goes.
   if (known && !session.user && navigator.onLine) await Promise.all([engine.forgetStock(), engine.forgetSex()])
   if (session.user) stock.value = await engine.stock()
-  await askVisitor()
+  // Not awaited: the page restores meanwhile, and the mode follows the answer when it comes.
+  askVisitor()
   await refresh()
   await restoreLast()
   autoPack()
@@ -1706,6 +1710,9 @@ let stopSessionWatch: (() => void) | null = null
 let unmounted = false
 onBeforeUnmount(() => {
   unmounted = true
+  // Left through the app (another tab): a visitor's place is given up (DELETE) and nothing of this run lands after.
+  run++
+  visitorAbort?.abort()
   stopSessionWatch?.()
   removeEventListener('online', goOnline)
   removeEventListener('offline', goOffline)
@@ -1717,7 +1724,6 @@ onBeforeUnmount(() => {
   if (refsTimer) clearTimeout(refsTimer)
   if (outboxTimer) clearTimeout(outboxTimer)
 })
-const anyReady = computed(() => ready.value.small || ready.value.full)
 </script>
 
 <template>
