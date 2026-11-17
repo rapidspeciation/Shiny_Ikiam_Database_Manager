@@ -54,7 +54,7 @@ import { locale, t, tn } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
-import { engineOf, epithet, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
+import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
 import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
@@ -641,7 +641,7 @@ const leafP = computed(() =>
   result.value?.source === 'phone' && result.value.feature && head.value ? leafScores(head.value, result.value.feature, sideValue.value) : null,
 )
 const scores = computed(() => (leafP.value && head.value ? sumSpecies(head.value, leafP.value) : null))
-const ranked = computed(() =>
+const ranked = computed<{ species: Candidate[]; genus: Map<string, number>; best?: Map<string, Candidate> } | null>(() =>
   fromServer.value ? { species: fromServer.value.species, genus: fromServer.value.genus } : scores.value && head.value ? rank(scores.value, head.value.meta.species, 5) : null,
 )
 /** The candidates' subspecies (most probable first), by species name; empty with an older head (no names). */
@@ -680,14 +680,38 @@ const said = computed(() => (ranked.value ? headline(top.value, ranked.value.gen
 /** The species and the genus are said as clear (the other levels are totals over many species). */
 const speciesSure = computed(() => said.value?.kind === 'species')
 const levelSure = computed(() => said.value?.kind === 'species' || said.value?.kind === 'genus')
-/** Under the top species (the headline's guess, «Incierto» below the species cut): its genus, and the clear tribe or subfamily. */
-const ladder = computed(() => (ranked.value ? rungs(said.value, top.value, ranked.value.genus) : []))
+/**
+ * The genus not clear: the two genera named in the headline instead of the top species alone (lib/identifyResult.ts
+ * genusPair, cuts per engine), each with its total and best species; null keeps the top species and its genus.
+ */
+const pair = computed(() => (ranked.value ? genusPair(said.value, top.value, ranked.value.genus, ranked.value.species, cuts.value, ranked.value.best) : null))
+/**
+ * The ranks the two named species share, for the small label: a clear tribe or subfamily (the headline's own level)
+ * is named there when the shared ranks hold it, and then it is the sure (green) label.
+ */
+const pairAbove = computed(() => {
+  if (!pair.value) return null
+  const [a, b] = pair.value.map(g => (g.species ? taxonOf(g.species.name, taxonomy.value) : null))
+  const label = { tribe: a?.tribe && a.tribe === b?.tribe ? a.tribe : null, subfamily: a?.subfamily && a.subfamily === b?.subfamily ? a.subfamily : null }
+  const s = said.value
+  if (s?.kind === 'tribe' && !label.tribe) label.tribe = s.name
+  if (s?.kind === 'subfamily' && !label.subfamily && !label.tribe) label.subfamily = s.name
+  const sure = (s?.kind === 'tribe' && label.tribe === s.name) || (s?.kind === 'subfamily' && label.subfamily === s.name)
+  return label.tribe || label.subfamily ? { ...label, sure } : null
+})
+/**
+ * Under the top species (the headline's guess, «Incierto» below the species cut): its genus, and the clear tribe or
+ * subfamily. None under two genera: the headline names both genera and the small label the ranks above them.
+ */
+const ladder = computed(() => (ranked.value && !pair.value ? rungs(said.value, top.value, ranked.value.genus) : []))
 /**
  * The top species' tribe and subfamily, the small label by the headline; not when a tribe or subfamily is the clear
  * level (its row names it, with its score). Brand green (the Ithomiini badge) only when the species or genus is clear.
  */
-const above = computed(() => (top.value && said.value?.kind !== 'tribe' && said.value?.kind !== 'subfamily' ? ranksAbove(top.value.name, taxonomy.value) : null))
-const aboveBadge = computed(() => levelSure.value && above.value?.tribe === 'Ithomiini')
+const above = computed(() =>
+  pair.value ? pairAbove.value : top.value && said.value?.kind !== 'tribe' && said.value?.kind !== 'subfamily' ? ranksAbove(top.value.name, taxonomy.value) : null,
+)
+const aboveBadge = computed(() => (pair.value ? !!pairAbove.value?.sure : levelSure.value) && above.value?.tribe === 'Ithomiini')
 /**
  * Whether to say the photo is or is not an Ithomiini (the badge, «No parece una Ithomiini.»): only from a clear level.
  * A clear species or genus: its tribe from the file, else its genus; a clear tribe: only «No parece» when it is
@@ -695,6 +719,7 @@ const aboveBadge = computed(() => levelSure.value && above.value?.tribe === 'Ith
  * clear: nothing.
  */
 const ithomiiniBadge = computed<boolean | null>(() => {
+  // Two genera under a clear tribe: the label names it (green when Ithomiini); another clear tribe: «No parece».
   if (said.value?.kind === 'tribe') return said.value.name === 'Ithomiini' ? null : false
   if (!levelSure.value) return null
   if (above.value?.tribe) return above.value.tribe === 'Ithomiini'
@@ -1826,7 +1851,7 @@ onBeforeUnmount(() => {
             <span>{{ $t('No encontramos las alas con claridad: el resultado puede estar mal. Pruebe otra foto, más cerca y con las alas abiertas.') }}</span>
           </p>
           <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
+            <div class="min-w-0" :class="{ 'flex-1': pair }">
               <!-- the label before the sentence: never after «Lo más parecido:» (round 2). The ranks above the answer
                    (tribe · subfamily) are the Ithomiini badge when the tribe is Ithomiini, so the page never says it twice; a
                    subfamily alone says «Subfamilia», never to be read as a tribe. -->
@@ -1843,12 +1868,30 @@ onBeforeUnmount(() => {
                 <span v-if="ithomiiniBadge === false" class="mr-1" data-testid="not-ithomiini">{{ $t('No parece una Ithomiini.') }}</span>
                 {{ $t('Posible identificación') }}
               </p>
-              <!-- Always the top species, as the Wings Gallery (Franz, 15 Nov 2026). data-top: the same (browser checks: tools, lab notes). -->
-              <h1 class="text-2xl leading-tight font-semibold" data-testid="headline" :data-top="top?.name" :data-top-p="top?.p" :data-sure="speciesSure">
-                <i>{{ top?.name }}</i>
+              <!-- Always the top species, as the Wings Gallery (Franz, 15 Nov 2026); the genus not clear: the two genera, each
+                   with its best species and its total (17 Nov 2026). data-top: the top species (browser checks: tools, lab notes). -->
+              <h1
+                class="text-2xl leading-tight font-semibold"
+                data-testid="headline"
+                :data-top="top?.name"
+                :data-top-p="top?.p"
+                :data-sure="speciesSure"
+                :data-pair="pair ? pair.map(g => g.genus).join('|') : null"
+              >
+                <template v-if="pair">
+                  <span v-for="(g, i) in pair" :key="g.genus" class="flex items-baseline justify-between gap-3" :data-testid="`pair-${i}`">
+                    <span class="min-w-0"
+                      ><span v-if="i" class="font-normal text-fg-muted">{{ `${$t('o')} ` }}</span><i>{{ g.species?.name ?? g.genus }}</i></span
+                    >{{ ' ' }}<span class="shrink-0 tabular-nums text-fg-muted" :title="$t('Puntuación de la IA')">{{ percent(g.p) }}</span>{{ i ? '' : ' ' }}
+                  </span>
+                </template>
+                <i v-else>{{ top?.name }}</i>
               </h1>
+              <p v-if="pair" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted" data-testid="pair-note">
+                <span class="unsure-tag" data-testid="species-unsure">{{ $t('Incierto') }}</span>{{ ' ' }}<span>{{ $t('Cada porcentaje es el de todo el género (la suma de sus especies).') }}</span>
+              </p>
             </div>
-            <div class="flex shrink-0 flex-col items-end pt-4">
+            <div v-if="!pair" class="flex shrink-0 flex-col items-end pt-4">
               <p class="text-2xl leading-tight font-semibold tabular-nums" :class="speciesSure ? 'text-brand-text' : 'text-fg-muted'" data-testid="headline-p" :title="$t('Puntuación de la IA')">
                 {{ percent(top?.p ?? 0) }}
               </p>

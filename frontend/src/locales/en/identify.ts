@@ -100,6 +100,7 @@ export default {
   'La foto parece de la tribu {name}': 'The photo looks like tribe {name}',
   'La foto parece de la subfamilia {name}': 'The photo looks like subfamily {name}',
   'Posible identificación': 'Possible identification',
+  'Cada porcentaje es el de todo el género (la suma de sus especies).': 'Each percentage is for the whole genus (the sum of its species).',
   'Preparando el identificador… la primera foto tarda más.': 'Preparing the identifier… the first photo takes longer.',
   'puntuación de la IA, no una garantía': 'the AI’s score, not a guarantee',
   'Quitar mi elección': 'Remove my choice',

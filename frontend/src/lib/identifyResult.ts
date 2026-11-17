@@ -16,6 +16,10 @@ export interface Cuts {
   genus: number
   /** The tribe and the subfamily (WingsClassificator X-A8, S1-confirmed at 0.80). */
   higher: number
+  /** Genus not clear: two genera are named when the top two genera's totals sum to at least this (`genusPair`). */
+  pair: number
+  /** ... and the second genus's total is at least this; below it, the top species and its genus alone (as before). */
+  second: number
 }
 /**
  * The cuts per engine: below them the species (genus) is shown as «Incierto», and the tribe or subfamily is not
@@ -23,9 +27,12 @@ export interface Cuts {
  * measure_20261116T0331Z/REPORT.md, PREREG.md D5): a species is right about 9 times in 10 from a score of 0.70 for
  * both engines (0.60 to 0.70: 79 to 88 %; 0.50 to 0.60: 60 to 87 %), a genus 97 % from 0.80 (0.50 to 0.80: 86 to 94 %). A new value: change this
  * one line and the test that names the values.
+ * `pair` and `second` (17 Nov 2026, same photos, chosen on one half and checked once on the other:
+ * .work/two-genera-20261117/RESULT.md): where two genera are named, the true genus is one of them on 93 % (small) and
+ * 91 % (BioCLIP) of the checking half's photos.
  */
 // prettier-ignore
-export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8 } }
+export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.2, second: 0.15 } }
 
 /** The engine of an answer: the server's and the phone's «Más preciso» (`full`) are BioCLIP; the rest the small one. */
 export const engineOf = (source: 'online' | 'phone', kind?: 'full' | 'small' | null): IdEngine =>
@@ -41,15 +48,23 @@ export interface GenusGroup {
   species: Candidate[]
 }
 
-/** The species in score order (the first `top`) and every genus's total, from all species' scores. */
-export function rank(scores: ArrayLike<number>, species: string[], top = 5): { species: Candidate[]; genus: Map<string, number> } {
+/**
+ * The species in score order (the first `top`), every genus's total, and every genus's best species, from all species'
+ * scores.
+ */
+export function rank(scores: ArrayLike<number>, species: string[], top = 5): { species: Candidate[]; genus: Map<string, number>; best: Map<string, Candidate> } {
   const genus = new Map<string, number>()
   for (let i = 0; i < species.length; i++) {
     const g = species[i].split(' ')[0]
     genus.set(g, (genus.get(g) ?? 0) + scores[i])
   }
   const order = Array.from({ length: species.length }, (_, i) => i).sort((a, b) => scores[b] - scores[a] || a - b)
-  return { species: order.slice(0, top).map(i => ({ name: species[i], p: scores[i] })), genus }
+  const best = new Map<string, Candidate>()
+  for (const i of order) {
+    const g = species[i].split(' ')[0]
+    if (!best.has(g)) best.set(g, { name: species[i], p: scores[i] })
+  }
+  return { species: order.slice(0, top).map(i => ({ name: species[i], p: scores[i] })), genus, best }
 }
 
 /** The candidates under their genus (the genus's total over all its species), genera in score order. */
@@ -109,6 +124,55 @@ export function headline(top: Candidate | undefined, genus: Map<string, number>,
     }
   }
   return { kind: 'unsure' }
+}
+
+/** A genus named in the two-genera answer: its total and its best species (null when no listed species is of it). */
+export interface GenusPick {
+  genus: string
+  p: number
+  species: Candidate | null
+}
+/**
+ * When the genus is not clear (the headline is a tribe, a subfamily or «not sure»), the two genera to name instead of
+ * the top species alone (Franz, 17 Nov 2026: «Mechanitis messenoides o Melinaea isocomma»), each with its total and
+ * its best species; null to keep the top species and its genus as before. Rule (.work/two-genera-20261117/
+ * PREREG_two_genera.md): the top two genera by total (ties: the higher best species, then by name) when their totals
+ * sum to at least `cuts.pair` and the second's is at least `cuts.second`, and only when the top species' genus is one
+ * of the two (the top species is always named). `best`: every genus's best species when known (the phone), else the
+ * listed species (the server lists its first 5).
+ */
+export function genusPair(
+  said: Headline | null,
+  top: Candidate | undefined,
+  genus: Map<string, number>,
+  species: Candidate[],
+  cuts: Cuts,
+  best?: Map<string, Candidate>,
+): [GenusPick, GenusPick] | null {
+  if (!said || !top || said.kind === 'species' || said.kind === 'genus') return null
+  const bestOf = (g: string) => best?.get(g) ?? species.find(c => c.name.split(' ')[0] === g) ?? null
+  const picks = [...genus].map(([g, p]) => ({ genus: g, p, species: bestOf(g) }))
+  picks.sort((a, b) => b.p - a.p || (b.species?.p ?? 0) - (a.species?.p ?? 0) || (a.genus < b.genus ? -1 : a.genus > b.genus ? 1 : 0))
+  const [first, second] = picks
+  if (!first || !second || first.p + second.p < cuts.pair || second.p < cuts.second) return null
+  const g = top.name.split(' ')[0]
+  if (first.genus !== g && second.genus !== g) return null
+  return [first, second]
+}
+
+/**
+ * The names under the candidate thumbnails: «M. messenoides», with the genus written out when another genus in the
+ * list starts with the same letter (Mechanitis and Melinaea are not both «M.»).
+ */
+export function stripNames(names: string[]): Map<string, string> {
+  const genera = new Set(names.map(n => n.split(' ')[0]))
+  const out = new Map<string, string>()
+  for (const n of names) {
+    const g = n.split(' ')[0]
+    const clash = [...genera].some(o => o !== g && o[0] === g[0])
+    out.set(n, clash ? n : shortName(n))
+  }
+  return out
 }
 
 /**

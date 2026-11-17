@@ -2,16 +2,17 @@
 /**
  * The AI's most likely species under the comparison, as thumbnails with their %: tapping one shows its reference
  * photos in the comparison above, in place (IdentifyView's `compared`). The one compared is outlined; the person's
- * choice («Es esta») carries a check.
+ * choice («Es esta») carries a check. Names as «M. messenoides», the genus written out when two genera in the strip share
+ * the initial (stripNames).
  */
+import { computed } from 'vue'
 import { Check } from 'lucide-vue-next'
 import PhotoThumb from './PhotoThumb.vue'
-import { percent, type Candidate } from '../../lib/identifyResult'
+import { percent, stripNames, type Candidate } from '../../lib/identifyResult'
 
-defineProps<{ candidates: (Candidate & { thumb?: string })[]; showing: string; pick: string | null }>()
+const props = defineProps<{ candidates: (Candidate & { thumb?: string })[]; showing: string; pick: string | null }>()
 defineEmits<{ compare: [name: string] }>()
-const genus = (n: string) => n.split(' ')[0]
-const rest = (n: string) => n.split(' ').slice(1).join(' ')
+const names = computed(() => stripNames(props.candidates.map(c => c.name)))
 </script>
 
 <template>
@@ -29,8 +30,12 @@ const rest = (n: string) => n.split(' ').slice(1).join(' ')
     >
       <span v-if="pick === c.name" class="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-brand text-on-brand"><Check :size="13" /></span>
       <template #caption>
-        <span class="line-clamp-2 block w-full text-xs leading-tight" :class="c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted'">
-          <i>{{ genus(c.name).slice(0, 1) }}. {{ rest(c.name) }}</i>
+        <span
+          class="block w-full text-xs leading-tight"
+          :class="[c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted', names.get(c.name) === c.name ? 'line-clamp-3 break-words' : 'line-clamp-2']"
+          data-testid="candidate-name"
+        >
+          <i>{{ names.get(c.name) }}</i>
         </span>
         <span class="block text-xs leading-tight tabular-nums" :class="c.name === showing ? 'text-brand-text font-medium' : 'text-fg-muted'">{{ percent(c.p) }}</span>
       </template>

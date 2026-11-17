@@ -42,7 +42,10 @@ describe('tribe and subfamily answer', () => {
 
   it('has one set of cuts per engine: species 0.70 (measured), genus and higher ranks 0.80', () => {
     // The shipped values (15 Nov 2026, PREREG.md): when the cuts change, these lines change with them.
-    expect(THRESHOLDS).toEqual({ small: { species: 0.7, genus: 0.8, higher: 0.8 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8 } })
+    expect(THRESHOLDS).toEqual({
+      small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0 },
+      bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.2, second: 0.15 },
+    })
     expect(engineOf('online')).toBe('bioclip')
     expect(engineOf('online', 'small')).toBe('bioclip')
     expect(engineOf('phone', 'full')).toBe('bioclip')
@@ -54,11 +57,11 @@ describe('tribe and subfamily answer', () => {
     expect(say([0.85, 0.05, 0.05, 0, 0.05, 0, 0, 0])).toEqual({ kind: 'species', name: 'Mechanitis polymnia' })
     expect(say([0.5, 0.35, 0.1, 0, 0.05, 0, 0, 0])).toEqual({ kind: 'genus', genus: 'Mechanitis' })
     // Separate cuts: a lower species cut names the species, a higher genus cut skips to the tribe.
-    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.55, genus: 0.8, higher: 0.8 })).toEqual({ kind: 'species', name: 'Mechanitis polymnia' })
-    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.8 })).toMatchObject({ kind: 'tribe', name: 'Ithomiini' })
-    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.99 })).toEqual({ kind: 'unsure' })
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.55, genus: 0.8, higher: 0.8, pair: 0.7, second: 0 })).toEqual({ kind: 'species', name: 'Mechanitis polymnia' })
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.8, pair: 0.7, second: 0 })).toMatchObject({ kind: 'tribe', name: 'Ithomiini' })
+    expect(say([0.6, 0.25, 0.1, 0, 0.05, 0, 0, 0], { species: 0.8, genus: 0.9, higher: 0.99, pair: 0.7, second: 0 })).toEqual({ kind: 'unsure' })
     // The tribe cut is its own too.
-    expect(say([0.4, 0.1, 0.35, 0, 0.15, 0, 0, 0], { species: 0.8, genus: 0.8, higher: 0.9 })).toEqual({ kind: 'unsure' })
+    expect(say([0.4, 0.1, 0.35, 0, 0.15, 0, 0, 0], { species: 0.8, genus: 0.8, higher: 0.9, pair: 0.7, second: 0 })).toEqual({ kind: 'unsure' })
   })
 
   it('names the tribe when its total is clear and the genus is not', () => {
