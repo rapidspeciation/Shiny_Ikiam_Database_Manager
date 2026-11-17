@@ -31,8 +31,8 @@ const names = computed(() => stripNames(props.candidates.map(c => c.name)))
       <span v-if="pick === c.name" class="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-brand text-on-brand"><Check :size="13" /></span>
       <template #caption>
         <span
-          class="block w-full text-xs leading-tight"
-          :class="[c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted', names.get(c.name) === c.name ? 'line-clamp-3 break-words' : 'line-clamp-2']"
+          class="block w-full leading-tight"
+          :class="[c.name === showing ? 'font-semibold text-fg' : 'text-fg-muted', names.get(c.name) === c.name ? 'line-clamp-3 text-[11px]' : 'line-clamp-2 text-xs']"
           data-testid="candidate-name"
         >
           <i>{{ names.get(c.name) }}</i>
