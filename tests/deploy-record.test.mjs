@@ -311,7 +311,7 @@ test("install-release.sh: a service.env with the lab's open login (ITHOMIINI_LAB
   try {
     f.stage();
     const env = join(f.app, 'shared', 'service.env');
-    for (const line of ['ITHOMIINI_LAB_OPEN_LOGIN=1', 'export ITHOMIINI_LAB_OPEN_LOGIN=0']) {
+    for (const line of ['ITHOMIINI_LAB_OPEN_LOGIN=1', 'export ITHOMIINI_LAB_OPEN_LOGIN=0', 'ITHOMIINI_LAB_OPEN_LOGIN = 1', 'Environment=A=1 ITHOMIINI_LAB_OPEN_LOGIN=1']) {
       writeFileSync(env, `APP_HOST=127.0.0.1\nAPP_PORT=8794\n${line}\n`);
       const run = f.run([], { DEPLOY_LOCAL: '1', ITHOMIINI_SERVICE_ENV: env });
       assert.equal(run.status, 1, run.stdout + run.stderr);

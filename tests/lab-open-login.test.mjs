@@ -35,6 +35,8 @@ test('the flag in a lab config: on (offline, or a Google copy that is not the te
 });
 
 test('the flag where production could be: the app refuses to start', () => {
+  // The live server's config is the PRODUCTION cases: it sets no NODE_ENV and binds loopback (behind Caddy), so the
+  // missing lab signal is what refuses it there; the NODE_ENV and host cases are extra guards.
   const refused = (env, why) => assert.throws(() => configFromEnv({ ITHOMIINI_LAB_OPEN_LOGIN: '1', ...env }), e => e.code === 'LAB_OPEN_LOGIN_REFUSED' && why.test(e.message));
   // The live server's service.env: loopback too, but no lab signal (no LOCAL_MODE, no lab address, the team workbook).
   refused(PRODUCTION, /no lab signal/);
@@ -97,6 +99,13 @@ test('lab open login: a random password logs in; a blank or unknown username is 
     const ana = await post('/auth/login', { username: 'Ana', password: random() });
     assert.equal(ana.status, 200);
     assert.equal((await session(ana.cookie)).user.username, 'ana');
+    // A deactivated account's name: the lab admin, never the disabled account.
+    a.store.db.prepare("UPDATE users SET active=0 WHERE username='ana'").run();
+    const gone = await post('/auth/login', { username: 'ana', password: random() });
+    assert.equal(gone.status, 200);
+    assert.equal((await session(gone.cookie)).user.username, 'lab');
+    // listen() given a public address: refused, never bound.
+    await assert.rejects(a.listen(0, '0.0.0.0'), /not a loopback address/);
   } finally {
     await a.close();
   }

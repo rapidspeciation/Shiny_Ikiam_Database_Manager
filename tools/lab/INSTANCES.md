@@ -15,6 +15,8 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
   `dev/<port>`, and what an earlier instance on that port left in it (database, proposals, photos cache) is kept.
 - **Login:** the admin `lab` with any password (the open login, `ITHOMIINI_LAB_OPEN_LOGIN=1`; a blank or unknown
   username is `lab` too). `LAB_OPEN_LOGIN=0` keeps the password check; the real one stays in `<folder>/credentials.json`.
+  Anyone who reaches the copy's address is the lab admin (T3 pairing included): `tailscale serve` only, never
+  `funnel`, and `LAB_OPEN_LOGIN=0` before sharing it.
 - **Code:** the instance runs the code of the checkout whose `tools/lab/dev-app.sh` you call. For a feature branch,
   call it from that branch's worktree. The first start in a checkout builds `web/` (`npm run build`), which needs
   `frontend/node_modules`.

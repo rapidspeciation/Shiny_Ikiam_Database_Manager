@@ -51,7 +51,9 @@ node tools/lab/sheet-edit.mjs Insectary_data 5012 Sex=female   # someone types i
   the answers from the sheet and its proposal holds everything it read. Then it
   starts the app on `http://127.0.0.1:8795`. Sign in as `lab` with any password
   (the lab's open login, `ITHOMIINI_LAB_OPEN_LOGIN=1`, refused outside a loopback lab;
-  `LAB_OPEN_LOGIN=0` keeps the real one, in `credentials.json`). The Asistente tab shows the lab T3 (through the proxy
+  `LAB_OPEN_LOGIN=0` keeps the real one, in `credentials.json`). With it on, anyone who
+  reaches the lab's address is the lab admin (T3 pairing included): publish it with `tailscale serve`
+  only, never `funnel`, and set `LAB_OPEN_LOGIN=0` before sharing the lab with anyone. The Asistente tab shows the lab T3 (through the proxy
   on `http://127.0.0.1:3776`). Every restart
   re-seeds the sheets, so it also undoes a proposal a model applied. `bench.mjs`
   refuses to run while a case's cells are not empty.

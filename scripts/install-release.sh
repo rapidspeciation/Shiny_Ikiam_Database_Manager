@@ -34,7 +34,8 @@ dir="$app/releases/$release"
 # The lab's open login (ITHOMIINI_LAB_OPEN_LOGIN: any password logs in, tools/lab) never reaches the live app (which
 # would also refuse to start with it: server/index.mjs labOpenLoginAllowed).
 for f in "$service_env" "$(dirname "$service_env")/gog.env" "$dir"/deploy/ithomiini*.service; do
-  if [ -f "$f" ] && grep -Eq '^[[:space:]]*(export[[:space:]]+|Environment="?)?ITHOMIINI_LAB_OPEN_LOGIN=' "$f"; then
+  # Any uncommented mention (spaces around =, export, several assignments on one Environment= line).
+  if [ -f "$f" ] && grep -Eq '^[^#]*ITHOMIINI_LAB_OPEN_LOGIN[[:space:]]*=' "$f"; then
     echo "Not installed: $f sets ITHOMIINI_LAB_OPEN_LOGIN (the lab's open login, never on the server). The app is unchanged." >&2
     exit 1
   fi

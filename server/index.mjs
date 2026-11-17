@@ -283,6 +283,8 @@ const LOOPBACK = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1|\[::1\])$/i;
  * copy, on a loopback address (Tailscale serve in front, Franz's network only), with a lab signal production never
  * has (LOCAL_MODE=1: offline, nothing reaches Google; or ITHOMIINI_LAB_URL with a workbook that is not the team's)
  * and never with NODE_ENV=production. Asked for anywhere else, it throws: the app does not start.
+ * The lab signal is the production guard: the live server binds loopback too (behind Caddy) and sets no NODE_ENV;
+ * the loopback check only stops a lab copy bound to a public address.
  */
 export function labOpenLoginAllowed({ flag, host, localMode, labUrl, workbookId, nodeEnv }) {
   if (flag === undefined || flag === '' || flag === '0' || flag === false) return false;
@@ -2168,6 +2170,9 @@ export async function createApp(config = {}, options = {}) {
     // tests: the background iNaturalist lookups (idle() before closing)
     speciesPhotos,
     listen: async (port = config.port, host = config.host) => {
+      // The open login on loopback only, whatever address the caller gives here.
+      if (config.labOpenLogin && !LOOPBACK.test(String(host ?? '')))
+        throw Object.assign(new Error(`ITHOMIINI_LAB_OPEN_LOGIN is for the lab only: APP_HOST ${host} is not a loopback address`), { code: 'LAB_OPEN_LOGIN_REFUSED' });
       if (t3Bridge && config.t3.proxyPort && !t3Proxy)
         t3Proxy = await t3Bridge.listen(config.t3.proxyPort).then(
           proxy => (console.log(`T3 Code (${config.t3.local}) with the bridge on 127.0.0.1:${config.t3.proxyPort}`), proxy),
