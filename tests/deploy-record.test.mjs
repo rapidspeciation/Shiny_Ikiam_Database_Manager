@@ -306,6 +306,28 @@ test('rollback-release.sh: a release that no longer matches its test record is r
   }
 });
 
+test("install-release.sh: a service.env with the lab's open login (ITHOMIINI_LAB_OPEN_LOGIN) is refused, the app unchanged", () => {
+  const f = deployFixture();
+  try {
+    f.stage();
+    const env = join(f.app, 'shared', 'service.env');
+    for (const line of ['ITHOMIINI_LAB_OPEN_LOGIN=1', 'export ITHOMIINI_LAB_OPEN_LOGIN=0']) {
+      writeFileSync(env, `APP_HOST=127.0.0.1\nAPP_PORT=8794\n${line}\n`);
+      const run = f.run([], { DEPLOY_LOCAL: '1', ITHOMIINI_SERVICE_ENV: env });
+      assert.equal(run.status, 1, run.stdout + run.stderr);
+      assert.match(run.stderr, /Not installed: .*service\.env sets ITHOMIINI_LAB_OPEN_LOGIN/);
+      assert.ok(!run.calls.some(c => c.startsWith('systemctl')));
+      assert.equal(current(f), null);
+    }
+    // Without it, the same install goes through.
+    writeFileSync(env, 'APP_HOST=127.0.0.1\nAPP_PORT=8794\n# ITHOMIINI_LAB_OPEN_LOGIN is for the lab only\n');
+    const ok = f.run([], { DEPLOY_LOCAL: '1', ITHOMIINI_SERVICE_ENV: env });
+    assert.equal(ok.status, 0, ok.stderr);
+  } finally {
+    f.close();
+  }
+});
+
 test('install-release.sh: a scratch root never installs the live units', () => {
   const f = deployFixture();
   try {

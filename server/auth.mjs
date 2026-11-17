@@ -89,6 +89,20 @@ export function resolveAccount(store, identifier) {
 export function login(store, body) {
   const row = resolveAccount(store, body.username);
   if (!verifyPassword(body.password, row)) throw bad('BAD_CREDENTIALS', 'Invalid username or password', 401);
+  return startSession(store, row);
+}
+/**
+ * The lab's open login (ITHOMIINI_LAB_OPEN_LOGIN=1, server/index.mjs labOpenLoginAllowed): any password; the
+ * account the username names, else (blank or unknown) the first active administrator.
+ */
+export function labOpenLogin(store, body) {
+  const row =
+    resolveAccount(store, body.username) ??
+    store.db.prepare("SELECT * FROM users WHERE role='admin' AND active=1 ORDER BY created_at, rowid LIMIT 1").get();
+  if (!row) throw bad('BAD_CREDENTIALS', 'Invalid username or password', 401);
+  return startSession(store, row);
+}
+function startSession(store, row) {
   const token = randomBytes(32).toString('base64url'),
     csrf = digest(`csrf:${token}`);
   const expires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();

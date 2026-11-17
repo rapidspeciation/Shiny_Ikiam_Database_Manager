@@ -122,6 +122,7 @@ import { reportFile, reportsDir } from './rack-tools.mjs';
 import {
   setup,
   login,
+  labOpenLogin,
   getSession,
   checkCsrf,
   revoke,
@@ -276,9 +277,37 @@ const mime = {
   '.woff2': 'font/woff2',
 };
 
+const LOOPBACK = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1|\[::1\])$/i;
+/**
+ * The lab's open login (ITHOMIINI_LAB_OPEN_LOGIN=1: any password logs in, POST /api/auth/login): only in a lab
+ * copy, on a loopback address (Tailscale serve in front, Franz's network only), with a lab signal production never
+ * has (LOCAL_MODE=1: offline, nothing reaches Google; or ITHOMIINI_LAB_URL with a workbook that is not the team's)
+ * and never with NODE_ENV=production. Asked for anywhere else, it throws: the app does not start.
+ */
+export function labOpenLoginAllowed({ flag, host, localMode, labUrl, workbookId, nodeEnv }) {
+  if (flag === undefined || flag === '' || flag === '0' || flag === false) return false;
+  const why = [];
+  if (flag !== '1' && flag !== true) why.push(`its value is ${JSON.stringify(flag)} (1 or 0)`);
+  if (nodeEnv === 'production') why.push('NODE_ENV=production');
+  if (!LOOPBACK.test(String(host ?? ''))) why.push(`APP_HOST ${host} is not a loopback address`);
+  if (!(localMode || (labUrl && workbookId !== REAL_ID))) why.push("no lab signal (LOCAL_MODE=1, or ITHOMIINI_LAB_URL with a workbook other than the team's)");
+  if (why.length) throw Object.assign(new Error(`ITHOMIINI_LAB_OPEN_LOGIN is for the lab only: ${why.join('; ')}`), { code: 'LAB_OPEN_LOGIN_REFUSED' });
+  return true;
+}
+
 export function configFromEnv(env = process.env) {
   const workbook = workbookFromEnv(env);
   return {
+    // The lab only: any password logs in (labOpenLoginAllowed throws anywhere else).
+    labOpenLogin: labOpenLoginAllowed({
+      flag: env.ITHOMIINI_LAB_OPEN_LOGIN,
+      host: env.APP_HOST || '127.0.0.1',
+      localMode: env.LOCAL_MODE === '1',
+      labUrl: env.ITHOMIINI_LAB_URL,
+      workbookId: workbook.id,
+      nodeEnv: env.NODE_ENV,
+    }),
+    labUrl: env.ITHOMIINI_LAB_URL || undefined,
     host: env.APP_HOST || '127.0.0.1',
     port: Number(env.APP_PORT || 8794),
     basePath: normalizeBase(env.APP_BASE_PATH || '/ithomiini'),
@@ -793,6 +822,17 @@ export async function createApp(config = {}, options = {}) {
   config = { ...configFromEnv({}), ...config };
   config.basePath = normalizeBase(config.basePath || '/ithomiini');
   config.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
+  // Checked again on the config as given (a caller may pass labOpenLogin itself).
+  config.labOpenLogin = labOpenLoginAllowed({
+    flag: config.labOpenLogin,
+    host: config.host,
+    localMode: config.localMode,
+    labUrl: config.labUrl,
+    workbookId: config.spreadsheetId,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  if (config.labOpenLogin)
+    console.warn(`LAB OPEN LOGIN on (ITHOMIINI_LAB_OPEN_LOGIN=1): any password logs in on ${config.host}:${config.port}; a blank or unknown username is the lab's admin`);
   let seed = options.seed;
   let sheets = options.sheets;
   if (!seed && !sheets && !options.store && config.localMode && config.seedFile) {
@@ -1034,7 +1074,7 @@ export async function createApp(config = {}, options = {}) {
         const account = resolveAccount(store, body.username)?.username ?? String(body.username ?? '').trim();
         loginLimiter.check(req, account);
         try {
-          const auth = login(store, body);
+          const auth = config.labOpenLogin ? labOpenLogin(store, body) : login(store, body);
           loginLimiter.succeeded(req, account);
           return json(
             res,

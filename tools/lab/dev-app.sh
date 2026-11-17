@@ -14,7 +14,9 @@
 # KNOWLEDGE_DIR in the caller's environment is passed on (no documents folder without it).
 #   tools/lab/dev-app.sh --stop --port 8821
 #   tools/lab/dev-app.sh --list          each one's port, folder and memory
-# The admin `lab` is made at the first start of a folder; its password is in <folder>/credentials.json (600).
+# The admin `lab` is made at the first start of a folder (its password in <folder>/credentials.json, 600), but the login
+# is open: any password logs in (ITHOMIINI_LAB_OPEN_LOGIN=1; a blank or unknown username is `lab`). LAB_OPEN_LOGIN=0
+# keeps the real password check.
 # Refuses to start with less than 2.5 GB available (MemAvailable), or with DEV_APP_LIMIT of these running already when
 # that is set (no limit by default).
 set -euo pipefail
@@ -22,6 +24,8 @@ HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
 PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start FRESH=0
 LIMIT="${DEV_APP_LIMIT:-}"
+OPEN="${LAB_OPEN_LOGIN:-1}"
+[[ "$OPEN" =~ ^[01]$ ]] || { echo "LAB_OPEN_LOGIN is 1 (any password logs in, the default) or 0" >&2; exit 2; }
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -101,7 +105,7 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E LOCAL_MODE=1 -E SEED_FILE="$LAB/snapshot.json" -E DATABASE_PATH="$DIR/app.sqlite" -E PHOTO_CACHE_DIR="$DIR/photos" \
   -E DRIVE_LISTING_FILE="$LAB/drive-listing.json" -E DRIVE_ACCOUNT=jmithominii@gmail.com \
   -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
-  -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 \
+  -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 -E ITHOMIINI_LAB_OPEN_LOGIN="$OPEN" \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
   -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
   -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
@@ -145,4 +149,5 @@ setsid bash -c '
     sleep 2
   done' dev-app-settle "$UNIT" "$URL" </dev/null >/dev/null 2>&1 &
 exec 9>&-
-echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; first sync: $state; log $DIR/app.log; login $DIR/credentials.json)"
+[ "$OPEN" = 1 ] && login="user lab, any password works" || login="$DIR/credentials.json"
+echo "Dev app on $URL (unit $UNIT, stops by itself after $TTL or when pid $owner ends; first sync: $state; log $DIR/app.log; login: $login)"

@@ -11,8 +11,9 @@
 #   tools/lab/app.sh --bg     run detached (log: $LAB/app.log, pid: $LAB/app.pid)
 #   tools/lab/app.sh --stop
 #   tools/lab/app.sh --refresh  only rewrite the lab workspace from this checkout (after editing assistant/)
-# First start: creates the admin `lab` (password in $LAB/credentials.json, mode 600)
-# and provisions its T3 workspace (scripts/t3-provision.mjs) when the lab T3 is up.
+# First start: creates the admin `lab` (password in $LAB/credentials.json, mode 600; the login is open, though: any
+# password logs in, ITHOMIINI_LAB_OPEN_LOGIN=1, a blank or unknown username is `lab`; LAB_OPEN_LOGIN=0 keeps the
+# password check) and provisions its T3 workspace (scripts/t3-provision.mjs) when the lab T3 is up.
 # Every later start refreshes that workspace, so the threads read this checkout's
 # brief, skills and subagents.
 set -euo pipefail
@@ -32,6 +33,8 @@ URL="http://127.0.0.1:$PORT"
 PUBLIC_URL="${LAB_PUBLIC_URL:-$URL}"
 T3_PUBLIC_URL="${LAB_T3_PUBLIC_URL:-http://127.0.0.1:$T3PROXY}"
 umask 077
+OPEN="${LAB_OPEN_LOGIN:-1}"
+[[ "$OPEN" =~ ^[01]$ ]] || { echo "LAB_OPEN_LOGIN is 1 (any password logs in, the default) or 0" >&2; exit 1; }
 # A Google Sheets copy of the workbook instead of the offline snapshot (to try what reads Google: Photo_links
 # from the real photo folders on Drive, read-only): `--workbook <id>` once (kept in $LAB/workbook-id),
 # `--offline` to go back. Its login is the app's own ($LAB/google.json, as on the server); the copy has its
@@ -150,6 +153,8 @@ env_app=(
   APP_PUBLIC_URL="$PUBLIC_URL"
   SECURE_COOKIES=0
   SYNC_INTERVAL_MS=0
+  # Any password logs in (lab only: server/index.mjs labOpenLoginAllowed); LAB_OPEN_LOGIN=0 checks it.
+  ITHOMIINI_LAB_OPEN_LOGIN="$OPEN"
   SETUP_TOKEN="$(cat "$LAB/setup-token")"
   ITHOMIINI_T3_URL="$T3_PUBLIC_URL"
   ITHOMIINI_T3_LOCAL="http://127.0.0.1:$T3PORT"
@@ -202,7 +207,8 @@ for _ in $(seq 300); do
   [ -n "$state" ] && [ "$state" != "syncing" ] && [ "$state" != "not_synced" ] && break
   sleep 2
 done
-echo "Lab app on $PUBLIC_URL (sync: ${state:-down}; log $LAB/app.log)"
+[ "$OPEN" = 1 ] && login="user lab, any password works" || login="$LAB/credentials.json"
+echo "Lab app on $PUBLIC_URL (sync: ${state:-down}; log $LAB/app.log; login: $login)"
 
 # The admin, created once through the app's own setup flow (in a database without people: the same password
 # as the other mode's, so the lab's login stays one).

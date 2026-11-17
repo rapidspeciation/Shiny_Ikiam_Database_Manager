@@ -13,7 +13,8 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 - **Port:** the first free one from 8821, or `--port <n>`.
 - **Folder:** `--fresh` gives a new one, `~/.cache/ithomiini-lab/dev/<port>-<time>`. Without it, the folder is
   `dev/<port>`, and what an earlier instance on that port left in it (database, proposals, photos cache) is kept.
-- **Login:** the admin `lab`; its password is in `<folder>/credentials.json`.
+- **Login:** the admin `lab` with any password (the open login, `ITHOMIINI_LAB_OPEN_LOGIN=1`; a blank or unknown
+  username is `lab` too). `LAB_OPEN_LOGIN=0` keeps the password check; the real one stays in `<folder>/credentials.json`.
 - **Code:** the instance runs the code of the checkout whose `tools/lab/dev-app.sh` you call. For a feature branch,
   call it from that branch's worktree. The first start in a checkout builds `web/` (`npm run build`), which needs
   `frontend/node_modules`.
