@@ -23,7 +23,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, ChevronDown, Download, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
-import { effectiveMode, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, type Mode, type ServerAnswer } from '../lib/identifyOnline'
+import { effectiveMode, identifyAsVisitor, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, visitorServer, type Mode, type ServerAnswer, type VisitorPlace } from '../lib/identifyOnline'
 import RefCompare from '../components/identify/RefCompare.vue'
 import StockPanel from '../components/identify/StockPanel.vue'
 import IdentifyAbout from '../components/identify/IdentifyAbout.vue'
@@ -50,7 +50,7 @@ import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
-import { locale, t } from '../lib/i18n'
+import { locale, t, tn } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
@@ -332,9 +332,13 @@ const sideValue = computed<Side>(() => (side.value === 'none' ? null : side.valu
 
 /** The person's choice on this device (null: none yet; online then when it can be). */
 const modeChoice = ref<Mode | null>(((m: string | null) => (m === 'online' || m === 'phone' ? m : null))(store.get(MODE)))
-const mode = computed<Mode>(() => effectiveMode(modeChoice.value, !!session.user, online.value))
+/** Signed out: the server reads visitors' photos too, one at a time in a queue (ANON_SERVER_IDENTIFY, server/visitor-identify.mjs). */
+const visitorOn = ref(false)
+/** Who may send the photo to the server now: the team, or a visitor when the server takes visitors' photos. */
+const serverOpen = computed(() => !!session.user || visitorOn.value)
+const mode = computed<Mode>(() => effectiveMode(modeChoice.value, serverOpen.value, online.value))
 function chooseMode(m: Mode) {
-  if (m === 'online' && (!session.user || !online.value)) return
+  if (m === 'online' && (!serverOpen.value || !online.value)) return
   modeChoice.value = m
   store.set(MODE, m)
 }
@@ -370,10 +374,26 @@ interface Result {
   timing?: PhoneTiming
   /** The identifier that read it (its head's file: the server's listed one, or this phone's). */
   idVersion?: string | null
+  /** Read by the server for a visitor (signed out): it stays theirs to see after a reload, unlike the team's. */
+  visitor?: boolean
 }
 const result = shallowRef<Result | null>(null)
 const head = shallowRef<Head | null>(null)
 const busy = ref<'loading' | 'sending' | 'analysing' | null>(null)
+/** A visitor's photo in the server's queue: its place (1: being read) and the wait the server estimates. */
+const queuePlace = ref<VisitorPlace | null>(null)
+/** The visitor's place given up when the photos are cleared (a new run). */
+let visitorAbort: AbortController | null = null
+/** The photo read on the server: the team's path, or a visitor's place in the queue. */
+function readOnServer(photo: string, side: Side) {
+  if (session.user) return identifyOnServer(photo, side)
+  visitorAbort?.abort()
+  const ctl = (visitorAbort = new AbortController())
+  return identifyAsVisitor(photo, side, { signal: ctl.signal, onPlace: p => (queuePlace.value = p) }).finally(() => {
+    if (visitorAbort === ctl) visitorAbort = null
+    queuePlace.value = null
+  })
+}
 const runError = ref<string | null>(null)
 const firstRun = ref(true)
 const camera = ref<HTMLInputElement | null>(null)
@@ -462,7 +482,7 @@ async function identifyOnline(photo: Photo, known?: Known) {
     const country = known ? known.country : await photoCountry(photo.bytes).catch(() => null)
     const side = sideValue.value
     const started = performance.now()
-    const out = await identifyOnServer(sent, side)
+    const out = await readOnServer(sent, side)
     if (mine !== run) return
     firstRun.value = false
     const at = new Date().toISOString()
@@ -478,6 +498,7 @@ async function identifyOnline(photo: Photo, known?: Known) {
       photo: sent,
       side,
       country,
+      ...(session.user ? {} : { visitor: true }),
     }
     compared.value = null
     pick.value = null
@@ -504,7 +525,7 @@ async function rereadOnline() {
   const mine = run
   try {
     const started = performance.now()
-    const out = await identifyOnServer(r.photo, side)
+    const out = await readOnServer(r.photo, side)
     if (result.value !== r || mine !== run) return
     // the timing line shows this read's time, not the first one's
     result.value = { ...r, server: out, status: out.crop ?? r.status, side, ms: Math.round(performance.now() - started) }
@@ -777,7 +798,7 @@ function serialResult(r: Result) {
 }
 /** A kept result back; a phone result needs the phone's head to be ranked (null when no model is on the phone). */
 async function revive(v: Result & { feature?: string | Float32Array }): Promise<Result | null> {
-  if (v.source === 'online') return session.user ? { ...v, feature: undefined } : null
+  if (v.source === 'online') return session.user || v.visitor ? { ...v, feature: undefined } : null
   if (!anyReady.value || typeof v.feature !== 'string') return null
   const bin = atob(v.feature)
   const bytes = new Uint8Array(bin.length)
@@ -1387,6 +1408,7 @@ function removeShot(at: string) {
 /** «Borrar fotos»: the strip and the result on screen; «Mis identificaciones» keeps them. */
 function clearPhotos() {
   run++
+  visitorAbort?.abort()
   busy.value = null
   shots.value = []
   clearResult()
@@ -1395,7 +1417,11 @@ function clearPhotos() {
 const busyText = computed(() =>
   busy.value === 'loading'
     ? t('Preparando el identificador… la primera foto tarda más.')
-    : busy.value === 'sending'
+    : busy.value === 'sending' && queuePlace.value && queuePlace.value.place > 1
+      ? tn(queuePlace.value.ahead, 'En cola: 1 foto antes que la suya, unos {s} s.', 'En cola: {n} fotos antes que la suya, unos {s} s.', { s: numText(queuePlace.value.waitS) })
+      : busy.value === 'sending' && queuePlace.value
+      ? t('Analizando en el servidor… unos {s} s.', { s: numText(queuePlace.value.waitS) })
+      : busy.value === 'sending'
       ? t('Analizando en el servidor…')
       : busy.value === 'analysing'
         ? t('Analizando la foto…')
@@ -1624,8 +1650,14 @@ function openViewer(which: 'mine' | 'ref', src?: string) {
   viewer.value = { photos: [mine, ...refPhotos], start: which === 'mine' ? 0 : Math.max(0, at) + 1 }
 }
 
+/** Whether the server takes this visitor's photos (asked again when the signal comes back). */
+async function askVisitor() {
+  if (session.user || !navigator.onLine) return
+  visitorOn.value = (await visitorServer()).on
+}
 const goOnline = () => {
   online.value = true
+  askVisitor()
   syncOutbox({ force: true })
   refresh().then(autoPack) // keeps the page too when it was opened without signal; a cut-off first save goes on
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
@@ -1663,6 +1695,7 @@ onMounted(async () => {
   // Signed out (the server said so): the team's inventory a session left on this phone goes.
   if (known && !session.user && navigator.onLine) await Promise.all([engine.forgetStock(), engine.forgetSex()])
   if (session.user) stock.value = await engine.stock()
+  await askVisitor()
   await refresh()
   await restoreLast()
   autoPack()
@@ -1974,7 +2007,7 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </div>
           <p class="hint mt-1">{{ result ? $t('Al cambiarlo, la lista se reordena.') : $t('Ayuda a ordenar los resultados.') }}</p>
         </section>
-        <section v-if="session.user" class="rounded-lg border border-border bg-surface p-3" data-testid="mode">
+        <section v-if="serverOpen" class="rounded-lg border border-border bg-surface p-3" data-testid="mode">
           <span class="field-label">{{ $t('Dónde se analiza la foto') }}</span>
           <div class="inline-flex flex-wrap rounded-md border border-control" role="radiogroup" :aria-label="$t('Dónde se analiza la foto')">
             <button
@@ -1999,7 +2032,9 @@ const anyReady = computed(() => ready.value.small || ready.value.full)
           </div>
           <p class="hint mt-1">
             {{
-              mode === 'online'
+              mode === 'online' && !session.user
+                ? $t('La foto va al servidor del proyecto, se analiza una a la vez y se borra al terminar: no se guarda ni se registra.')
+                : mode === 'online'
                 ? $t('La foto se envía al servidor del proyecto, que la analiza y no la guarda. No hace falta descargar nada.')
                 : !online
                   ? anyReady

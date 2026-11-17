@@ -48,7 +48,8 @@ import { holdId, releaseHold } from './holds.mjs';
 import { searchRange } from './search.mjs';
 import { serveOfflineId } from './offline-id.mjs';
 import { frozenStock, headSpecies, syncedAt } from './frozen-stock.mjs';
-import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from './identify-photos.mjs';
+import { checkPhoto, fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from './identify-photos.mjs';
+import { createVisitorIdentify } from './visitor-identify.mjs';
 import { AddressLimiter, anonymousSpeciesPhotos, clientAddress, createPublicLists, DriveBudget, publicPhotoFile, queueAdmission } from './public-reads.mjs';
 import { ITHOMIINI_GENERA } from '../frontend/src/lib/ithomiiniGenera.ts';
 import { extendPremadeRows } from './premade.mjs';
@@ -357,7 +358,21 @@ export function configFromEnv(env = process.env) {
     wikilocDaily: env.WIKILOC_DAILY_CHECK === '0' ? false : env.WIKILOC_DAILY_CHECK === '1' ? true : 'auto',
     // The Wings Gallery's files made from the photo readings (server/gallery-public.mjs): beside the database by default.
     publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
+    // Identificar's «En línea (servidor)» for visitors without a sign-in (server/visitor-identify.mjs): off unless
+    // ANON_SERVER_IDENTIFY=1. One photo at a time through the app's one identifier, at most ANON_IDENTIFY_QUEUE waiting
+    // (20), ANON_IDENTIFY_PER_10MIN photos per address in 10 minutes (10).
+    anonServerIdentify: env.ANON_SERVER_IDENTIFY === '1',
+    anonIdentify: {
+      ...(env.ANON_IDENTIFY_QUEUE ? { maxWaiting: Number(env.ANON_IDENTIFY_QUEUE) } : {}),
+      ...(env.ANON_IDENTIFY_PER_10MIN ? { perWindow: Number(env.ANON_IDENTIFY_PER_10MIN) } : {}),
+      ...(env.ANON_IDENTIFY_TIMEOUT_S ? { timeoutMs: Number(env.ANON_IDENTIFY_TIMEOUT_S) * 1000 } : {}),
+    },
     identifierOptions: {
+      // The one identifier process (the team's and visitors' photos: shared, so the server never reads two at once):
+      // 3 cores (IDENTIFIER_THREADS) at nice 10 (IDENTIFIER_NICE). Measured on claudeclaw, 17 Nov 2026
+      // (.work/anon-identify-20261117 measure report): 1.26 s a photo at 3 threads, the app's pages no slower at nice
+      // 10, which lets the app and the other services come first when they need a core (it was nice 5).
+      nice: env.IDENTIFIER_NICE ? Number(env.IDENTIFIER_NICE) : 10,
       ...(env.IDENTIFIER_THREADS ? { threads: Number(env.IDENTIFIER_THREADS) } : {}),
       ...(env.IDENTIFIER_IDLE_MINUTES ? { idleMinutes: Number(env.IDENTIFIER_IDLE_MINUTES) } : {}),
       // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
@@ -933,6 +948,28 @@ export async function createApp(config = {}, options = {}) {
     photo: new AddressLimiter({ limit: 1500, ...config.anonLimits?.photo }),
   };
   const anonDrive = new DriveBudget({ perSecond: 2, burst: 20, ...config.anonLimits?.drive });
+  // Visitors' photos for the server's identifier (server/visitor-identify.mjs), when ANON_SERVER_IDENTIFY is on and the
+  // identifier is here: per address 10 photos in 10 minutes, and the queue's polls (one a second and a half).
+  const visitorIdentify =
+    config.anonServerIdentify && assistant?.identifyPhoto && assistant.identifier
+      ? createVisitorIdentify({
+          // The team's sex line (fieldSex) stays the team's: a visitor gets the species answer only.
+          read: async ({ photo, side, signal, ticket }) => {
+            const out = await assistant.identifyPhoto({ photo, side }, { priority: 1, signal, ticket });
+            if (out.status === 200 && out.body) delete out.body.fieldSex;
+            return out;
+          },
+          standing: ticket => assistant.identifier.standing(ticket),
+          queued: () => assistant.identifier.queued(1),
+          ...config.anonIdentify,
+        })
+      : null;
+  const visitorLimits = visitorIdentify
+    ? {
+        submit: new AddressLimiter({ limit: config.anonIdentify?.perWindow ?? 10, windowMs: 10 * 60_000, ...config.anonLimits?.visitorIdentify }),
+        poll: new AddressLimiter({ limit: 1500, windowMs: 10 * 60_000, ...config.anonLimits?.visitorPoll }),
+      }
+    : null;
   // A visitor's names join the iNaturalist queue only while fewer than 20 wait, and 300 a day for all visitors.
   const anonQueue = queueAdmission(speciesPhotos, { waiting: 20, perDay: 300, ...config.anonLimits?.queue });
   const refPhotoOptions = options.fetchRefPhoto ? { fetchImpl: options.fetchRefPhoto } : {};
@@ -1186,6 +1223,40 @@ export async function createApp(config = {}, options = {}) {
           if (url.searchParams.has('card') || !publicPhotoFile(store, id)) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
           return await sendPhoto(req, res, id, Number(url.searchParams.get('w') || 400), { beforeDownload: () => anonDrive.take() });
         }
+      }
+      // Identificar's «En línea (servidor)» for visitors (ANON_SERVER_IDENTIFY; server/visitor-identify.mjs): GET what the
+      // queue holds, POST a photo (202 a ticket), GET a ticket (its place, then its answer once), DELETE it (leaving).
+      if (!session && visitorIdentify && (path === '/api/visitor/identify' || path.startsWith('/api/visitor/identify/'))) {
+        if (path === '/api/visitor/identify' && method === 'GET') {
+          visitorLimits.poll.check(req);
+          // on: the identifier's files are here (otherwise the page keeps the phone's models only).
+          const installed = assistant.identifier.status().installed;
+          return json(res, 200, { on: installed, ...visitorIdentify.info() }, { 'cache-control': 'no-store' });
+        }
+        if (path === '/api/visitor/identify' && method === 'POST') {
+          const checked = checkPhoto(body);
+          if (checked.error) return json(res, checked.error.status, checked.error.body);
+          if (!assistant.identifier.status().installed) throw fail('UNAVAILABLE', 'The identifier is not installed on this server', 503);
+          visitorLimits.submit.check(req);
+          try {
+            return json(res, 202, visitorIdentify.submit(checked), { 'cache-control': 'no-store' });
+          } catch (e) {
+            if (e.code === 'BUSY') return json(res, 503, { error: { code: 'BUSY', message: e.message } }, { 'retry-after': '60' });
+            throw e;
+          }
+        }
+        const ticket = /^\/api\/visitor\/identify\/([0-9a-f-]{36})$/.exec(path)?.[1];
+        if (ticket && method === 'GET') {
+          visitorLimits.poll.check(req);
+          const out = visitorIdentify.status(ticket);
+          if (!out) throw fail('NOT_FOUND', 'No such ticket (it ended or was dropped)', 404);
+          return json(res, 200, out, { 'cache-control': 'no-store' });
+        }
+        if (ticket && method === 'DELETE') {
+          visitorIdentify.cancel(ticket);
+          return json(res, 200, { ok: true });
+        }
+        throw fail('NOT_FOUND', 'Not found', 404);
       }
       if (!session) throw fail('AUTH_REQUIRED', 'Sign in required', 401);
       if (method !== 'GET' && method !== 'HEAD') checkCsrf(session, req.headers['x-csrf-token']);
@@ -2172,6 +2243,8 @@ export async function createApp(config = {}, options = {}) {
     writingNow,
     // tests: the background iNaturalist lookups (idle() before closing)
     speciesPhotos,
+    /** Visitors' photos for the server's identifier (null when ANON_SERVER_IDENTIFY is off). */
+    visitorIdentify,
     listen: async (port = config.port, host = config.host) => {
       // The open login on loopback only, whatever address the caller gives here.
       if (config.labOpenLogin && !LOOPBACK.test(String(host ?? '')))
@@ -2191,6 +2264,7 @@ export async function createApp(config = {}, options = {}) {
         await new Promise(resolve => t3Proxy.close(resolve));
       }
       t3Bridge?.close();
+      visitorIdentify?.close();
       assistant?.close?.();
       whatsapp?.relay.close();
       checks.close();

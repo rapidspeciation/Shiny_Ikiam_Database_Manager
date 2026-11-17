@@ -133,19 +133,35 @@ export function fieldSexBlock(fs) {
   if (!Number.isInteger(pct) || pct < 90 || pct > 99) return { ...out, status: 'cell_under_90' };
   return { ...out, pct };
 }
-export async function identifyUpload({ identifier, body, scratch, sides = async () => null }) {
-  const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
-  if (!identifier) return bad(503, 'unavailable', 'The identifier is not installed on this server.');
+const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
+/**
+ * The photo of a request checked: { photo (its base64), side } or { error: { status, body } }. The page sends any
+ * photo the browser opens (JPEG, PNG, WebP, HEIC where the phone reads it) as a JPEG of at most 1600 px
+ * (frontend/src/lib/identifyOnline.ts photoCanvas), so only a JPEG of at most MAX_UPLOAD bytes is taken.
+ */
+export function checkPhoto(body) {
   const data = typeof body?.photo === 'string' ? body.photo : '';
-  if (!data || data.length > Math.ceil(MAX_UPLOAD / 3) * 4 || !/^[A-Za-z0-9+/=]+$/.test(data)) return bad(400, 'invalid_photo', 'Send the photo as base64 JPEG.');
-  const bytes = Buffer.from(data, 'base64');
-  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return bad(400, 'invalid_photo', 'The photo must be a JPEG.');
-  const side = body?.side === 'East' || body?.side === 'West' ? body.side : null;
+  if (!data || data.length > Math.ceil(MAX_UPLOAD / 3) * 4 || !/^[A-Za-z0-9+/=]+$/.test(data)) return { error: bad(400, 'invalid_photo', 'Send the photo as base64 JPEG.') };
+  const head = Buffer.from(data.slice(0, 8), 'base64');
+  if (head.length < 4 || head[0] !== 0xff || head[1] !== 0xd8) return { error: bad(400, 'invalid_photo', 'The photo must be a JPEG.') };
+  return { photo: data, side: body?.side === 'East' || body?.side === 'West' ? body.side : null };
+}
+/**
+ * `priority` (server/identifier.mjs): 0 a team member waiting (the default, «first»), 1 a visitor's photo
+ * (server/visitor-identify.mjs), after the team's and before the background ones; a visitor's `signal` takes it out of
+ * the identifier's queue while it waits, and its `ticket` asks its place there.
+ */
+export async function identifyUpload({ identifier, body, scratch, sides = async () => null, priority = 0, signal = null, ticket = null }) {
+  if (!identifier) return bad(503, 'unavailable', 'The identifier is not installed on this server.');
+  const checked = checkPhoto(body);
+  if (checked.error) return checked.error;
+  const bytes = Buffer.from(checked.photo, 'base64');
+  const side = checked.side;
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const path = join(scratch, `${randomUUID()}.jpg`);
   try {
     writeFileSync(path, bytes, { mode: 0o600 });
-    const out = await identifier.identify({ path, side, first: true });
+    const out = await identifier.identify({ path, side, ...(priority ? { priority, signal, ticket } : { first: true }) });
     if (!out || out.error) return bad(503, 'identifier_failed', String(out?.error ?? 'The identifier did not answer.'));
     const pairs = list => (Array.isArray(list) ? list.filter(x => Array.isArray(x) && typeof x[0] === 'string').map(([n, p]) => [n, Number(p) || 0]) : []);
     const species = pairs(out.species);

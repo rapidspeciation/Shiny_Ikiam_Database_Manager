@@ -7120,13 +7120,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // A collector new to the workbook, in Lists (Monitoreo → Importar).
     if (path === '/api/chat/proposals/new-collector' && method === 'POST') return collectorProposal(body, user);
     // Identificar's «En línea (servidor)»: one photo read by the AI Identifier, nothing kept (server/identify-photos.mjs).
-    if (path === '/api/ai/identify-photo' && method === 'POST')
-      return identifyUpload({
-        identifier,
-        body,
-        scratch: config.identifyScratch ?? join(tmpdir(), 'ithomiini-identify'),
-        sides: async () => (config.identifierDir ? headSides(join(config.identifierDir, MODELS.find(m => m.role === 'head-meta').path)) : null),
-      });
+    if (path === '/api/ai/identify-photo' && method === 'POST') return identifyPhoto(body);
     // The species in the walk's photos, read in the background: start (POST) and progress (GET).
     const walkIdsMatch = /^\/api\/chat\/walks\/([0-9a-f-]{36})\/identify$/.exec(path);
     if (walkIdsMatch && (method === 'GET' || method === 'POST')) {
@@ -7564,10 +7558,29 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
   });
 
+  /**
+   * One photo read by the AI Identifier, nothing kept (server/identify-photos.mjs identifyUpload): the team's
+   * «En línea (servidor)» (priority 0) and visitors' photos (server/visitor-identify.mjs, priority 1). null in a worker.
+   */
+  function identifyPhoto(body, { priority = 0, signal = null, ticket = null } = {}) {
+    return identifyUpload({
+      identifier,
+      body,
+      priority,
+      signal,
+      ticket,
+      scratch: config.identifyScratch ?? join(tmpdir(), 'ithomiini-identify'),
+      sides: async () => (config.identifierDir ? headSides(join(config.identifierDir, MODELS.find(m => m.role === 'head-meta').path)) : null),
+    });
+  }
+
   return {
     handle,
     mcp,
     tools: mcpTools,
+    identifyPhoto: inWorker ? null : identifyPhoto,
+    /** The app's one AI Identifier (server/identifier.mjs: its queue, standing, status), null in a worker. */
+    identifier: inWorker ? null : identifier,
     t3,
     sheetsCopy,
     /** The batches open in people's «Fotos» tabs (null in a worker). */

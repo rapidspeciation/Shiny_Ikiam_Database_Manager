@@ -4,7 +4,7 @@
  * in the shape the tab's result already shows. The server runs the same head as the phone's models
  * (head_6fa6ab78), so the names and the subspecies leaves are the same.
  */
-import { api, ApiError } from './api'
+import { api, apiRoot, ApiError } from './api'
 import { t } from './i18n'
 import type { FieldSexAnswer } from './fieldSex'
 import type { Candidate, Higher } from './identifyResult'
@@ -30,11 +30,11 @@ export interface ServerAnswer {
 }
 
 /**
- * The mode used: online only when it can be (signed in, with signal); otherwise on the phone. With no choice kept,
- * online when it can be (it needs no download).
+ * The mode used: online only when it can be (signed in, or a visitor when the server takes visitors' photos; with
+ * signal); otherwise on the phone. With no choice kept, online when it can be (it needs no download).
  */
-export function effectiveMode(choice: Mode | null, signedIn: boolean, online: boolean): Mode {
-  if (!signedIn || !online) return 'phone'
+export function effectiveMode(choice: Mode | null, server: boolean, online: boolean): Mode {
+  if (!server || !online) return 'phone'
   return choice === 'phone' ? 'phone' : 'online'
 }
 
@@ -101,10 +101,89 @@ export function onlineError(err: unknown): string {
   if (status === 401 || status === 403) return t('Su sesión terminó. Inicie sesión de nuevo o use «En este teléfono».')
   if (status === 400) return t('No se pudo leer la foto. Pruebe con otra.')
   if (status === 413) return t('La foto es demasiado grande. Pruebe con otra.')
+  // A visitor's photo (identifyAsVisitor): the queue is full, or too many photos from this network.
+  if (err instanceof ApiError && err.code === 'BUSY') return t('El servidor está ocupado. Pruebe de nuevo en un minuto.')
+  if (status === 429) return t('Muchas fotos desde esta red. Espere unos minutos o use «En este teléfono».')
+  if (status === 504) return t('El servidor tardó demasiado. Pruebe de nuevo o use «En este teléfono».')
   return t('El identificador del servidor no respondió. Pruebe de nuevo o use «En este teléfono».')
 }
 
 /** The server's reading of a photo (base64 JPEG) with the side of the Andes. */
 export function identifyOnServer(photo: string, side: 'East' | 'West' | null): Promise<ServerAnswer> {
   return api<ServerAnswer>('ai/identify-photo', { method: 'POST', body: { photo, side }, signal: AbortSignal.timeout(150_000) })
+}
+
+/** A visitor's place in the server's queue (server/visitor-identify.mjs): 1 is the photo being read. */
+export interface VisitorPlace {
+  state: 'waiting' | 'running'
+  place: number
+  ahead: number
+  waitS: number
+}
+interface VisitorTicket extends Partial<Omit<VisitorPlace, 'state'>> {
+  ticket: string
+  state: VisitorPlace['state'] | 'done' | 'failed'
+  answer?: ServerAnswer
+  status?: number
+  error?: { code: string; message: string }
+}
+
+/**
+ * Whether the server reads visitors' photos (ANON_SERVER_IDENTIFY, with the identifier installed): GET
+ * api/visitor/identify answers { on: true, waitS, … }; off (or an older server) it answers 401 or 404.
+ */
+export async function visitorServer(): Promise<{ on: boolean; waitS?: number }> {
+  try {
+    const out = await api<{ on: boolean; waitS?: number }>('visitor/identify', { signal: AbortSignal.timeout(10_000) })
+    return { on: out.on === true, waitS: out.waitS }
+  } catch {
+    return { on: false }
+  }
+}
+
+const POLL_MS = 1500
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true })
+  })
+
+/** Tickets of this page still in the queue: given up when the page closes (pagehide), so the next person moves up. */
+const open = new Set<string>()
+let leaving = false
+if (typeof window !== 'undefined')
+  window.addEventListener('pagehide', () => {
+    leaving = true
+    for (const id of open) fetch(`${apiRoot}api/visitor/identify/${id}`, { method: 'DELETE', keepalive: true, credentials: 'same-origin' }).catch(() => {})
+    open.clear()
+  })
+
+/**
+ * A visitor's photo read by the server: in its queue (one photo at a time for everyone), its place told through
+ * `onPlace` while it waits, its answer when read. `signal` gives the place up (Borrar fotos, a new photo). A ticket the
+ * server dropped (the page was asleep too long) is queued once more.
+ */
+export async function identifyAsVisitor(photo: string, side: 'East' | 'West' | null, { onPlace, signal }: { onPlace?: (p: VisitorPlace) => void; signal?: AbortSignal } = {}): Promise<ServerAnswer> {
+  let again = 1
+  for (;;) {
+    let t = await api<VisitorTicket>('visitor/identify', { method: 'POST', body: { photo, side }, signal })
+    open.add(t.ticket)
+    try {
+      for (;;) {
+        if (t.state === 'done' && t.answer) return t.answer
+        if (t.state === 'failed') throw new ApiError(t.status ?? 503, t.error ?? { code: 'identifier_failed', message: '' })
+        if (t.state === 'waiting' || t.state === 'running') onPlace?.({ state: t.state, place: t.place ?? 1, ahead: t.ahead ?? 0, waitS: t.waitS ?? 0 })
+        await wait(POLL_MS, signal)
+        t = await api<VisitorTicket>(`visitor/identify/${t.ticket}`, { signal })
+      }
+    } catch (err) {
+      const gone = err instanceof ApiError && err.status === 404
+      if (!gone || signal?.aborted || again-- <= 0) {
+        if (!gone && !leaving) fetch(`${apiRoot}api/visitor/identify/${t.ticket}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {})
+        throw err
+      }
+    } finally {
+      open.delete(t.ticket)
+    }
+  }
 }

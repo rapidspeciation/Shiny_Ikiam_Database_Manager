@@ -424,4 +424,13 @@ export default {
   'Quitar esta foto': 'Remove this photo',
   'nada descargado': 'nothing downloaded',
   'Fotos de referencia': 'Reference photos',
+  // Visitors' photos on the server (lib/identifyOnline.ts identifyAsVisitor; server/visitor-identify.mjs).
+  'En cola: 1 foto antes que la suya, unos {s} s.': 'In the queue: 1 photo before yours, about {s} s.',
+  'En cola: {n} fotos antes que la suya, unos {s} s.': 'In the queue: {n} photos before yours, about {s} s.',
+  'Analizando en el servidor… unos {s} s.': 'Analysing on the server… about {s} s.',
+  'La foto va al servidor del proyecto, se analiza una a la vez y se borra al terminar: no se guarda ni se registra.':
+    "The photo goes to the project's server, is analysed one at a time and deleted when done: it is not kept or logged.",
+  'El servidor está ocupado. Pruebe de nuevo en un minuto.': 'The server is busy. Try again in a minute.',
+  'Muchas fotos desde esta red. Espere unos minutos o use «En este teléfono».': 'Many photos from this network. Wait a few minutes or use «On this phone».',
+  'El servidor tardó demasiado. Pruebe de nuevo o use «En este teléfono».': 'The server took too long. Try again or use «On this phone».',
 }

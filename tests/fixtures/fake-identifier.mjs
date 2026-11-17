@@ -1,6 +1,7 @@
 // A stand-in for tools/identifier/worker.py (tests/identifier.test.mjs): the same lines on stdin and
 // stdout. The photo's file says what to answer: "Genus species p" (a name and its probability),
-// "slow" (no answer), "crash" (the process ends), or anything else (an error for that photo).
+// "slow" (no answer), "crash" (the process ends), or anything else (an error for that photo). "sleep <ms> <rest>":
+// <rest> answered after that long. A JPEG's first two bytes (FF D8) before the text are skipped (tests/visitor-identify).
 // `--idle <s>`: ends after that long without photos, as the real one does.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -25,10 +26,16 @@ createInterface({ input: process.stdin }).on('line', line => {
   quiet();
   let text;
   try {
-    text = readFileSync(job.path, 'utf8').trim();
+    const bytes = readFileSync(job.path);
+    text = (bytes[0] === 0xff && bytes[1] === 0xd8 ? bytes.subarray(2) : bytes).toString('utf8').trim();
   } catch (e) {
     return say({ id: job.id, error: `FileNotFoundError: ${job.path}` });
   }
+  const sleep = /^sleep (\d+) (.*)$/.exec(text);
+  if (sleep) return setTimeout(() => answer(job, sleep[2]), Number(sleep[1]));
+  answer(job, text);
+});
+function answer(job, text) {
   if (text === 'slow') return;
   if (text === 'crash') process.exit(3);
   const m = /^(\S+) (\S+) ([\d.]+)$/.exec(text);
@@ -49,5 +56,5 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (!loaded) out.loadMs = 10;
   loaded = true;
   say(out);
-});
+}
 process.stdin.on('end', () => process.exit(0));
