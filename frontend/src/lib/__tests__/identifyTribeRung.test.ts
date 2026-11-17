@@ -41,7 +41,8 @@ describe('tribe and subfamily answer', () => {
   })
 
   it('has one set of cuts per engine: species 0.70 (measured), genus and higher ranks 0.80', () => {
-    // The shipped values (15 Nov 2026, PREREG.md): when the cuts change, these lines change with them.
+    // The shipped values (15 Nov 2026, PREREG.md; pair and second 17 Nov 2026, PREREG_two_genera.md and its RESULT.md):
+    // when the cuts change, these lines change with them.
     expect(THRESHOLDS).toEqual({
       small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.02 },
       bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.15 },

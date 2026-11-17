@@ -32,7 +32,7 @@ export interface Cuts {
  * stricter choice after the numbers: its preregistered 0.20 never bound a shown pair, and its pairs summing under 0.70
  * held the truth only 79 % of the time). `second`: BioCLIP 0.15 (chosen and checked), small 0.02 (the lead's display
  * choice: no «o Y 1 %»). Where two genera are named, the true genus is one of them on 92 % (small) and 98 %
- * (BioCLIP) of the checking half's photos.
+ * (BioCLIP) of the checking half's photos (not a fresh check: the 0.70 and 0.02 were set after both halves were read).
  */
 // prettier-ignore
 export const THRESHOLDS: Record<IdEngine, Cuts> = { small: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.02 }, bioclip: { species: 0.7, genus: 0.8, higher: 0.8, pair: 0.7, second: 0.15 } }
