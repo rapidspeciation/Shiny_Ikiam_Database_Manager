@@ -10,12 +10,12 @@ import type { VisitorPlace } from '../../lib/identifyOnline'
 // mode a visitor starts in, the queue place while a side change is read again, and the place given up when the
 // visitor leaves through the app. The phone's models and the server are stand-ins. No AI.
 
-const phone = vi.hoisted(() => ({ ready: false }))
+const phone = vi.hoisted(() => ({ ready: false, hold: null as Promise<void> | null }))
 vi.mock('../../lib/offlineEngine', async orig => {
   const real = await orig<typeof import('../../lib/offlineEngine')>()
   const engine = {
     list: async () => ({ files: [] }),
-    ready: async () => ({ small: phone.ready, full: false }),
+    ready: async () => (await phone.hold, { small: phone.ready, full: false }),
     stored: async () => null,
     toDownload: () => ({ plain: 1, wire: 1, total: 1 }),
     offer: () => ({ state: phone.ready ? 'current' : 'missing', plain: 1, wire: 1, total: 1, from: null, to: null, fromBytes: null, toBytes: null, notes: null }),
@@ -72,6 +72,7 @@ afterEach(() => {
   unmount()
   queue.calls = []
   phone.ready = false
+  phone.hold = null
   sessionStorage.clear()
   localStorage.clear()
   vi.unstubAllGlobals()
@@ -125,6 +126,22 @@ describe('IdentifyView signed out, the server open to visitors', () => {
     phone.ready = true
     const second = await mountSignedOut()
     expect(modeOf(second.host)).toMatch(/En este teléfono/)
+  })
+
+  it('a photo pasted before the phone\'s models are looked at stays on the phone (never uploaded)', async () => {
+    phone.ready = true
+    let release = () => {}
+    phone.hold = new Promise<void>(r => (release = r))
+    const { host, settle } = await mountSignedOut()
+    const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' })
+    const paste = Object.assign(new Event('paste', { cancelable: true }), { clipboardData: { items: [], files: [file] } })
+    dispatchEvent(paste)
+    await settle()
+    expect(queue.calls).toHaveLength(0)
+    release()
+    await settle()
+    expect(modeOf(host)).toMatch(/En este teléfono/)
+    expect(queue.calls).toHaveLength(0)
   })
 
   it('a side change read again in the queue shows the place and the wait', async () => {

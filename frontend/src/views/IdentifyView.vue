@@ -338,7 +338,7 @@ const modeChoice = ref<Mode | null>(((m: string | null) => (m === 'online' || m 
 const visitorOn = ref(false)
 /** Who may send the photo to the server now: the team, or a visitor when the server takes visitors' photos. */
 const serverOpen = computed(() => !!session.user || visitorOn.value)
-const mode = computed<Mode>(() => effectiveMode(choiceOrDefault(modeChoice.value, !!session.user, anyReady.value), serverOpen.value, online.value))
+const mode = computed<Mode>(() => effectiveMode(choiceOrDefault(modeChoice.value, !!session.user, anyReady.value, checked.value), serverOpen.value, online.value))
 function chooseMode(m: Mode) {
   if (m === 'online' && (!serverOpen.value || !online.value)) return
   modeChoice.value = m

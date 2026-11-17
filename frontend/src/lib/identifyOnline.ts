@@ -40,10 +40,11 @@ export function effectiveMode(choice: Mode | null, server: boolean, online: bool
 
 /**
  * The choice used when the person made none: a visitor whose phone already has a model keeps reading on the phone (their
- * photos never left it before); the team, and a visitor with nothing downloaded, start online (null).
+ * photos never left it before); the team, and a visitor with nothing downloaded, start online (null). Until the page
+ * has looked at the phone's models (`checked`), a visitor stays on the phone: a photo pasted meanwhile never leaves it.
  */
-export function choiceOrDefault(choice: Mode | null, signedIn: boolean, phoneReady: boolean): Mode | null {
-  return choice ?? (!signedIn && phoneReady ? 'phone' : null)
+export function choiceOrDefault(choice: Mode | null, signedIn: boolean, phoneReady: boolean, checked = true): Mode | null {
+  return choice ?? (!signedIn && (phoneReady || !checked) ? 'phone' : null)
 }
 
 /** The answer as the tab's ranking: the species, every listed genus's total, and the subspecies per species. */

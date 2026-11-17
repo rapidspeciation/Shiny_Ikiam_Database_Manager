@@ -114,5 +114,8 @@ describe('choiceOrDefault', () => {
     expect(choiceOrDefault(null, false, false)).toBe(null)
     expect(choiceOrDefault(null, true, true)).toBe(null)
     expect(choiceOrDefault('online', false, true)).toBe('online')
+    // The phone's models not looked at yet: a visitor stays on the phone; the team is not held.
+    expect(choiceOrDefault(null, false, false, false)).toBe('phone')
+    expect(choiceOrDefault(null, true, false, false)).toBe(null)
   })
 })
