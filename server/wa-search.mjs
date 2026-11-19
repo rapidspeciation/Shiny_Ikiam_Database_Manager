@@ -184,9 +184,12 @@ export function createWhatsAppSearch({ path = null, db = null, now = () => Date.
       const hit = data.rows.find(r => r.id === id && (!chatWanted || r.chat === chatWanted));
       if (!hit) return { error: `No message ${clip(id, 80)} in the groups' copy.`, ...synced };
       const list = data.byChat.get(hit.chat);
-      const part = list.slice(Math.max(0, hit.index - limit), hit.index + limit + 1);
-      const shown = { ...synced, ...stale, around: hit.id, messages: part.map(r => ({ ...show(r), ...(r === hit ? { match: true } : {}) })) };
-      return fitList(shown, 'messages', BUDGET, kept => (kept < part.length ? { truncated: 'Only the first messages fit: ask with a smaller limit.' } : {})).out;
+      // The asked-for message in the middle: a window too large for one answer narrows on both sides.
+      const windowOf = n => list.slice(Math.max(0, hit.index - n), hit.index + n + 1);
+      const build = n => ({ ...synced, ...stale, around: hit.id, messages: windowOf(n).map(r => ({ ...show(r), ...(r === hit ? { match: true } : {}) })) });
+      let n = limit;
+      while (n > 0 && JSON.stringify(build(n)).length > BUDGET) n--;
+      return { ...build(n), ...(n < limit ? { truncated: `Only ${n} messages on each side fit in one answer.` } : {}) };
     }
 
     const groups = parseQuery(args.query);
@@ -221,7 +224,9 @@ export function createWhatsAppSearch({ path = null, db = null, now = () => Date.
       ...(!matches.length ? { note: 'Nothing found: try fewer or shorter words, a|b alternatives, the other language, or without dates.' } : {}),
     };
     // Within one answer's size: the next page starts after the last message shown.
-    return fitList(out, 'messages', BUDGET, kept => (offset + kept < matches.length ? { next_offset: offset + kept } : {})).out;
+    const more = kept => (offset + kept < matches.length ? { next_offset: offset + kept } : {});
+    const fitted = fitList(out, 'messages', BUDGET, more);
+    return { ...fitted.out, ...more(fitted.kept) };
   }
   return { run, allowed };
 }

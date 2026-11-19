@@ -37,6 +37,8 @@ const PHONE_ANYWHERE = /\+?\(?\d(?:[ .()_-]{0,2}\d){8,14}/g;
 /** A number inside a link or a contact card: wa.me/593…, api.whatsapp.com/send?phone=593…, waid=593…. */
 const PHONE_IN_LINK = /(wa\.me\/|[?&]phone=|\bwaid=)\+?\d{6,}/gi;
 const URL = /\bhttps?:\/\/[^\s<>"')\]]+/gi;
+/** Kept as they are, like links: decimals (GPS points, -0.9512345) and date-times (2026-10-01 10:00). */
+const KEEP = new RegExp(`${URL.source}|(?<![\\d.,])-?\\d{1,3}[.,]\\d{4,}(?![.,]?\\d)|\\b\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)?`, 'gi');
 /** wacli's display text for a message with no text of its own («Sent image», «Reacted 👍 to …»). */
 const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message was deleted)$/is;
 
@@ -47,7 +49,7 @@ export const linksOf = text => [...new Set((String(text ?? '').match(URL) ?? [])
 export function maskPhones(text) {
   const s = String(text ?? '').replace(PHONE_IN_LINK, '$1numero-oculto');
   const links = [];
-  const kept = s.replace(URL, u => `\u0000${links.push(u) - 1}\u0000`);
+  const kept = s.replace(KEEP, u => `\u0000${links.push(u) - 1}\u0000`);
   return kept.replace(PHONE_IN_TEXT, '[número]').replace(/\u0000(\d+)\u0000/g, (_, i) => links[Number(i)]);
 }
 /** A file or person's name with any phone-like number masked; null when nothing else is left. */

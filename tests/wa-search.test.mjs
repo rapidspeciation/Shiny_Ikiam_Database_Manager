@@ -96,6 +96,10 @@ test('export helpers: links, phone masking outside links, the people map', () =>
   assert.equal(maskPhones('https://api.whatsapp.com/send?phone=593991234567&text=hola'), 'https://api.whatsapp.com/send?phone=numero-oculto&text=hola');
   assert.equal(maskPhones('TEL;waid=593991234567:+593 99 123 4567'), 'TEL;waid=numero-oculto:[número]');
   assert.equal(maskPhones('Cel.0991234567 o (099) 123-4567'), 'Cel.[número] o [número]');
+  assert.equal(maskPhones('099.123.4567'), '[número]');
+  // GPS points and date-times are not phone numbers (review round 2).
+  assert.equal(maskPhones('lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567'), 'lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567');
+  assert.equal(maskPhones('2026-10-01 10:00 y 2026-10-01T10:00:00'), '2026-10-01 10:00 y 2026-10-01T10:00:00');
   assert.equal(maskName('Carta_0991234567.pdf'), 'Carta_[número].pdf');
   assert.equal(maskName('Juan 0991234567'), 'Juan [número]');
   assert.equal(maskName('+593 99 123 4567'), null);
@@ -193,6 +197,15 @@ test('whatsapp_search: a page cut to the answer size goes on from the last messa
   assert.ok(JSON.stringify(first).length < 38000);
   const next = search.run({ query: 'contrato', limit: 100, order: 'oldest', offset: first.next_offset }, { role: 'editor' });
   assert.equal(next.messages[0].id, `M${first.messages.length}`);
+  // A page that fits says where the next one starts too (review round 2).
+  const small = search.run({ query: 'contrato', limit: 3, order: 'oldest' }, { role: 'editor' });
+  assert.deepEqual([small.total, small.messages.length, small.next_offset], [100, 3, 3]);
+  assert.equal(search.run({ query: 'contrato', limit: 3, offset: 97 }, { role: 'editor' }).next_offset, undefined);
+  // A window around a message too large for one answer narrows on both sides and keeps the message.
+  const around = search.run({ around: 'M50', limit: 100 }, { role: 'editor' });
+  assert.ok(around.truncated && around.messages.some(m => m.id === 'M50' && m.match), JSON.stringify(around).slice(0, 200));
+  const at = around.messages.findIndex(m => m.match);
+  assert.equal(at, around.messages.length - 1 - at, 'as many before as after');
 });
 
 test('whatsapp_search: team accounts only; observers, inactive accounts and callers without a token are refused', async () => {
