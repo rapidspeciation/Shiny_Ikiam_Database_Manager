@@ -25,7 +25,8 @@
 //
 //   node tools/whatsapp/bridge.mjs serve            the receiver (systemd: ithomiini-wa-bridge.service)
 //   node tools/whatsapp/bridge.mjs backfill [days]  copy the group's last days (default 30) into its history file on claudeclaw
-//   node tools/whatsapp/bridge.mjs install          copy the bridge to ~/.local/share/ithomiini-wa-bridge and write the unit
+//   node tools/whatsapp/bridge.mjs install          copy the bridge to ~/.local/share/ithomiini-wa-bridge and write the units
+//   node tools/whatsapp/bridge.mjs search-export [--push]  the two team groups' copy for the app's whatsapp_search (search-export.mjs)
 // Config: $WA_BRIDGE_CONFIG (default ~/.config/ithomiini-wa-bridge/config.json, mode 600); state and
 // logs in ~/.local/state/ithomiini-wa-bridge. Design and test notes: tools/whatsapp/README.md.
 import { createServer } from 'node:http';
@@ -1485,7 +1486,7 @@ function serve() {
 /** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
 function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
-  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/asr-parakeet.mjs', 'tools/whatsapp/dictation-words.json', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
+  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/asr-parakeet.mjs', 'tools/whatsapp/search-export.mjs', 'tools/whatsapp/dictation-words.json', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
     copyFileSync(join(ROOT, f), join(target, f));
   }
@@ -1508,7 +1509,37 @@ UMask=0077
 WantedBy=default.target
 `,
   );
-  console.log(`Installed in ${target}; unit ${unit}`);
+  // The groups' copy for the app's whatsapp_search, every 10 minutes (enable once: systemctl --user enable --now ithomiini-wa-search.timer).
+  const units = join(HOME, '.config/systemd/user');
+  writeFileSync(
+    join(units, 'ithomiini-wa-search.service'),
+    `[Unit]
+Description=Ithomiini: the team WhatsApp groups' search copy to the app server (tools/whatsapp/search-export.mjs)
+
+[Service]
+Type=oneshot
+ExecStart=${process.execPath} ${join(target, 'tools/whatsapp/bridge.mjs')} search-export --push
+Environment=PATH=${dirname(process.execPath)}:${join(HOME, '.local/bin')}:/usr/local/bin:/usr/bin:/bin
+Nice=10
+TimeoutStartSec=300
+UMask=0077
+`,
+  );
+  writeFileSync(
+    join(units, 'ithomiini-wa-search.timer'),
+    `[Unit]
+Description=Ithomiini: the team WhatsApp groups' search copy every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+`,
+  );
+  console.log(`Installed in ${target}; units ${unit}, ithomiini-wa-search.service and .timer`);
 }
 
 /**
@@ -1595,6 +1626,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (cmd === 'install') install();
   else if (cmd === 'backfill') backfill(Number(process.argv[3]) || 30).catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'voice-push') voicePush(process.argv[3], { dry: process.argv.includes('--dry'), restart: process.argv.includes('--restart') }).catch(e => (console.error(e.message), process.exit(1)));
+  else if (cmd === 'search-export')
+    import('./search-export.mjs')
+      .then(({ searchExport }) => searchExport({ config: JSON.parse(readFileSync(CONFIG_FILE, 'utf8')), stateDir: STATE_DIR, push: process.argv.includes('--push') }))
+      .catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'voice-check') voiceCheck(process.argv[3], process.argv.slice(4)).catch(e => (console.error(e.message), process.exit(1)));
-  else console.error('Usage: bridge.mjs serve | install | backfill [days] | voice-push <chat> [--dry] [--restart] | voice-check <audio file> [engine…]');
+  else console.error('Usage: bridge.mjs serve | install | backfill [days] | search-export [--push] | voice-push <chat> [--dry] [--restart] | voice-check <audio file> [engine…]');
 }

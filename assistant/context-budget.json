@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15059,
-      "reason": "Counting fix (16 Nov, Franz: a reply said 41 females where the counts add up to 48): do any arithmetic with bash or python, never in the head; a total no tool printed goes after its list"
+      "bytes": 15841,
+      "reason": "Key documents (Franz, 18 Nov 2026: the assistant missed the 2024-0443 contract, a link shared only on WhatsApp): «Documentos clave» names where the latest versions live, search WhatsApp and Drive before saying a document does not exist; whatsapp_search's name among the deferred tools"
     },
     "skill:app-dev": {
       "bytes": 423,
@@ -166,8 +166,8 @@
       "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 57 failed calls in the retro's week were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
     },
     "mcp deferred names": {
-      "bytes": 1200,
-      "reason": "row_history, show_photos, tubes_lookup and send_sheet_photos left them (always loaded, retro 16 Nov 2026)"
+      "bytes": 1225,
+      "reason": "Key documents (Franz, 18 Nov 2026: the assistant missed the 2024-0443 contract, a link shared only on WhatsApp): «Documentos clave» names where the latest versions live, search WhatsApp and Drive before saying a document does not exist; whatsapp_search's name among the deferred tools"
     },
     "mcp server instructions": {
       "bytes": 0,

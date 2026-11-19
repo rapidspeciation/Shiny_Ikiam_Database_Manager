@@ -51,6 +51,7 @@ import { MEETING_DOC_TOOLS, MEETING_DOC_TOOL_NAMES, createMeetingDocs, googleBac
 import { RACK_FIELDS, RACK_ROW_FIELDS, changesProblems, newDeposit, rackInput, routeRowEdit, rowWell, turnWells, wellName } from './rack-deposit.mjs';
 import { MAPS_TOOLS, MAPS_TOOL_NAMES, createMapsTools } from './maps-tools.mjs';
 import { WEATHER_TOOLS, WEATHER_TOOL_NAMES, createWeatherTool } from './weather-tool.mjs';
+import { WA_SEARCH_TOOLS, WA_SEARCH_TOOL_NAMES, createWhatsAppSearch } from './wa-search.mjs';
 import { clutchPhotoDir as clutchPhotoFolder } from './clutch-photos.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
@@ -482,6 +483,8 @@ const TOOLS = [
   ...MAPS_TOOLS,
   // Read-only: the weather forecast for a collecting site, from Open-Meteo (server/weather-tool.mjs).
   ...WEATHER_TOOLS,
+  // Read-only, team accounts only: the team's two WhatsApp groups, their whole history (server/wa-search.mjs).
+  ...WA_SEARCH_TOOLS,
   {
     type: 'function',
     function: {
@@ -951,6 +954,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   });
   // weather_forecast: Open-Meteo's answers kept an hour.
   const weather = createWeatherTool({ store, ...(config.weatherTool ?? {}) });
+  // whatsapp_search: the groups' copy from Franz's PC (tools/whatsapp/search-export.mjs), beside the database.
+  const waSearch = createWhatsAppSearch({ path: config.waSearchPath ?? null, db });
   // The photo archive's fixes: database edits here, Drive changes on a separate reviewable plan.
   const curation = createCuration({
     store,
@@ -6475,6 +6480,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
     if (MAPS_TOOL_NAMES.has(name)) return fitResult(await mapsTools.run(name, args), { narrow: 'ask for a smaller limit or a narrower region' });
     if (WEATHER_TOOL_NAMES.has(name)) return weather.run(name, args);
+    if (WA_SEARCH_TOOL_NAMES.has(name)) return fitResult(waSearch.run(args, context.user), { narrow: 'ask for fewer messages (a smaller limit, more words, dates) or page with offset' });
     if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFactsTool(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
     if (CURATION_TOOL_NAMES.has(name)) {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot change the database' };

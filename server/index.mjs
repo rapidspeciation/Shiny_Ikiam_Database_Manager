@@ -316,6 +316,9 @@ export function configFromEnv(env = process.env) {
     databasePath: env.DATABASE_PATH || join(here, '../.local/app.sqlite'),
     // The sheets' copy the assistant's `query` reads (server/replica.mjs); beside the database by default.
     sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
+    // The team's WhatsApp groups for whatsapp_search (server/wa-search.mjs; copied here by tools/whatsapp/search-export.mjs):
+    // wa-search/wa-search.sqlite beside the database by default.
+    waSearchPath: env.WA_SEARCH_PATH ? resolve(env.WA_SEARCH_PATH) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'wa-search', 'wa-search.sqlite') : undefined,
     // LOCAL_MODE (the lab): a recorded listing of the photo folders on Drive, read by sync_photo_links (server/drive.mjs).
     driveListingFile: env.DRIVE_LISTING_FILE || undefined,
     // Explicit lab-only file sandbox, including when Sheets uses a disposable Google copy.

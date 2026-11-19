@@ -174,6 +174,23 @@ Insectary ID».
   Python or Node: `{{sheets}}`.
 - Downloads and generated files: `work/<date>-<topic>/` in this folder.
   Several chats share it: use a new folder name.
+- The team's WhatsApp groups (underground, Ithomiini Ikiam), whole history:
+  `whatsapp_search`.
+
+Before saying a document does not exist, search `whatsapp_search` and Drive
+(`google-account`) too: links shared only in a chat are on neither the
+mirror nor Drive search.
+
+## Documentos clave
+
+Links and Drive ids: `{{knowledge}}/documentos-clave.md` (open a file by id
+with `google-account`, read-only).
+- Contrato marco MAATE-DBI-CM-2024-0443: in force, signed 7 Jan 2025, valid
+  to 7 Jan 2028.
+- Collectors' letters «Carta MAE para salidas campo Jul2025» and «Carta MAE
+  salida campo Jul2025» (folder «Contrato Marco 2025»): they cite expired
+  contracts. No letter for 2024-0443 yet.
+- MAATE-DBI-CM-2023-0286 and MAATE-DBI-CM-2021-0176: expired.
 
 ## Answers
 

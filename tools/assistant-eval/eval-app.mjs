@@ -125,6 +125,13 @@ async function start() {
     mkdirSync(join(RUN, 'photos/maps-cache'), { recursive: true });
     cpSync(tags, join(RUN, 'photos/maps-cache/plant-photo-tags-v1.json'));
   }
+  // whatsapp_search: the team groups' copy the bridge's timer last made on this PC (tools/whatsapp/search-export.mjs),
+  // where the app looks for it (wa-search/ beside its database). Without it the tool says the copy is missing.
+  const waSearch = join(process.env.HOME ?? '', '.local/state/ithomiini-wa-bridge/wa-search.sqlite');
+  if (existsSync(waSearch)) {
+    mkdirSync(join(RUN, 'wa-search'), { recursive: true, mode: 0o700 });
+    cpSync(waSearch, join(RUN, 'wa-search', 'wa-search.sqlite'));
+  }
   const env = [
     `IDENTIFIER_DIR=${join(LAB, 'identifier')}`,
     `ITHOMIINI_T3_HOME=${T3HOME}`,

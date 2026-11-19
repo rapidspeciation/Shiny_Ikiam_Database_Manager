@@ -1,0 +1,40 @@
+{
+ "about": "Key documents the team asked for (Franz, 18 Nov 2026): the framework contract in force and the collectors' letters. The 2024-0443 contract is a link-only Drive PDF posted once in the underground WhatsApp group (Drive search misses it); the letters' folder is left out of the documents mirror on purpose (drive-sync excludes 'contrat'). The eval workspace has no Google login, so these pass on what it can reach: the private notes documentos-clave.md in its knowledge folder and whatsapp_search over the groups' copy. Live Drive reads (gog) are not tested here. Baseline 18 Nov (before): both failed.",
+ "tasks": [
+  {
+   "id": "K01",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "Franz 18 Nov 2026 (baseline: the 2023 contract given, 'none in force')",
+   "about": "the framework contract in force: MAATE-DBI-CM-2024-0443, signed 7 Jan 2025, valid to 7 Jan 2028",
+   "prompt": "¿dónde está el contrato marco más reciente que nos permite colectar mariposas?",
+   "checks": [
+    { "includes": ["0443"], "w": 2, "why": "names the 2024-0443 contract" },
+    { "anyOf": [{ "regex": "drive\\.google\\.com/(file/d|open)" }, { "regex": "MAATE-DBI-CM-2024-0443\\.pdf" }], "w": 2, "why": "its link or file" },
+    { "regex": "(\\b0?7 (de )?(enero|ene\\.?|jan\\w*) (de |del )?2028|\\b0?7/0?1/2028|2028-01-07|(enero|january) 0?7,? 2028)", "w": 2, "why": "valid to 7 Jan 2028" },
+    { "noRegex": "no (hay|existe|tenemos) (ning[uú]n )?contrato (marco )?vigente", "why": "not 'none in force'" }
+   ]
+  },
+  {
+   "id": "K02",
+   "tier": "e2e",
+   "split": "dev",
+   "kind": "bad",
+   "source": "Franz 18 Nov 2026 (baseline: answered with the workbook's collector list)",
+   "about": "the collectors' letters of July 2025, which cite expired contracts; none yet for 2024-0443",
+   "prompt": "¿hay una carta con los nombres de los colectores?",
+   "checks": [
+    { "includesAny": ["Jul2025", "julio 2025", "julio de 2025", "july 2025", "jul 2025", "28 de julio"], "w": 2, "why": "points to the July 2025 letters" },
+    {
+     "anyOf": [
+      { "regex": "(vencid|expirad|caducad|expired|ya no (est[aá]n? )?vigente|no (est[aá]n?|son) vigentes?)" },
+      { "regex": "(no (hay|existe|tenemos)|(a[uú]n|todav[ií]a) no (hay|existe|tenemos))[^.\\n]{0,80}(carta|letter)[^.\\n]{0,120}0443|0443[^.\\n]{0,120}(no (hay|existe|tiene)|(a[uú]n|todav[ií]a) no|sin)[^.\\n]{0,60}carta" }
+     ],
+     "w": 2,
+     "why": "says they cite expired contracts, or that no letter exists yet for 2024-0443"
+    }
+   ]
+  }
+ ]
+}
