@@ -97,9 +97,14 @@ test('export helpers: links, phone masking outside links, the people map', () =>
   assert.equal(maskPhones('TEL;waid=593991234567:+593 99 123 4567'), 'TEL;waid=numero-oculto:[número]');
   assert.equal(maskPhones('Cel.0991234567 o (099) 123-4567'), 'Cel.[número] o [número]');
   assert.equal(maskPhones('099.123.4567'), '[número]');
+  // Written with one dot or comma, a prefix or a split group: still numbers, not coordinates (review round 3).
+  for (const t of ['099.1234567', '099,1234567', '+593.991234567', '593.991234567', '2.991234567', '(099) 123.4567', '099 123.4567', '099-123.4567', '+593 99 123.4567', '0991-23-4567'])
+    assert.equal(maskPhones(t), '[número]', t);
+  assert.equal(maskPhones('cuadros 120, 130, 140, 150'), 'cuadros 120, 130, 140, 150');
   // GPS points and date-times are not phone numbers (review round 2).
   assert.equal(maskPhones('lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567'), 'lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567');
   assert.equal(maskPhones('2026-10-01 10:00 y 2026-10-01T10:00:00'), '2026-10-01 10:00 y 2026-10-01T10:00:00');
+  assert.equal(maskPhones('-0.95123, -77.81234 y Lat: 0.9512345'), '-0.95123, -77.81234 y Lat: 0.9512345');
   assert.equal(maskName('Carta_0991234567.pdf'), 'Carta_[número].pdf');
   assert.equal(maskName('Juan 0991234567'), 'Juan [número]');
   assert.equal(maskName('+593 99 123 4567'), null);

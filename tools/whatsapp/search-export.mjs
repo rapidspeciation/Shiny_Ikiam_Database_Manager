@@ -31,14 +31,28 @@ const PHONE_NAME = /^[\s+()\d.-]{7,}$/;
  * Any other bare number of 9 to 15 digits is masked too (an iNaturalist id written without its link, say): the
  * price of never letting a number through.
  */
-const PHONE_IN_TEXT = /(?<![\w/@=#])(?<!\d[.,])\+?\(?\d(?:[ .()-]{0,2}\d){8,14}(?![\w/])/g;
+const PHONE_IN_TEXT = /(?<![\w/@=#])(?<!\d[.,])\+?\(?\d(?:(?:[ .()-]|,(?=\d)){0,2}\d){8,14}(?![\w/])/g;
 /** The same in a file or a person's name, where a number may touch letters or «_»: Carta_0991234567.pdf. */
-const PHONE_ANYWHERE = /\+?\(?\d(?:[ .()_-]{0,2}\d){8,14}/g;
+const PHONE_ANYWHERE = /\+?\(?\d(?:(?:[ .()_-]|,(?=\d)){0,2}\d){8,14}/g;
 /** A number inside a link or a contact card: wa.me/593…, api.whatsapp.com/send?phone=593…, waid=593…. */
 const PHONE_IN_LINK = /(wa\.me\/|[?&]phone=|\bwaid=)\+?\d{6,}/gi;
 const URL = /\bhttps?:\/\/[^\s<>"')\]]+/gi;
-/** Kept as they are, like links: decimals (GPS points, -0.9512345) and date-times (2026-10-01 10:00). */
-const KEEP = new RegExp(`${URL.source}|(?<![\\d.,])-?\\d{1,3}[.,]\\d{4,}(?![.,]?\\d)|\\b\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)?`, 'gi');
+/**
+ * Kept as they are, like links: GPS points (a lat,lon pair, or one coordinate: no leading zero, at most 180, 4 to 8
+ * decimals, no digit group just before it, so «099.1234567» or «(099) 123.4567» are still masked) and dates
+ * (2026-10-01, with a time).
+ */
+const LAT = String.raw`-?(?:0|[1-9]\d?)[.,]\d{4,8}`;
+const LON = String.raw`-?(?:0|[1-9]\d?|1[0-7]\d|180)[.,]\d{4,8}`;
+const KEEP = new RegExp(
+  [
+    URL.source,
+    String.raw`(?<![\d+.,])${LAT}(?!\d)\s*[,;]?\s*${LON}(?![\d]|[.,]\d)`,
+    String.raw`(?<![\d+.,])(?<![\d+][\s().-]{1,2})${LON}(?![\d]|[.,]\d)`,
+    String.raw`\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)`,
+  ].join('|'),
+  'gi',
+);
 /** wacli's display text for a message with no text of its own («Sent image», «Reacted 👍 to …»). */
 const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message was deleted)$/is;
 
