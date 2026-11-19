@@ -26,49 +26,78 @@ export const SCHEMA_VERSION = 1;
 const clip = (s, n) => (s == null ? '' : String(s).slice(0, n));
 /** A name that is only a phone number (WhatsApp shows the number when there is no name). */
 const PHONE_NAME = /^[\s+()\d.-]{7,}$/;
-/**
- * A phone number written in a text, outside links: +593 99 123 4567, 0991234567, (099) 123-4567, Cel.0991234567.
- * Any other bare number of 9 to 15 digits is masked too (an iNaturalist id written without its link, say): the
- * price of never letting a number through.
- */
-const PHONE_IN_TEXT = /(?<![\w/@=#])(?<!\d[.,])\+?\(?\d(?:(?:[ .()-]|,(?=\d)){0,2}\d){8,14}(?![\w/])/g;
-/** The same in a file or a person's name, where a number may touch letters or «_»: Carta_0991234567.pdf. */
-const PHONE_ANYWHERE = /\+?\(?\d(?:(?:[ .()_-]|,(?=\d)){0,2}\d){8,14}/g;
-/** A number inside a link or a contact card: wa.me/593…, api.whatsapp.com/send?phone=593…, waid=593…. */
-const PHONE_IN_LINK = /(wa\.me\/|[?&]phone=|\bwaid=)\+?\d{6,}/gi;
 const URL = /\bhttps?:\/\/[^\s<>"')\]]+/gi;
-/**
- * Kept as they are, like links: GPS points (a lat,lon pair, or one coordinate: no leading zero, at most 180, 4 to 8
- * decimals, no digit group just before it, so «099.1234567» or «(099) 123.4567» are still masked) and dates
- * (2026-10-01, with a time).
- */
+/** A whole WhatsApp address: 593991234567@s.whatsapp.net, …@lid, …@g.us (with or without :device). */
+const JID = /\+?\d{5,}(?::\d+)?@(?:s\.whatsapp\.net|c\.us|g\.us|lid|broadcast|newsletter)\b/gi;
+/** A link that carries a phone number: WhatsApp's and Telegram's chat links, or a phone/tel/number/waid parameter. */
+const PHONE_LINK = /^https?:\/\/(?:[\w-]+\.)?(?:wa\.me|whatsapp\.com|t\.me)\/|[?&#;](?:phone|tel|number|mobile|celular|waid)=/i;
+/** In such a link, every run of digits that could be a number (+, %2B, separators and %20 between digits). */
+const LINK_DIGITS = /(?:\+|%2B)?\d(?:(?:[\s.()\p{Pd}]|%20|%2D){0,3}\d){5,}/giu;
+/** A phone word just before a number: then 7 digits are enough (a local landline: «teléfono: 2991234»). */
+const PHONE_WORD = /(\b(?:tel[eé]fonos?|telf?|tlf|cel(?:ular)?|m[oó]vil|whats?app|wsp|n[uú]mero|ll[aá]m[ae]\w*|contacto|fono|phone|mobile|tel:)(?:[\s.:#=]|\b(?:es|al|a|de|del)\b){0,6})([+(]?\d(?:[\d \t   \p{Pd}.()]*\d)?)/giu;
+/** Kept as they are: GPS points (a lat,lon pair, or one coordinate: no leading zero, at most 180, 4 to 8 decimals, no digit group just before), dates, CAM ids and ranges. */
 const LAT = String.raw`-?(?:0|[1-9]\d?)[.,]\d{4,8}`;
 const LON = String.raw`-?(?:0|[1-9]\d?|1[0-7]\d|180)[.,]\d{4,8}`;
 const KEEP = new RegExp(
   [
-    URL.source,
     String.raw`(?<![\d+.,])${LAT}(?!\d)\s*[,;]?\s*${LON}(?![\d]|[.,]\d)`,
     String.raw`(?<![\d+.,])(?<![\d+][\s().-]{1,2})${LON}(?![\d]|[.,]\d)`,
     String.raw`\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)`,
+    String.raw`\bCAM\d{6}(?:\s*[-–a]\s*(?:CAM)?\d{3,6})?`,
   ].join('|'),
   'gi',
 );
+/** A run of digits with what may join a number's groups: spaces of any kind, dashes, dots, brackets, and / , ; (split later). */
+const RUN = /[+(]?\d(?:[\d \t   \p{Pd}.(),;/]*\d)?\)?/gu;
+const digitsOf = s => (String(s).match(/\d/g) ?? []).length;
+/**
+ * Whether one piece of a run (no / , ; in it) is a phone number to mask: 9 to 15 digits, or 16 and more (a JID's
+ * number, or two numbers written one after the other), unless it reads as a list: groups of at most 3 digits with no
+ * leading 0 and no + (counts: «100 200 300»), or groups all of 5 or 6 digits (CAM numbers: «072174 072175»).
+ */
+function isPhone(piece) {
+  const groups = piece.match(/\d+/g) ?? [];
+  const n = groups.join('').length;
+  if (n < 9) return false;
+  if (groups.length > 1 && !/^\s*[+(]/.test(piece)) {
+    const counts = groups.every(g => g.length <= 3 && g[0] !== '0') && groups[0] !== '593';
+    const sameLong = groups[0].length >= 5 && groups[0].length <= 6 && groups.every(g => g.length === groups[0].length);
+    if (counts || sameLong) return false;
+  }
+  return true;
+}
+/** A run with each phone-like piece masked; pieces are split at / and ;, at «, », and at a gap of two spaces or « - ». */
+const maskRun = run =>
+  run
+    .split(/(\/|;|,(?=\s)|\s{2,}|\s\p{Pd}\s)/u)
+    .map((piece, i) => (i % 2 === 0 && isPhone(piece) ? piece.replace(/^(\s*)[\s\S]*?(\s*)$/, '$1[número]$2') : piece))
+    .join('');
+
 /** wacli's display text for a message with no text of its own («Sent image», «Reacted 👍 to …»). */
 const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message was deleted)$/is;
 
 /** The links in a text, in order, without repeats. */
 export const linksOf = text => [...new Set((String(text ?? '').match(URL) ?? []).map(u => u.replace(/[.,;:!?]+$/, '')))];
 
-/** A text with its phone numbers masked: in WhatsApp links and contact cards, and anywhere outside other links. */
+/**
+ * A text with its phone numbers and WhatsApp addresses masked, also inside links that carry a number (wa.me,
+ * phone=…); other links, GPS points, dates and CAM ids are kept as written. A bare number of 9 or more digits is
+ * masked even when it is not a phone (an iNaturalist id written without its link): the price of never letting one
+ * through.
+ */
 export function maskPhones(text) {
-  const s = String(text ?? '').replace(PHONE_IN_LINK, '$1numero-oculto');
-  const links = [];
-  const kept = s.replace(KEEP, u => `\u0000${links.push(u) - 1}\u0000`);
-  return kept.replace(PHONE_IN_TEXT, '[número]').replace(/\u0000(\d+)\u0000/g, (_, i) => links[Number(i)]);
+  const held = [];
+  const hold = x => `\u0000${held.push(x) - 1}\u0000`;
+  let s = String(text ?? '').replace(JID, '[número]');
+  s = s.replace(URL, u => hold(PHONE_LINK.test(u) ? u.replace(LINK_DIGITS, 'numero-oculto') : u));
+  s = s.replace(PHONE_WORD, (all, word, num) => (digitsOf(num) >= 7 ? `${word}[número]` : all));
+  s = s.replace(KEEP, hold);
+  s = s.replace(RUN, maskRun);
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => held[Number(i)]);
 }
 /** A file or person's name with any phone-like number masked; null when nothing else is left. */
 export function maskName(name) {
-  const masked = String(name ?? '').replace(PHONE_IN_LINK, '$1numero-oculto').replace(PHONE_ANYWHERE, '[número]').trim();
+  const masked = maskPhones(name).trim();
   return masked && !PHONE_NAME.test(masked) && masked.replace(/\[número\]/g, '').trim() ? masked : null;
 }
 
