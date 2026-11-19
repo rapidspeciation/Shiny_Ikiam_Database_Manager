@@ -1,5 +1,5 @@
 // whatsapp_search (server/wa-search.mjs) over a copy made by tools/whatsapp/search-export.mjs from a fixture wacli
-// store: only the two team groups go in, with no phone number or JID; the search finds words, dates, senders and
+// store: only the two team groups go in, texts as written and senders as names, never JIDs; the search finds words, dates, senders and
 // links and shows the messages around a hit; only active team accounts may search (observers, inactive accounts and
 // callers without a token are refused). Nothing here reaches WhatsApp or an AI.
 import test from 'node:test';
@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { exportRows, linksOf, maskName, maskPhones, peopleIndex, searchExport, writeSearchFile } from '../tools/whatsapp/search-export.mjs';
+import { displayName, exportRows, linksOf, peopleIndex, searchExport, writeSearchFile } from '../tools/whatsapp/search-export.mjs';
 import { createWhatsAppSearch, dayOf, parseQuery } from '../server/wa-search.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
@@ -47,6 +47,7 @@ function fixtureStore(dir) {
   m(GROUP, 'A5', GUEST, '+593 99 000 0003', '2026-10-03T15:00:00Z', 'Les paso la carta de colectores', { media: 'document', file: 'Carta MAE salida campo Jul2025.pdf', caption: 'Les paso la carta de colectores', display: 'Sent document' });
   m(GROUP, 'A6', SELF, 'Franz', '2026-10-03T15:01:00Z', 'Claude: la carta cita el contrato 2023-0286, ya vencido.', { fromMe: true, quoted: 'A5', quotedSender: GUEST });
   m(GROUP, 'A7', ANA, 'Ana Ikiam', '2026-10-04T15:00:00Z', 'este mensaje se borró', { revoked: true });
+  m(GROUP, 'A8', GUEST, '593990000003@s.whatsapp.net', '2026-10-05T15:00:00Z', 'escríbele a 593990000002@s.whatsapp.net o a @593990000001@s.whatsapp.net en 120363000000000002@g.us');
   m(IKIAM, 'B0', ANA, 'Ana Ikiam', '2026-11-01T14:00:00Z', null, { display: 'Sent image', media: 'image' });
   m(IKIAM, 'B1', ANA, 'Ana Ikiam', '2026-11-02T14:00:00Z', 'Agenda for Thursday: the permit (contrato marco) renewal');
   m(OTHER, 'C1', ANA, 'Ana Ikiam', '2026-10-01T10:00:00Z', 'contrato marco en otro chat que no se exporta');
@@ -69,14 +70,15 @@ function exported() {
   return { dir, rows, file };
 }
 
-test('export: only the two groups, no reactions or deleted messages, no phone number or JID anywhere in the file', () => {
+test('export: only the two groups, no reactions or deleted messages, no JID anywhere in the file, texts as written', () => {
   const { rows, file } = exported();
-  assert.deepEqual(rows.map(r => r.id), ['A1', 'A2', 'A4', 'A5', 'A6', 'B0', 'B1']);
+  assert.deepEqual(rows.map(r => r.id), ['A1', 'A2', 'A4', 'A5', 'A6', 'A8', 'B0', 'B1']);
   // A photo with no caption: its attachment, not wacli's «Sent image».
-  assert.deepEqual([rows[5].text, rows[5].media], [null, 'image']);
+  assert.deepEqual([rows[6].text, rows[6].media], [null, 'image']);
   const raw = readFileSync(file).toString('latin1');
   for (const d of DIGITS) assert.ok(!raw.includes(d), `the file holds ${d}`);
-  assert.ok(!raw.includes('0990000009') && !raw.includes('000 0008'), 'phone numbers in a text are masked');
+  // Texts are kept as written (no masking since 18 Nov 2026): a number someone typed stays.
+  assert.ok(raw.includes('0990000009') && raw.includes('+593 99 000 0008'), 'a text is kept as written');
   const byId = Object.fromEntries(rows.map(r => [r.id, r]));
   // The LID sender is the same app account as her phone JID (contact_aliases); a mention becomes a name.
   assert.equal(byId.A1.sender_user, 'ana');
@@ -87,74 +89,32 @@ test('export: only the two groups, no reactions or deleted messages, no phone nu
   // An unlinked sender whose WhatsApp name is a number: no name rather than the number.
   assert.deepEqual([byId.A5.sender_user, byId.A5.sender_name], [null, null]);
   assert.deepEqual([byId.A5.media, byId.A5.filename], ['document', 'Carta MAE salida campo Jul2025.pdf']);
+  // A WhatsApp name that is a JID is no name; a JID typed in a text becomes the person's name, a group's «(grupo)».
+  assert.deepEqual([byId.A8.sender_user, byId.A8.sender_name], [null, null]);
+  assert.equal(byId.A8.text, 'escríbele a @Luis o a @{ana} en (grupo)');
   assert.deepEqual(JSON.parse(byId.A2.links), ['https://drive.google.com/file/d/FAKEFILEID000/view?usp=drivesdk']);
 });
 
-test('export helpers: links, phone masking outside links, the people map', () => {
+test('export helpers: links, display names, the people map, queries and dates', () => {
   assert.deepEqual(linksOf('mira https://a.org/x?y=1. y https://a.org/x?y=1'), ['https://a.org/x?y=1']);
-  assert.equal(maskPhones('llama al +593 99 123 4567 o 0991234567; https://inat.org/obs/123456789 CAM072174'), 'llama al [número] o [número]; https://inat.org/obs/123456789 CAM072174');
-  assert.equal(maskPhones('el 18/11/2026 a las 9:30, 30 marcas, -0.95123'), 'el 18/11/2026 a las 9:30, 30 marcas, -0.95123');
-  // Numbers in WhatsApp links, contact cards, file names and mixed names (review round 1).
-  assert.equal(maskPhones('https://wa.me/593991234567 y wa.me/593991234567'), 'https://wa.me/numero-oculto y wa.me/[número]');
-  assert.equal(maskPhones('https://api.whatsapp.com/send?phone=593991234567&text=hola'), 'https://api.whatsapp.com/send?phone=numero-oculto&text=hola');
-  assert.equal(maskPhones('TEL;waid=593991234567:+593 99 123 4567'), 'TEL;waid=[número]:[número]');
-  assert.equal(maskPhones('Cel.0991234567 o (099) 123-4567'), 'Cel.[número] o [número]');
-  assert.equal(maskPhones('099.123.4567'), '[número]');
-  // Written with one dot or comma, a prefix or a split group: still numbers, not coordinates (review round 3).
-  for (const t of ['099.1234567', '099,1234567', '+593.991234567', '593.991234567', '2.991234567', '(099) 123.4567', '099 123.4567', '099-123.4567', '+593 99 123.4567', '0991-23-4567'])
-    assert.equal(maskPhones(t), '[número]', t);
-  assert.equal(maskPhones('cuadros 120, 130, 140, 150'), 'cuadros 120, 130, 140, 150');
-  // GPS points and date-times are not phone numbers (review round 2).
-  assert.equal(maskPhones('lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567'), 'lat -0.9512345 lon -77.8123456; -1.0123456,-77.81234567');
-  assert.equal(maskPhones('2026-10-01 10:00 y 2026-10-01T10:00:00'), '2026-10-01 10:00 y 2026-10-01T10:00:00');
-  assert.equal(maskPhones('-0.95123, -77.81234 y Lat: 0.9512345'), '-0.95123, -77.81234 y Lat: 0.9512345');
-  assert.equal(maskName('Carta_0991234567.pdf'), 'Carta_[número].pdf');
-  assert.equal(maskName('Juan 0991234567'), 'Juan [número]');
-  assert.equal(maskName('+593 99 123 4567'), null);
-  assert.equal(maskName('IMG-20261001-WA0003.jpg'), 'IMG-20261001-WA0003.jpg');
+  // A name that is only a number is no name (WhatsApp shows the number when there is none); others as written.
+  assert.equal(displayName('+593 99 000 0003'), null);
+  assert.equal(displayName('  Ana Ikiam '), 'Ana Ikiam');
+  assert.equal(displayName('Juan 0990000001'), 'Juan 0990000001');
+  assert.equal(displayName(''), null);
+  // No name either: a number with no letter in any spacing or marks, a short one, or a WhatsApp address (made-up).
+  assert.equal(displayName('12345'), null);
+  assert.equal(displayName('+593 99\u2011000\u20110003'), null);
+  assert.equal(displayName('\u202a+593 99 000 0003\u202c'), null);
+  assert.equal(displayName('593990000003@s.whatsapp.net'), null);
+  assert.equal(displayName('111111111111111@lid'), null);
+  assert.equal(displayName('Ana 🦋'), 'Ana 🦋');
   assert.deepEqual([...peopleIndex({ 'x:3@s.whatsapp.net': 'a', self: 'f', y: '' })], [['x@s.whatsapp.net', 'a'], ['self', 'f']]);
   assert.deepEqual(parseQuery('Contrato "carta MAE" a|b'), [['contrato'], ['carta mae'], ['a', 'b']]);
   assert.equal(dayOf('01/10/2026'), Date.parse('2026-10-01T05:00:00Z'));
   assert.equal(dayOf('2026-10-01', true), Date.parse('2026-10-02T05:00:00Z'));
   assert.equal(dayOf('mañana'), null);
   assert.equal(dayOf('31/02/2026'), null);
-});
-
-// Round 4 (both critics' inputs): every way of writing a number they found leaking, and what must stay as written.
-const LEAKS = [
-  '099.1234567', '099,1234567', '+593.991234567', '593.991234567', 'tel 2.991234567', '(099) 123.4567', '099 123.4567', '099-123.4567',
-  '+593 99 123.4567', 'Cel. 099.1234567', '0991-23-4567', 'https://api.whatsapp.com/send?phone=%2B593991234567', 'https://wa.me/+593-99-123-4567',
-  'https://wa.me/c/593991234567', 'https://t.me/+593991234567', 'https://example.com/c?tel=0991234567', 'cel: 0991234567/0987654321',
-  'cel: 099 123 4567', '+593 99 123 4567', '099 123 4567', '099‑123‑4567', '099–123–4567',
-  'teléfono: 2991234', 'Cel: 99.1234567', 'Llámame al 2 2123456', '120363000000000001@g.us', '593990000001@s.whatsapp.net',
-  '0991234567,0987654321', '0991234567.0987654321', '099 123 4567 098 765 4321', 'Cel0991234567', 'juan_0991234567', '0991234567_',
-  '#0991234567', 'tel=0991234567', '1234567890123456', '@593991234567hola', 'tel:+593991234567',
-  // Round 5: two spaces or « - » inside a number, 5-5 and 3-3-3 groupings, Signal and other links, numbers said in words.
-  'Juan +593 99  123 4567', 'Juan 09912 34567', 'https://signal.me/#p/+593991234567', '987 654 321', '612 345 678', '51 987 654 321',
-  'llama a Ana 987 654 321', '099 - 123 - 4567', '099 – 123 – 4567', '099  123  4567', '+593  99  123  4567',
-  'https://example.com/?whatsapp=593991234567', 'https://x.org/?cel=0991234567', 'https://ikiam.edu.ec/contact/0991234567',
-  'Mira https://x.org/a,0991234567', 'CAM072174 a 0991234567', '099\u2009123\u20094567', '099\u200b123\u200b4567',
-];
-const KEPT = [
-  'conteos 100 200 300', 'cuentas 120 340 560 780', 'cuadros 120, 130, 140, 150', 'IMG_20261001_123456.jpg', 'CAM000201-000250',
-  'CAM000201, 000202', '000201 000202 000203', 'lat -0.9512345 lon -77.8123456', '-0,63831234 -76,14971234', '-0.6383, -76.1497',
-  '2026-10-01 10:00', '18/11/2026 9:30', 'el 18-11-2026', 'pagué 1.500000', '$1,500.00', 'número de jaulas: 12', '9:30-11:00',
-  'https://www.inaturalist.org/observations/123456789', 'MAATE-DBI-CM-2024-0443', 'CAM072174',
-  // Round 5: lists, document ids, DOIs, ORCIDs, photo stamps and years kept; links of other sites kept.
-  'conteo 12 45 300 120', '100 - 200 - 300', '000201 - 000202', '12/05/2026 - 15/05/2026', 'Oficio MAAE-2024-0443-001',
-  'ORCID 0000-0002-1825-0097', 'DOI 10.1016/j.cub.2020.01.001', 'Screenshot_20260512-143012.png', 'años 2024 2025 2026',
-  'https://sanger.zoom.us/j/96456932341?pwd=abc', 'https://docs.google.com/spreadsheets/d/1AbC/edit?gid=1234567890#gid=1234567890',
-  'tengo dos o tres jaulas, una con cuatro',
-];
-
-test('masking: no phone number or JID left in a text or a name, ordinary numbers kept (rounds 4 and 5)', () => {
-  for (const t of LEAKS) {
-    assert.doesNotMatch(maskPhones(t).replace(/CAM\d{6}/g, ''), /\d{3}/, `text: ${JSON.stringify(t)} → ${JSON.stringify(maskPhones(t))}`);
-    assert.doesNotMatch((maskName(`Contacto ${t}.pdf`) ?? '').replace(/CAM\d{6}/g, ''), /\d{3}/, `name: ${JSON.stringify(t)}`);
-  }
-  for (const t of KEPT) assert.equal(maskPhones(t), t);
-  assert.equal(maskPhones('mi número es cero nueve nueve uno dos tres cuatro cinco seis siete'), 'mi número es [número]');
-  assert.equal(maskPhones('0991234567  0987654321'), '[número]  [número]');
 });
 
 test('searchExport: the config chats, the people map, the file pushed only when it changed', async () => {
@@ -173,7 +133,7 @@ test('searchExport: the config chats, the people map, the file pushed only when 
   const state = join(dir, 'state');
   const log = { log() {} };
   const first = await searchExport({ config, stateDir: state, push: true, log });
-  assert.deepEqual([first.rows, first.pushed], [7, true]);
+  assert.deepEqual([first.rows, first.pushed], [8, true]);
   assert.equal((await searchExport({ config, stateDir: state, push: true, log })).pushed, false, 'unchanged: not copied again');
   const search = createWhatsAppSearch({ path: target });
   assert.equal(search.run({ query: 'contrato marco' }, { role: 'editor' }).total, 2);
@@ -219,7 +179,7 @@ test('whatsapp_search: words, the answer in the next message (around), senders b
     assert.equal((await editor.call('whatsapp_search', { query: 'otro chat' })).total, 0, 'other chats are not in the copy');
     assert.match((await editor.call('whatsapp_search', {})).error, /query/);
     assert.match((await editor.call('whatsapp_search', { from: 'ayer' })).error, /from/);
-    // No phone number or JID in any answer.
+    // No sender's or mentioned person's JID in any answer: they are names.
     const all = JSON.stringify(await editor.call('whatsapp_search', { query: 'a|e|i|o|u|http', limit: 100 }));
     for (const d of DIGITS) assert.ok(!all.includes(d), `an answer holds ${d}`);
   } finally {

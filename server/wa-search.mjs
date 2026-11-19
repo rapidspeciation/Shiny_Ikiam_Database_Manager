@@ -1,7 +1,8 @@
 // The assistant's search in the team's WhatsApp groups (whatsapp_search): «Ithomiini 🦋 (underground)» and «Ithomiini
 // Ikiam», their whole history, read-only. The file is a copy of those two groups made on Franz's PC from wacli's store
-// (tools/whatsapp/search-export.mjs, every 10 minutes) and copied here; it has no phone numbers or JIDs: each sender is
-// an app account (shown with its name in the app) or a WhatsApp name.
+// (tools/whatsapp/search-export.mjs, every 10 minutes) and copied here. Its texts are as written (the team sees the
+// same messages in the groups); senders are never JIDs: each is an app account (shown with its name in the app) or a
+// WhatsApp name.
 // Who may search: active team accounts (editor, reviewer, admin), which include the WhatsApp chats' own accounts.
 // Observers (read-only guests) and signed-out callers never reach the groups' messages: the MCP endpoint
 // refuses a call without a person's token, and this module refuses any other role.

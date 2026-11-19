@@ -2,10 +2,11 @@
 // from wacli's store (read-only) and copied to the app's server, where every team chat can search it.
 //
 // Only the chats named in the config's `search.chats` (default: «Ithomiini 🦋 (underground)» and «Ithomiini Ikiam»)
-// go in. The file has no phone number and no JID: each sender is their app account (the private people map on the
-// server, `chats.group.people.map`, read over ssh) or their WhatsApp name, and a mention «@593…» in a text becomes
-// «@Name». Phone-like numbers in the text itself are masked. Reactions and deleted messages are left out; a voice
-// note carries its transcript when the bridge has one.
+// go in. Senders are names, never JIDs: each is their app account (the private people map on the server,
+// `chats.group.people.map`, read over ssh) or their WhatsApp name, and a mention «@593…» in a text becomes «@Name».
+// The texts are kept as written (Franz, 18 Nov 2026: only active team accounts search them, and they see the same
+// messages in the groups). Reactions and deleted messages are left out; a voice note carries its transcript when the
+// bridge has one.
 //
 //   node tools/whatsapp/bridge.mjs search-export [--push]   build the file (and copy it to the server)
 // systemd: ithomiini-wa-search.timer every 10 minutes (written by `bridge.mjs install`).
@@ -24,86 +25,9 @@ export const SEARCH_DEFAULTS = {
 export const SCHEMA_VERSION = 1;
 
 const clip = (s, n) => (s == null ? '' : String(s).slice(0, n));
-/** A name that is only a phone number (WhatsApp shows the number when there is no name). */
-const PHONE_NAME = /^[\s+()\d.-]{7,}$/;
+/** A WhatsApp address (a person's, a LID or a group's), with or without :device. */
+const JID = /\b(\d{5,20})(?::\d+)?@(s\.whatsapp\.net|c\.us|lid|g\.us|broadcast|newsletter)\b/gi;
 const URL = /\bhttps?:\/\/[^\s<>"')\]]+/gi;
-/** A whole WhatsApp address: 593991234567@s.whatsapp.net, …@lid, …@g.us (with or without :device). */
-const JID = /\+?\d{5,}(?::\d+)?@(?:s\.whatsapp\.net|c\.us|g\.us|lid|broadcast|newsletter)\b/gi;
-/** A link that carries a phone number: WhatsApp's, Telegram's and Signal's chat links, or a phone-like parameter. */
-const PHONE_LINK = /^https?:\/\/(?:[\w-]+\.)?(?:wa\.me|whatsapp\.com|t\.me|signal\.me)\/|[?&#;](?:phone|tel|telefono|number|numero|mobile|movil|cel|celular|whatsapp|wa|waid)=/i;
-/** In such a link, every run of digits that could be a number (+, %2B, separators and %20 between digits). */
-const LINK_DIGITS = /(?:\+|%2B)?\d(?:(?:[\s.()\p{Pd}]|%20|%2D){0,3}\d){5,}/giu;
-/** In any other link, what can only be a phone: +593…, %2B593…, an Ecuadorian mobile 09XXXXXXXX between non-letters. */
-const LINK_PHONE = /(?:\+|%2B)\d{9,15}(?!\d)|(?<![\w])09\d{8}(?![\w])/gi;
-/** What may sit between a number's groups: any space (no-break, narrow, thin), an invisible format character, a dash, a dot, a bracket. */
-const SEP = String.raw`\p{Zs}\t\p{Cf}\p{Pd}.()`;
-/** A phone word just before a number: then 7 digits are enough (a local landline: «teléfono: 2991234»). */
-const PHONE_WORD = new RegExp(
-  String.raw`(\b(?:tel[eé]fonos?|telf?|tlf|cel(?:ular)?|m[oó]vil|whats?app|wsp|n[uú]mero|ll[aá]m[ae]\w*|contacto|fono|phone|mobile|tel:)(?:[\s.:#=]|\b(?:es|al|a|de|del)\b){0,6})([+(]?\d(?:[\d${SEP}]*\d)?)`,
-  'giu',
-);
-/**
- * Kept as they are: GPS points (a lat,lon pair, or one coordinate: no leading zero, at most 180, 4 to 8 decimals, no
- * digit group just before), dates and date-time stamps, CAM ids and ranges, document ids (MAATE-DBI-CM-2024-0443,
- * MAAE-2024-0443-001), DOIs and ORCIDs.
- */
-const LAT = String.raw`-?(?:0|[1-9]\d?)[.,]\d{4,8}`;
-const LON = String.raw`-?(?:0|[1-9]\d?|1[0-7]\d|180)[.,]\d{4,8}`;
-const KEEP = new RegExp(
-  [
-    String.raw`\b10\.\d{4,9}/[^\s,;]+`,
-    String.raw`(?<![\d+.,])${LAT}(?!\d)\s*[,;]?\s*${LON}(?![\d]|[.,]\d)`,
-    String.raw`(?<![\d+.,])(?<![\d+][\s().-]{1,2})${LON}(?![\d]|[.,]\d)`,
-    String.raw`\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)`,
-    String.raw`(?<!\d)(?:19|20)\d{6}[-_T]\d{6}(?!\d)`,
-    String.raw`\bCAM\d{6}(?!\d)(?:\s*[-–a]\s*(?:CAM)?\d{3,6}(?!\d))?`,
-    String.raw`\b[A-Z]{2,}(?:-[A-Z]+)*-(?:19|20)\d{2}-\d{3,5}(?:-\d{1,4})?(?!\d)`,
-    String.raw`\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b`,
-  ].join('|'),
-  'gi',
-);
-/** A run of digits with what may join a number's groups, and / , ; (split later). */
-const RUN = new RegExp(String.raw`[+(]?\d(?:[\d${SEP},;/]*\d)?\)?`, 'gu');
-const digitsOf = s => (String(s).match(/\d/g) ?? []).length;
-/**
- * Whether a piece of a run is a phone number to mask: 9 to 15 digits, or 16 and more (a JID's number, or two numbers
- * written one after the other), unless it reads as a list: counts (groups of at most 3 digits with no leading 0 and no
- * +, «100 200 300», but not a mobile in threes «987 654 321»), CAM numbers (groups of 6 digits, «072174 072175») or
- * years («2024 2025 2026»).
- */
-function isPhone(piece) {
-  const groups = piece.match(/\d+/g) ?? [];
-  const n = groups.join('').length;
-  if (n < 9) return false;
-  if (groups.length > 1 && !/^\s*[+(]/.test(piece)) {
-    const mobile = groups.length >= 3 && groups.slice(-3).every(g => g.length === 3) && /^[6-9]/.test(groups.at(-3));
-    const counts = !mobile && groups.every(g => g.length <= 3 && g[0] !== '0') && groups[0] !== '593';
-    const cams = groups.every(g => g.length === 6);
-    const years = groups.every(g => /^(?:19|20)\d{2}$/.test(g));
-    if (counts || cams || years) return false;
-  }
-  return true;
-}
-const masked = piece => piece.replace(/^(\s*)[\s\S]*?(\s*)$/, '$1[número]$2');
-/**
- * A run with each phone-like part masked. It is split at the hard separators (/ ; and «, »); each part again at the
- * soft ones (two spaces, « - »): the soft pieces that are phones are masked, and when none is, the whole part is
- * tested, so «099  123  4567» or «099 - 123 - 4567» is one number.
- */
-const maskRun = run =>
-  run
-    .split(/(\/|;|,(?=\s))/u)
-    .map((part, i) => {
-      if (i % 2) return part;
-      const soft = part.split(/(\s{2,}|\s\p{Pd}\s)/u);
-      if (soft.some((p, j) => j % 2 === 0 && isPhone(p))) return soft.map((p, j) => (j % 2 === 0 && isPhone(p) ? masked(p) : p)).join('');
-      return isPhone(part) ? masked(part) : part;
-    })
-    .join('');
-/** Digits said as words in a voice note («cero nueve nueve uno dos…»): seven or more in a row are a number. */
-const SPOKEN = /\b(?:(?:cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|zero|oh|one|two|three|four|five|six|seven|eight|nine|\d{1,4})[\s,.-]+){6,}(?:cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|zero|oh|one|two|three|four|five|six|seven|eight|nine|\d{1,4})\b/giu;
-const spokenDigits = run => run.split(/[\s,.-]+/).reduce((n, w) => n + (/^\d+$/.test(w) ? w.length : 1), 0);
-
 /** wacli's display text for a message with no text of its own («Sent image», «Reacted 👍 to …»). */
 const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message was deleted)$/is;
 
@@ -111,26 +35,13 @@ const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message w
 export const linksOf = text => [...new Set((String(text ?? '').match(URL) ?? []).map(u => u.replace(/[.,;:!?]+$/, '')))];
 
 /**
- * A text with its phone numbers and WhatsApp addresses masked, also inside links that carry a number (wa.me,
- * phone=…); other links, GPS points, dates and CAM ids are kept as written. A bare number of 9 or more digits is
- * masked even when it is not a phone (an iNaturalist id written without its link): the price of never letting one
- * through.
+ * A sender's or contact's name as written; null when it is no name: a number with no letter in it (WhatsApp shows the
+ * number when there is no name, in any spacing, dashes or direction marks) or a WhatsApp address.
  */
-export function maskPhones(text) {
-  const held = [];
-  const hold = x => `\u0000${held.push(x) - 1}\u0000`;
-  let s = String(text ?? '').replace(JID, '[número]');
-  s = s.replace(URL, u => hold(PHONE_LINK.test(u) ? u.replace(LINK_DIGITS, 'numero-oculto') : u.replace(LINK_PHONE, 'numero-oculto')));
-  s = s.replace(SPOKEN, run => (/[a-z]/i.test(run) && spokenDigits(run) >= 7 ? '[número]' : run));
-  s = s.replace(PHONE_WORD, (all, word, num) => (digitsOf(num) >= 7 ? `${word}[número]` : all));
-  s = s.replace(KEEP, hold);
-  s = s.replace(RUN, maskRun);
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => held[Number(i)]);
-}
-/** A file or person's name with any phone-like number masked; null when nothing else is left. */
-export function maskName(name) {
-  const masked = maskPhones(name).trim();
-  return masked && !PHONE_NAME.test(masked) && masked.replace(/\[número\]/g, '').trim() ? masked : null;
+export function displayName(name) {
+  const n = String(name ?? '').trim();
+  if (!n || new RegExp(JID.source, 'i').test(n)) return null;
+  return /\p{Nd}/u.test(n) && !/\p{L}/u.test(n) ? null : n;
 }
 
 /**
@@ -150,7 +61,7 @@ export function peopleIndex(map) {
 export function exportRows(db, { chats, people = new Map(), transcripts = {} }) {
   const contacts = new Map();
   for (const c of db.prepare("SELECT jid, coalesce(nullif(push_name, ''), nullif(full_name, ''), nullif(first_name, ''), nullif(business_name, '')) name FROM contacts").all())
-    if (maskName(c.name)) contacts.set(bareJid(c.jid), clip(maskName(c.name), 80));
+    if (displayName(c.name)) contacts.set(bareJid(c.jid), clip(displayName(c.name), 80));
   try {
     // A LID's phone JID (or the other way round): one person under two JIDs.
     for (const a of db.prepare('SELECT jid, alias FROM contact_aliases').all()) {
@@ -164,7 +75,7 @@ export function exportRows(db, { chats, people = new Map(), transcripts = {} }) 
   const userOf = (jid, fromMe) => (fromMe ? people.get('self') : people.get(bareJid(jid))) ?? null;
   const nameOf = (jid, fromMe, given) => {
     if (fromMe) return 'Franz';
-    const name = maskName(given);
+    const name = displayName(given);
     if (name) return clip(name, 80);
     return contacts.get(bareJid(jid)) ?? null;
   };
@@ -177,7 +88,11 @@ export function exportRows(db, { chats, people = new Map(), transcripts = {} }) 
     }
     return '@alguien';
   };
-  const clean = text => maskPhones(String(text ?? '').replace(/@(\d{6,20})\b/g, (_, d) => mention(d)));
+  // A mention «@593…», or a WhatsApp address typed in a text, becomes the person's name (a group's: «(grupo)»).
+  const clean = text =>
+    String(text ?? '')
+      .replace(new RegExp('@?' + JID.source, 'gi'), (_, d, kind) => (/^g\.us$/i.test(kind) ? '(grupo)' : mention(d)))
+      .replace(/@(\d{6,20})\b/g, (_, d) => mention(d));
   const textOf = r => {
     const t = r.text || r.media_caption || (r.display_text && !PLACEHOLDER.test(r.display_text.trim()) ? r.display_text : '');
     return clean(t).trim();
@@ -207,7 +122,7 @@ export function exportRows(db, { chats, people = new Map(), transcripts = {} }) 
         sender_name: bot ? 'Claude (asistente)' : nameOf(r.sender_jid, r.from_me, r.sender_name),
         text: clip(text, 6000) || null,
         media,
-        filename: r.filename ? clip(maskName(r.filename) ?? '[número]', 200) : null,
+        filename: r.filename ? clip(r.filename, 200) : null,
         links: JSON.stringify(linksOf(text)),
         transcript,
         reply_to: r.quoted_msg_id ? String(r.quoted_msg_id) : null,

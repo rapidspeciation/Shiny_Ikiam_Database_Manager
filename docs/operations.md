@@ -16,7 +16,7 @@ The setup screen requires a private random token and creates the first active ad
 | `/home/ubuntu/ithomiini/shared/knowledge/` | Private approved meeting documents (hand-copied snapshot) |
 | `/home/ubuntu/ithomiini/shared/knowledge/drive/` | Text mirror of the project Drive's documents and `manifest.json` (`ithomiini-drive-sync.service`: nightly at 03:00 EC and on request) |
 | `/home/ubuntu/ithomiini/shared/knowledge/documentos-clave.md` | Private notes the brief's «Documentos clave» points to: the key documents' Drive ids and links (kept by hand, not in git) |
-| `/home/ubuntu/ithomiini/shared/wa-search/wa-search.sqlite` | The two team WhatsApp groups for `whatsapp_search`, without phone numbers or JIDs; copied from Franz's PC every 10 minutes (`tools/whatsapp/search-export.mjs`, `ithomiini-wa-search.timer` there) |
+| `/home/ubuntu/ithomiini/shared/wa-search/wa-search.sqlite` | The two team WhatsApp groups for `whatsapp_search` (texts as written; senders as names, never JIDs); copied from Franz's PC every 10 minutes (`tools/whatsapp/search-export.mjs`, `ithomiini-wa-search.timer` there) |
 | `/home/ubuntu/ithomiini/shared/backups/` | Verified daily SQLite backups |
 | `/home/ubuntu/.config/ithomiini/` | Protected service settings and Google/AI credentials |
 
