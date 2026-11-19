@@ -129,20 +129,32 @@ const LEAKS = [
   'teléfono: 2991234', 'Cel: 99.1234567', 'Llámame al 2 2123456', '120363000000000001@g.us', '593990000001@s.whatsapp.net',
   '0991234567,0987654321', '0991234567.0987654321', '099 123 4567 098 765 4321', 'Cel0991234567', 'juan_0991234567', '0991234567_',
   '#0991234567', 'tel=0991234567', '1234567890123456', '@593991234567hola', 'tel:+593991234567',
+  // Round 5: two spaces or « - » inside a number, 5-5 and 3-3-3 groupings, Signal and other links, numbers said in words.
+  'Juan +593 99  123 4567', 'Juan 09912 34567', 'https://signal.me/#p/+593991234567', '987 654 321', '612 345 678', '51 987 654 321',
+  'llama a Ana 987 654 321', '099 - 123 - 4567', '099 – 123 – 4567', '099  123  4567', '+593  99  123  4567',
+  'https://example.com/?whatsapp=593991234567', 'https://x.org/?cel=0991234567', 'https://ikiam.edu.ec/contact/0991234567',
+  'Mira https://x.org/a,0991234567', 'CAM072174 a 0991234567', '099\u2009123\u20094567', '099\u200b123\u200b4567',
 ];
 const KEPT = [
   'conteos 100 200 300', 'cuentas 120 340 560 780', 'cuadros 120, 130, 140, 150', 'IMG_20261001_123456.jpg', 'CAM000201-000250',
   'CAM000201, 000202', '000201 000202 000203', 'lat -0.9512345 lon -77.8123456', '-0,63831234 -76,14971234', '-0.6383, -76.1497',
   '2026-10-01 10:00', '18/11/2026 9:30', 'el 18-11-2026', 'pagué 1.500000', '$1,500.00', 'número de jaulas: 12', '9:30-11:00',
   'https://www.inaturalist.org/observations/123456789', 'MAATE-DBI-CM-2024-0443', 'CAM072174',
+  // Round 5: lists, document ids, DOIs, ORCIDs, photo stamps and years kept; links of other sites kept.
+  'conteo 12 45 300 120', '100 - 200 - 300', '000201 - 000202', '12/05/2026 - 15/05/2026', 'Oficio MAAE-2024-0443-001',
+  'ORCID 0000-0002-1825-0097', 'DOI 10.1016/j.cub.2020.01.001', 'Screenshot_20260512-143012.png', 'años 2024 2025 2026',
+  'https://sanger.zoom.us/j/96456932341?pwd=abc', 'https://docs.google.com/spreadsheets/d/1AbC/edit?gid=1234567890#gid=1234567890',
+  'tengo dos o tres jaulas, una con cuatro',
 ];
 
-test('masking: no phone number or JID left in a text or a name, ordinary numbers kept (round 4)', () => {
+test('masking: no phone number or JID left in a text or a name, ordinary numbers kept (rounds 4 and 5)', () => {
   for (const t of LEAKS) {
-    assert.doesNotMatch(maskPhones(t), /\d{3}/, `text: ${JSON.stringify(t)} → ${JSON.stringify(maskPhones(t))}`);
-    assert.doesNotMatch(maskName(`Contacto ${t}.pdf`) ?? '', /\d{3}/, `name: ${JSON.stringify(t)}`);
+    assert.doesNotMatch(maskPhones(t).replace(/CAM\d{6}/g, ''), /\d{3}/, `text: ${JSON.stringify(t)} → ${JSON.stringify(maskPhones(t))}`);
+    assert.doesNotMatch((maskName(`Contacto ${t}.pdf`) ?? '').replace(/CAM\d{6}/g, ''), /\d{3}/, `name: ${JSON.stringify(t)}`);
   }
   for (const t of KEPT) assert.equal(maskPhones(t), t);
+  assert.equal(maskPhones('mi número es cero nueve nueve uno dos tres cuatro cinco seis siete'), 'mi número es [número]');
+  assert.equal(maskPhones('0991234567  0987654321'), '[número]  [número]');
 });
 
 test('searchExport: the config chats, the people map, the file pushed only when it changed', async () => {
