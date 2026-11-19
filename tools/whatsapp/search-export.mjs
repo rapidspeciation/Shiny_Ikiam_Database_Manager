@@ -26,8 +26,16 @@ export const SCHEMA_VERSION = 1;
 const clip = (s, n) => (s == null ? '' : String(s).slice(0, n));
 /** A name that is only a phone number (WhatsApp shows the number when there is no name). */
 const PHONE_NAME = /^[\s+()\d.-]{7,}$/;
-/** A phone number written in a text, outside links: +593 99 123 4567, 0991234567, 593991234567. */
-const PHONE_IN_TEXT = /(?<![\w/@=.#-])\+?\d(?:[ .-]?\d){8,14}(?![\w/])/g;
+/**
+ * A phone number written in a text, outside links: +593 99 123 4567, 0991234567, (099) 123-4567, Cel.0991234567.
+ * Any other bare number of 9 to 15 digits is masked too (an iNaturalist id written without its link, say): the
+ * price of never letting a number through.
+ */
+const PHONE_IN_TEXT = /(?<![\w/@=#])(?<!\d[.,])\+?\(?\d(?:[ .()-]{0,2}\d){8,14}(?![\w/])/g;
+/** The same in a file or a person's name, where a number may touch letters or «_»: Carta_0991234567.pdf. */
+const PHONE_ANYWHERE = /\+?\(?\d(?:[ .()_-]{0,2}\d){8,14}/g;
+/** A number inside a link or a contact card: wa.me/593…, api.whatsapp.com/send?phone=593…, waid=593…. */
+const PHONE_IN_LINK = /(wa\.me\/|[?&]phone=|\bwaid=)\+?\d{6,}/gi;
 const URL = /\bhttps?:\/\/[^\s<>"')\]]+/gi;
 /** wacli's display text for a message with no text of its own («Sent image», «Reacted 👍 to …»). */
 const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message was deleted)$/is;
@@ -35,12 +43,17 @@ const PLACEHOLDER = /^(Sent (an? )?\w+|Reacted .*|Message deleted|This message w
 /** The links in a text, in order, without repeats. */
 export const linksOf = text => [...new Set((String(text ?? '').match(URL) ?? []).map(u => u.replace(/[.,;:!?]+$/, '')))];
 
-/** A text with the phone-like numbers outside its links masked. */
+/** A text with its phone numbers masked: in WhatsApp links and contact cards, and anywhere outside other links. */
 export function maskPhones(text) {
-  const s = String(text ?? '');
+  const s = String(text ?? '').replace(PHONE_IN_LINK, '$1numero-oculto');
   const links = [];
   const kept = s.replace(URL, u => `\u0000${links.push(u) - 1}\u0000`);
   return kept.replace(PHONE_IN_TEXT, '[número]').replace(/\u0000(\d+)\u0000/g, (_, i) => links[Number(i)]);
+}
+/** A file or person's name with any phone-like number masked; null when nothing else is left. */
+export function maskName(name) {
+  const masked = String(name ?? '').replace(PHONE_IN_LINK, '$1numero-oculto').replace(PHONE_ANYWHERE, '[número]').trim();
+  return masked && !PHONE_NAME.test(masked) && masked.replace(/\[número\]/g, '').trim() ? masked : null;
 }
 
 /**
@@ -59,8 +72,8 @@ export function peopleIndex(map) {
  */
 export function exportRows(db, { chats, people = new Map(), transcripts = {} }) {
   const contacts = new Map();
-  for (const c of db.prepare("SELECT jid, coalesce(nullif(full_name, ''), nullif(push_name, ''), nullif(first_name, ''), nullif(business_name, '')) name FROM contacts").all())
-    if (c.name && !PHONE_NAME.test(c.name)) contacts.set(bareJid(c.jid), c.name);
+  for (const c of db.prepare("SELECT jid, coalesce(nullif(push_name, ''), nullif(full_name, ''), nullif(first_name, ''), nullif(business_name, '')) name FROM contacts").all())
+    if (maskName(c.name)) contacts.set(bareJid(c.jid), clip(maskName(c.name), 80));
   try {
     // A LID's phone JID (or the other way round): one person under two JIDs.
     for (const a of db.prepare('SELECT jid, alias FROM contact_aliases').all()) {
@@ -74,8 +87,8 @@ export function exportRows(db, { chats, people = new Map(), transcripts = {} }) 
   const userOf = (jid, fromMe) => (fromMe ? people.get('self') : people.get(bareJid(jid))) ?? null;
   const nameOf = (jid, fromMe, given) => {
     if (fromMe) return 'Franz';
-    const name = String(given ?? '').trim();
-    if (name && !PHONE_NAME.test(name)) return clip(name, 80);
+    const name = maskName(given);
+    if (name) return clip(name, 80);
     return contacts.get(bareJid(jid)) ?? null;
   };
   // «@593991234567» or «@123456789012345» (a LID) in a text: the person's name, never the number.
@@ -117,7 +130,7 @@ export function exportRows(db, { chats, people = new Map(), transcripts = {} }) 
         sender_name: bot ? 'Claude (asistente)' : nameOf(r.sender_jid, r.from_me, r.sender_name),
         text: clip(text, 6000) || null,
         media,
-        filename: r.filename ? clip(maskPhones(r.filename), 200) : null,
+        filename: r.filename ? clip(maskName(r.filename) ?? '[número]', 200) : null,
         links: JSON.stringify(linksOf(text)),
         transcript,
         reply_to: r.quoted_msg_id ? String(r.quoted_msg_id) : null,

@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { exportRows, linksOf, maskPhones, peopleIndex, searchExport, writeSearchFile } from '../tools/whatsapp/search-export.mjs';
+import { exportRows, linksOf, maskName, maskPhones, peopleIndex, searchExport, writeSearchFile } from '../tools/whatsapp/search-export.mjs';
 import { createWhatsAppSearch, dayOf, parseQuery } from '../server/wa-search.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
@@ -77,7 +77,7 @@ test('export: only the two groups, no reactions or deleted messages, no phone nu
   const byId = Object.fromEntries(rows.map(r => [r.id, r]));
   // The LID sender is the same app account as her phone JID (contact_aliases); a mention becomes a name.
   assert.equal(byId.A1.sender_user, 'ana');
-  assert.match(byId.A1.text, /@Luis Pérez tal vez/);
+  assert.match(byId.A1.text, /@Luis tal vez/, 'their own WhatsApp name, not the address book label');
   // Franz's own messages: his account, never the number WhatsApp shows as his name; the bridge's own answer is Claude's.
   assert.deepEqual([byId.A4.sender_user, byId.A4.sender_name], ['franz', 'Franz']);
   assert.deepEqual([byId.A6.sender_user, byId.A6.sender_name], [null, 'Claude (asistente)']);
@@ -91,11 +91,21 @@ test('export helpers: links, phone masking outside links, the people map', () =>
   assert.deepEqual(linksOf('mira https://a.org/x?y=1. y https://a.org/x?y=1'), ['https://a.org/x?y=1']);
   assert.equal(maskPhones('llama al +593 99 123 4567 o 0991234567; https://inat.org/obs/123456789 CAM072174'), 'llama al [número] o [número]; https://inat.org/obs/123456789 CAM072174');
   assert.equal(maskPhones('el 18/11/2026 a las 9:30, 30 marcas, -0.95123'), 'el 18/11/2026 a las 9:30, 30 marcas, -0.95123');
+  // Numbers in WhatsApp links, contact cards, file names and mixed names (review round 1).
+  assert.equal(maskPhones('https://wa.me/593991234567 y wa.me/593991234567'), 'https://wa.me/numero-oculto y wa.me/numero-oculto');
+  assert.equal(maskPhones('https://api.whatsapp.com/send?phone=593991234567&text=hola'), 'https://api.whatsapp.com/send?phone=numero-oculto&text=hola');
+  assert.equal(maskPhones('TEL;waid=593991234567:+593 99 123 4567'), 'TEL;waid=numero-oculto:[número]');
+  assert.equal(maskPhones('Cel.0991234567 o (099) 123-4567'), 'Cel.[número] o [número]');
+  assert.equal(maskName('Carta_0991234567.pdf'), 'Carta_[número].pdf');
+  assert.equal(maskName('Juan 0991234567'), 'Juan [número]');
+  assert.equal(maskName('+593 99 123 4567'), null);
+  assert.equal(maskName('IMG-20261001-WA0003.jpg'), 'IMG-20261001-WA0003.jpg');
   assert.deepEqual([...peopleIndex({ 'x:3@s.whatsapp.net': 'a', self: 'f', y: '' })], [['x@s.whatsapp.net', 'a'], ['self', 'f']]);
   assert.deepEqual(parseQuery('Contrato "carta MAE" a|b'), [['contrato'], ['carta mae'], ['a', 'b']]);
   assert.equal(dayOf('01/10/2026'), Date.parse('2026-10-01T05:00:00Z'));
   assert.equal(dayOf('2026-10-01', true), Date.parse('2026-10-02T05:00:00Z'));
   assert.equal(dayOf('mañana'), null);
+  assert.equal(dayOf('31/02/2026'), null);
 });
 
 test('searchExport: the config chats, the people map, the file pushed only when it changed', async () => {
@@ -166,6 +176,23 @@ test('whatsapp_search: words, the answer in the next message (around), senders b
   } finally {
     store.close();
   }
+});
+
+test('whatsapp_search: a page cut to the answer size goes on from the last message shown', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-search-big-'));
+  const file = join(dir, 'wa-search.sqlite');
+  const rows = Array.from({ length: 100 }, (_, i) => ({
+    id: `M${i}`, chat: 'underground', at: Date.parse('2026-10-01T12:00:00Z') + i * 60_000, sender_user: null, sender_name: 'Ana',
+    text: `contrato ${i} ` + 'x'.repeat(1500), media: null, filename: null, links: '[]', transcript: null, reply_to: null, reply_user: null, reply_name: null, reply_text: null,
+  }));
+  writeSearchFile(file, rows, { chats: { underground: 'U' } });
+  const search = createWhatsAppSearch({ path: file });
+  const first = search.run({ query: 'contrato', limit: 100, order: 'oldest' }, { role: 'editor' });
+  assert.ok(first.messages.length < 100 && first.messages.length > 5, String(first.messages.length));
+  assert.equal(first.next_offset, first.messages.length);
+  assert.ok(JSON.stringify(first).length < 38000);
+  const next = search.run({ query: 'contrato', limit: 100, order: 'oldest', offset: first.next_offset }, { role: 'editor' });
+  assert.equal(next.messages[0].id, `M${first.messages.length}`);
 });
 
 test('whatsapp_search: team accounts only; observers, inactive accounts and callers without a token are refused', async () => {

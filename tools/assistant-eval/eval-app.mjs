@@ -132,6 +132,10 @@ async function start() {
     mkdirSync(join(RUN, 'wa-search'), { recursive: true, mode: 0o700 });
     cpSync(waSearch, join(RUN, 'wa-search', 'wa-search.sqlite'));
   }
+  // The documents folder the brief names ({{knowledge}}), with the private notes documentos-clave.md: the copy of the
+  // server's that tools/lab/knowledge-pull.sh keeps for the lab app (no Google login here to read Drive itself).
+  const pulled = [join(LAB, 'app-workbook', 'knowledge'), join(LAB, 'app', 'knowledge')].find(d => existsSync(d));
+  if (pulled) cpSync(pulled, join(RUN, 'knowledge'), { recursive: true });
   const env = [
     `IDENTIFIER_DIR=${join(LAB, 'identifier')}`,
     `ITHOMIINI_T3_HOME=${T3HOME}`,

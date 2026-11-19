@@ -1,5 +1,5 @@
 {
- "about": "Key documents the team asked for (Franz, 18 Nov 2026): the framework contract in force and the collectors' letters. The 2024-0443 contract is a link-only Drive PDF posted once in the underground WhatsApp group (Drive search misses it); the letters' folder is left out of the documents mirror on purpose (drive-sync excludes 'contrat'). The eval workspace has no Google login, so these pass on what it can reach: the private notes documentos-clave.md in its knowledge folder and whatsapp_search over the groups' copy. Live Drive reads (gog) are not tested here. Baseline 18 Nov (before): both failed.",
+ "about": "Key documents the team asked for (Franz, 18 Nov 2026): the framework contract in force and the collectors' letters. The 2024-0443 contract is a link-only Drive PDF posted once in the underground WhatsApp group (Drive search misses it); the letters' folder is left out of the documents mirror on purpose (drive-sync excludes 'contrat'). The eval workspace has no Google login, so these pass on what it can reach: the private notes documentos-clave.md in its knowledge folder (eval-app.mjs copies the lab's pull of the server's knowledge folder) and whatsapp_search over the groups' copy. Live Drive reads (gog) are not tested here. Baseline 18 Nov (before): both failed.",
  "tasks": [
   {
    "id": "K01",

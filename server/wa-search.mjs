@@ -7,7 +7,10 @@
 // refuses a call without a person's token, and this module refuses any other role.
 import { DatabaseSync } from 'node:sqlite';
 import { statSync } from 'node:fs';
+import { RESULT_BUDGET, fitList } from './tool-budget.mjs';
 
+/** An answer's size: a little under the tools' budget, which fitResult still checks. */
+const BUDGET = RESULT_BUDGET - 2000;
 export const WA_SEARCH_ROLES = ['editor', 'reviewer', 'admin'];
 export const WA_SEARCH_TOOLS = [
   {
@@ -65,8 +68,9 @@ export function dayOf(text, end = false) {
     [, d, m, y] = hit.map(Number);
     if (y < 100) y += 2000;
   } else return null;
-  const t = Date.UTC(y, m - 1, d + (end ? 1 : 0), 5);
-  return Number.isNaN(t) || m < 1 || m > 12 || d < 1 || d > 31 ? null : t;
+  const day = new Date(Date.UTC(y, m - 1, d, 5));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) return null;
+  return day.getTime() + (end ? 86_400_000 : 0);
 }
 /** The query as groups of alternatives, all of which must match: «contrato marco|MAATE "carta MAE"». */
 export function parseQuery(query) {
@@ -181,7 +185,8 @@ export function createWhatsAppSearch({ path = null, db = null, now = () => Date.
       if (!hit) return { error: `No message ${clip(id, 80)} in the groups' copy.`, ...synced };
       const list = data.byChat.get(hit.chat);
       const part = list.slice(Math.max(0, hit.index - limit), hit.index + limit + 1);
-      return { ...synced, ...stale, around: hit.id, messages: part.map(r => ({ ...show(r), ...(r === hit ? { match: true } : {}) })) };
+      const shown = { ...synced, ...stale, around: hit.id, messages: part.map(r => ({ ...show(r), ...(r === hit ? { match: true } : {}) })) };
+      return fitList(shown, 'messages', BUDGET, kept => (kept < part.length ? { truncated: 'Only the first messages fit: ask with a smaller limit.' } : {})).out;
     }
 
     const groups = parseQuery(args.query);
@@ -208,14 +213,15 @@ export function createWhatsAppSearch({ path = null, db = null, now = () => Date.
     if (args.order !== 'oldest') matches.reverse();
     const offset = Math.max(0, Number(args.offset) || 0);
     const page = matches.slice(offset, offset + limit);
-    return {
+    const out = {
       ...synced,
       ...stale,
       total: matches.length,
       messages: page.map(show),
-      ...(offset + page.length < matches.length ? { next_offset: offset + page.length } : {}),
       ...(!matches.length ? { note: 'Nothing found: try fewer or shorter words, a|b alternatives, the other language, or without dates.' } : {}),
     };
+    // Within one answer's size: the next page starts after the last message shown.
+    return fitList(out, 'messages', BUDGET, kept => (offset + kept < matches.length ? { next_offset: offset + kept } : {})).out;
   }
   return { run, allowed };
 }

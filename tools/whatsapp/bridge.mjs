@@ -1533,7 +1533,6 @@ Description=Ithomiini: the team WhatsApp groups' search copy every 10 minutes
 [Timer]
 OnBootSec=3min
 OnUnitActiveSec=10min
-Persistent=true
 
 [Install]
 WantedBy=timers.target
