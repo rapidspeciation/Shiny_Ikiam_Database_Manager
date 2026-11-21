@@ -9,11 +9,11 @@ ithomiini-ikiam.com {
 }
 
 # T3 Code, with the app's bridge in its pages (server/t3bridge.mjs): page loads and the
-# bridge script go to the app, which fetches the page from T3 and adds one script tag
-# (it tells the Asistente tab which chat its T3 frame shows). T3's API, built files and
-# websockets go straight to T3. While the app is down its page loads go to T3 too
-# (lb_policy first, a failed dial remembered for fail_duration): T3 without the bridge,
-# and the Asistente guesses the open chat as before.
+# bridge script go to the app, which fetches the page from T3, rewrites T3's framing
+# headers for the app's origin, and adds one script tag (it tells the Asistente tab which
+# chat its T3 frame shows). T3's API, built files and websockets go straight to T3. While
+# the app is down page loads fall back to T3 (lb_policy first, fail_duration 10s), keeping
+# standalone T3 reachable; embedded framing resumes once the app is back.
 t3.ithomiini-ikiam.com {
 	# T3's built files carry a content hash in their names (a new T3 version, new names): kept by the
 	# browser instead of asked again on every load (T3 sends no-cache). Deferred, so it replaces T3's header.

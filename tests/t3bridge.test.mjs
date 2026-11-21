@@ -9,6 +9,7 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import {
   BRIDGE_PATH,
+  allowFraming,
   bridgeScript,
   bridgeTag,
   canInject,
@@ -58,10 +59,98 @@ test('which requests and answers get it', () => {
   assert.equal(isPageLoad(req('/', 'text/html', 'POST')), false);
   assert.equal(isPageLoad(req(BRIDGE_PATH)), false);
   assert.equal(canInject(200, { 'content-type': 'text/html; charset=utf-8' }), true);
+  assert.equal(canInject(200, { 'content-type': 'text/html', 'content-security-policy': "frame-ancestors 'none'" }), true);
+  assert.equal(
+    canInject(200, { 'content-type': 'text/html', 'content-security-policy': "frame-ancestors\t 'none'; " }),
+    true,
+  );
+  assert.equal(
+    canInject(200, { 'content-type': 'text/html', 'content-security-policy': "frame-ancestors 'self'; base-uri 'self'" }),
+    true,
+  );
   assert.equal(canInject(200, { 'content-type': 'text/html', 'content-security-policy': "script-src 'self'" }), false);
+  assert.equal(canInject(200, { 'content-type': 'text/html', 'content-security-policy': "script-src-elem 'none'" }), false);
+  assert.equal(
+    canInject(200, {
+      'content-type': 'text/html',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+    }),
+    false,
+  );
+  assert.equal(canInject(200, { 'content-type': 'text/html', 'content-security-policy': 'sandbox' }), false);
+  assert.equal(
+    canInject(200, { 'content-type': 'text/html', 'content-security-policy': "frame-ancestors 'none', script-src 'none'" }),
+    false,
+  );
+  assert.equal(
+    canInject(200, {
+      'content-type': 'text/html',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+      'content-security-policy': "script-src 'none'",
+    }),
+    false,
+  );
   assert.equal(canInject(200, { 'content-type': 'text/html', 'content-encoding': 'br' }), false);
   assert.equal(canInject(200, { 'content-type': 'application/json' }), false);
   assert.equal(canInject(304, { 'content-type': 'text/html' }), false);
+});
+
+test('framing headers: narrowed to self and the app origin, keeping other CSP directives and clickjacking protection', () => {
+  // T3 0.1.11 SPA headers: X-Frame-Options stripped, frame-ancestors narrowed to self + app origin.
+  assert.deepEqual(
+    allowFraming(
+      { 'content-type': 'text/html', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" },
+      APP,
+    ),
+    { 'content-type': 'text/html', 'content-security-policy': `frame-ancestors 'self' ${APP}` },
+  );
+  // Other directives preserved when frame-ancestors is rewritten.
+  assert.deepEqual(
+    allowFraming(
+      {
+        'x-frame-options': 'DENY',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; FRAME-ANCESTORS 'none'",
+      },
+      APP,
+    ),
+    { 'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' ${APP}` },
+  );
+  // X-Frame-Options alone: stripped and replaced with frame-ancestors so third-party framing stays blocked.
+  assert.deepEqual(allowFraming({ 'x-frame-options': 'SAMEORIGIN' }, APP), {
+    'content-security-policy': `frame-ancestors 'self' ${APP}`,
+  });
+  // X-Frame-Options + CSP without frame-ancestors: frame-ancestors added to preserve clickjacking protection.
+  assert.deepEqual(
+    allowFraming({ 'x-frame-options': 'DENY', 'content-security-policy': "script-src 'self'" }, APP),
+    { 'content-security-policy': `script-src 'self'; frame-ancestors 'self' ${APP}` },
+  );
+  // Multiple comma-separated policies: every policy's frame-ancestors is rewritten.
+  assert.deepEqual(
+    allowFraming({ 'content-security-policy': "frame-ancestors 'none', default-src 'self'; frame-ancestors 'self'" }, APP),
+    { 'content-security-policy': `frame-ancestors 'self' ${APP}, default-src 'self'; frame-ancestors 'self' ${APP}` },
+  );
+  // Duplicate frame-ancestors within one policy, tabs/extra spaces, trailing semicolon: normalized cleanly.
+  assert.deepEqual(
+    allowFraming({ 'content-security-policy': "frame-ancestors\t 'none';  frame-ancestors 'self'; " }, APP),
+    { 'content-security-policy': `frame-ancestors 'self' ${APP}` },
+  );
+  // Responses without framing headers stay untouched (API JSON, sandboxed attachments).
+  assert.deepEqual(allowFraming({ 'content-type': 'application/json' }, APP), { 'content-type': 'application/json' });
+  assert.deepEqual(allowFraming({ 'content-security-policy': "default-src 'none'; sandbox" }, APP), {
+    'content-security-policy': "default-src 'none'; sandbox",
+  });
+  // Without a valid HTTP(S) app origin (including wildcard hosts): headers pass through unchanged.
+  const locked = { 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" };
+  for (const bad of [
+    '',
+    'null',
+    'ws://app.example.org',
+    'https://*.example.org',
+    'https://app.example.org/path',
+    "https://app.example.org; script-src 'unsafe-inline'",
+  ]) {
+    assert.deepEqual(allowFraming(locked, bad), locked);
+  }
 });
 
 /** Runs the bridge in a fake T3 page: its posts, and a way to navigate and to say hello. */
@@ -168,15 +257,32 @@ test("the frame opens on the person's own project: T3's list filtered to it, eac
   // The sign-in link: the project goes out of the address (T3 never sees it), its #token stays.
   const first = runBridge({ path: '/pair', search: `?ithomiini-project=${encodeURIComponent(ana)}`, hash: '#token=abc', storage });
   assert.equal(first.window.location.pathname, '/pair#token=abc');
-  assert.deepEqual(ui(), { projectOrder: [ana, ben], threadLastVisitedAtById: { x: '2026-10-01' }, sidebarProjectScopeKey: ana });
-  // The person then picks another project or «All projects» in T3: back to their own the next time.
-  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: ben }));
+  assert.deepEqual(ui(), {
+    projectOrder: [ana, ben],
+    threadLastVisitedAtById: { x: '2026-10-01' },
+    sidebarProjectScopeKey: ana,
+    sidebarProjectScopeKeys: [ana],
+  });
+  // The person then picks another project or «All projects» in T3 (0.1.11 writes sidebarProjectScopeKeys): back to their own the next time.
+  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: ben, sidebarProjectScopeKeys: [ben] }));
   const again = runBridge({ path: '/', search: `?x=1&ithomiini-project=${encodeURIComponent(ana)}`, storage });
   assert.equal(again.window.location.pathname, '/?x=1');
   assert.equal(ui().sidebarProjectScopeKey, ana);
+  assert.deepEqual(ui().sidebarProjectScopeKeys, [ana]);
+  // «All projects» in T3 0.1.11 stores an empty array (non-nullish): still reset to the person's own project.
+  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: null, sidebarProjectScopeKeys: [] }));
+  runBridge({ path: '/', search: `?ithomiini-project=${encodeURIComponent(ana)}`, storage });
+  assert.equal(ui().sidebarProjectScopeKey, ana);
+  assert.deepEqual(ui().sidebarProjectScopeKeys, [ana]);
   // Another person signs in to the app in this browser: their own project.
   runBridge({ path: '/', search: `?ithomiini-project=${encodeURIComponent(ben)}`, storage });
-  assert.deepEqual([ui().sidebarProjectScopeKey, ui().projectOrder], [ben, [ben, ana]]);
+  assert.deepEqual([ui().sidebarProjectScopeKey, ui().sidebarProjectScopeKeys, ui().projectOrder], [ben, [ben], [ben, ana]]);
+  // Non-object stored JSON (e.g. a string or array): replaced cleanly without spreading index keys.
+  for (const raw of ['"5"', '[]']) {
+    items.set('t3code:ui-state:v1', raw);
+    runBridge({ path: '/', search: `?ithomiini-project=${encodeURIComponent(ana)}`, storage });
+    assert.deepEqual(ui(), { sidebarProjectScopeKey: ana, sidebarProjectScopeKeys: [ana], projectOrder: [ana] });
+  }
   // Outside the app's frame nothing is touched.
   items.clear();
   runBridge({ framed: false, search: `?ithomiini-project=${encodeURIComponent(ana)}`, storage });
@@ -299,13 +405,34 @@ async function fakeT3() {
         });
       return;
     }
+    if (req.url === '/redirect') {
+      res.writeHead(302, {
+        location: '/pair',
+        'x-frame-options': 'DENY',
+        'content-security-policy': "frame-ancestors 'none'",
+      });
+      return res.end();
+    }
+    if (req.url === '/missing') {
+      res.writeHead(404, {
+        'content-type': 'text/html; charset=utf-8',
+        'x-frame-options': 'DENY',
+        'content-security-policy': "frame-ancestors 'none'",
+      });
+      return res.end('<!doctype html><p>Not found</p>');
+    }
     const headers = {
       'content-type': 'text/html; charset=utf-8',
+      'content-length': Buffer.byteLength(PAGE),
       etag: '"t3"',
       'cache-control': 'no-cache',
+      'x-frame-options': 'DENY',
+      'content-security-policy': "frame-ancestors 'none'",
       'set-cookie': ['s=1; Path=/'],
     };
-    if (req.url === '/csp') headers['content-security-policy'] = "script-src 'self'";
+    if (req.url === '/csp') {
+      headers['content-security-policy'] = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
+    }
     res.writeHead(200, headers);
     res.end(PAGE);
   });
@@ -359,17 +486,37 @@ test('the full proxy (the lab): all of T3 passes, its pages with the tag, websoc
     });
     assert.equal(page.status, 200);
     assert.ok(page.body.toString().includes(bridgeTag(APP)), 'the app origin, without its trailing slash');
+    assert.equal(page.headers['x-frame-options'], undefined);
+    assert.equal(page.headers['content-security-policy'], `frame-ancestors 'self' ${APP}`);
     assert.equal(page.headers.etag, undefined);
     assert.equal(Number(page.headers['content-length']), page.body.length);
     assert.deepEqual(page.headers['set-cookie'], ['s=1; Path=/']);
     const asked = t3.seen.at(-1).headers;
     assert.equal(asked['accept-encoding'], 'identity', 'asked uncompressed');
     assert.equal(asked['if-none-match'], undefined, 'never "not modified" to a page without the tag');
-    // T3's own CSP: left alone.
-    assert.ok(!(await request(port, '/csp', { accept: 'text/html' })).body.toString().includes(BRIDGE_PATH));
-    // Other files and the API pass as they are (compressed, cookies both ways, bodies).
+    // T3's own script-restricting CSP: not injected, other directives/ETag/Content-Length kept, framing narrowed.
+    const cspPage = await request(port, '/csp', { accept: 'text/html' });
+    assert.ok(!cspPage.body.toString().includes(BRIDGE_PATH));
+    assert.equal(cspPage.headers.etag, '"t3"');
+    assert.equal(Number(cspPage.headers['content-length']), cspPage.body.length);
+    assert.equal(cspPage.headers['x-frame-options'], undefined);
+    assert.equal(
+      cspPage.headers['content-security-policy'],
+      `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' ${APP}`,
+    );
+    // Non-injected redirect and error responses also get framing headers rewritten.
+    const redir = await request(port, '/redirect', { accept: 'text/html' });
+    assert.equal(redir.status, 302);
+    assert.equal(redir.headers['x-frame-options'], undefined);
+    assert.equal(redir.headers['content-security-policy'], `frame-ancestors 'self' ${APP}`);
+    const missing = await request(port, '/missing', { accept: 'text/html' });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers['x-frame-options'], undefined);
+    assert.equal(missing.headers['content-security-policy'], `frame-ancestors 'self' ${APP}`);
+    // Other files and the API pass as they are (compressed, cookies both ways, bodies, no added CSP).
     const script = await request(port, '/assets/index.js', { accept: '*/*', 'accept-encoding': 'gzip' });
     assert.equal(script.headers['content-encoding'], 'gzip');
+    assert.equal(script.headers['content-security-policy'], undefined);
     const api = await request(
       port,
       '/api/auth/x',
@@ -379,9 +526,11 @@ test('the full proxy (the lab): all of T3 passes, its pages with the tag, websoc
     assert.equal(api.status, 201);
     assert.deepEqual(JSON.parse(api.body), { method: 'POST', body: '{"a":1}', cookie: 't3=abc' });
     assert.deepEqual(api.headers['set-cookie'], ['a=1; Path=/', 'b=2; Path=/']);
-    // The script itself, cacheable for a few minutes.
+    // The script itself, cacheable for a few minutes, with no framing headers.
     const script2 = await request(port, BRIDGE_PATH);
     assert.equal(script2.headers['cache-control'], 'public, max-age=300');
+    assert.equal(script2.headers['x-frame-options'], undefined);
+    assert.equal(script2.headers['content-security-policy'], undefined);
     assert.equal(script2.body.toString(), bridgeScript);
 
     // A websocket through the proxy.
@@ -405,6 +554,8 @@ test('the full proxy (the lab): all of T3 passes, its pages with the tag, websoc
     });
     const down = await request(port, '/', { accept: 'text/html' });
     assert.equal(down.status, 502);
+    assert.equal(down.headers['x-frame-options'], undefined);
+    assert.equal(down.headers['content-security-policy'], undefined);
     assert.match(
       down.body.toString(),
       /T3 Code is not answering[\s\S]*http-equiv="refresh"|http-equiv="refresh"[\s\S]*T3 Code is not answering/,
@@ -438,6 +589,8 @@ test("production: the app answers T3's page loads for T3's host (Caddy sends the
     const page = await request(port, `/${ENV}/${A}`, { host: 't3.example.org', accept: 'text/html' });
     assert.equal(page.status, 200);
     assert.ok(page.body.toString().includes(bridgeTag(APP)));
+    assert.equal(page.headers['x-frame-options'], undefined);
+    assert.equal(page.headers['content-security-policy'], `frame-ancestors 'self' ${APP}`);
     assert.equal((await request(port, BRIDGE_PATH, { host: 'T3.example.org' })).body.toString(), bridgeScript);
     // The app's own host: its health, not T3.
     const health = await request(port, '/health', { host: 'app.example.org' });
@@ -447,4 +600,25 @@ test("production: the app answers T3's page loads for T3's host (Caddy sends the
     await app.close();
     t3.server.close();
   }
+});
+
+test('without a valid HTTP(S) appOrigin: framing headers pass through unchanged and no bridge script is injected', async () => {
+  const t3 = await fakeT3();
+  for (const appOrigin of ['', 'data:text/html,x', 'https://*.example.org']) {
+    const bridge = createT3Bridge({ t3: { url: 'https://t3.example.org', local: t3.local }, appOrigin });
+    const proxy = await bridge.listen(0);
+    const { port } = proxy.address();
+    try {
+      const page = await request(port, '/', { accept: 'text/html' });
+      assert.equal(page.status, 200);
+      assert.ok(!page.body.toString().includes(BRIDGE_PATH));
+      assert.equal(page.headers['x-frame-options'], 'DENY');
+      assert.equal(page.headers['content-security-policy'], "frame-ancestors 'none'");
+    } finally {
+      proxy.closeAllConnections();
+      await new Promise(resolve => proxy.close(resolve));
+      bridge.close();
+    }
+  }
+  t3.server.close();
 });

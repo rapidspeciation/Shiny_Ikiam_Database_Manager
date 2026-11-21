@@ -1,7 +1,9 @@
 // The T3 bridge: tells the Asistente tab which chat its T3 Code frame shows.
-// T3 is a stock install on its own address, with no embedding API; its page has
-// no Content-Security-Policy and no service worker. So the page is fetched from
-// T3 and a small script is added to it (bridgeScript): inside a frame, it posts
+// T3 is a stock install on its own address, with no embedding API and no service
+// worker; from 0.1.11 its pages also send X-Frame-Options: DENY and
+// Content-Security-Policy: frame-ancestors 'none'. So the page is fetched from
+// T3, framing headers are narrowed to 'self' and the app's origin, and a small
+// script is added to it (bridgeScript): inside a frame, it posts
 // the chat on screen ({ type: 'ithomiini-t3', path, environmentId, threadId,
 // draftId, visible, focused }) to the app's origin only, on every navigation and
 // when the app says hello. A T3 page open in its own browser tab sends nothing.
@@ -17,7 +19,9 @@
 // button: a new tab, as before.
 // - Production (Caddy): requests to T3's host reach this app only for page loads
 //   and /__ithomiini/bridge.js (deploy/Caddyfile.fragment); T3's API, assets and
-//   websockets go from Caddy straight to T3, and so does everything if the app is down.
+//   websockets go from Caddy straight to T3. If the app is down Caddy falls back
+//   to T3 directly (standalone T3 stays up; from 0.1.11 embedded framing needs
+//   this bridge to rewrite T3's frame headers).
 // - Full proxy (the lab, ITHOMIINI_T3_PROXY_PORT): a listener of its own proxies
 //   all of T3 (HTTP and websockets) and adds the script to its page loads.
 // Without the script (an old route, a T3 update that broke it) the app guesses
@@ -48,12 +52,16 @@ function bridge() {
       const KEY = 't3code:ui-state:v1';
       let ui = {};
       try {
-        ui = JSON.parse(localStorage.getItem(KEY) || '{}') || {};
+        ui = JSON.parse(localStorage.getItem(KEY) || '{}');
       } catch {
         /* T3 starts it again */
       }
+      if (!ui || typeof ui !== 'object' || Array.isArray(ui)) ui = {};
       const order = Array.isArray(ui.projectOrder) ? ui.projectOrder.filter(key => key !== own) : [];
-      localStorage.setItem(KEY, JSON.stringify({ ...ui, sidebarProjectScopeKey: own, projectOrder: [own, ...order] }));
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({ ...ui, sidebarProjectScopeKey: own, sidebarProjectScopeKeys: [own], projectOrder: [own, ...order] }),
+      );
     } catch {
       /* no storage: T3 as it was */
     }
@@ -221,19 +229,130 @@ export function isPageLoad(req) {
   );
 }
 
-/** Whether T3's answer can take the script: an HTML page, not compressed, without a CSP of its own. */
+// CSP directives that can block or sandbox a same-origin <script src="/__ithomiini/bridge.js">.
+const SCRIPT_CSP = new Set(['default-src', 'script-src', 'script-src-elem', 'sandbox']);
+
+/** Splits a Content-Security-Policy header (string or array) into comma-separated policies of trimmed directives. */
+function parseCsp(value) {
+  const list = Array.isArray(value) ? value : value == null ? [] : [value];
+  const policies = [];
+  for (const item of list) {
+    for (const raw of String(item).split(',')) {
+      const directives = raw
+        .split(';')
+        .map(d => d.trim())
+        .filter(Boolean);
+      if (directives.length) policies.push(directives);
+    }
+  }
+  return policies;
+}
+
+const directiveName = directive => directive.split(/\s+/, 1)[0].toLowerCase();
+
+/** Whether a CSP header contains any directive that may restrict a same-origin <script src>. */
+function cspRestrictsScripts(value) {
+  return parseCsp(value).some(directives => directives.some(d => SCRIPT_CSP.has(directiveName(d))));
+}
+
+const headerValue = (headers, name) =>
+  headers[name] ?? Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
+
+const headerValues = (headers, name) =>
+  Object.entries(headers)
+    .filter(([key]) => key.toLowerCase() === name)
+    .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
+
+function validHttpOrigin(origin) {
+  if (typeof origin !== 'string' || !origin || /[\s;,]/.test(origin)) return false;
+  try {
+    const parsed = new URL(origin);
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.origin === origin &&
+      !parsed.hostname.includes('*')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether T3's answer can take the script: an HTML page, not compressed, without a
+ * script-restricting CSP header (T3's SPA index.html carries no <meta> CSP).
+ */
 export function canInject(statusCode, headers) {
+  const encoding = headerValue(headers, 'content-encoding');
   return (
     statusCode === 200 &&
-    /^text\/html/i.test(String(headers['content-type'] ?? '')) &&
-    !headers['content-security-policy'] &&
-    (!headers['content-encoding'] || headers['content-encoding'] === 'identity')
+    /^text\/html/i.test(String(headerValue(headers, 'content-type') ?? '')) &&
+    !cspRestrictsScripts(headerValues(headers, 'content-security-policy')) &&
+    (!encoding || String(encoding).toLowerCase() === 'identity')
   );
+}
+
+/**
+ * Rewrites framing headers on a proxied T3 response so `origin` (the app embedding T3) may
+ * frame it, keeping clickjacking protection against third-party sites and preserving any
+ * other CSP directives. Without a valid HTTP(S) `origin`, headers pass through unchanged.
+ */
+export function allowFraming(headers, origin) {
+  if (!validHttpOrigin(origin)) return headers;
+  let hadXfo = false;
+  let cspKey = null;
+  const cspValues = [];
+  const out = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    if (lower === 'x-frame-options') {
+      hadXfo = true;
+      continue;
+    }
+    if (lower === 'content-security-policy') {
+      if (cspKey === null) cspKey = name;
+      cspValues.push(value);
+      continue;
+    }
+    out[name] = value;
+  }
+  const frameDirective = `frame-ancestors 'self' ${origin}`;
+  if (cspKey !== null) {
+    const policies = parseCsp(cspValues.flat());
+    let hadFrameAncestors = false;
+    const rewritten = policies.map(directives => {
+      let seenInPolicy = false;
+      const next = [];
+      for (const d of directives) {
+        if (directiveName(d) === 'frame-ancestors') {
+          hadFrameAncestors = true;
+          if (!seenInPolicy) {
+            next.push(frameDirective);
+            seenInPolicy = true;
+          }
+        } else {
+          next.push(d);
+        }
+      }
+      return next;
+    });
+    if (!hadFrameAncestors && hadXfo) {
+      if (rewritten.length) rewritten[0].push(frameDirective);
+      else rewritten.push([frameDirective]);
+    }
+    if (hadFrameAncestors || hadXfo) {
+      out[cspKey] = rewritten.map(d => d.join('; ')).join(', ');
+    } else {
+      out[cspKey] = cspValues.length === 1 ? cspValues[0] : cspValues.flat().join(', ');
+    }
+  } else if (hadXfo) {
+    out['content-security-policy'] = frameDirective;
+  }
+  return out;
 }
 
 // Connection-level headers, not passed on (RFC 9110 §7.6.1).
 const HOP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'te', 'trailer', 'upgrade']);
-const pass = headers => Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP.has(name)));
+const pass = headers => Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP.has(name.toLowerCase())));
 
 /** The page shown in the frame when T3 does not answer (restarting, updating); it tries again by itself. */
 const unavailablePage = `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="5">
@@ -250,7 +369,8 @@ export function createT3Bridge({ t3, appOrigin }) {
   const local = new URL(t3.local);
   const upstream = { host: local.hostname, port: Number(local.port) || 80 };
   const publicHost = new URL(t3.url).host.toLowerCase();
-  const origin = appOrigin ? new URL(appOrigin).origin : '';
+  const parsedOrigin = appOrigin ? new URL(appOrigin).origin : '';
+  const origin = validHttpOrigin(parsedOrigin) ? parsedOrigin : '';
   const agent = new http.Agent({ keepAlive: true, maxSockets: 64 });
 
   /** Whether a request to the app's server is for T3's host (production: Caddy sends T3's page loads here). */
@@ -284,8 +404,9 @@ export function createT3Bridge({ t3, appOrigin }) {
       delete headers['if-modified-since'];
     }
     const up = http.request({ ...upstream, agent, method: req.method, path: req.url, headers }, answer => {
+      const out = allowFraming(pass(answer.headers), origin);
       if (!page || !canInject(answer.statusCode, answer.headers)) {
-        res.writeHead(answer.statusCode, answer.statusMessage, pass(answer.headers));
+        res.writeHead(answer.statusCode, answer.statusMessage, out);
         return void answer.pipe(res);
       }
       const chunks = [];
@@ -293,7 +414,6 @@ export function createT3Bridge({ t3, appOrigin }) {
       answer.on('error', () => fail(req, res, true));
       answer.on('end', () => {
         const body = Buffer.from(injectBridge(Buffer.concat(chunks).toString('utf8'), origin));
-        const out = pass(answer.headers);
         for (const name of ['content-length', 'etag', 'last-modified']) delete out[name];
         res.writeHead(answer.statusCode, answer.statusMessage, { ...out, 'content-length': body.length });
         res.end(body);
