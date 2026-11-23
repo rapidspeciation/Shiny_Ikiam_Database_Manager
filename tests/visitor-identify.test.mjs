@@ -296,20 +296,35 @@ test('a visitor who signed in meanwhile (another tab) still gets their ticket; t
 test('valid ticket polling is throttled per ticket, not by the shared per-IP discovery/probe limit', async t => {
   const { call, answer } = await setup(t, { anonIdentify: { maxPolls: 50 }, anonLimits: { visitorPoll: { limit: 2 } } });
   const ip = '203.0.113.55';
-  const sent = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 120 Oleria onega 0.9') }, ip });
+  const sent = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 250 Oleria onega 0.9') }, ip });
   assert.equal(sent.status, 202);
-  // More than 2 polls on the valid ticket from the same IP succeed and finish cleanly.
-  for (let i = 0; i < 4; i++) {
+  // Three polls while the photo is still running all return 200 (exceeding the per-IP discovery/probe limit of 2).
+  for (let i = 0; i < 3; i++) {
     const p = await call('GET', `/visitor/identify/${sent.body.ticket}`, { ip });
     assert.equal(p.status, 200);
-    if (p.body.state === 'done') break;
+    assert.match(p.body.state, /waiting|running/);
   }
-  const done = await answer(sent.body.ticket).catch(() => null);
-  assert.ok(done === null || done.body.state === 'done');
+  const done = await answer(sent.body.ticket);
+  assert.equal(done.body.state, 'done');
   // Discovery and unknown-ticket probes still enforce the per-IP poll limit (limit: 2).
   assert.equal((await call('GET', '/visitor/identify', { ip })).status, 200);
   assert.equal((await call('GET', '/visitor/identify/00000000-0000-0000-0000-000000000000', { ip })).status, 404);
   assert.equal((await call('GET', '/visitor/identify', { ip })).status, 429);
+});
+
+test('cancelling a running read keeps its cap slot until the worker finishes', async t => {
+  const { call, seen, app } = await setup(t, { anonIdentify: { maxWaiting: 1 } });
+  const a = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 250 Oleria onega 0.9') } });
+  assert.equal(a.status, 202);
+  for (let i = 0; i < 100 && seen.sent.length < 1; i++) await new Promise(r => setTimeout(r, 5));
+  assert.equal((await call('DELETE', `/visitor/identify/${a.body.ticket}`)).status, 200);
+  // The read is still running in the worker: the cap slot stays occupied until it settles.
+  const info = await call('GET', '/visitor/identify');
+  assert.equal(info.body.visitors, 1);
+  assert.equal(info.body.full, true);
+  assert.equal((await call('POST', '/visitor/identify', { body: { photo: b64('Oleria onega 0.9') } })).status, 503);
+  await app.visitorIdentify.idle();
+  assert.equal((await call('POST', '/visitor/identify', { body: { photo: b64('Oleria onega 0.9') } })).status, 202);
 });
 
 test('polling one valid ticket past maxPolls returns 429 RATE_LIMITED', async t => {
@@ -323,14 +338,14 @@ test('polling one valid ticket past maxPolls returns 429 RATE_LIMITED', async t 
   assert.equal(over.body.error.code, 'RATE_LIMITED');
 });
 
-test('configFromEnv ignores non-numeric ANON_IDENTIFY_* and IDENTIFIER_NICE values', () => {
+test('configFromEnv ignores non-numeric and fractional integer ANON_IDENTIFY_* / IDENTIFIER_* values', () => {
   const cfg = configFromEnv({
     ANON_SERVER_IDENTIFY: '1',
-    ANON_IDENTIFY_QUEUE: 'abc',
+    ANON_IDENTIFY_QUEUE: '2.5',
     ANON_IDENTIFY_PER_10MIN: '-5',
     ANON_IDENTIFY_TIMEOUT_S: 'oops',
     IDENTIFIER_NICE: 'nope',
-    IDENTIFIER_THREADS: '0',
+    IDENTIFIER_THREADS: '1.5',
   });
   assert.deepEqual(cfg.anonIdentify, {});
   assert.equal(cfg.identifierOptions.nice, 10);

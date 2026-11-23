@@ -177,8 +177,29 @@ if (typeof window !== 'undefined') window.addEventListener('pageshow', e => e.pe
  */
 export async function identifyAsVisitor(photo: string, side: 'East' | 'West' | null, { onPlace, signal }: { onPlace?: (p: VisitorPlace) => void; signal?: AbortSignal } = {}): Promise<ServerAnswer> {
   let again = 1
+  const drop = (id: string) => {
+    if (!leaving) fetch(`${apiRoot}api/visitor/identify/${id}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {})
+  }
   for (;;) {
-    let t = await api<VisitorTicket>('visitor/identify', { method: 'POST', body: { photo, side }, signal })
+    if (signal?.aborted) throw signal.reason
+    // Let an already-started POST yield its ticket ID on in-app abort so we can DELETE it right away.
+    const post = api<VisitorTicket>('visitor/identify', { method: 'POST', body: { photo, side } })
+    let t = signal
+      ? await new Promise<VisitorTicket>((resolve, reject) => {
+          const onAbort = () => reject(signal.reason)
+          signal.addEventListener('abort', onAbort, { once: true })
+          post.then(
+            r => {
+              signal.removeEventListener('abort', onAbort)
+              if (signal.aborted) {
+                drop(r.ticket)
+                reject(signal.reason)
+              } else resolve(r)
+            },
+            e => (signal.removeEventListener('abort', onAbort), reject(e)),
+          )
+        })
+      : await post
     open.add(t.ticket)
     try {
       for (;;) {
@@ -191,7 +212,7 @@ export async function identifyAsVisitor(photo: string, side: 'East' | 'West' | n
     } catch (err) {
       const gone = err instanceof ApiError && err.status === 404
       if (!gone || signal?.aborted || again-- <= 0) {
-        if (!gone && !leaving) fetch(`${apiRoot}api/visitor/identify/${t.ticket}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {})
+        if (!gone) drop(t.ticket)
         throw err
       }
     } finally {

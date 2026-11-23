@@ -40,8 +40,9 @@ export function createVisitorIdentify({
 } = {}) {
   const tickets = new Map();
   let closed = false;
-  const active = () => [...tickets.values()].filter(t => t.state === 'queued').length;
   const pending = new Set();
+  // Count every admitted photo until its underlying work settles (including one cancelled or timed out while running).
+  const active = () => pending.size;
 
   function view(t) {
     if (t.state === 'queued') {
@@ -100,8 +101,8 @@ export function createVisitorIdentify({
       t.status = out?.status ?? 503;
       t.error = out?.body?.error ?? { code: 'identifier_failed', message: 'The identifier did not answer.' };
     }
-    // idle() once the reading has really ended (its temp file removed).
-    await work;
+    // Keep the slot (and idle()) until the underlying reading has really ended (its temp file removed).
+    if (out.status === 504) await work;
   }
 
   return {

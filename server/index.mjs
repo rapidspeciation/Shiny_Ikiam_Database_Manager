@@ -364,25 +364,25 @@ export function configFromEnv(env = process.env) {
     // address in 10 minutes (60: a class behind one campus address; the queue's cap and the one worker bound the load,
     // not this).
     anonServerIdentify: env.ANON_SERVER_IDENTIFY === '1',
-    anonIdentify: (() => {
+    ...(() => {
       const pos = v => { const n = Number(v); return v !== undefined && v !== '' && Number.isFinite(n) && n > 0 ? n : null; };
-      const q = pos(env.ANON_IDENTIFY_QUEUE), p = pos(env.ANON_IDENTIFY_PER_10MIN), t = pos(env.ANON_IDENTIFY_TIMEOUT_S);
-      return { ...(q ? { maxWaiting: q } : {}), ...(p ? { perWindow: p } : {}), ...(t ? { timeoutMs: t * 1000 } : {}) };
-    })(),
-    identifierOptions: (() => {
-      const pos = v => { const n = Number(v); return v !== undefined && v !== '' && Number.isFinite(n) && n > 0 ? n : null; };
+      const posInt = v => { const n = pos(v); return n !== null && Number.isInteger(n) ? n : null; };
+      const q = posInt(env.ANON_IDENTIFY_QUEUE), p = posInt(env.ANON_IDENTIFY_PER_10MIN), t = pos(env.ANON_IDENTIFY_TIMEOUT_S);
       const nice = env.IDENTIFIER_NICE !== undefined && env.IDENTIFIER_NICE !== '' && Number.isInteger(Number(env.IDENTIFIER_NICE)) ? Number(env.IDENTIFIER_NICE) : 10;
-      const threads = pos(env.IDENTIFIER_THREADS), idle = pos(env.IDENTIFIER_IDLE_MINUTES);
+      const threads = posInt(env.IDENTIFIER_THREADS), idle = pos(env.IDENTIFIER_IDLE_MINUTES);
       return {
-        // The one identifier process (the team's and visitors' photos: shared, so the server never reads two at once):
-        // 3 cores (IDENTIFIER_THREADS) at nice 10 (IDENTIFIER_NICE). Measured on claudeclaw, 17 Nov 2026
-        // (.work/anon-identify-20261117 measure report): 1.26 s a photo at 3 threads, the app's pages no slower at nice
-        // 10, which lets the app and the other services come first when they need a core (it was nice 5).
-        nice,
-        ...(threads ? { threads } : {}),
-        ...(idle ? { idleMinutes: idle } : {}),
-        // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
-        ...(env.IDENTIFIER_ENCODER ? { encoder: env.IDENTIFIER_ENCODER } : {}),
+        anonIdentify: { ...(q ? { maxWaiting: q } : {}), ...(p ? { perWindow: p } : {}), ...(t ? { timeoutMs: t * 1000 } : {}) },
+        identifierOptions: {
+          // The one identifier process (the team's and visitors' photos: shared, so the server never reads two at once):
+          // 3 cores (IDENTIFIER_THREADS) at nice 10 (IDENTIFIER_NICE). Measured on claudeclaw, 17 Nov 2026
+          // (.work/anon-identify-20261117 measure report): 1.26 s a photo at 3 threads, the app's pages no slower at nice
+          // 10, which lets the app and the other services come first when they need a core (it was nice 5).
+          nice,
+          ...(threads ? { threads } : {}),
+          ...(idle ? { idleMinutes: idle } : {}),
+          // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
+          ...(env.IDENTIFIER_ENCODER ? { encoder: env.IDENTIFIER_ENCODER } : {}),
+        },
       };
     })(),
     // Whole photos kept for the assistant to look closer (GB; 0: none), the least used dropped first.

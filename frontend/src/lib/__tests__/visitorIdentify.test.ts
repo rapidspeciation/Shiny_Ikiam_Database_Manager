@@ -87,6 +87,28 @@ describe('identifyAsVisitor', () => {
     expect(calls[1].url).toContain('visitor/identify/d')
   })
 
+  it('aborted while POST is still in flight: once the server answers 202, the ticket is DELETEd right away', async () => {
+    let replyPost: (r: Response) => void = () => {}
+    const calls: { url: string; method: string }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        calls.push({ url: String(url), method })
+        if (method === 'POST') return new Promise<Response>(resolve => (replyPost = resolve))
+        return Promise.resolve(json(200, { ok: true }))
+      }),
+    )
+    const ctl = new AbortController()
+    const out = identifyAsVisitor('/9j/AAAA', null, { signal: ctl.signal }).catch(e => e)
+    ctl.abort()
+    await out
+    replyPost(json(202, { ticket: 'e', state: 'waiting', place: 2, ahead: 1, waitS: 2 }))
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(calls.map(c => c.method)).toEqual(['POST', 'DELETE'])
+    expect(calls[1].url).toContain('visitor/identify/e')
+  })
+
   it('a full queue says so plainly', () => {
     expect(onlineError(new ApiError(503, { code: 'BUSY', message: 'busy' }))).toMatch(/ocupado|busy/i)
     expect(onlineError(new ApiError(429, { code: 'RATE_LIMITED', message: 'x' }))).toMatch(/red|network/i)
