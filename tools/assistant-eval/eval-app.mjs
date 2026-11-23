@@ -24,7 +24,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const LAB = '/home/franz/.cache/ithomiini-lab';
 const T3HOME = '/home/franz/.t3-ithomiini-lab';
 const OUT = join(LAB, 'assistant-eval', 'evalapp');
-const WS = join(T3HOME, 'workspaces-eval', 'eval');
 const LAB_WS = join(T3HOME, 'workspaces', 'lab');
 
 const argv = process.argv.slice(2);
@@ -32,7 +31,25 @@ const opt = (n, d) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1
 const cmd = argv[0];
 const PORT = Number(opt('port', 8805));
 const CHECKOUT = opt('checkout', join(HERE, '..', '..'));
+const VOICE = opt('voice', 'app');
+const WS_NAME = opt('workspace', VOICE === 'app' ? 'eval' : 'eval-wa');
+const WS_DIR = join(T3HOME, 'workspaces-eval', WS_NAME);
 const RUN = join(OUT, `run-${PORT}`);
+
+/** Resolve voice files for composeBrief(): null for default app voice, or ordered absolute paths for a WhatsApp voice dir. */
+export function resolveVoiceFiles(checkout, voice = 'app') {
+  if (!voice || voice === 'app') return null;
+  const dir = join(checkout, 'assistant', 'voice', voice);
+  const order = ['whatsapp.md', 'core.md', 'humor.md'];
+  const files = order.map(f => join(dir, f)).filter(f => existsSync(f));
+  if (!files.length) throw new Error(`No voice files found in ${dir}`);
+  return files;
+}
+
+export function resolveEvalWorkspaceName(voice = 'app', workspace = null) {
+  if (workspace) return workspace;
+  return !voice || voice === 'app' ? 'eval' : 'eval-wa';
+}
 
 function base() {
   const dir = join(OUT, 'base');
@@ -60,26 +77,26 @@ function base() {
 
 async function workspace() {
   const b = base();
-  mkdirSync(join(WS, '.claude'), { recursive: true });
+  mkdirSync(join(WS_DIR, '.claude'), { recursive: true });
   // Brief: the lab's composed brief (same person, same paths), with the checkout's assistant/AGENTS.md body when it differs.
   const brief = composeBrief();
-  writeFileSync(join(WS, 'AGENTS.md'), brief);
-  if (!existsSync(join(WS, 'CLAUDE.md'))) symlinkSync('AGENTS.md', join(WS, 'CLAUDE.md'));
+  writeFileSync(join(WS_DIR, 'AGENTS.md'), brief);
+  if (!existsSync(join(WS_DIR, 'CLAUDE.md'))) symlinkSync('AGENTS.md', join(WS_DIR, 'CLAUDE.md'));
   for (const sub of ['skills', 'agents']) {
-    rmSync(join(WS, '.claude', sub), { recursive: true, force: true });
-    cpSync(join(CHECKOUT, 'assistant', sub), join(WS, '.claude', sub), { recursive: true });
+    rmSync(join(WS_DIR, '.claude', sub), { recursive: true, force: true });
+    cpSync(join(CHECKOUT, 'assistant', sub), join(WS_DIR, '.claude', sub), { recursive: true });
   }
   // As in production's WhatsApp workspaces: the bridge's skill (the chats' guide to the WhatsApp answer), which the
   // tasks' WhatsApp envelope names. Without it the chat loaded the older `whatsapp` relay skill instead (4 Nov eval).
   const bridgeSkill = join(CHECKOUT, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md');
   if (existsSync(bridgeSkill)) {
-    mkdirSync(join(WS, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true });
-    cpSync(bridgeSkill, join(WS, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'));
+    mkdirSync(join(WS_DIR, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true });
+    cpSync(bridgeSkill, join(WS_DIR, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'));
   }
   // Mirror .claude/skills (including whatsapp-bridge) into .agents/skills for Antigravity and Codex threads.
-  rmSync(join(WS, '.agents', 'skills'), { recursive: true, force: true });
-  mkdirSync(join(WS, '.agents'), { recursive: true });
-  cpSync(join(WS, '.claude', 'skills'), join(WS, '.agents', 'skills'), { recursive: true });
+  rmSync(join(WS_DIR, '.agents', 'skills'), { recursive: true, force: true });
+  mkdirSync(join(WS_DIR, '.agents'), { recursive: true });
+  cpSync(join(WS_DIR, '.claude', 'skills'), join(WS_DIR, '.agents', 'skills'), { recursive: true });
   // The lab's settings, plus the eval's Google rules (eval-settings.mjs: gcloud denied, the project's Gmail read-only).
   const settings = await evalSettings(JSON.parse(readFileSync(join(LAB_WS, '.claude', 'settings.json'), 'utf8')), { checkout: CHECKOUT });
   settings.disableClaudeAiConnectors = true;
@@ -89,10 +106,10 @@ async function workspace() {
   // The checkout's own Claude Code trims, when it has them, as scripts/t3-provision.mjs applies them in production.
   const lean = join(CHECKOUT, 'scripts', 'claude-lean.mjs');
   if (existsSync(lean)) (await import(lean)).leanClaude(settings);
-  writeFileSync(join(WS, '.claude', 'settings.json'), JSON.stringify(settings, null, 2));
-  for (const f of ['t3-skills.json']) if (existsSync(join(LAB_WS, '.claude', f))) cpSync(join(LAB_WS, '.claude', f), join(WS, '.claude', f));
+  writeFileSync(join(WS_DIR, '.claude', 'settings.json'), JSON.stringify(settings, null, 2));
+  for (const f of ['t3-skills.json']) if (existsSync(join(LAB_WS, '.claude', f))) cpSync(join(LAB_WS, '.claude', f), join(WS_DIR, '.claude', f));
   const token = readFileSync(join(b, 'token'), 'utf8').trim();
-  writeFileSync(join(WS, '.mcp.json'), JSON.stringify({ mcpServers: { db: { type: 'http', url: `http://127.0.0.1:${PORT}/api/ai/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2), { mode: 0o600 });
+  writeFileSync(join(WS_DIR, '.mcp.json'), JSON.stringify({ mcpServers: { db: { type: 'http', url: `http://127.0.0.1:${PORT}/api/ai/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2), { mode: 0o600 });
   // Register the workspace-isolated stdio MCP proxy in lab T3's Antigravity profile(s).
   const proxySrc = join(CHECKOUT, 'scripts', 'mcp-stdio-proxy.mjs');
   if (existsSync(proxySrc)) {
@@ -102,25 +119,27 @@ async function workspace() {
       : await import('../../scripts/antigravity-mcp-config.mjs');
     syncAntigravityMcp({ sourceProxy: proxySrc, proxyPath: join(OUT, 'mcp-stdio-proxy.mjs'), t3Home: T3HOME });
   }
-  return WS;
+  return WS_DIR;
 }
 
 /** The brief as production composes it (server/brief.mjs of the checkout under test, no lab section), for the admin `lab`. */
 function composeBrief() {
-  const code = `import(${JSON.stringify(join(CHECKOUT, 'server', 'brief.mjs'))}).then(m => process.stdout.write(m.composeBrief({ display_name: 'Lab', username: 'lab' }, { docs: ${JSON.stringify(join(CHECKOUT, 'docs'))}, knowledge: ${JSON.stringify(join(RUN, 'knowledge'))}, sheets: ${JSON.stringify(join(RUN, 'sheets.sqlite'))}, root: ${JSON.stringify(CHECKOUT)} })))`;
+  const voice = resolveVoiceFiles(CHECKOUT, VOICE);
+  const code = `import(${JSON.stringify(join(CHECKOUT, 'server', 'brief.mjs'))}).then(m => process.stdout.write(m.composeBrief({ display_name: 'Lab', username: 'lab' }, { docs: ${JSON.stringify(join(CHECKOUT, 'docs'))}, knowledge: ${JSON.stringify(join(RUN, 'knowledge'))}, sheets: ${JSON.stringify(join(RUN, 'sheets.sqlite'))}, root: ${JSON.stringify(CHECKOUT)}, voice: ${JSON.stringify(voice)} })))`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8' });
   if (r.status !== 0) throw new Error(`composeBrief: ${r.stderr}`);
   return r.stdout;
 }
 
 function project() {
-  const marker = join(WS, '.claude', 't3-project');
+  const marker = join(WS_DIR, '.claude', 't3-project');
   if (existsSync(marker)) return readFileSync(marker, 'utf8').trim();
   const t3 = existsSync(join(LAB, 'bin', 't3')) ? join(LAB, 'bin', 't3') : '/home/franz/.local/bin/t3';
-  const r = spawnSync(t3, ['project', 'add', WS, '--title', 'Assistant eval'], { env: { ...process.env, T3CODE_HOME: T3HOME }, encoding: 'utf8' });
+  const title = WS_NAME === 'eval' ? 'Assistant eval' : `Assistant eval (${VOICE})`;
+  const r = spawnSync(t3, ['project', 'add', WS_DIR, '--title', title], { env: { ...process.env, T3CODE_HOME: T3HOME }, encoding: 'utf8' });
   if (r.status !== 0) throw new Error(`t3 project add: ${r.stderr || r.stdout}`);
   const db = new DatabaseSync(join(T3HOME, 'userdata', 'statev2.sqlite'), { readOnly: true });
-  const row = db.prepare('SELECT project_id FROM projection_projects WHERE workspace_root = ? AND deleted_at IS NULL').get(WS);
+  const row = db.prepare('SELECT project_id FROM projection_projects WHERE workspace_root = ? AND deleted_at IS NULL').get(WS_DIR);
   db.close();
   if (!row) throw new Error('project not found after t3 project add');
   writeFileSync(marker, row.project_id);
@@ -169,7 +188,7 @@ async function start() {
   if (r.status !== 0) throw new Error(`dev-app.sh: ${r.stderr || r.stdout}`);
   await workspace();
   const pid = project();
-  console.log(JSON.stringify({ app: `http://127.0.0.1:${PORT}`, workspace: WS, projectId: pid, db: join(RUN, 'app.sqlite') }));
+  console.log(JSON.stringify({ app: `http://127.0.0.1:${PORT}`, workspace: WS_DIR, projectId: pid, db: join(RUN, 'app.sqlite') }));
 }
 
 /** Drafts of the eval since `since` are removed, so the next task sees no pending proposal. */
@@ -185,11 +204,17 @@ function reset(since = '1970') {
   console.log(JSON.stringify({ discarded: n, appliedSince: applied }));
 }
 
-if (cmd === 'start') await start();
-else if (cmd === 'stop') spawnSync(join(CHECKOUT, 'tools/lab/dev-app.sh'), ['--stop', '--port', String(PORT)], { stdio: 'inherit' });
-else if (cmd === 'workspace') console.log(await workspace());
-else if (cmd === 'reset') reset(opt('since'));
-else {
-  console.error('usage: eval-app.mjs start|stop|workspace|reset');
-  process.exit(2);
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  if (cmd === 'start') await start();
+  else if (cmd === 'stop') spawnSync(join(CHECKOUT, 'tools/lab/dev-app.sh'), ['--stop', '--port', String(PORT)], { stdio: 'inherit' });
+  else if (cmd === 'workspace') {
+    const ws = await workspace();
+    const pid = project();
+    console.log(JSON.stringify({ workspace: ws, projectId: pid, voice: VOICE }));
+  } else if (cmd === 'reset') reset(opt('since'));
+  else {
+    console.error('usage: eval-app.mjs start|stop|workspace|reset [--voice app|whatsapp-d3l] [--workspace eval|eval-wa]');
+    process.exit(2);
+  }
 }

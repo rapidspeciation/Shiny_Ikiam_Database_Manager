@@ -41,15 +41,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const argv0 = process.argv.slice(2);
 const TARGET = argv0.includes('--target') ? argv0[argv0.indexOf('--target') + 1] : 'eval';
-const EVAL_WS = '/home/franz/.t3-ithomiini-lab/workspaces-eval/eval';
+const IS_EVAL_TARGET = TARGET === 'eval' || TARGET === 'eval-wa';
+const EVAL_WS = join('/home/franz/.t3-ithomiini-lab/workspaces-eval', TARGET === 'eval-wa' ? 'eval-wa' : 'eval');
 const LAB = {
   home: '/home/franz/.t3-ithomiini-lab',
   local: 'http://127.0.0.1:3775',
   tokenFile: '/home/franz/.cache/ithomiini-lab/t3-admin-token',
   attachmentsDir: '/home/franz/.t3-ithomiini-lab/userdata/attachments',
-  // --target eval (default): the eval's own app (eval-app.mjs, port 8805), reset before every task.
+  // --target eval (default) or eval-wa (WhatsApp voice): the eval's own app (eval-app.mjs, port 8805), reset before every task.
   // --target lab: the shared lab app (8795, Sheets copy) as in the 4 Nov pilot; no reset.
-  ...(TARGET === 'eval'
+  ...(IS_EVAL_TARGET
     ? { projectId: readFileSync(join(EVAL_WS, '.claude', 't3-project'), 'utf8').trim(), workspace: EVAL_WS, appDb: '/home/franz/.cache/ithomiini-lab/assistant-eval/evalapp/run-8805/app.sqlite' }
     : { projectId: '2020befa-5e8a-47a9-8689-ece4297faa44', workspace: '/home/franz/.t3-ithomiini-lab/workspaces/lab', appDb: '/home/franz/.cache/ithomiini-lab/app-workbook/app.sqlite' }),
 };
@@ -57,7 +58,7 @@ const LAB = {
 /** Back to the frozen state before a task: the eval app's pending proposals discarded (none is ever applied). */
 const running = new Map(); // task id → start (ISO) of the chat tasks under way
 function resetState({ self, ids = [] } = {}) {
-  if (TARGET !== 'eval') return null;
+  if (!IS_EVAL_TARGET) return null;
   // Drafts of tasks still running in parallel are kept: only those older than every other running task go.
   const others = [...running].filter(([id]) => id !== self).map(([, t]) => t);
   const before = others.length ? others.sort()[0] : new Date().toISOString();
@@ -265,7 +266,7 @@ function proposalsOf(threadId, toolUseIds = [], ids = [], since = '1970') {
  * all written first and then waited for together in the replica `query` reads (fixtures.mjs). */
 async function fixtures(cells, label) {
   if (!cells.length) return;
-  if (TARGET !== 'eval') throw new Error('fixtures need the eval app');
+  if (!IS_EVAL_TARGET) throw new Error('fixtures need the eval app');
   const m = mcpFrom(LAB.workspace);
   const r = await setCells(cells, {
     edit: ({ sheet, row, field, value }) => {
@@ -463,12 +464,12 @@ if (argv.includes('--regrade')) {
   for (const r of fresh) console.log(r.id, r.sample ? `s${r.sample}` : '', r.score?.toFixed?.(2), r.invalid ? `INVALID: ${r.invalid}` : '', (r.checks ?? []).filter(c => !c.pass).map(c => JSON.stringify(c.check) + ' ' + (c.detail ?? '')).join(' | '));
   process.exit(0);
 }
-const fixed = TARGET === 'eval' ? await fixedContext(LAB.workspace).catch(() => null) : null;
+const fixed = IS_EVAL_TARGET ? await fixedContext(LAB.workspace).catch(() => null) : null;
 writeFileSync(join(outDir, 'run.json'), JSON.stringify({ ...RUN, tasksFile, tasks: tasks.map(t => t.id), startedAt: new Date().toISOString(), fixed }, null, 1));
 // Tasks that change the app's sheets (betweenTurns apply) run last and alone; the next run restarts the app.
 /** The eval app answers (an OOM kill on 4 Nov made later tasks fall back to Bash: such results are invalid). */
 async function appUp() {
-  if (TARGET !== 'eval') return true;
+  if (!IS_EVAL_TARGET) return true;
   try {
     return (await fetch('http://127.0.0.1:8805/health', { signal: AbortSignal.timeout(5000) })).ok;
   } catch {
@@ -491,7 +492,7 @@ const runOne = async (task, sample = 1) => {
   const started = Date.now();
   let res;
   try {
-    if (appliesDrafts(task) && TARGET === 'eval') await restartApp();
+    if (appliesDrafts(task) && IS_EVAL_TARGET) await restartApp();
     res = { ...meta, ...(task.tier === 'unit' ? await runUnit(task) : await runChat(task, sample)) };
   } catch (e) {
     running.delete(`${task.id}#${sample}`);
