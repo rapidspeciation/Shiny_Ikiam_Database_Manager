@@ -719,6 +719,7 @@ export function buildDisplaySpace(
   for (let j = 0; j < displayLeaves.length; j++) leaf2sp[j] = spIdx.get(displaySpNames[j])!
   const ssp = rawSsp ? Uint8Array.from(displayLeaves, lf => (lf.split(' ').length >= 3 ? 1 : 0)) : null
   const geo = rawGeo ? Uint8Array.from(displayGeoList) : null
+  // `rows` intentionally remains the raw fp16 weight row count (15,347) while `leaves` holds the display count (15,300).
   const nextMeta: HeadMeta = {
     ...meta,
     species: displaySpecies,

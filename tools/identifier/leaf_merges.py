@@ -13,15 +13,22 @@ import os
 SCHEMA = "ithomiini-leaf-merges/1"
 
 
-def load_leaf_merges(path, head_sha=None):
-    """Load and validate an ithomiini-leaf-merges/1 file; return {} if absent or for another head."""
+def load_leaf_merges(path, head_sha=None, required=False):
+    """Load and validate an ithomiini-leaf-merges/1 file.
+
+    When `required=True`, raises FileNotFoundError if absent and ValueError on head mismatch.
+    """
     if not path or not os.path.exists(path):
+        if required:
+            raise FileNotFoundError(f"Required leaf merges file not found: {path}")
         return {}
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
     if doc.get("schema") != SCHEMA:
         raise ValueError(f"{path}: unexpected schema {doc.get('schema')!r}")
     if head_sha is not None and doc.get("head") != head_sha:
+        if required:
+            raise ValueError(f"{path}: head mismatch {doc.get('head')!r} != {head_sha!r}")
         return {}
     merges = doc.get("merges")
     if not isinstance(merges, dict):
@@ -127,7 +134,7 @@ def build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_leaf2sp, raw
 
 
 def merge_leaf_probs(raw_probs, old_to_new, n_display, np):
-    """Sum raw leaf probabilities into display leaves (exact probability conservation)."""
+    """Sum raw leaf probabilities into display leaves (conserves total mass within float64 rounding, < 1e-12)."""
     probs = np.asarray(raw_probs, dtype=np.float64)
     if old_to_new is None:
         return probs

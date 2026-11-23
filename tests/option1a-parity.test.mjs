@@ -40,9 +40,19 @@ import numpy as np
 sys.path.insert(0, sys.argv[1])
 import leaf_merges
 
-merges = leaf_merges.load_leaf_merges(sys.argv[2], "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552")
+merges = leaf_merges.load_leaf_merges(sys.argv[2], "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552", required=True)
 assert len(merges) == 48, len(merges)
 assert leaf_merges.load_leaf_merges(sys.argv[2], "0" * 64) == {}
+try:
+    leaf_merges.load_leaf_merges("/nonexistent/leaf_merges.json", required=True)
+    raise AssertionError("expected FileNotFoundError")
+except FileNotFoundError:
+    pass
+try:
+    leaf_merges.load_leaf_merges(sys.argv[2], "0" * 64, required=True)
+    raise AssertionError("expected ValueError on head mismatch")
+except ValueError:
+    pass
 
 controls = [
     "Greta diaphanus quisqueya",

@@ -206,7 +206,7 @@ class Identifier:
         self.head.eval()
         import leaf_merges
 
-        merges = leaf_merges.load_leaf_merges(LEAF_MERGES, HEAD_SHA256)
+        merges = leaf_merges.load_leaf_merges(LEAF_MERGES, HEAD_SHA256, required=True)
         space = leaf_merges.build_display_space(
             raw_leaves,
             ck["rank_vocab"]["species"],
@@ -216,6 +216,7 @@ class Identifier:
             merges,
             np,
         )
+        self._merge_leaf_probs = leaf_merges.merge_leaf_probs
         self.old_to_new = space["old_to_new"]
         self.leaves = space["leaves"]
         self.sp_vocab = space["sp_vocab"]
@@ -280,15 +281,14 @@ class Identifier:
         np, torch = self.np, self.torch
         with torch.no_grad():
             logits = self.head(torch.from_numpy(feat.astype(np.float32)))
+            # field-sex-gate-check.py stubs Logits without .double() and constructs Identifier via __new__.
             if hasattr(logits, "double"):
                 logits = logits.double()
             raw = logits.softmax(1)[0].numpy().astype(np.float64)
         old_to_new = getattr(self, "old_to_new", None)
         if old_to_new is None:
             return raw
-        probs = np.zeros(len(self.leaves), dtype=np.float64)
-        np.add.at(probs, old_to_new, raw)
-        return probs
+        return self._merge_leaf_probs(raw, old_to_new, len(self.leaves), np)
 
     def tops(self, feat, side=None, ecuador=None, higher=False):
         np = self.np
