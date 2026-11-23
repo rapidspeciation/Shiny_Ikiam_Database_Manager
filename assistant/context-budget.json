@@ -26,7 +26,7 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15835,
+      "bytes": 15175,
       "reason": "Key documents (Franz, 18 Nov 2026: the assistant missed the 2024-0443 contract, a link shared only on WhatsApp): «Documentos clave» names where the latest versions live, search WhatsApp and Drive before saying a document does not exist; whatsapp_search's name among the deferred tools"
     },
     "skill:app-dev": {

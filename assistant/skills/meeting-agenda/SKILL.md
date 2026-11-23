@@ -16,8 +16,12 @@ writes the Agenda in English as a checklist. Each point is «Topic (Owner)», fo
 
 | Asked | You give |
 |---|---|
-| «temas para la reunión de mañana», «¿qué hay pendiente?» | Text in the chat (Spanish), grouped as below, each topic with what it is about and its owner. No proposal unless asked. |
+| «temas para la reunión de mañana», «¿qué hay pendiente?», summary of the week | Text in the chat (Spanish), grouped as below, each topic with what it is about and its owner. No proposal unless asked. **For WhatsApp replies**, also read `reference/whatsapp-summary.md` in this skill folder for the full Spanish summary rules and <= 450-word format. |
 | «prepara la agenda propuesta», «crea el documento de la reunión» | The agenda (English, the minutes' format) as a proposal with `meeting_doc_propose`, and in the chat: the `whatsapp` text it returns and the preview `link`. |
+
+## Summary of the week & pending items
+
+For meeting topics, pending items or a summary of the week: give what changed since the last meeting and what is still open (a decision pending, a follow-up the minutes assign), one line each with what it is, who (as the source names them) and the next step. The minutes are the latest «NNN Meeting-dd/mm/yyyy» documents in the Meetings folder of `{{knowledge}}` (or `meeting_doc_context` when configured). Keep their content, not just the heading, and quote them when they are thin, translated into the language of the question. Leave out standing alerts and counts that have not changed in weeks, but bring the alerts that ask to finish something left open (a census open with no marks, census proposals still pending). An F1/F2 families item gives its pairs' F1 clutches since the last meeting; other clutch counts are not meeting topics.
 
 ## What may be on the agenda
 
