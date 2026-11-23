@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 14449,
-      "reason": "Phase 2 (preserves 18 Nov key-documents): conditional meeting-agenda, brief dedup, core SQL columns, completeness & duplicate-proposal guards (net -1,386 B vs 471f55d7)"
+      "bytes": 14458,
+      "reason": "Phase 2 (preserves 18 Nov key-documents): conditional meeting-agenda, brief dedup, core SQL columns, non-NA cross-sheet dedupe, completeness & duplicate-proposal guards (net -1,377 B vs 471f55d7)"
     },
     "skill:app-dev": {
       "bytes": 423,
