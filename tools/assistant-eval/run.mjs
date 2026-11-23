@@ -86,6 +86,7 @@ const RUN = {
   effort: opt('effort', 'medium'),
   // claude-eval-main: Franz's main login on the lab T3. claude-ithomiini and claude-eval use the team's account.
   instance: opt('instance', 'claude-eval-main'),
+  checkout: opt('checkout', null),
   samples: Number(opt('samples', 2)),
   turnTimeoutMs: Number(opt('turn-timeout', 1200)) * 1000,
   variant: opt('variant', 'baseline'),
@@ -95,7 +96,7 @@ const RUN = {
 };
 if (!Number.isInteger(RUN.samples) || RUN.samples < 1) throw new Error(`--samples must be a whole number ≥ 1, not ${opt('samples')}`);
 if (!(RUN.turnTimeoutMs > 0)) throw new Error(`--turn-timeout must be seconds > 0, not ${opt('turn-timeout')}`);
-const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+const todayGuayaquil = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
 const tasks = JSON.parse(readFileSync(tasksFile, 'utf8')).tasks.filter(t => !only || only.has(t.id));
 
 function t3turn(req) {
@@ -349,7 +350,8 @@ async function runChat(task, sample = 1) {
     }
     const metrics = chatMetrics(threadId);
     const proposals = proposalsOf(threadId, metrics.toolUseIds, metrics.uuids, new Date(t0).toISOString());
-    const g = grade(task, { ...metrics, proposals, prompts }, { today: TODAY });
+    const sampleToday = todayGuayaquil();
+    const g = grade(task, { ...metrics, proposals, prompts }, { today: sampleToday });
     const cut = routing ? cutGraded(task, metrics.tools) : [];
     result = {
       id: task.id,
@@ -376,7 +378,7 @@ async function runChat(task, sample = 1) {
       finalText: metrics.finalText.slice(0, 3000),
       turnTexts: metrics.turnTexts.map(t => t.slice(0, 3000)),
       startedAt: new Date(t0).toISOString(),
-      today: TODAY,
+      today: sampleToday,
     };
     return result;
   } finally {
@@ -479,9 +481,10 @@ async function appUp() {
 const appliesDrafts = t => (t.betweenTurns ?? []).some(a => a.action === 'applyLatest');
 /** A fresh eval app from the frozen copy, before each sample of a task that applies a draft. */
 async function restartApp() {
-  spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'stop'], { encoding: 'utf8' });
-  const r = spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'start'], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`eval app restart: ${(r.stderr || r.stdout).slice(-300)}`);
+  const co = RUN.checkout ? ['--checkout', RUN.checkout] : [];
+  spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'stop', ...co], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(HERE, 'eval-app.mjs'), 'start', ...co], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`eval app restart: ${(r.stderr || r.stdout).slice(0, 400)}`);
   for (let i = 0; i < 60 && !(await appUp()); i++) await new Promise(res => setTimeout(res, 3000));
   if (!(await appUp())) throw new Error('eval app restart: no /health after 3 min');
 }
