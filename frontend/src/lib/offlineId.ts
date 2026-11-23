@@ -808,10 +808,14 @@ export function subspeciesBySpecies(head: Head, p: Float64Array, species: number
 }
 
 /**
- * Every leaf's probability (worker.py tops): softmax of the cosine head, then the geographic prior when a side of
- * the Andes is given (names off that side, or not recorded in Ecuador, weigh 2 %), normalised again.
+ * Every leaf's probability stages (worker.py tops): raw softmax (`rawP`), display-merged (`mergedP`, Option 1A),
+ * and post-prior normalized (`p`, when a side of the Andes is given).
  */
-export function leafScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
+export function leafScoreStages(
+  head: Head,
+  feature: Float32Array,
+  side: Side = null,
+): { rawP: Float64Array; mergedP: Float64Array; p: Float64Array } {
   const { meta, w, geo, rawRows, old2new, leaf2sp } = head
   const d = meta.dim, n = rawRows
   let norm = 0
@@ -845,15 +849,17 @@ export function leafScores(head: Head, feature: Float32Array, side: Side = null)
   const rawP = logits
   for (let r = 0; r < n; r++) rawP[r] /= total
   // Option 1A display-time leaf probability sum BEFORE geographic prior and rank roll-up.
-  let p: Float64Array
+  let mergedP: Float64Array
   if (old2new) {
-    p = new Float64Array(leaf2sp.length)
-    for (let r = 0; r < n; r++) p[old2new[r]] += rawP[r]
+    mergedP = new Float64Array(leaf2sp.length)
+    for (let r = 0; r < n; r++) mergedP[old2new[r]] += rawP[r]
   } else {
-    p = rawP
+    mergedP = rawP
   }
+  let p = mergedP
   const m = p.length
   if (geo && (side === 'East' || side === 'West')) {
+    p = Float64Array.from(mergedP)
     const sideBit = side === 'East' ? 4 : 8
     let sum = 0
     for (let r = 0; r < m; r++) {
@@ -863,7 +869,15 @@ export function leafScores(head: Head, feature: Float32Array, side: Side = null)
     }
     if (sum > 0) for (let r = 0; r < m; r++) p[r] /= sum
   }
-  return p
+  return { rawP, mergedP, p }
+}
+
+/**
+ * Every leaf's probability (worker.py tops): softmax of the cosine head, then the geographic prior when a side of
+ * the Andes is given (names off that side, or not recorded in Ecuador, weigh 2 %), normalised again.
+ */
+export function leafScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
+  return leafScoreStages(head, feature, side).p
 }
 
 /**
