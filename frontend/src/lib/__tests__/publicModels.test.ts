@@ -37,20 +37,31 @@ describe('the public (Hugging Face) models', () => {
   })
 })
 
-describe('the public small model is the server\'s current one (server/offline-id.mjs STUDENT: S_B, or L1 after a rollback)', () => {
-  it('the same file, version, input size and note; a phone holding L1 from Hugging Face is offered S_B', async () => {
+describe('the public small model is the server\'s current one (server/offline-id.mjs STUDENT: W2, or S_B / L1 after a rollback)', () => {
+  it('the same file, version, input size and note; a phone holding S_B or L1 from Hugging Face is offered W2', async () => {
     const url = new URL('../../../../server/offline-id.mjs', import.meta.url).href
     const { STUDENT } = await import(/* @vite-ignore */ url)
     const small = publicListing().find(f => f.role === 'student')!
-    expect({ name: small.name, sha256: small.sha256, version: small.version, input: small.input, notes: small.notes }).toEqual({
+    expect({ name: small.name, bytes: small.bytes, sha256: small.sha256, version: small.version, input: small.input, notes: small.notes }).toEqual({
       name: STUDENT.name,
+      bytes: STUDENT.bytes,
       sha256: STUDENT.sha256,
       version: STUDENT.version,
       input: STUDENT.input,
       notes: STUDENT.notes,
     })
     expect(small.url).toContain(`/fr4nzzch/butterfly-id-small-onnx/resolve/`)
-    if (small.name === 'student_SB_int8.onnx') {
+    if (small.name === 'student_W2_int8.onnx') {
+      expect(small.url).toContain('/resolve/d56b55fab6c2f64258670a1f2e99dd187f43472b/')
+      expect(small.notes?.es).toBe('Mejor en fotos nuevas de iNaturalist: acierta la especie en el 84,7 % frente al 82,7 % de la versión anterior.')
+      const sb: StoredFile = { etag: '"sha256-200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762"', bytes: 23380320, role: 'student', parts: ['200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762'], version: 'small-SB-20261111', input: { size: 182 } }
+      const l1: StoredFile = { etag: '"sha256-d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb"', bytes: 23565423, role: 'student', parts: ['d6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb'] }
+      expect(isCurrent(sb, small as ListedFile)).toBe(false)
+      expect(isCurrent(l1, small as ListedFile)).toBe(false)
+      expect(studentSizeOf({}, 'student_W2_int8.onnx')).toBe(182)
+      expect(studentSizeOf(sb, 'student_SB_int8.onnx')).toBe(182)
+      expect(studentSizeOf(l1, 'student_L1_int8.onnx')).toBe(192)
+    } else if (small.name === 'student_SB_int8.onnx') {
       expect(small.url).toContain('/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/')
       expect(small.notes?.es).toBe('Mejor en fotos nuevas de iNaturalist: acierta la especie en el 81,8 % frente al 79,4 % de la versión anterior.')
       // L1 as a signed-out phone kept it (its Hugging Face ETag and part hash, no version): not current, so an update.

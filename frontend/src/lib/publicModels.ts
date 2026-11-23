@@ -22,10 +22,15 @@ export interface PublicFile {
   notes?: { es?: string; en?: string }
 }
 
-// The small model, S_B and the previous one: the list names one (rollback by code: SMALL_L1 here and STUDENT_L1 in
-// server/offline-id.mjs; model-versions HANDOFF.md 0b).
-// Model S_B (11 Nov 2026), 182 px: the server's built-in small model too (server/offline-id.mjs STUDENT). Commit
-// fb2068d5 adds it beside L1.
+// The small model, W2 and the previous ones: the list names one (rollback by code: SMALL_SB or SMALL_L1 here and
+// STUDENT_SB or STUDENT_L1 in server/offline-id.mjs; model-versions HANDOFF.md 0b).
+// Model W2 (23 Nov 2026), 182 px: the server's built-in small model too (server/offline-id.mjs STUDENT). Commit
+// d56b55fa adds it beside S_B and L1.
+export const SMALL_W2: PublicFile = { name: "student_W2_int8.onnx", role: "student", bytes: 26327311, sha256: "52c76bd7de48fa228be885c9fa3d1d9af112cd838b25fd2e80d7dbc63ea6cd74", version: "small-W2-20261123", input: { size: 182, values: "clip" },
+  url: "https://huggingface.co/fr4nzzch/butterfly-id-small-onnx/resolve/d56b55fab6c2f64258670a1f2e99dd187f43472b/student_W2_int8.onnx",
+  parts: ["52c76bd7de48fa228be885c9fa3d1d9af112cd838b25fd2e80d7dbc63ea6cd74"],
+  notes: { es: "Mejor en fotos nuevas de iNaturalist: acierta la especie en el 84,7\u00a0% frente al 82,7\u00a0% de la versión anterior.", en: "Better on new iNaturalist photos: the species right in 84.7\u00a0% against 82.7\u00a0% for the previous version." } }
+// Model S_B (11 Nov 2026), 182 px, at its own commit fb2068d5 (kept in the repo for rollback).
 export const SMALL_SB: PublicFile = { name: "student_SB_int8.onnx", role: "student", bytes: 23380320, sha256: "200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762", version: "small-SB-20261111", input: { size: 182, values: "clip" },
   url: "https://huggingface.co/fr4nzzch/butterfly-id-small-onnx/resolve/fb2068d595546d1a42e6c0f780afb82500b238c7/student_SB_int8.onnx",
   parts: ["200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762"],
@@ -49,7 +54,7 @@ export const PUBLIC_FILES: PublicFile[] = [
   { name: "head_6fa6ab78_fp16.bin", role: "head", bytes: 31430656, sha256: "d20188e14a19a11eb6f8b82543017ef78314dd89e3e57814d101fe6373112660",
     url: "https://huggingface.co/fr4nzzch/butterfly-id-classifier/resolve/4bb06f9080809ca6b3196f49baeea78870a8d1ec/offline/head_6fa6ab78_fp16.bin",
     parts: ["d20188e14a19a11eb6f8b82543017ef78314dd89e3e57814d101fe6373112660"] },
-  SMALL_SB,
+  SMALL_W2,
 ]
 
 /** The models' public pages (licence and model card), for «Acerca de y licencias». */

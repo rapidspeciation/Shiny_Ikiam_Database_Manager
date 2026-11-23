@@ -329,7 +329,7 @@ function cManifest(bytes, extra = {}) {
   };
 }
 
-test('every listed file carries a version and its SHA-256: the content for the identifier, S_B and B for the small and sex models', async () => {
+test('every listed file carries a version and its SHA-256: the content for the identifier, W2 and B for the small and sex models', async () => {
   const { base, ident, server, signIn } = await setup();
   try {
     signIn();
@@ -337,7 +337,7 @@ test('every listed file carries a version and its SHA-256: the content for the i
     for (const f of list.files) {
       const bytes = readFileSync(join(ident, MODELS.find(m => m.name === f.name).path));
       assert.equal(f.sha256, sha256Of(bytes), f.name);
-      // The current small model (S_B; L1 in a rollback build) with its version, input size and note.
+      // The current small model (W2; S_B or L1 in a rollback build) with its version, input size and note.
       assert.equal(f.version, f.role === 'sex' ? SEX_B.version : f.role === 'student' ? STUDENT.version : contentVersion(f.sha256), f.name);
       assert.deepEqual(f.input, f.role === 'student' ? STUDENT.input : undefined, f.name);
       if (f.role === 'student') assert.deepEqual(f.notes, STUDENT.notes);
@@ -583,7 +583,7 @@ test('a manifest whose role is not its file\'s is not used', async () => {
 
 // ---------------------------------------------------------------- pages from before model versions (production 6366223e)
 
-test('a page from before model versions gets L1 and B only; the versioned list (?caps=versions) offers S_B and a manifest\'s C', async () => {
+test('a page from before model versions gets L1 and B only; the versioned list (?caps=versions) offers the current small model and a manifest\'s C', async () => {
   const { port, ident, server, signIn } = await setup();
   const p = '/prueba-offline/models';
   try {

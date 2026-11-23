@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { COMPAT_MODELS, contentVersion, phoneModels, SEX_MANIFEST, STUDENT_MANIFEST } from '../../server/offline-id.mjs';
+import { COMPAT_MODELS, contentVersion, phoneModels, SEX_MANIFEST, STUDENT, STUDENT_MANIFEST } from '../../server/offline-id.mjs';
 
 const dir = process.argv[2];
 if (!dir) {
@@ -28,7 +28,7 @@ const { models, problems } = await phoneModels(dir);
 const manifest = await stat(join(dir, SEX_MANIFEST)).catch(() => null);
 console.log(`Sex model: ${manifest ? SEX_MANIFEST : `no ${SEX_MANIFEST}, model B (built in)`}`);
 const smallManifest = await stat(join(dir, STUDENT_MANIFEST)).catch(() => null);
-console.log(`Small model: ${smallManifest ? STUDENT_MANIFEST : `no ${STUDENT_MANIFEST}, model S_B (built in)`}`);
+console.log(`Small model: ${smallManifest ? STUDENT_MANIFEST : `no ${STUDENT_MANIFEST}, ${STUDENT.version} (built in)`}`);
 let sexOffered = false;
 for (const m of models) {
   const file = join(dir, m.path);

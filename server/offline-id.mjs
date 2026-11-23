@@ -33,26 +33,38 @@ import { constants as zlibConstants, createGunzip, createGzip, createZstdCompres
  * same detector, crop and head). Kept in offline/ beside the head. Which file it is, its version, SHA-256 and input
  * size come from the manifest offline/student-model.json (STUDENT_MANIFEST, checkPhoneManifest), so a new small model
  * is a data change even when its input size differs (the phone keeps the size with the file). Without a manifest,
- * model S_B (STUDENT: DINOv2-S/14 reg4 at 182 px, int8, 11 Nov 2026; WingsClassificator
- * reports/model_autoresearch_20261109/taxonomic EXPORT.md, B12 fresh-set check passed). A file whose SHA-256 is not
+ * model W2 (STUDENT: DINOv2-S/14 reg4 + LLRD at 182 px, 2-layer selective fp32 int8, 23 Nov 2026; WingsClassificator
+ * reports/small_cls_autoresearch_20261122/EXPORT.md, frozen S2 fresh-set check passed). A file whose SHA-256 is not
  * the expected one is not offered (checked once per file version), and a missing one only hides the option.
- * Rollback without a code change: a manifest naming L1 (STUDENT_L1; model-versions HANDOFF.md).
+ * Rollback without a code change: a manifest naming S_B (STUDENT_SB) or L1 (STUDENT_L1; model-versions HANDOFF.md).
  */
+export const STUDENT_W2 = {
+  name: 'student_W2_int8.onnx',
+  sha256: '52c76bd7de48fa228be885c9fa3d1d9af112cd838b25fd2e80d7dbc63ea6cd74',
+  bytes: 26327311,
+  version: 'small-W2-20261123',
+  input: { size: 182, values: 'clip' },
+  // Shown with the update in Descargas: frozen S2, 792 never-seen Neotropical iNaturalist photos, species top-1.
+  notes: { es: 'Mejor en fotos nuevas de iNaturalist: acierta la especie en el 84,7\u00a0% frente al 82,7\u00a0% de la versión anterior.', en: 'Better on new iNaturalist photos: the species right in 84.7\u00a0% against 82.7\u00a0% for the previous version.' },
+};
+/** Model S_B (DINOv2-S/14 reg4, 182 px, 11 Nov 2026): the previous small model, kept in offline/ for rollback. */
 export const STUDENT_SB = {
   name: 'student_SB_int8.onnx',
   sha256: '200343ee87918fb7b8e2d2ff8433d9aa54995c9921ab5b8f942ff3ab25385762',
+  bytes: 23380320,
   version: 'small-SB-20261111',
   input: { size: 182, values: 'clip' },
   // Shown with the update in Descargas: B12, 1,156 iNaturalist photos never seen in training, species top-1.
   notes: { es: 'Mejor en fotos nuevas de iNaturalist: acierta la especie en el 81,8\u00a0% frente al 79,4\u00a0% de la versión anterior.', en: 'Better on new iNaturalist photos: the species right in 81.8\u00a0% against 79.4\u00a0% for the previous version.' },
 };
-/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the previous small model, kept in offline/ for older pages and the rollback. */
+/** Model L1 (ViT-S/16, 192 px, 31 Oct 2026): the original small model, kept in offline/ for older pages and rollback. */
 export const STUDENT_L1 = { name: 'student_L1_int8.onnx', sha256: 'd6bdc3e5f8721b6ff707b4f46625cc8d8c9af86c0df757f9b2619aed1cc2f5fb', bytes: 23565423, version: 'small-L1-20261031', input: { size: 192, values: 'clip' } };
 /**
- * The small model this server offers to current pages. Rollback by code (model-versions HANDOFF.md 0b): STUDENT_L1
- * here and SMALL_L1 in frontend/src/lib/publicModels.ts, nothing else (the phone keeps reading stored sizes).
+ * The small model this server offers to current pages. Rollback by code (model-versions HANDOFF.md 0b): STUDENT_SB
+ * (or STUDENT_L1) here and SMALL_SB (or SMALL_L1) in frontend/src/lib/publicModels.ts, nothing else (the phone keeps
+ * reading stored sizes).
  */
-export const STUDENT = STUDENT_SB;
+export const STUDENT = STUDENT_W2;
 export const STUDENT_MANIFEST = 'offline/student-model.json';
 
 /**
@@ -219,7 +231,7 @@ export async function phoneModels(identifierDir, { versioned = true } = {}) {
  * The capability a client names to get the versioned listing (list.json?caps=versions; frontend/src/lib/offlineEngine.ts
  * and src/offline/main.ts send it). A client that does not name it is a build from before model versions (production
  * up to 11 Nov 2026): it feeds any small model 192 px and takes the sex model only under model B's name, and a page
- * left open keeps running that code. It gets COMPAT_MODELS: L1 and B, never S_B or a manifest's model.
+ * left open keeps running that code. It gets COMPAT_MODELS: L1 and B, never the current small model or a manifest's model.
  */
 export const LIST_CAPS = 'versions';
 const L1_ENTRY = { name: STUDENT_L1.name, path: `offline/${STUDENT_L1.name}`, role: 'student', sha256: STUDENT_L1.sha256, optional: true, packed: false, version: STUDENT_L1.version, input: STUDENT_L1.input };

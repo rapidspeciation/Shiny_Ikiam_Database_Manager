@@ -314,7 +314,7 @@ const modelRows = computed<ModelRow[]>(() =>
       ready: ready.value[k],
       // On the phone and the list offers a newer version (a phone with no stored version counts as older).
       outdated: o?.state === 'update',
-      // An update says its exact size (one file of about 23 MB, not «25 MB»); a first download its rounded size.
+      // An update says its exact size (one file of about 26 MB, not «25 MB»); a first download its rounded size.
       downloadMb: o?.state === 'update' ? mb(s.wire || s.plain) : roughMb(s.wire || s.plain || publicSize(k)),
       takesMb: roughMb(s.total),
       recommended: k === 'small',
