@@ -26,7 +26,7 @@
   },
   "parts": {
     "brief": {
-      "bytes": 15175,
+      "bytes": 13719,
       "reason": "Key documents (Franz, 18 Nov 2026: the assistant missed the 2024-0443 contract, a link shared only on WhatsApp): «Documentos clave» names where the latest versions live, search WhatsApp and Drive before saying a document does not exist; whatsapp_search's name among the deferred tools"
     },
     "skill:app-dev": {
@@ -106,7 +106,7 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp:query": {
-      "bytes": 3764,
+      "bytes": 2362,
       "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
     },
     "mcp:get_record": {
@@ -162,7 +162,7 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp always-loaded (total)": {
-      "bytes": 25300,
+      "bytes": 23898,
       "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 57 failed calls in the retro's week were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
     },
     "mcp deferred names": {
