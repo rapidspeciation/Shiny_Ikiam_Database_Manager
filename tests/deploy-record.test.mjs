@@ -362,6 +362,29 @@ test('the T3 workspaces hash: the same from a PC and from claudeclaw (file modes
     writeFileSync(join(shared, 't3-workspaces', 'pato', 'AGENTS.md'), 'edited by hand');
     assert.notEqual(await t3ProvisionStamp(release, env), second, 'the brief of a workspace changed');
     assert.notEqual(await t3ProvisionStamp(release, { ...env, ITHOMIINI_CLAUDE_LEAN: '0' }), await t3ProvisionStamp(release, env), 'a provision variable');
+
+    // Antigravity proxy (release + workspaces copy) and profile mcp_config.json changes invalidate the stamp.
+    const beforeAg = await t3ProvisionStamp(release, env);
+    mkdirSync(join(release, 'scripts'), { recursive: true });
+    writeFileSync(join(release, 'scripts', 'mcp-stdio-proxy.mjs'), '// v1\n');
+    const afterProxySrc = await t3ProvisionStamp(release, env);
+    assert.notEqual(afterProxySrc, beforeAg, 'release scripts/mcp-stdio-proxy.mjs changed');
+    writeFileSync(join(shared, 't3-workspaces', '.antigravity-mcp-proxy.mjs'), '// v1\n');
+    chmodSync(join(shared, 't3-workspaces', '.antigravity-mcp-proxy.mjs'), 0o755);
+    const afterProxyCopy = await t3ProvisionStamp(release, env);
+    assert.notEqual(afterProxyCopy, afterProxySrc, 'workspaces .antigravity-mcp-proxy.mjs changed');
+    const agCfgDir = join(dir, 'home', '.t3', 'userdata', 'providers', 'antigravity', 'prof1', 'config');
+    mkdirSync(agCfgDir, { recursive: true });
+    const afterProfileDir = await t3ProvisionStamp(release, env);
+    assert.notEqual(afterProfileDir, afterProxyCopy, 'a new Antigravity profile appeared');
+    const agCfg = join(agCfgDir, 'mcp_config.json');
+    writeFileSync(agCfg, '{"mcpServers":{}}\n', { mode: 0o600 });
+    const afterCfg = await t3ProvisionStamp(release, env);
+    assert.notEqual(afterCfg, afterProfileDir, 'Antigravity mcp_config.json written');
+    chmodSync(agCfg, 0o664);
+    assert.equal(await t3ProvisionStamp(release, env), afterCfg, 'umask on mcp_config.json does not change hash');
+    writeFileSync(agCfg, '{"mcpServers":{"db":{"command":"node"}}}\n');
+    assert.notEqual(await t3ProvisionStamp(release, env), afterCfg, 'Antigravity mcp_config.json content changed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

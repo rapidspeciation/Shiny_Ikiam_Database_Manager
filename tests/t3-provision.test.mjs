@@ -358,3 +358,69 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps only the 
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('Antigravity MCP provisioning: copies stable proxy, writes mode 0600 mcp_config.json (missing/0-byte/existing), preserves other servers, idempotent, clean no-op when absent', () => {
+  const home = mkdtempSync(join(tmpdir(), 't3-provision-ag-'));
+  try {
+    const shared = join(home, 'ithomiini', 'shared');
+    mkdirSync(shared, { recursive: true });
+    const db = new DatabaseSync(join(shared, 'database.sqlite'));
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE ai_tokens(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+      INSERT INTO users VALUES ('u1','ana','Ana Pérez','editor',1);`);
+    mkdirSync(join(home, '.config', 'ithomiini'), { recursive: true });
+    writeFileSync(join(home, '.claude.json'), '{}');
+    const t3Home = join(home, '.t3');
+    const workspaces = join(shared, 't3-workspaces');
+    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), T3CODE_HOME: t3Home, ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
+    const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+
+    // 1. Clean no-op when no Antigravity profiles exist.
+    run('ana');
+    const agRoot = join(t3Home, 'userdata', 'providers', 'antigravity');
+    const proxyPath = join(workspaces, '.antigravity-mcp-proxy.mjs');
+    assert.ok(!existsSync(agRoot), 'no antigravity folder created when absent');
+    assert.ok(!existsSync(proxyPath), 'no proxy copied when no antigravity profiles exist');
+
+    // 2. Profiles: missing mcp_config.json, 0-byte empty file, existing with other keys/servers, and a subdir without config/.
+    const pMissing = join(agRoot, 'profile-missing', 'config');
+    const pZero = join(agRoot, 'profile-zero', 'config');
+    const pExisting = join(agRoot, 'profile-existing', 'config');
+    const pNoCfg = join(agRoot, 'profile-no-config');
+    for (const d of [pMissing, pZero, pExisting, pNoCfg]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(pZero, 'mcp_config.json'), ''); // 0-byte file as T3 creates
+    writeFileSync(
+      join(pExisting, 'mcp_config.json'),
+      JSON.stringify({ customFlag: true, mcpServers: { other: { command: '/bin/echo', args: ['hi'] }, db: { command: '/old/node', args: ['/old/proxy.mjs'] } } }, null, 2),
+    );
+
+    run('--refresh-all');
+
+    // Stable proxy copied with mode 0o755 and exact contents of scripts/mcp-stdio-proxy.mjs.
+    const proxySrc = new URL('../scripts/mcp-stdio-proxy.mjs', import.meta.url).pathname;
+    assert.ok(existsSync(proxyPath));
+    assert.equal(statSync(proxyPath).mode & 0o777, 0o755);
+    assert.equal(readFileSync(proxyPath, 'utf8'), readFileSync(proxySrc, 'utf8'));
+
+    const expectedEntry = { command: process.execPath, args: [proxyPath] };
+    for (const dir of [pMissing, pZero, pExisting]) {
+      const file = join(dir, 'mcp_config.json');
+      assert.equal(statSync(file).mode & 0o777, 0o600, `${file} mode 0600`);
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      assert.deepEqual(parsed.mcpServers.db, expectedEntry);
+    }
+    const existingParsed = JSON.parse(readFileSync(join(pExisting, 'mcp_config.json'), 'utf8'));
+    assert.equal(existingParsed.customFlag, true, 'other top-level keys preserved');
+    assert.deepEqual(existingParsed.mcpServers.other, { command: '/bin/echo', args: ['hi'] }, 'other mcpServers preserved');
+    assert.ok(!existsSync(join(pNoCfg, 'config')), 'subdir without config/ untouched');
+
+    // 3. Idempotent on a second --refresh-all.
+    const before = readFileSync(join(pExisting, 'mcp_config.json'), 'utf8');
+    run('--refresh-all');
+    assert.equal(readFileSync(join(pExisting, 'mcp_config.json'), 'utf8'), before);
+    assert.equal(statSync(join(pExisting, 'mcp_config.json')).mode & 0o777, 0o600);
+    db.close();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

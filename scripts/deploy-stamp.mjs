@@ -11,7 +11,7 @@
 // input file or workspace file t3-provision.mjs reads or writes goes into ENV, RELEASE_FILES or WORKSPACE_FILES here,
 // or a deploy skips a refresh it needed (these lists are a copy, nothing checks them).
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -20,7 +20,7 @@ const ENV = [
   'ITHOMIINI_T3_WORKSPACES', 'ITHOMIINI_SRC', 'ITHOMIINI_CONFIG_DIR', 'ITHOMIINI_DOCS', 'ITHOMIINI_KNOWLEDGE',
   'ITHOMIINI_DENY_READ', 'ITHOMIINI_LAB_URL', 'ITHOMIINI_CLAUDE_LEAN', 'T3_BIN', 'T3CODE_HOME', 'CODEX_HOME', 'HOME',
 ];
-const RELEASE_FILES = ['scripts/t3-provision.mjs', 'scripts/claude-lean.mjs', 'scripts/lab-guard.mjs', 'server/brief.mjs', 'assistant'];
+const RELEASE_FILES = ['scripts/t3-provision.mjs', 'scripts/mcp-stdio-proxy.mjs', 'scripts/claude-lean.mjs', 'scripts/lab-guard.mjs', 'server/brief.mjs', 'assistant'];
 const WORKSPACE_FILES = [
   'AGENTS.md', 'CLAUDE.md', '.mcp.json', '.codex/config.toml', '.claude/settings.json', '.claude/t3-skills.json',
   '.claude/ithomiini-workspace.json', '.claude/t3-project', '.claude/voice', '.claude/skills', '.agents/skills',
@@ -98,6 +98,19 @@ export async function t3ProvisionStamp(release, env = process.env) {
     }
   });
   const codex = readOr(join(env.CODEX_HOME || join(home, '.codex'), 'config.toml'), null);
+  tree(workspaces, '.antigravity-mcp-proxy.mjs', out);
+  const agRoot = join(t3Home, 'userdata', 'providers', 'antigravity');
+  if (existsSync(agRoot)) {
+    const profiles = readdirSync(agRoot, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+      .sort();
+    for (const profile of profiles) {
+      const cfgDir = join(agRoot, profile, 'config');
+      if (!existsSync(cfgDir) || !statSync(cfgDir).isDirectory()) continue;
+      tree(agRoot, `${profile}/config/mcp_config.json`, out);
+    }
+  } else out.push('antigravity none');
   for (const name of names) {
     const workspace = join(workspaces, name);
     out.push(`workspace ${name}`);

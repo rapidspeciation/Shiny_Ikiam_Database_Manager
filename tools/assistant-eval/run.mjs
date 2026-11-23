@@ -200,7 +200,7 @@ function chatMetrics(threadId, instance = RUN.instance) {
     for (const it of items) {
       const p = JSON.parse(it.payload_json);
       if (it.type === 'dynamic_tool') {
-        tools.push({ name: String(p.toolName ?? '?').replace(/^mcp__db__/, ''), failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined, ...(it.status === 'completed' ? { result: resultText(p.output) } : {}) });
+        tools.push({ name: String(p.toolName ?? '?').replace(/^(?:mcp__db__|db\.)/, ''), failed: it.status === 'failed', ...(['interrupted', 'cancelled'].includes(it.status) ? { cut: true } : {}), input: JSON.stringify(p.input ?? '').slice(0, 300), output: it.status === 'failed' ? String(p.output ?? '').slice(0, 300) : undefined, ...(it.status === 'completed' ? { result: resultText(p.output) } : {}) });
         // Proposals are attributed only to this chat's drafting calls (never to ids seen in list/get answers).
         if (DRAFTING.test(String(p.toolName ?? ''))) {
           if (p.nativeItemRef?.nativeId) toolUseIds.push(p.nativeItemRef.nativeId);
@@ -229,6 +229,7 @@ function chatMetrics(threadId, instance = RUN.instance) {
       usage.cachedInput += u.cachedInputTokens ?? 0;
       usage.cacheCreation += u.cacheCreationTokens ?? 0;
       usage.output += u.outputTokens ?? 0;
+      if (typeof u.reasoningTokens === 'number') usage.reasoningTokens = (usage.reasoningTokens ?? 0) + u.reasoningTokens;
       usage.scopes.push(u.usageScope ?? '?');
       // T3 records only the main agent's tokens: a run with sub-agents is under-counted.
       if (u.hasSubagents || subagents > 0) usage.subagentUsageMissing = true;

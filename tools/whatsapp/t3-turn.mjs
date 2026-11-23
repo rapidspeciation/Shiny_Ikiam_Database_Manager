@@ -67,14 +67,17 @@ const busy = (db, id) =>
   Boolean(db.prepare(`SELECT 1 FROM orchestration_v2_projection_runs WHERE thread_id = ? AND status IN (${UNDER_WAY.map(() => '?').join(',')}) LIMIT 1`).get(id, ...UNDER_WAY));
 const lastOrdinal = (db, id) => db.prepare('SELECT max(ordinal) n FROM orchestration_v2_projection_runs WHERE thread_id = ?').get(id)?.n ?? 0;
 
-function modelSelection({ model = 'claude-opus-5-5', effort = 'medium' } = {}, instanceId = 'claudeAgent') {
+export function modelSelection({ model = 'claude-opus-5-5', effort = 'medium' } = {}, instanceId = 'claudeAgent') {
+  const isAntigravity = instanceId === 'antigravity' || /^gemini-/i.test(String(model ?? ''));
   return {
     instanceId,
     model,
-    options: [
-      { id: 'effort', value: effort },
-      { id: 'fastMode', value: false },
-    ],
+    options: isAntigravity
+      ? [{ id: 'thought_level', value: effort }]
+      : [
+          { id: 'effort', value: effort },
+          { id: 'fastMode', value: false },
+        ],
   };
 }
 

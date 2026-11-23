@@ -218,6 +218,43 @@ set = { PATH = ${q(TOOLS_PATH)} }
 }
 
 /**
+ * The app's tools for Antigravity (Gemini threads in T3): Antigravity ACP reads only its profile's
+ * config/mcp_config.json (shared across workspaces), not per-workspace .mcp.json. We copy a standalone
+ * stdio-to-HTTP proxy beside the workspaces (so pruned releases never break mcp_config.json) and register
+ * it in every Antigravity profile; at session start the proxy reads process.cwd()/.mcp.json to preserve
+ * per-workspace token isolation. Clean no-op when no Antigravity profiles exist.
+ */
+function antigravityConfig() {
+  const t3Home = process.env.T3CODE_HOME || join(process.env.HOME, '.t3');
+  const rootDir = join(t3Home, 'userdata', 'providers', 'antigravity');
+  if (!existsSync(rootDir)) return;
+  const profiles = readdirSync(rootDir, { withFileTypes: true }).filter(
+    d => d.isDirectory() && existsSync(join(rootDir, d.name, 'config')) && statSync(join(rootDir, d.name, 'config')).isDirectory(),
+  );
+  if (!profiles.length) return;
+  const proxyPath = join(workspaces, '.antigravity-mcp-proxy.mjs');
+  cpSync(join(release, 'scripts', 'mcp-stdio-proxy.mjs'), proxyPath);
+  chmodSync(proxyPath, 0o755);
+  for (const d of profiles) {
+    const file = join(rootDir, d.name, 'config', 'mcp_config.json');
+    let data = {};
+    if (existsSync(file)) {
+      const raw = readFileSync(file, 'utf8').trim();
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed;
+      }
+    }
+    const mcpServers = data.mcpServers && typeof data.mcpServers === 'object' && !Array.isArray(data.mcpServers)
+      ? { ...data.mcpServers }
+      : {};
+    mcpServers[MCP_SERVER] = { command: process.execPath, args: [proxyPath] };
+    writeFileSync(file, JSON.stringify({ ...data, mcpServers }, null, 2) + '\n', { mode: 0o600 });
+    chmodSync(file, 0o600);
+  }
+}
+
+/**
  * Writes (or refreshes) a person's workspace. Idempotent: the brief, the skills
  * and the settings are rewritten; the token is kept unless `freshToken`.
  */
@@ -293,6 +330,7 @@ function provision(user, { freshToken, addProject, folder = user.username, title
   );
   chmodSync(mcp, 0o600);
   codexConfig(workspace, token);
+  antigravityConfig();
 
   // The app's tools and the skills run without asking; other settings of the folder are kept.
   const settingsFile = join(workspace, '.claude', 'settings.json');

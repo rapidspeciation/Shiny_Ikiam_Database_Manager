@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderRole, turn } from '../tools/whatsapp/t3-turn.mjs';
+import { modelSelection, senderRole, turn } from '../tools/whatsapp/t3-turn.mjs';
 
 /** A stand-in T3: its state tables, the commands it got, and what it does on each command and each poll. */
 function fakeT3({ onSend = () => {}, onTick = () => {} } = {}) {
@@ -252,4 +252,50 @@ test('the sender in the app: the private map links a JID to an account, the live
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('modelSelection: Antigravity / Gemini uses thought_level; Claude instances keep effort + fastMode', async () => {
+  assert.deepEqual(modelSelection({ model: 'gemini-4-neon', effort: 'high' }, 'antigravity'), {
+    instanceId: 'antigravity',
+    model: 'gemini-4-neon',
+    options: [{ id: 'thought_level', value: 'high' }],
+  });
+  assert.deepEqual(modelSelection({ model: 'gemini-4-neon', effort: 'xhigh' }, 'antigravity-eval'), {
+    instanceId: 'antigravity-eval',
+    model: 'gemini-4-neon',
+    options: [{ id: 'thought_level', value: 'xhigh' }],
+  });
+  assert.deepEqual(modelSelection({ effort: 'medium' }, 'antigravity'), {
+    instanceId: 'antigravity',
+    model: 'claude-opus-5-5',
+    options: [{ id: 'thought_level', value: 'medium' }],
+  });
+  assert.deepEqual(modelSelection({ model: 'claude-opus-5-5', effort: 'high' }, 'claudeAgent'), {
+    instanceId: 'claudeAgent',
+    model: 'claude-opus-5-5',
+    options: [
+      { id: 'effort', value: 'high' },
+      { id: 'fastMode', value: false },
+    ],
+  });
+  assert.deepEqual(modelSelection({ model: 'claude-opus-5-5', effort: 'medium' }, 'claude-eval-main'), {
+    instanceId: 'claude-eval-main',
+    model: 'claude-opus-5-5',
+    options: [
+      { id: 'effort', value: 'medium' },
+      { id: 'fastMode', value: false },
+    ],
+  });
+
+  // End-to-end via turn() creating a new Antigravity chat.
+  const t3 = fakeT3({
+    onSend: (c, t) => c.type === 'thread.turn.start' && (t.run('R1', c.threadId, 'completed', 1), t.answer('R1', 'ok')),
+  });
+  const out = await turn(
+    { op: 'turn', threadId: null, newThreadId: 'AG1', text: 'hola', instanceId: 'antigravity', create: { projectId: 'P', model: 'gemini-4-neon', effort: 'high' } },
+    t3,
+  );
+  assert.equal(out.ok, true);
+  assert.deepEqual(t3.sent[0].modelSelection.options, [{ id: 'thought_level', value: 'high' }]);
+  assert.deepEqual(t3.sent[1].modelSelection.options, [{ id: 'thought_level', value: 'high' }]);
 });
