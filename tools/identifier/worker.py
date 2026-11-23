@@ -573,13 +573,21 @@ def load_taxonomy(path, sp_vocab, np):
     return out
 
 
-def higher_totals(sp_probs, higher, np, k=3):
-    """The `k` most probable tribes and subfamilies: [[name, p], ...], each the sum of its species' scores."""
+def higher_distributions(sp_probs, higher, np):
+    """Full tribe and subfamily probability totals plus unassigned mass: {rank: (names, agg, unassigned)}."""
     out = {}
     for rank, (names, idx) in higher.items():
         has = idx >= 0
-        agg = np.zeros(len(names))
+        agg = np.zeros(len(names), dtype=np.float64)
         np.add.at(agg, idx[has], sp_probs[has])
+        out[rank] = (names, agg, float(sp_probs[~has].sum()))
+    return out
+
+
+def higher_totals(sp_probs, higher, np, k=3):
+    """The `k` most probable tribes and subfamilies: [[name, p], ...], each the sum of its species' scores."""
+    out = {}
+    for rank, (names, agg, _unassigned) in higher_distributions(sp_probs, higher, np).items():
         out[rank] = [[names[j], round(float(agg[j]), 4)] for j in np.argsort(-agg, kind="stable")[:k] if agg[j] > 0]
     return out
 
