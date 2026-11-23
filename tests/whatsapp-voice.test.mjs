@@ -41,23 +41,21 @@ test('voiceAddressed: Franz\'s chat takes the name anywhere, the group only in i
     assert.ok(!voiceAddressed(t), t);
   assert.ok(!voiceAddressed('hola oye hey ok bueno mira cloud, revisa esto'));
   assert.ok(voiceAddressed('hola oye hey ok bueno mira cloud, revisa esto', personal));
-  // Parakeet's «Claudia» (13 Nov) and whisper's «Claudio» (22 Nov) for «Claude»: a leading call in Franz's chat only.
-  for (const t of [
-    'Claudia, ¿puedes ver cuántas mariposas ha colectado el colector Josué Ruiz?',
-    'Claudia, ¿me escuchaste?',
-    'Hola Claudia, revisa esto',
-    'Claudio, puedes ver cuántas marifosas he colectado la persona de Jose Ruiz en nuestro proyecto.',
-    'Hola Claudio, revisa esto',
-    '¿Claudio? ¿me escuchas?',
-    '¡Claudio! revisa esto',
-  ])
+  // Parakeet's «Claudia» for «Claude» (13 Nov): a leading call in Franz's chat only; «Claudio» wakes nobody.
+  for (const t of ['Claudia, ¿puedes ver cuántas mariposas ha colectado la persona Josué Ruiz en nuestro proyecto?', 'Claudia, ¿me escuchas?', 'Hola Claudia, revisa esto'])
     assert.ok(voiceAddressed(t, personal), t);
   for (const t of ['Claudia, ¿me escuchaste?', 'Hola Claudia, revisa esto', 'Claudio, ¿vienes mañana?', 'Hola Claudio, revisa esto'])
     assert.ok(!voiceAddressed(t), t);
   assert.ok(!voiceAddressed('le dije a Claudia, que venga mañana', personal));
-  assert.ok(!voiceAddressed('le dije a Claudio, que venga mañana', personal));
-  // Other names (and Claudio/Claudia without vocative punctuation) are not Claude.
-  for (const t of ['Claudio dice que mañana no viene', 'Claudia ya llegó', 'claudette dice hola', 'Clodomiro trae las trampas', 'Oye Claudio'])
+  // Other names (including Claudio, since Parakeet on CPU hears «Claudia» rather than whisper's «Claudio») are not Claude.
+  for (const t of [
+    'Claudio, puedes ver cuántas marifosas he colectado la persona de Jose Ruiz en nuestro proyecto.',
+    'Claudio, ¿vienes mañana?',
+    'Claudio dice que mañana no viene',
+    'Claudia ya llegó',
+    'claudette dice hola',
+    'Clodomiro trae las trampas',
+  ])
     assert.ok(!voiceAddressed(t, personal), t);
   assert.ok(!voiceAddressed('', personal));
   assert.ok(!voiceAddressed(null));
@@ -105,7 +103,7 @@ function setup({ engines: over = {}, repliesHour = 20, history = true, parakeetM
     voice: voiceConf,
   };
   const heard = {};
-  const calls = { parakeet: [], scribe: [], whisper: [] };
+  const calls = { parakeet: [], 'parakeet-cpu': [], scribe: [], whisper: [] };
   const engine = name => async file => {
     calls[name].push(basename(file));
     if (name === 'parakeet' && parakeetMs) await new Promise(r => setTimeout(r, parakeetMs));
@@ -114,7 +112,7 @@ function setup({ engines: over = {}, repliesHour = 20, history = true, parakeetM
     if (t == null) throw new Error('no such audio');
     return { text: name === 'scribe' ? `${t} [scribe]` : t, language: 'es' };
   };
-  const engines = { parakeet: engine('parakeet'), scribe: engine('scribe'), whisper: engine('whisper'), ...(tts ? { tts } : {}) };
+  const engines = { parakeet: engine('parakeet'), 'parakeet-cpu': engine('parakeet-cpu'), scribe: engine('scribe'), whisper: engine('whisper'), ...(tts ? { tts } : {}) };
   const bridge = createBridge({ config, stateDir: join(dir, 'state'), log: { error() {}, info() {} }, engines, now });
   let n = 0;
   /** A voice note (ptt) in a chat; `said` is what the engines hear in it. */
@@ -213,11 +211,11 @@ test('a long «🎙️» line is cut at 80 characters', async () => {
   assert.equal(line, `Claude: 🎙️ «${(said + ' [scribe]').slice(0, 80)}…»`);
 });
 
-test('the group ignores a note that only talks about Claude; Franz\'s chat takes the name anywhere; Claudio outside a personal leading call wakes nobody', async () => {
+test('the group ignores a note that only talks about Claude; Franz\'s chat takes the name anywhere; Claudio wakes nobody', async () => {
   const s = setup();
   s.voice('G@g.us', 'Le estaba contando a Ana que Claude nos ayudó con las Methona');
   s.voice('G@g.us', 'Claudio, ¿traes las trampas mañana?');
-  s.voice('S@s.whatsapp.net', 'Claudio dice que mañana no viene');
+  s.voice('S@s.whatsapp.net', 'Claudio, ¿traes las trampas mañana?');
   await s.settle();
   assert.deepEqual(s.turns(), []);
   assert.deepEqual(s.outbox(), []);
@@ -243,20 +241,35 @@ test('a tagged message with a voice note waits for the note\'s on-arrival transc
   assert.equal(s.outbox().find(o => o.kind === 'reply').text, 'Claude: Hay 12.');
 });
 
-test('fallbacks: Parakeet down → whisper on arrival (never Scribe); Scribe down in a turn → the stored transcript', async () => {
+test('fallbacks: Parakeet eGPU down → parakeet-cpu on arrival (never Scribe); both Parakeet down → whisper; Scribe down in a turn → stored transcript', async () => {
   const s = setup({ engines: { parakeet: () => { throw new Error('device 0000:03:00.0 not found'); }, scribe: () => { throw new Error('scribe 503'); } } });
   const a = s.voice('G@g.us', 'Claude, ¿qué tal la Godyris?');
   await s.settle();
   assert.deepEqual(s.calls.parakeet, [`${a.id}.ogg`]);
-  assert.deepEqual(s.calls.whisper, [`${a.id}.ogg`]); // the arrival's fallback
+  assert.deepEqual(s.calls['parakeet-cpu'], [`${a.id}.ogg`]); // the arrival's primary fallback
+  assert.deepEqual(s.calls.whisper, []);
   assert.deepEqual(s.calls.scribe, [`${a.id}.ogg`]); // the turn's upgrade, which fails
-  assert.match(s.turns()[0], /transcribed by whisper/);
-  assert.equal(s.bridge.state().voiceMeta[a.id].engine, 'whisper');
+  assert.match(s.turns()[0], /transcribed by parakeet-cpu/);
+  assert.equal(s.bridge.state().voiceMeta[a.id].engine, 'parakeet-cpu');
   assert.ok(s.log().some(e => e.dir === 'voice' && e.engine === 'parakeet' && e.ok === false && /not found/.test(e.error)));
   assert.ok(s.log().some(e => e.dir === 'voice' && e.engine === 'scribe' && e.ok === false));
+  // If parakeet-cpu fails too, arrival falls back to whisper as last resort.
+  const s2 = setup({
+    engines: {
+      parakeet: () => { throw new Error('device 0000:03:00.0 not found'); },
+      'parakeet-cpu': () => { throw new Error('parakeet cpu oom'); },
+      scribe: () => { throw new Error('scribe 503'); },
+    },
+  });
+  const b = s2.voice('G@g.us', 'Claude, ¿qué tal la Oleria?');
+  await s2.settle();
+  assert.deepEqual(s2.calls.parakeet, [`${b.id}.ogg`]);
+  assert.deepEqual(s2.calls['parakeet-cpu'], [`${b.id}.ogg`]);
+  assert.deepEqual(s2.calls.whisper, [`${b.id}.ogg`]);
+  assert.equal(s2.bridge.state().voiceMeta[b.id].engine, 'whisper');
 });
 
-test('fallbacks: Parakeet error → whisper immediately for 5 minutes, then Parakeet again; explicit probe clears cooldown on recovery', async () => {
+test('fallbacks: Parakeet eGPU error → parakeet-cpu immediately for 5 minutes, then Parakeet again; explicit probe clears cooldown on recovery', async () => {
   let skew = 0;
   let parakeetBroken = true;
   const s = setup({
@@ -268,78 +281,97 @@ test('fallbacks: Parakeet error → whisper immediately for 5 minutes, then Para
       },
     },
   });
-  const a = s.voice('S@s.whatsapp.net', 'Claudio, puedes ver cuántas mariposas hay?');
+  const a = s.voice('S@s.whatsapp.net', 'Claudia, ¿puedes ver cuántas mariposas ha colectado la persona Josué Ruiz?');
   await s.settle();
-  // Second note within 5 minutes skips Parakeet and goes straight to whisper (no second 30 s hang).
-  const b = s.voice('S@s.whatsapp.net', 'Claude, me escuchas.');
+  // Second note within 5 minutes skips Parakeet eGPU and goes straight to parakeet-cpu (no second 30 s hang).
+  const b = s.voice('S@s.whatsapp.net', 'Claudia, ¿me escuchas?');
   await s.settle();
   assert.deepEqual(s.calls.parakeet, [`${a.id}.ogg`]);
-  assert.deepEqual(s.calls.whisper, [`${a.id}.ogg`, `${b.id}.ogg`]);
+  assert.deepEqual(s.calls['parakeet-cpu'], [`${a.id}.ogg`, `${b.id}.ogg`]);
+  assert.deepEqual(s.calls.whisper, []);
   assert.equal(s.turns().length, 2);
-  // Explicit single-engine call (as in voice-check) still probes Parakeet even during cooldown.
+  // Explicit single-engine call (as in voice-check) still probes Parakeet eGPU even during cooldown.
   const probeFail = await s.bridge.transcribe(join(s.dir, `${b.id}.ogg`), ['parakeet']);
   assert.equal(probeFail.error, 'no pude transcribir la nota de voz');
   assert.equal(s.calls.parakeet.length, 2);
-  // Recovery while still inside cooldown: a succeeding probe resets parakeetDownUntil so the next arrival note uses Parakeet immediately.
+  // Recovery while still inside cooldown: a succeeding probe resets parakeetDownUntil so the next arrival note uses Parakeet eGPU immediately.
   parakeetBroken = false;
   const probeOk = await s.bridge.transcribe(join(s.dir, `${b.id}.ogg`), ['parakeet']);
   assert.equal(probeOk.engine, 'parakeet');
   const c = s.voice('S@s.whatsapp.net', 'Claude, ya volvió la GPU?');
   await s.settle();
   assert.deepEqual(s.calls.parakeet, [`${a.id}.ogg`, `${b.id}.ogg`, `${b.id}.ogg`, `${c.id}.ogg`]);
-  assert.equal(s.calls.whisper.length, 2);
+  assert.equal(s.calls['parakeet-cpu'].length, 2);
   assert.equal(s.turns().length, 3);
-  // After another failure, advancing past the 5-minute cooldown retries Parakeet automatically.
+  // After another failure, advancing past the 5-minute cooldown retries Parakeet eGPU automatically.
   parakeetBroken = true;
   const d = s.voice('S@s.whatsapp.net', 'Claude, falló otra vez');
   await s.settle();
-  assert.equal(s.calls.whisper.length, 3);
+  assert.equal(s.calls['parakeet-cpu'].length, 3);
   parakeetBroken = false;
   skew = 6 * 60_000;
   const e = s.voice('S@s.whatsapp.net', 'Claude, seis minutos después', { Timestamp: new Date(Date.now() + skew).toISOString() });
   await s.settle();
   assert.equal(s.calls.parakeet.at(-1), `${e.id}.ogg`);
-  assert.equal(s.calls.whisper.length, 3);
+  assert.equal(s.calls['parakeet-cpu'].length, 3);
   assert.ok(d.id);
 });
 
-test('fallbacks: real parakeetRun timeout preserves stderr warning, logs timed out, and falls back to whisper', async () => {
+test('fallbacks: real parakeetRun eGPU timeout logs stderr and falls back to real parakeet-cpu with Vulkan disabled and nice -n 10', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wa-parakeet-to-'));
-  const hang = join(dir, 'hang.sh');
-  writeFileSync(hang, '#!/bin/sh\necho "vulkan device lost" >&2\nsleep 5\n');
-  chmodSync(hang, 0o700);
+  const stub = join(dir, 'systemd-stub.sh');
+  const seenCpu = join(dir, 'cpu-seen.json');
+  writeFileSync(
+    stub,
+    `#!/bin/sh
+if [ "$PARAKEET_DEVICE" = "cpu" ]; then
+  printf '{"device":"%s","icd":"%s","drv":"%s","args":"%s"}\\n' "$PARAKEET_DEVICE" "$VK_ICD_FILENAMES" "$VK_DRIVER_FILES" "$*" > ${JSON.stringify(seenCpu)}
+  echo '{"text":"Claudia, ¿me escuchas?","language":"es","audioMs":1890}'
+  exit 0
+fi
+echo "vulkan device lost" >&2
+sleep 5
+`,
+  );
+  chmodSync(stub, 0o700);
   const whisperCalls = [];
   const bridge = createBridge({
     config: {
       chats: { self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 0, ack: 'reaction' } },
       routes: { r: { script: '/bin/false', attachmentsDir: join(dir, 'att') } },
       wacli: { bin: '/bin/false', store: dir },
-      voice: { parakeet: { module: '/dev/null', model: '/dev/null', device: '0000:03:00.0', systemdRun: hang, timeoutMs: 300 } },
+      voice: { parakeet: { module: '/dev/null', model: '/dev/null', device: '0000:03:00.0', systemdRun: stub, timeoutMs: 300, cpuMemoryMax: '2G' } },
     },
     stateDir: join(dir, 'state'),
     log: { error() {}, info() {} },
     engines: {
       whisper: async file => {
         whisperCalls.push(basename(file));
-        return { text: 'Claude, hola', language: 'es' };
+        return { text: 'should not run', language: 'es' };
       },
     },
   });
   const audio = join(dir, 'note.ogg');
   writeFileSync(audio, 'not audio');
-  const t = await bridge.transcribe(audio, ['parakeet', 'whisper'], { on: 'arrival', chat: 'self', id: 'N1' });
-  assert.equal(t.engine, 'whisper');
-  assert.equal(t.text, 'Claude, hola');
-  assert.deepEqual(whisperCalls, ['note.ogg']);
+  const t = await bridge.transcribe(audio, ['parakeet', 'parakeet-cpu', 'whisper'], { on: 'arrival', chat: 'self', id: 'N1' });
+  assert.equal(t.engine, 'parakeet-cpu');
+  assert.equal(t.wakeText, 'Claudia, ¿me escuchas?');
+  assert.equal(t.text, 'Claude, ¿me escuchas?'); // shared dictation word list maps Claudia → Claude after wake check
+  assert.deepEqual(whisperCalls, []);
+  const cpuEnv = JSON.parse(readFileSync(seenCpu, 'utf8'));
+  assert.equal(cpuEnv.device, 'cpu');
+  assert.equal(cpuEnv.icd, '/dev/null');
+  assert.equal(cpuEnv.drv, '/dev/null');
+  assert.match(cpuEnv.args, /-p MemoryMax=2G -- nice -n 10 /);
   const entries = readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   const errEntry = entries.find(e => e.engine === 'parakeet' && e.ok === false);
   assert.ok(errEntry, 'parakeet failure logged');
-  assert.match(errEntry.error, /timed out after 300ms \(hang\.sh\): vulkan device lost/);
+  assert.match(errEntry.error, /timed out after 300ms \(systemd-stub\.sh\): vulkan device lost/);
 });
 
 test('fallbacks: every engine down → no trigger, nothing stored, nothing sent', async () => {
   const fail = () => { throw new Error('down'); };
-  const s = setup({ engines: { parakeet: fail, whisper: fail, scribe: fail } });
+  const s = setup({ engines: { parakeet: fail, 'parakeet-cpu': fail, whisper: fail, scribe: fail } });
   const a = s.voice('G@g.us', 'Claude, hola');
   await s.settle();
   assert.equal(s.bridge.state().transcripts[a.id], undefined);
@@ -348,15 +380,15 @@ test('fallbacks: every engine down → no trigger, nothing stored, nothing sent'
   assert.deepEqual(s.turns(), []);
 });
 
-test('a turn whose note has no stored transcript runs the turn chain: Scribe, then Parakeet, then whisper', async () => {
-  const s = setup({ engines: { scribe: () => { throw new Error('scribe 500'); } } });
+test('a turn whose note has no stored transcript runs the turn chain: Scribe, then Parakeet, then parakeet-cpu, then whisper', async () => {
+  const s = setup({ engines: { scribe: () => { throw new Error('scribe 500'); }, parakeet: () => { throw new Error('egpu gone'); } } });
   // A read-only chat is never transcribed on arrival; here the turn chain is checked through transcribe() itself.
   const file = join(s.dir, 'x.ogg');
   writeFileSync(file, 'x');
   s.heard['x.ogg'] = 'hola';
   const t = await s.bridge.transcribe(file);
-  assert.equal(t.engine, 'parakeet');
-  assert.deepEqual([s.calls.scribe, s.calls.parakeet, s.calls.whisper], [['x.ogg'], ['x.ogg'], []]);
+  assert.equal(t.engine, 'parakeet-cpu');
+  assert.deepEqual([s.calls.scribe, s.calls.parakeet, s.calls['parakeet-cpu'], s.calls.whisper], [['x.ogg'], ['x.ogg'], ['x.ogg'], []]);
 });
 
 test('the limits still apply: /stop, the hourly limit; a read-only chat is not transcribed', async () => {
@@ -397,7 +429,7 @@ test('the bridge\'s own voice reply, coming back as Franz\'s audio, is not trans
   assert.ok(s.log().some(e => e.id === id && e.skipped === 'own voice note'));
 });
 
-test('asr-parakeet picks the configured eGPU only: never the iGPU, the CPU or another device', async () => {
+test('asr-parakeet picks the configured eGPU or explicit cpu only: never the iGPU and no silent fallback from a PCI id', async () => {
   const { pickDevice } = await import('../tools/whatsapp/asr-parakeet.mjs');
   const devices = [
     { name: 'Vulkan0', description: 'AMD Radeon 760M Graphics', deviceType: 'igpu', deviceId: '0000:66:00.0' },
@@ -405,9 +437,11 @@ test('asr-parakeet picks the configured eGPU only: never the iGPU, the CPU or an
     { name: 'CPU', description: 'AMD Ryzen 5 7640U', deviceType: 'cpu', deviceId: null },
   ];
   assert.equal(pickDevice(devices, '0000:03:00.0').name, 'Vulkan1');
+  assert.equal(pickDevice(devices, 'cpu').name, 'CPU');
+  assert.throws(() => pickDevice(devices.slice(0, 2), 'cpu'), /CPU device not found/);
   assert.throws(() => pickDevice(devices, '0000:66:00.0'), /igpu, not the eGPU/);
   assert.throws(() => pickDevice(devices, null), /no device configured/);
-  assert.throws(() => pickDevice(devices.slice(0, 1).concat(devices.slice(2)), '0000:03:00.0'), /not found/); // eGPU unplugged: no fallback
+  assert.throws(() => pickDevice(devices.slice(0, 1).concat(devices.slice(2)), '0000:03:00.0'), /not found/); // eGPU unplugged: no silent fallback to CPU
 });
 
 test('a group note that only talks about Claude early wakes the turn, which is told to end in [silent]', async () => {

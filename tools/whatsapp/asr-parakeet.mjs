@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// One voice note through Parakeet (transcribe.cpp, the engine T3 uses for its own dictation), on this PC's eGPU only.
+// One voice note through Parakeet (transcribe.cpp, the engine T3 uses for its own dictation), on this PC's eGPU or CPU.
 //   node asr-parakeet.mjs <audio file>        → one JSON line: { text, language, audioMs, ms, loadMs, device, vramMB, rssMB }
 // The bridge runs it as a child process, one note at a time, under systemd-run --scope -p MemoryMax=… (bridge.mjs
-// parakeet()), so the model's memory is given back after each note. Settings from the environment (the bridge sets them
+// parakeetRun()), so the model's memory is given back after each note. Settings from the environment (the bridge sets them
 // from config.voice.parakeet):
 //   PARAKEET_MODULE  transcribe-cpp's dist/index.js (a copy of T3's, so a T3 update does not move it)
 //   PARAKEET_MODEL   the GGUF (parakeet-ultra-Q8_0.gguf)
-//   PARAKEET_DEVICE  the GPU's PCI id (0000:03:00.0, the RX 7600M XT eGPU). The helper uses that exact device and
-//                    nothing else: never the iGPU (it drives the screen), and no fallback to another device or the CPU.
+//   PARAKEET_DEVICE  the eGPU's PCI id (0000:03:00.0, the RX 7600M XT) or "cpu" for the explicit CPU fallback (called by
+//                    the bridge with Vulkan ICDs disabled so a wedged eGPU cannot hang probing and the iGPU is never touched).
+//                    The helper uses that exact target and nothing else: never the iGPU, and no silent fallback from a PCI id.
 import { execFile } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -28,19 +29,24 @@ export function decodePcm(file, { ffmpeg = 'ffmpeg', maxSeconds = 1800 } = {}) {
   });
 }
 
-/** The exact device: the configured PCI id, a discrete GPU; anything else (the iGPU, the CPU, a missing id) is refused. */
-export function pickDevice(devices, pciId) {
-  if (!pciId) throw new Error('no device configured');
-  const d = devices.find(x => x.deviceId === pciId);
-  if (!d) throw new Error(`device ${pciId} not found`);
-  if (d.deviceType !== 'gpu') throw new Error(`device ${pciId} is ${d.deviceType}, not the eGPU`);
+/** The exact target: "cpu" for the CPU backend, or a configured discrete GPU PCI id; never the iGPU, and no silent fallback. */
+export function pickDevice(devices, target) {
+  if (!target) throw new Error('no device configured');
+  if (target === 'cpu') {
+    const d = devices.find(x => x.deviceType === 'cpu');
+    if (!d) throw new Error('CPU device not found');
+    return d;
+  }
+  const d = devices.find(x => x.deviceId === target);
+  if (!d) throw new Error(`device ${target} not found`);
+  if (d.deviceType !== 'gpu') throw new Error(`device ${target} is ${d.deviceType}, not the eGPU`);
   return d;
 }
 
 async function main() {
   const file = process.argv[2];
   const { PARAKEET_MODULE: mod, PARAKEET_MODEL: model, PARAKEET_DEVICE: pci } = process.env;
-  if (!file || !mod || !model || !pci) fail('usage: PARAKEET_MODULE=… PARAKEET_MODEL=… PARAKEET_DEVICE=<pci id> node asr-parakeet.mjs <audio>', 2);
+  if (!file || !mod || !model || !pci) fail('usage: PARAKEET_MODULE=… PARAKEET_MODEL=… PARAKEET_DEVICE=<pci id|cpu> node asr-parakeet.mjs <audio>', 2);
   const t0 = Date.now();
   const pcm = await decodePcm(file);
   if (pcm.length < 16000 * 0.3) fail('audio too short');

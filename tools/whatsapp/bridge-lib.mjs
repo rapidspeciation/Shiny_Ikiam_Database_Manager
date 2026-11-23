@@ -403,18 +403,16 @@ export const KEYTERMS = [
 export const isVoice = type => ['audio', 'ptt'].includes(String(type ?? '').toLowerCase());
 
 const fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-/** Claude's name and the ways speech engines mishear it. Whole words only (not claudette or Clodomiro); «Claudia» and «Claudio» count only as a leading call in Franz's own chat (below). */
+/** Claude's name and the ways speech engines mishear it. Not Claudio, Claudia, Clodomiro or claudette: whole words only. */
 const CLAUDE_WORDS = new Set(['claude', 'claud', 'klaud', 'clod']);
-/** «Cloud» (and, in Franz's own chat, «Claudia» / «Claudio») counts only as a call: the first word, or right after greetings («oye cloud, …»), and followed by a comma, ? or ! («Cloud, …», «¿Cloud?»), never as a noun («cloud computing», «ok cloud storage», «a cloud of»). */
+/** «Cloud» (and, in Franz's own chat, «Claudia») counts only as a call: the first word, or right after greetings («oye cloud, …»), and followed by a comma, ? or ! («Cloud, …», «¿Cloud?»), never as a noun («cloud computing», «ok cloud storage», «a cloud of»). */
 const GREETINGS = new Set(['oye', 'oiga', 'hey', 'hola', 'ok', 'okay', 'oki', 'ya', 'bueno', 'eh', 'mira', 'hi', 'hello', 'buenas']);
-const PERSONAL_CALL_WORDS = new Set(['claudia', 'claudio']);
 
 /**
  * Whether a voice note's transcript calls Claude, so it counts as an @claude mention. `personal` (Franz's own chat):
  * the name anywhere. The group: only among the first `window` words («Claude, …», «oye Claude …»); a note that talks
  * about Claude later («le dije a Ana que Claude…») does not wake it, and one that talks about it early («ayer Claude me
- * dijo…») wakes it but the turn is told to stay [silent] when the note is not for it. «Cloud» (and in Franz's own chat
- * «Claudia» / «Claudio») only as a call (above). Pure.
+ * dijo…») wakes it but the turn is told to stay [silent] when the note is not for it. «Cloud» only as a call (above). Pure.
  */
 export function voiceAddressed(transcript, { personal = false, window = 6 } = {}) {
   const folded = fold(transcript);
@@ -424,8 +422,8 @@ export function voiceAddressed(transcript, { personal = false, window = 6 } = {}
     if (CLAUDE_WORDS.has(w)) return true;
   }
   const lead = words.findIndex(w => !GREETINGS.has(w));
-  // Parakeet hears «Claude» as «Claudia» (13 Nov) and whisper as «Claudio» (22 Nov): in Franz's own chat a leading «Claudia,» / «Claudio,» is a call too.
-  const callWord = words[lead] === 'cloud' || (personal && PERSONAL_CALL_WORDS.has(words[lead])) ? words[lead] : null;
+  // Parakeet often hears «Claude» as «Claudia» (13 Nov): in Franz's own chat a leading «Claudia,» is a call too.
+  const callWord = words[lead] === 'cloud' || (personal && words[lead] === 'claudia') ? words[lead] : null;
   if (!callWord || (!personal && lead >= window)) return false;
   return new RegExp(`^[^a-z0-9]*(?:[a-z0-9]+[^a-z0-9]+){${lead}}${callWord}\\s*[,?!]`).test(folded);
 }

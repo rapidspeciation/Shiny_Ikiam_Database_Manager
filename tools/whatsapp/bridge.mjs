@@ -728,13 +728,15 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   // --- voice notes: the engines, the on-arrival queue, the transcripts
   // Parakeet (transcribe.cpp on this PC's eGPU, config voice.parakeet) is local and fast but has no custom vocabulary, so it
   // misspells genera (fixGenera repairs the ones it can); Scribe v2 (ElevenLabs, the genera as keyterms) gets the names right
-  // but is outside. So: on arrival, every note goes through Parakeet (then the local whisper if it fails), never Scribe; a turn
+  // but is outside. So: on arrival, every note goes through Parakeet on eGPU (then Parakeet on CPU with Vulkan disabled so a
+  // wedged eGPU cannot hang probing and the iGPU is never touched, then local whisper as last resort), never Scribe; a turn
   // that needs a note (its own, the one it quotes, the sender's last minutes) upgrades it once with Scribe, as before
-  // (then Parakeet, then whisper). The 12 Nov 2026 pilot: reports/wa_voice_20261112 in WingsClassificator.
-  const ARRIVAL = ['parakeet', 'whisper'];
-  const TURN = ['scribe', 'parakeet', 'whisper'];
+  // (then Parakeet, Parakeet CPU, whisper). The 12 Nov 2026 pilot: reports/wa_voice_20261112 in WingsClassificator.
+  const ARRIVAL = ['parakeet', 'parakeet-cpu', 'whisper'];
+  const TURN = ['scribe', 'parakeet', 'parakeet-cpu', 'whisper'];
   const ready = {
     parakeet: () => Boolean(config.voice?.parakeet?.model && config.voice?.parakeet?.device) || Boolean(engines.parakeet),
+    'parakeet-cpu': () => Boolean(config.voice?.parakeet?.model && config.voice?.parakeet?.module) || Boolean(engines['parakeet-cpu']),
     scribe: () => Boolean(config.voice?.elevenlabsEnv) || Boolean(engines.scribe),
     whisper: () => Boolean(config.voice?.whisperPython) || Boolean(engines.whisper),
   };
@@ -750,17 +752,25 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   /** The shared dictation word list (config voice.wordsFiles, default dictation-words.json and its untracked .local.json beside this file), read per note. */
   const wordsFiles = () => config.voice?.wordsFiles ?? [join(HERE, 'dictation-words.json'), join(HERE, 'dictation-words.local.json')];
 
-  // Parakeet failed or timed out (e.g. eGPU dropped off the bus): left alone for 5 minutes while another engine can handle arrival.
+  // Parakeet eGPU failed or timed out (e.g. eGPU dropped off the bus): left alone for 5 minutes while another engine can handle arrival.
   let parakeetDownUntil = 0;
 
-  /** Parakeet: tools/whatsapp/asr-parakeet.mjs as a child process in its own scope (MemoryMax), on the configured eGPU only. */
-  async function parakeetRun(file) {
+  /** Parakeet: tools/whatsapp/asr-parakeet.mjs as a child process in its own scope (MemoryMax), on the configured eGPU or CPU. */
+  async function parakeetRun(file, { cpu = false } = {}) {
     const p = config.voice.parakeet;
-    const env = { ...process.env, PARAKEET_MODULE: p.module, PARAKEET_MODEL: p.model, PARAKEET_DEVICE: p.device };
-    const args = ['--user', '--scope', '--quiet', '-p', `MemoryMax=${p.memoryMax ?? '3G'}`, '--', process.execPath, p.script ?? join(HERE, 'asr-parakeet.mjs'), file];
+    const env = {
+      ...process.env,
+      PARAKEET_MODULE: p.module,
+      PARAKEET_MODEL: p.model,
+      PARAKEET_DEVICE: cpu ? 'cpu' : p.device,
+      ...(cpu ? { VK_ICD_FILENAMES: '/dev/null', VK_DRIVER_FILES: '/dev/null' } : {}),
+    };
+    const mem = cpu ? (p.cpuMemoryMax ?? p.memoryMax ?? '3G') : (p.memoryMax ?? '3G');
+    const cmd = [process.execPath, p.script ?? join(HERE, 'asr-parakeet.mjs'), file];
+    const args = ['--user', '--scope', '--quiet', '-p', `MemoryMax=${mem}`, '--', ...(cpu ? ['nice', '-n', '10', ...cmd] : cmd)];
     let out;
     try {
-      out = await run(p.systemdRun ?? 'systemd-run', args, { env, timeout: p.timeoutMs ?? 30_000 });
+      out = await run(p.systemdRun ?? 'systemd-run', args, { env, timeout: cpu ? (p.cpuTimeoutMs ?? 180_000) : (p.timeoutMs ?? 30_000) });
     } catch (e) {
       out = String(e.stdout ?? '');
       if (!out.trim()) throw e;
@@ -820,6 +830,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   }
   const ENGINES = {
     parakeet: file => onGpu(() => (engines.parakeet ?? parakeetRun)(file)),
+    'parakeet-cpu': file => (engines['parakeet-cpu'] ?? (f => parakeetRun(f, { cpu: true })))(file),
     scribe: file => (engines.scribe ?? scribeRun)(file),
     whisper: file => (engines.whisper ?? whisperRun)(file),
   };
