@@ -43,6 +43,7 @@ import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerPhoto } from 
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
 import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, reprocessable, type HistoryRecord, type Versions } from '../lib/identifyHistory'
+import { activeHeadRelease } from '../lib/identifierReleases'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
@@ -52,7 +53,7 @@ import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { locale, t, tn } from '../lib/i18n'
 import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
-import { leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
+import { displayHeadMeta, leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
@@ -451,7 +452,7 @@ async function identify(photo: Photo, known?: Known) {
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status }, takenAt: known?.takenAt }
-    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country, timing, idVersion: storedHead.value }
+    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country, timing, idVersion: activeHeadRelease(storedHead.value) }
     compared.value = null
     pick.value = null
     keepLast()
@@ -492,7 +493,7 @@ async function identifyOnline(photo: Photo, known?: Known) {
     lastPhoto.value = { at, photo, takenAt: known?.takenAt }
     result.value = {
       at,
-      idVersion: listedHead.value,
+      idVersion: activeHeadRelease(listedHead.value),
       source: 'online',
       crop: squareCrop(canvas, out.wingBox),
       status: out.crop ?? 'success',
@@ -1214,7 +1215,7 @@ async function loadHeadNames() {
   try {
     if (f) {
       const r = await fetch(f.url ?? new URL(`prueba-offline/models/${f.name}`, appRoot()).href, { credentials: f.url ? 'omit' : 'same-origin' })
-      if (r.ok) return void (headNames.value = await r.json())
+      if (r.ok) return void (headNames.value = displayHeadMeta(await r.json()))
     }
   } catch {
     /* no signal: the phone's copy */
@@ -1470,7 +1471,7 @@ const versionsOf = (r: Result): Versions => ({
   sex: r.sex && 'z' in r.sex ? (r.sex.m?.version ?? r.sex.m?.sha256 ?? null) : null,
 })
 const currentVersions = computed<Versions>(() => ({
-  id: mode.value === 'online' ? listedHead.value : storedHead.value,
+  id: activeHeadRelease(mode.value === 'online' ? listedHead.value : storedHead.value),
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
 const entries = computed(() =>

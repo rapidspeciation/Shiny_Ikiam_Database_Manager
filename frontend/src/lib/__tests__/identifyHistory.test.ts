@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { memoryHistory, outdated, prune, reprocessable, versionDay } from '../identifyHistory'
-import { headRelease, IDENTIFIER_HEADS } from '../identifierReleases'
+import { activeHeadRelease, headRelease, IDENTIFIER_HEADS, MERGED_HEAD_6FA6AB78 } from '../identifierReleases'
 import { PUBLIC_FILES } from '../publicModels'
 import { readLog, writeLog, writeLogAll, type LogEntry } from '../identifyLog'
 
@@ -28,10 +28,16 @@ describe('identifyHistory', () => {
   })
   it('the identifier\'s heads by the release list: an older listed head asks for Reprocesar; unlisted or newer does not', () => {
     const old = 'head_b8127dbf.json'
-    const now = 'head_6fa6ab78.json'
+    const prev = 'head_6fa6ab78.json'
+    const now = MERGED_HEAD_6FA6AB78
+    expect(outdated({ id: old, sex: null }, { id: prev, sex: null })).toBe(true)
     expect(outdated({ id: old, sex: null }, { id: now, sex: null })).toBe(true)
+    // pre-merge head_6fa6ab78.json results trigger Reprocesar after Option 1A display-time merges
+    expect(outdated({ id: prev, sex: null }, { id: now, sex: null })).toBe(true)
     // a server rolled back to the older head: the item is newer, no button
-    expect(outdated({ id: now, sex: null }, { id: old, sex: null })).toBe(false)
+    expect(outdated({ id: prev, sex: null }, { id: old, sex: null })).toBe(false)
+    expect(outdated({ id: now, sex: null }, { id: prev, sex: null })).toBe(false)
+    expect(outdated({ id: now, sex: null }, { id: now, sex: null })).toBe(false)
     // a head this build does not list (older and never released here, or newer than the build): unknown, no button
     expect(outdated({ id: 'head_749fbffd.json', sex: null }, { id: now, sex: null })).toBe(false)
     expect(outdated({ id: now, sex: null }, { id: 'head_ffffffff.json', sex: null })).toBe(false)
@@ -39,11 +45,16 @@ describe('identifyHistory', () => {
   })
   it('the release list ends with the head the app lists now, each file once, days in order', () => {
     const headMeta = PUBLIC_FILES.find(f => f.role === 'head-meta')!.name
-    expect(IDENTIFIER_HEADS.at(-1)!.file).toBe(headMeta)
+    expect(IDENTIFIER_HEADS.at(-1)!.file).toBe(activeHeadRelease(headMeta))
     expect(new Set(IDENTIFIER_HEADS.map(h => h.file)).size).toBe(IDENTIFIER_HEADS.length)
     const days = IDENTIFIER_HEADS.map(h => h.released)
     expect([...days].sort()).toEqual(days)
-    expect(headRelease('head_6fa6ab78.json')).toBe(IDENTIFIER_HEADS.length - 1)
+    expect(headRelease('head_6fa6ab78.json')).toBe(IDENTIFIER_HEADS.length - 2)
+    expect(headRelease(MERGED_HEAD_6FA6AB78)).toBe(IDENTIFIER_HEADS.length - 1)
+    expect(activeHeadRelease('head_6fa6ab78.json')).toBe(MERGED_HEAD_6FA6AB78)
+    expect(activeHeadRelease('head_b8127dbf.json')).toBe('head_b8127dbf.json')
+    expect(activeHeadRelease('head_ffffffff.json')).toBe('head_ffffffff.json')
+    expect(activeHeadRelease(null)).toBeNull()
     expect(headRelease(null)).toBeNull()
   })
   it('one gate for «Reprocesar»: a reader in the mode chosen, and an older model or a needed re-read', () => {

@@ -74,6 +74,9 @@ TOP = 5
 # The head's tribe and subfamily per species, placeholders left out (export_taxonomy.py): the worker adds each
 # tribe's and subfamily's total to a photo's answer (Identificar's tribe / subfamily answer).
 TAXONOMY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "taxonomy_6fa6ab78.json")
+# Option 1A display-time 48-pair leaf merges (labels_q/leaf_map.tsv): probabilities of merged leaves sum into their
+# corrected leaf before geographic prior and species/genus/tribe/subfamily roll-up.
+LEAF_MERGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaf_merges_6fa6ab78.json")
 
 
 def parse_args():
@@ -197,16 +200,30 @@ class Identifier:
                     cos = cos.view(cos.size(0), self.n, self.K).max(dim=2).values
                 return self.s * cos
 
-        self.leaves = list(ck["leaves"])
-        self.head = CosineHead(ck["feat_dim"], len(self.leaves), K=ck.get("K", 1))
+        raw_leaves = list(ck["leaves"])
+        self.head = CosineHead(ck["feat_dim"], len(raw_leaves), K=ck.get("K", 1))
         self.head.load_state_dict(ck["head_state_dict"])
         self.head.eval()
-        self.sp_vocab = list(ck["rank_vocab"]["species"])
+        import leaf_merges
+
+        merges = leaf_merges.load_leaf_merges(LEAF_MERGES, HEAD_SHA256)
+        space = leaf_merges.build_display_space(
+            raw_leaves,
+            ck["rank_vocab"]["species"],
+            ck["rank_vocab"]["genus"],
+            ck["leaf2rank"]["species"],
+            ck["leaf2rank"]["genus"],
+            merges,
+            np,
+        )
+        self.old_to_new = space["old_to_new"]
+        self.leaves = space["leaves"]
+        self.sp_vocab = space["sp_vocab"]
         self.sp_index = {n: i for i, n in enumerate(self.sp_vocab)}
-        self.ge_vocab = list(ck["rank_vocab"]["genus"])
-        self.leaf2sp = np.array(ck["leaf2rank"]["species"])
-        self.leaf2ge = np.array(ck["leaf2rank"]["genus"])
-        self.is_ssp = np.array([lf.count(" ") >= 2 for lf in self.leaves])
+        self.ge_vocab = space["ge_vocab"]
+        self.leaf2sp = space["leaf2sp"]
+        self.leaf2ge = space["leaf2ge"]
+        self.is_ssp = space["is_ssp"]
         del ck
         self.higher = load_taxonomy(TAXONOMY, self.sp_vocab, np)
 
@@ -259,10 +276,23 @@ class Identifier:
         feat = self.encoder.run(None, {"pixel_values": x})[0]
         return feat / np.linalg.norm(feat, axis=1, keepdims=True), prov
 
-    def tops(self, feat, side=None, ecuador=None, higher=False):
+    def _merged_probs(self, feat):
         np, torch = self.np, self.torch
         with torch.no_grad():
-            probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
+            logits = self.head(torch.from_numpy(feat.astype(np.float32)))
+            if hasattr(logits, "double"):
+                logits = logits.double()
+            raw = logits.softmax(1)[0].numpy().astype(np.float64)
+        old_to_new = getattr(self, "old_to_new", None)
+        if old_to_new is None:
+            return raw
+        probs = np.zeros(len(self.leaves), dtype=np.float64)
+        np.add.at(probs, old_to_new, raw)
+        return probs
+
+    def tops(self, feat, side=None, ecuador=None, higher=False):
+        np = self.np
+        probs = self._merged_probs(feat)
         w = self.weights(side, ecuador)
         prior = bool((w < 1).any())
         if prior:
@@ -297,11 +327,9 @@ class Identifier:
     def species_noprior(self, feat, name):
         """The species marginal of `name` WITHOUT the geographic prior (the field sex line's gate, whatever side the
         person chose), unrounded; 0 for a name the head does not have."""
-        np, torch = self.np, self.torch
         if name not in self.sp_index:
             return 0.0
-        with torch.no_grad():
-            probs = self.head(torch.from_numpy(feat.astype(np.float32))).softmax(1)[0].numpy().astype(np.float64)
+        probs = self._merged_probs(feat)
         return float(probs[self.leaf2sp == self.sp_index[name]].sum())
 
     def field_sex_block(self, feat, crop, name):

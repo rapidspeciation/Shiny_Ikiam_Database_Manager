@@ -20,6 +20,8 @@
  * measures (they only decide rare cases: rectangle artefacts and overlapping duplicates).
  */
 
+import leafMerges6fa6ab78 from '../../../tools/identifier/leaf_merges_6fa6ab78.json'
+
 export interface Rgba { width: number; height: number; data: Uint8ClampedArray | Uint8Array }
 
 // ---------------------------------------------------------------- EXIF orientation
@@ -618,8 +620,120 @@ export interface HeadMeta {
 
 /* Schemas read: ithomiini-offline-head/1 (no leaf names: no subspecies shown) and /2, which adds them. */
 
-/** `ssp`: per leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file). */
-export interface Head { meta: HeadMeta; w: Uint16Array; leaf2sp: Int32Array; geo: Uint8Array | null; ssp: Uint8Array | null }
+/** Option 1A display-time 48-pair leaf merges bundled for head_hier_6fa6ab78.pt (labels_q/leaf_map.tsv). */
+export const LEAF_MERGES_6FA6AB78: { head: string; count: number; merges: Record<string, string> } = leafMerges6fa6ab78
+
+/** `rawRows`: rows in `w` (15,347); `old2new`: Option 1A projection to display leaves (15,300), or null.
+ *  `ssp`: per display leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file). */
+export interface Head {
+  meta: HeadMeta
+  w: Uint16Array
+  rawRows: number
+  old2new: Int32Array | null
+  leaf2sp: Int32Array
+  geo: Uint8Array | null
+  ssp: Uint8Array | null
+}
+
+function speciesOfLeaf(leaf: string): string {
+  const parts = leaf.split(' ')
+  return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : leaf
+}
+
+function resolveMerges(headSha: string | undefined, explicit?: Record<string, string> | null): Record<string, string> | null {
+  if (explicit !== undefined) return explicit && Object.keys(explicit).length ? explicit : null
+  return headSha === LEAF_MERGES_6FA6AB78.head ? LEAF_MERGES_6FA6AB78.merges : null
+}
+
+/**
+ * Display-time Option 1A leaf projection for HeadMeta (matching tools/identifier/leaf_merges.py build_display_space):
+ * collapses merged source leaves into their target leaf and drops emptied species from `meta.species`.
+ * Does not mutate `meta`.
+ */
+export function buildDisplaySpace(
+  meta: HeadMeta,
+  merges?: Record<string, string> | null,
+): { meta: HeadMeta; old2new: Int32Array | null; leaf2sp: Int32Array; geo: Uint8Array | null; ssp: Uint8Array | null } {
+  const rawGeo = meta.geo ? Uint8Array.from(meta.geo, c => parseInt(c, 16)) : null
+  const rawSsp = meta.leaves?.length === meta.rows && meta.is_ssp?.length === meta.rows ? Uint8Array.from(meta.is_ssp, c => (c === '1' ? 1 : 0)) : null
+  const active = resolveMerges(meta.head_sha256, merges)
+  if (!active || !meta.leaves || meta.leaves.length !== meta.rows || !meta.leaves.some(lf => Object.hasOwn(active, lf))) {
+    return { meta, old2new: null, leaf2sp: Int32Array.from(meta.leaf2sp), geo: rawGeo, ssp: rawSsp }
+  }
+
+  const rawLeaves = meta.leaves
+  const rawIndex = new Map<string, number>()
+  for (let i = 0; i < rawLeaves.length; i++) rawIndex.set(rawLeaves[i], i)
+  const rawSpSet = new Set(meta.species)
+
+  const old2new = new Int32Array(rawLeaves.length)
+  const displayLeaves: string[] = []
+  const displayIndex = new Map<string, number>()
+  const displaySpNames: string[] = []
+  const displayGeoList: number[] = []
+
+  // Fallback geo bits per species (only needed for a brand-new merged leaf absent from rawLeaves, e.g. Melinaea mothone messenina).
+  let spGeo: Map<string, number> | null = null
+  const geoForSpecies = (sp: string): number => {
+    if (!rawGeo) return 0
+    const exact = rawIndex.get(sp)
+    if (exact !== undefined) return rawGeo[exact]
+    if (!spGeo) {
+      spGeo = new Map<string, number>()
+      for (let i = 0; i < rawGeo.length; i++) {
+        const s = meta.species[meta.leaf2sp[i]]
+        spGeo.set(s, (spGeo.get(s) ?? 0) | rawGeo[i])
+      }
+    }
+    return spGeo.get(sp) ?? 0
+  }
+
+  for (let i = 0; i < rawLeaves.length; i++) {
+    const lf = rawLeaves[i]
+    const target = Object.hasOwn(active, lf) ? active[lf] : lf
+    let j = displayIndex.get(target)
+    if (j === undefined) {
+      j = displayLeaves.length
+      displayIndex.set(target, j)
+      displayLeaves.push(target)
+      const orig = rawIndex.get(target)
+      if (orig !== undefined) {
+        displaySpNames.push(meta.species[meta.leaf2sp[orig]])
+        if (rawGeo) displayGeoList.push(rawGeo[orig])
+      } else {
+        const sp = speciesOfLeaf(target)
+        if (!rawSpSet.has(sp)) throw new Error(`head merge: species "${sp}" for "${target}" not in head species list`)
+        displaySpNames.push(sp)
+        if (rawGeo) displayGeoList.push(geoForSpecies(sp))
+      }
+    }
+    old2new[i] = j
+  }
+
+  const usedSp = new Set(displaySpNames)
+  const displaySpecies = meta.species.filter(s => usedSp.has(s))
+  const spIdx = new Map<string, number>()
+  for (let i = 0; i < displaySpecies.length; i++) spIdx.set(displaySpecies[i], i)
+
+  const leaf2sp = new Int32Array(displayLeaves.length)
+  for (let j = 0; j < displayLeaves.length; j++) leaf2sp[j] = spIdx.get(displaySpNames[j])!
+  const ssp = rawSsp ? Uint8Array.from(displayLeaves, lf => (lf.split(' ').length >= 3 ? 1 : 0)) : null
+  const geo = rawGeo ? Uint8Array.from(displayGeoList) : null
+  const nextMeta: HeadMeta = {
+    ...meta,
+    species: displaySpecies,
+    leaf2sp: Array.from(leaf2sp),
+    leaves: displayLeaves,
+    ...(ssp ? { is_ssp: Array.from(ssp, v => (v ? '1' : '0')).join('') } : {}),
+    ...(geo ? { geo: Array.from(geo, v => v.toString(16)).join('') } : {}),
+  }
+  return { meta: nextMeta, old2new, leaf2sp, geo, ssp }
+}
+
+/** Display-merged view of a head metadata object (for name search when the full weights are not loaded). */
+export function displayHeadMeta(meta: HeadMeta, merges?: Record<string, string> | null): HeadMeta {
+  return buildDisplaySpace(meta, merges).meta
+}
 
 let half: Float32Array | null = null
 /** float16 bits -> float32, for every 16-bit value */
@@ -633,12 +747,11 @@ function halfTable(): Float32Array {
   return half
 }
 
-export function makeHead(meta: HeadMeta, weights: ArrayBuffer): Head {
+export function makeHead(meta: HeadMeta, weights: ArrayBuffer, merges?: Record<string, string> | null): Head {
   if (weights.byteLength !== meta.rows * meta.dim * 2) throw new Error('head weights: wrong size')
   if (meta.K !== 1) throw new Error('head: K > 1 not supported here')
-  const geo = meta.geo ? Uint8Array.from(meta.geo, c => parseInt(c, 16)) : null
-  const ssp = meta.leaves?.length === meta.rows && meta.is_ssp?.length === meta.rows ? Uint8Array.from(meta.is_ssp, c => (c === '1' ? 1 : 0)) : null
-  return { meta, w: new Uint16Array(weights), leaf2sp: Int32Array.from(meta.leaf2sp), geo, ssp }
+  const space = buildDisplaySpace(meta, merges)
+  return { meta: space.meta, w: new Uint16Array(weights), rawRows: meta.rows, old2new: space.old2new, leaf2sp: space.leaf2sp, geo: space.geo, ssp: space.ssp }
 }
 
 export type Side = 'East' | 'West' | null
@@ -698,8 +811,8 @@ export function subspeciesBySpecies(head: Head, p: Float64Array, species: number
  * the Andes is given (names off that side, or not recorded in Ecuador, weigh 2 %), normalised again.
  */
 export function leafScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
-  const { meta, w, geo } = head
-  const d = meta.dim, n = meta.rows
+  const { meta, w, geo, rawRows, old2new, leaf2sp } = head
+  const d = meta.dim, n = rawRows
   let norm = 0
   for (let i = 0; i < d; i++) norm += feature[i] * feature[i]
   norm = Math.sqrt(norm) || 1
@@ -728,17 +841,26 @@ export function leafScores(head: Head, feature: Float32Array, side: Side = null)
   }
   let total = 0
   for (let r = 0; r < n; r++) { logits[r] = Math.exp(logits[r] - max); total += logits[r] }
-  const p = logits
-  for (let r = 0; r < n; r++) p[r] /= total
+  const rawP = logits
+  for (let r = 0; r < n; r++) rawP[r] /= total
+  // Option 1A display-time leaf probability sum BEFORE geographic prior and rank roll-up.
+  let p: Float64Array
+  if (old2new) {
+    p = new Float64Array(leaf2sp.length)
+    for (let r = 0; r < n; r++) p[old2new[r]] += rawP[r]
+  } else {
+    p = rawP
+  }
+  const m = p.length
   if (geo && (side === 'East' || side === 'West')) {
     const sideBit = side === 'East' ? 4 : 8
     let sum = 0
-    for (let r = 0; r < n; r++) {
+    for (let r = 0; r < m; r++) {
       const g = geo[r]
       if (g & 1 && (!(g & sideBit) || !(g & 2))) p[r] *= 0.02
       sum += p[r]
     }
-    if (sum > 0) for (let r = 0; r < n; r++) p[r] /= sum
+    if (sum > 0) for (let r = 0; r < m; r++) p[r] /= sum
   }
   return p
 }

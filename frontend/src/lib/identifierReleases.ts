@@ -13,12 +13,23 @@
  * - head_b8127dbf.json: the first offline identifier page (commit 9909c335, 29 Oct 2026) and Identificar for everyone
  *   (92317f9b, 3 Nov 2026).
  * - head_6fa6ab78.json: head_hier 6fa6ab78, alias_w075 on V5N crops with label fixes (3fc6082c, 4 Nov 2026).
+ * - head_6fa6ab78.json+merges48: Option 1A display-time 48-pair taxonomic name merge (labels_q/leaf_map.tsv,
+ *   Greta diaphanus quisqueya kept separate) on unchanged head_hier 6fa6ab78 weights (23 Nov 2026).
  * The server's earlier head_hier 749fbffd (19 Oct 2026) was never listed as a file, so no item can name it.
  */
+export const MERGED_HEAD_6FA6AB78 = 'head_6fa6ab78.json+merges48'
+
 export const IDENTIFIER_HEADS: readonly { file: string; released: string }[] = [
   { file: 'head_b8127dbf.json', released: '2026-10-29' },
   { file: 'head_6fa6ab78.json', released: '2026-11-04' },
+  { file: MERGED_HEAD_6FA6AB78, released: '2026-11-23' },
 ]
+
+/** The active identifier release token for a head-meta file (reflects bundled Option 1A merges on head_6fa6ab78). */
+export function activeHeadRelease(file: string | null | undefined): string | null {
+  if (!file) return null
+  return file === 'head_6fa6ab78.json' ? MERGED_HEAD_6FA6AB78 : file
+}
 
 /** A head file's place in the release order (0 = oldest), or null when this build does not know it. */
 export function headRelease(file: string | null | undefined): number | null {
