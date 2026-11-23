@@ -56,10 +56,11 @@ def _genus_of(leaf):
     return leaf.split()[0]
 
 
-def build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_leaf2sp, raw_leaf2ge, merges, np):
+def build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_leaf2sp, raw_leaf2ge, merges, np, strict=False):
     """Build the merged display leaf/species/genus tables and old_to_new index map.
 
-    If `merges` is empty (or no raw leaf matches), returns an identity projection over the raw vocab.
+    If `merges` is empty (or no raw leaf matches when `strict=False`), returns an identity projection
+    over the raw vocab. When `strict=True`, every merge source key must exist in `raw_leaves`.
     When merges apply, emptied species/genera are dropped from the display vocabularies so old
     synonym/misspelled species names never appear in rankings.
     """
@@ -68,7 +69,7 @@ def build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_leaf2sp, raw
     raw_ge_vocab = list(raw_ge_vocab)
     n_raw = len(raw_leaves)
 
-    if not merges or not any(lf in merges for lf in raw_leaves):
+    if not merges:
         return {
             "old_to_new": None,
             "leaves": raw_leaves,
@@ -80,6 +81,21 @@ def build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_leaf2sp, raw
         }
 
     raw_index = {lf: i for i, lf in enumerate(raw_leaves)}
+    if strict:
+        missing = [k for k in merges if k not in raw_index]
+        if missing:
+            raise ValueError(f"Merged source leaves missing from head vocabulary ({len(missing)}): {missing[:5]!r}")
+    elif not any(lf in merges for lf in raw_leaves):
+        return {
+            "old_to_new": None,
+            "leaves": raw_leaves,
+            "sp_vocab": raw_sp_vocab,
+            "ge_vocab": raw_ge_vocab,
+            "leaf2sp": np.asarray(raw_leaf2sp, dtype=np.int64),
+            "leaf2ge": np.asarray(raw_leaf2ge, dtype=np.int64),
+            "is_ssp": np.array([lf.count(" ") >= 2 for lf in raw_leaves], dtype=bool),
+        }
+
     raw_sp_set = set(raw_sp_vocab)
     raw_ge_set = set(raw_ge_vocab)
 

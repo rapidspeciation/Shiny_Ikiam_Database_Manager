@@ -204,7 +204,12 @@ class Identifier:
         self.head = CosineHead(ck["feat_dim"], len(raw_leaves), K=ck.get("K", 1))
         self.head.load_state_dict(ck["head_state_dict"])
         self.head.eval()
-        import leaf_merges
+        import importlib.util
+
+        lm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaf_merges.py")
+        lm_spec = importlib.util.spec_from_file_location("_worker_leaf_merges", lm_path)
+        leaf_merges = importlib.util.module_from_spec(lm_spec)
+        lm_spec.loader.exec_module(leaf_merges)
 
         merges = leaf_merges.load_leaf_merges(LEAF_MERGES, HEAD_SHA256, required=True)
         space = leaf_merges.build_display_space(
@@ -215,6 +220,7 @@ class Identifier:
             ck["leaf2rank"]["genus"],
             merges,
             np,
+            strict=True,
         )
         self._merge_leaf_probs = leaf_merges.merge_leaf_probs
         self.old_to_new = space["old_to_new"]
@@ -290,7 +296,7 @@ class Identifier:
             return raw
         return self._merge_leaf_probs(raw, old_to_new, len(self.leaves), np)
 
-    def tops(self, feat, side=None, ecuador=None, higher=False):
+    def _score_distributions(self, feat, side=None, ecuador=None):
         np = self.np
         probs = self._merged_probs(feat)
         w = self.weights(side, ecuador)
@@ -298,10 +304,17 @@ class Identifier:
         if prior:
             pr = probs * w
             probs = pr / pr.sum() if pr.sum() > 0 else probs
+        sp = np.zeros(len(self.sp_vocab), dtype=np.float64)
+        np.add.at(sp, self.leaf2sp, probs)
+        ge = np.zeros(len(self.ge_vocab), dtype=np.float64)
+        np.add.at(ge, self.leaf2ge, probs)
+        return probs, sp, ge, prior
 
-        def marg(leaf2r, vocab, k):
-            agg = np.zeros(len(vocab))
-            np.add.at(agg, leaf2r, probs)
+    def tops(self, feat, side=None, ecuador=None, higher=False):
+        np = self.np
+        probs, sp, ge, prior = self._score_distributions(feat, side, ecuador)
+
+        def top_k(agg, vocab, k):
             return [[vocab[j], round(float(agg[j]), 4)] for j in np.argsort(-agg, kind="stable")[:k]]
 
         order = np.argsort(-probs, kind="stable")
@@ -312,15 +325,13 @@ class Identifier:
                 if len(subs) >= TOP:
                     break
         out = {
-            "species": marg(self.leaf2sp, self.sp_vocab, TOP),
+            "species": top_k(sp, self.sp_vocab, TOP),
             "subspecies": subs,
-            "genus": marg(self.leaf2ge, self.ge_vocab, 3),
+            "genus": top_k(ge, self.ge_vocab, 3),
             "top": [self.leaves[order[0]], round(float(probs[order[0]]), 4)],
             "prior": side if prior and side in ("East", "West") else ("Ecuador" if prior else None),
         }
         if higher and self.higher:
-            sp = np.zeros(len(self.sp_vocab))
-            np.add.at(sp, self.leaf2sp, probs)
             out.update(higher_totals(sp, self.higher, np))
         return out
 

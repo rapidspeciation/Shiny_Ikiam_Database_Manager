@@ -68,8 +68,13 @@ ge_i = {g: i for i, g in enumerate(raw_ge_vocab)}
 raw_l2sp = np.array([sp_i[" ".join(lf.split()[:2])] for lf in raw_leaves], dtype=np.int64)
 raw_l2ge = np.array([ge_i[lf.split()[0]] for lf in raw_leaves], dtype=np.int64)
 
-space = leaf_merges.build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_l2sp, raw_l2ge, merges, np)
+space = leaf_merges.build_display_space(raw_leaves, raw_sp_vocab, raw_ge_vocab, raw_l2sp, raw_l2ge, merges, np, strict=True)
 assert len(space["leaves"]) == len(raw_leaves) - 47
+try:
+    leaf_merges.build_display_space(raw_leaves[1:], raw_sp_vocab, raw_ge_vocab, raw_l2sp[1:], raw_l2ge[1:], merges, np, strict=True)
+    raise AssertionError("expected ValueError on missing merge key")
+except ValueError:
+    pass
 assert "Melinaea mothone messenina" in space["leaves"]
 assert "Greta diaphanus quisqueya" in space["leaves"]
 for old in merges:
