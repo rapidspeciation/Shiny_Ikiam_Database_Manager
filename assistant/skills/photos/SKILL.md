@@ -9,12 +9,11 @@ description: The photos of the butterflies' wings, from the camera to the databa
 
 1. **Photograph** each preserved butterfly's wings twice, dorsal and ventral,
    with its envelope in the picture (the CAM_ID is read from it), the ruler
-   and the colour card. The camera saves a JPG and a RAW file of each
-   (details below).
+   and the colour card. The camera saves a JPG and a RAW file of each.
 2. **Rename** the files after the CAM_ID, on the computer, with the Rename
-   Photos app (below).
+   Photos app.
 3. **Upload** them to the project's Drive folder «Photos», into the folder of
-   their collection (below).
+   their collection.
 4. **List** them in the Photo_links sheet: `sync_photo_links`, or «Read
    Drive» in the «Photos» tab's «Photo_links y sitios».
 5. The sheets then show them: Photo_dorsal and Photo_ventral of
@@ -25,8 +24,7 @@ description: The photos of the butterflies' wings, from the camera to the databa
    «Photos» tab, or the gallery's own «Update DB» tab).
 
 Photos that are on Drive but not yet in Photo_links show `NOT FOUND`
-(`Not Found` in Collection_data) in their row: step 4 is what makes them
-appear.
+(`Not Found` in Collection_data) in their row until they are listed there.
 
 ## Taking the photos
 
@@ -37,21 +35,20 @@ Drive):
   the camera's grid), the ruler at the bottom of the frame straight, and the
   pencilled cross of the board a little left of the centre: the colour card
   on the right takes more room than the envelope on the left.
-- Manual focus on one wing in the centre, zoomed in; checked again often.
+- Manual focus on one wing in the centre, zoomed in, checked again often.
 - One wing per quadrant, dorsal side first (the side that touches when the
-  wings close; a male's hair pencils show on it). Then the wings are flipped,
+  wings close, where a male's hair pencils show). Then the wings are flipped,
   the left ones to the right and the right ones to the left, for the ventral
-  photo. So each butterfly has two photos taken one after the other, dorsal
-  then ventral.
+  photo, taken right after the dorsal one.
 - A remote shutter or the 5-second timer, so the camera does not shake.
 - The photos are copied from the card into a folder per batch, named by its
-  date, and renamed there before they are uploaded.
+  date, and renamed there.
 
 ## File names
 
 - `<CAM_ID>d.JPG` and `<CAM_ID>v.JPG`, the ID exactly as the row's CAM_ID
   has it: `CAM078038d.JPG`, and `M6285d.JPG` for a sample that keeps its
-  collector's ID. Capitals do not matter; anything else does:
+  collector's ID. Capitals do not matter, anything else does:
   `CAM077986_d.jpg`, `CAM077986d (1).JPG` and `CAM077986d.jpeg` are not found.
 - The RAW file has the same name with its own ending (`CAM078038d.CR2`,
   `.ORF`).
@@ -62,7 +59,7 @@ Drive):
   last column, which reads `.jpg`/`.HEIC` as `.JPG` and `d1`/`v1` as `d`/`v`.
 - When the CAM written on the envelope is wrong (an extra digit, a repeated
   CAM that was renumbered), the file takes the row's CAM. The envelope is
-  corrected by hand; the photo does not need retaking.
+  corrected by hand, and the photo does not need retaking.
 
 ## Folders on Drive
 
@@ -92,17 +89,17 @@ Everything is under «Photos»:
 It is the «Renombrar» part of the app's «Photos» tab (and, for people without an account,
 https://fr4nzz.github.io/rename_photos_AI/). It runs in the person's
 browser, on the photos in a folder of their computer, before they are
-uploaded: the photos stay on the computer and it needs no key. Chrome or
-Edge (Brave after switching on the setting the app shows); other browsers
-can read the folder but not rename in it. In the tab it checks the IDs
-against the database as it is now, and «Review with Claude» opens a chat
-beside it that double-checks the batch (below).
+uploaded: the photos stay on the computer and it needs no key. It works in
+Chrome or Edge (Brave after switching on the setting the app shows). Other
+browsers can read the folder but not rename in it. In the tab it checks the
+IDs against the live database, and «Review with Claude» opens a chat beside
+it that double-checks the batch.
 
 1. «Open folder», then «Read photos»: it reads the CAM_ID on each envelope
    (about a second per photo) and turns each photo and its RAW file so the
    envelope reads upright.
-2. «Review»: a card per butterfly with its photos side by side; those that
-   need a look come first. Confirm or correct each (Enter, «Confirm», or one
+2. «Review»: a card per butterfly with its photos side by side, those that
+   need a look first. Confirm or correct each (Enter, «Confirm», or one
    of the suggestions). The strip at the top shows the CAMs in the order the
    photos were taken, where gaps and repeats stand out.
 3. «Rename Files». RAW files are renamed with their JPG. A log in the
@@ -110,19 +107,19 @@ beside it that double-checks the batch (below).
 
 What sends a photo to review, which tells what to check:
 
-- the CAM it read is not in the database (in the tab, the database as it is
-  now; on its own page, a copy read once a day), so the butterflies' rows
-  are typed before their photos are renamed;
-- the CAM is far from those of the photos taken just before and after;
+- the CAM it read is not in the database (in the tab, the live database, and
+  on its own page, a copy read once a day), so the butterflies' rows are
+  typed before their photos are renamed
+- the CAM is far from those of the photos taken just before and after
 - the same CAM on photos that were not taken one after the other, or on more
-  than two;
+  than two
 - its envelope points another way than the rest of its session (photos
   taken less than half an hour apart): the photo takes the session's
   rotation and is flagged, in case it was the camera that was turned.
 
 It reads IDs written as `CAM` and six digits. Other IDs (the Colombian
 `M6285`) are typed in the review, or read in its Gemini mode (the sparkle
-button; it needs a Gemini API key, and its prompt names the ID's form).
+button, which needs a Gemini API key, and whose prompt names the ID's form).
 Its repository, with how the reader works and how accurate it is:
 https://github.com/Fr4nzz/rename_photos_AI.
 
@@ -137,47 +134,46 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 1. `rename_photos_read`: the IDs in the order photographed (`order`), what
    does not add up (`checks`), and the photos to look at.
 2. `rename_photos_look` at those photos' envelopes, several a call. An
-   envelope has its ID in handwriting: `CAM` and six digits; an ID crossed
-   out on it does not count. The digits most often mistaken for each other:
-   1 and 7, 3 and 8, 4 and 9, 0 and 6, 5 and 6. The order helps as much as
-   the handwriting: the envelopes come out of a box in a run of IDs, and a
+   envelope has its ID in handwriting, `CAM` and six digits. An ID crossed
+   out on it does not count. The digits most often mistaken for each other
+   are 1 and 7, 3 and 8, 4 and 9, 0 and 6, 5 and 6. The order helps as much
+   as the handwriting: the envelopes come out of a box in a run of IDs, and a
    butterfly's two photos are taken one after the other.
-3. `rename_photos_edit` what is clear; `leave` the rest for the person with
-   the reason.
+3. `rename_photos_edit` an ID yourself when the envelope reads clearly, the
+   ID fits the run around it and the database has it. `leave` the rest for
+   the person, with the reason: a wrong name puts a photo on another
+   butterfly's row.
 4. Look at a sample of the photos nothing flagged as well, a dozen or two
-   spread over the batch: the reader is right on nearly all of those, and a
+   spread over the batch. The reader is right on nearly all of those, and a
    wrong one in the sample means looking at more around it. The sample is
    for the IDs: the app's wing check (`wingCheck`) has compared every
    photo's wings with its view and its turn, and flags those that differ.
 
 | Found | Most likely | What to do |
 |---|---|---|
-| `out-of-sequence`, or `not-in-database` with a `suggest` or `maybe` | a misread digit | read the envelope; set the ID when it fits the IDs before and after and the database has it |
-| `no-reading` | the envelope is partly out of the frame, covered by a wing, or faint | `part: "photo"` shows the whole photo; set the ID you can read; one you cannot read is the ID of the single photo beside it only when that leaves both with two photos |
-| `notTwoPhotos`, one photo | its other view carries another ID (often the flagged photo beside it), or was not taken | find it beside it; otherwise `leave`: the view is missing, to photograph again |
-| `notTwoPhotos`, three or more | a view photographed twice (the first one blurred), or two butterflies given one ID | look at the whole photos: `skip` the worse of a repeat; two butterflies are for the person |
-| `apart` | the later photos are misread, or one CAM is on two envelopes | read both envelopes; a CAM on two envelopes is for the person (skill `data-rules`, duplicates) |
+| `out-of-sequence`, or `not-in-database` with a `suggest` or `maybe` | a misread digit | read the envelope. Set the ID when it fits the IDs before and after and the database has it |
+| `no-reading` | the envelope is partly out of the frame, covered by a wing, or faint | `part: "photo"` shows the whole photo. Set the ID you can read. One you cannot read is the ID of the single photo beside it only when that leaves both with two photos |
+| `notTwoPhotos`, one photo | its other view carries another ID (often the flagged photo beside it), or was not taken | find it beside it, otherwise `leave` it as a view missing, to photograph again |
+| `notTwoPhotos`, three or more | a view photographed twice (the first one blurred), or two butterflies given one ID | look at the whole photos. `skip` the worse of a repeat. Two butterflies are for the person |
+| `apart` | the later photos are misread, or one CAM is on two envelopes | read both envelopes. A CAM on two envelopes is for the person (skill `data-rules`, duplicates) |
 | `notInWorkbook` without `maybe` | the butterfly's row is not typed yet (IDs running on after the database's last ones) | say which IDs: their rows are typed before the photos are uploaded |
-| `alreadyPhotographed` | photographed again on purpose, or an older ID read by mistake | read the envelope; if it is right, ask whether the new photos replace the old ones |
-| `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
-| `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed (below) |
+| `alreadyPhotographed` | photographed again on purpose, or an older ID read by mistake | read the envelope. If it is right, ask whether the new photos replace the old ones |
+| `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo. `rotate` it only if it shows turned |
+| `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed |
 | `repeated-id` | as `apart` | |
-| `wing-side`: the d and v photos swapped | a view set by hand against the wings | look at both whole photos; when they agree with the wings, set `view` of each |
-| `wing-side`: both photos one side, or some wings not turned over | the butterfly not turned over (or only some wings) before its second photo | `leave`: to photograph again |
+| `wing-side`: the d and v photos swapped | a view set by hand against the wings | look at both whole photos. When they agree with the wings, set `view` of each |
+| `wing-side`: both photos one side, or some wings not turned over | the butterfly not turned over (or only some wings) before its second photo | `leave` it, to photograph again |
 | `wing-side`: a single photo against its name | its other photo carries another ID, or the view is missing | as `notTwoPhotos` |
-| `wing-count` | a wing moved or fell between the two photos; or one the check missed (a glass wing on the dark half of the background) | look at both whole photos; a wing really missing from one is for the person |
-| `wing-turn` | the photo turned otherwise than its wings ask | look at the whole photo; `rotate` it when its forewings are not on top |
-| `turn-disagree` | its envelope points another way than its sure wings; it was turned as the wings say | look at the whole photo: usually an envelope laid down turned, nothing to change |
-| `turn-camera` | turned by its envelope alone (the wings not sure), unlike its camera's other photos | look at the whole photo; `rotate` it when its forewings are not on top |
+| `wing-count` | a wing moved or fell between the two photos, or one the check missed (a glass wing on the dark half of the background) | look at both whole photos. A wing really missing from one is for the person |
+| `wing-turn` | the photo turned otherwise than its wings ask | look at the whole photo. `rotate` it when its forewings are not on top |
+| `turn-disagree` | its envelope points another way than its sure wings. It was turned as the wings say | look at the whole photo: usually an envelope laid down turned, nothing to change |
+| `turn-camera` | turned by its envelope alone (the wings not sure), unlike its camera's other photos | look at the whole photo. `rotate` it when its forewings are not on top |
 
-- Set an ID yourself when the envelope reads clearly, the ID fits the run
-  around it and the database has it. Otherwise `leave` it: a wrong name puts
-  a photo on another butterfly's row.
 - Which way up: the wings side by side with the forewings above the
   hindwings (the ruler and colour card are usually at the bottom, but not
   always). Each photo is turned by its own wings when they are sure, else by
   its envelope when it reads sure (an envelope is often laid down turned, so
-  the wings come first); a photo with neither takes the usual turn of its
+  the wings come first). A photo with neither takes the usual turn of its
   camera's other photos. Photos flagged `turn-unsure` had neither and no
   clear usual turn: look at two or three whole photos (`part: "photo"`, as
   they will be once turned) and `rotate` those whose forewings are not on
@@ -191,7 +187,7 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 - Then say where the files go, from `upload`: the folder for the photos and
   the one for the RAW files, each with its link and its place in Drive for
   desktop (`inDriveForDesktop`). They are the folders that hold the photos
-  of the IDs nearest these; `alsoNear` is a second folder some of them point
+  of the IDs nearest these. `alsoNear` is a second folder some of them point
   to, worth asking about. With `noFolderYet` the batch is a new collection:
   propose its folder (the country and year of `butterflies`, with `JPG` and
   `RAW` inside) and make it with `organize_photos` once they agree.
@@ -201,7 +197,8 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   ([reference/drive-space.md](reference/drive-space.md)).
 - The rest of the way: once the upload is done, «Uploaded: update» in the
   tab reads those folders for Photo_links, and the same part of the tab
-  updates the sites; or `sync_photo_links`, then `update_websites`, here.
+  updates the sites. From the chat: `sync_photo_links`, then
+  `update_websites`.
 
 ## Photos uploaded to Drive without being renamed
 
@@ -214,23 +211,22 @@ beside the chat shows the batch as it is read.
 
 1. `drive_photos` with the `batch` once read: the IDs in the order taken
    (`order`), the checks, and `toLook`, only the photos that do not add up.
-   The others are not to be looked at: two photos per ID, in the order of
-   the IDs around them, read sure, turned by their own wings or envelope or
-   as their camera's other photos (`turnBy`).
+   The others need no look: two photos per ID, in the order of the IDs
+   around them, read sure, turned by their own wings or envelope or as their
+   camera's other photos (`turnBy`).
 2. `drive_photos_look` at those, the envelope first (`what: "photo"` for the
-   side, the wings, the turn; `box` for a part at full resolution: a faint
-   envelope, a wing), and `drive_photos_edit` what is clear (a photo's
-   `rotation`; `turnAll` when every photo of the batch needs the same turn),
-   as in
-   «Reviewing a batch» above (the same digits mistaken, the same order of
-   IDs). A photo not wanted (blurred, a repeat): `remove`; the reason in
-   `note`.
-3. Tell the person what you changed and what is left for them; they check
+   side, the wings and the turn, `box` for a part at full resolution such as
+   a faint envelope or a wing). `drive_photos_edit` what is clear, as in
+   «Reviewing a batch before it is renamed» (the same misread digits, the
+   same order of IDs): a photo's `rotation`, `turnAll` when every photo of
+   the batch needs the same turn, and `remove` for a photo not wanted
+   (blurred, a repeat), with the reason in `note`.
+3. Tell the person what you changed and what is left for them. They check
    the card (each tile has the ID, the view, a turn and «quitar») and press
-   «Aplicar en Drive»: a plan of the files' changes (renames with the RAW
-   files, turns, removals: the project account bins its own files; another
-   account's are renamed …_todelete and the transfer sheet left ready).
-   Then a Photo_links reading lists them.
+   «Aplicar en Drive», a plan of the files' changes: renames with the RAW
+   files, turns and removals. The project account bins its own files.
+   Another account's are renamed …_todelete and the transfer sheet left
+   ready. Then a Photo_links reading lists them.
 4. IDs whose photos have to be taken again (a view missing, two photos of
    one side, an envelope that cannot be read): say them, and show them with
    `show_photos` (`notes` says why for each), so the person sees which
@@ -243,21 +239,21 @@ person asks about, two IDs to compare, the odd cases of a check.
 
 The Wings Gallery and the maps keep their own copy of the data, made when
 their «Update Database» run on GitHub reads the sheets: `update_websites`
-starts it and says how it went. The gallery takes about a minute; the maps
-5 to 10. A photo reaches the gallery once Photo_links lists it and the
+starts it and says how it went. The gallery takes about a minute and the
+maps 5 to 10. A photo reaches the gallery once Photo_links lists it and the
 database has recalculated, so the sites are updated after `sync_photo_links`,
 not before.
 
 ## Updating Photo_links
 
-`sync_photo_links` reads the Drive folders and compares them with the sheet:
-about half a minute for every folder, a few seconds with `only` when the
-person names the folder they uploaded to. Nothing is written until the person
-agrees, in the chat or with «Apply» on the card that opens beside the chat
-(«Proposed changes»): the card lists every row, a folder can be unticked
-there to leave it for later, and a bar shows the writing as it goes (about
-7 seconds per 400 rows; other people's saves wait their turn between two of
-them, so say so before a large one).
+`sync_photo_links` reads the Drive folders and compares them with the sheet,
+in about half a minute for every folder, or a few seconds with `only` when
+the person names the folder they uploaded to. Nothing is written until the
+person agrees, in the chat or with «Apply» on the «Proposed changes» card
+beside the chat. The card lists every row, a folder can be unticked there to
+leave it for later, and a bar shows the writing as it goes (about 7 seconds
+per 400 rows). Other people's saves wait their turn between two of those, so
+warn the person before a large write.
 
 Its answer is also a check of the new photos. Before asking whether to
 write, say what it found, what it most likely is and what you suggest:
@@ -265,13 +261,13 @@ write, say what it found, what it most likely is and what you suggest:
 | Found | Most likely | What to do |
 |---|---|---|
 | `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go ([reference/organize.md](reference/organize.md)) |
-| `turned` (beside the checks) | a photo whose orientation tag differs from the rest of its folder that day: turned by mistake, or re-saved already turned (then it shows right) | look at them together (`photo_files_look`, 800); `organize_photos` `rotate` with its `degrees` only those that show turned |
-| `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
-| `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the database ID one character away that fits) | ask which; a misread one is renamed |
+| `turned` (beside the checks) | a photo whose orientation tag differs from the rest of its folder that day: turned by mistake, or re-saved already turned (then it shows right) | look at them together (`photo_files_look`, 800). `organize_photos` `rotate` with its `degrees` only those that show turned |
+| `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it. Rename it or move it to a `_temp` folder |
+| `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too, `maybe` is the database ID one character away that fits) | ask which. A misread one is renamed |
 | `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
-| `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder (`organize_photos`; the right folder is the one of the butterfly's country and year in its row); another photo: compare the two envelopes with the row |
+| `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder with `organize_photos` (the right folder is the one of the butterfly's country and year in its row). Another photo: compare the two envelopes with the row |
 | `unpaired` | the other view was not photographed, or carries another name (often the `outOfOrder` or `unknownId` photo beside it) | find it among those, or ask for the photo |
-| `beforeCollection` | the ID belongs to another butterfly: this one was not collected yet | look at the envelope; check the row's date |
+| `beforeCollection` | the ID belongs to another butterfly: this one was not collected yet | look at the envelope, check the row's date |
 | `otherCountry` | a photo uploaded to the wrong folder, or one CAM used for two butterflies (skill `data-rules`, duplicates) | compare the envelope with both rows |
 | `sameName.different` | two photos share a name: one is misnamed, or the CAM was used twice | compare the two photos |
 | `notListed` | a new folder nobody asked to list | ask whether to list it (`add`) |
@@ -323,22 +319,22 @@ later), and says when Photo_links has the photo but the row does not find it
 has between its photos (file name, envelope read by OCR, the species and sex
 models, the wings' side and turn) and the database, by kind, folder and year,
 and how sure each is (`tier`). Tell the person the counts and offer a
-section to start with; a section at a time keeps the review short enough to
+section to start with: a section at a time keeps the review short enough to
 finish.
 
-- `clear`: independent sources agree against one; the card ticks the fix.
+- `clear`: independent sources agree against one. The card ticks the fix.
 - `reason`: the readings disagree among themselves. `photo_facts` with `cams`
-  gives everything known of those butterflies; the notes in the database
+  gives everything known of those butterflies. The notes in the database
   often record an identification changed on purpose.
-- `look`: only the photo settles it: the envelope or the ID line
+- `look`: only the photo settles it, the envelope or the ID line
   (`photo_files_look`, view `envelope` or `both`) before the whole photo.
 
 `show_photo_fixes` puts a section on a card beside the chat, with each
-case's crops, its evidence and the fix; the person decides there, case by
+case's crops, its evidence and the fix. The person decides there, case by
 case or a group at once. After weighing `reason` or `look` cases, the card
 takes your chosen value and a one-line note per case (`items`). «Aplicar»
 writes the database fixes, marks the wrong readings so they are not raised
-again, and starts the Drive renames and turns on a card of their own; one
+again, and starts the Drive renames and turns on a card of their own. One
 that could not be made comes back on the card with its reason.
 
 Files owned by another account are left for that account: the files card

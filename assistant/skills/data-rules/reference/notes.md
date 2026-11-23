@@ -2,26 +2,28 @@
 
 ## Format
 
-The form is `d/m/yy INI: text`, joined with ` | `, in English.
-Besides:
+The form is `d/m/yy INI: text` after the existing note, joined with ` | `, in
+English. The tools add the date and initials.
 
-- The date is the day the note is **written**; the event's date goes inside
-  the text: `29/9/26 FCH: Wing clip 27/9/26`, "preserved 14/9".
+- The date is the day the note is written. The event's date goes inside the
+  text: `29/9/26 FCH: Wing clip 27/9/26`, "preserved 14/9".
 - Other people's older notes keep their own styles (`13-12-24 MJS:`,
   `8 OCT 24 KG:`, `21May26 PAS …`, `16/9/2026 AA:`).
 - Collectors' initials are the `Abbreviation` column of the Lists sheet.
-- Translating: the same meaning in clear English, keeping IDs, codes, names
-  and places as written ("3 pupas muertas" → "3 pupae dead", "parece que
-  están enfermas" → "larvae look sick"); see "Writing a note" below. The owner note is "Butterflies of Oda/Esteban" (old rows'
-  "mariposas de …" stay).
+- A Spanish note is translated with the same meaning in clear English ("3
+  pupas muertas" → "3 pupae dead", "parece que están enfermas" → "larvae look
+  sick"), keeping IDs, codes, names and places as written.
+- The owner note is "Butterflies of Oda/Esteban" (old rows' "mariposas de …"
+  stay).
 
 ## Must be noted
 
 - A change of species, subspecies, sex, ID_status or an ID/CAM/tube: "from X
-  to Y" (and who verified: an expert who only confirms is credited in the
-  note; one who corrects becomes the Identifier).
-- Why a sample is in ethanol instead of flash frozen; "Preserved dead ~2h",
-  "Preserved while dying".
+  to Y", and who verified it. An expert who only confirms is credited in the
+  note. An expert who corrects becomes the Identifier.
+- Why a sample is in ethanol instead of flash frozen.
+- A sample preserved dead or dying, flash frozen ones too: "Preserved dead
+  ~2h", "Preserved while dying".
 - A wing clip's date (no column): `Wing clip d/m/yy`.
 - An identification made from non-wing characters (abdominal lines, antennal
   clubs), with a link to the photo in Drive "Supplementary_images_for_Notes"
@@ -46,8 +48,8 @@ Besides:
 - How a butterfly died: `Death_cause` (Eaten, Spider, Ants, Deformed,
   `Unknown - Only wings`, Heat stroke, Disappearance, Killed_Preserved,
   Unknown…).
-  Notes like "Only found wings" or "Body eaten" are from before mid-2024,
-  when the list lacked those values.
+  Rows from before mid-2024 may give the cause only in a note, because the
+  list lacked those values then. They stay as they are.
 - A paper's doubt marks ("fecha supuesta", "29/6?", "~2/7").
 - A restatement of what the row already says, or of the existing note in
   another language.

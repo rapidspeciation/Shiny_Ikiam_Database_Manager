@@ -2,17 +2,16 @@
 
 The notebook reading rules for `match_notebook` (dittos, dashes, counts,
 species abbreviations, crossed-out values) are in **digitalizar-cuaderno**
-("Writing the values"); this file adds what the other papers look like and the
-marks and shorthand not listed there.
+("Writing the values"). The papers, marks and shorthand below add to them.
 
 ## Which paper holds what
 
-- **Three notebooks for the sheet** (filled daily; they travel between the
-  insectary and Aula 11, and the typing lags): Insectary data (Emergidos:
-  one line per butterfly; the daily deaths too), Insectary stock (clutches,
-  brown), Cruces / F1-F2 (blue, crosses diary). Also: CRISPR notebook
-  (backup of the CRISPR sheet), pheromone notebook (insectary ID, extraction
-  date, CAM, tube), field notebooks and envelopes.
+- **Three notebooks for the sheet**, filled daily: Insectary data
+  (Emergidos, one line per butterfly, and the daily deaths), Insectary stock
+  (clutches, brown) and Cruces / F1-F2 (blue, crosses diary). They travel
+  between the insectary and Aula 11, and the typing lags. Also: CRISPR
+  notebook (backup of the CRISPR sheet), pheromone notebook (insectary ID,
+  extraction date, CAM, tube), field notebooks and envelopes.
 - **Loose sheets**: when a notebook is away, emergences go on a sheet pasted in
   later; hand tables (ID | Species | Preserve date | CAM) come as photos too.
 - **Cage cards and whiteboards** are working aids: a whiteboard (pheromone
@@ -23,39 +22,40 @@ marks and shorthand not listed there.
 
 ## Marks on the page
 
-- Ditto (`"`, `״`, `ll`, `11`, `||`, `〃`, a wavy line) repeats the value above;
-  under a blank cell it repeats the **last value written** above in that
+- Ditto (`"`, `״`, `ll`, `11`, `||`, `〃`, a wavy line) repeats the value
+  above. Under a blank cell it repeats the last value written above in that
   column. A ditto run that crosses a change of species or clutch is suspect:
   flag it.
 - A brace `}` or `{` spans lines: its value or note applies to each line. An
   arrow `↑`/`↗` under a note = the same note as above.
-- A dash by column: in a clutch column → the line is wild-caught (no clutch);
-  in Stock origin → `NA` (a cross clutch too); in a date or count →
-  `NA` (the stage never came). Before 2024 a dash could mean "not yet".
+- A dash by column: in a clutch column → the line is wild-caught (no clutch),
+  in Stock origin → `NA` (a cross clutch too), in a date or count → `NA` (the
+  stage never came). Before 2024 a dash could mean "not yet".
 - A line holding only a pre-written ID or number = unused slot: skip it.
 - Ticks (✓, `V`, `✓✓`) in the margin or after a clutch number mean the line
-  was already typed into the sheet. The tick is not data; the row should
+  was already typed into the sheet. The tick is not data. The row should
   exist, so compare (expect few changes) and say if it is missing.
-- Highlights: Emergidos, dead butterflies already in the database (the
-  proposal tables mark the rows already dead in the sheet); clutches, finished or dead
-  clutches (green). Orange highlights have no known meaning: ask. A green
-  strike-through in 2022 = dead.
-- Pink or red ink = a later correction; the correction is the value.
-- `?` after a value is the writer's own doubt; `~2/7` approximate; `2/9+3/9`
-  laid over two days (the first day). A transcriber's remark in a cell
-  ("inventado") is not data.
+- Highlights on Emergidos mark dead butterflies already in the database (the
+  proposal tables mark the rows already dead in the sheet). Green highlights
+  on clutch pages mark finished or dead clutches. Orange highlights have no
+  known meaning: ask. A green strike-through in 2022 = dead.
+- Pink or red ink = a later correction, and the correction is the value.
+- `?` after a value is the writer's own doubt and `~2/7` is approximate.
+  `2/9+3/9` means laid over two days: the date is the first day. A
+  transcriber's remark in a cell ("inventado") is not data.
 - The year is often written once on the page (or not at all).
-- On Emergidos lines, **Dead date = Emerge date** means killed and preserved
-  on emergence (F2s, parents for experiments).
-- Weekday + date pairs on whiteboards and cards are often inconsistent; a date
+- On Emergidos lines, Dead date = Emerge date means killed and preserved on
+  emergence (F2s, parents for experiments).
+- Weekday + date pairs on whiteboards and cards are often inconsistent. A date
   later than the photo, or a dictated date ten days off, is a slip: ask.
 
 ## Envelopes and labels
 
 - Insectary envelope: CAM · genus species subspecies (hybrids
-  `zaneka x menophilus`) · ♀/♂ · `(Reared ID: 1LK)` or `(ID: 7RO)` · a date:
+  `zaneka x menophilus`) · ♀/♂ · `(Reared ID: 1LK)` or `(ID: 7RO)` · a date.
   `wing clip: 28/8/2024` is the clip date of a living butterfly (a note, not
-  its death); `Died: 27sep2024` or a bare date is the death/preservation date.
+  its death). `Died: 27sep2024` or a bare date is the death or preservation
+  date.
 - Field envelope: CAM · taxon · sex · time (`13:39 Hs`) · locality · dd/mm/yy,
   sometimes weight and collector. Trap envelopes add point (`P1`–`P10`),
   stratum (soto/dosel, Baja/Alta), bait (pescado, banana), weather; `=` = same
@@ -76,7 +76,7 @@ marks and shorthand not listed there.
 |---|---|
 | ♀ / H (hembra), ♂ / M (macho) | female, male (in cross strings `H: DRT M: FRT`) |
 | wc, WC □ / ☑ | wing clip (not done / done) |
-| unk, unk preserv. | cause Unknown; "unk preserv. FS…" = preserved, that tube |
+| unk, unk preserv. | cause Unknown, and "unk preserv. FS…" = preserved, that tube |
 | founded | found (dead) |
 | disapp., desaparecido | Disappearance |
 | preserved CAM… FS… | Killed_Preserved with that CAM and tube |

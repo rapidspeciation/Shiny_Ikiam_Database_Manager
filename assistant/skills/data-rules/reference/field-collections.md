@@ -24,10 +24,10 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 |---|---|
 | CAM_ID, Tube_1_id | the next local wild CAM; its tube |
 | Tube_1_tissue | `WHOLE_ORGANISM` |
-| Tube_2–4 | `NA`; their tissues `NOT_COLLECTED` (older rows with `NA` stay) |
+| Tube_2–4 | `NA`, with their tissues `NOT_COLLECTED` (older rows with `NA` stay) |
 | Preservation_medium | `Flash frozen` |
-| Preserved_dead_alive | `Alive`; `Dead` when found dead or dying, with a note "Preserved dead ~2h" |
-| Death_date = Preservation_date | the collection day (the next day if kept overnight; still `Alive`) |
+| Preserved_dead_alive | `Alive`, or `Dead` when found dead or dying, with a note "Preserved dead ~2h" |
+| Death_date = Preservation_date | the collection day (the next day if kept overnight, still `Alive`) |
 | Splitted_body | `No` |
 | Location_Head, _Torax, _abdomen, _Legs, _wings | `Ikiam` (Location_WholeBody blank) |
 | Insectary_ID, CAM_ID_insectary, FieldMark_ID | `NA` |
@@ -44,8 +44,8 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
   `NA`. The rest stays **blank** until the butterfly dies in the insectary.
 - **Lookup formulas**: Death_date, Preservation_date, Preservation_medium and
   Preserved_dead_alive come from the Insectary_data twin by formula
-  (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`): keep them; no
-  values are typed there. Rows from Aug 2026 lack these formulas (blank even
+  (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`). Keep them and
+  type no values there. Rows from Aug 2026 lack these formulas (blank even
   where the twin has died): Revisión → Sugerencias lists them («Fórmulas que
   faltan»), and a proposal fills them (`missingFormulas`). Rows the app
   creates get them.
@@ -53,7 +53,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
   `NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`.
 - **At death, preserved**: CAM_ID_insectary = the insectary CAM, Tube_1_id =
   the insectary tube, `WHOLE_ORGANISM`, Splitted_body `No`, Location_*
-  `Ikiam`; CAM_ID stays `NA`.
+  `Ikiam`. CAM_ID stays `NA`.
 
 ### Others
 
@@ -69,7 +69,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 - **Collector / Identifier**: the list value `INI - Full name` (`AA - …`,
   `PAS - …`). Unknown: `NA - Missing data`. `CR` is two people in the list:
   ask which. A new person is added to the list first (PAS). Collector is per
-  row (who caught it); Identifier is usually one person per trip; on
+  row (who caught it). Identifier is usually one person per trip, and on
   monitoring Identifier = Collector.
 - **ID_status**: `COMPLETE` (with Identifier), `Complete_but_verify`,
   `Incomplete_genus_only` / tribe / family, `To_identify` (species blank, no
@@ -103,8 +103,8 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 - `Subspecies_Form` free text in the local vocabulary: deceptus, intermedia,
   messenoides; proceriformis, eurydice; salapia, derasa; janarilla; zaneka,
   menophilus; ida; matronalis; ecuadorina; lota; psamathe; tigilla…;
-  `(No subspecies described)` for monotypic species. No trailing spaces;
-  `messnoides` → messenoides.
+  `(No subspecies described)` for monotypic species. No trailing spaces, and
+  `messnoides` is corrected to messenoides.
 - `Sex`: `female ?` / `male ?` only on preserved rows. Sexed by genitalia
   (Methona, Oleria tigilla…) → note "Sexed by genitalia".
 - Insectary_data writes the trinomial ("Mechanitis messenoides deceptus" =
@@ -124,20 +124,20 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 
 Taxonomy (Family, Subfamily, Tribe, Genus), place, photo, rack, manifest and
 Sanger (STS) columns are formulas; Data_entry_order, Family to Genus, Country
-and Side_Andes are also protected (the app cannot write them). A row,
-new or existing, leaves them to their formulas: the proposal shows what each
-one will give, and when that is the value wanted nothing is typed there; a
-value is typed over a formula only when the formula gives something else,
-and that is said. The manifest columns are kept by PAS. A Death/Preservation
-lookup keyed on an Insectary_ID `NA` or blank pulls another butterfly's data:
-point it out; those values are not this butterfly's.
+and Side_Andes are also protected (the app cannot write them). A row, new
+or existing, leaves them to their formulas, and the proposal shows what each
+one will give. A value is typed over a formula only when the formula gives
+something other than the value wanted, and the proposal says so. The manifest
+columns are kept by PAS. A Death/Preservation lookup keyed on an Insectary_ID
+`NA` or blank pulls another butterfly's data: point it out, since those
+values are not this butterfly's.
 
 ## Wild-caught twins
 
 A butterfly taken alive has **two rows with the same Insectary_ID**: this one
 and Insectary_data (`Wild-caught`, CLUTCH NUMBER `NA`, Stock_of_origin `NA`,
 species, sex, Intro2Insectary_date = Collection_date). Propose both in the same
-proposal; a correction of species or sex goes to both. Entry is often split:
-whoever preserves types CAM and tubes, whoever holds the field envelope types
-collector, place, time and weather: a half-complete row waits for the envelope
-(say whose).
+proposal, and send a correction of species or sex to both. Entry is often
+split. Whoever preserves types CAM and tubes, and whoever holds the field
+envelope types collector, place, time and weather, so a half-complete row waits
+for the envelope (say whose).

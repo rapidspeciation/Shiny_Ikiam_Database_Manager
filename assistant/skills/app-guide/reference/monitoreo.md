@@ -24,9 +24,9 @@ track and points are kept for the map.
 1. Get the walk, one of:
    - Paste the trail link in «Pega el enlace de una ruta de Wikiloc» →
      «Traer». The app server's «Importador de Wikiloc» reads the public page,
-     usually within a minute or two (status «activo» / «sin señal (…)»; while
-     it does not respond, links wait in the queue). «Trabajos (N)» shows the
-     jobs.
+     usually within a minute or two. Its status shows «activo» or «sin señal
+     (…)», and while it does not respond the links wait in the queue.
+     «Trabajos (N)» shows the jobs.
    - «Buscar nuevos»: checks the «Perfiles seguidos (N)» for new walks whose
      title contains the profile's pattern (e.g. "monitor"), assigned to that
      profile's collector. A profile is added with its link and «Recolector…»
@@ -94,9 +94,9 @@ Capture points of the stored walks on a satellite map, atlas-style filters
 - «Mostrar como» Puntos / Grupos / Calor («Radio del calor»); «Colorear por»
   Especie / Sexo / Tipo (preservado, marcado, recaptura) / Recorrido;
   «Transectos T1–T4», «Trazados GPS de Wikiloc», «Unir recapturas».
-- With dates chosen, «Recorridos de ese día» lists the walks (open in
-  Wikiloc; «Quitar recorrido del mapa» for its uploader or a reviewer/admin —
-  the sheet rows do not change).
+- With dates chosen, «Recorridos de ese día» lists the walks, each opening in
+  Wikiloc. Its uploader or a reviewer/admin can remove a walk with «Quitar
+  recorrido del mapa», which leaves the sheet rows unchanged.
 - A chosen butterfly («Individuo B39 · …») links to «ver fotos» (Recapturas).
 
 Parameters (lists comma-separated): `fechas=YYYY-MM-DD,…`, `anios=2025,2026`,
@@ -131,9 +131,10 @@ note, with the rows it could be (editors).
 - «La nota no coincide con su fila»: already paired, but note and sheet
   disagree → «Sí es la fila N» (keeps the pairing; fix the sheet in Buscador if
   it is wrong).
-- «¿Qué fila es?»: pick one of «Filas de ese día que puede ser» ((propuesta)
-  marks the app's guess) or «No es ninguna». «guardado sin fila» = stored on
-  the map without a row until chosen.
+- «¿Qué fila es?»: pick one of «Filas de ese día que puede ser» (the one
+  marked `(propuesta)` is the app's guess) or «No es ninguna». «guardado sin
+  fila» means the point is stored on the map without a row until one is
+  chosen.
 - Walks still «por revisar» are paired here point by point, then «Pasar al
   mapa».
 - Re-matching all walks with the current method: «Aplicar N cambios»

@@ -14,10 +14,10 @@ readings. Your task gives the notebook kind, the photo path(s) and turn
 ## Steps
 
 1. Look at every strip (several Read calls in one message). Each strip
-   repeats the header row; on a right-hand page the red-framed column on the
+   repeats the header row. On a right-hand page, the red-framed column on the
    left is the left page's ID column cut on the same lines, so every line
    shows its ID.
-2. Transcribe **every line and every column**, top to bottom, crossed-out
+2. Transcribe every line and every column, top to bottom, crossed-out
    lines included (`crossedOut: true`) and the notes, following each line
    across the gutter by its ID. Skip only lines holding nothing but a
    pre-written ID or number. A brace or ditto run can go past a strip: find
@@ -25,11 +25,12 @@ readings. Your task gives the notebook kind, the photo path(s) and turn
 3. Digits: compare this hand's 1 and 7 (and 3 and 8) on clear cells first,
    and zoom on cells where they decide a value:
    `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out DIR --rotate R --zoom x0,y0,x1,y1`
-   (fractions of the upright photo; R and DIR as in your task).
+   (fractions of the upright photo, with R and DIR as in your task).
 4. On a spread, check the two halves are in step: the stages must make sense
-   on each line (no hatch date or 0 larvae → no pupae or adults; "no hatch" /
-   "all died" sit on such lines; `ins`/`lab` is on almost every line). If
-   not, the right page is shifted by a line: re-align it.
+   on each line. A line with no hatch date or 0 larvae has no pupae or
+   adults, "no hatch" and "all died" sit on such lines, and `ins`/`lab` is on
+   almost every line. If the halves are not in step, the right page is
+   shifted by a line: re-align it.
 5. Write the page to the output file with the Write tool, then check it
    parses: `python3 -m json.tool FILE > /dev/null`.
 6. Answer in four lines: the file's path; the counts (lines, doubtful cells,
@@ -47,14 +48,14 @@ readings. Your task gives the notebook kind, the photo path(s) and turn
  "spans": [{"field": "COLUMN", "value": "…", "from": "KEY", "to": "KEY"}]}
 ```
 
-- `kind` and `rotate` as your task gives them; `photo` the photo path (a
-  list for several photos, and each line's `photo`: 0 for the first);
-  `title` a short name of the page; `year` only when the page shows it (a
-  header, a sticky note, a full date).
+- `kind` and `rotate` as your task gives them. `photo` is the photo path: a
+  list for several photos, with each line's `photo` giving its index (0 for
+  the first). `title` is a short name of the page. Give `year` only when the
+  page shows it (a header, a sticky note, a full date).
 - `lines`: one per written line, top to bottom, up to 150. `raw`: the line as
   written, short, keeping abbreviations and symbols. `values`: column → text
-  as read, with the exact column names below; a cell empty on the page: its
-  column left out.
+  as read, with the exact column names below. Leave out the column of a cell
+  that is empty on the page.
 - `confidence`, `alternatives`, `reasons`: only for doubtful and unreadable
   cells (below). `crossedOut: true` for a crossed-out line or one marked "no
   se usó el ID".
@@ -82,11 +83,11 @@ Columns per kind:
 
 ## Reading a page
 
-Values go **as written**: the tool converts them.
+Values go as written: the tool converts them.
 
-- Dates as written (`17/9`); ditto marks replaced by the value above (or a
-  span); short CAMs and tubes (`cam505`, `81`) may stay short.
-- Counts as written (`12+15`; a corrected count as `12=9=4`); INSECTARY OR
+- Dates as written (`17/9`), with ditto marks replaced by the value above (or
+  a span). Short CAMs and tubes (`cam505`, `81`) may stay short.
+- Counts as written (`12+15`, a corrected count as `12=9=4`). INSECTARY OR
   LABORATORY (`ins/oda`) and the notes columns as written.
 
 ### Doubtful and unreadable cells
@@ -99,9 +100,9 @@ Give everything readable; doubt is a highlight, not an omission.
   line you could follow, is sure. A clear value that looks wrong (a date out
   of stage order, adults > pupae) is sure: send it as written and point it
   out.
-- **Cannot read it at all**: `null` (never left out), why in `reasons`, and
-  any partial reading in `alternatives` (e.g. `"1?/9"`). It shows empty for
-  the person to fill and is never written empty.
+- **Cannot read it at all**: `null`, with the column kept, why in `reasons`,
+  and any partial reading in `alternatives` (e.g. `"1?/9"`). It shows empty
+  for the person to fill and is never written empty.
 - **Look-alikes**: 0/O, 1/I/7, 1/4, 1/2, 3/7, 2/7, 5/S, 8/B, 2/Z, 6/G, 4/9,
   3/8, `+`/1; ♀/♂ written small. Copy IDs as written (`600` for `6OO`; `5OS`
   and `50S` are two butterflies): the tool looks among look-alikes.
@@ -167,13 +168,13 @@ Give everything readable; doubt is a highlight, not an omission.
   Ceremonia). More: `.claude/skills/data-rules/reference/notes.md`.
 - **Which line a value is on**: notebook pages curve like any open book, so
   a value can look as if it sits on the line above or below its own. Follow
-  the page's printed horizontal lines to the ID they start from; a straight
-  line across the photo can land on the wrong row. One note per clutch or
-  butterfly; a bracket or arrow shares it between the lines it spans. On
-  Emergidos pages a death date or cause can look higher or lower than its
-  line (the page curves, or it was written close to the next ID): a smiley,
+  the page's printed horizontal lines to the ID they start from, since a
+  straight line across the photo can land on the wrong row. Each clutch or
+  butterfly has one note, and a bracket or arrow shares it between the lines
+  it spans. On Emergidos pages a death date or cause can also look higher or
+  lower than its line because it was written close to the next ID: a smiley,
   or a death before the emergence, on the line it seems to sit on means it
-  belongs to a neighbouring line. A value between two lines is doubtful; say
+  belongs to a neighbouring line. A value between two lines is doubtful: say
   which two.
 
 ## The notebooks
@@ -190,7 +191,7 @@ lines highlighted in colour are finished clutches.
   species cell goes to `Generation` (`F1`); the clutch number stays as
   written (`1013(2)`).
 - `INSECTARY OR LABORATORY` as written: `ins`, `lab`, `ins/oda`,
-  `ins/este`, `ins ESTEBAN` (what looks like `ins/lab` is `ins/oda`).
+  `ins/este`, `ins ESTEBAN`. What looks like `ins/lab` is `ins/oda`.
 - `NOTES`: parents female first: `U8A♀ + C8B♂`.
 - The column headed "dissections" or "# larvae preserved", often a sum, is
   `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`.
@@ -206,17 +207,17 @@ Emerge date · Dead date · Notes*. The first `#` is a running count such as
 - `Insectary_ID`: the ID on the wing (digit + two letters like `5VB`, `6OO`,
   or letter, digit, letter like `N4D`).
 - `Stock_of_origin` as written (`interm.`, `messen.`). Only the *M.
-  messenoides* stocks have one: every other line, and a dash, is `"NA"`;
-  always send it.
-- Emerge date → `Intro2Insectary_date`; dead date → `Death_date`. The notes
+  messenoides* stocks have one. Every other line, and a dash, is `"NA"`.
+  Send the column on every line.
+- Emerge date → `Intro2Insectary_date`, dead date → `Death_date`. The notes
   go to `Notes_Insectary_data` with their column words ("ethanol", "wc", a
   CAM…): the tool moves those to their columns.
 - **A CRISPR control** ("CRISPR #159 control" in the clutch column):
   `CLUTCH NUMBER` `"NA"`, `Wild_Reared` `Reared`, the stock, note "Comes from
   CRISPR control #159".
 - **An "ethanol" / "flash frozen" bracket** over a butterfly with a CAM: it
-  was killed and preserved on its emerge date: that is its `Death_date`, even
-  when blank.
+  was killed and preserved on its emerge date, which is its `Death_date` even
+  when the dead-date cell is blank.
 - **Wild-caught lines** (no clutch, "—"; the note gives the collector's
   initials, time, weather and place, e.g. "PAS 12:15 N.C C.T.C"):
   `Wild_Reared` `Wild-caught`, species, sex, `Intro2Insectary_date` (the

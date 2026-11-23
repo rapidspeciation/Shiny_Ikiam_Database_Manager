@@ -14,28 +14,27 @@ organisation, so the file is copied and the original deleted:
    takes the folders inside it too.
 2. The first owner opens the sheet signed in to their account and presses
    «Delete copied files»: the `…_todelete` files they own go to the bin
-   (mode 0; the space is freed when the bin is emptied) or are deleted for
-   good (mode 1).
+   (mode 0, and the space is freed when the bin is emptied) or are deleted
+   for good (mode 1).
 
 - The account that presses «Copy files» is the one that ends up owning the
-  photos: pressed from the project's account it copies them the other way.
+  photos: pressed from the project's account, it copies them the other way.
   «Delete copied files» only touches files named `…_todelete`.
-- The sheet's cells are written from here, so the other person only opens it
-  and presses the button: `organize_photos` with
-  `{action: "transfer", step: "copy", in: <folder>}` before step 1, or
-  `step: "delete"` before step 2 (`permanent: true` for mode 1, when the
-  space is needed right away). The sheet holds one folder at a time; while a
-  run of it is going on the plan says so and leaves the step out.
+- The sheet's cells are written from here with `organize_photos`
+  `{action: "transfer", step: "copy" or "delete", in: <folder>}`
+  (`permanent: true` with `"delete"` for mode 1, when the space is needed
+  right away), so the other person only
+  opens it and presses the button. It holds one folder at a time, and while
+  a run of it is going on the plan says so and leaves the step out.
 - The copies are new files, so the old links end with the originals.
-  `sync_photo_links` moves each row to the copy of the same name; it can be
-  run right after step 1, and the links never break.
-- Step 2 for the project's own files can be done here:
-  `organize_photos` `fix: [{check: "copied", in: <folder>}]` bins each
-  `…_todelete` file whose copy is beside it (same name, same size), and leaves
-  the sheet ready for the accounts that own the others. The bin still counts
-  against the space until it is emptied in Drive; `permanent: true` deletes
-  them for good instead, which frees the space at once and cannot be taken
-  back.
+  `sync_photo_links` moves each row to the copy of the same name. It can be
+  run right after the copy, and the links never break.
+- The project's own originals are deleted from here: `organize_photos`
+  `fix: [{check: "copied", in: <folder>}]` bins each `…_todelete` file whose
+  copy is beside it (same name, same size) and leaves the sheet ready for the
+  accounts that own the others. The bin counts against the space until it is
+  emptied in Drive. `permanent: true` deletes them for good instead, which
+  frees the space at once and cannot be taken back.
 - Which account owns each file is Photo_links' «Owner Email» column
   (`query`): the files still owned by the project's account are the ones
   that take its space.
@@ -47,16 +46,16 @@ be uploaded does not fit), offer this, a step at a time:
    as Drive itself says: it counts folders Photo_links does not list too),
    and who took the photos over the last time (`takenOverBefore`). Ask which
    folder to hand over. Originals already copied (`originalsAlreadyCopied`)
-   are freed first: step 4 alone.
-2. `organize_photos` with `{action: "transfer", step: "copy", in: <folder>}`:
-   once they press «Apply», the sheet has the folder. Give them the sheet's
-   link to send to the person of that account, who opens it signed in to it
-   and presses «Copy files» (a few seconds a file: a folder of some hundred
-   photos takes half an hour or more).
-3. When they say the copy is done: `sync_photo_links`, so the rows point to
-   the copies. A folder Photo_links does not list yet is listed with it
-   (`add`): its photos then show in the sheets, and step 4 can find it.
-4. Then `organize_photos` with
-   `fix: [{check: "copied", in: <folder>, permanent: true}]`: the originals
-   the project's account owns, each with its copy beside it, are deleted for
-   good and the space is free. `drive_space` afterwards shows it.
+   need only the deletion at the end, and are freed first.
+2. `organize_photos` with the transfer `step: "copy"` and that folder. Once
+   they press «Apply», give them the sheet's link to send to the person of
+   that account, who opens it signed in to it and presses «Copy files» (a
+   few seconds a file, so a folder of some hundred photos takes half an hour
+   or more).
+3. When they say the copy is done, `sync_photo_links`. A folder Photo_links
+   does not list yet is listed with it (`add`), so its photos show in the
+   sheets and the deletion can find it.
+4. Then the deletion for good: `organize_photos` with
+   `fix: [{check: "copied", in: <folder>, permanent: true}]`. The originals
+   the project's account owns, each with its copy beside it, are deleted and
+   the space is free. `drive_space` afterwards shows it.

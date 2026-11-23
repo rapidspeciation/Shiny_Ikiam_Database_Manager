@@ -8,16 +8,15 @@ reviewer or admin role. All tabs keep their pending edits in the save bar
 
 The tables behave like Google Sheets:
 
-- Type over a selected cell to replace it; double click, Enter or F2 edits in
-  place; Enter/Tab save and move (Shift goes back). «Supr» (Delete) clears the
-  selection. Ctrl+D (or the «Rellenar» button in Buscador) copies the first
-  selected row down the selection.
-- Paste ranges from Excel/Sheets; one value pasted over several selected cells
-  fills them all.
-- **Fill handle**: the small square at the bottom-right of a selection; drag
-  it down to copy. In the Colecta list, `Insectary_ID`, `CAM_ID` and
-  `Tube_1_id` continue the series instead (O6D → O7D, CAM079895 → CAM079896);
-  elsewhere it copies.
+- Type over a selected cell to replace it. Double click, Enter or F2 edits in
+  place, and Enter/Tab save and move (Shift goes back). «Supr» (Delete) clears
+  the selection. Ctrl+D (or the «Rellenar» button in Buscador) copies the
+  first selected row down the selection.
+- Paste ranges from Excel/Sheets. One value pasted over several selected
+  cells fills them all.
+- **Fill handle**: drag the small square at the bottom-right of a selection
+  down to copy. In the Colecta list, `Insectary_ID`, `CAM_ID` and `Tube_1_id`
+  continue the series instead (O6D → O7D, CAM079895 → CAM079896).
 - Grey cells are formulas (read-only). A ▾ arrow marks a dropdown list: click
   it to open the list. A value outside a non-strict list is saved but flagged
   with a red corner ("se guarda igual; corrígelo si es un error").
@@ -56,14 +55,15 @@ as a spreadsheet.
 - «Hoja completa» opens that sheet whole at the match row; «Resultados de
   «…»» goes back to the results.
 - With the box empty: «Hoja» (grouped: Insectario, Campo, Cruces,
-  Experimentos, Muestras, Fotos, Referencia; row counts in grey), «Filas
+  Experimentos, Muestras, Fotos, Referencia, with row counts in grey), «Filas
   vacías preasignadas» (also show the pre-made empty rows), «Revisión de
   datos» (the Revisión tab filtered to this sheet), «Añadir fila» (a new row
-  at the top, marked «nueva»), «Crear filas preasignadas» (reviewer/admin:
-  asks how many, max 500; copies the last pre-made row's formulas and
-  dropdowns; in Insectary_data it writes the next IDs into the rows after the
-  last ID, and when no rows are left PAS adds them), «Rellenar» (= Ctrl+D), reload,
-  download CSV, open the sheet in Google Sheets.
+  at the top, marked «nueva»), «Crear filas preasignadas», «Rellenar» (=
+  Ctrl+D), reload, download CSV, open the sheet in Google Sheets.
+- «Crear filas preasignadas» (reviewer/admin) asks how many rows (max 500)
+  and copies the last pre-made row's formulas and dropdowns. In
+  Insectary_data it writes the next IDs into the rows after the last ID, and
+  when no rows are left the curator (PAS) adds them.
 - A banner warns when the sheet's header row changed in Google Sheets (a
   missing/duplicate column blocks reading and saving that sheet).
 
@@ -85,23 +85,27 @@ alive also get their Insectary_data row in the same save.
 1. Header (what the outing shares; on phones it folds into one line, tap ✎):
    «Collection_date» (warns «¿Es hoy la fecha de la colecta?» when it is
    today), «Collector», «Identifier», «Rainfall» (starts `DY_(dry)`),
-   «Cloud_cover» — they apply to rows added from now on.
+   «Cloud_cover». These apply to the rows added after they are set.
 2. «Collection_location», «Filas a añadir», «SPECIES (opcional)» (the same for
    all), «Release_Collect» (`Collected_Sent2Insectary`, `Collected_Preserved`,
    `Released_Unmarked`) → «Añadir N filas». Change the place and add more for a
    second site.
 3. Each row: SPECIES, Subspecies_Form, Sex (`female`, `male`, `female ?`,
    `male ?`, `NOT_COLLECTED`), Release_Collect, Collection_time (hh:mm),
-   then per fate: **insectary** → the next free pre-made `Insectary_ID` (to
-   write on the wings, no CAM yet); **preserved** → the next `CAM_ID` (from
-   Lists' Wild_indv_CAMid pool) and `Tube_1_id`, and Preservation_medium
-   (`Flash frozen` by default); Purpose, notes, and per-row Collector,
-   Identifier, Rainfall, Cloud_cover.
+   then by fate:
+   - **insectary**: the next free pre-made `Insectary_ID` (to write on the
+     wings, no CAM yet).
+   - **preserved**: the next `CAM_ID` (from Lists' Wild_indv_CAMid pool),
+     `Tube_1_id` and Preservation_medium (`Flash frozen` by default).
+
+   Then Purpose, notes, and per-row Collector, Identifier, Rainfall,
+   Cloud_cover.
 4. Boxes on the right: «Próximo CAM_ID» (warns when fewer than 50 are left),
    «Próximo tubo», «Próximo Insectary ID».
-5. Views «Tabla» (spreadsheet, fill handle continues IDs) or «Formulario»
-   (tick rows, «hasta aquí» for a run, then fill SPECIES/Sex/Release_Collect
-   and «Aplicar»; «Quitar», «Desmarcar»; copy a row to apply it to others).
+5. Views «Tabla» (spreadsheet, fill handle continues IDs) or «Formulario». In
+   «Formulario», tick rows (use «hasta aquí» for a run), fill
+   SPECIES/Sex/Release_Collect and press «Aplicar». It also has «Quitar» and
+   «Desmarcar», and a row can be copied to apply it to others.
 6. «Quitar vacías», «Vaciar lista». The list is kept **in this browser** until
    saved or emptied, even after closing the page.
 7. «Guardar colecta (N)» → a summary («Guardar N mariposas»: date, places,
@@ -136,14 +140,15 @@ chosen, the date, the cause and preserved or not, and write the same cells.
 Below: «Últimas N muertes registradas» («ver más»).
 
 **Tarjetas**, in two levels like a shopping cart:
-1. A search box (Insectary ID, CAM or tube; says alive or dead; for a worn
-   wing, `A?B` = one character unreadable, `A[16]B` = one of two, and
-   look-alikes such as 6/8 or B/D are offered with the doubtful character in
-   amber; ♀ / ♂ / ? and a species under the box rank what is seen). Enter or
-   a tap puts the butterfly in «Seleccionadas»; a pasted list or a range
-   (`B0D-B9D`) puts them all; «Seleccionar varias» adds each ID tapped.
-2. The panel (right column on a wide screen; on a phone one line above the
-   cards, «Cambiar»): «Fecha de muerte» (Hoy / Ayer / a date), the cause as
+1. A search box for an Insectary ID, CAM or tube, which says whether the
+   butterfly is alive or dead. For a worn wing, `A?B` = one character
+   unreadable and `A[16]B` = one of two, and look-alikes such as 6/8 or B/D
+   are offered with the doubtful character in amber. ♀ / ♂ / ? and a species
+   under the box rank what is seen. Enter or a tap puts the butterfly in
+   «Seleccionadas», a pasted list or a range (`B0D-B9D`) puts them all, and
+   «Seleccionar varias» adds each ID tapped.
+2. The panel (the right column on a wide screen, or on a phone one line above
+   the cards with «Cambiar»): «Fecha de muerte» (Hoy / Ayer / a date), the cause as
    buttons, «Sin preservar | Preservada» (the medium and each one's CAM and
    tube, next free ones pre-filled) and a note. With no card open it is «Para
    las próximas mariposas»: every butterfly added afterwards starts with those
@@ -280,7 +285,8 @@ the butterflies go into a small cage and are released one by one.
 1. «Nuevo censo»: the date (today by default), then tap the species (its
    butterflies alive are counted beside it: Insectary_data rows with no
    Death_date and no Death_cause). A census already «En curso» for that species
-   and day is joined; several phones mark it at once and see each other's marks.
+   and day is joined, and several phones can mark it at once and see each
+   other's marks.
 2. For each butterfly: type the wing ID (`A?B`, `A[16]B` and look-alikes as in
    Muertes; ♀ / ♂ / ? if seen) and tap it, or Enter for the first: a big ☺ with
    «Deshacer». «Viva, pero se ve distinta…» keeps a sex or species doubt with a

@@ -13,16 +13,16 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
   (remote `github-ithomiini:…`, Host `github-ithomiini` in `~/.ssh/config`),
   not a personal GitHub account. There is no `gh` CLI on the server.
 - **Running app**: a *release* built from the source in
-  `/home/ubuntu/ithomiini/releases/<time>`; `current` points at it. These are
-  built, minified bundles: changes go in the source. A file patched by hand
-  there breaks the version check (the page keeps saying "new version") and is
-  wiped by the next deploy.
+  `/home/ubuntu/ithomiini/releases/<time>`, which `current` points at. These
+  are built, minified bundles: changes go in the source. A file patched by
+  hand there breaks the version check (the page keeps saying "new version")
+  and is wiped by the next deploy.
 
 | Part | Where |
 |---|---|
 | Screens | `frontend/src`: Vue 3 + TypeScript + Tailwind. Grids are Tabulator 6.5 through `components/SheetGrid.vue`, `CollectGrid.vue`, `components/assistant/ProposalSheet.vue` and `lib/gridKit.ts` |
-| Server | `server/*.mjs`: Node 24, node:sqlite. The assistant's tools: `server/assistant.mjs`, run in a worker thread (`server/assistant-host.mjs`) that reads the database through `server/store-reader.mjs` (the Store's reads it lists, writes only to the proposals); notebook matching: `server/notebook*.mjs`; document tools: `server/knowledge.mjs` |
-| Assistant instructions | `assistant/`: `AGENTS.md` (the brief; `server/brief.mjs` fills in the person), `skills/`, `agents/` (the app shows them at `#/instrucciones`) |
+| Server | `server/*.mjs`: Node 24, node:sqlite. The assistant's tools are in `server/assistant.mjs`, run in a worker thread (`server/assistant-host.mjs`) that reads the database through `server/store-reader.mjs` (the Store's reads it lists, writes only to the proposals). Notebook matching: `server/notebook*.mjs`. Document tools: `server/knowledge.mjs` |
+| Assistant instructions | `assistant/`: `AGENTS.md` (the brief, into which `server/brief.mjs` fills the person), `skills/`, `agents/` (the app shows them at `#/instrucciones`) |
 | Design and docs | `DESIGN.md` and `PRODUCT.md` (read both before UI work), `docs/` |
 
 ## Rules of the code
@@ -48,7 +48,7 @@ in the app that would remove the workaround: it is usually the change to
 make. Before adding an option the AI sets row by row, check whether the app
 could know it by itself (e.g. which rows are dead, from Death_date). The
 tests limit the size of tool answers and of the tool descriptions every chat
-loads: a clearer description is worth its characters; cut repetition first,
+loads. A clearer description is worth its characters: cut repetition first,
 and raise the limit when what remains is needed.
 
 ## Steps
@@ -72,23 +72,23 @@ and raise the limit when what remains is needed.
 5. Release: in `/home/ubuntu/ithomiini/src`, `git pull --rebase`,
    `git merge chat/<topic>`, `git push`. Then read
    `curl -s localhost:8794/health`: deploy when `google.workbook.state` is
-   `ok` and every number in `writing` is zero; otherwise wait and tell the
+   `ok` and every number in `writing` is zero. Otherwise wait and tell the
    person why. A deploy restarts the app for everyone, so changes from the
    same hour go out together: tell the person, then run `scripts/deploy.sh`
    once in the background. It installs only a commit Franz's PC has
-   tested and built (`scripts/deploy.sh --stage` there); without one it
+   tested and built (`scripts/deploy.sh --stage` there). Without one it
    stops before anything changes and says so: ask Franz to stage the
    commit. Only when he says his PC is off and the change cannot wait:
    `DEPLOY_LOCAL_TESTS=1 scripts/deploy.sh` (the full tests here, a few
    minutes). It restarts the app (T3 chats keep running) and refreshes the
-   T3 workspaces when they changed; saves waiting for Google are kept and
+   T3 workspaces when they changed. Saves waiting for Google are kept and
    written by the new process.
-6. Verify: `version.json` shows the new build; a minute later /health has
-   `"status":"ok"` and an `eventLoop` p99 of a few ms; use the change once
+6. Verify: `version.json` shows the new build, and a minute later /health has
+   `"status":"ok"` and an `eventLoop` p99 of a few ms. Use the change once
    (e.g. the new option on this chat's proposal). Tell the person to reload
    and what to look at, and say what you could not see on a screen. If
    something broke, or the person wants it undone,
    `bash /home/ubuntu/ithomiini/current/scripts/rollback-release.sh` goes
-   back to the release before at once (no tests needed); then `git revert`
-   the commit and deploy it as above. Remove the
-   worktree when done (`git -C /home/ubuntu/ithomiini/src worktree remove /home/ubuntu/ithomiini/work/<topic>`).
+   back to the release before at once (no tests needed). Then `git revert`
+   the commit and deploy it as above. Remove the worktree when done:
+   `git -C /home/ubuntu/ithomiini/src worktree remove /home/ubuntu/ithomiini/work/<topic>`.

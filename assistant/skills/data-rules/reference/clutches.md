@@ -7,15 +7,16 @@ eggs; the plant is taped with date, species and egg count).
 
 ## Formula columns
 
-Rows from clutch 989 lack the two formulas that count from Insectary_data
-(`Earliest Emerge Date`, `Number of Adults in Insectary_data`; the pre-made
-block ran out): listed in «Fórmulas que faltan» for a proposal to fill; no
-values are typed there.
+From clutch 989 on, rows lack the two formulas that count from
+Insectary_data, `Earliest Emerge Date` and `Number of Adults in
+Insectary_data`, because the pre-made block ran out. «Fórmulas que faltan»
+lists these rows so that a proposal can fill the formulas. No values are typed
+in these two columns.
 
 ## Clutch numbers
 
-- One global sequence (1016 in Sep 2026), appended in **pickup order, not
-  laying order**: DATE LAID can be earlier than the previous clutch's.
+- One global sequence (1016 in Sep 2026), appended in pickup order, not
+  laying order: DATE LAID can be earlier than the previous clutch's.
 - Only F1 clutches have batches, written `N(k)` with no space:
   - F1 clutches (Generation `F1`, parents in NOTES, e.g. `A7E♀`): all eggs
     of one couple share one number, and every batch carries its number in
@@ -36,10 +37,10 @@ values are typed there.
 - One term per day, plant or group: `=12+15`. Single values too: `=12`.
 - A minus is a loss: `=27-5` (27 larvae, 5 died). A total corrected later
   becomes a subtraction: `=31+4-34`.
-- NUMBER OF LARVAE holds the larvae used (team convention since Oct 2026):
-  those that died or disappeared are subtracted, preserved ones and those that
-  pupated are not (20 larvae, 10 preserved, 5 pupated, 5 died → `=20-5`).
-  Older rows also subtracted the pupated and preserved ones; they stay.
+- NUMBER OF LARVAE holds the larvae used: those that died or disappeared are
+  subtracted, preserved ones and those that pupated are not (20 larvae, 10
+  preserved, 5 pupated, 5 died → `=20-5`). Rows from before Oct 2026 also
+  subtracted the pupated and preserved ones, and they stay.
 - The sheet keeps one date per stage, the first. Each day's counts go in
   NOTES, one dated note per event: `5/10/26 FCH: 3 larvae hatched`,
   `… 5 larvae died`, `… 2 larvae disappeared`, `… 3 pupated`,
@@ -57,9 +58,9 @@ values are typed there.
 - **Failed clutch (no hatch)**: HATCHING DATE `NA`, NUMBER OF LARVAE `=0`,
   then PUPA DATE, NUMBER OF PUPA, EMERGENCE DATE, NUMBER OF ADULTS and
   DISECTIONS `NA`; a note such as "no hatch" / "All eggs turn black".
-- A stage that never came: its date `NA`; its count as written: a dash is
-  `NA`, a written `0` stays `0` (rows with hatched larvae and no pupae hold
-  `0` more often than `NA`).
+- A stage that never came has the date `NA`. Its count follows the page: a
+  dash is `NA`, and a written `0` stays `0`. Rows with hatched larvae and no
+  pupae hold `0` more often than `NA`.
 - DATE LAID `NA` = eggs found or brought in, or the date unknown.
 - `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`: `NA` by default, else a sum
   (`=2+6`; words like "3 pupas; 1 larva" = 4) of the larvae and pupae
@@ -77,16 +78,17 @@ values are typed there.
   `Laboratory` (2022–24, "Aula 11"). A line without it takes the page's room.
 - `ins/<name>` (`ins/oda`, `ins/este`, `ins ESTEBAN`, sometimes written once
   above the first line) marks clutches of students who use the insectary:
-  `Insectary` plus the note "Butterflies of Oda" / "Butterflies of Esteban"
-  (English; older rows say "mariposas de …": that counts as said, leave it).
+  `Insectary` plus the note "Butterflies of Oda" / "Butterflies of Esteban",
+  in English. Older rows that say "mariposas de …" already have the note:
+  leave them.
   What looks like `ins/lab` is `ins/oda`. `match_notebook` does this; the
   code itself does not go in NOTES.
 
 ## Generation, species, parents
 
-- `Generation`: `F1`, `F2`, `Backcross` when the page says so (F1)/(F2)/(BC);
-  a stock clutch is `NA`.
-- `SPECIES`: the **mother's** species, or the cross (hybrid names and `VS`
+- `Generation`: `F1`, `F2`, `Backcross` when the page says so (F1)/(F2)/(BC).
+  A stock clutch is `NA`.
+- `SPECIES`: the mother's species, or the cross (hybrid names and `VS`
   forms: [crosses.md](crosses.md)). A wrong stocks species propagates to
   every sibling's SPECIES formula.
 - Eggs or larvae from the field or an unknown mother: SPECIES `NA` + a note

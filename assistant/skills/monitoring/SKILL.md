@@ -1,11 +1,11 @@
 ---
 name: monitoring
-description: Butterfly monitoring on the Ikiam transects T1–T4 — a Wikiloc walk turned into Collection_data rows (queue_walk, get_walk), a monitoring capture recorded by hand, field marks (M/A/B series) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use it when the person sends a Wikiloc link, asks about a walk, a mark or a recapture, whether a species should be preserved or marked, or how monitoring data are recorded.
+description: Butterfly monitoring on the Ikiam transects T1–T4: a Wikiloc walk turned into Collection_data rows (queue_walk, get_walk), a monitoring capture recorded by hand, field marks (M/A/B series) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use it when the person sends a Wikiloc link, asks about a walk, a mark or a recapture, whether a species should be preserved or marked, or how monitoring data are recorded.
 ---
 
 # Monitoring (Ikiam transects)
 
-The Ikiam trail (1.11 km; section T1 by the campus to T4) is walked 4 days a
+The Ikiam trail (1.11 km, from section T1 by the campus to T4) is walked 4 days a
 month, one walker per day, who records each butterfly as a Wikiloc waypoint
 with a photo and a note (species, sex, time, height, weather, mark). The
 project documentation's `monitoring.md` has the app's full rules. The walk is
@@ -22,7 +22,7 @@ window in the month.
    (below), or the missing values of the row the walker already typed.
 
 The person can also import the walk in Monitoreo → Importar, which hands out
-the next CAM and tube for preserved points; a GPX file uploaded there also
+the next CAM and tube for preserved points. A GPX file uploaded there also
 keeps the GPS times.
 
 ## A capture by hand (no Wikiloc)
@@ -44,60 +44,63 @@ given).
   and the import take it from the point's GPS position, and
   `review_suggestions` (source `wikiloc-transects`) suggests the missing
   ones.
-- **Which butterflies**: all Ithomiini **and** their tiger-pattern mimics
-  (Heliconius numata and others); the 30 rule applies to Ithomiini only.
+- **Which butterflies**: all Ithomiini and their tiger-pattern mimics
+  (Heliconius numata and others). The 30-preserved rule applies to Ithomiini
+  only.
 - **SamplingDay_data**, one row per walker and day, also on days without
-  captures: Date · Location `Ikiam` · Purpose `Monitoring` · Start_time: the
-  start of the recording (the GPX's first time, in Ecuador time, UTC−5) or as
-  the walker gives it · End_time: as the walker gives it, which can be after
-  the recording stops when butterflies are identified at the end (the note
-  then says so); without it, the GPX's last time, or ask · Collectors_initials
-  (several joined by `|`: `AA|FCH`) · Notes (rain, fallen trees, "No
-  butterflies collected"), from the walker and the trail's description in
-  Wikiloc.
-- A Wikiloc GPX download has the track and its times but not the points; the
-  captures come from the trail link or from screenshots of the points (each
-  shows the point's time and note; the route statistics screen gives «Tiempo
-  total» and the description).
+  captures:
+  - Date, Location `Ikiam`, Purpose `Monitoring`.
+  - Start_time: the start of the recording (the GPX's first time, in Ecuador
+    time, UTC−5), or as the walker gives it.
+  - End_time: as the walker gives it, which can be after the recording stops
+    when butterflies are identified at the end (the note then says so).
+    Without it, the GPX's last time, or ask.
+  - Collectors_initials, several joined by `|` (`AA|FCH`).
+  - Notes (rain, fallen trees, "No butterflies collected"), from the walker
+    and the trail's description in Wikiloc.
+- A Wikiloc GPX download has the track and its times but not the points. The
+  captures come from the trail link or from screenshots of the points: each
+  shows the point's time and note, and the route statistics screen gives
+  «Tiempo total» and the description.
 
 ## The fates (templates)
 
 | Fate | Release_Collect | Values |
 |---|---|---|
 | Preserved | `Collected_Preserved` | the field-preserved template (skill `data-rules`, field collections) with FieldMark_ID `NA` and Death_date = Preservation_date = the walk day; the weight is measured later in the lab (leave it) |
-| Marked and released | `Mark_Released` | FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date, Preservation_date, Location_Head…_wings `NA` · tube tissues and Preservation_medium `NOT_COLLECTED` (as the app's import writes them; older rows with `NA` or `NOT_PRESERVED` stay) · Preserved_dead_alive `NOT_PRESERVED` · Splitted_body `No` |
-| Released unmarked | `Released_Unmarked` | as marked, with FieldMark_ID `NA`. Rare (last used Sep 2025); ask AA when it applies |
+| Marked and released | `Mark_Released` | FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date, Preservation_date, Location_Head…_wings `NA` · tube tissues and Preservation_medium `NOT_COLLECTED`, as the app's import writes them (older rows with `NA` or `NOT_PRESERVED` stay) · Preserved_dead_alive `NOT_PRESERVED` · Splitted_body `No` |
+| Released unmarked | `Released_Unmarked` | as marked, with FieldMark_ID `NA`. Rare (last used Sep 2025): ask AA when it applies |
 
 ## Marks
 
 - Written on the ventral right wing. Series: `M0`–`M99` (to Aug 2025), then
-  `A1`–`A99`, then `B1`… (B73 on 26 Sep 2026). Next mark = the highest of the
-  current series + 1; after 99, the next letter.
+  `A1`–`A99`, then `B1`… (B73 on 26 Sep 2026). The next mark is the highest of
+  the current series + 1, and after 99 the next letter starts.
 - In Aug 2026 the numbering went back to B40, so B40–B59 each belong to two
-  butterflies: a mark alone is not unique; use mark + species + sex.
+  butterflies. A mark alone is not unique: use mark + species + sex.
 - A mark recorded on another species is a conflict (a mistyped mark or
   species), not a recapture: ask the walker.
 - In a waypoint note (`M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id:
-  B69`) the leading `M1` is the capture's order in the walk, **not** a mark;
-  the mark comes after `id`. No mark → preserved. Some walkers write only the
+  B69`) the leading `M1` is the capture's order in the walk, not a mark.
+  The mark comes after `id`. No mark → preserved. Some walkers write only the
   mark and leave the species for the photo.
 - Before 2023 and on expeditions FieldMark_ID held collectors' field numbers
   (CR12, PAS16, TP5_3, LTS000009): not marks.
 
 ## Recaptures
 
-- A recapture is a **new `Mark_Released` row** with the same FieldMark_ID,
+- A recapture is a new `Mark_Released` row with the same FieldMark_ID,
   species and sex on a later date (a "Recapture" note is optional). The sheet
   has such rows since Aug 2025, and every recapture since Jul 2026 is one.
 - Before that, some recaptures were written only in the marking row's note
   (2024 to May 2026: "recatch&realease transect=4…", "Recapture …"). They stay
-  notes; the app shows them in Monitoreo → Recapturas.
+  notes, and the app shows them in Monitoreo → Recapturas.
 - A mark above the last one handed out is a new butterfly, even if the number
   was used long ago.
 
 ## The 30-preserved rule
 
-- In force: once an Ithomiini species has 30 preserved individuals from
+- Once an Ithomiini species has 30 preserved individuals from
   Ikiam, Casa de Lin and Mariposario Ikiam together (every
   `Collected_Preserved` row from those places, whatever its Purpose), further
   captures there are marked and released.
@@ -117,7 +120,7 @@ given).
 | nothing about rain, `S` (seco), `NO` in a rain column | Rainfall | `DY_(dry)` |
 | `llovizna`, `LV` | Rainfall | `DZ_(drizzle)` |
 | `LD` (lluvia débil), "lluvia" (inferred: say so) | Rainfall | `WR_(weak_rain)` |
-| `LF` (lluvia fuerte; deduced: say so) | Rainfall | `SR_(strong_rain)` |
+| `LF` (lluvia fuerte, deduced: say so) | Rainfall | `SR_(strong_rain)` |
 | `ND`, "no data" | either | `NA` |
 
 - `NO` is overcast in a cloud column but "no rain" in a rain column.

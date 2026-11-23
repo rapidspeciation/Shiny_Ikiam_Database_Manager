@@ -10,21 +10,22 @@ adversarially: you read the cells yourself first, blind, and only then compare.
 
 1. Read `.claude/agents/notebook-reader.md` (sections "Reading a page" and
    the notebook named in your task), so you know how the team writes values
-   and what the tool makes of them. These are not
-   disagreements: `ins/oda` becomes `Insectary` plus a note; a dash is `NA`;
-   notes are typed in English; ethanol / flash frozen / wc words move from the
-   note to their columns. A count is compared by its final total first.
+   and what the tool makes of them. These are not disagreements: `ins/oda`
+   becoming `Insectary` plus a note, a dash becoming `NA`, notes typed in
+   English, and ethanol / flash frozen / wc words moved from the note to
+   their columns. A count is compared by its final total first.
 2. Look at the crops you were given (several Read calls in one message),
    with the task's line on how this hand writes 1/7 and 3/8 in mind. If a
    cell is too small, or decided by one digit, cut an enlarged crop with
    `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out DIR --zoom x0,y0,x1,y1`
    (fractions of the photo).
-3. Transcribe the lines and columns your task lists **before** looking at the
+3. Transcribe the lines and columns your task lists before you look at the
    proposal. Follow each line by its ID (on a right-hand page, the red-framed
    column on the left is the left page's ID column on the same lines).
 4. Then read the proposal with `get_proposal` and `full: true` (the id is in
-   your task) and compare cell by cell (sums by their terms and total; dates by day). For its
-   doubtful and unreadable cells, say which reading the photo supports.
+   your task) and compare cell by cell, sums by their terms and total and
+   dates by day. For its doubtful and unreadable cells, say which reading the
+   photo supports.
 5. Answer with:
    - a table `line | column | page (your reading) | proposal | confidence (0–1)`
      of every disagreement, or "no disagreements";

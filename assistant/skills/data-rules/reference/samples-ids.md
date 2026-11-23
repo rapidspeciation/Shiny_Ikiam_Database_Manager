@@ -9,14 +9,15 @@
 | Jun 2023 – Jun 2026 | digit + 2 letters; the digit runs fastest, then the **last** letter | `0AA`…`9ZZ` (`9AZ`→`0BA`) |
 | since 30 Jun 2026 | letter + digit + series letter; the digit runs fastest, then the first letter; 260 per series | `A0A`…`Z9A`, `A0B`…; series E from 29 Sep 2026 |
 
-- The current series has **no Ñ**: `N9D` → `O0D`. The next ID is the next free
-  **pre-made row** (the IDs are typed ahead, so a free row is one with no
-  SPECIES or other data) (the app's «Siguiente Insectary ID», Inicio). What follows
-  `Z9` of the last series: the team decides when it comes; ask.
-- The series letter changes only after `Z9`: after `A9D` comes `B0D`. On
-  20–21 Sep 2026 the notebook went from `A9D` to `A0E`, so `A0E`–`A8E` were
-  used before their turn; when the D series really ended (29 Sep), they were
-  given out again. The first ones keep the plain IDs, the 29 Sep ones are
+- The current series has no Ñ: `N9D` → `O0D`. The next ID is the next free
+  **pre-made row**, shown as «Siguiente Insectary ID» on Inicio. The IDs are
+  typed ahead, so a free row is one with no SPECIES or other data. What
+  follows `Z9` of the last series is for the team to decide when it comes:
+  ask.
+- The series letter changes only after `Z9`: after `A9D` comes `B0D`. For
+  example, `A0E`–`A8E` exist twice: once from a slip on 20–21 Sep 2026 (the
+  notebook went from `A9D` to `A0E`), and again when the D series ended on
+  29 Sep. The first ones keep the plain IDs, and the 29 Sep ones are
   `A0E.1`–`A8E.1`. An ID that changes series in the middle of a page is
   worth pointing out.
 - The Panama STRI rows with Insectary_ID `NA` are not ours.
@@ -55,10 +56,10 @@
   jump far past the last (from CAM079xxx to CAM110xxx). Expeditions abroad have
   used ranges of their own in the wild pool: not for local rows. This guide
   lists no ranges on purpose: any written here would go stale.
-- Ranges and how many are left: always from `review_issues` with show `alerts`
-  (its CAM pools: every range on Lists, used, highest, next and left), or read
-  from the Lists column itself. Never from the highest CAM in the data or a
-  `LIKE 'CAM07%'` query: that misses every range that does not start that way.
+- Ranges and how many are left come from `review_issues` with show `alerts`
+  (its CAM pools: every range on Lists, used, highest, next and left), or from
+  the Lists column itself. The highest CAM in the data or a `LIKE 'CAM07%'`
+  query does not give them: it misses every range that does not start that way.
 - Next CAM = the last used **in that pool's current range** + 1, skipping used
   ones. Before proposing one, check it is unused in **every** sheet
   (`search_text` looks in all of them) and in pending proposals: when several
@@ -71,8 +72,9 @@
   ask PAS or AA (they hand out the ranges) for one.
 - Typical errors: an extra 0 (`CAM0770542` for `CAM077542`, often a whole
   batch), a dropped digit, a CAM typed in a tube column, a stale "next CAM"
-  whiteboard. A duplicate: the **second** individual gets a new CAM; note the
-  old one; the envelope is struck and rewritten; photos are renamed (tasks).
+  whiteboard. A duplicate CAM: the second individual gets a new CAM, with the
+  old one in a note. Its envelope is struck and rewritten and its photos
+  renamed (tasks for the team).
 - Photo files are named by CAM (`CAM078038d.JPG`, `…v.JPG`): a CAM change
   breaks the photo link until the files are renamed.
 
@@ -122,8 +124,8 @@ Collection_data they are formulas looking the CAM up in the MEIER manifest
 - `WHOLE_ORGANISM` only when the whole body, legs included, is in one tube.
 - Wing clip: `**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP`;
   `NON-ANDROCONIA WING CLIP` only for pheromone samples.
-- Split bodies: `HEAD | ABDOMEN`, `THORAX`, `THORAX | LEG`, `LEG`… per tube;
-  sperm work: `**OTHER_REPRODUCTIVE_ANIMAL_TISSUE** | SPERMATOPHORE`,
+- Split bodies: `HEAD | ABDOMEN`, `THORAX`, `THORAX | LEG`, `LEG`… per tube.
+  Sperm work: `**OTHER_REPRODUCTIVE_ANIMAL_TISSUE** | SPERMATOPHORE`,
   `SPERM_SEMINAL_FLUID`. Unused tube: ID `NA`, tissue `NOT_COLLECTED` (older
   rows with `NA` stay).
 
@@ -135,9 +137,10 @@ Values: `Flash frozen`, `Ethanol`, `DMSO`, `NOT_COLLECTED`.
   shipper or −80 °C). Dead longer → `Ethanol` (or DMSO).
 - No shipper: −80 °C freezer; ethanol only when neither is available, **with a
   note saying why**. Field trips without a shipper: ethanol.
-- Wing clips: `Flash frozen` (since Sep 2026; an Aug 2024 meeting had said
-  ethanol). Flash frozen is the general preference: since 2025 almost
-  everything is; an ethanol row without a reason note: ask.
+- Wing clips: `Flash frozen`. Clips from before Sep 2026 may be in ethanol,
+  which an Aug 2024 meeting had set. Flash frozen is the general preference,
+  and almost every row from 2025 on is flash frozen. For an ethanol row
+  without a reason note, ask.
 - Pheromone males: `Flash frozen`; ethanol only with the reason in a note (KG
   knows the pheromone protocol).
 - Weekends: the freezer is not reachable, so butterflies are kept alive until

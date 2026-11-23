@@ -1,6 +1,6 @@
 ---
 name: data-review
-description: Help the person work through the inconsistencies of the Ithomiini workbook (the app's Revisión tab) — first the fixes that are certain, as one proposal to review and apply, then the doubtful ones one at a time with the evidence and the options. Use it when the person asks to check the data, a sheet or a row, what is wrong somewhere, to apply the corrections agreed in Revisión ("aplica las correcciones acordadas") or the suggested ones, or about the alerts (CAM ranges running out, the 30-preserved rule).
+description: Help the person work through the inconsistencies of the Ithomiini workbook (the app's Revisión tab): first the fixes that are certain, as one proposal to review and apply, then the doubtful ones one at a time with the evidence and the options. Use it when the person asks to check the data, a sheet or a row, what is wrong somewhere, to apply the corrections agreed in Revisión ("aplica las correcciones acordadas") or the suggested ones, or about the alerts (CAM ranges running out, the 30-preserved rule).
 ---
 
 # Data review
@@ -10,7 +10,7 @@ what the tools give:
 
 | Revisión view | What it holds | Tool |
 |---|---|---|
-| «Problemas» | inconsistencies, as cards people judge (accept the fix, reject, give another value) | `review_issues`; the ones agreed: `review_issues` with show `agreed` |
+| «Problemas» | inconsistencies, as cards people judge (accept the fix, reject, give another value) | `review_issues`, and for the agreed ones `review_issues` with show `agreed` |
 | «Sugerencias» | corrections the app computes, each with a certainty | `review_suggestions` |
 | «Resueltos» | problems the sheet no longer has, and who solved them | — |
 | «Alertas» | CAM ranges running out, the 30-preserved rule | `review_issues` with show `alerts` |
@@ -30,14 +30,14 @@ kind of issue, a period) when there is a lot.
 Gather the fixes whose right value is not in doubt:
 
 - the corrections people already agreed in Revisión (`review_issues` with
-  show `agreed`);
+  show `agreed`)
 - the suggestions with certainty `certain` (only the spelling changes: a list
-  value written another way, extra spaces).
+  value written another way, extra spaces)
 
-Offer them as one proposal (`propose_changes`; for agreed fixes, with their
-`issueIds`, so Revisión shows them as applied). Tell the person in a few
+Offer them as one proposal with `propose_changes`, passing the agreed fixes'
+`issueIds` so that Revisión shows them as applied. Tell the person in a few
 lines what it changes, then let them review it in «Cambios propuestos» and
-apply it. Very many rows: one proposal per kind of fix.
+apply it. With very many rows, make one proposal per kind of fix.
 
 ### 3. The doubtful ones, one at a time
 
@@ -45,24 +45,24 @@ Then go through the rest: the suggestions marked `likely` or `check` and the
 issues without a fix. For each one (or a group with the same cause, such as a
 run of tubes), show:
 
-- the rows involved, side by side;
+- the rows involved, side by side
 - the evidence for each value:
-  - the rows around them (CAMs, tubes and IDs run in sequence);
-  - correction notes: when the team corrects a species or an ID they write in
-    the row's notes "from X to Y";
+  - the rows around them (CAMs, tubes and IDs run in sequence)
+  - correction notes: when the team corrects a species or an ID, they write
+    "from X to Y" in the row's notes
   - the specimen photos: what the envelope in the photo says, when it
     disagrees with the row (the issues `envelope_sex` and `envelope_species`
-    of that row);
+    of that row)
   - for a wild butterfly taken to the insectary, its two rows (Collection_data
     and Insectary_data, same Insectary_ID): when they disagree on species or
     sex, the suggestion of source `twins` says which side was corrected later
-    or matches the envelope;
+    or matches the envelope
   - who changed the cell and when (`row_history` with the row's recordId
-    and the field);
-  - the paper: ask for a photo of the notebook page or the envelope;
-- the options, with the one the evidence favours.
+    and the field)
+  - the paper: ask for a photo of the notebook page or the envelope
+- the options, with the one the evidence favours
 
-The person decides; add each decision to the same proposal
+The person decides. Add each decision to the same proposal
 (`update_proposal`) and apply when they say so.
 
 A value corrected for a typing slip (a digit missing, two swapped, another
@@ -74,28 +74,32 @@ which correction they follow.
 
 | Issue | Where it is solved |
 |---|---|
-| Drive work on the photos (`task`: rename, move) | by a person in Drive; give them as a checklist (they are marked done in Revisión). Afterwards `sync_photo_links` brings Photo_links up to date (skill `photos`) |
-| A Wikiloc point without its row (`walk_doubt`) | Monitoreo → «Dudas de emparejamiento»: say which rows fit; a person pairs it |
+| Drive work on the photos (`task`: rename, move) | by a person in Drive. Give them as a checklist (they are marked done in Revisión). Afterwards `sync_photo_links` brings Photo_links up to date (skill `photos`) |
+| A Wikiloc point without its row (`walk_doubt`) | Monitoreo → «Dudas de emparejamiento»: say which rows fit, and a person pairs it |
 | A formula cell (`manual`) | by hand in Google Sheets |
 
 ## Alerts
 
-- A CAM range running out: when its pool already has the next range on Lists, the alert is information that names it (say so, nobody needs to ask); otherwise PAS or AA hand out the next range; say so.
+- A CAM range running out: when its pool already has the next range on Lists,
+  the alert is information that names that range: say so, and say that nobody
+  needs to ask. Otherwise PAS or AA hand out the next range: say so.
 - A species at 30 preserved: further captures from those places are marked
   and released (skill `monitoring`).
 - A CAM range not used for about six months is information («sin uso
   desde…»): nobody needs to ask for a new range.
 - A census session left open in Censo with no marks: when its species
   already has disappearances dated within a week of its day (`covered`), the
-  census was entered another way (Muertes, proposals, Sheets): say it was
-  entered, not that it is unfinished; the empty session can be cancelled.
-  Otherwise it is «abierto sin usar»: nothing was entered for it; mark it from
-  the notebook or cancel it. Name who opened it after the outcome.
-- Census proposals still pending: when their rows changed since (`stale`),
-  never suggest applying them (they would overwrite newer data); give
-  `open`, the butterflies still without a death date (each counted once), and
-  say those disappearances must be redone from the notebook. Not stale: apply
-  or discard them; until then those butterflies count as alive.
+  census was entered another way (Muertes, proposals, Sheets). Say it was
+  entered, not that it is unfinished, and that the empty session can be
+  cancelled. Otherwise it is «abierto sin usar»: nothing was entered for it,
+  so mark it from the notebook or cancel it. Name who opened it after the
+  outcome.
+- Census proposals still pending: when their rows changed after the proposal
+  was made (`stale`), never suggest applying them (they would overwrite newer
+  data). Give `open`, the butterflies still without a death date (each
+  counted once), and say those disappearances must be redone from the
+  notebook. When they are not stale, apply or discard them. Until then those
+  butterflies count as alive.
   `openCensuses` and `censusProposals` of `review_issues` show "alerts" give
   the details.
 - An alert unchanged for months is standing, and the team knows it: a pool

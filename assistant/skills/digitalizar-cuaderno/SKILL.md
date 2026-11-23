@@ -5,10 +5,10 @@ description: Digitize photos of the Ikiam insectary notebooks into the Ithomiini
 
 # Digitalizar cuaderno
 
-The handwriting is read blind; `match_notebook` finds each line's row,
-compares every cell with the sheet and drafts **one proposal per page**
-beside the chat. Values go **as written**: the tool converts them, and its
-description lists each notebook's columns.
+The handwriting is read blind. Then `match_notebook` finds each line's row,
+compares every cell with the sheet and drafts one proposal per page beside
+the chat. Values go as written: the tool converts them, and its description
+lists each notebook's columns.
 
 How to read a page (the file format, doubtful and unreadable cells, how the
 team writes values, each notebook's layout) is in
@@ -18,58 +18,60 @@ team writes values, each notebook's layout) is in
 
 1. **Identify the notebook** from its headers (`stocks` Clutches, `emergence`
    Emergidos, `deaths` Muertes, `crispr` CRISPR, `labels` envelopes and
-   labels). If unsure, say so in one line and use the closest kind; don't
-   stop to ask.
+   labels). If unsure, say so in one line and use the closest kind without
+   stopping to ask.
 2. **Cut the strips** (see "Crops").
 3. **Read**:
-   - one page: read it yourself, following
-     `.claude/agents/notebook-reader.md` (steps 1–4 and "Reading a page"
-     on), and give the lines to `match_notebook` directly;
-   - several pages: one reader subagent per page (see "Several pages at
-     once");
-   - envelopes and labels: read them yourself the same way (see "Labels").
+   - One page: read it yourself, following
+     `.claude/agents/notebook-reader.md` (its steps up to writing the file,
+     and "Reading a page" on), and give the lines to `match_notebook`
+     directly instead of writing a file.
+   - Several pages: one reader subagent per page (see "Several pages at
+     once").
+   - Envelopes and labels: read them yourself the same way (see "Labels").
 4. **Propose at once**: one `match_notebook` per page with
-   `includeUnchanged: true` (the table then follows the whole page), `year`
-   only if the page shows it (see "The year"), `photo` (the attachment's
-   file name) and `rotate` (the turn you gave crops.py) so the page shows
-   upright beside its table. All the envelopes/labels of a message are one
-   call (`kind: "labels"`). Don't look the rows up first: the tool does it.
+   `includeUnchanged: true` so the table follows the whole page, `year` only
+   if the page shows it (see "The year"), `photo` (the attachment's file
+   name) and `rotate` (the turn you gave crops.py) so the page shows upright
+   beside its table. All the envelopes and labels of a message are one call
+   (`kind: "labels"`). Call it straight away: the tool looks the rows up.
 5. **Second reading** (see "Verification"): when the page has any of the
-   cells listed there, it is done in the same turn, before the summary, so the
+   cells listed there, do it in the same turn, before the summary, so the
    person reviews the page once.
 6. **Tell the person in 3–6 short lines**: which notebook and rows
    ("Clutches 120–134"), how many cells it fills, the differences
    with the sheet (sheet → notebook), what the second reading changed (if one
    was done), and the lines not found in the sheet. A small table only when
    there are several differences.
-7. **Corrections** ("la línea 5 es macho"): a few cells → `update_proposal`
-   on the same proposal; many lines (a shifted block) → `match_notebook`
-   again with the whole page corrected and `replaceProposalId`. Say what
-   changed. A page already proposed in this chat is re-matched the same way
-   (one proposal per page). When the person moves a value to the line above
-   or below, re-read the other deaths and notes of that page, and of the
-   pages read with it, on zoomed crops; correct those that moved in the same
-   proposals and list them.
+7. **Corrections** ("la línea 5 es macho"): for a few cells,
+   `update_proposal` on the same proposal. For many lines (a shifted block),
+   `match_notebook` again with the whole page corrected and
+   `replaceProposalId`. Say what changed. A page already proposed in this
+   chat is re-matched the same way, so each page keeps one proposal. When the
+   person moves a value to the line above or below, re-read the other deaths
+   and notes of that page, and of the pages read with it, on zoomed crops.
+   Correct those that moved in the same proposals and list them.
 
 Pages that are not a plain notebook table (cage cards, crosses notebook,
 field envelopes): read the skill **data-rules** first.
 
 ## What `match_notebook` does and answers
 
-It finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes list
-values, keeps the SPECIES formula unless what emerged differs or it gives
-nothing for the clutch (then the page's species is written), writes notes as
-`d/m/yy INI: text` after the existing note (only the parts the row's note does
-not say yet, in any wording: a note it already says is left out and counted in
-`notesAlreadyThere`; one that says the note of the row above or below is left
-out with a warning, as probably read on the neighbouring line, for the person
-to check), keeps the clutch's subspecies as the stock where the page has a
-dash, turns owner codes, generations
-(`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into their columns,
-fills a death's template, and flags as doubtful the clutches, CAMs and tubes
-that break the run around them. Implied values never replace a value the row
-has. With `includeUnchanged`, lines already in the sheet show as grey context
-rows, never written.
+It finds each row (look-alike IDs 0/O, 1/I, 5/S, row order) and completes
+list values. It keeps the SPECIES formula unless what emerged differs or the
+formula gives nothing for the clutch, and then writes the page's species.
+Notes go in as `d/m/yy INI: text` after the existing note, with only the
+parts the row's note does not say yet, in any wording. A note the row
+already says is left out and counted in `notesAlreadyThere`. A note that
+says what the note of the row above or below says is left out with a warning
+(it was probably read on the neighbouring line) for the person to check.
+Where the page has a dash, the tool keeps the clutch's subspecies as the
+stock. It turns owner codes, generations (`(F1)`), dashes and note words
+(`ethanol`, `wc`, a CAM…) into their columns, fills a death's template, and
+flags as doubtful the clutches, CAMs and tubes that break the run around
+them. Implied values never replace a value the row has. With
+`includeUnchanged`, lines already in the sheet show as grey context rows and
+are never written.
 
 **The year**: `year` only when the page shows it (a header, a sticky note, a
 full date). Without it the tool takes the year the sheet has for the same
@@ -82,25 +84,25 @@ that need attention (not found, crossed out, differences, doubtful,
 unreadable, problems, warnings), each with its status (match, new, missing,
 ambiguous, duplicate, nokey, crossed), `rowError`, `warnings` and those
 cells. Lines that only fill cells or are already as in the sheet are
-counted (`linesOnlyFilled`, `linesAsInSheet`); the proposal (`get_proposal`)
+counted (`linesOnlyFilled`, `linesAsInSheet`). The proposal (`get_proposal`)
 has every line and cell.
 
-- `missing` (an ID not in the sheet: probably misread; see `didYouMean`),
+- `missing` (an ID not in the sheet, probably misread: see `didYouMean`),
   `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
   `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
   typed in Insectary_data).
 - `overlaps` = the same rows in another pending proposal, each with how many
   of its `cells` the sheet already has (`alreadyInSheet`). `superseded`: a
-  copy of the page applied later has all its rows; `closed` when it was
-  discarded for that, otherwise `why` not (tell the person). If it is your
-  own copy of the same page, pass its id as `replaceProposalId` next time, or
-  discard the older copy (`update_proposal` `discard`).
+  copy of the page applied later has all its rows. It is `closed` when it was
+  discarded for that, otherwise `why` says why not: tell the person. If it is
+  your own copy of the same page, pass its id as `replaceProposalId` next
+  time, or discard the older copy (`update_proposal` `discard`).
 - A correction that looks like a typing slip (a digit missing, two swapped,
   another prefix) was often repeated in the rows typed with it: look at the
   same column in the rows around the page. The tool adds those it finds
-  (`sameErrorNearby`) after the page's rows, as doubtful cells; propose
+  (`sameErrorNearby`) after the page's rows, as doubtful cells. Propose
   others you see the same way, and say in the summary how many rows off the
-  photo have it and where. Those with `inProposal` are in the proposal;
+  photo have it and where. Those with `inProposal` are in the proposal, and
   `alreadyIn` names another pending proposal that writes them.
 - `wildWithoutCollection`: wild-caught butterflies (Emergidos) without their
   Collection_data row, drafted for you to complete from the line's note (its
@@ -114,13 +116,13 @@ has every line and cell.
 ## Labels — Sobres y etiquetas → Insectary_data
 
 The envelope or label of one sampled butterfly: a CAM, the species, the sex,
-"Reared ID: 1TG", a date, often a tube held beside it (read its printed
-code). One line per label; ignore the notebook behind it.
+"Reared ID: 1TG", a date, often a tube held beside it, whose printed code
+you read. One line per label, leaving out the notebook behind it.
 
 - The Reared ID is the `Insectary_ID`.
 - A struck CAM with a new one beside it is the correction history: the last
-  uncrossed value is the CAM (report the chain). `wing clip: 28/8/24` is a
-  clip date, not a death.
+  uncrossed value is the CAM, and you report the chain. `wing clip: 28/8/24`
+  is a clip date, not a death.
 - Before saying the tube matches, look at the row with `get_record`: if the
   label's tube is in another tube column, or its tissue or medium disagrees
   (the envelope says wing clip, that tube is `WHOLE_ORGANISM`), say so as a
@@ -130,21 +132,21 @@ More: data-rules `reference/reading-paper.md`.
 
 ## Crops
 
-One command cuts the photo for reading (Pillow). Its output goes to this
+One command cuts the photo for reading. Its output goes to this
 chat's own `work/<today>-<topic>/` folder.
 
 1. `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out work/<today>-<topic>`
    writes `<photo>-overview.jpg`: the photo upright (EXIF) with rulers of
    fractions (0–1) on every side. Look at it once. If the page is still
-   sideways, add `--rotate 90` (clockwise; 270 if that leaves it upside down)
-   to every call.
+   sideways, add `--rotate 90` (clockwise), or 270 if that leaves it upside
+   down, to every call.
 2. Read off the overview, for each page of the spread: its left and right
    edge (`x=0.11-0.50`), the top of the header row (`head=`), the top of the
    first written line and the bottom of the last one at the page's left and
    right edges (`top=0.145,0.14 bottom=0.93,0.915`), and count the written
    lines. Then:
    `python3 …/crops.py PHOTO --out DIR --lines 30 --left "x=0.11-0.50 head=0.10 top=0.145,0.14 bottom=0.93,0.915" --right "x=0.50-0.88 head=0.085 top=0.14,0.135 bottom=0.915,0.88"`
-   (one page: `--page "…"`; `--enhance strong` for faint pencil).
+   For one page, use `--page "…"`. Add `--enhance strong` for faint pencil.
    - It prints JSON: each strip's `path` and `lines` (e.g. left 1–10, right
      1–10).
    - The borders snap to the printed ruling (`snapped`: how many lines they
@@ -162,17 +164,17 @@ or one strip per page.
 
 ## Several pages at once: reader subagents
 
-- Read a single page yourself (splitting one page across readers was slower
-  and not more accurate).
+- Read a single page yourself: splitting one page across readers is slower
+  and no more accurate.
 - Several pages in one message: cut every page's strips, then start one
-  `notebook-reader` subagent per page, **all in one
-  message** (`run_in_background: false`). Each prompt holds only the kind,
-  the photo path and `rotate`, the strip paths with their lines, and the
-  output file `work/<today>-<topic>/<page>.json`. The reading is blind: none
-  of your readings and none of the sheet's values.
+  `notebook-reader` subagent per page, all in one message
+  (`run_in_background: false`). Each prompt holds only the kind, the photo
+  path and `rotate`, the strip paths with their lines, and the output file
+  `work/<today>-<topic>/<page>.json`. The reading is blind: none of your
+  readings and none of the sheet's values.
 - Each reader saves its page to that file and answers with the path, its
-  counts, anything odd and how this hand writes 1/7 and 3/8 (keep that line
-  for the reviewers).
+  counts, anything odd and how this hand writes 1/7 and 3/8. Keep that line
+  for the reviewers.
 - Then `match_notebook` with `linesFile` (the path) and `includeUnchanged:
   true` for every page, several calls in one message; the file already holds
   the kind, title, photo and rotate.
@@ -185,26 +187,26 @@ unreadable cells, no `differs`, no `problems`, plausible lines. Otherwise
 re-read only what is likely wrong:
 
 1. **The cells to re-read**:
-   - doubtful and unreadable cells and `problems`;
+   - doubtful and unreadable cells, and `problems`
    - `differs` cells: the sheet's value was often typed from this same page,
-     so each is re-read on a zoomed crop;
-   - cells that fail plausibility (adults ≤ pupae ≤ larvae ≤ eggs; laid ≤
-     hatch ≤ pupa ≤ emergence; counts on an "all died" / "no hatch" line; a
-     line without `ins`/`lab` among lines that have it);
-   - crossed-out, overwritten, faint or crowded cells and long sums (4+
-     terms);
+     so each is re-read on a zoomed crop
+   - cells that fail plausibility (adults ≤ pupae ≤ larvae ≤ eggs, laid ≤
+     hatch ≤ pupa ≤ emergence, counts on an "all died" / "no hatch" line, a
+     line without `ins`/`lab` among lines that have it)
+   - crossed-out, overwritten, faint or crowded cells, and long sums (4+
+     terms)
    - on a spread whose alignment you are unsure of, the right-hand page's
-     lines with their IDs.
+     lines with their IDs
 2. Tell the person in one line that the proposal is in Cambios propuestos and
    that you are checking those cells.
-3. Start the `notebook-reviewer` subagents
-   **all in one message** (`run_in_background: false`): one per block of
-   lines, each with only its strips, the photo path (for `--zoom`), the
-   proposal id, the lines (by ID) and columns to read, and the line on how
-   this hand writes 1/7 and 3/8. The reading is blind: none of your
-   readings and no values from the proposal (a reviewer told "ins/lab" read
-   "ins/lab" where the page says "ins/oda"). Without subagents (Codex):
-   re-read those cells yourself on zoomed crops.
+3. Start the `notebook-reviewer` subagents all in one message
+   (`run_in_background: false`): one per block of lines, each with only its
+   strips, the photo path (for `--zoom`), the proposal id, the lines (by ID)
+   and columns to read, and the line on how this hand writes 1/7 and 3/8.
+   The reading is blind: none of your readings and no values from the
+   proposal (a reviewer told "ins/lab" read "ins/lab" where the page says
+   "ins/oda"). Without subagents (Codex), re-read those cells yourself on
+   zoomed crops.
 4. Where the photo settles a disagreement (look at a zoomed crop yourself),
    correct the same proposal with `update_proposal` (only the cells that
    change). Where it does not, the cell stays doubtful. In the summary say how

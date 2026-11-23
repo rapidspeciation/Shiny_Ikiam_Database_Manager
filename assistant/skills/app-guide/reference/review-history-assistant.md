@@ -62,8 +62,8 @@ RAW files with their JPG.
   the Drive folder for the photos and the one for the RAW files, with their
   links; after renaming, «Uploaded: update» opens «Photo_links y sitios»
   with those folders being read.
-- **«Photo_links y sitios»**, without the assistant (what the sheet's menu
-  «📷 Photo Database Tools» did): «Read Drive» reads all the listed folders,
+- **«Photo_links y sitios»**, without the assistant (the app's version of the
+  sheet's menu «📷 Photo Database Tools»): «Read Drive» reads all the listed folders,
   only the ones ticked (quicker; the search box finds folders inside), or a
   new one by its Drive link, and shows the same card the chat would, with
   «Apply». Rows follow files renamed, deleted or copied to another account.
@@ -104,10 +104,10 @@ workspace and the `ithomiini` tools; the app has no other chat.
 
 ### Cambios propuestos
 
-Beside T3 (below it on phones); placed right or bottom, or alone in its own
-browser tab, an editable Sheets-like grid where the person can correct a cell
-before applying. The own-tab pages (any device, no T3 needed; the header's
-pop-out opens the one for what the panel shows):
+An editable Sheets-like grid beside T3 (below it on phones), where the person
+can correct a cell before applying. It can sit at the right or the bottom, or
+alone in its own browser tab. The own-tab pages work on any device without T3,
+and the header's pop-out opens the one for what the panel shows:
 
 - `#/propuestas/<id>`: that proposal alone (a proposal's `link`; each card's
   link icons open or copy it).
@@ -209,8 +209,8 @@ kinds of `review_issues`, e.g. `envelope_sex`), `hoja=<sheet>`,
 
 ### Sugerencias
 
-Corrections the app computes; read only (no apply button: to make them, ask
-the assistant for a proposal with the chosen ones).
+Corrections the app computes, read only. There is no apply button: to make
+them, the person asks the assistant for a proposal with the chosen ones.
 
 - Grouped by source (Arreglos de los chequeos, Espacios de más, Fórmulas que
   faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
@@ -244,15 +244,16 @@ reached 30, the day, those preserved after; species close to it).
 - Invitations: an admin sends one from Usuarios, or from a chat (skill
   **invitar**); the email link (`#/activar?t=…`) lets the person choose
   «Usuario» (3–64 letters, numbers, dots, dashes), «Nombre» and a password of
-  6–16 characters. The link does not expire: in its first 7 days it opens
-  straight away; after that «Enviarme un código» emails a 6-digit code (valid 15
-  minutes) to the invitation's address, typed before the form. A revoked
+  6–16 characters. The link does not expire. In its first 7 days it opens
+  straight away. After that, «Enviarme un código» emails a 6-digit code (valid
+  15 minutes) to the invitation's address, typed before the form. A revoked
   invitation stops working until it is sent again.
-- Usuarios — `#/usuarios` (admin; user menu top right): invite by «Correo»,
-  «Nombre», «Permiso» (Solo lectura, Editor, Revisor, Administrador) →
-  «Enviar invitación»; the invitations with their status («Esperando», «Vencida (pide código)»,
-  «Cuenta creada», «Anulada») and how often an expired link was
-  opened (copy link, send again with 7 new days, revoke);
-  users with role, active, «Cambiar contraseña»; «Crear una cuenta sin
-  correo (con contraseña inicial)».
+- Usuarios (`#/usuarios`, admin, in the user menu top right): invite by
+  «Correo», «Nombre», «Permiso» (Solo lectura, Editor, Revisor,
+  Administrador) → «Enviar invitación». It lists the invitations with their
+  status («Esperando», «Vencida (pide código)», «Cuenta creada», «Anulada»)
+  and how often an expired link was opened, each with copy link, send again
+  with 7 new days, and revoke. It also lists the users, with their role and
+  whether they are active, and offers «Cambiar contraseña» and «Crear una
+  cuenta sin correo (con contraseña inicial)».
 - The user menu also has «Abrir Google Sheet» (phones) and «Cerrar sesión».

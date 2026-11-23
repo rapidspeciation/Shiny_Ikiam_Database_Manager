@@ -1,18 +1,15 @@
 ---
 name: data-rules
-description: How the Ikiam insectary team records data in the Ithomiini workbook, as a senior member knows it — the values each kind of record gets (a field collection, an emergence, a death, a preservation, a wing clip, a clutch, a failed clutch, a cross), Insectary IDs, CAMs and tubes, counts kept as sums, notes, and how the paper notebooks, envelopes and cage cards are written. Use it before drafting new rows or corrections, when a value on a page or in the sheet looks odd, when transcribing envelopes, cage cards, crosses or field notes, and to answer "how do we record X", "what goes in column Y", "which CAM / ID / tube comes next". Monitoring walks, marks and recaptures: skill monitoring.
+description: How the Ikiam insectary team records data in the Ithomiini workbook, as a senior member knows it: the values each kind of record gets (a field collection, an emergence, a death, a preservation, a wing clip, a clutch, a failed clutch, a cross), Insectary IDs, CAMs and tubes, counts kept as sums, notes, and how the paper notebooks, envelopes and cage cards are written. Use it before drafting new rows or corrections, when a value on a page or in the sheet looks odd, when transcribing envelopes, cage cards, crosses or field notes, and to answer "how do we record X", "what goes in column Y", "which CAM / ID / tube comes next". Monitoring walks, marks and recaptures: skill monitoring.
 ---
 
 # Data rules
-
-Taken from the workbook's rows, the meeting notes and protocols in Drive, and
-the team's practice up to Sep 2026.
 
 ## Principles
 
 - Where the team's practice varied, the rules in these files are the ones to
   follow. Older rows that differ stay as they are.
-- A correction of species, sex, ID, CAM or tube goes to **every** sheet that
+- A correction of species, sex, ID, CAM or tube goes to every sheet that
   holds the butterfly, with a note "from X to Y"
   ([samples-ids.md](reference/samples-ids.md)).
 - `match_notebook`, `get_walk` and the app's tabs already apply many of these
@@ -25,10 +22,11 @@ the team's practice up to Sep 2026.
 
 ## Which file
 
-Read the file of the case before drafting; for a notebook photo the skill
-**digitalizar-cuaderno** comes first. Open it whole with the Read tool (each
-file is short); don't grep or sed it with Bash. A death or preservation:
-insectary-individuals.md; a CAM, tube or ID: samples-ids.md as well.
+Read the file of the case before drafting. For a notebook photo the skill
+**digitalizar-cuaderno** comes first. Open each file whole with the Read tool
+(each is short), not with grep or sed in Bash. A death or preservation also
+needs insectary-individuals.md, and a CAM, tube or ID also needs
+samples-ids.md.
 
 | Case | File |
 |---|---|

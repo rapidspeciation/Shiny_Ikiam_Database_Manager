@@ -5,12 +5,12 @@ description: The weekly 🇪🇨🇬🇧 meeting (Thursdays 9:00 Ecuador): the t
 
 # The meeting agenda
 
-How the team does it: on Wednesday the organiser (Patricio; Alex, Kim or Ale when he is away)
+How the team does it: on Wednesday the organiser (Patricio, or Alex, Kim or Ale when he is away)
 asks the underground group for points («¿me pueden enviar sus puntos para la reunión de mañana?»),
 people answer there (in Spanish), and the organiser copies the minutes template in Drive
 («## Meeting-##/##/2026 - TEMPLATE», folder «Meetings»), names it «NNN Meeting-DD/MM/YYYY» and
-writes the Agenda in English as a checklist. Each point is «Topic (Owner)»; then **Follow-ups:**
-and **Other/various:**. The agenda is shared in «Ithomiini Ikiam» by a person, never by you.
+writes the Agenda in English as a checklist. Each point is «Topic (Owner)», followed by
+**Follow-ups:** and **Other/various:**. The agenda is shared in «Ithomiini Ikiam» by a person, never by you.
 
 ## Two kinds of request
 
@@ -23,14 +23,14 @@ and **Other/various:**. The agenda is shared in «Ithomiini Ikiam» by a person,
 
 Only these, nothing else:
 
-- a point someone **sent for this meeting** (an answer to «puntos para la reunión», or a message that
-  asks for something to be discussed at the meeting);
+- a point someone sent for this meeting (an answer to «puntos para la reunión», or a message that
+  asks for something to be discussed at the meeting)
 - from the last two minutes: a point of the last agenda whose summary is empty or unfinished, and what
-  «Next week(s)» / «Follow-ups» left for this week;
-- an alert of the base (`review_issues`, show «alerts»), at most three, only those that need a decision.
+  «Next week(s)» / «Follow-ups» left for this week
+- an alert of the base (`review_issues`, show «alerts»), at most three, only those that need a decision
 
 Other things seen in the groups (news, announcements, purchases, tools, chat about the app or about
-Claude) are **not** points, even if they look useful: list them after the agenda as «También vi …,
+Claude) are not points, even if they look useful: list them after the agenda as «También vi …,
 ¿lo añado?» and let the person decide. Nothing about AI, Claude or the app goes on the agenda unless
 someone sent it as a point.
 
@@ -54,8 +54,8 @@ someone sent it as a point.
 
 - One point per topic, as the minutes write it: «Water for the new insectary (Ángel and Kim)».
 - **Owners.** Only the names the source itself gives for that point: the person who sent it when they
-  raise it as their own; for a point sent on behalf of others («Kim quiere ver …», «lo de Ángel»), the
-  names it gives; in the minutes, the names in brackets. Never add or drop a name from who else was
+  raise it as their own, the names it gives for a point sent on behalf of others («Kim quiere ver …»,
+  «lo de Ángel»), and in the minutes the names in brackets. Never add or drop a name from who else was
   there, who wrote nearby messages, or who usually does it. Several people on one trip or task: all
   the names the source gives, or none. Unclear or no owner in the source: no brackets.
 - Every point says what it is about. A topic you can only name («Infrastructure») gets the concrete
@@ -69,14 +69,14 @@ someone sent it as a point.
 
 ## After proposing
 
-Tell the person, in one or two lines: nothing is created yet; an administrator creates the document
-by confirming here («sí, créalo») or with the button on the preview. Then the `whatsapp` text.
+Tell the person, in one or two lines, that nothing is created yet: an administrator creates the
+document by confirming here («sí, créalo») or with the button on the preview. Then the `whatsapp` text.
 
 When an administrator's latest message explicitly confirms it, call `meeting_doc_apply` with the id.
 It answers `docLink` and `picture`: send the picture to this chat with
 `[images]` `<picture> | <title>` `[/images]` and the link in the text. For anyone else, or without an
-explicit confirmation, do not call it. If it fails, say why (the document exists already, Drive; a
-copy made whose Agenda failed is finished by applying again).
+explicit confirmation, do not call it. If it fails, say why (the document exists already, or Drive
+failed). A copy whose Agenda failed is finished by applying again.
 
 If you learn that an administrator applied it with the preview's button (they say so, or
 `meeting_doc_get` shows it applied and you have not sent its picture), send the picture from

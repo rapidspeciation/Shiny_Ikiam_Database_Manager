@@ -12,7 +12,7 @@ into it (the «Google Sheet» button at the top right opens it).
   `https://ithomiini-ikiam.com/` + route, e.g.
   `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.
 - **Labels**: the interface is in English by default and in Spanish with the
-  EN/ES button at the top. The labels here are the Spanish ones, in «»; for a
+  EN/ES button at the top. The labels here are the Spanish ones, in «». For a
   person using the English interface, give the control's meaning too.
 
 ## Reference files
@@ -32,7 +32,7 @@ Historial: skill **historial**.
 
 | Tab | Route | For | Writes to |
 |---|---|---|---|
-| Inicio | `#/inicio` | summaries; for the team: last IDs used, next Insectary ID and clutch, upcoming hatch/pupa/emergence | — |
+| Inicio | `#/inicio` | summaries, and for the team the last IDs used, next Insectary ID and clutch, upcoming hatch/pupa/emergence | — |
 | Buscador | `#/tablas?buscar=…&hoja=…`, `#/tablas?hoja=…&fila=…` | a text in every sheet, each match among its neighbouring rows; any sheet as an editable spreadsheet | the sheet edited |
 | Colecta | `#/colecta` | a day of field collection in bulk | Collection_data (+ Insectary_data for live ones) |
 | Monitoreo | `#/monitoreo?vista=…` | Ikiam transects T1–T4: Wikiloc walks, report, map, recaptures, doubtful pairings | Collection_data, SamplingDay_data |
@@ -54,8 +54,8 @@ Old links still work: `#/cuaderno` → Asistente,
 
 | Role | Can |
 |---|---|
-| Visitor (no account) | only Inicio, with natural-history rates (no counts, no insectary); any other link opens the login («Iniciar sesión») |
-| observer («Solo lectura») | every tab except Revisión; cannot edit, save, undo or use T3 Code; no «Dudas» sub-tab |
+| Visitor (no account) | only Inicio, with natural-history rates (no counts, no insectary). Any other link opens the login («Iniciar sesión») |
+| observer («Solo lectura») | every tab except Revisión, and no «Dudas» sub-tab. Cannot edit, save, undo or use T3 Code |
 | editor | edit and save everywhere, undo in Historial, Revisión and Monitoreo → Dudas, propose and apply changes through the assistant |
 | reviewer («Revisor») | as editor, plus «Crear filas preasignadas» (more pre-made rows at the end of a sheet), removing anyone's walk from the map, and «Aplicar N cambios» of re-matching in Dudas |
 | admin | as reviewer, plus Usuarios (invite, roles, passwords), the «Actualizar T3» button and the recheck button in Historial |

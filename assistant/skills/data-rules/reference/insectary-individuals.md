@@ -29,9 +29,9 @@ blank means it has not died yet.
 - `CLUTCH NUMBER`: exactly as the Insectary_stocks row writes it (`831 (3)`
   with a space in 2024–25, `994(6)` without in 2026).
 - `SPECIES` stays the formula from the clutch unless what emerged differs
-  (deceptus stock emerging as intermedia is common; so is proceriformis →
+  (deceptus stock emerging as intermedia is common, and so is proceriformis →
   eurydice) or the formula gives nothing (the clutch is not in
-  Insectary_stocks yet, or has no species there); then the species from the
+  Insectary_stocks yet, or has no species there). Then the species from the
   notebook is typed over it. A proposed species equal to the clutch's is left
   to the formula, not written. `match_notebook` does this, and `lookAt`
   (`formulaEmpty`) names the rows still left without one.
@@ -113,7 +113,7 @@ tubes `NA` and their tissues `NOT_COLLECTED` · Preservation_medium
 Preserved_Dead_Alive `Alive` when killed (`Killed_Preserved`), `Dead` for any
 other cause · Location_body `Ikiam` · Research_purpose from the project
 (`F1/F2 mutation rate` for cross parents and offspring, `Pheromones` for
-pheromone males, `Sperm dissections`), else `NA`; when the page does not say
+pheromone males, `Sperm dissections`), else `NA`. When the page does not say
 the project, `F1/F2 mutation rate` (the most common) for the person to confirm.
 Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
 
@@ -152,23 +152,24 @@ Older rows with LIFESTAGE empty stay as they are.
 
 `Unknown`, `Eaten`, `Spider`, `Ants`, `Disappearance`, `Killed_Preserved`,
 `Deformed`, `Heat stroke`, `Unknown - Only wings`, `Other` (a special case
-described in the note; in 2026 also a larva or egg found dead). Paper words:
-unk → Unknown; eaten / body eaten → Eaten; spider, "founded by spider" (= found)
-→ Spider; ants; mantis → Other + note; deformed; heat or thermal shock → Heat
-stroke; disapp / desaparecido / escaped → Disappearance; preserved / killed →
-Killed_Preserved; only wings → Unknown - Only wings; N/A on a dead butterfly →
-Unknown. A death date with no cause written anywhere also takes `Unknown`,
-for the person to confirm. Use the cause itself; the old habit of `Other` +
-note "Eaten" ended in 2024.
+described in the note, and in 2026 also a larva or egg found dead). Paper
+words: unk → Unknown, eaten / body eaten → Eaten, spider or "founded by spider"
+(= found) → Spider, ants → Ants, mantis → Other + note, deformed → Deformed,
+heat or thermal shock → Heat stroke, disapp / desaparecido / escaped →
+Disappearance, preserved / killed → Killed_Preserved, only wings → Unknown -
+Only wings, N/A on a dead butterfly → Unknown. A death date with no cause
+written anywhere also takes `Unknown`, for the person to confirm. Use the
+cause itself. Rows from before mid-2024 may have `Other` with the note "Eaten".
 
 - **Disappearance** comes from a census, done one species at a time (often
-  several species the same day; sometimes females and males on different
-  days). The butterflies are released one by one and each wing ID is read; a
+  several species the same day, sometimes females and males on different
+  days). The butterflies are released one by one and each wing ID is read. A
   butterfly in the insectary that is not seen gets Death_date = the census
   day (not a real death date), Death_cause `Disappearance`, the not-preserved
-  block, and the note "Disappeared in census of d/m/yy" (the census day). The Censo tab does all of this while
-  the census happens. For a single named butterfly missing outside a census,
-  ask who handled it last (it may have been taken for an experiment).
+  block, and the note "Disappeared in census of d/m/yy" (the census day). The
+  Censo tab does all of this while the census happens. For a single named
+  butterfly missing outside a census, ask who handled it last (it may have
+  been taken for an experiment).
 - **A census on paper**: a smiley beside an ID in the Emergidos notebook is a
   butterfly seen alive in the census of its species. The date is not written
   on the page: ask for it per species, or, if nobody knows, estimate it from
@@ -188,13 +189,13 @@ note "Eaten" ended in 2024.
 - Weekend deaths are dated the day they were found (often Monday).
 - Partial remains: wings and legs are still preserved; cause from the note.
 
-## Eggs, larvae and pupae preserved (since Sep 2026)
+## Eggs, larvae and pupae preserved
 
-F1 eggs, larvae and prepupae get an Insectary_ID each, from the pre-made
-sequence. F1 larvae are preserved at the 3rd instar (since Oct 2026; the
-4th until Sep 2026); eggs and larvae that look about to die are preserved
-early. The notebook (Emergidos) writes them as a run of tube IDs with
-"Preserved alive · Flash frozen · Larvae · 3rd instar", or per line
+From Sep 2026, F1 eggs, larvae and prepupae get an Insectary_ID each, from
+the pre-made sequence. F1 larvae are preserved at the 3rd instar (rows up to
+Sep 2026 have the 4th), and eggs and larvae that look about to die are
+preserved early. The notebook (Emergidos) writes them as a run of tube IDs
+with "Preserved alive · Flash frozen · Larvae · 3rd instar", or per line
 "lysimnia egg → preserved → FS50849027 → CAM078279".
 
 | Column | Value |
@@ -205,15 +206,15 @@ early. The notebook (Emergidos) writes them as a run of tube IDs with
 | LIFESTAGE | the stage when preserved: `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa`, `Pupa day 1` … `Pupa day 12` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
-| CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
+| CAM_ID, Tube_1 | a CAM, with one tube `WHOLE_ORGANISM` `Flash frozen` |
 | Preservation_medium | `NOT_COLLECTED` |
 | Research_purpose | `F1/F2 mutation rate` |
 | Note | `d/m/yy INI: Preserved alive 3rd instar` |
 
 The clutch's Insectary_stocks row gets a dated note per group, with the IDs:
 `d/m/yy INI: 2 larvae preserved as 3rd instar (R0C, R1C)`. Its NUMBER OF
-LARVAE keeps them: since Oct 2026 the count holds the larvae used, and only
-those that died or disappeared are subtracted ([clutches.md](clutches.md)).
+LARVAE keeps them: the count holds the larvae used, and only those that died
+or disappeared are subtracted ([clutches.md](clutches.md)).
 
 ## Research_purpose and Pedigree
 
@@ -236,17 +237,16 @@ after.
 Renaming an ID with a suffix (`W0B` → `W0B.1`) is a cell edit the app can
 make.
 
-How it has happened:
+Examples:
 
-- On 31 Aug 2026 the notebook wrote `W0B`–`W9B`, then started again at
-  `W0B` instead of going on to `X0B`: ten more butterflies of the same two
-  clutches got `W0B`–`W9B`, and the page went on with `X0B`. The second ten
-  are `W0B.1`–`W9B.1`, in rows after `W9B` and before `X0B`, as on the page.
-- `0PQ`–`9PX` (80 IDs) were used from 16 to 31 Dec 2024; over the holidays
-  (31 Dec–6 Jan) the same 80 were given out again, and the next ID after
-  them was `0PY`. The second ones are `0PQ.1`–`9PX.1`, after `9PX` and before
-  `0PY`.
-- `A0E`–`A8E` were used early by a series slip on 20–21 Sep 2026
-  ([samples-ids.md](samples-ids.md)); the 29 Sep ones, `A0E.1`–`A8E.1`, are
-  after `Z9D`, the ID before them on that page, about 250 rows below the
-  first ones.
+- `W0B`–`W9B` (31 Aug 2026) were written on twenty butterflies of the same
+  two clutches, the notebook restarting at `W0B` before going on to `X0B`.
+  The second ten are `W0B.1`–`W9B.1`, in rows after `W9B` and before `X0B`,
+  as on the page.
+- `0PQ`–`9PX` (80 IDs) were given out from 16 to 31 Dec 2024 and again over
+  the holidays (31 Dec–6 Jan), and the next ID after them is `0PY`. The second
+  ones are `0PQ.1`–`9PX.1`, after `9PX` and before `0PY`.
+- `A0E`–`A8E` were used early, on 20–21 Sep 2026, by a series slip
+  ([samples-ids.md](samples-ids.md)), and again on 29 Sep. The 29 Sep ones,
+  `A0E.1`–`A8E.1`, are after `Z9D`, the ID before them on that page, about
+  250 rows below the first ones.

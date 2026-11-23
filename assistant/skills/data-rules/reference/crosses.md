@@ -1,13 +1,14 @@
 # Crosses, families, pedigree
 
-Protocols in Drive (answer "what does the protocol say" from the project
-documents' folder, citing the document and date): "Protocol for Controlled Crosses and Families"
-(M. polymnia; M. menophilus; polymnia × lysimnia F1, revised Jul–Aug 2026), the
-2023 lys/pol crosses protocol, the F2 hybrid tissue protocol (2024).
+The protocols in Drive are "Protocol for Controlled Crosses and Families"
+(M. polymnia, M. menophilus, polymnia × lysimnia F1, revised Jul–Aug 2026),
+the 2023 lys/pol crosses protocol and the F2 hybrid tissue protocol (2024).
+Answer "what does the protocol say" from the project documents' folder, citing
+the document and date.
 
 ## Notation
 
-- The **female is written first**, always: cage cards, clutch notes
+- The female is written first everywhere: cage cards, clutch notes
   (`U8A♀ + C8B♂`), hybrid names.
 - Hybrid (F1) name = mother's subspecies `x` father's subspecies:
   `Mechanitis polymnia werneri x proceriformis` ("wer x pro" = ♀ werneri, west,
@@ -28,8 +29,8 @@ documents' folder, citing the document and date): "Protocol for Controlled Cross
 ## Protocol steps the data should reflect
 
 1. Pair: a virgin reared female from stock and (usually) a wild male. The
-   **start date** is the day they are caged together; checks every hour
-   8:00–16:00; a pair stays at most 2 weeks (Mtg Oct 2025).
+   start date is the day they are caged together. The pair is checked every
+   hour 8:00–16:00 and stays at most 2 weeks (Mtg Oct 2025).
 2. Male: wing clip + CAM right after mating (flash frozen). Female: clip after
    she starts laying. Both parents: Research_purpose `F1/F2 mutation rate`,
    Pedigree `Yes` (a leftover `YES or NO` is the unfilled template).
@@ -70,9 +71,9 @@ documents' folder, citing the document and date): "Protocol for Controlled Cross
 
 ## Mating-table conventions
 
-- Start = day caged together; Finish = the last day the pair (or the female
-  alone) stayed. Unknown or not observed = `NA`; `-` for the grandparents of
-  wild or pure-stock parents. `NA` in mating columns can mean no mating or
+- Start = day caged together. Finish = the last day the pair (or the female
+  alone) stayed. Unknown or not observed = `NA`, and `-` for the grandparents
+  of wild or pure-stock parents. `NA` in mating columns can mean no mating or
   not observed: say which when you know.
 - Reasons for ending: "female dead", "male dead", "both dead", "no mating
   occur - male dead", time limit. Female and male death dates are separate.

@@ -22,13 +22,13 @@ description: The app's Historial tab — every save to the workbook (from the ap
   saves, `#/historial?accion=<actionId>` to one save.
 - **Filters**: «Buscar (ID, campo, valor o nota)», «Persona», «Origen»
   (Aplicación, Google Sheets, Deshacer, Asistente, Importación), «Hoja»,
-  «Desde», «Hasta» → «Buscar»; «Cargar más».
+  «Desde», «Hasta» → «Buscar». «Cargar más» loads more.
 - **A card**: who, when, origin, rows, the save's note and its status
   (Guardado, Detectado = made in Google Sheets, En curso, Sin confirmar, No
-  guardado; «deshecho» once undone). Opened, each cell: sheet and row, label,
-  column, old value struck through → new value.
+  guardado, and «deshecho» once undone). Opened, each cell: sheet and row,
+  label, column, old value struck through → new value.
 - **Undo** (editors): select saves (only «Guardado» ones), untick single cells
-  if needed → «Deshacer selección» → the preview «Deshacer N cambios» (a cell
-  changed again afterwards is a conflict: take it out or fix it by hand) →
-  «Motivo (opcional)» → «Deshacer en la hoja».
+  if needed → «Deshacer selección» → the preview «Deshacer N cambios» →
+  «Motivo (opcional)» → «Deshacer en la hoja». In the preview, a cell changed
+  again after the save is a conflict: take it out or fix it by hand.
 - **Admins**: a recheck button re-verifies writes left «Sin confirmar».

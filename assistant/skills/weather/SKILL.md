@@ -29,19 +29,19 @@ outside Ecuador (`warning`) is nearly always the wrong place: ask.
 ## Reading it
 
 - Each day: min/max temperature, the day's rain (mm) and its highest hourly
-  chance of rain; `hours` rows `[hour, °C, rain chance %, rain mm, cloud %,
-  wind km/h]`; `monitoring` for 9:00–11:00; `field_precip_mm` and
-  `field_precip_prob_max` for the field hours. Rain at an hour is the rain of
-  the hour ending then. Today's hours before `past_until` have gone: they are
-  the model's, not what fell.
+  chance of rain. `hours` rows are `[hour, °C, rain chance %, rain mm,
+  cloud %, wind km/h]`, `monitoring` covers 9:00–11:00, and `field_precip_mm`
+  and `field_precip_prob_max` cover the field hours. Rain at an hour is the
+  rain of the hour ending then. Today's hours before `past_until` have gone:
+  they are the model's, not what fell.
 - Which days or hours look dry: compare the days with each other from these
   numbers (lowest chance and fewest mm in the field hours), and quote the
   numbers behind the choice. How much rain calls off a walk is the team's
   call: when the days are close, say so and leave it to whoever goes.
 - It is a model's forecast for its nearest grid point (`grid`: a few km
   from the site, at its own `elevation_m`): in the Amazon showers are local
-  and hard to time, and days 4 to 7 are less sure than tomorrow. Say it once when the
-  choice rests on small differences.
+  and hard to time, and days 4 to 7 are less sure than tomorrow. Say it once
+  when the choice rests on small differences.
 - Credit the source once: «Datos: Open-Meteo.com».
 
 ## Answer
