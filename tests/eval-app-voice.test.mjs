@@ -30,6 +30,8 @@ test('resolveEvalWorkspaceName isolates non-app voice into eval-wa by default', 
 test('composeBrief with whatsapp-d3l voice includes WhatsApp voice and excludes app voice', () => {
   const appBrief = composeBrief({ display_name: 'Lab', username: 'lab' }, { root: ROOT, docs: '/d', knowledge: '/k', sheets: '/s', voice: resolveVoiceFiles(ROOT, 'app') });
   const waBrief = composeBrief({ display_name: 'Lab', username: 'lab' }, { root: ROOT, docs: '/d', knowledge: '/k', sheets: '/s', voice: resolveVoiceFiles(ROOT, 'whatsapp-d3l') });
-  assert.match(waBrief, /WhatsApp/i);
-  assert.ok(waBrief.length > appBrief.length, 'whatsapp-d3l baseline voice should be larger than app voice');
+  assert.match(appBrief, /sit at a desk entering data/);
+  assert.doesNotMatch(waBrief, /sit at a desk entering data/);
+  assert.match(waBrief, /# Soul \(WhatsApp\)/);
+  assert.ok(waBrief.length > appBrief.length, 'whatsapp-d3l voice should be larger than app voice');
 });

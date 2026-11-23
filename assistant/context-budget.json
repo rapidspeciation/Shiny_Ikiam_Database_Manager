@@ -26,8 +26,8 @@
   },
   "parts": {
     "brief": {
-      "bytes": 14374,
-      "reason": "Wave 2.1 tubes.medium core row + Wave 3 completeness/readability guard (net -1459 B vs baseline 471f55d7)"
+      "bytes": 14449,
+      "reason": "Phase 2 (preserves 18 Nov key-documents): conditional meeting-agenda, brief dedup, core SQL columns, completeness & duplicate-proposal guards (net -1,386 B vs 471f55d7)"
     },
     "skill:app-dev": {
       "bytes": 423,
@@ -107,7 +107,7 @@
     },
     "mcp:query": {
       "bytes": 2362,
-      "reason": "main on 8 Nov 2026 (58220e63) after the eval-branch baseline: brief and query grew there"
+      "reason": "Phase 2: trimmed query description preserving all SQL/date/tubes/history/staged rules (-1,402 B vs 471f55d7)"
     },
     "mcp:get_record": {
       "bytes": 451,

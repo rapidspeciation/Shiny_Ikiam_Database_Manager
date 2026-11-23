@@ -2,7 +2,7 @@
 // The eval's own app and workspace (lab only), so every task starts from the same state:
 //   node tools/assistant-eval/eval-app.mjs start [--port 8805] [--checkout <repo>]   app (LOCAL_MODE, dev-app.sh) + workspace
 //   node tools/assistant-eval/eval-app.mjs stop  [--port 8805]
-//   node tools/assistant-eval/eval-app.mjs workspace [--checkout <repo>]               rewrite the workspace (brief, skills) only
+//   node tools/assistant-eval/eval-app.mjs workspace [--checkout <repo>] [--voice app|whatsapp-d3l] [--workspace eval|eval-wa]  rewrite workspace & print JSON {workspace, projectId, voice}
 //   node tools/assistant-eval/eval-app.mjs reset [--since <iso>]                      drop proposals the eval drafted
 //
 // - App: tools/lab/dev-app.sh of the checkout under test (its own systemd user unit, memory ceiling, LOCAL_MODE on the
@@ -15,7 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evalSettings } from './eval-settings.mjs';
@@ -32,9 +32,6 @@ const cmd = argv[0];
 const PORT = Number(opt('port', 8805));
 const CHECKOUT = opt('checkout', join(HERE, '..', '..'));
 const VOICE = opt('voice', 'app');
-const WS_NAME = opt('workspace', VOICE === 'app' ? 'eval' : 'eval-wa');
-const WS_DIR = join(T3HOME, 'workspaces-eval', WS_NAME);
-const RUN = join(OUT, `run-${PORT}`);
 
 /** Resolve voice files for composeBrief(): null for default app voice, or ordered absolute paths for a WhatsApp voice dir. */
 export function resolveVoiceFiles(checkout, voice = 'app') {
@@ -50,6 +47,10 @@ export function resolveEvalWorkspaceName(voice = 'app', workspace = null) {
   if (workspace) return workspace;
   return !voice || voice === 'app' ? 'eval' : 'eval-wa';
 }
+
+const WS_NAME = resolveEvalWorkspaceName(VOICE, opt('workspace', null));
+const WS_DIR = join(T3HOME, 'workspaces-eval', WS_NAME);
+const RUN = join(OUT, `run-${PORT}`);
 
 function base() {
   const dir = join(OUT, 'base');
@@ -204,7 +205,7 @@ function reset(since = '1970') {
   console.log(JSON.stringify({ discarded: n, appliedSince: applied }));
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isMain = Boolean(process.argv[1]) && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   if (cmd === 'start') await start();
   else if (cmd === 'stop') spawnSync(join(CHECKOUT, 'tools/lab/dev-app.sh'), ['--stop', '--port', String(PORT)], { stdio: 'inherit' });
