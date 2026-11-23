@@ -13,7 +13,7 @@ import { deflateSync } from 'node:zlib';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createMapsTools, mapsUrl, sexOf, yearOf } from '../server/maps-tools.mjs';
-import { EXPORT, OFFICIAL_MAPS_URL, checkExport, clearingFrame, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
+import { DEADLINE_MS, EXPORT, OFFICIAL_MAPS_URL, QUEUE_MS, checkExport, clearingFrame, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
 import { LEGEND_BOTTOM_LEFT, OVERLAYS, withGeometry } from './fixtures/export-geometry.mjs';
 import { BBOX, EXPECT, GREEN, PNG_OK, REC, S, URL_OK, alive, answer, chunk, crc, dirOf, drawPng, encodePng, fakeModule, fakes, made, mapPng, started, waitFor } from './helpers/maps-render.mjs';
 
@@ -61,6 +61,9 @@ test('worker: opens only the URL given, evaluates only the export call, returns 
   assert.deepEqual(fake.get('url'), [URL_OK]);
   assert.deepEqual(fake.get('evaluate'), ['() => window.ithomiiniMapsExport()']);
   assert.equal(fake.get('launch')[0].headless, true);
+  assert.ok(fake.get('launch')[0].args.includes('--disable-vulkan'), 'disables Vulkan to avoid broken GPU/eGPU hangs');
+  assert.ok(fake.get('launch')[0].args.includes('--use-angle=swiftshader'));
+  assert.ok(DEADLINE_MS + QUEUE_MS <= 38_000, `queue+render (${DEADLINE_MS + QUEUE_MS} ms) leaves room for Pillow under 60 s`);
   assert.deepEqual(fake.get('context')[0].viewport, EXPORT.viewport);
   assert.equal(fake.get('context')[0].acceptDownloads, false);
   const [tmp] = fake.get('tmpdir');

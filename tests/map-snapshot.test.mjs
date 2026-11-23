@@ -46,3 +46,53 @@ test('tiles: the app\'s User-Agent, a/b/c subdomains, one at a time, kept a week
   const later = await snaps.render({ bbox });
   assert.equal(later.tiles.fetched, later.tiles.asked);
 });
+
+test('tiles: a stalled tile fetch respects deadlineMs, throws DEADLINE, and releases the fetch slot', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  let stall = true;
+  const fetchImpl = (_url, { signal } = {}) => {
+    if (!stall) return Promise.resolve(new Response(png));
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
+    });
+  };
+  const dir = mkdtempSync(join(tmpdir(), 'map-snapshot-deadline-'));
+  const snaps = createSnapshots({ dir, fetchImpl });
+  const bbox = [-78, -1.2, -77.3, -0.6];
+  const t0 = Date.now();
+  await assert.rejects(() => snaps.render({ bbox, deadlineMs: 150 }), err => err?.code === 'DEADLINE');
+  assert.ok(Date.now() - t0 < 2000, 'aborted promptly at deadlineMs');
+  // The slot was released: a subsequent render succeeds cleanly.
+  stall = false;
+  const ok = await snaps.render({ bbox, deadlineMs: 5000 });
+  assert.ok(ok.bytes > 0 && ok.tiles.fetched > 0);
+});
+
+test('tiles: concurrent caller with longer deadline is not aborted by a short-deadline caller sharing loading', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const fetchImpl = (_url, { signal } = {}) =>
+    new Promise((resolve, reject) => {
+      const t = setTimeout(() => resolve(new Response(png)), 25);
+      signal?.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason ?? new Error('aborted'))), { once: true });
+    });
+  const dir = mkdtempSync(join(tmpdir(), 'map-snapshot-shared-'));
+  const snaps = createSnapshots({ dir, fetchImpl });
+  const bbox = [-78, -1.2, -77.3, -0.6];
+  const [shortRun, longRun] = await Promise.allSettled([
+    snaps.render({ bbox, deadlineMs: 40 }),
+    snaps.render({ bbox, deadlineMs: 5000 }),
+  ]);
+  assert.equal(shortRun.status, 'rejected');
+  assert.equal(shortRun.reason?.code, 'DEADLINE');
+  assert.equal(longRun.status, 'fulfilled', String(longRun.reason));
+  assert.ok(longRun.value.bytes > 0);
+});
+
+test('pillow: tight deadline with >64 KB stdin payload rejects cleanly with DEADLINE without unhandled EPIPE', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const fetchImpl = async () => new Response(png);
+  const dir = mkdtempSync(join(tmpdir(), 'map-snapshot-epipe-'));
+  const snaps = createSnapshots({ dir, fetchImpl });
+  const bbox = [-78, -1.2, -77.3, -0.6];
+  // Warm tiles first so all remaining budget goes into the Python Pillow invocation.
+  await snaps.render({ bbox, deadlineMs: 5000 });
+  const points = Array.from({ length: 20_000 }, (_, i) => ({ lat: -0.9 - (i % 100) * 0.001, lng: -77.7 + (i % 100) * 0.001, color: i % 5 }));
+  await assert.rejects(() => snaps.render({ bbox, points, deadlineMs: 15 }), err => err?.code === 'DEADLINE');
+});

@@ -28,6 +28,9 @@ import { PER_SHEET, TILE, createPhotoSheets } from './photo-sheets.mjs';
 
 export const MAPS_URL = 'https://rapidspeciation.github.io/ithomiini_maps/';
 export const GALLERY_URL = 'https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/';
+/** Total budget for maps_snapshot (strictly under Claude Code's 60 s MCP client timeout) and its app-render share. */
+export const SNAPSHOT_DEADLINE_MS = 48_000;
+export const SNAPSHOT_APP_BUDGET_MS = 35_000;
 const ELEVATION_API = 'https://api.open-meteo.com/v1/elevation';
 
 /** The maps' sources: the key the tools take, and the name the maps app shows (its `source` URL parameter). */
@@ -849,6 +852,8 @@ export function createMapsTools({
   snapshotDir = null,
   snapshotOptions = {},
   renderOptions = {},
+  snapshotDeadlineMs = SNAPSHOT_DEADLINE_MS,
+  snapshotAppBudgetMs = SNAPSHOT_APP_BUDGET_MS,
   cacheDir = null,
   sheetOptions = null,
   clutchPhotoDir = null,
@@ -1337,14 +1342,48 @@ export function createMapsTools({
   async function snapshot(args) {
     if (!snapshots) return { error: 'Map pictures are off on this server (no folder for them is set).' };
     const started = Date.now();
+    const deadlineAt = started + Math.max(1, snapshotDeadlineMs);
+    const leftMs = () => deadlineAt - Date.now();
+    const deadlineError = (extra = {}, { pillow = false } = {}) => {
+      const secs = Math.max(1, Math.round(snapshotDeadlineMs / 1000));
+      const hint = pillow
+        ? "call again (fetched map tiles are cached), or narrow with bbox or fewer species, or use frame 'best_sites'"
+        : "narrow with bbox or fewer species, or use frame 'best_sites'";
+      return {
+        error: `map render passed ${secs} s: ${hint}`,
+        ...extra,
+        timing_ms: { ...(extra.timing_ms ?? {}), total: Date.now() - started },
+      };
+    };
+    const withinDeadline = promise => {
+      const left = leftMs();
+      if (left <= 0) {
+        Promise.resolve(promise).catch(() => {});
+        return Promise.reject(Object.assign(new Error('deadline'), { code: 'DEADLINE' }));
+      }
+      let timer;
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('deadline'), { code: 'DEADLINE' })), left);
+        }),
+      ]).finally(() => clearTimeout(timer));
+    };
     // Rounded as the app is sent it (bbox=), so the tool and the app compare records in the same box.
     const bbox = Array.isArray(args.bbox) && args.bbox.length === 4 && args.bbox.every(Number.isFinite) ? args.bbox.map(v => round(v, 5)) : null;
     const all = !bbox && args.frame === 'all';
     const wanted = clamp(args.sites, 1, 15, 8);
     const inner = {};
-    const found = await localities({ ...args, taxa: args.species ?? args.taxa, bbox, limit: 50 }, inner);
+    let found;
+    try {
+      found = await withinDeadline(localities({ ...args, taxa: args.species ?? args.taxa, bbox, limit: 50 }, inner));
+    } catch (e) {
+      if (e?.code === 'DEADLINE') return deadlineError({ timing_ms: { data: Date.now() - started } });
+      throw e;
+    }
     if (found.error) return found;
     const dataMs = Date.now() - started;
+    if (leftMs() <= 0) return deadlineError({ timing_ms: { data: dataMs } });
     // Auto: the best site and the next best near it, so the picture is a place to go to, not a continent.
     const near = s => km(found.sites[0], s) <= CLUSTER_KM;
     // Numbered on the picture in this order (`on_map`); `rank` stays the site's place among all.
@@ -1394,17 +1433,26 @@ export function createMapsTools({
     else {
       // A framed-by-us picture whose legend covers a named site is drawn again with a wider frame: the one the check
       // worked out from the picture's geometry (the named sites clear of the legend in either bottom corner and of the
-      // other overlays), else padded 15 % (4 Nov: Melinaea menophilus, «3 Km Sur Dayuma» under the legend). At most
-      // three drawings; a box asked is kept.
+      // other overlays), else padded 15 % (4 Nov: Melinaea menophilus, «3 Km Sur Dayuma» under the legend). Up to three
+      // drawings while enough of the app budget remains for another render; a box asked is kept.
       let tryFrame = frame;
       let url;
-      let run;
+      let run = null;
       let checked = null;
       let reframed = 0;
+      let prevRenderMs = 0;
+      const appDeadlineAt = Math.min(deadlineAt, started + Math.max(0, snapshotAppBudgetMs));
       for (let attempt = 0; attempt < 3; attempt++) {
+        const appLeft = appDeadlineAt - Date.now();
+        if (appLeft <= 0 || (attempt > 0 && prevRenderMs > 0 && appLeft < prevRenderMs)) {
+          if (!run) run = { ok: false, reason: 'deadline', detail: 'no budget left for app render' };
+          break;
+        }
+        if (attempt > 0) reframed++;
         url = mapsUrl({ ...linkArgs, bbox: tryFrame, exportMode: true }, OFFICIAL_MAPS_URL);
-        run = await renderer.render(url);
+        run = await renderer.render(url, { budgetMs: appLeft });
         renderTiming = run.timing ?? null;
+        prevRenderMs = run.timing?.render ?? 0;
         if (!run.ok) break;
         checked = checkExport(run.result, {
           records: inner.records.map(r => ({ source: SOURCES[r.source] ?? r.source, id: r.id, sex: r.sex, country: r.country, year: r.year, lng: r.lng, lat: r.lat })),
@@ -1423,9 +1471,8 @@ export function createMapsTools({
         const next = checked.detail?.reframe ?? (reframed ? null : [w - dx, so - dy, e + dx, n + dy]);
         if (!next || next.every((x, i) => Math.abs(x - tryFrame[i]) < 1e-5)) break;
         tryFrame = next;
-        reframed++;
       }
-      if (!run.ok) degraded = { reason: run.reason, detail: run.detail ?? null };
+      if (!run?.ok) degraded = { reason: run?.reason ?? 'deadline', detail: run?.detail ?? null };
       else {
         if (!checked.ok) degraded = { reason: checked.reason, detail: checked.detail, ...(reframed ? { reframed } : {}) };
         else {
@@ -1463,6 +1510,15 @@ export function createMapsTools({
       }
     }
 
+    const pillowLeft = leftMs();
+    if (pillowLeft <= 0) {
+      return deadlineError({
+        map_url: mapsUrl(linkArgs, mapsBase),
+        degraded,
+        timing_ms: { data: dataMs, ...(renderTiming ? { app_attempt: renderTiming } : {}) },
+      });
+    }
+
     // Pillow: the same records, frame and ranking, drawn without the app (its basemap, colours and labels are not kept).
     const words = WORDS[lang];
     const shownIn = r => r.lng >= frame[0] && r.lng <= frame[2] && r.lat >= frame[1] && r.lat <= frame[3];
@@ -1477,16 +1533,32 @@ export function createMapsTools({
       legend.push({ text: `${words.other} · ${words.count(order.slice(PALETTE.length - 1).reduce((t, [, n]) => t + n, 0), sex)}`, color: grey });
     if (best.length) legend.push({ text: words.sites(best.length), color: null });
     const pillowStarted = Date.now();
-    const picture = await snapshots.render({
-      bbox: frame,
-      // Grey first, then the commonest taxon to the rarest, so the rarer ones are on top.
-      points: inner.records
-        .map(r => ({ lat: r.lat, lng: r.lng, color: colour.get(r.name) ?? grey }))
-        .sort((a, b) => (a.color === grey ? -1 : a.color) - (b.color === grey ? -1 : b.color)),
-      sites: best.map(s => ({ lat: s.lat, lng: s.lng, rank: s.on_map })),
-      legend,
-      title: `${words[sex]} · ${words.title}`,
-    });
+    let picture;
+    try {
+      picture = await snapshots.render({
+        bbox: frame,
+        // Grey first, then the commonest taxon to the rarest, so the rarer ones are on top.
+        points: inner.records
+          .map(r => ({ lat: r.lat, lng: r.lng, color: colour.get(r.name) ?? grey }))
+          .sort((a, b) => (a.color === grey ? -1 : a.color) - (b.color === grey ? -1 : b.color)),
+        sites: best.map(s => ({ lat: s.lat, lng: s.lng, rank: s.on_map })),
+        legend,
+        title: `${words[sex]} · ${words.title}`,
+        deadlineMs: pillowLeft,
+      });
+    } catch (e) {
+      if (e?.code === 'DEADLINE' || leftMs() <= 0) {
+        return deadlineError(
+          {
+            map_url: mapsUrl(linkArgs, mapsBase),
+            degraded,
+            timing_ms: { data: dataMs, ...(renderTiming ? { app_attempt: renderTiming } : {}), pillow: Date.now() - pillowStarted },
+          },
+          { pillow: true },
+        );
+      }
+      throw e;
+    }
     const [pw, ps, pe, pn] = picture.bbox;
     const onPicture = inner.records.filter(r => r.lng >= pw && r.lng <= pe && r.lat >= ps && r.lat <= pn).length;
     return {

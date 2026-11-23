@@ -107,7 +107,7 @@ async function main() {
   }
   const problem = renderUrlProblem(job.url);
   if (problem) return fail('url_rejected', 'url', problem);
-  const deadline = Date.now() + Math.max(1000, Number(job.deadline_ms) || 45_000);
+  const deadline = Date.now() + Math.max(1000, Number(job.deadline_ms) || 30_000);
   const left = () => Math.max(500, deadline - Date.now());
   // The worker's own stop, after the parent's (which kills the run first when it is there).
   setTimeout(() => end(124, true), left() + 1500);
@@ -116,8 +116,8 @@ async function main() {
     browser = await browserKit.chromium.launch({
       executablePath: browserKit.executablePath,
       headless: true,
-      // WebGL without a GPU (the maps are MapLibre); the pilots ran with these.
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-extensions', '--no-first-run'],
+      // WebGL without a GPU (the maps are MapLibre); --disable-vulkan avoids probing broken Vulkan ICDs/eGPUs.
+      args: ['--disable-vulkan', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-extensions', '--no-first-run'],
       timeout: left(),
     });
   } catch (e) {
@@ -131,8 +131,8 @@ async function main() {
     try {
       await page.goto(job.url, { waitUntil: 'domcontentloaded', timeout: left() });
       stage = 'interface';
-      // The app defines it when it mounts: an app without it (not yet deployed) is told apart in at most 25 s.
-      await page.waitForFunction(() => typeof window.ithomiiniMapsExport === 'function', null, { timeout: Math.min(25_000, left()) });
+      // The app defines it when it mounts: an app without it (not yet deployed) is told apart in at most 20 s.
+      await page.waitForFunction(() => typeof window.ithomiiniMapsExport === 'function', null, { timeout: Math.min(20_000, left()) });
       stage = 'export';
       const result = await Promise.race([
         page.evaluate(() => window.ithomiiniMapsExport()),

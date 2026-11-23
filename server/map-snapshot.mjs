@@ -167,10 +167,46 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
   // At most FETCHES_AT_ONCE tile requests in flight from this renderer (the tile server's light-use rule).
   let active = 0;
   const waiting = [];
-  const slot = () => (active < FETCHES_AT_ONCE ? (active++, Promise.resolve()) : new Promise(r => waiting.push(r)));
+  const slot = deadlineAt => {
+    if (active < FETCHES_AT_ONCE) {
+      active++;
+      return Promise.resolve(true);
+    }
+    if (deadlineAt !== null && Date.now() >= deadlineAt) return Promise.resolve(false);
+    return new Promise(resolve => {
+      let timer = null;
+      const grant = () => {
+        if (timer) clearTimeout(timer);
+        resolve(true);
+      };
+      waiting.push(grant);
+      if (deadlineAt !== null) {
+        timer = setTimeout(() => {
+          const i = waiting.indexOf(grant);
+          if (i >= 0) waiting.splice(i, 1);
+          resolve(false);
+        }, Math.max(0, deadlineAt - Date.now()));
+      }
+    });
+  };
   const release = () => (waiting.length ? waiting.shift()() : active--);
+  const raceDeadline = (promise, deadlineAt) => {
+    if (deadlineAt === null) return promise;
+    const left = deadlineAt - Date.now();
+    if (left <= 0) {
+      Promise.resolve(promise).catch(() => {});
+      return Promise.reject(Object.assign(new Error('The map picture timed out.'), { code: 'DEADLINE' }));
+    }
+    let timer;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error('The map picture timed out.'), { code: 'DEADLINE' })), left);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
 
-  async function tile(z, x, y) {
+  async function tile(z, x, y, deadlineAt = null) {
     const path = join(tileDir, String(z), String(x), `${y}.png`);
     let kept = null;
     try {
@@ -179,19 +215,36 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
       // not kept
     }
     if (kept && now() - kept.mtimeMs < TILE_KEEP_MS) return { path, fetched: false };
-    if (loading.has(path)) return loading.get(path);
+    while (loading.has(path)) {
+      try {
+        const res = await raceDeadline(loading.get(path), deadlineAt);
+        if (!res?.timedOut) return res;
+      } catch (e) {
+        if (e?.code === 'DEADLINE') return { path: null, fetched: false, failed: true, timedOut: true };
+        throw e;
+      }
+      if (deadlineAt !== null && Date.now() >= deadlineAt) return { path: null, fetched: false, failed: true, timedOut: true };
+    }
+    if (deadlineAt !== null && Date.now() >= deadlineAt) return { path: null, fetched: false, failed: true, timedOut: true };
     const job = (async () => {
       const url = tileUrl.replace('{s}', SUBDOMAINS[(x + y) % SUBDOMAINS.length]).replace('{z}', z).replace('{x}', x).replace('{y}', y);
-      await slot();
+      if (!(await slot(deadlineAt))) return { path: null, fetched: false, failed: true, timedOut: true };
       try {
         for (let i = 0; i < TILE_TRIES; i++) {
+          const left = deadlineAt === null ? 8_000 : deadlineAt - Date.now();
+          if (deadlineAt !== null && left <= 0) return { path: null, fetched: false, failed: true, timedOut: true };
           try {
-            const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(8_000) });
+            const response = await raceDeadline(
+              fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(Math.min(8_000, Math.max(1, left))) }),
+              deadlineAt,
+            );
             if (!response.ok) break; // busy, down or refused: not asked again at once
-            const data = Buffer.from(await response.arrayBuffer());
+            const data = Buffer.from(await raceDeadline(response.arrayBuffer(), deadlineAt));
             if (!writeCacheFile(path, data)) break;
             return { path, fetched: true };
-          } catch {
+          } catch (e) {
+            if (e?.code === 'DEADLINE' || (deadlineAt !== null && Date.now() >= deadlineAt))
+              return { path: null, fetched: false, failed: true, timedOut: true };
             // a network error: tried again once, then the expired tile if kept, else blank
           }
         }
@@ -199,13 +252,11 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
         release();
       }
       return kept ? { path, fetched: false } : { path: null, fetched: false, failed: true };
-    })();
+    })().finally(() => {
+      if (loading.get(path) === job) loading.delete(path);
+    });
     loading.set(path, job);
-    try {
-      return await job;
-    } finally {
-      loading.delete(path);
-    }
+    return await job;
   }
 
   /** The pictures and tiles older than a week deleted, then the oldest tiles until the cache fits (at most once an hour). */
@@ -253,8 +304,9 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
    * `bbox` [west, south, east, north]; `points` [{ lat, lng, color (PALETTE index) }]; `sites` [{ lat, lng, rank }];
    * `legend` [{ text, color }]; `title`. `width`/`height`: the picture's pixels.
    */
-  async function render({ bbox, points = [], sites = [], legend = [], title = '', width = 1280, height = 960, quality = 80 }) {
+  async function render({ bbox, points = [], sites = [], legend = [], title = '', width = 1280, height = 960, quality = 80, deadlineMs = null }) {
     const started = now();
+    const deadlineAt = Number.isFinite(deadlineMs) ? Date.now() + Math.max(0, deadlineMs) : null;
     mkdirSync(dir, { recursive: true });
     clean();
     const mapW = width / SCALE;
@@ -265,8 +317,10 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
     const jobs = [];
     for (let tx = Math.floor(left / TILE); tx * TILE < left + mapW; tx++)
       for (let ty = Math.max(0, Math.floor(top / TILE)); ty * TILE < top + mapH && ty < n; ty++)
-        jobs.push(tile(z, ((tx % n) + n) % n, ty).then(t => ({ ...t, x: Math.round((tx * TILE - left) * SCALE), y: Math.round((ty * TILE - top) * SCALE) })));
+        jobs.push(tile(z, ((tx % n) + n) % n, ty, deadlineAt).then(t => ({ ...t, x: Math.round((tx * TILE - left) * SCALE), y: Math.round((ty * TILE - top) * SCALE) })));
     const tiles = await Promise.all(jobs);
+    if (deadlineAt !== null && (Date.now() >= deadlineAt || tiles.some(t => t.timedOut)))
+      throw Object.assign(new Error('The map picture timed out.'), { code: 'DEADLINE' });
     const tilesMs = now() - started;
     const px = p => [Math.round((lngX(p.lng, z) - left) * SCALE), Math.round((latY(p.lat, z) - top) * SCALE)];
     const inside = ([x, y]) => x >= -10 && y >= -10 && x <= width + 10 && y <= height + 10;
@@ -289,10 +343,16 @@ export function createSnapshots({ dir, fetchImpl = fetch, python = 'python3', ti
       attribution: ATTRIBUTION,
       out: join(dir, `snap-${new Date(now()).toISOString().replace(/[:.]/g, '-')}-${createHash('sha1').update(JSON.stringify([bbox, points.length, title, sites])).digest('hex').slice(0, 8)}.jpg`),
     };
+    const pyTimeout = deadlineAt === null ? timeoutMs : Math.min(timeoutMs, deadlineAt - Date.now());
+    if (pyTimeout <= 0) throw Object.assign(new Error('The map picture timed out.'), { code: 'DEADLINE' });
     await new Promise((resolve, reject) => {
-      const child = execFile(python, ['-c', SCRIPT], { timeout: timeoutMs, maxBuffer: 1 << 20 }, (error, stdout, stderr) =>
-        error ? reject(new Error(`The map picture failed: ${String(stderr || error.message).trim().split('\n').at(-1)}`)) : resolve(stdout),
-      );
+      const child = execFile(python, ['-c', SCRIPT], { timeout: pyTimeout, maxBuffer: 1 << 20 }, (error, stdout, stderr) => {
+        if (!error) return resolve(stdout);
+        if (deadlineAt !== null && (Date.now() >= deadlineAt || (pyTimeout < timeoutMs && error.killed)))
+          return reject(Object.assign(new Error('The map picture timed out.'), { code: 'DEADLINE' }));
+        reject(new Error(`The map picture failed: ${String(stderr || error.message).trim().split('\n').at(-1)}`));
+      });
+      child.stdin.on('error', () => {});
       child.stdin.end(JSON.stringify(job));
     });
     return {

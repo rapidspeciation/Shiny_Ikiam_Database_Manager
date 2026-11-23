@@ -37,15 +37,16 @@ export const URL_KEYS = new Set(['genus', 'sp', 'ssp', 'source', 'country', 'sex
 /** Asked of the tool but not drawn on a Pillow picture. */
 export const PILLOW_NOT_KEPT = ['basemap', 'color_by', 'site_labels', 'legend_style'];
 
-const DEADLINE_MS = 50_000;
-const QUEUE_MS = 10_000;
+export const DEADLINE_MS = 30_000;
+export const QUEUE_MS = 5_000;
 const MIN_AVAILABLE = 3 * 1024 ** 3;
 const RSS_CAP = 2 * 1024 ** 3;
 const POLL_MS = 500;
 const STDOUT_MAX = 24 * 1024 * 1024;
 const CHECK_MS = 15_000;
 /** After the run is killed, how long to wait for the worker's pipes to close before going on without them. */
-const CLOSE_MS = 5000;
+const CLOSE_MS = 2_000;
+const REAP_WAIT_MS = 1_500;
 const KEEP_MS = 7 * 86400_000;
 const TOL_DEG = 1e-5;
 const TOL_ZOOM = 0.02;
@@ -741,7 +742,7 @@ export function createMapRenderer({
     let killedFor = null;
     let reaping = Promise.resolve();
     let reaped = null; // what the last kill left: { killed, left }
-    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true })).then(r => (reaped = r ?? null)).catch(() => {}));
+    const reap = () => (reaping = reaping.then(() => tree?.reap({ withRoot: true, waitMs: REAP_WAIT_MS })).then(r => (reaped = r ?? null)).catch(() => {}));
     let giveUp = null;
     /** Kill the run (once); its 'close' then answers, or, if its pipes stay open, CLOSE_MS later the run gives up. */
     const stop = reason => {
@@ -844,9 +845,9 @@ export function createMapRenderer({
     }
   }
 
-  async function slot(started) {
+  async function slot(deadlineAt) {
     while (busy) {
-      const left = queueMs - (now() - started);
+      const left = deadlineAt - now();
       if (left <= 0) return false;
       let wake;
       let timer;
@@ -895,23 +896,44 @@ export function createMapRenderer({
     sweep(tmpRoot(), (name, age) => /^maps-render-\w{6}$/.test(name) && age > 600_000);
   }
 
-  async function render(url) {
+  async function render(url, { budgetMs = null } = {}) {
     const t0 = now();
     const timing = () => ({ total: Math.round(now() - t0) });
-    const state = await availability();
+    const totalCap = Number.isFinite(budgetMs) ? Math.max(0, budgetMs) : deadlineMs + queueMs;
+    const totalDeadline = t0 + totalCap;
+    const avail = availability();
+    const state = Number.isFinite(budgetMs)
+      ? await new Promise(resolve => {
+          const left = totalDeadline - now();
+          if (left <= 0) return resolve({ enabled: false, reason: 'deadline', detail: 'no render budget left' });
+          let done = false;
+          const t = setTimeout(() => {
+            if (!done) (done = true), resolve({ enabled: false, reason: 'deadline', detail: 'availability check passed budget' });
+          }, left);
+          avail.then(s => {
+            if (!done) (done = true), clearTimeout(t), resolve(s);
+          });
+        })
+      : await avail;
     if (!state.enabled) return { ok: false, reason: state.reason, detail: state.detail, timing: timing() };
     const problem = renderUrlProblem(url);
     if (problem) return { ok: false, reason: 'url_rejected', detail: problem, timing: timing() };
-    if (!(await slot(t0))) return { ok: false, reason: 'queue_wait', detail: 'this thread was rendering', timing: timing() };
+    if (now() >= totalDeadline) return { ok: false, reason: 'deadline', detail: 'no render budget left', timing: timing() };
+    const waitStarted = now();
+    const queueDeadline = Math.min(waitStarted + queueMs, totalDeadline);
+    if (!(await slot(queueDeadline))) return { ok: false, reason: 'queue_wait', detail: 'this thread was rendering', timing: timing() };
     try {
       clean();
       // The server process's other threads: one browser at a time for the process, waiting within the queue time.
       for (;;) {
         while (otherRenders().length) {
-          if (now() - t0 >= queueMs) return { ok: false, reason: 'queue_wait', detail: 'another tools thread was rendering', timing: timing() };
+          if (now() >= queueDeadline) return { ok: false, reason: 'queue_wait', detail: 'another tools thread was rendering', timing: timing() };
           await sleep(Math.min(250, pollMs));
         }
-        const waited = Math.round(now() - t0);
+        const waited = Math.round(now() - waitStarted);
+        const started = now();
+        const runBudget = Math.min(deadlineMs, totalDeadline - started);
+        if (runBudget <= 0) return { ok: false, reason: 'deadline', detail: 'no render budget left', timing: { queue: waited, render: 0, total: Math.round(now() - t0) } };
         let mem = null;
         try {
           mem = memOf();
@@ -919,9 +941,8 @@ export function createMapRenderer({
           // unknown
         }
         if (mem === null || mem < minAvailable) return { ok: false, reason: 'low_memory', detail: { mem_available_mb: mem === null ? null : Math.round(mem / 2 ** 20) }, timing: timing() };
-        const started = now();
         let lost = false;
-        const run = await runWorker({ url }, deadlineMs, started, (child, stop) => {
+        const run = await runWorker({ url }, runBudget, started, (child, stop) => {
           // Started at the same moment as another thread's: the older one keeps its turn.
           if (otherRenders(child.pid).some(o => o.earlier)) {
             lost = true;
@@ -929,7 +950,7 @@ export function createMapRenderer({
           }
         });
         if (lost) {
-          if (now() - t0 >= queueMs) return { ok: false, reason: 'queue_wait', detail: 'another tools thread was rendering', timing: timing() };
+          if (now() >= queueDeadline) return { ok: false, reason: 'queue_wait', detail: 'another tools thread was rendering', timing: timing() };
           continue;
         }
         return { ...run, timing: { queue: waited, render: Math.round(now() - started), total: Math.round(now() - t0), peak_rss_mb: run.peak_rss_mb } };

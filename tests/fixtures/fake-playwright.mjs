@@ -64,6 +64,7 @@ const page = {
   async evaluate(fn) {
     log('evaluate', String(fn));
     if (scenario.hang === 'export') await forever();
+    if (scenario.delayMs) await new Promise(r => setTimeout(r, scenario.delayMs));
     return scenario.result ?? appAnswer(this.url);
   },
 };

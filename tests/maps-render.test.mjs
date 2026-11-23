@@ -13,8 +13,8 @@ import { Worker } from 'node:worker_threads';
 import { deflateSync } from 'node:zlib';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { createMapsTools, mapsUrl, sexOf, yearOf } from '../server/maps-tools.mjs';
-import { EXPORT, OFFICIAL_MAPS_URL, checkExport, clearingFrame, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
+import { SNAPSHOT_APP_BUDGET_MS, SNAPSHOT_DEADLINE_MS, createMapsTools, mapsUrl, sexOf, yearOf } from '../server/maps-tools.mjs';
+import { DEADLINE_MS, EXPORT, OFFICIAL_MAPS_URL, QUEUE_MS, checkExport, clearingFrame, createMapRenderer, decodePng, fitBoundsView, pixelChecks, procStat, procTable, processTree, projectPoint, renderUrlProblem, treeRss, unsupportedFilter, visibleBounds } from '../server/maps-render.mjs';
 import { LEGEND_BOTTOM_LEFT, OVERLAYS, withGeometry } from './fixtures/export-geometry.mjs';
 import { BBOX, EXPECT, GREEN, PNG_OK, REC, S, URL_OK, alive, answer, chunk, crc, dirOf, drawPng, encodePng, fakeModule, fakes, made, mapPng, started, waitFor } from './helpers/maps-render.mjs';
 
@@ -56,14 +56,15 @@ const appPngFile = (() => {
     return file;
   };
 })();
-async function snapshotTools(app = {}, env = null) {
+async function snapshotTools(app = {}, env = null, extra = {}) {
   // CAM000011: the workbook says male, the maps female; the maps' sex wins, so the app's filter agrees with the tool.
   const seed = { Collection_data: [{ row: 2, values: { CAM_ID: 'CAM000016', SPECIES: 'Oleria onega', Sex: 'female', Country: 'Ecuador' } }, { row: 3, values: { CAM_ID: 'CAM000014', SPECIES: 'Tithorea harmonia', Sex: 'male', Country: 'Ecuador' } }, { row: 4, values: { CAM_ID: 'CAM000011', SPECIES: 'Tithorea harmonia', Sex: 'male', Country: 'Ecuador' } }] };
   const store = new Store({ localMode: true }, { sheets: new LocalSheets(seed) });
   await store.sync({ sheets: Object.keys(seed) });
-  const fake = fakeModule({ app: { records: APP_RECORDS, png: appPngFile(), ...app } });
-  const renderOptions = env ?? { env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, log: () => {} };
-  const tools = createMapsTools({ store, fetchImpl, mapsBase: MAPS, snapshotDir: dirOf('snap'), snapshotOptions: { tileUrl: 'https://tiles.test/{z}/{x}/{y}' }, renderOptions });
+  const { delayMs, ...appRest } = app;
+  const fake = fakeModule(app.hang ? app : { ...(delayMs ? { delayMs } : {}), app: { records: APP_RECORDS, png: appPngFile(), ...appRest } });
+  const renderOptions = env === false ? false : { env: { PLAYWRIGHT_MODULE: fake.module }, memAvailable: () => 8 * 1024 ** 3, log: () => {}, ...(env ?? {}) };
+  const tools = createMapsTools({ store, fetchImpl: extra.fetchImpl ?? fetchImpl, mapsBase: MAPS, snapshotDir: dirOf('snap'), snapshotOptions: { tileUrl: 'https://tiles.test/{z}/{x}/{y}', ...(extra.snapshotOptions ?? {}) }, renderOptions, ...(extra.toolOptions ?? {}) });
   return { tools, fake };
 }
 
@@ -189,6 +190,98 @@ test('maps_snapshot falls back to Pillow with the reason and the same records, f
   assert.equal(filled.degraded.reason, 'sex_from_workbook');
   assert.equal(filled.degraded.detail.records_affected, 1);
   assert.deepEqual(fake.get('url'), []);
+});
+
+test('maps_snapshot deadlines: defaults stay strictly below 60 s MCP timeout; Pillow fallback succeeds when Playwright hits its shorter deadline', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  assert.ok(DEADLINE_MS + QUEUE_MS <= 38_000, `maps-render queue+deadline (${DEADLINE_MS + QUEUE_MS} ms) leaves room for Pillow`);
+  assert.ok(SNAPSHOT_APP_BUDGET_MS <= 38_000, `app budget (${SNAPSHOT_APP_BUDGET_MS} ms) leaves room for Pillow`);
+  assert.ok(SNAPSHOT_DEADLINE_MS < 60_000 && SNAPSHOT_DEADLINE_MS <= 48_000, `overall deadline (${SNAPSHOT_DEADLINE_MS} ms) strictly under 60 s`);
+
+  // Playwright hangs and hits its shorter deadline; Pillow fallback completes cleanly inside the overall budget.
+  const { tools } = await snapshotTools(
+    { hang: 'export' },
+    { deadlineMs: 500, queueMs: 200 },
+    { toolOptions: { snapshotDeadlineMs: 8000, snapshotAppBudgetMs: 1500 } },
+  );
+  const t0 = Date.now();
+  const out = await tools.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'], lang: 'es' });
+  const elapsed = Date.now() - t0;
+  assert.equal(out.error, undefined, JSON.stringify(out));
+  assert.equal(out.renderer, 'pillow');
+  assert.equal(out.degraded.reason, 'deadline');
+  assert.ok(out.image && existsSync(out.image));
+  assert.ok(out.images_block);
+  assert.ok(elapsed < 8000, `fallback finished in ${elapsed} ms inside 8000 ms budget`);
+});
+
+test('maps_snapshot deadlines: returns clear named error inside budget when render/fallback or data exceeds deadline', { skip: !pillow && 'no python3 with Pillow' }, async () => {
+  const hangingTiles = async (url, { signal } = {}) => {
+    if (url.startsWith('https://tiles.test/')) {
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
+      });
+    }
+    return fetchImpl(url);
+  };
+
+  // (1) App renderer hits its deadline and Pillow fallback tiles also stall -> named error within budget.
+  const { tools: bothSlow } = await snapshotTools(
+    { hang: 'export' },
+    { deadlineMs: 500, queueMs: 200 },
+    { fetchImpl: hangingTiles, toolOptions: { snapshotDeadlineMs: 1200, snapshotAppBudgetMs: 600 } },
+  );
+  const t1 = Date.now();
+  const r1 = await bothSlow.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'], lang: 'es' });
+  const e1 = Date.now() - t1;
+  assert.match(r1.error, /^map render passed 1 s: (call again \(fetched map tiles are cached\), or )?narrow with bbox or fewer species, or use frame 'best_sites'$/);
+  assert.equal(r1.images_block, undefined);
+  assert.ok(r1.map_url);
+  assert.ok(e1 < 4000, `bounded error returned in ${e1} ms (well under 60 s)`);
+
+  // (2) Pillow-only fallback stalls on basemap tiles -> named error mentioning cached tiles within budget.
+  const { tools: pillowSlow } = await snapshotTools(
+    {},
+    false,
+    { fetchImpl: hangingTiles, toolOptions: { snapshotDeadlineMs: 400 } },
+  );
+  const t2 = Date.now();
+  const r2 = await pillowSlow.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female' });
+  const e2 = Date.now() - t2;
+  assert.equal(r2.error, "map render passed 1 s: call again (fetched map tiles are cached), or narrow with bbox or fewer species, or use frame 'best_sites'");
+  assert.equal(r2.images_block, undefined);
+  assert.ok(r2.map_url);
+  assert.ok(e2 < 2000, `pillow timeout returned in ${e2} ms`);
+
+  // (3) Remote data fetch stalls -> named error within budget.
+  const hangingData = () => new Promise(() => {});
+  const { tools: dataSlow } = await snapshotTools(
+    {},
+    false,
+    { fetchImpl: hangingData, toolOptions: { snapshotDeadlineMs: 300 } },
+  );
+  const t3 = Date.now();
+  const r3 = await dataSlow.run('maps_snapshot', { species: ['Tithorea harmonia'] });
+  const e3 = Date.now() - t3;
+  assert.equal(r3.error, "map render passed 1 s: narrow with bbox or fewer species, or use frame 'best_sites'");
+  assert.ok(e3 < 2000, `data timeout returned in ${e3} ms`);
+
+  // (4) ranked_site_hidden skips a doomed redraw when remaining app budget is less than the first render's time,
+  // preserving degraded.reason='ranked_site_hidden' and falling back to Pillow inside budget.
+  const { tools: tightReframe, fake: reframeFake } = await snapshotTools(
+    { delayMs: 500, geometry: { overlays: [OVERLAYS[0], LEGEND_BOTTOM_LEFT, OVERLAYS[2], OVERLAYS[3]] } },
+    { deadlineMs: 5000, queueMs: 500 },
+    { toolOptions: { snapshotDeadlineMs: 8000, snapshotAppBudgetMs: 900 } },
+  );
+  // Warm data and availability() with an explicit bbox call (no redraw).
+  const warm = await tightReframe.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', bbox: [-77.25, -0.75, -77.15, -0.68] });
+  assert.equal(warm.error, undefined);
+  const urlsBefore = reframeFake.get('url').length;
+  const r4 = await tightReframe.run('maps_snapshot', { species: ['Tithorea harmonia'], sex: 'female', country: ['Ecuador'] });
+  assert.equal(r4.error, undefined, JSON.stringify(r4));
+  assert.equal(r4.renderer, 'pillow');
+  assert.equal(r4.degraded.reason, 'ranked_site_hidden');
+  assert.equal(r4.degraded.reframed, undefined, 'no redraw ran, so reframed is not reported');
+  assert.equal(reframeFake.get('url').length - urlsBefore, 1, 'skipped second render when appLeft < prevRenderMs');
 });
 
 test('live: one render of the deployed maps app', { skip: process.env.MAPS_RENDER_LIVE !== '1' && 'MAPS_RENDER_LIVE=1 to run' }, async () => {
