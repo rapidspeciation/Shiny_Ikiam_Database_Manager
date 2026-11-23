@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -359,7 +359,7 @@ test('A workspace marked `denyRules: false` (the WhatsApp group) keeps only the 
   }
 });
 
-test('Antigravity MCP provisioning: copies stable proxy, writes mode 0600 mcp_config.json (missing/0-byte/existing), preserves other servers, idempotent, clean no-op when absent', () => {
+test('Antigravity MCP provisioning: installs 0555 proxy in shared/t3-tools, writes mode 0600 mcp_config.json (missing/0-byte/existing), skips malformed JSON with warning, runs with 0 workspaces, idempotent, clean no-op when absent', () => {
   const home = mkdtempSync(join(tmpdir(), 't3-provision-ag-'));
   try {
     const shared = join(home, 'ithomiini', 'shared');
@@ -373,33 +373,44 @@ test('Antigravity MCP provisioning: copies stable proxy, writes mode 0600 mcp_co
     const t3Home = join(home, '.t3');
     const workspaces = join(shared, 't3-workspaces');
     const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), T3CODE_HOME: t3Home, ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
-    const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+    const run = (...args) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+
+    const agRoot = join(t3Home, 'userdata', 'providers', 'antigravity');
+    const toolsDir = join(shared, 't3-tools');
+    const proxyPath = join(toolsDir, 'antigravity-mcp-proxy.mjs');
+    const proxySrc = new URL('../scripts/mcp-stdio-proxy.mjs', import.meta.url).pathname;
 
     // 1. Clean no-op when no Antigravity profiles exist.
-    run('ana');
-    const agRoot = join(t3Home, 'userdata', 'providers', 'antigravity');
-    const proxyPath = join(workspaces, '.antigravity-mcp-proxy.mjs');
+    assert.equal(run('--refresh-all').status, 0);
     assert.ok(!existsSync(agRoot), 'no antigravity folder created when absent');
     assert.ok(!existsSync(proxyPath), 'no proxy copied when no antigravity profiles exist');
 
-    // 2. Profiles: missing mcp_config.json, 0-byte empty file, existing with other keys/servers, and a subdir without config/.
+    // 2. Profiles: missing mcp_config.json, 0-byte empty file, existing with other keys/servers, malformed JSON, and subdir without config/.
     const pMissing = join(agRoot, 'profile-missing', 'config');
     const pZero = join(agRoot, 'profile-zero', 'config');
     const pExisting = join(agRoot, 'profile-existing', 'config');
+    const pMalformed = join(agRoot, 'profile-malformed', 'config');
     const pNoCfg = join(agRoot, 'profile-no-config');
-    for (const d of [pMissing, pZero, pExisting, pNoCfg]) mkdirSync(d, { recursive: true });
+    for (const d of [pMissing, pZero, pExisting, pMalformed, pNoCfg]) mkdirSync(d, { recursive: true });
     writeFileSync(join(pZero, 'mcp_config.json'), ''); // 0-byte file as T3 creates
     writeFileSync(
       join(pExisting, 'mcp_config.json'),
       JSON.stringify({ customFlag: true, mcpServers: { other: { command: '/bin/echo', args: ['hi'] }, db: { command: '/old/node', args: ['/old/proxy.mjs'] } } }, null, 2),
     );
+    const brokenContent = '{not valid json';
+    writeFileSync(join(pMalformed, 'mcp_config.json'), brokenContent);
 
-    run('--refresh-all');
+    // Works even on --refresh-all with 0 workspaces (runs once per CLI invocation).
+    const rEmpty = run('--refresh-all');
+    assert.equal(rEmpty.status, 0, rEmpty.stderr);
+    assert.match(rEmpty.stderr, /Skipped malformed Antigravity MCP config.*profile-malformed/);
+    assert.equal(readFileSync(join(pMalformed, 'mcp_config.json'), 'utf8'), brokenContent, 'malformed config preserved untouched');
 
-    // Stable proxy copied with mode 0o755 and exact contents of scripts/mcp-stdio-proxy.mjs.
-    const proxySrc = new URL('../scripts/mcp-stdio-proxy.mjs', import.meta.url).pathname;
+    // Read-only proxy installed outside workspaces tree under shared/t3-tools (dir 0755, file 0555).
     assert.ok(existsSync(proxyPath));
-    assert.equal(statSync(proxyPath).mode & 0o777, 0o755);
+    assert.ok(!existsSync(join(workspaces, '.antigravity-mcp-proxy.mjs')));
+    assert.equal(statSync(toolsDir).mode & 0o777, 0o755);
+    assert.equal(statSync(proxyPath).mode & 0o777, 0o555);
     assert.equal(readFileSync(proxyPath, 'utf8'), readFileSync(proxySrc, 'utf8'));
 
     const expectedEntry = { command: process.execPath, args: [proxyPath] };
@@ -414,11 +425,23 @@ test('Antigravity MCP provisioning: copies stable proxy, writes mode 0600 mcp_co
     assert.deepEqual(existingParsed.mcpServers.other, { command: '/bin/echo', args: ['hi'] }, 'other mcpServers preserved');
     assert.ok(!existsSync(join(pNoCfg, 'config')), 'subdir without config/ untouched');
 
-    // 3. Idempotent on a second --refresh-all.
-    const before = readFileSync(join(pExisting, 'mcp_config.json'), 'utf8');
-    run('--refresh-all');
-    assert.equal(readFileSync(join(pExisting, 'mcp_config.json'), 'utf8'), before);
-    assert.equal(statSync(join(pExisting, 'mcp_config.json')).mode & 0o777, 0o600);
+    // 3. Provisioning a user succeeds even with a malformed Antigravity profile: Claude + Codex still provisioned, unchanged files skip rewrite.
+    const proxyInoBefore = statSync(proxyPath).ino;
+    const cfgInoBefore = statSync(join(pExisting, 'mcp_config.json')).ino;
+    const rAna = run('ana');
+    assert.equal(rAna.status, 0, rAna.stderr);
+    assert.match(rAna.stderr, /Skipped malformed Antigravity MCP config.*profile-malformed/);
+    assert.ok(existsSync(join(workspaces, 'ana', '.mcp.json')));
+    assert.ok(existsSync(join(workspaces, 'ana', '.codex', 'config.toml')));
+    assert.equal(statSync(proxyPath).ino, proxyInoBefore, 'unchanged 0555 proxy skips rewrite');
+    assert.equal(statSync(join(pExisting, 'mcp_config.json')).ino, cfgInoBefore, 'unchanged mcp_config.json skips rewrite');
+
+    // 4. Atomic replacement still succeeds when updating a read-only 0555 proxy whose content drifted.
+    rmSync(proxyPath, { force: true });
+    writeFileSync(proxyPath, '// stale\n', { mode: 0o555 });
+    assert.equal(run('--refresh-all').status, 0);
+    assert.equal(statSync(proxyPath).mode & 0o777, 0o555);
+    assert.equal(readFileSync(proxyPath, 'utf8'), readFileSync(proxySrc, 'utf8'));
     db.close();
   } finally {
     rmSync(home, { recursive: true, force: true });

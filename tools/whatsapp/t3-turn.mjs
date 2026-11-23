@@ -67,12 +67,17 @@ const busy = (db, id) =>
   Boolean(db.prepare(`SELECT 1 FROM orchestration_v2_projection_runs WHERE thread_id = ? AND status IN (${UNDER_WAY.map(() => '?').join(',')}) LIMIT 1`).get(id, ...UNDER_WAY));
 const lastOrdinal = (db, id) => db.prepare('SELECT max(ordinal) n FROM orchestration_v2_projection_runs WHERE thread_id = ?').get(id)?.n ?? 0;
 
-export function modelSelection({ model = 'claude-opus-5-5', effort = 'medium' } = {}, instanceId = 'claudeAgent') {
-  const isAntigravity = instanceId === 'antigravity' || /^gemini-/i.test(String(model ?? ''));
+export function isAntigravity(instanceId, model) {
+  return /^antigravity(?:$|[-_])/i.test(String(instanceId ?? '')) || /^gemini-/i.test(String(model ?? ''));
+}
+
+export function modelSelection({ model, effort = 'medium' } = {}, instanceId = 'claudeAgent') {
+  const antigravity = isAntigravity(instanceId, model);
+  const resolvedModel = model || (antigravity ? 'gemini-4-neon' : 'claude-opus-5-5');
   return {
     instanceId,
-    model,
-    options: isAntigravity
+    model: resolvedModel,
+    options: antigravity
       ? [{ id: 'thought_level', value: effort }]
       : [
           { id: 'effort', value: effort },
@@ -88,6 +93,9 @@ function moveTo(row, instanceId) {
   try {
     current = JSON.parse(row.payload_json ?? '{}').modelSelection ?? null;
   } catch {}
+  const fromAntigravity = isAntigravity(row.provider_instance_id, current?.model);
+  const toAntigravity = isAntigravity(instanceId, '');
+  if (fromAntigravity !== toAntigravity) return modelSelection({}, instanceId);
   return current?.model ? { ...current, instanceId } : modelSelection({}, instanceId);
 }
 

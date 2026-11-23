@@ -15,7 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evalSettings } from './eval-settings.mjs';
@@ -95,34 +95,12 @@ async function workspace() {
   writeFileSync(join(WS, '.mcp.json'), JSON.stringify({ mcpServers: { db: { type: 'http', url: `http://127.0.0.1:${PORT}/api/ai/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2), { mode: 0o600 });
   // Register the workspace-isolated stdio MCP proxy in lab T3's Antigravity profile(s).
   const proxySrc = join(CHECKOUT, 'scripts', 'mcp-stdio-proxy.mjs');
-  const agRoot = join(T3HOME, 'userdata', 'providers', 'antigravity');
-  if (existsSync(proxySrc) && existsSync(agRoot)) {
-    const profiles = readdirSync(agRoot, { withFileTypes: true }).filter(
-      d => d.isDirectory() && existsSync(join(agRoot, d.name, 'config')) && statSync(join(agRoot, d.name, 'config')).isDirectory(),
-    );
-    if (profiles.length) {
-      const proxyPath = join(OUT, 'mcp-stdio-proxy.mjs');
-      mkdirSync(OUT, { recursive: true });
-      cpSync(proxySrc, proxyPath);
-      chmodSync(proxyPath, 0o755);
-      for (const d of profiles) {
-        const cfgFile = join(agRoot, d.name, 'config', 'mcp_config.json');
-        let data = {};
-        if (existsSync(cfgFile)) {
-          const raw = readFileSync(cfgFile, 'utf8').trim();
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed;
-          }
-        }
-        const mcpServers = data.mcpServers && typeof data.mcpServers === 'object' && !Array.isArray(data.mcpServers)
-          ? { ...data.mcpServers }
-          : {};
-        mcpServers.db = { command: process.execPath, args: [proxyPath] };
-        writeFileSync(cfgFile, JSON.stringify({ ...data, mcpServers }, null, 2) + '\n', { mode: 0o600 });
-        chmodSync(cfgFile, 0o600);
-      }
-    }
+  if (existsSync(proxySrc)) {
+    const helperPath = join(CHECKOUT, 'scripts', 'antigravity-mcp-config.mjs');
+    const { syncAntigravityMcp } = existsSync(helperPath)
+      ? await import(helperPath)
+      : await import('../../scripts/antigravity-mcp-config.mjs');
+    syncAntigravityMcp({ sourceProxy: proxySrc, proxyPath: join(OUT, 'mcp-stdio-proxy.mjs'), t3Home: T3HOME });
   }
   return WS;
 }

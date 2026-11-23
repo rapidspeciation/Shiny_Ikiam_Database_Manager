@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { modelSelection, senderRole, turn } from '../tools/whatsapp/t3-turn.mjs';
+import { isAntigravity, modelSelection, senderRole, turn } from '../tools/whatsapp/t3-turn.mjs';
 
 /** A stand-in T3: its state tables, the commands it got, and what it does on each command and each poll. */
 function fakeT3({ onSend = () => {}, onTick = () => {} } = {}) {
@@ -22,8 +22,8 @@ function fakeT3({ onSend = () => {}, onTick = () => {} } = {}) {
     db,
     sent: [],
     ticks: 0,
-    thread: (id, instance = 'claudeAgent') =>
-      db.prepare('INSERT INTO orchestration_v2_projection_threads VALUES (?, ?, ?, NULL, NULL, ?, ?)').run(id, 'P', 'Chat', instance, '{}'),
+    thread: (id, instance = 'claudeAgent', payload = {}) =>
+      db.prepare('INSERT INTO orchestration_v2_projection_threads VALUES (?, ?, ?, NULL, NULL, ?, ?)').run(id, 'P', 'Chat', instance, JSON.stringify(payload)),
     run: (id, thread, status, ordinal) => db.prepare('INSERT INTO orchestration_v2_projection_runs VALUES (?, ?, ?, ?)').run(id, thread, status, ordinal),
     status: (id, status) => db.prepare('UPDATE orchestration_v2_projection_runs SET status = ? WHERE run_id = ?').run(status, id),
     item: (run, thread, ordinal, type, status, payload = {}) =>
@@ -254,21 +254,27 @@ test('the sender in the app: the private map links a JID to an account, the live
   }
 });
 
-test('modelSelection: Antigravity / Gemini uses thought_level; Claude instances keep effort + fastMode', async () => {
+test('modelSelection and moveTo: Antigravity / Gemini defaults to gemini-4-neon + thought_level and cross-family moves rebuild cleanly', async () => {
+  assert.equal(isAntigravity('antigravity', ''), true);
+  assert.equal(isAntigravity('antigravity-eval', ''), true);
+  assert.equal(isAntigravity('antigravity_prod', ''), true);
+  assert.equal(isAntigravity('antigravityfoo', 'claude-opus-5-5'), false);
+  assert.equal(isAntigravity('custom', 'gemini-4-neon'), true);
+
   assert.deepEqual(modelSelection({ model: 'gemini-4-neon', effort: 'high' }, 'antigravity'), {
     instanceId: 'antigravity',
     model: 'gemini-4-neon',
     options: [{ id: 'thought_level', value: 'high' }],
   });
-  assert.deepEqual(modelSelection({ model: 'gemini-4-neon', effort: 'xhigh' }, 'antigravity-eval'), {
+  assert.deepEqual(modelSelection({ effort: 'low' }, 'antigravity'), {
+    instanceId: 'antigravity',
+    model: 'gemini-4-neon',
+    options: [{ id: 'thought_level', value: 'low' }],
+  });
+  assert.deepEqual(modelSelection({ effort: 'xhigh' }, 'antigravity-eval'), {
     instanceId: 'antigravity-eval',
     model: 'gemini-4-neon',
     options: [{ id: 'thought_level', value: 'xhigh' }],
-  });
-  assert.deepEqual(modelSelection({ effort: 'medium' }, 'antigravity'), {
-    instanceId: 'antigravity',
-    model: 'claude-opus-5-5',
-    options: [{ id: 'thought_level', value: 'medium' }],
   });
   assert.deepEqual(modelSelection({ model: 'claude-opus-5-5', effort: 'high' }, 'claudeAgent'), {
     instanceId: 'claudeAgent',
@@ -298,4 +304,43 @@ test('modelSelection: Antigravity / Gemini uses thought_level; Claude instances 
   assert.equal(out.ok, true);
   assert.deepEqual(t3.sent[0].modelSelection.options, [{ id: 'thought_level', value: 'high' }]);
   assert.deepEqual(t3.sent[1].modelSelection.options, [{ id: 'thought_level', value: 'high' }]);
+
+  // Cross-family moveTo: Claude -> Antigravity rebuilds model + thought_level (does not carry claude-opus / fastMode).
+  const claudeToAg = fakeT3({
+    onSend: (c, t) => c.type === 'thread.turn.start' && (t.run('R2', c.threadId, 'completed', 2), t.answer('R2', 'ok')),
+  });
+  claudeToAg.thread('T-C2A', 'claudeAgent', { modelSelection: modelSelection({ model: 'claude-opus-5-5', effort: 'high' }, 'claudeAgent') });
+  await turn({ op: 'turn', threadId: 'T-C2A', text: 'hola', instanceId: 'antigravity-eval' }, claudeToAg);
+  assert.deepEqual(claudeToAg.sent[0].modelSelection, {
+    instanceId: 'antigravity-eval',
+    model: 'gemini-4-neon',
+    options: [{ id: 'thought_level', value: 'medium' }],
+  });
+
+  // Cross-family moveTo: Antigravity -> Claude rebuilds claude-opus-5-5 + effort/fastMode.
+  const agToClaude = fakeT3({
+    onSend: (c, t) => c.type === 'thread.turn.start' && (t.run('R2', c.threadId, 'completed', 2), t.answer('R2', 'ok')),
+  });
+  agToClaude.thread('T-A2C', 'antigravity', { modelSelection: modelSelection({ model: 'gemini-4-neon', effort: 'xhigh' }, 'antigravity') });
+  await turn({ op: 'turn', threadId: 'T-A2C', text: 'hola', instanceId: 'claudeAgent' }, agToClaude);
+  assert.deepEqual(agToClaude.sent[0].modelSelection, {
+    instanceId: 'claudeAgent',
+    model: 'claude-opus-5-5',
+    options: [
+      { id: 'effort', value: 'medium' },
+      { id: 'fastMode', value: false },
+    ],
+  });
+
+  // Same-family moveTo preserves existing model and options.
+  const sameAg = fakeT3({
+    onSend: (c, t) => c.type === 'thread.turn.start' && (t.run('R2', c.threadId, 'completed', 2), t.answer('R2', 'ok')),
+  });
+  sameAg.thread('T-A2A', 'antigravity', { modelSelection: modelSelection({ model: 'gemini-4-neon', effort: 'xhigh' }, 'antigravity') });
+  await turn({ op: 'turn', threadId: 'T-A2A', text: 'hola', instanceId: 'antigravity-eval' }, sameAg);
+  assert.deepEqual(sameAg.sent[0].modelSelection, {
+    instanceId: 'antigravity-eval',
+    model: 'gemini-4-neon',
+    options: [{ id: 'thought_level', value: 'xhigh' }],
+  });
 });

@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { PassThrough } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createProxyHandler, parseSseJsonRpc, readWorkspaceMcp } from '../scripts/mcp-stdio-proxy.mjs';
+import { createProxyHandler, parseSseJsonRpc, readWorkspaceMcp, runStdio } from '../scripts/mcp-stdio-proxy.mjs';
 
 const proxyScript = new URL('../scripts/mcp-stdio-proxy.mjs', import.meta.url).pathname;
 
@@ -42,6 +43,8 @@ test('empty workspace fallback: missing or non-HTTP .mcp.json serves empty MCP w
       assert.deepEqual(await proxy.handleMessage({ jsonrpc: '2.0', id: 3, method: 'tools/list' }), { jsonrpc: '2.0', id: 3, result: { tools: [] } });
       assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
       assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', id: 4, method: 'notifications/progress' }), null);
+      // Client responses (no method) are silently ignored instead of fabricating an error.
+      assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', id: 99, result: { roots: [] } }), null);
 
       const unknown = await proxy.handleMessage({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'query' } });
       assert.equal(unknown.id, 5);
@@ -53,10 +56,15 @@ test('empty workspace fallback: missing or non-HTTP .mcp.json serves empty MCP w
   }
 });
 
-test('HTTP JSON forwarding: sends Bearer header, tracks mcp-session-id, falls back to ithomiini, and handles 202 notifications silently', async () => {
+test('HTTP JSON forwarding: sends Bearer header, tracks mcp-session-id, falls back from non-HTTP db to HTTP ithomiini, and handles 202 notifications silently', async () => {
   const dir = makeWorkspace({
     mcpServers: {
-      ithomiini: { type: 'http', url: 'http://127.0.0.1:9/api/ai/mcp', headers: { Authorization: 'Bearer tok-legacy' } },
+      db: { command: 'node', args: ['stdio-only.mjs'] },
+      ithomiini: {
+        type: 'http',
+        url: 'http://127.0.0.1:9/api/ai/mcp',
+        headers: { Authorization: 'Bearer tok-legacy', 'Content-Type': 'text/plain', Accept: 'text/plain', 'mcp-session-id': 'spoofed' },
+      },
     },
   });
   try {
@@ -64,7 +72,7 @@ test('HTTP JSON forwarding: sends Bearer header, tracks mcp-session-id, falls ba
     const proxy = createProxyHandler({
       cwd: dir,
       fetchImpl: async (url, opts) => {
-        seen.push({ url, method: opts.method, headers: opts.headers, body: JSON.parse(opts.body) });
+        seen.push({ url, method: opts.method, headers: opts.headers, body: JSON.parse(opts.body), hasSignal: Boolean(opts.signal) });
         const body = JSON.parse(opts.body);
         if (body.method === 'initialize') {
           return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} } } }), {
@@ -87,13 +95,18 @@ test('HTTP JSON forwarding: sends Bearer header, tracks mcp-session-id, falls ba
     assert.equal(proxy.sessionId, 'sess-42');
     assert.equal(seen[0].url, 'http://127.0.0.1:9/api/ai/mcp');
     assert.equal(seen[0].headers.Authorization, 'Bearer tok-legacy');
-    assert.equal(seen[0].headers['Content-Type'], 'application/json');
-    assert.equal(seen[0].headers.Accept, 'application/json, text/event-stream');
-    assert.equal(seen[0].headers['mcp-session-id'], undefined);
+    assert.equal(seen[0].headers['Content-Type'], 'application/json', 'protocol Content-Type wins over config headers');
+    assert.equal(seen[0].headers.Accept, 'application/json, text/event-stream', 'protocol Accept wins over config headers');
+    assert.equal(seen[0].hasSignal, true);
+
+    // Client response (method-less message with id) is a silent no-op and does not call fetch.
+    assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', id: 77, result: {} }), null);
+    assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', id: 78, error: { code: -32601, message: 'no' } }), null);
+    assert.equal(seen.length, 1);
 
     // Notification: forwarded with session id, returns null on 202 empty body.
     assert.equal(await proxy.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
-    assert.equal(seen[1].headers['mcp-session-id'], 'sess-42');
+    assert.equal(seen[1].headers['mcp-session-id'], 'sess-42', 'tracked session id wins over config headers');
     assert.equal(seen[1].headers.Authorization, 'Bearer tok-legacy');
 
     // Notification without notifications/ prefix (missing id): still forwarded and silent.
@@ -109,7 +122,7 @@ test('HTTP JSON forwarding: sends Bearer header, tracks mcp-session-id, falls ba
   }
 });
 
-test('SSE responses, upstream HTTP/network/parse errors, and malformed stdin lines return valid JSON-RPC errors', async () => {
+test('SSE responses, upstream array / notification-only SSE / HTTP / timeout / network errors, and malformed stdin lines return valid JSON-RPC errors', async () => {
   const dir = makeWorkspace({
     mcpServers: {
       db: { type: 'http', url: 'http://127.0.0.1:9/api/ai/mcp', headers: { Authorization: 'Bearer tok-1' } },
@@ -119,6 +132,7 @@ test('SSE responses, upstream HTTP/network/parse errors, and malformed stdin lin
     let mode = 'sse';
     const proxy = createProxyHandler({
       cwd: dir,
+      timeoutMs: 40,
       fetchImpl: async (_url, opts) => {
         const body = JSON.parse(opts.body);
         if (mode === 'sse') {
@@ -133,6 +147,28 @@ test('SSE responses, upstream HTTP/network/parse errors, and malformed stdin lin
             '',
           ].join('\r\n');
           return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
+        }
+        if (mode === 'sse-notif-only') {
+          const sse = [
+            'event: message',
+            'data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}',
+            '',
+            'event: message',
+            `data: {"jsonrpc":"2.0","id":${JSON.stringify(body.id)},"method":"sampling/createMessage"}`,
+            '',
+          ].join('\n');
+          return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+        }
+        if (mode === 'array') {
+          return new Response(JSON.stringify([{ jsonrpc: '2.0', id: body.id, result: {} }]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (mode === 'timeout') {
+          return await new Promise((_, reject) => {
+            opts.signal.addEventListener('abort', () => reject(opts.signal.reason), { once: true });
+          });
         }
         if (mode === 'http-500') return new Response('upstream boom', { status: 500, headers: { 'content-type': 'text/plain' } });
         if (mode === 'http-401') {
@@ -150,6 +186,27 @@ test('SSE responses, upstream HTTP/network/parse errors, and malformed stdin lin
     // SSE response with preceding notification + multi-line data.
     const sseReply = await proxy.handleMessage({ jsonrpc: '2.0', id: 7, method: 'tools/call' });
     assert.deepEqual(sseReply, { jsonrpc: '2.0', id: 7, result: { ok: true } });
+
+    // Notification-only / request-only SSE stream -> JSON-RPC -32000 error.
+    mode = 'sse-notif-only';
+    const errSse = await proxy.handleMessage({ jsonrpc: '2.0', id: 70, method: 'tools/call' });
+    assert.equal(errSse.id, 70);
+    assert.equal(errSse.error.code, -32000);
+    assert.match(errSse.error.message, /SSE stream contained no JSON-RPC response/);
+
+    // Upstream top-level JSON array -> JSON-RPC -32000 error.
+    mode = 'array';
+    const errArr = await proxy.handleMessage({ jsonrpc: '2.0', id: 71, method: 'ping' });
+    assert.equal(errArr.id, 71);
+    assert.equal(errArr.error.code, -32000);
+    assert.match(errArr.error.message, /non-object JSON/);
+
+    // Upstream timeout -> JSON-RPC -32000 error (never hangs).
+    mode = 'timeout';
+    const errTimeout = await proxy.handleMessage({ jsonrpc: '2.0', id: 72, method: 'tools/call' });
+    assert.equal(errTimeout.id, 72);
+    assert.equal(errTimeout.error.code, -32000);
+    assert.match(errTimeout.error.message, /timeout|abort/i);
 
     // Upstream HTTP 500 -> JSON-RPC -32000 error.
     mode = 'http-500';
@@ -187,21 +244,25 @@ test('SSE responses, upstream HTTP/network/parse errors, and malformed stdin lin
     assert.equal(parseErr.id, null);
     assert.equal(parseErr.error.code, -32700);
 
-    // Direct SSE helper check.
+    // Direct SSE helper checks.
     assert.deepEqual(parseSseJsonRpc('data: {"jsonrpc":"2.0","id":3,"result":{"n":1}}\n\n', 3), { jsonrpc: '2.0', id: 3, result: { n: 1 } });
+    assert.throws(() => parseSseJsonRpc('data: {"jsonrpc":"2.0","method":"notifications/log"}\n\n', 3), /SSE stream contained no JSON-RPC response/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('per-workspace isolation: two workspaces send only their own Bearer tokens, never cross-leaking', async () => {
+test('per-workspace isolation and strict non-traversal: two workspaces send only their own Bearer tokens, and subdirectories do not inherit parent .mcp.json', async () => {
   const wsAna = makeWorkspace({
     mcpServers: { db: { type: 'http', url: 'http://127.0.0.1:9/api/ai/mcp', headers: { Authorization: 'Bearer tok-ana' } } },
   });
   const wsLuis = makeWorkspace({
     mcpServers: { db: { type: 'http', url: 'http://127.0.0.1:9/api/ai/mcp', headers: { Authorization: 'Bearer tok-luis' } } },
   });
+  const subdir = join(wsAna, 'subdir');
+  mkdirSync(subdir, { recursive: true });
   try {
+    assert.equal(readWorkspaceMcp(subdir), null, 'strict non-traversal: subdirectory does not inherit parent .mcp.json');
     const auths = [];
     const fetchImpl = async (_url, opts) => {
       auths.push(opts.headers.Authorization);
@@ -221,6 +282,88 @@ test('per-workspace isolation: two workspaces send only their own Bearer tokens,
   } finally {
     rmSync(wsAna, { recursive: true, force: true });
     rmSync(wsLuis, { recursive: true, force: true });
+  }
+});
+
+test('concurrent post-initialize dispatch: slow tools/call does not block a concurrent ping while initialize still gates sessionId', async () => {
+  const dir = makeWorkspace({
+    mcpServers: { db: { type: 'http', url: 'http://127.0.0.1:9/api/ai/mcp', headers: { Authorization: 'Bearer tok-conc' } } },
+  });
+  try {
+    let releaseSlow;
+    const slowStarted = new Promise(resolve => {
+      releaseSlow = resolve;
+    });
+    let resolveSlowFetch;
+    const seenSessions = {};
+    const fetchImpl = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      seenSessions[body.id] = opts.headers['mcp-session-id'];
+      if (body.method === 'initialize') {
+        await new Promise(r => setTimeout(r, 20));
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2025-06-18' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'mcp-session-id': 'sess-conc' },
+        });
+      }
+      if (body.method === 'tools/call') {
+        releaseSlow();
+        await new Promise(resolve => {
+          resolveSlowFetch = resolve;
+        });
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { slow: true } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { fast: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const replies = [];
+    let pingArrived;
+    const gotPing = new Promise(resolve => {
+      pingArrived = resolve;
+    });
+    let outBuf = '';
+    stdout.setEncoding('utf8');
+    stdout.on('data', chunk => {
+      outBuf += chunk;
+      let idx;
+      while ((idx = outBuf.indexOf('\n')) !== -1) {
+        const msg = JSON.parse(outBuf.slice(0, idx));
+        outBuf = outBuf.slice(idx + 1);
+        replies.push(msg);
+        if (msg.id === 3) pingArrived();
+      }
+    });
+
+    const done = runStdio({ cwd: dir, fetchImpl, stdin, stdout });
+    stdin.write(
+      [
+        JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'slow' } }),
+        JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'ping' }),
+      ].join('\n') + '\n',
+    );
+    await slowStarted;
+    await gotPing;
+    // Ping (id: 3) completed while slow tools/call (id: 2) is still blocked!
+    assert.deepEqual(replies.map(r => r.id), [1, 3]);
+    // Close stdin while slow tools/call is still in flight; runStdio must wait for it before resolving.
+    stdin.end();
+    resolveSlowFetch();
+    await done;
+    assert.deepEqual(replies.map(r => r.id), [1, 3, 2]);
+    assert.equal(seenSessions[1], undefined);
+    assert.equal(seenSessions[2], 'sess-conc');
+    assert.equal(seenSessions[3], 'sess-conc');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -288,6 +431,7 @@ test('spawned stdio round-trip against local HTTP mock server across chunked std
       initLine.slice(20) + '\n\n',
       '{not-json\n',
       JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n',
+      JSON.stringify({ jsonrpc: '2.0', id: 99, result: {} }) + '\n', // client response: no reply
       JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n',
       JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'boom' }) + '\n',
       JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'ping', params: { ok: 1 } }), // no trailing newline
@@ -295,22 +439,20 @@ test('spawned stdio round-trip against local HTTP mock server across chunked std
     assert.equal(res1.code, 0, res1.stderr);
     assert.equal(res1.stderr, '');
     const lines = res1.stdout.trim().split('\n').map(l => JSON.parse(l));
-    assert.equal(lines.length, 5, 'notification emits nothing, 5 responses emitted');
-    assert.equal(lines[0].id, 1);
-    assert.equal(lines[0].result.protocolVersion, '2025-06-18');
-    assert.equal(lines[1].error.code, -32700);
-    assert.equal(lines[2].id, 2);
-    assert.deepEqual(lines[2].result.tools, [{ name: 'query' }]);
-    assert.equal(lines[3].id, 3);
-    assert.equal(lines[3].error.code, -32000);
-    assert.match(lines[3].error.message, /HTTP 502/);
-    assert.equal(lines[4].id, 4);
-    assert.deepEqual(lines[4].result, { echo: { ok: 1 } });
+    assert.equal(lines.length, 5, 'notification and client response emit nothing, 5 responses emitted');
+    const byId = new Map(lines.map(l => [l.id, l]));
+    assert.equal(byId.get(1).result.protocolVersion, '2025-06-18');
+    assert.equal(byId.get(null).error.code, -32700);
+    assert.deepEqual(byId.get(2).result.tools, [{ name: 'query' }]);
+    assert.equal(byId.get(3).error.code, -32000);
+    assert.match(byId.get(3).error.message, /HTTP 502/);
+    assert.deepEqual(byId.get(4).result, { echo: { ok: 1 } });
 
     assert.equal(received.length, 5);
     assert.ok(received.every(r => r.auth === 'Bearer tok-roundtrip'));
-    assert.equal(received[0].session, undefined);
-    assert.deepEqual(received.slice(1).map(r => r.session), ['live-sess-9', 'live-sess-9', 'live-sess-9', 'live-sess-9']);
+    const initReq = received.find(r => r.method === 'initialize');
+    assert.equal(initReq.session, undefined);
+    for (const r of received.filter(x => x.method !== 'initialize')) assert.equal(r.session, 'live-sess-9');
 
     // Unconfigured workspace served locally with zero HTTP requests to the mock server.
     const beforeCount = received.length;

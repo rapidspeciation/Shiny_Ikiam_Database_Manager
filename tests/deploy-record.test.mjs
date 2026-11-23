@@ -363,16 +363,20 @@ test('the T3 workspaces hash: the same from a PC and from claudeclaw (file modes
     assert.notEqual(await t3ProvisionStamp(release, env), second, 'the brief of a workspace changed');
     assert.notEqual(await t3ProvisionStamp(release, { ...env, ITHOMIINI_CLAUDE_LEAN: '0' }), await t3ProvisionStamp(release, env), 'a provision variable');
 
-    // Antigravity proxy (release + workspaces copy) and profile mcp_config.json changes invalidate the stamp.
+    // Antigravity helper + proxy (release + shared/t3-tools copy) and profile mcp_config.json changes invalidate the stamp.
     const beforeAg = await t3ProvisionStamp(release, env);
     mkdirSync(join(release, 'scripts'), { recursive: true });
+    writeFileSync(join(release, 'scripts', 'antigravity-mcp-config.mjs'), '// helper v1\n');
+    const afterHelperSrc = await t3ProvisionStamp(release, env);
+    assert.notEqual(afterHelperSrc, beforeAg, 'release scripts/antigravity-mcp-config.mjs changed');
     writeFileSync(join(release, 'scripts', 'mcp-stdio-proxy.mjs'), '// v1\n');
     const afterProxySrc = await t3ProvisionStamp(release, env);
-    assert.notEqual(afterProxySrc, beforeAg, 'release scripts/mcp-stdio-proxy.mjs changed');
-    writeFileSync(join(shared, 't3-workspaces', '.antigravity-mcp-proxy.mjs'), '// v1\n');
-    chmodSync(join(shared, 't3-workspaces', '.antigravity-mcp-proxy.mjs'), 0o755);
+    assert.notEqual(afterProxySrc, afterHelperSrc, 'release scripts/mcp-stdio-proxy.mjs changed');
+    mkdirSync(join(shared, 't3-tools'), { recursive: true });
+    writeFileSync(join(shared, 't3-tools', 'antigravity-mcp-proxy.mjs'), '// v1\n');
+    chmodSync(join(shared, 't3-tools', 'antigravity-mcp-proxy.mjs'), 0o555);
     const afterProxyCopy = await t3ProvisionStamp(release, env);
-    assert.notEqual(afterProxyCopy, afterProxySrc, 'workspaces .antigravity-mcp-proxy.mjs changed');
+    assert.notEqual(afterProxyCopy, afterProxySrc, 'shared/t3-tools/antigravity-mcp-proxy.mjs changed');
     const agCfgDir = join(dir, 'home', '.t3', 'userdata', 'providers', 'antigravity', 'prof1', 'config');
     mkdirSync(agCfgDir, { recursive: true });
     const afterProfileDir = await t3ProvisionStamp(release, env);

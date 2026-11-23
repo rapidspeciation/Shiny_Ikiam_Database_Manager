@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
 import { applyLabGuard } from './lab-guard.mjs';
 import { LEAN_DENY, leanClaude, unleanClaude } from './claude-lean.mjs';
+import { syncAntigravityMcp } from './antigravity-mcp-config.mjs';
 import { overlaidFiles, overlayReader } from '../server/doc-review.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -219,39 +220,19 @@ set = { PATH = ${q(TOOLS_PATH)} }
 
 /**
  * The app's tools for Antigravity (Gemini threads in T3): Antigravity ACP reads only its profile's
- * config/mcp_config.json (shared across workspaces), not per-workspace .mcp.json. We copy a standalone
- * stdio-to-HTTP proxy beside the workspaces (so pruned releases never break mcp_config.json) and register
- * it in every Antigravity profile; at session start the proxy reads process.cwd()/.mcp.json to preserve
- * per-workspace token isolation. Clean no-op when no Antigravity profiles exist.
+ * config/mcp_config.json (shared across workspaces), not per-workspace .mcp.json. We install a read-only
+ * standalone stdio-to-HTTP proxy under `<shared>/t3-tools/` (outside the workspaces tree so chats cannot
+ * edit it and pruned releases never break mcp_config.json) and register it once per CLI run in every
+ * Antigravity profile. Clean no-op when no Antigravity profiles exist.
  */
 function antigravityConfig() {
-  const t3Home = process.env.T3CODE_HOME || join(process.env.HOME, '.t3');
-  const rootDir = join(t3Home, 'userdata', 'providers', 'antigravity');
-  if (!existsSync(rootDir)) return;
-  const profiles = readdirSync(rootDir, { withFileTypes: true }).filter(
-    d => d.isDirectory() && existsSync(join(rootDir, d.name, 'config')) && statSync(join(rootDir, d.name, 'config')).isDirectory(),
-  );
-  if (!profiles.length) return;
-  const proxyPath = join(workspaces, '.antigravity-mcp-proxy.mjs');
-  cpSync(join(release, 'scripts', 'mcp-stdio-proxy.mjs'), proxyPath);
-  chmodSync(proxyPath, 0o755);
-  for (const d of profiles) {
-    const file = join(rootDir, d.name, 'config', 'mcp_config.json');
-    let data = {};
-    if (existsSync(file)) {
-      const raw = readFileSync(file, 'utf8').trim();
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed;
-      }
-    }
-    const mcpServers = data.mcpServers && typeof data.mcpServers === 'object' && !Array.isArray(data.mcpServers)
-      ? { ...data.mcpServers }
-      : {};
-    mcpServers[MCP_SERVER] = { command: process.execPath, args: [proxyPath] };
-    writeFileSync(file, JSON.stringify({ ...data, mcpServers }, null, 2) + '\n', { mode: 0o600 });
-    chmodSync(file, 0o600);
-  }
+  syncAntigravityMcp({
+    sourceProxy: join(release, 'scripts', 'mcp-stdio-proxy.mjs'),
+    proxyPath: join(shared, 't3-tools', 'antigravity-mcp-proxy.mjs'),
+    proxyDirMode: 0o755,
+    t3Home: process.env.T3CODE_HOME || join(process.env.HOME, '.t3'),
+    serverName: MCP_SERVER,
+  });
 }
 
 /**
@@ -330,7 +311,6 @@ function provision(user, { freshToken, addProject, folder = user.username, title
   );
   chmodSync(mcp, 0o600);
   codexConfig(workspace, token);
-  antigravityConfig();
 
   // The app's tools and the skills run without asking; other settings of the folder are kept.
   const settingsFile = join(workspace, '.claude', 'settings.json');
@@ -447,15 +427,18 @@ if (arg === '--refresh-all') {
       console.error(`Not refreshed ${name}: ${e.message}`);
     }
   }
+  antigravityConfig();
   if (failed) process.exitCode = 1;
 } else if (arg === '--refresh') {
   const name = process.argv[3];
   if (!name || !existsSync(join(workspaces, name))) throw new Error(`No workspace ${name ?? ''}`);
   refresh(name);
+  antigravityConfig();
 } else {
   const user = userOf(arg);
   if (!user) throw new Error(`No active user ${arg}`);
   const folder = flag('--workspace') ?? user.username;
   if (!/^[A-Za-z0-9._-]+$/.test(folder)) throw new Error(`Bad workspace folder ${folder}`);
   console.log(`Ready: ${provision(user, { freshToken: true, addProject: true, folder, title: flag('--title') ?? user.display_name })}`);
+  antigravityConfig();
 }
