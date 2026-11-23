@@ -482,6 +482,7 @@ async function identifyOnline(photo: Photo, known?: Known) {
     }
     const sent = jpegBase64(canvas)
     const country = known ? known.country : await photoCountry(photo.bytes).catch(() => null)
+    if (mine !== run) return
     const side = sideValue.value
     const started = performance.now()
     const out = await readOnServer(sent, side)

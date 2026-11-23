@@ -62,6 +62,11 @@ vi.mock('../../lib/identifyOnline', async orig => {
     squareCrop: () => 'data:image/jpeg;base64,AA==',
   }
 })
+const countryHold = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
+vi.mock('../../lib/photoCountry', async orig => {
+  const real = await orig<typeof import('../../lib/photoCountry')>()
+  return { ...real, photoCountry: async () => (await countryHold.hold, null) }
+})
 vi.mock('../../lib/offlinePhoto', async orig => {
   const real = await orig<typeof import('../../lib/offlinePhoto')>()
   return { ...real, takePhoto: async (_input: unknown, identify: (p: unknown) => unknown) => identify({ blob: new Blob(['x'], { type: 'image/jpeg' }), bytes: new ArrayBuffer(4) }) }
@@ -73,6 +78,7 @@ afterEach(() => {
   queue.calls = []
   phone.ready = false
   phone.hold = null
+  countryHold.hold = null
   sessionStorage.clear()
   localStorage.clear()
   vi.unstubAllGlobals()
@@ -174,5 +180,20 @@ describe('IdentifyView signed out, the server open to visitors', () => {
     await router.push('/buscar')
     await settle()
     expect(queue.calls[0].signal!.aborted).toBe(true)
+  })
+
+  it('leaving while photoCountry is still resolving does not start a visitor upload', async () => {
+    let release = () => {}
+    countryHold.hold = new Promise<void>(r => (release = r))
+    const { host, settle, router } = await mountSignedOut()
+    const input = host.querySelector<HTMLInputElement>('input[type=file][multiple]')!
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] })
+    input.dispatchEvent(new Event('change'))
+    await settle()
+    expect(queue.calls).toHaveLength(0)
+    await router.push('/buscar')
+    release()
+    await settle()
+    expect(queue.calls).toHaveLength(0)
   })
 })

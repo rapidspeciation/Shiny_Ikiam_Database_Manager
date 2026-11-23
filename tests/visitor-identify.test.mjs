@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApp } from '../server/index.mjs';
+import { configFromEnv, createApp } from '../server/index.mjs';
 import { createIdentifier } from '../server/identifier.mjs';
 import { setPasswordHashCost } from '../server/auth.mjs';
 
@@ -291,4 +291,48 @@ test('a visitor who signed in meanwhile (another tab) still gets their ticket; t
   if (r.body.state !== 'done') assert.equal((await answer(sent.body.ticket)).body.state, 'done');
   // Signed in, a new photo goes the team's way, not into the visitors' route.
   assert.notEqual((await call('POST', '/visitor/identify', { session, body: { photo: b64('Oleria onega 0.9') } })).status, 202);
+});
+
+test('valid ticket polling is throttled per ticket, not by the shared per-IP discovery/probe limit', async t => {
+  const { call, answer } = await setup(t, { anonIdentify: { maxPolls: 50 }, anonLimits: { visitorPoll: { limit: 2 } } });
+  const ip = '203.0.113.55';
+  const sent = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 120 Oleria onega 0.9') }, ip });
+  assert.equal(sent.status, 202);
+  // More than 2 polls on the valid ticket from the same IP succeed and finish cleanly.
+  for (let i = 0; i < 4; i++) {
+    const p = await call('GET', `/visitor/identify/${sent.body.ticket}`, { ip });
+    assert.equal(p.status, 200);
+    if (p.body.state === 'done') break;
+  }
+  const done = await answer(sent.body.ticket).catch(() => null);
+  assert.ok(done === null || done.body.state === 'done');
+  // Discovery and unknown-ticket probes still enforce the per-IP poll limit (limit: 2).
+  assert.equal((await call('GET', '/visitor/identify', { ip })).status, 200);
+  assert.equal((await call('GET', '/visitor/identify/00000000-0000-0000-0000-000000000000', { ip })).status, 404);
+  assert.equal((await call('GET', '/visitor/identify', { ip })).status, 429);
+});
+
+test('polling one valid ticket past maxPolls returns 429 RATE_LIMITED', async t => {
+  const { call } = await setup(t, { anonIdentify: { maxPolls: 2 } });
+  const sent = await call('POST', '/visitor/identify', { body: { photo: b64('sleep 200 Oleria onega 0.9') } });
+  assert.equal(sent.status, 202);
+  assert.equal((await call('GET', `/visitor/identify/${sent.body.ticket}`)).status, 200);
+  assert.equal((await call('GET', `/visitor/identify/${sent.body.ticket}`)).status, 200);
+  const over = await call('GET', `/visitor/identify/${sent.body.ticket}`);
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error.code, 'RATE_LIMITED');
+});
+
+test('configFromEnv ignores non-numeric ANON_IDENTIFY_* and IDENTIFIER_NICE values', () => {
+  const cfg = configFromEnv({
+    ANON_SERVER_IDENTIFY: '1',
+    ANON_IDENTIFY_QUEUE: 'abc',
+    ANON_IDENTIFY_PER_10MIN: '-5',
+    ANON_IDENTIFY_TIMEOUT_S: 'oops',
+    IDENTIFIER_NICE: 'nope',
+    IDENTIFIER_THREADS: '0',
+  });
+  assert.deepEqual(cfg.anonIdentify, {});
+  assert.equal(cfg.identifierOptions.nice, 10);
+  assert.equal(cfg.identifierOptions.threads, undefined);
 });

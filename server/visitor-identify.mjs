@@ -31,6 +31,7 @@ export function createVisitorIdentify({
   standing = () => null,
   queued = () => ({ ahead: 0, waitMs: 5000 }),
   maxWaiting = 20,
+  maxPolls = 600,
   timeoutMs = 180_000,
   staleMs = 30_000,
   keepMs = 120_000,
@@ -109,7 +110,7 @@ export function createVisitorIdentify({
       if (closed) throw fail('UNAVAILABLE', 'The identifier is not available.', 503);
       sweep();
       if (active() >= maxWaiting) throw fail('BUSY', 'The identifier is busy; try again in a minute.', 503);
-      const t = { id: randomUUID(), state: 'queued', ctl: new AbortController(), seen: now() };
+      const t = { id: randomUUID(), state: 'queued', ctl: new AbortController(), seen: now(), polls: 0 };
       tickets.set(t.id, t);
       startSweeper();
       const p = follow(t, photo, side).finally(() => pending.delete(p));
@@ -120,6 +121,7 @@ export function createVisitorIdentify({
     status(id) {
       const t = tickets.get(id);
       if (!t) return null;
+      if (++t.polls > maxPolls) throw fail('RATE_LIMITED', 'Too many requests; try again later', 429);
       t.seen = now();
       // The others who stopped asking go now, so this place is right.
       sweep();

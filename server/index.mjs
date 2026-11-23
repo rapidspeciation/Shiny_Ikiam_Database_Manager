@@ -359,26 +359,32 @@ export function configFromEnv(env = process.env) {
     // The Wings Gallery's files made from the photo readings (server/gallery-public.mjs): beside the database by default.
     publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
     // Identificar's «En línea (servidor)» for visitors without a sign-in (server/visitor-identify.mjs): off unless
-    // ANON_SERVER_IDENTIFY=1. One photo at a time through the app's one identifier, at most ANON_IDENTIFY_QUEUE waiting
-    // (20), ANON_IDENTIFY_PER_10MIN photos the queue took per address in 10 minutes (60: a class behind one campus
-    // address; the queue's cap and the one worker bound the load, not this).
+    // ANON_SERVER_IDENTIFY=1. One photo at a time through the app's one identifier, at most ANON_IDENTIFY_QUEUE
+    // visitors' photos in at once (20, waiting or being read), ANON_IDENTIFY_PER_10MIN photos the queue took per
+    // address in 10 minutes (60: a class behind one campus address; the queue's cap and the one worker bound the load,
+    // not this).
     anonServerIdentify: env.ANON_SERVER_IDENTIFY === '1',
-    anonIdentify: {
-      ...(env.ANON_IDENTIFY_QUEUE ? { maxWaiting: Number(env.ANON_IDENTIFY_QUEUE) } : {}),
-      ...(env.ANON_IDENTIFY_PER_10MIN ? { perWindow: Number(env.ANON_IDENTIFY_PER_10MIN) } : {}),
-      ...(env.ANON_IDENTIFY_TIMEOUT_S ? { timeoutMs: Number(env.ANON_IDENTIFY_TIMEOUT_S) * 1000 } : {}),
-    },
-    identifierOptions: {
-      // The one identifier process (the team's and visitors' photos: shared, so the server never reads two at once):
-      // 3 cores (IDENTIFIER_THREADS) at nice 10 (IDENTIFIER_NICE). Measured on claudeclaw, 17 Nov 2026
-      // (.work/anon-identify-20261117 measure report): 1.26 s a photo at 3 threads, the app's pages no slower at nice
-      // 10, which lets the app and the other services come first when they need a core (it was nice 5).
-      nice: env.IDENTIFIER_NICE ? Number(env.IDENTIFIER_NICE) : 10,
-      ...(env.IDENTIFIER_THREADS ? { threads: Number(env.IDENTIFIER_THREADS) } : {}),
-      ...(env.IDENTIFIER_IDLE_MINUTES ? { idleMinutes: Number(env.IDENTIFIER_IDLE_MINUTES) } : {}),
-      // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
-      ...(env.IDENTIFIER_ENCODER ? { encoder: env.IDENTIFIER_ENCODER } : {}),
-    },
+    anonIdentify: (() => {
+      const pos = v => { const n = Number(v); return v !== undefined && v !== '' && Number.isFinite(n) && n > 0 ? n : null; };
+      const q = pos(env.ANON_IDENTIFY_QUEUE), p = pos(env.ANON_IDENTIFY_PER_10MIN), t = pos(env.ANON_IDENTIFY_TIMEOUT_S);
+      return { ...(q ? { maxWaiting: q } : {}), ...(p ? { perWindow: p } : {}), ...(t ? { timeoutMs: t * 1000 } : {}) };
+    })(),
+    identifierOptions: (() => {
+      const pos = v => { const n = Number(v); return v !== undefined && v !== '' && Number.isFinite(n) && n > 0 ? n : null; };
+      const nice = env.IDENTIFIER_NICE !== undefined && env.IDENTIFIER_NICE !== '' && Number.isInteger(Number(env.IDENTIFIER_NICE)) ? Number(env.IDENTIFIER_NICE) : 10;
+      const threads = pos(env.IDENTIFIER_THREADS), idle = pos(env.IDENTIFIER_IDLE_MINUTES);
+      return {
+        // The one identifier process (the team's and visitors' photos: shared, so the server never reads two at once):
+        // 3 cores (IDENTIFIER_THREADS) at nice 10 (IDENTIFIER_NICE). Measured on claudeclaw, 17 Nov 2026
+        // (.work/anon-identify-20261117 measure report): 1.26 s a photo at 3 threads, the app's pages no slower at nice
+        // 10, which lets the app and the other services come first when they need a core (it was nice 5).
+        nice,
+        ...(threads ? { threads } : {}),
+        ...(idle ? { idleMinutes: idle } : {}),
+        // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
+        ...(env.IDENTIFIER_ENCODER ? { encoder: env.IDENTIFIER_ENCODER } : {}),
+      };
+    })(),
     // Whole photos kept for the assistant to look closer (GB; 0: none), the least used dropped first.
     drivePhotosOriginalsGb: env.DRIVE_PHOTOS_ORIGINALS_GB !== undefined ? Number(env.DRIVE_PHOTOS_ORIGINALS_GB) : undefined,
     // A folder of photos on this computer shown as a Drive folder (the lab: LocalDrive, server/drive.mjs).
@@ -1251,9 +1257,13 @@ export async function createApp(config = {}, options = {}) {
         }
         const ticket = /^\/api\/visitor\/identify\/([0-9a-f-]{36})$/.exec(path)?.[1];
         if (ticket && method === 'GET') {
-          visitorLimits.poll.check(req);
+          // Valid tickets are throttled per ticket (server/visitor-identify.mjs maxPolls), so a class behind one
+          // address never loses accepted jobs to the shared per-IP discovery/probe limit.
           const out = visitorIdentify.status(ticket);
-          if (!out) throw fail('NOT_FOUND', 'No such ticket (it ended or was dropped)', 404);
+          if (!out) {
+            visitorLimits.poll.check(req);
+            throw fail('NOT_FOUND', 'No such ticket (it ended or was dropped)', 404);
+          }
           return json(res, 200, out, { 'cache-control': 'no-store' });
         }
         if (ticket && method === 'DELETE') {
