@@ -121,9 +121,15 @@ function historyRows(config, chat, sinceMs) {
 
 function run(bin, args, { input = null, timeout = 120_000, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, args, { timeout, env, maxBuffer: 16 * 1024 * 1024 }, (e, stdout, stderr) =>
-      e ? reject(Object.assign(new Error(clip(String(stderr || e.message).trim(), 300)), { stdout })) : resolve(stdout),
-    );
+    const child = execFile(bin, args, { timeout, env, maxBuffer: 16 * 1024 * 1024 }, (e, stdout, stderr) => {
+      if (!e) return resolve(stdout);
+      const errText = String(stderr || '').trim();
+      const dur = timeout >= 1000 ? `${Math.round(timeout / 1000)}s` : `${timeout}ms`;
+      const msg = e.killed && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+        ? `timed out after ${dur} (${basename(bin)})${errText ? `: ${errText}` : ''}`
+        : errText || e.message;
+      reject(Object.assign(new Error(clip(msg, 300)), { stdout }));
+    });
     if (input != null) child.stdin.end(input);
   });
 }
@@ -744,6 +750,9 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
   /** The shared dictation word list (config voice.wordsFiles, default dictation-words.json and its untracked .local.json beside this file), read per note. */
   const wordsFiles = () => config.voice?.wordsFiles ?? [join(HERE, 'dictation-words.json'), join(HERE, 'dictation-words.local.json')];
 
+  // Parakeet failed or timed out (e.g. eGPU dropped off the bus): left alone for 5 minutes while another engine can handle arrival.
+  let parakeetDownUntil = 0;
+
   /** Parakeet: tools/whatsapp/asr-parakeet.mjs as a child process in its own scope (MemoryMax), on the configured eGPU only. */
   async function parakeetRun(file) {
     const p = config.voice.parakeet;
@@ -751,7 +760,7 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
     const args = ['--user', '--scope', '--quiet', '-p', `MemoryMax=${p.memoryMax ?? '3G'}`, '--', process.execPath, p.script ?? join(HERE, 'asr-parakeet.mjs'), file];
     let out;
     try {
-      out = await run(p.systemdRun ?? 'systemd-run', args, { env, timeout: p.timeoutMs ?? 180_000 });
+      out = await run(p.systemdRun ?? 'systemd-run', args, { env, timeout: p.timeoutMs ?? 30_000 });
     } catch (e) {
       out = String(e.stdout ?? '');
       if (!out.trim()) throw e;
@@ -817,12 +826,16 @@ export function createBridge({ config, stateDir = STATE_DIR, now = Date.now, log
 
   /** The first engine of `order` that answers: { text, language, engine, ms } (text '' for a note without speech), or { error }. */
   async function transcribe(file, order = TURN, ctx = {}) {
-    for (const engine of order.filter(e => ready[e]())) {
+    const active = order.filter(e => ready[e]());
+    for (const engine of active) {
+      if (engine === 'parakeet' && now() < parakeetDownUntil && active.some(e => e !== 'parakeet')) continue;
       const t0 = now();
       try {
         const r = await ENGINES[engine](file);
+        if (engine === 'parakeet') parakeetDownUntil = 0;
         return { ...r, text: String(r.text ?? '').trim(), engine, ms: now() - t0 };
       } catch (e) {
+        if (engine === 'parakeet') parakeetDownUntil = now() + (config.voice?.parakeet?.cooldownMs ?? 300_000);
         record({ dir: 'voice', ...ctx, engine, ok: false, error: clip(e.message, 120) });
       }
     }

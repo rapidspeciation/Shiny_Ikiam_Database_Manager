@@ -45,7 +45,8 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
   `model` (the GGUF), `device` (the eGPU's PCI id), `memoryMax`; without it the arrival engine is whisper alone.
   - on arrival: Parakeet Ultra (transcribe.cpp, the engine T3 uses; `tools/whatsapp/asr-parakeet.mjs` as a child process
     under `systemd-run --user --scope -p MemoryMax=3G`, on the eGPU named by its PCI id in `voice.parakeet.device`, never
-    the iGPU, no fallback to another device), then faster-whisper `small` if it fails (its own `MemoryMax=2G` scope, and
+    the iGPU, no fallback to another device; 30 s default timeout, and skipped for 5 minutes after a failure while another
+    engine is ready), then faster-whisper `small` if it fails (its own `MemoryMax=2G` scope, and
     no «Claude» in its prompt, which it could echo); never Scribe (other members'
     notes go outside only when a turn needs them, as before). Parakeet has no custom vocabulary, so `fixGenera` turns
     sound-alike genera («hiposcada», «callitomia») into the genus, and the shared word list turns its aliases into the
@@ -58,7 +59,7 @@ shows it is working. Anything else needs `@claude` as a whole word, and the chat
     Parakeet if Scribe fails, then whisper); after a failed Scribe upgrade later turns reuse the stored transcript;
   - a note whose transcript calls Claude counts as @claude (`voiceAddressed`): in Franz's chat «Claude» anywhere, in the
     group only among the first six words («Claude, …», «oye Claude …»); also Claud, Klaud, Clod, and «Cloud» only as a
-    call followed by a comma, ? or ! («Cloud, …», «oye cloud, …»), never as a noun («ok cloud storage»); never Claudio, and «Claudia» only in Franz's chat as a call («Claudia, …», a Parakeet mishearing of Claude). A group note that only talks about Claude
+    call followed by a comma, ? or ! («Cloud, …», «oye cloud, …»), never as a noun («ok cloud storage»); «Claudia» / «Claudio» only in Franz's chat as a leading call («Claudia, …», «Claudio, …», Parakeet / whisper mishearings of Claude). A group note that only talks about Claude
     early («ayer Claude me dijo…») does wake it, and the turn is told to end in [silent] (👀, then the silent mark). The
     hourly limit, /stop and the ack apply; the answer starts with «🎙️ «what was heard (80 characters)»»;
   - the bridge's own voice replies (they come back as Franz's audio) are skipped by id; a voice send that gives back no

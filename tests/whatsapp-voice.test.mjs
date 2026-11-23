@@ -41,13 +41,23 @@ test('voiceAddressed: Franz\'s chat takes the name anywhere, the group only in i
     assert.ok(!voiceAddressed(t), t);
   assert.ok(!voiceAddressed('hola oye hey ok bueno mira cloud, revisa esto'));
   assert.ok(voiceAddressed('hola oye hey ok bueno mira cloud, revisa esto', personal));
-  // Parakeet's «Claudia» for «Claude» (13 Nov): a leading call in Franz's chat only.
-  for (const t of ['Claudia, ¿puedes ver cuántas mariposas ha colectado el colector Josué Ruiz?', 'Claudia, ¿me escuchaste?', 'Hola Claudia, revisa esto'])
+  // Parakeet's «Claudia» (13 Nov) and whisper's «Claudio» (22 Nov) for «Claude»: a leading call in Franz's chat only.
+  for (const t of [
+    'Claudia, ¿puedes ver cuántas mariposas ha colectado el colector Josué Ruiz?',
+    'Claudia, ¿me escuchaste?',
+    'Hola Claudia, revisa esto',
+    'Claudio, puedes ver cuántas marifosas he colectado la persona de Jose Ruiz en nuestro proyecto.',
+    'Hola Claudio, revisa esto',
+    '¿Claudio? ¿me escuchas?',
+    '¡Claudio! revisa esto',
+  ])
     assert.ok(voiceAddressed(t, personal), t);
-  for (const t of ['Claudia, ¿me escuchaste?', 'Hola Claudia, revisa esto']) assert.ok(!voiceAddressed(t), t);
+  for (const t of ['Claudia, ¿me escuchaste?', 'Hola Claudia, revisa esto', 'Claudio, ¿vienes mañana?', 'Hola Claudio, revisa esto'])
+    assert.ok(!voiceAddressed(t), t);
   assert.ok(!voiceAddressed('le dije a Claudia, que venga mañana', personal));
-  // Other names are not Claude.
-  for (const t of ['Claudio, ¿vienes mañana?', 'Claudia ya llegó', 'claudette dice hola', 'Clodomiro trae las trampas', 'Oye Claudio'])
+  assert.ok(!voiceAddressed('le dije a Claudio, que venga mañana', personal));
+  // Other names (and Claudio/Claudia without vocative punctuation) are not Claude.
+  for (const t of ['Claudio dice que mañana no viene', 'Claudia ya llegó', 'claudette dice hola', 'Clodomiro trae las trampas', 'Oye Claudio'])
     assert.ok(!voiceAddressed(t, personal), t);
   assert.ok(!voiceAddressed('', personal));
   assert.ok(!voiceAddressed(null));
@@ -203,7 +213,7 @@ test('a long «🎙️» line is cut at 80 characters', async () => {
   assert.equal(line, `Claude: 🎙️ «${(said + ' [scribe]').slice(0, 80)}…»`);
 });
 
-test('the group ignores a note that only talks about Claude; Franz\'s chat takes the name anywhere; Claudio wakes nobody', async () => {
+test('the group ignores a note that only talks about Claude; Franz\'s chat takes the name anywhere; Claudio outside a personal leading call wakes nobody', async () => {
   const s = setup();
   s.voice('G@g.us', 'Le estaba contando a Ana que Claude nos ayudó con las Methona');
   s.voice('G@g.us', 'Claudio, ¿traes las trampas mañana?');
@@ -244,6 +254,87 @@ test('fallbacks: Parakeet down → whisper on arrival (never Scribe); Scribe dow
   assert.equal(s.bridge.state().voiceMeta[a.id].engine, 'whisper');
   assert.ok(s.log().some(e => e.dir === 'voice' && e.engine === 'parakeet' && e.ok === false && /not found/.test(e.error)));
   assert.ok(s.log().some(e => e.dir === 'voice' && e.engine === 'scribe' && e.ok === false));
+});
+
+test('fallbacks: Parakeet error → whisper immediately for 5 minutes, then Parakeet again; explicit probe clears cooldown on recovery', async () => {
+  let skew = 0;
+  let parakeetBroken = true;
+  const s = setup({
+    now: () => Date.now() + skew,
+    engines: {
+      parakeet: file => {
+        if (parakeetBroken) throw new Error('device 0000:03:00.0 lost');
+        return { text: s.heard[basename(file)], language: 'es' };
+      },
+    },
+  });
+  const a = s.voice('S@s.whatsapp.net', 'Claudio, puedes ver cuántas mariposas hay?');
+  await s.settle();
+  // Second note within 5 minutes skips Parakeet and goes straight to whisper (no second 30 s hang).
+  const b = s.voice('S@s.whatsapp.net', 'Claude, me escuchas.');
+  await s.settle();
+  assert.deepEqual(s.calls.parakeet, [`${a.id}.ogg`]);
+  assert.deepEqual(s.calls.whisper, [`${a.id}.ogg`, `${b.id}.ogg`]);
+  assert.equal(s.turns().length, 2);
+  // Explicit single-engine call (as in voice-check) still probes Parakeet even during cooldown.
+  const probeFail = await s.bridge.transcribe(join(s.dir, `${b.id}.ogg`), ['parakeet']);
+  assert.equal(probeFail.error, 'no pude transcribir la nota de voz');
+  assert.equal(s.calls.parakeet.length, 2);
+  // Recovery while still inside cooldown: a succeeding probe resets parakeetDownUntil so the next arrival note uses Parakeet immediately.
+  parakeetBroken = false;
+  const probeOk = await s.bridge.transcribe(join(s.dir, `${b.id}.ogg`), ['parakeet']);
+  assert.equal(probeOk.engine, 'parakeet');
+  const c = s.voice('S@s.whatsapp.net', 'Claude, ya volvió la GPU?');
+  await s.settle();
+  assert.deepEqual(s.calls.parakeet, [`${a.id}.ogg`, `${b.id}.ogg`, `${b.id}.ogg`, `${c.id}.ogg`]);
+  assert.equal(s.calls.whisper.length, 2);
+  assert.equal(s.turns().length, 3);
+  // After another failure, advancing past the 5-minute cooldown retries Parakeet automatically.
+  parakeetBroken = true;
+  const d = s.voice('S@s.whatsapp.net', 'Claude, falló otra vez');
+  await s.settle();
+  assert.equal(s.calls.whisper.length, 3);
+  parakeetBroken = false;
+  skew = 6 * 60_000;
+  const e = s.voice('S@s.whatsapp.net', 'Claude, seis minutos después', { Timestamp: new Date(Date.now() + skew).toISOString() });
+  await s.settle();
+  assert.equal(s.calls.parakeet.at(-1), `${e.id}.ogg`);
+  assert.equal(s.calls.whisper.length, 3);
+  assert.ok(d.id);
+});
+
+test('fallbacks: real parakeetRun timeout preserves stderr warning, logs timed out, and falls back to whisper', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wa-parakeet-to-'));
+  const hang = join(dir, 'hang.sh');
+  writeFileSync(hang, '#!/bin/sh\necho "vulkan device lost" >&2\nsleep 5\n');
+  chmodSync(hang, 0o700);
+  const whisperCalls = [];
+  const bridge = createBridge({
+    config: {
+      chats: { self: { jid: 'S@s.whatsapp.net', label: 'yo', route: 'r', enabled: true, dryRun: true, repliesHour: 20, contextLines: 0, ack: 'reaction' } },
+      routes: { r: { script: '/bin/false', attachmentsDir: join(dir, 'att') } },
+      wacli: { bin: '/bin/false', store: dir },
+      voice: { parakeet: { module: '/dev/null', model: '/dev/null', device: '0000:03:00.0', systemdRun: hang, timeoutMs: 300 } },
+    },
+    stateDir: join(dir, 'state'),
+    log: { error() {}, info() {} },
+    engines: {
+      whisper: async file => {
+        whisperCalls.push(basename(file));
+        return { text: 'Claude, hola', language: 'es' };
+      },
+    },
+  });
+  const audio = join(dir, 'note.ogg');
+  writeFileSync(audio, 'not audio');
+  const t = await bridge.transcribe(audio, ['parakeet', 'whisper'], { on: 'arrival', chat: 'self', id: 'N1' });
+  assert.equal(t.engine, 'whisper');
+  assert.equal(t.text, 'Claude, hola');
+  assert.deepEqual(whisperCalls, ['note.ogg']);
+  const entries = readFileSync(join(dir, 'state', 'bridge.log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const errEntry = entries.find(e => e.engine === 'parakeet' && e.ok === false);
+  assert.ok(errEntry, 'parakeet failure logged');
+  assert.match(errEntry.error, /timed out after 300ms \(hang\.sh\): vulkan device lost/);
 });
 
 test('fallbacks: every engine down → no trigger, nothing stored, nothing sent', async () => {
