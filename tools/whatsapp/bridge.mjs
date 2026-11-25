@@ -1564,10 +1564,9 @@ WantedBy=timers.target
   );
   console.log(`Installed in ${target}; units ${unit}, ithomiini-wa-search.service and .timer`);
   if (existsSync(CONFIG_FILE)) {
-    try {
-      await skillPush(null);
-    } catch (e) {
-      console.warn(`whatsapp-bridge skill push skipped (${e.message}); run bridge.mjs skill-push when the workspace host is reachable.`);
+    const res = await skillPush(null, { continueOnError: true });
+    if (res.failed.length) {
+      for (const f of res.failed) console.warn(`whatsapp-bridge skill push skipped for ${f.chat} (${f.error}); run bridge.mjs skill-push ${f.chat} when reachable.`);
     }
   }
 }
@@ -1597,14 +1596,21 @@ async function syncBridgeSkill(route, { dry = false } = {}) {
 }
 
 /** Installs the whatsapp-bridge skill into .claude/skills and .agents/skills for one chat or all configured workspaces. */
-async function skillPush(key = null, { dry = false } = {}) {
-  const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+async function skillPush(key = null, { dry = false, continueOnError = false } = {}) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  } catch (e) {
+    if (continueOnError) return { pushed: [], failed: [{ chat: 'config', error: e.message }] };
+    throw e;
+  }
   const targets = key
     ? [[key, config.chats?.[key]]]
     : Object.entries(config.chats ?? {}).filter(([, c]) => c?.enabled && !c.readOnly);
   if (key && !targets[0]?.[1]) throw new Error(`Chat ${key}: no chat`);
   const seen = new Set();
-  const hashes = [];
+  const pushed = [];
+  const failed = [];
   for (const [k, chat] of targets) {
     const route = config.routes?.[chat?.route];
     if (!route?.workspace) {
@@ -1614,10 +1620,15 @@ async function skillPush(key = null, { dry = false } = {}) {
     const wsKey = `${route.ssh ?? 'local'}:${route.workspace}`;
     if (seen.has(wsKey)) continue;
     seen.add(wsKey);
-    const hash = await syncBridgeSkill(route, { dry });
-    if (hash) hashes.push({ chat: k, workspace: route.workspace, hash });
+    try {
+      const hash = await syncBridgeSkill(route, { dry });
+      if (hash) pushed.push({ chat: k, workspace: route.workspace, hash });
+    } catch (e) {
+      if (!continueOnError) throw e;
+      failed.push({ chat: k, workspace: route.workspace, error: e.message });
+    }
   }
-  return hashes;
+  return { pushed, failed };
 }
 
 /**

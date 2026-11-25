@@ -15,7 +15,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { t3CommandWay } from './t3commands.mjs';
-import { allowFraming, canInject, injectBridge } from './t3bridge.mjs';
+import { allowFraming, canInject, injectBridge, validHttpOrigin } from './t3bridge.mjs';
 
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
 
@@ -348,14 +348,14 @@ export async function t3Checks({ t3, admin, chats, user, appOrigin, fetchImpl = 
   let originForCheck = 'https://app.invalid';
   let invalidExplicitOrigin = false;
   if (appOrigin !== undefined) {
+    let parsedOrigin = '';
     try {
-      const parsed = new URL(appOrigin);
-      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.origin === appOrigin && !parsed.hostname.includes('*'))
-        originForCheck = parsed.origin;
-      else invalidExplicitOrigin = true;
+      parsedOrigin = appOrigin ? new URL(appOrigin).origin : '';
     } catch {
-      invalidExplicitOrigin = true;
+      parsedOrigin = '';
     }
+    if (validHttpOrigin(parsedOrigin)) originForCheck = parsedOrigin;
+    else invalidExplicitOrigin = true;
   }
   await check('page', async () => {
     const { status, headers, html } = await loadPage();

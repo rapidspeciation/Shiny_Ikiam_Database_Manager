@@ -144,7 +144,7 @@ async function runChecks() {
 }
 async function start(version: string, back = false) {
   const from = status.value?.current
-  if (back && !confirm(t('¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Lo que se hizo en {from} (chats nuevos, ajustes) no se ve en {to}; sigue guardado para cuando se actualice otra vez.', { to: version, from }))) return
+  if (back && !confirm(t('¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Si el esquema de la base no cambió, los chats actuales se conservan; si cambió, se restaura la copia previa de statev2.sqlite y los chats hechos en {from} quedan guardados en una copia aparte en ~/.t3/backups (no se restauran solos al actualizar).', { to: version, from }))) return
   starting.value = true
   checks.value = null
   try {

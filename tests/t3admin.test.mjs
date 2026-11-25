@@ -266,6 +266,22 @@ test('the checks after an update: what the app needs from T3, each with what it 
   );
   assert.equal(missingOriginNoFraming.find(c => c.id === 'page').ok, false);
   assert.match(missingOriginNoFraming.find(c => c.id === 'page').detail, /bridge script injection is disabled/);
+
+  // Origins rejected by validHttpOrigin in t3bridge.mjs (e.g. comma or wildcard in hostname) must fail 'page' and 'framing' identically.
+  for (const badOrigin of ['https://a,b.example.org', 'https://*.example.org']) {
+    const bad = await pageCase(
+      {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html', 'x-frame-options': 'DENY' }),
+        text: async () => '<html><head><script src="/a.js"></script></head></html>',
+      },
+      { appOrigin: badOrigin },
+    );
+    assert.equal(bad.find(c => c.id === 'page').ok, false, badOrigin);
+    assert.match(bad.find(c => c.id === 'page').detail, /bridge script injection is disabled/);
+    assert.equal(bad.find(c => c.id === 'framing').ok, false, badOrigin);
+  }
 });
 
 test("a person's T3 sign-in link: T3's own client scopes; with an admin token older than the T3, the client scopes it has", async () => {

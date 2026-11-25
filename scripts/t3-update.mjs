@@ -387,32 +387,50 @@ const targetV2 = join(home, 'userdata', 'statev2.sqlite');
 /** Reverts a failed downgrade after DB swap: stops T3, restores pre-downgrade DB and original runtime selection, restarts and checks. */
 async function recoverFailedDowngrade(reason) {
   if (!restoredDb && !stoppedForRestore) return;
-  try {
-    await stopT3();
-    await waitStopped(5000);
-  } catch (e) {
-    say(`WARNING: could not stop T3 during downgrade recovery: ${e.message}`);
-  }
-  if (restoredDb && copy?.dir && existsSync(join(copy.dir, 'statev2.sqlite'))) {
+  if (restoredDb) {
+    let stoppedCleanly = false;
     try {
-      replaceSqlite(join(copy.dir, 'statev2.sqlite'), targetV2);
-      say(`Rolled back statev2.sqlite from ${copy.dir} after failed downgrade (${reason}).`);
+      await stopT3();
+      stoppedCleanly = await waitStopped(5000);
     } catch (e) {
-      say(`WARNING: could not roll back statev2.sqlite from ${copy.dir}: ${e.message}`);
+      say(`WARNING: could not stop T3 during downgrade recovery: ${e.message}`);
     }
-  }
-  if (from && STABLE.test(from)) {
-    if (copy?.dir && existsSync(join(copy.dir, 'service-state.json'))) {
+    if (!stoppedCleanly) {
+      say(`WARNING: T3 is still answering during downgrade recovery (${reason}); refusing to swap statev2.sqlite or launcher while T3 may be open. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    if (copy?.dir && existsSync(join(copy.dir, 'statev2.sqlite'))) {
       try {
-        copyFileSync(join(copy.dir, 'service-state.json'), join(home, 'runtime', 'service-state.json'));
-      } catch {
-        /* best effort */
+        replaceSqlite(join(copy.dir, 'statev2.sqlite'), targetV2);
+        say(`Rolled back statev2.sqlite from ${copy.dir} after failed downgrade (${reason}).`);
+      } catch (e) {
+        say(`WARNING: could not roll back statev2.sqlite from ${copy.dir}: ${e.message}`);
       }
     }
-    if (existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))) {
-      const rc = await run(opts.t3, ['update', '--base-dir', home, '--yes', from], t3Env());
-      if (rc !== 0) say(`WARNING: restoring launcher to ${from} exited with code ${rc}`);
+    if (from && STABLE.test(from)) {
+      if (copy?.dir && existsSync(join(copy.dir, 'service-state.json'))) {
+        try {
+          copyFileSync(join(copy.dir, 'service-state.json'), join(home, 'runtime', 'service-state.json'));
+        } catch {
+          /* best effort */
+        }
+      }
+      if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete')) && copy?.dir && existsSync(join(copy.dir, 'runtime-version', '.install-complete'))) {
+        try {
+          restoreRuntime(copy.dir, from);
+          say(`Restored pruned runtime ${from} from ${copy.dir}.`);
+        } catch (e) {
+          say(`WARNING: could not restore runtime ${from} from ${copy.dir}: ${e.message}`);
+        }
+      }
+      if (existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))) {
+        const rc = await run(opts.t3, ['update', '--base-dir', home, '--yes', from], t3Env());
+        if (rc !== 0) say(`WARNING: restoring launcher to ${from} exited with code ${rc}`);
+      }
     }
+  } else if (await running()) {
+    // Nothing was swapped yet and T3 is still up: no need to restart.
+    return;
   }
   const startCode = await startT3();
   if (startCode !== 0) say(`WARNING: restarting T3 on ${from ?? 'previous version'} exited with code ${startCode}`);
@@ -436,10 +454,23 @@ if (back && (runtimeBackup || needDbRestore)) {
       details.push(`runtime ${to} from ${runtimeBackup}`);
     }
     if (needDbRestore) {
-      await stopT3();
       stoppedForRestore = true;
+      await stopT3();
       if (!(await waitStopped(5000)))
         throw new Error('T3 is still answering after stop: refusing to replace statev2.sqlite while it may be open');
+      // Refresh the pre-downgrade DB snapshot AFTER confirmed shutdown so commits between backup() and stop are never lost on recovery.
+      if (existsSync(targetV2) && copy?.dir) {
+        const fresh = join(copy.dir, `statev2.sqlite.final-${process.pid}`);
+        rmSync(fresh, { force: true });
+        const srcDb = new DatabaseSync(targetV2, { readOnly: true, timeout: 10_000 });
+        try {
+          srcDb.exec(`VACUUM INTO '${fresh.replace(/'/g, "''")}'`);
+        } finally {
+          srcDb.close();
+        }
+        chmodSync(fresh, 0o600);
+        renameSync(fresh, join(copy.dir, 'statev2.sqlite'));
+      }
       mkdirSync(join(home, 'userdata'), { recursive: true });
       replaceSqlite(join(dbBackup, 'statev2.sqlite'), targetV2);
       restoredDb = true;

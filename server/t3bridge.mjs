@@ -263,7 +263,7 @@ const headerValues = (headers, name) =>
     .filter(([key]) => key.toLowerCase() === name)
     .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
 
-function validHttpOrigin(origin) {
+export function validHttpOrigin(origin) {
   if (typeof origin !== 'string' || !origin || /[\s;,]/.test(origin)) return false;
   try {
     const parsed = new URL(origin);

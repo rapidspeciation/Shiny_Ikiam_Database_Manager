@@ -77,8 +77,8 @@ export default {
   'Si la base de datos cambió de esquema, volver restaura la copia previa de statev2.sqlite (los chats posteriores quedan guardados en una copia nueva en ~/.t3/backups).':
     'If the database schema changed, going back restores the pre-update statev2.sqlite backup (later chats are kept in a new backup under ~/.t3/backups).',
   'Volver a {version}': 'Go back to {version}',
-  '¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Lo que se hizo en {from} (chats nuevos, ajustes) no se ve en {to}; sigue guardado para cuando se actualice otra vez.':
-    'Go back to T3 {to}? T3 restarts on version {to}. What was done in {from} (new chats, settings) does not show in {to}; it stays saved for when it is updated again.',
+  '¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Si el esquema de la base no cambió, los chats actuales se conservan; si cambió, se restaura la copia previa de statev2.sqlite y los chats hechos en {from} quedan guardados en una copia aparte en ~/.t3/backups (no se restauran solos al actualizar).':
+    'Go back to T3 {to}? T3 restarts on version {to}. If the database schema did not change, current chats are kept; if it changed, the pre-update statev2.sqlite backup is restored and chats made in {from} stay in a separate backup under ~/.t3/backups (not automatically restored on upgrade).',
   'Arrastra para cambiar el tamaño': 'Drag to resize',
   // ProposalsView, ProposalsLive
   'Cambios propuestos': 'Proposed changes',

@@ -253,18 +253,69 @@ exit 2
     assert.deepEqual(dbAfterFail.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 102]);
     dbAfterFail.close();
 
-    // 5. If --restart fails after t3 update switched to 0.1.9, recovery restores 0.1.11 DB + launcher and verifies 0.1.11 answers.
+    // 5. If --restart fails after t3 update switched to 0.1.9, recovery restores 0.1.11 DB (including writes committed
+    //    between initial backup() and stop) + restores pruned 0.1.11 runtime from backup before reactivating launcher.
     writeFileSync(join(root, 'fail-downgrade'), '0');
     writeFileSync(join(root, 'fail-restart'), '1');
-    const failRestart = await run(['0.1.9', ...common, '--restart', restartCmd]);
+    const lateWriteSql = join(root, 'late-write.mjs');
+    writeFileSync(
+      lateWriteSql,
+      `import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync(${JSON.stringify(join(home, 'userdata', 'statev2.sqlite'))});
+db.exec("INSERT OR REPLACE INTO migration_log VALUES (103, 'written-before-stop');");
+db.close();
+`,
+    );
+    const stopWithLateWrite = `if [ "$(cat '${root}/up')" = 1 ]; then '${process.execPath}' '${lateWriteSql}'; fi && echo stopped >> '${stopLog}' && printf '%s' 0 > '${root}/up'`;
+    writeFileSync(join(home, 'runtime', 'versions', '0.1.11', 'marker-011.txt'), 'runtime-0.1.11\n');
+    const pruneFromOnRestartFail = `if [ "$(cat '${root}/version')" = 0.1.9 ]; then rm -rf '${home}/runtime/versions/0.1.11'; fi; if [ "$(cat '${root}/fail-restart')" = 1 ]; then exit 1; fi; printf '%s' 1 > '${root}/up'`;
+    const failRestart = await run([
+      '0.1.9',
+      '--home', home, '--t3', t3, '--local', local, '--wait', '10',
+      '--stop', stopWithLateWrite,
+      '--restart', pruneFromOnRestartFail,
+      '--token-file', join(root, 'token'), '--token-label', 'broker',
+    ]);
     assert.equal(failRestart.code, 1);
     assert.match(failRestart.stdout, /Rolled back statev2\.sqlite/);
+    assert.match(failRestart.stdout, /Restored pruned runtime 0\.1\.11/);
     assert.match(failRestart.stdout, /Recovered T3 on 0\.1\.11/);
+    assert.equal(
+      readFileSync(join(home, 'runtime', 'versions', '0.1.11', 'marker-011.txt'), 'utf8'),
+      'runtime-0.1.11\n',
+      'pruned 0.1.11 runtime restored from backup during recovery',
+    );
     assert.equal(readFileSync(join(root, 'version'), 'utf8'), '0.1.11');
     const dbAfterRestartFail = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'), { readOnly: true });
-    assert.deepEqual(dbAfterRestartFail.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 102]);
+    assert.deepEqual(
+      dbAfterRestartFail.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id),
+      [81, 102, 103],
+      'post-stop refresh preserved writes committed between initial backup and shutdown',
+    );
     dbAfterRestartFail.close();
     writeFileSync(join(root, 'fail-restart'), '0');
+
+    // 5b. If T3 fails to stop during recovery (still answering), recovery refuses to swap statev2.sqlite or launcher.
+    const stopCountFile = join(root, 'stop-count');
+    writeFileSync(stopCountFile, '0');
+    const stopOnlyOnce = `n=$(($(cat '${stopCountFile}') + 1)); printf '%s' "$n" > '${stopCountFile}'; if [ "$n" -eq 1 ]; then printf '%s' 0 > '${root}/up'; fi`;
+    const failRestartKeepUp = `printf '%s' 1 > '${root}/up'; exit 1`;
+    const refuseOpenRecovery = await run([
+      '0.1.9',
+      '--home', home, '--t3', t3, '--local', local, '--wait', '10',
+      '--stop', stopOnlyOnce,
+      '--restart', failRestartKeepUp,
+      '--token-file', join(root, 'token'), '--token-label', 'broker',
+    ]);
+    assert.equal(refuseOpenRecovery.code, 1);
+    assert.match(refuseOpenRecovery.stdout, /still answering during downgrade recovery.*refusing to swap statev2\.sqlite/);
+    assert.equal(readFileSync(join(root, 'version'), 'utf8'), '0.1.9', 'launcher left untouched while T3 stayed answering');
+    // Reset version/DB back to 0.1.11 state for remaining assertions.
+    writeFileSync(join(root, 'version'), '0.1.11');
+    writeFileSync(join(root, 'migration'), '102');
+    const dbReset = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'));
+    dbReset.exec("INSERT OR REPLACE INTO migration_log VALUES (102, 'migrated-0.1.11');");
+    dbReset.close();
 
     // 6. Successful downgrade 0.1.11 → 0.1.9: restores pruned runtime + restores 0.1.9 statev2.sqlite + removes WAL/SHM + logs backup notice.
     rmSync(join(home, 'runtime', 'versions', '0.1.9'), { recursive: true, force: true });
