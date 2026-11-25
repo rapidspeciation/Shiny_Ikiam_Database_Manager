@@ -74,7 +74,7 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "skill:monitoring": {
-      "bytes": 495,
+      "bytes": 458,
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "skill:photos": {
@@ -98,7 +98,7 @@
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "skills (total)": {
-      "bytes": 9115,
+      "bytes": 9078,
       "reason": "baseline after R15 (6-7 Nov 2026)"
     },
     "mcp:find_records": {
@@ -166,8 +166,8 @@
       "reason": "Retro 16 Nov 2026: row_history, show_photos, tubes_lookup and send_sheet_photos load with the chat (anthropic/alwaysLoad): 57 failed calls in the retro's week were made before their schema was loaded, with guessed keys; the always-loaded tools had none"
     },
     "mcp deferred names": {
-      "bytes": 1225,
-      "reason": "Key documents (Franz, 18 Nov 2026: the assistant missed the 2024-0443 contract, a link shared only on WhatsApp): «Documentos clave» names where the latest versions live, search WhatsApp and Drive before saying a document does not exist; whatsapp_search's name among the deferred tools"
+      "bytes": 1244,
+      "reason": "Add deferred read-only find_walk MCP tool for indexed multi-profile Wikiloc lookups (+19 B deferred tool name; monitoring skill trimmed -37 B, net -18 B)"
     },
     "mcp server instructions": {
       "bytes": 0,

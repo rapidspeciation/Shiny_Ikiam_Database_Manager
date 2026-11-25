@@ -9,7 +9,8 @@
 import { moduleMap, parseDateText } from './schema.mjs';
 import { msg, tpl } from './messages.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
-import { queueLink, trailUrl } from './monitoring.mjs';
+import { queryTrailIndex, queueLink, trailUrl } from './monitoring.mjs';
+import { RESULT_BUDGET, fitList } from './tool-budget.mjs';
 
 const MODULE = 'Collection_data';
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
@@ -77,6 +78,34 @@ function createFormulas(rows) {
   const next =
     rows.slice(last + 1).find(r => !r.observed) ?? (last >= 0 && rows[last].formulas.length ? rows[last] : null);
   return new Set(next?.formulas || []);
+}
+
+/**
+ * Read-only indexed lookup of Wikiloc walks across all configured profiles.
+ * Queries `wikiloc_trail_index` directly in SQLite (zero network calls) and fits
+ * the answer inside the assistant's tool result budget.
+ */
+export function findWalk(store, args = {}) {
+  const input = args && typeof args === 'object' ? args : {};
+  const result = queryTrailIndex(store, {
+    dateFrom: input.date_from,
+    dateTo: input.date_to,
+    month: input.month,
+    place: input.place,
+    profileId: input.profile_id,
+    limit: input.limit,
+  });
+  if (result.error) return result;
+  const more = kept =>
+    kept < result.total
+      ? {
+          returned: kept,
+          truncated: true,
+          next: `Showing ${kept} of ${result.total} indexed walks; narrow by date_from/date_to, month, place or profile_id.`,
+        }
+      : { returned: kept, truncated: false };
+  const fitted = fitList(result, 'walks', RESULT_BUDGET - 500, more);
+  return { ...fitted.out, ...more(fitted.kept) };
 }
 
 /**
