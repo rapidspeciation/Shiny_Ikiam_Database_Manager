@@ -16,7 +16,7 @@ window in the month.
 
 ## Finding a past walk
 
-Use `find_walk({ date_from, date_to, month, place, profile_id, limit })` to search indexed Wikiloc walks across all configured profiles (for example Franz's `13756119` «Franz Chandi 1» and `11910200` «Franz Chandi») directly in SQLite — read-only and instant, without browsing. If a date range matches a walk whose title had no day, `month_candidates` lists month-only trails in that month. Only pass a returned `trail_url` to `queue_walk` → `get_walk` when full waypoints or photos are needed.
+Use `find_walk({ date_from, date_to, month, place, profile_id, limit })` to search indexed Wikiloc walks across all configured profiles (for example Franz's `13756119` «Franz Chandi 1» and `11910200` «Franz Chandi») directly in SQLite — read-only and instant, without browsing. If a date range matches a walk whose title had no day, `month_candidates` lists month-only trails in that month; when `undated > 0`, some indexed trails have no parsed date/month yet and need a `place` query or `queue_walk`. Only pass a returned `trail_url` to `queue_walk` → `get_walk` when full waypoints or photos are needed.
 
 ## A Wikiloc walk
 

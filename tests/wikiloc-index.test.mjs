@@ -95,7 +95,7 @@ test('date, month, distance and trail metadata normalization handle Spanish, Eng
     distanceKm: 3.45,
   });
 
-  // Same-month upload fills recordedDate when title lacks day (consistent with walkDate)
+  // Same-month upload stays in uploadedDate and never fabricates recordedDate when title lacks a day
   const sameMonth = normalizeTrailMeta({
     url: 'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281',
     title: 'Colecta venecia misahualli',
@@ -103,12 +103,16 @@ test('date, month, distance and trail metadata normalization handle Spanish, Eng
     recorded: 'diciembre 2022',
     created: '2022-12-08T18:10+0100',
   });
-  assert.equal(sameMonth.recordedDate, '2022-12-08');
+  assert.equal(sameMonth.recordedDate, null);
   assert.equal(sameMonth.recordedMonth, '2022-12');
   assert.equal(sameMonth.uploadedDate, '2022-12-08');
 
-  // Invalid trail rejected
+  // Non-Wikiloc URL rejected even if wikilocId is provided
   assert.equal(normalizeTrailMeta({ url: 'https://example.com/nope', title: 'Bad' }), null);
+  assert.equal(
+    normalizeTrailMeta({ url: 'https://other.example/monitoreo-120902999', wikilocId: '120902999', title: 'Monitoreo' }),
+    null,
+  );
 });
 
 test('ID-range filtering and date bracketing narrow candidate trails cleanly', () => {
@@ -247,25 +251,67 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       },
       editor,
     );
-    assert.equal(saved.walk.profileId, '11910200');
-    assert.equal(saved.walk.recordedMonth, '2022-12');
+    assert.equal(saved.walk.author, '11910200');
     assert.equal(saved.walk.uploadedDate, '2022-12-09');
     assert.equal(saved.walk.distanceKm, 3.45);
 
-    // Profile sync reports list-page trails (sparse metadata for 120902281 + another non-monitoring trail).
+    // Save two walks whose titles have misleading dates corrected by "Fecha de realización" (Sol F1 & Fable F1).
+    await saveWalk(
+      s,
+      {
+        url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-27-4-2024-220000001',
+        name: 'Monitoreo 27/4/2024',
+        date: '2025-04-27',
+        recorded: 'abril 2025',
+        place: 'Ikiam, Tena',
+        distanceKm: 1.15,
+        author: '13756119',
+        track: [],
+        waypoints: [],
+      },
+      editor,
+    );
+    await saveWalk(
+      s,
+      {
+        url: 'https://es.wikiloc.com/rutas-senderismo/t2-8-9-2025-220000002',
+        name: 'T2 8/9/2025',
+        date: '2025-08-09',
+        recorded: 'agosto 2025',
+        author: '13756119',
+        track: [],
+        waypoints: [],
+      },
+      editor,
+    );
+
+    // Profile sync reports list-page trails (must NEVER overwrite saved walk date/month/place/distance!).
     queueSync(s, editor);
     const job1 = claimJob(s).job;
     assert.equal(job1.target, '13756119');
     finishJob(s, job1.id, {
       status: 'done',
       profileName: 'Franz Chandi 1',
-      message: 'Sin rutas nuevas (1 rutas revisadas)',
+      message: 'Sin rutas nuevas (4 rutas revisadas)',
       trails: [
         {
           url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-ithomidos-14-mayo-2025-213523060',
           title: 'Monitoreo ithomidos sendero Ikiam FCH 14 mayo 2025',
-          place: 'Tena, Napo',
-          distance: '1,11 km',
+        },
+        {
+          url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-27-4-2024-220000001',
+          title: 'Monitoreo 27/4/2024',
+          distanceKm: 9.99,
+          place: 'Wrong Place',
+        },
+        {
+          url: 'https://es.wikiloc.com/rutas-senderismo/t2-8-9-2025-220000002',
+          title: 'T2 8/9/2025',
+        },
+        // Undated trail (no date in title)
+        {
+          url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-t3-220000003',
+          title: 'Monitoreo T3',
         },
       ],
     });
@@ -292,6 +338,27 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       ],
     });
 
+    // Verify saved walks kept their corrected dates, months, place & distance after profile sync.
+    const correctedYear = queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-04-27', dateTo: '2025-04-27' });
+    assert.equal(correctedYear.walks.length, 1);
+    assert.equal(correctedYear.walks[0].wikiloc_id, '220000001');
+    assert.equal(correctedYear.walks[0].recorded_date, '2025-04-27');
+    assert.equal(correctedYear.walks[0].recorded_month, '2025-04');
+    assert.equal(correctedYear.walks[0].place, 'Ikiam, Tena');
+    assert.equal(correctedYear.walks[0].distance_km, 1.15);
+    assert.equal(correctedYear.undated, 1, 'undated Monitoreo T3 reported on date search');
+
+    const correctedSwap = queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-08-09', dateTo: '2025-08-09' });
+    assert.equal(correctedSwap.walks.length, 1);
+    assert.equal(correctedSwap.walks[0].wikiloc_id, '220000002');
+    assert.equal(correctedSwap.walks[0].recorded_month, '2025-08');
+    assert.equal(queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-09-08', dateTo: '2025-09-08' }).total, 0);
+
+    // Undated trail still findable by place/title keywords.
+    const undatedHit = queryTrailIndex(s, { profileId: '13756119', place: 'T3' });
+    assert.equal(undatedHit.total, 1);
+    assert.equal(undatedHit.walks[0].wikiloc_id, '220000003');
+
     const hit = queryTrailIndex(s, { profileId: '11910200', dateFrom: '2022-12-08', dateTo: '2022-12-08' });
     assert.equal(hit.walks.length, 1);
     assert.equal(hit.walks[0].wikiloc_id, '120902281');
@@ -299,9 +366,14 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
     assert.equal(hit.walks[0].place, 'Misahuallí, Napo');
     assert.equal(hit.walks[0].walk_id, saved.walk.id);
     assert.equal(hit.walks[0].walk_status, 'waiting');
-    // Month-only trail from Dec 2022 surfaced cleanly in month_candidates.
+    // Month-only trail from Dec 2022 surfaced cleanly in month_candidates (both with and without matching `month`).
     assert.equal(hit.month_candidates.length, 1);
     assert.equal(hit.month_candidates[0].wikiloc_id, '120901100');
+    const hitWithMonth = queryTrailIndex(s, { profileId: '11910200', dateFrom: '2022-12-01', dateTo: '2022-12-10', month: '2022-12' });
+    assert.equal(hitWithMonth.month_candidates.length, 1);
+    assert.equal(hitWithMonth.month_candidates[0].wikiloc_id, '120901100');
+    const hitOtherMonth = queryTrailIndex(s, { profileId: '11910200', dateFrom: '2022-12-01', dateTo: '2022-12-10', month: '2022-11' });
+    assert.equal(hitOtherMonth.month_candidates, undefined);
 
     // Deleting the walk clears walk_id in the index without deleting the index row.
     deleteWalk(s, saved.walk.id, editor);
@@ -483,7 +555,7 @@ test('indexed query on 1,000 synthetic walks uses SQLite indexes and runs in < 1
   }
 });
 
-test('readProfile stops pagination early at minId and extracts normalized card metadata without a real browser', async () => {
+test('readProfile stops pagination early at minId and rejects non-Wikiloc links', async () => {
   const visited = [];
   const pages = {
     0: {
@@ -492,16 +564,14 @@ test('readProfile stops pagination early at minId and extracts normalized card m
         {
           url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-mayo-2025-213523060',
           title: 'Monitoreo 14 mayo 2025',
-          place: 'Ikiam, Tena',
-          distance: '1,11 km',
-          dateText: '2025-05-14T15:00:00Z',
+        },
+        {
+          url: 'https://other.example/monitoreo-120902999',
+          title: 'Monitoreo unrelated host',
         },
         {
           url: 'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281',
           title: 'Colecta venecia misahualli',
-          place: 'Misahuallí, Napo',
-          distance: '3,45 km',
-          dateText: 'diciembre 2022',
         },
       ],
     },
@@ -511,9 +581,6 @@ test('readProfile stops pagination early at minId and extracts normalized card m
         {
           url: 'https://es.wikiloc.com/rutas-senderismo/old-trail-90000000',
           title: 'Old trail',
-          place: 'Tena',
-          distance: '2 km',
-          dateText: '2021-01-10',
         },
       ],
     },
@@ -529,20 +596,21 @@ test('readProfile stops pagination early at minId and extracts normalized card m
     evaluate: async () => pages[currentFrom] || { name: 'Franz Chandi', links: [] },
   };
 
-  // With minId=120000000: page 0 has both trails >= 120M; page 10 has only 90M (< minId) -> stops without fetching page 20!
+  // With minId=120000000: page 0 has both valid Wikiloc trails >= 120M (other.example ignored);
+  // page 10 has only 90M (< minId) -> stops without fetching page 20!
   const result = await readProfile(fakePage, '11910200', { minId: 120_000_000 });
   assert.equal(result.name, 'Franz Chandi');
   assert.equal(visited.length, 2, 'stopped immediately after page with IDs below minId');
   assert.deepEqual(
-    result.trails.map(t => ({ id: t.wikilocId, profileId: t.profileId, recordedDate: t.recordedDate, recordedMonth: t.recordedMonth, uploadedDate: t.uploadedDate, distanceKm: t.distanceKm })),
+    result.trails.map(t => ({ id: t.wikilocId, profileId: t.profileId, recordedDate: t.recordedDate, recordedMonth: t.recordedMonth })),
     [
-      { id: '213523060', profileId: '11910200', recordedDate: '2025-05-14', recordedMonth: '2025-05', uploadedDate: '2025-05-14', distanceKm: 1.11 },
-      { id: '120902281', profileId: '11910200', recordedDate: null, recordedMonth: '2022-12', uploadedDate: null, distanceKm: 3.45 },
+      { id: '213523060', profileId: '11910200', recordedDate: '2025-05-14', recordedMonth: '2025-05' },
+      { id: '120902281', profileId: '11910200', recordedDate: null, recordedMonth: null },
     ],
   );
 });
 
-test('readTrail returns normalized recordedMonth, uploadedDate, place, distanceKm and profileId', async () => {
+test('readTrail keeps upload-day date fallback for import while leaving recordedDate null for month-only index lookups', async () => {
   const fakePage = {
     goto: async () => {},
     title: async () => 'Colecta venecia misahualli | Wikiloc',
@@ -556,7 +624,6 @@ test('readTrail returns normalized recordedMonth, uploadedDate, place, distanceK
       author: '11910200',
       created: '2022-12-08T19:00:00+0100',
       distance: '3,45 km',
-      place: 'Misahuallí, Napo',
       href: 'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281',
       started: null,
       took: '1 hora 30 minutos',
@@ -564,11 +631,30 @@ test('readTrail returns normalized recordedMonth, uploadedDate, place, distanceK
     }),
   };
   const walk = await readTrail(fakePage, 'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281');
-  assert.equal(walk.profileId, '11910200');
-  assert.equal(walk.recordedDate, '2022-12-08');
+  assert.equal(walk.author, '11910200');
+  // Existing import workflow still gets upload-day fallback in `date`.
+  assert.equal(walk.date, '2022-12-08');
+  // Index metadata does NOT treat an upload day as a confirmed exact recording day.
+  assert.equal(walk.recordedDate, null);
   assert.equal(walk.recordedMonth, '2022-12');
   assert.equal(walk.uploadedDate, '2022-12-08');
-  assert.equal(walk.place, 'Misahuallí, Napo');
   assert.equal(walk.distanceKm, 3.45);
   assert.equal(walk.minutes, 90);
+
+  // Saving this walk keeps it out of exact-day hits and surfaces it under month / month_candidates, even across re-init.
+  const s = makeStore();
+  try {
+    await saveWalk(s, walk, editor);
+    initMonitoring(s.db);
+    const exactDay = findWalk(s, { date_from: '2022-12-08', date_to: '2022-12-08', profile_id: '11910200' });
+    assert.equal(exactDay.total, 0);
+    assert.equal(exactDay.month_candidates.length, 1);
+    assert.equal(exactDay.month_candidates[0].wikiloc_id, '120902281');
+    const byMonth = findWalk(s, { month: '2022-12', profile_id: '11910200' });
+    assert.equal(byMonth.total, 1);
+    assert.equal(byMonth.walks[0].recorded_date, null);
+    assert.equal(byMonth.walks[0].uploaded_date, '2022-12-08');
+  } finally {
+    s.close();
+  }
 });

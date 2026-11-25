@@ -102,10 +102,7 @@ function backfillWikilocIndex(db) {
               w.recorded_month, w.uploaded_date, w.place, w.distance_km, w.created_at, i.wikiloc_id AS indexed_id
        FROM wikiloc_walks w
        LEFT JOIN wikiloc_trail_index i ON i.wikiloc_id = w.wikiloc_id
-       WHERE i.wikiloc_id IS NULL
-          OR (w.date IS NOT NULL AND (w.recorded_date IS NULL OR w.recorded_month IS NULL))
-          OR (w.profile_id IS NULL AND json_extract(w.data_json, '$.author') IS NOT NULL)
-          OR (w.recorded_month IS NULL AND json_extract(w.data_json, '$.recorded') IS NOT NULL)`,
+       WHERE i.wikiloc_id IS NULL`,
     )
     .all();
   if (!rows.length) return;
@@ -966,12 +963,6 @@ const walkRow = row => {
     url: row.url,
     name: row.name,
     date: row.date,
-    profileId: row.profile_id ?? data.author ?? null,
-    recordedDate: row.recorded_date ?? row.date ?? null,
-    recordedMonth: row.recorded_month ?? null,
-    uploadedDate: row.uploaded_date ?? data.uploadedDate ?? null,
-    place: row.place ?? data.place ?? null,
-    distanceKm: row.distance_km ?? data.distanceKm ?? null,
     status: row.status,
     trackId: row.track_id,
     proposalId: row.proposal_id ?? null,
@@ -1052,8 +1043,7 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   }
   const name = text(body.name, 200) || `Wikiloc ${wikilocId}`;
   // The collector: given by the profile being checked, or known from the trail's author.
-  const rawAuthor = body.author ?? body.profileId ?? body.profile_id ?? '';
-  const author = /^\d{3,12}$/.test(String(rawAuthor)) ? String(rawAuthor) : null;
+  const author = /^\d{3,12}$/.test(String(body.author || '')) ? String(body.author) : null;
   const collector =
     text(body.collector, 120) ||
     (author && store.db.prepare('SELECT collector FROM wikiloc_profiles WHERE wikiloc_user=?').get(author)?.collector) ||
@@ -1063,7 +1053,9 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   const started = typeof body.started === 'string' && Number.isFinite(Date.parse(body.started)) ? new Date(body.started).toISOString() : null;
   const minutes = number(body.minutes, 0, 24 * 60);
   const recordedText = text(body.recorded, 60);
-  const recordedDate = date || null;
+  // Explicit recordedDate (including null from readTrail when only the upload day is known) stays distinct from `date`.
+  const hasExplicitRecordedDate = Object.hasOwn(body, 'recordedDate') || Object.hasOwn(body, 'recorded_date');
+  const recordedDate = hasExplicitRecordedDate ? parseIsoDate(body.recordedDate ?? body.recorded_date) : date || null;
   const recordedMonth =
     (recordedDate ? recordedDate.slice(0, 7) : null) ??
     parseRecordedMonth(body.recordedMonth ?? body.recorded_month) ??
@@ -1092,8 +1084,8 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
         `UPDATE wikiloc_walks
          SET url=?, name=?, date=?, data_json=?,
              profile_id=COALESCE(?, profile_id),
-             recorded_date=COALESCE(?, recorded_date),
-             recorded_month=COALESCE(?, recorded_month),
+             recorded_date=?,
+             recorded_month=?,
              uploaded_date=COALESCE(?, uploaded_date),
              place=COALESCE(?, place),
              distance_km=COALESCE(?, distance_km)
@@ -1103,7 +1095,7 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
     upsertTrailIndex(
       store,
       [{ wikilocId, profileId: author, trailUrl: url, title: name, place, recordedDate, recordedMonth, uploadedDate, distanceKm }],
-      { profileId: author, walkId: existing.id },
+      { profileId: author, walkId: existing.id, authoritative: true },
     );
     return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(existing.id)), failed, updated: true };
   }
@@ -1136,7 +1128,7 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   upsertTrailIndex(
     store,
     [{ wikilocId, profileId: author, trailUrl: url, title: name, place, recordedDate, recordedMonth, uploadedDate, distanceKm }],
-    { profileId: author, walkId: id },
+    { profileId: author, walkId: id, authoritative: true },
   );
   return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)), failed, updated: false };
 }
@@ -1511,13 +1503,17 @@ const MAX_FIND_LIMIT = 100;
 
 /**
  * Upserts normalized trail metadata entries into `wikiloc_trail_index` (from profile syncs or saveWalk).
- * Preserves richer non-null fields (such as an exact recorded_date or linked walk_id) on conflict.
+ * `authoritative: true` (saveWalk) updates recorded_date + recorded_month together from the full trail page;
+ * listing-card syncs (`authoritative: false`) never overwrite a saved walk's date, month, place or distance.
  */
-export function upsertTrailIndex(store, trails, { profileId = null, walkId = null } = {}) {
+export function upsertTrailIndex(store, trails, { profileId = null, walkId = null, authoritative = false } = {}) {
   const list = Array.isArray(trails) ? trails : [];
   if (!list.length) return { indexed: 0, skipped: 0 };
   const db = store.db;
-  const existingStmt = db.prepare('SELECT title, place FROM wikiloc_trail_index WHERE wikiloc_id = ?');
+  const existingStmt = db.prepare(
+    `SELECT profile_id, title, place, recorded_date, recorded_month, uploaded_date, distance_km, walk_id
+     FROM wikiloc_trail_index WHERE wikiloc_id = ?`,
+  );
   const upsertStmt = db.prepare(
     `INSERT INTO wikiloc_trail_index(
        wikiloc_id, wikiloc_id_num, profile_id, trail_url, title, place,
@@ -1525,16 +1521,16 @@ export function upsertTrailIndex(store, trails, { profileId = null, walkId = nul
      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(wikiloc_id) DO UPDATE SET
        wikiloc_id_num = excluded.wikiloc_id_num,
-       profile_id = COALESCE(excluded.profile_id, wikiloc_trail_index.profile_id),
+       profile_id = excluded.profile_id,
        trail_url = excluded.trail_url,
        title = excluded.title,
-       place = COALESCE(excluded.place, wikiloc_trail_index.place),
-       recorded_date = COALESCE(excluded.recorded_date, wikiloc_trail_index.recorded_date),
-       recorded_month = COALESCE(excluded.recorded_month, wikiloc_trail_index.recorded_month),
-       uploaded_date = COALESCE(excluded.uploaded_date, wikiloc_trail_index.uploaded_date),
-       distance_km = COALESCE(excluded.distance_km, wikiloc_trail_index.distance_km),
+       place = excluded.place,
+       recorded_date = excluded.recorded_date,
+       recorded_month = excluded.recorded_month,
+       uploaded_date = excluded.uploaded_date,
+       distance_km = excluded.distance_km,
        search_text = excluded.search_text,
-       walk_id = COALESCE(excluded.walk_id, wikiloc_trail_index.walk_id),
+       walk_id = excluded.walk_id,
        indexed_at = excluded.indexed_at`,
   );
   const stamp = now();
@@ -1550,22 +1546,40 @@ export function upsertTrailIndex(store, trails, { profileId = null, walkId = nul
         continue;
       }
       const prev = existingStmt.get(meta.wikilocId);
+      const keepSaved = !authoritative && Boolean(prev?.walk_id);
+      const keepExistingDate = keepSaved || (!authoritative && Boolean(prev?.recorded_date));
+      const mergedProfileId = meta.profileId ?? prev?.profile_id ?? null;
       const mergedTitle = meta.title || prev?.title || `Wikiloc ${meta.wikilocId}`;
-      const mergedPlace = meta.place ?? prev?.place ?? null;
+      const mergedPlace = keepSaved ? (prev.place ?? meta.place) : (meta.place ?? prev?.place ?? null);
+      const mergedRecordedDate = keepExistingDate
+        ? prev.recorded_date
+        : authoritative
+          ? meta.recordedDate
+          : (meta.recordedDate ?? prev?.recorded_date ?? null);
+      const mergedRecordedMonth = keepExistingDate
+        ? prev.recorded_month
+        : mergedRecordedDate
+          ? mergedRecordedDate.slice(0, 7)
+          : authoritative
+            ? meta.recordedMonth
+            : (meta.recordedMonth ?? prev?.recorded_month ?? null);
+      const mergedUploadedDate = keepSaved ? (prev.uploaded_date ?? meta.uploadedDate) : (meta.uploadedDate ?? prev?.uploaded_date ?? null);
+      const mergedDistanceKm = keepSaved ? (prev.distance_km ?? meta.distanceKm) : (meta.distanceKm ?? prev?.distance_km ?? null);
+      const mergedWalkId = walkId ?? (typeof raw.walkId === 'string' ? raw.walkId : null) ?? prev?.walk_id ?? null;
       const searchText = foldSearchText([mergedTitle, mergedPlace].filter(Boolean).join(' '));
       upsertStmt.run(
         meta.wikilocId,
         Number(meta.wikilocId),
-        meta.profileId,
+        mergedProfileId,
         meta.trailUrl,
         mergedTitle,
-        meta.place,
-        meta.recordedDate,
-        meta.recordedMonth,
-        meta.uploadedDate,
-        meta.distanceKm,
+        mergedPlace,
+        mergedRecordedDate,
+        mergedRecordedMonth,
+        mergedUploadedDate,
+        mergedDistanceKm,
         searchText,
-        walkId ?? (typeof raw.walkId === 'string' ? raw.walkId : null),
+        mergedWalkId,
         stamp,
       );
       indexed++;
@@ -1711,12 +1725,16 @@ export function queryTrailIndex(
     )
     .all(...mainParams, cappedLimit);
 
-  // When filtering by exact date range without `month`, also surface any month-only trails
-  // (recorded_date IS NULL) whose recorded_month overlaps the range, using the recorded_month index.
+  // When filtering by date range, also surface any month-only trails (recorded_date IS NULL)
+  // whose recorded_month overlaps the range (and equals `month` when supplied), using the recorded_month index.
   let monthCandidates = [];
-  if ((from || to) && !monthFilter) {
+  if (from || to) {
     const mcClauses = [...baseClauses, 't.recorded_date IS NULL'];
     const mcParams = [...baseParams];
+    if (monthFilter) {
+      mcClauses.push('t.recorded_month = ?');
+      mcParams.push(monthFilter);
+    }
     if (from) {
       mcClauses.push('t.recorded_month >= ?');
       mcParams.push(from.slice(0, 7));
@@ -1741,6 +1759,15 @@ export function queryTrailIndex(
       .map(formatIndexedWalk);
   }
 
+  // When a date or month filter is active, count undated trails matching the other filters so callers know they exist.
+  let undated = 0;
+  if (from || to || monthFilter) {
+    const undatedClauses = [...baseClauses, 't.recorded_date IS NULL', 't.recorded_month IS NULL'];
+    undated = store.db
+      .prepare(`SELECT COUNT(*) AS n FROM wikiloc_trail_index t WHERE ${undatedClauses.join(' AND ')}`)
+      .get(...baseParams).n;
+  }
+
   const profiles = store.db
     .prepare('SELECT wikiloc_user, name, collector, last_checked FROM wikiloc_profiles ORDER BY created_at')
     .all()
@@ -1757,6 +1784,7 @@ export function queryTrailIndex(
     returned: walks.length,
     walks,
     ...(monthCandidates.length ? { month_candidates: monthCandidates } : {}),
+    ...(undated ? { undated } : {}),
     profiles,
     truncated: total > walks.length,
   };
