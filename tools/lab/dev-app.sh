@@ -151,8 +151,8 @@ for attempt in 1 2; do
   done
   if [ "$stopped" = 1 ]; then
     if [ "$attempt" = 1 ] && [ "$HEAP" = 1280 ] && [ "$HAS_NODE_OPTIONS" = 0 ] && [ -f "$DIR/app.log" ] \
-      && tail -c +"$((log_offset + 1))" "$DIR/app.log" | grep -qF "Workbook rows kept in memory"; then
-      echo "$UNIT fell back to in-memory rows under the 1280 MB heap cap: retrying once at 2048 MB." >&2
+      && tail -c +"$((log_offset + 1))" "$DIR/app.log" | grep -F "Workbook rows kept in memory" >/dev/null; then
+      echo "$UNIT stopped after falling back to in-memory rows (likely the 1280 MB heap cap): retrying once at 2048 MB." >&2
       systemctl --user reset-failed "$UNIT.service" 2>/dev/null || true
       HEAP=2048
       continue
