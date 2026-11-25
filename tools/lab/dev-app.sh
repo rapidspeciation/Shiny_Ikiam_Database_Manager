@@ -26,6 +26,8 @@ PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start F
 LIMIT="${DEV_APP_LIMIT:-}"
 OPEN="${LAB_OPEN_LOGIN:-1}"
 [[ "$OPEN" =~ ^[01]$ ]] || { echo "LAB_OPEN_LOGIN is 1 (any password logs in, the default) or 0" >&2; exit 2; }
+SHEETS_MODE=file
+HAS_NODE_OPTIONS=0
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +35,13 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; shift 2 ;;
     --ttl) TTL="$2"; shift 2 ;;
     --max) MAX="$2"; shift 2 ;;
-    --env) [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }; EXTRA+=(-E "$2"); shift 2 ;;
+    --env)
+      [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }
+      case "$2" in
+        LOCAL_SHEETS=*) SHEETS_MODE="${2#LOCAL_SHEETS=}" ;;
+        NODE_OPTIONS=*) HAS_NODE_OPTIONS=1 ;;
+      esac
+      EXTRA+=(-E "$2"); shift 2 ;;
     --fresh) FRESH=1; shift ;;
     --stop) ACTION=stop; shift ;;
     --list) ACTION=list; shift ;;
@@ -94,36 +102,66 @@ done
 # tools/assistant-eval/eval-app.mjs passes its environment on; by default none, and the tool says so. --env still wins.
 [ -z "${KNOWLEDGE_DIR:-}" ] || EXTRA=(-E "KNOWLEDGE_DIR=$KNOWLEDGE_DIR" "${EXTRA[@]}")
 # The workbook's rows file (server/file-sheets.mjs), one per snapshot and version of the code that shapes the rows,
-# made here (under the start lock) so the app only copies it.
-systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
-  || echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
-systemd-run --user --unit="$UNIT" --collect --quiet \
-  --description="Ithomiini dev app :$PORT ($DIR), for pid $owner, $TTL at most" \
-  -p WorkingDirectory="$HERE" -p RuntimeMaxSec="$TTL" -p MemoryMax="$MAX" -p MemorySwapMax=1G \
-  -p StandardOutput=append:"$DIR/app.log" -p StandardError=append:"$DIR/app.log" \
-  -E DEV_APP_OWNER="$owner" \
-  -E LOCAL_MODE=1 -E SEED_FILE="$LAB/snapshot.json" -E DATABASE_PATH="$DIR/app.sqlite" -E PHOTO_CACHE_DIR="$DIR/photos" \
-  -E DRIVE_LISTING_FILE="$LAB/drive-listing.json" -E DRIVE_ACCOUNT=jmithominii@gmail.com \
-  -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
-  -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 -E ITHOMIINI_LAB_OPEN_LOGIN="$OPEN" \
-  -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
-  -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
-  -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
-  "${EXTRA[@]}" \
-  node server/index.mjs
+# made here (under the start lock) so the app only copies it. With rows in SQLite, a 1280 MB V8 heap cap trims the
+# start peak; in-memory mode (LOCAL_SHEETS=memory, or if the file could not be made here) keeps 2048 MB so parsing
+# and holding the snapshot does not hit the heap limit.
+HEAP=1280
+if [ "$SHEETS_MODE" = memory ]; then
+  HEAP=2048
+elif ! systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json"; then
+  HEAP=2048
+  echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
+fi
 URL="http://127.0.0.1:$PORT"
 # Ready once it answers and its first sync of the snapshot is done (the sync starts before it listens, so an answer
-# that is not "syncing" comes after it).
+# that is not "syncing" comes after it). If a default 1280 MB start falls back to in-memory rows and stops while
+# starting (V8 heap limit), retry once at 2048 MB without overriding an explicit --env NODE_OPTIONS=...
 state=""
-deadline=$((SECONDS + 300))
-while [ "$SECONDS" -lt "$deadline" ]; do
-  health="$(curl -fs -m 5 "$URL/health" || true)"
-  if [ -n "$health" ] && ! grep -q '"sync":"syncing"' <<<"$health"; then
-    state="$(grep -o '"sync":"[^"]*"' <<<"$health" | head -n 1 | cut -d'"' -f4)"
-    break
+for attempt in 1 2; do
+  log_offset=0
+  [ -f "$DIR/app.log" ] && log_offset=$(wc -c < "$DIR/app.log")
+  systemd-run --user --unit="$UNIT" --collect --quiet \
+    --description="Ithomiini dev app :$PORT ($DIR), for pid $owner, $TTL at most" \
+    -p WorkingDirectory="$HERE" -p RuntimeMaxSec="$TTL" -p MemoryMax="$MAX" -p MemorySwapMax=1G \
+    -p StandardOutput=append:"$DIR/app.log" -p StandardError=append:"$DIR/app.log" \
+    -E DEV_APP_OWNER="$owner" \
+    -E LOCAL_MODE=1 -E SEED_FILE="$LAB/snapshot.json" -E DATABASE_PATH="$DIR/app.sqlite" -E PHOTO_CACHE_DIR="$DIR/photos" \
+    -E DRIVE_LISTING_FILE="$LAB/drive-listing.json" -E DRIVE_ACCOUNT=jmithominii@gmail.com \
+    -E APP_HOST=127.0.0.1 -E APP_PORT="$PORT" -E APP_BASE_PATH=/ -E APP_PUBLIC_URL="http://127.0.0.1:$PORT" \
+    -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 -E ITHOMIINI_LAB_OPEN_LOGIN="$OPEN" \
+    -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
+    -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
+    -E NODE_OPTIONS="--max-old-space-size=$HEAP --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
+    "${EXTRA[@]}" \
+    node server/index.mjs
+  state=""
+  stopped=0
+  deadline=$((SECONDS + 300))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    health="$(curl -fs -m 5 "$URL/health" || true)"
+    if [ -n "$health" ] && ! grep -q '"sync":"syncing"' <<<"$health"; then
+      state="$(grep -o '"sync":"[^"]*"' <<<"$health" | head -n 1 | cut -d'"' -f4)"
+      break
+    fi
+    if ! systemctl --user is-active --quiet "$UNIT.service"; then
+      stopped=1
+      break
+    fi
+    sleep 2
+  done
+  if [ "$stopped" = 1 ]; then
+    if [ "$attempt" = 1 ] && [ "$HEAP" = 1280 ] && [ "$HAS_NODE_OPTIONS" = 0 ] && [ -f "$DIR/app.log" ] \
+      && tail -c +"$((log_offset + 1))" "$DIR/app.log" | grep -F "Workbook rows kept in memory" >/dev/null; then
+      echo "$UNIT stopped after falling back to in-memory rows (likely the 1280 MB heap cap): retrying once at 2048 MB." >&2
+      systemctl --user reset-failed "$UNIT.service" 2>/dev/null || true
+      HEAP=2048
+      continue
+    fi
+    echo "$UNIT stopped while starting: $DIR/app.log" >&2
+    tail -n 20 "$DIR/app.log" >&2
+    exit 1
   fi
-  systemctl --user is-active --quiet "$UNIT.service" || { echo "$UNIT stopped while starting: $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
-  sleep 2
+  break
 done
 [ -n "$state" ] || { echo "$UNIT did not finish its first sync within 5 min (it still runs; $DIR/app.log; --stop it)" >&2; exit 1; }
 [ "$state" != error ] || { echo "$UNIT: its first sync failed (it still runs; --stop it): $DIR/app.log" >&2; tail -n 20 "$DIR/app.log" >&2; exit 1; }
