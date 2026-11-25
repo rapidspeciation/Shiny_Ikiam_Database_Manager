@@ -80,12 +80,20 @@ function readTiff(t: DataView): PhotoMeta {
   return { gps, takenAt: day && day[1] !== '0000' ? `${day[1]}-${day[2]}-${day[3]}` : null }
 }
 
+// Image-decoding JPEG segments with a length field (ITU-T T.81): SOF, DHT, DAC, SOS, DQT, DNL, DRI, DHP, EXP.
+// Everything else (APP1-APP15, COM, reserved 0x02-0xbf, JPG 0xc8, JPG0-JPG13 0xf0-0xfd) is dropped; APP0 JFIF is rebuilt bare.
+const KEEP_SEGMENT = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+  0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf,
+  0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf,
+])
+
 /**
- * The JPEG without its APP1-APP15 and comment segments (EXIF and its GPS, XMP, ICC, maker notes), wherever they sit
- * (between the scans of a progressive JPEG too), its JFIF header (APP0) rebuilt bare (no thumbnail or extra bytes; any
- * other APP0 dropped), and without anything after its end marker; the image data
- * untouched; the same bytes when there was nothing to take out. Not a JPEG, or a cut one: null (nothing is sent rather
- * than a photo whose metadata could not be checked). The server does the same again (server/clutch-photos.mjs readJpeg).
+ * The JPEG keeping only image-decoding segments (dropping APP1-APP15, COM, and reserved/extension markers anywhere in
+ * the stream, including between the scans of a progressive JPEG), its JFIF header (APP0) rebuilt bare (no thumbnail or
+ * extra bytes; any other APP0 dropped), and without anything after its end marker; the image data untouched; the same
+ * bytes when there was nothing to take out. Not a JPEG, or a cut one: null (nothing is sent rather than a photo whose
+ * metadata could not be checked). The server does the same again (server/clutch-photos.mjs readJpeg).
  */
 export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null
@@ -97,6 +105,7 @@ export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
     let m = bytes[i + 1]
     // Fill bytes before a marker.
     while (m === 0xff && i + 2 < bytes.length) m = bytes[++i + 1]
+    if (m === 0x00 || m === 0xd8 || m === 0xff) return null
     if (m === 0xd9) {
       // The end: whatever follows it is not kept.
       keep.push(bytes.subarray(i, i + 2))
@@ -111,8 +120,7 @@ export function stripJpegMeta(bytes: Uint8Array): Uint8Array | null {
     if (i + 4 > bytes.length) return null
     const len = (bytes[i + 2] << 8) | bytes[i + 3]
     if (len < 2 || i + 2 + len > bytes.length) return null
-    const meta = (m >= 0xe0 && m <= 0xef) || m === 0xfe
-    if (!meta) keep.push(bytes.subarray(i, i + 2 + len))
+    if (KEEP_SEGMENT.has(m)) keep.push(bytes.subarray(i, i + 2 + len))
     else if (m === 0xe0 && len >= 14 && [0x4a, 0x46, 0x49, 0x46, 0].every((b, k) => bytes[i + 4 + k] === b))
       keep.push(new Uint8Array([0xff, 0xe0, 0, 16, ...bytes.subarray(i + 4, i + 16), 0, 0]))
     i += 2 + len

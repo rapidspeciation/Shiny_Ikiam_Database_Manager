@@ -63,11 +63,24 @@ export function initClutchPhotos(db) {
 
 const JFIF = Buffer.from('JFIF\0', 'latin1');
 const SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+// Image-decoding JPEG segments with a length field (ITU-T T.81): SOF, DHT, DAC, SOS, DQT, DNL, DRI, DHP, EXP.
+// Everything else (APP1-APP15, COM, reserved 0x02-0xbf, JPG 0xc8, JPG0-JPG13 0xf0-0xfd) is dropped; APP0 JFIF is rebuilt bare.
+const KEEP_SEGMENT = new Set([
+  ...SOF,
+  0xc4,
+  0xcc,
+  0xda,
+  0xdb,
+  0xdc,
+  0xdd,
+  0xde,
+  0xdf,
+]);
 /**
- * A JPEG's size and EXIF turn: { width, height, orientation, clean }, where `clean` is the file without its APP1-APP15
- * (EXIF with its GPS, XMP, IPTC…) and comment segments anywhere in it (between the scans of a progressive JPEG too),
+ * A JPEG's size and EXIF turn: { width, height, orientation, clean }, where `clean` keeps only image-decoding segments
+ * (dropping APP1-APP15, COM, and reserved/extension markers anywhere in the stream, including between progressive scans),
  * with its JFIF header (APP0) rebuilt bare (no thumbnail or extra bytes; any other APP0 dropped), and without anything
- * after its end marker; null when it is not a JPEG.
+ * after its end marker; null when it is not a complete JPEG.
  */
 export function readJpeg(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
@@ -76,14 +89,17 @@ export function readJpeg(buf) {
   let width = 0;
   let height = 0;
   let orientation = 1;
+  let ended = false;
   while (i < buf.length) {
     if (buf[i] !== 0xff) return null;
     let m = buf[i + 1];
     // Fill bytes before a marker.
     while (m === 0xff && i + 2 < buf.length) m = buf[++i + 1];
+    if (m === 0x00 || m === 0xd8 || m === 0xff) return null;
     if (m === 0xd9) {
       // The end: whatever follows it is not kept.
       keep.push(buf.subarray(i, i + 2));
+      ended = true;
       break;
     }
     if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
@@ -99,9 +115,9 @@ export function readJpeg(buf) {
       width = buf.readUInt16BE(i + 7);
     }
     if (m === 0xe1) orientation = exifOrientation(buf.subarray(i + 4, i + 2 + len)) ?? orientation;
-    const meta = (m >= 0xe0 && m <= 0xef) || m === 0xfe;
-    if (!meta) keep.push(buf.subarray(i, i + 2 + len));
-    else if (m === 0xe0 && len >= 14 && buf.subarray(i + 4, i + 9).equals(JFIF)) keep.push(Buffer.concat([Buffer.from([0xff, 0xe0, 0, 16]), buf.subarray(i + 4, i + 16), Buffer.from([0, 0])]));
+    if (KEEP_SEGMENT.has(m)) keep.push(buf.subarray(i, i + 2 + len));
+    else if (m === 0xe0 && len >= 14 && buf.subarray(i + 4, i + 9).equals(JFIF))
+      keep.push(Buffer.concat([Buffer.from([0xff, 0xe0, 0, 16]), buf.subarray(i + 4, i + 16), Buffer.from([0, 0])]));
     i += 2 + len;
     if (m === 0xda) {
       // A scan's image data runs to the next marker (0xff then neither a stuffed 0x00 nor a restart marker).
@@ -112,7 +128,7 @@ export function readJpeg(buf) {
       i = j;
     }
   }
-  if (!width || !height) return null;
+  if (!ended || !width || !height) return null;
   return { width, height, orientation, clean: Buffer.concat(keep) };
 }
 /** The Orientation tag (1–8) of an APP1 EXIF payload, or null. */

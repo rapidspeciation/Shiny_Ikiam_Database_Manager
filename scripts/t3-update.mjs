@@ -3,35 +3,43 @@
 // (server/t3admin.mjs). On the server it is the user unit ithomiini-t3-update@<version>.service
 // (deploy/); in the lab, tools/lab/t3.sh --update. In order:
 //  1. a copy of T3's database (the file the running T3 uses: statev2.sqlite from 0.1.0, state.sqlite
-//     before), its settings and service state, in <home>/backups/<time>-<from version>; the newest
-//     --keep stay. T3's own `t3 update` keeps none;
-//  2. `t3 update <version> --yes` (--allow-downgrade to go back to a version still in runtime/versions):
-//     it downloads the version, moves ~/.local/bin/t3 to it and restarts T3's service;
-//  3. (the lab, which has no service) --restart, the command that starts T3 again;
-//  4. waits until T3 answers on the new version (/.well-known/t3/environment). The first start of
+//     before), its settings, service state, and runtime/versions/<from> (T3 0.1.11+ prunes older
+//     runtimes on startup) in <home>/backups/<time>-<from version>; the newest --keep stay. T3's
+//     own `t3 update` keeps none;
+//  2. on downgrade, restores runtime/versions/<to> from backup if pruned, and restores the pre-update
+//     statev2.sqlite backup cleanly (stopping T3 first via --stop or --service when given) so schema
+//     migrations from the newer version never break the older binary;
+//  3. `t3 update <version> --yes` (--allow-downgrade to go back to an earlier version):
+//     it downloads or activates the version, moves ~/.local/bin/t3 to it and restarts T3's service;
+//  4. (the lab, which has no service) --restart, the command that starts T3 again;
+//  5. waits until T3 answers on the new version (/.well-known/t3/environment). The first start of
 //     0.1.0 copies the old database into statev2.sqlite before it answers;
-//  5. (--token-file) the app's token for T3 issued again by the version now running, in its database
+//  6. (--token-file) the app's token for T3 issued again by the version now running, in its database
 //     (a token from an older T3 lacks the newer one's permissions, and its sign-in links with it; after
 //     going back, the older database does not know the newer token), and the earlier tokens of the
 //     app (same --token-label) revoked.
 // Each step goes to the log (stdout, appended by the unit) and to <home>/userdata/logs/t3-update.json,
 // which the app reads to show the progress.
 //   node scripts/t3-update.mjs [<version>] [--home ~/.t3] [--t3 ~/.local/bin/t3] [--local http://127.0.0.1:3773]
-//        [--restart '<command>'] [--keep 3] [--wait 900] [--token-file <file> --token-label ithomiini-broker]
+//        [--stop '<command>'] [--service t3code.service] [--restart '<command>'] [--keep 3] [--wait 900]
+//        [--token-file <file> --token-label ithomiini-broker]
 // Without <version>: the newest stable release.
 import { spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 
 const STABLE = /^\d+\.\d+\.\d+$/;
+const BACKUP_DIR = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-(.+)$/;
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     home: { type: 'string', default: process.env.T3CODE_HOME || join(process.env.HOME, '.t3') },
     t3: { type: 'string', default: join(process.env.HOME, '.local/bin/t3') },
     local: { type: 'string', default: 'http://127.0.0.1:3773' },
+    stop: { type: 'string' },
+    service: { type: 'string' },
     restart: { type: 'string' },
     keep: { type: 'string', default: '3' },
     wait: { type: 'string', default: '900' },
@@ -106,17 +114,90 @@ function databaseOf(protocol) {
   return v2;
 }
 
-/** A consistent copy of T3's database (VACUUM INTO reads it in one transaction while T3 runs) and its settings. */
-function backup(from, protocol) {
+/** Total file bytes inside a directory tree (best-effort, symlinks not followed). */
+function dirBytes(path) {
+  let total = 0;
+  try {
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) return 0;
+    if (!st.isDirectory()) return st.size;
+    for (const entry of readdirSync(path, { withFileTypes: true })) total += dirBytes(join(path, entry.name));
+  } catch {
+    /* unreadable entry: ignore */
+  }
+  return total;
+}
+
+/** Newest backup folder for `version` (with an optional predicate), or null. */
+function findBackup(version, predicate = () => true) {
+  const root = join(home, 'backups');
+  if (!existsSync(root)) return null;
+  const dirs = readdirSync(root)
+    .filter(name => BACKUP_DIR.exec(name)?.[1] === version)
+    .sort()
+    .reverse();
+  for (const name of dirs) {
+    const dir = join(root, name);
+    if (predicate(dir)) return dir;
+  }
+  return null;
+}
+
+/** Checks that a SQLite backup opens cleanly and passes PRAGMA quick_check. */
+function verifySqlite(path) {
+  const db = new DatabaseSync(path, { readOnly: true, timeout: 10_000 });
+  try {
+    const rows = db.prepare('PRAGMA quick_check').all();
+    const ok = rows.length === 1 && String(Object.values(rows[0])[0]).toLowerCase() === 'ok';
+    if (!ok) throw new Error(`PRAGMA quick_check failed: ${rows.map(r => Object.values(r)[0]).join('; ')}`);
+  } finally {
+    db.close();
+  }
+}
+
+/** Atomically replaces `target` SQLite DB with `source`, removing stale WAL/SHM sidecars. */
+function replaceSqlite(source, target) {
+  const staged = `${target}.restore-${process.pid}`;
+  rmSync(staged, { force: true });
+  copyFileSync(source, staged);
+  chmodSync(staged, 0o600);
+  rmSync(`${target}-wal`, { force: true });
+  rmSync(`${target}-shm`, { force: true });
+  renameSync(staged, target);
+}
+
+/** Atomically restores a pruned runtime/versions/<version> folder from its backup copy. */
+function restoreRuntime(backupDir, version) {
+  const src = join(backupDir, 'runtime-version');
+  const versionsRoot = join(home, 'runtime', 'versions');
+  mkdirSync(versionsRoot, { recursive: true });
+  const dest = join(versionsRoot, version);
+  const staged = join(versionsRoot, `.${version}.restore-${process.pid}`);
+  rmSync(staged, { recursive: true, force: true });
+  cpSync(src, staged, { recursive: true, verbatimSymlinks: true });
+  rmSync(dest, { recursive: true, force: true });
+  renameSync(staged, dest);
+}
+
+/** A consistent copy of T3's database (VACUUM INTO reads it in one transaction while T3 runs), its settings, and its runtime. */
+function backup(from, protocol, { preserve = null, databaseMigration = null } = {}) {
   const db = databaseOf(protocol);
+  const runtimeSrc = from && STABLE.test(from) && existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))
+    ? join(home, 'runtime', 'versions', from)
+    : null;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const root = join(home, 'backups');
   const dir = join(root, `${stamp}-${from ?? 'unknown'}`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if (db) {
-    const size = statSync(db).size;
+  const dbSize = db ? statSync(db).size : 0;
+  const runtimeSize = runtimeSrc ? dirBytes(runtimeSrc) : 0;
+  if (db || runtimeSrc) {
     const free = statfsSync(root);
-    if (free.bavail * free.bsize < size * 2 + 1e9) throw new Error(`not enough disk for a copy of ${db} (${Math.round(size / 1e6)} MB)`);
+    const needed = dbSize * 2 + runtimeSize + 1e9;
+    if (free.bavail * free.bsize < needed)
+      throw new Error(`not enough disk for a backup (${Math.round((dbSize + runtimeSize) / 1e6)} MB needed)`);
+  }
+  if (db) {
     const source = new DatabaseSync(db, { readOnly: true, timeout: 10_000 });
     try {
       source.exec(`VACUUM INTO '${join(dir, db.split('/').pop()).replace(/'/g, "''")}'`);
@@ -124,6 +205,7 @@ function backup(from, protocol) {
       source.close();
     }
   }
+  if (runtimeSrc) cpSync(runtimeSrc, join(dir, 'runtime-version'), { recursive: true, verbatimSymlinks: true });
   for (const file of ['userdata/settings.json', 'userdata/keybindings.json', 'userdata/environment-id', 'runtime/service-state.json'])
     if (existsSync(join(home, file))) copyFileSync(join(home, file), join(dir, file.split('/').pop()));
   // The app's token as this version knows it (step 5 replaces it): put back by hand, it works again after going back.
@@ -131,14 +213,23 @@ function backup(from, protocol) {
     copyFileSync(opts['token-file'], join(dir, 'app-token'));
     chmodSync(join(dir, 'app-token'), 0o600);
   }
-  // The newest copies stay (each about the size of the database).
+  writeFileSync(
+    join(dir, 'backup-meta.json'),
+    `${JSON.stringify({ version: from ?? null, protocol, databaseMigration, database: db ? db.split('/').pop() : null, runtimeBackedUp: Boolean(runtimeSrc), createdAt: new Date().toISOString() }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  // The newest copies stay (never pruning the backup targeted for restoration during this run).
   const keep = Math.max(1, Number(opts.keep) || 3);
   const ours = readdirSync(root)
-    .filter(name => /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-/.test(name))
+    .filter(name => BACKUP_DIR.test(name))
     .sort()
     .reverse();
-  for (const old of ours.slice(keep)) rmSync(join(root, old), { recursive: true, force: true });
-  return { dir, database: db };
+  for (const old of ours.slice(keep)) {
+    const candidate = join(root, old);
+    if (preserve && candidate === preserve) continue;
+    rmSync(candidate, { recursive: true, force: true });
+  }
+  return { dir, database: db, runtimeBackedUp: Boolean(runtimeSrc) };
 }
 
 /** Runs a command, its output into the log; resolves with its exit code. */
@@ -209,24 +300,90 @@ if (from === to) {
   say('Already on this version: nothing to do.');
   process.exit(0);
 }
-if (back && !existsSync(join(home, 'runtime', 'versions', to, '.install-complete')))
-  fail(`${to} is not in ${join(home, 'runtime', 'versions')}: only a version T3 had before can be gone back to`);
+const hasInstalledRuntime = existsSync(join(home, 'runtime', 'versions', to, '.install-complete'));
+const runtimeBackup = back && !hasInstalledRuntime
+  ? findBackup(to, dir => existsSync(join(dir, 'runtime-version', '.install-complete')))
+  : null;
+const dbBackup = back && order(to, '0.1.0') >= 0
+  ? findBackup(to, dir => existsSync(join(dir, 'statev2.sqlite')))
+  : null;
+if (back && !hasInstalledRuntime && !runtimeBackup)
+  fail(`${to} is not in ${join(home, 'runtime', 'versions')} or ${join(home, 'backups')}: only a version T3 had before (still installed or backed up) can be gone back to`);
+if (dbBackup) {
+  try {
+    verifySqlite(join(dbBackup, 'statev2.sqlite'));
+  } catch (e) {
+    fail(`backup database for ${to} (${join(dbBackup, 'statev2.sqlite')}) failed integrity check: ${e.message}`);
+  }
+}
 done('check', started, `${from} → ${to}`);
 
 save({ step: 'backup' });
 started = Date.now();
+let copy;
 try {
-  const copy = backup(from, protocol);
+  copy = backup(from, protocol, { preserve: dbBackup || runtimeBackup, databaseMigration: before?.databaseMigration ?? null });
   save({ backup: copy.dir });
-  done('backup', started, copy.database ? `${copy.database} → ${copy.dir}` : `no database found; settings → ${copy.dir}`);
+  done(
+    'backup',
+    started,
+    `${copy.database ? `${copy.database} → ${copy.dir}` : `no database found; settings → ${copy.dir}`}${copy.runtimeBackedUp ? ' (+ runtime)' : ''}`,
+  );
 } catch (e) {
   fail(`the copy of T3's database failed, nothing was changed: ${e.message}`);
 }
 
 save({ step: 'installing' });
+let stoppedForRestore = false;
+let restoredDb = false;
+const targetV2 = join(home, 'userdata', 'statev2.sqlite');
+if (back && (runtimeBackup || dbBackup)) {
+  started = Date.now();
+  const details = [];
+  try {
+    if (runtimeBackup) {
+      restoreRuntime(runtimeBackup, to);
+      details.push(`runtime ${to} from ${runtimeBackup}`);
+    }
+    if (dbBackup) {
+      if (opts.stop) {
+        const sc = await run('sh', ['-c', opts.stop], t3Env());
+        if (sc !== 0) throw new Error(`stop command ended with code ${sc}`);
+        stoppedForRestore = true;
+      } else if (opts.service) {
+        const sc = await run('systemctl', ['--user', 'stop', opts.service], t3Env());
+        if (sc !== 0) throw new Error(`systemctl stop ${opts.service} ended with code ${sc}`);
+        stoppedForRestore = true;
+      }
+      mkdirSync(join(home, 'userdata'), { recursive: true });
+      replaceSqlite(join(dbBackup, 'statev2.sqlite'), targetV2);
+      restoredDb = true;
+      details.push(`statev2.sqlite from ${dbBackup}`);
+    }
+  } catch (e) {
+    if (stoppedForRestore && opts.service && !opts.restart) await run('systemctl', ['--user', 'start', opts.service], t3Env());
+    fail(`could not restore pre-update state for ${to}: ${e.message}`);
+  }
+  done('restore', started, details.join('; '));
+}
+
 started = Date.now();
 const code = await run(opts.t3, ['update', '--base-dir', home, '--yes', ...(back ? ['--allow-downgrade'] : []), to], t3Env());
-if (code !== 0) fail(`t3 update ended with code ${code} (T3 keeps running ${from})`);
+if (code !== 0) {
+  if (restoredDb && copy?.dir && existsSync(join(copy.dir, 'statev2.sqlite'))) {
+    try {
+      replaceSqlite(join(copy.dir, 'statev2.sqlite'), targetV2);
+      say(`Rolled back statev2.sqlite from ${copy.dir} after failed downgrade.`);
+    } catch (e) {
+      say(`WARNING: could not roll back statev2.sqlite from ${copy.dir}: ${e.message}`);
+    }
+  }
+  if (stoppedForRestore) {
+    if (opts.restart) await run('sh', ['-c', opts.restart], t3Env());
+    else if (opts.service) await run('systemctl', ['--user', 'start', opts.service], t3Env());
+  }
+  fail(`t3 update ended with code ${code} (T3 keeps running ${from})`);
+}
 done('t3 update', started);
 
 if (opts.restart) {

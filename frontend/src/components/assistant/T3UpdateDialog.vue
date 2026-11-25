@@ -105,6 +105,7 @@ const checkLabel = (id: string) =>
     commands: t('Crear chats y enviar mensajes'),
     chats: t('Leer los chats (propuestas, dueño del chat)'),
     page: t('Puente de la página de T3'),
+    framing: t('Marco (iframe) de T3'),
   })[id] ?? id
 
 let timer: ReturnType<typeof setTimeout> | undefined

@@ -20,7 +20,7 @@ const ENV = [
   'ITHOMIINI_T3_WORKSPACES', 'ITHOMIINI_SRC', 'ITHOMIINI_CONFIG_DIR', 'ITHOMIINI_DOCS', 'ITHOMIINI_KNOWLEDGE',
   'ITHOMIINI_DENY_READ', 'ITHOMIINI_LAB_URL', 'ITHOMIINI_CLAUDE_LEAN', 'T3_BIN', 'T3CODE_HOME', 'CODEX_HOME', 'HOME',
 ];
-const RELEASE_FILES = ['scripts/t3-provision.mjs', 'scripts/antigravity-mcp-config.mjs', 'scripts/mcp-stdio-proxy.mjs', 'scripts/claude-lean.mjs', 'scripts/lab-guard.mjs', 'server/brief.mjs', 'assistant'];
+const RELEASE_FILES = ['scripts/t3-provision.mjs', 'scripts/antigravity-mcp-config.mjs', 'scripts/mcp-stdio-proxy.mjs', 'scripts/claude-lean.mjs', 'scripts/lab-guard.mjs', 'server/brief.mjs', 'assistant', 'tools/whatsapp/bridge-skill'];
 const WORKSPACE_FILES = [
   'AGENTS.md', 'CLAUDE.md', '.mcp.json', '.codex/config.toml', '.claude/settings.json', '.claude/t3-skills.json',
   '.claude/ithomiini-workspace.json', '.claude/t3-project', '.claude/voice', '.claude/skills', '.agents/skills',

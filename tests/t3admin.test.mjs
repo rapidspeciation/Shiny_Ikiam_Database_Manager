@@ -88,6 +88,14 @@ test('T3 status: the version running (T3 says it), the newest stable release wit
   // On 0.1.0: up to date, 0.0.45 and 0.0.44 to go back to.
   const after = await t3Admin({ home: t3HomeDir({ versions: ['0.0.44', '0.0.45', '0.1.0'] }), local: 'http://t3.test', fetchImpl: fakeFetch({ serverVersion: '0.1.0', orchestrationProtocolVersion: 2 }) }).status();
   assert.deepEqual([after.updateAvailable, after.jump, after.release, after.previous], [false, null, null, ['0.0.45', '0.0.44']]);
+  // A version pruned from runtime/versions by T3 0.1.11+ but preserved in backups/*/runtime-version still appears in previous.
+  const prunedHome = t3HomeDir({ versions: ['0.1.11'] });
+  mkdirSync(join(prunedHome, 'backups', '2026-11-21T11-38-09-683Z-0.1.9', 'runtime-version'), { recursive: true });
+  writeFileSync(join(prunedHome, 'backups', '2026-11-21T11-38-09-683Z-0.1.9', 'runtime-version', '.install-complete'), '0.1.9\n');
+  // A backup without runtime-version/.install-complete is NOT offered.
+  mkdirSync(join(prunedHome, 'backups', '2026-11-10T10-00-00-000Z-0.1.7'), { recursive: true });
+  const prunedStatus = await t3Admin({ home: prunedHome, local: 'http://t3.test', fetchImpl: fakeFetch({ serverVersion: '0.1.11', orchestrationProtocolVersion: 2 }) }).status();
+  assert.deepEqual(prunedStatus.previous, ['0.1.9']);
 });
 
 test('the update starts the unit for the version the admin saw; one T3 has not got is refused, and so is a second one at once', async () => {
@@ -151,7 +159,13 @@ test('the checks after an update: what the app needs from T3, each with what it 
     if (url.endsWith('/api/auth/pairing-token')) return { ok: true, status: 200, json: async () => ({ credential: 'c', expiresAt: '2026-10-19T15:00:00Z' }) };
     if (url.endsWith('/api/orchestration/dispatch')) return { ok: false, status: 404 };
     if (url.endsWith('/api/auth/websocket-ticket')) return { ok: true, json: async () => ({ ticket: 't' }) };
-    if (url === 'http://t3.test/') return { ok: true, text: async () => '<!doctype html><html><head><script type="module" src="/assets/main.js"></script></head></html>' };
+    if (url === 'http://t3.test/')
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" }),
+        text: async () => '<!doctype html><html><head><script type="module" src="/assets/main.js"></script></head></html>',
+      };
     throw new Error(`unexpected ${url} ${init.method}`);
   };
   class WebSocketImpl {
@@ -173,17 +187,70 @@ test('the checks after an update: what the app needs from T3, each with what it 
     ownerOf: () => 'lab',
   };
   const admin = t3Admin({ home: t3HomeDir(), local: t3.local, fetchImpl });
-  const checks = await t3Checks({ t3, admin, chats, user: { username: 'lab' }, fetchImpl, WebSocketImpl });
-  assert.deepEqual(checks.map(c => [c.id, c.ok]), [['answers', true], ['token', true], ['pairing', true], ['commands', true], ['chats', true], ['page', true]]);
+  const checks = await t3Checks({ t3, admin, chats, user: { username: 'lab' }, appOrigin: 'https://app.example.org', fetchImpl, WebSocketImpl });
+  assert.deepEqual(checks.map(c => [c.id, c.ok]), [['answers', true], ['token', true], ['pairing', true], ['commands', true], ['chats', true], ['page', true], ['framing', true]]);
   assert.equal(checks[0].detail, '0.1.0 · protocol 2');
   assert.equal(checks[3].detail, 'over its socket (V2)');
   assert.equal(checks[4].detail, 'statev2.sqlite · your project, 2 chats');
+  assert.match(checks[6].detail, /framing headers rewritten/);
   // A token from 0.0.45 on 0.1.0: links without the new permissions (T3's «Permissions have changed»).
   held = ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'access:write'];
-  const old = await t3Checks({ t3, admin, chats: { ...chats, ownerOf: () => 'ana' }, user: { username: 'lab' }, fetchImpl, WebSocketImpl });
+  const old = await t3Checks({ t3, admin, chats: { ...chats, ownerOf: () => 'ana' }, user: { username: 'lab' }, appOrigin: 'https://app.example.org', fetchImpl, WebSocketImpl });
   assert.deepEqual(old.filter(c => !c.ok).map(c => c.id), ['token', 'chats']);
   assert.match(old[1].detail, /older T3: sign-in links lack settings:write, providers:manage, filesystem:read/);
   assert.match(old[4].detail, /reads as ana's/);
+
+  // Self-checks catch upstream CSP / <meta> CSP / compression / missing APP_PUBLIC_URL framing regressions.
+  held = full;
+  const pageCase = (pageRes, extra = {}) =>
+    t3Checks({
+      t3,
+      admin,
+      chats,
+      user: { username: 'lab' },
+      appOrigin: 'https://app.example.org',
+      WebSocketImpl,
+      fetchImpl: async (url, init = {}) => (url === 'http://t3.test/' ? pageRes : fetchImpl(url, init)),
+      ...extra,
+    });
+  const blockedScriptCsp = await pageCase({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/html', 'content-security-policy': "script-src 'self'; frame-ancestors 'none'" }),
+    text: async () => '<html><head><script src="/a.js"></script></head></html>',
+  });
+  assert.equal(blockedScriptCsp.find(c => c.id === 'page').ok, false);
+  assert.match(blockedScriptCsp.find(c => c.id === 'page').detail, /Content-Security-Policy blocks bridge script/);
+
+  const metaCsp = await pageCase({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/html' }),
+    text: async () => '<html><head><meta http-equiv="Content-Security-Policy" content="script-src \'none\'"><script src="/a.js"></script></head></html>',
+  });
+  assert.equal(metaCsp.find(c => c.id === 'page').ok, false);
+  assert.match(metaCsp.find(c => c.id === 'page').detail, /<meta> Content-Security-Policy/);
+
+  const compressed = await pageCase({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/html', 'content-encoding': 'gzip' }),
+    text: async () => '<html><head></head></html>',
+  });
+  assert.equal(compressed.find(c => c.id === 'page').ok, false);
+  assert.match(compressed.find(c => c.id === 'page').detail, /compressed \(gzip\)/);
+
+  const missingOrigin = await pageCase(
+    {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/html', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" }),
+      text: async () => '<html><head></head></html>',
+    },
+    { appOrigin: '' },
+  );
+  assert.equal(missingOrigin.find(c => c.id === 'framing').ok, false);
+  assert.match(missingOrigin.find(c => c.id === 'framing').detail, /APP_PUBLIC_URL is unset or invalid/);
 });
 
 test("a person's T3 sign-in link: T3's own client scopes; with an admin token older than the T3, the client scopes it has", async () => {

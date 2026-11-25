@@ -256,6 +256,128 @@ test('tubes: every tube cell with its number, so the last or highest tube is not
   }
 });
 
+test('tubes.entered excludes bulk sheet saves (>20 distinct records in one minute by one source) while keeping normal saves', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sheets-copy-bulk-tubes-'));
+  try {
+    // 21 rows for a bulk save (>20), 20 rows for the exact <=20 boundary, 30 rows split across 2 sources (15+15),
+    // and 25 rows for a non-tube bulk edit alongside 2 tube saves.
+    const rows = [];
+    for (let i = 1; i <= 75; i++) {
+      rows.push({
+        row: i + 1,
+        values: {
+          Insectary_ID: `B${i}`,
+          SPECIES: 'Mechanitis lysimnia',
+          Tube_1_id: `FS90500${String(i).padStart(3, '0')}`,
+          Tube_1_tissue: 'WHOLE_ORGANISM',
+        },
+      });
+    }
+    const { store } = await setup(dir, { Insectary_data: rows });
+    const rec = i => store.getRecordBySheetRow('Insectary_data', i + 1);
+    const addAction = (id, createdAt, source, purpose, changes) => {
+      store.db
+        .prepare("INSERT INTO actions(id, actor, source, purpose, status, created_at) VALUES (?, 'u-ana', ?, ?, 'verified', ?)")
+        .run(id, source, purpose, createdAt);
+      const ins = store.db.prepare('INSERT INTO changes(id, action_id, record_id, sheet, row_num, field, before_json, after_json, moved) VALUES (?,?,?,?,?,?,?,?,0)');
+      for (const [idx, c] of changes.entries()) {
+        ins.run(`${id}-${idx}`, id, c.recordId, 'Insectary_data', c.row, c.field, JSON.stringify(c.before ?? null), JSON.stringify(c.after));
+      }
+    };
+
+    // 1. Row 1 was legitimately entered individually on Nov 1, THEN re-saved in the 21-row bulk sheet save on Nov 5.
+    addAction('act-early-1', '2026-11-01T10:00:05.000Z', 'app', 'tubos', [
+      { recordId: rec(1).id, row: 2, field: 'Tube_1_id', after: 'FS90500001' },
+    ]);
+    // 2. Bulk sheet save of 21 distinct records in minute 2026-11-05T12:00 by source 'sheets' (>20 -> excluded!).
+    addAction(
+      'act-bulk-21',
+      '2026-11-05T12:00:10.000Z',
+      'sheet_reconciliation',
+      'sheets',
+      Array.from({ length: 21 }, (_, k) => ({
+        recordId: rec(k + 1).id,
+        row: k + 2,
+        field: 'Tube_1_id',
+        after: `FS90500${String(k + 1).padStart(3, '0')}`,
+      })),
+    );
+    // 3. Exact boundary: 20 distinct records in minute 2026-11-05T13:00 by one source (<=20 -> kept!).
+    addAction(
+      'act-ok-20',
+      '2026-11-05T13:00:15.000Z',
+      'app',
+      'tubos',
+      Array.from({ length: 20 }, (_, k) => ({
+        recordId: rec(22 + k).id,
+        row: 23 + k,
+        field: 'Tube_1_id',
+        after: `FS90500${String(22 + k).padStart(3, '0')}`,
+      })),
+    );
+    // 4. Two different sources saving 15 tubes each in the SAME minute (15 <= 20 per source -> both kept!).
+    addAction(
+      'act-src-a',
+      '2026-11-05T14:00:05.000Z',
+      'app',
+      'tubos',
+      Array.from({ length: 15 }, (_, k) => ({
+        recordId: rec(42 + k).id,
+        row: 43 + k,
+        field: 'Tube_1_id',
+        after: `FS90500${String(42 + k).padStart(3, '0')}`,
+      })),
+    );
+    addAction(
+      'act-src-b',
+      '2026-11-05T14:00:45.000Z',
+      'sheet_reconciliation',
+      'sheets',
+      Array.from({ length: 15 }, (_, k) => ({
+        recordId: rec(57 + k).id,
+        row: 58 + k,
+        field: 'Tube_1_id',
+        after: `FS90500${String(57 + k).padStart(3, '0')}`,
+      })),
+    );
+    // 5. Bulk non-tube edits (25 Notes cells) + 2 tube saves in the same minute by one source -> 2 tube saves kept!
+    addAction('act-nontube-bulk', '2026-11-05T15:00:20.000Z', 'sheet_reconciliation', 'sheets', [
+      ...Array.from({ length: 25 }, (_, k) => ({
+        recordId: rec(1 + k).id,
+        row: 2 + k,
+        field: 'Notes',
+        after: `note-${k}`,
+      })),
+      { recordId: rec(72).id, row: 73, field: 'Tube_1_id', after: 'FS90500072' },
+      { recordId: rec(73).id, row: 74, field: 'Tube_1_id', after: 'FS90500073' },
+    ]);
+
+    const out = join(dir, 'sheets.sqlite');
+    buildCopy(store.db, out);
+    const copy = new DatabaseSync(out, { readOnly: true });
+    const enteredOf = tube => copy.prepare('SELECT entered FROM tubes WHERE tube = ?').get(tube)?.entered;
+    try {
+      // Row 1 keeps its genuine Nov 1 entry; rows 2..21 (only seen in the 21-row bulk save) have entered = NULL.
+      assert.equal(enteredOf('FS90500001'), '2026-11-01T10:00:05.000Z');
+      for (let i = 2; i <= 21; i++) assert.equal(enteredOf(`FS90500${String(i).padStart(3, '0')}`), null, `bulk row ${i} excluded`);
+      // Boundary 20-row batch is kept.
+      assert.equal(enteredOf('FS90500022'), '2026-11-05T13:00:15.000Z');
+      assert.equal(enteredOf('FS90500041'), '2026-11-05T13:00:15.000Z');
+      // 15 + 15 across two different sources in the same minute are both kept.
+      assert.equal(enteredOf('FS90500042'), '2026-11-05T14:00:05.000Z');
+      assert.equal(enteredOf('FS90500057'), '2026-11-05T14:00:45.000Z');
+      // Bulk non-tube edits do not taint 2 tube saves in the same minute.
+      assert.equal(enteredOf('FS90500072'), '2026-11-05T15:00:20.000Z');
+      assert.equal(enteredOf('FS90500073'), '2026-11-05T15:00:20.000Z');
+    } finally {
+      copy.close();
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('query: one read-only statement, capped, stopped after the time limit, with fold and km', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sheets-query-'));
   const { store, at } = await setup(dir);

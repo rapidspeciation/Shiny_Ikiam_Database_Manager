@@ -71,6 +71,7 @@ export default {
   'Crear chats y enviar mensajes': 'Make chats and send messages',
   'Leer los chats (propuestas, dueño del chat)': "Read the chats (proposals, the chat's owner)",
   'Puente de la página de T3': "The bridge in T3's page",
+  'Marco (iframe) de T3': "T3's iframe framing headers",
   'Comprobar la app con T3': 'Check the app with T3',
   'Volver a una versión anterior': 'Go back to an earlier version',
   'T3 guarda las versiones que tuvo. Volver a una es lo mismo que actualizar a ella (con su copia de seguridad antes).':

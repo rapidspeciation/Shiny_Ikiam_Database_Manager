@@ -51,7 +51,7 @@ fi
 if [ "${1:-}" = "--update" ]; then
   HERE="$(cd "$(dirname "$0")/../.." && pwd)"
   exec node "$HERE/scripts/t3-update.mjs" ${2:+"$2"} --home "$T3CODE_HOME" --t3 "$T3" --local "http://127.0.0.1:$PORT" \
-    --restart "$HERE/tools/lab/t3.sh --bg" --token-file "$LAB/t3-admin-token" --token-label ithomiini-lab
+    --stop "$HERE/tools/lab/t3.sh --stop" --restart "$HERE/tools/lab/t3.sh --bg" --token-file "$LAB/t3-admin-token" --token-label ithomiini-lab
 fi
 
 # Provider settings: only Claude and Codex; the Claude models are chosen by the

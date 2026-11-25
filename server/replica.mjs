@@ -50,7 +50,9 @@ import { listOptions } from './verify.mjs';
 import { PURPOSES } from './history.mjs';
 
 /** Changes when the copy's layout does: a new version rebuilds it. */
-const LAYOUT = 4;
+const LAYOUT = 5;
+/** More than this many distinct records with tube saves in one UTC minute by one source count as a bulk edit (excluded from tubes.entered). */
+export const BULK_TUBE_SAVE_LIMIT = 20;
 export const COPY_FILE = 'sheets.sqlite';
 /** The copy beside a database file (none for an in-memory database). */
 export const copyBeside = databasePath => (!databasePath || databasePath === ':memory:' ? null : join(dirname(databasePath), COPY_FILE));
@@ -287,6 +289,7 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
       const select = source.prepare(
         'SELECT id, row_num, observed, values_json FROM records WHERE sheet=? AND missing=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num',
       );
+      const tubeCols = [];
       for (const mod of modules) {
         const rows = select.all(mod.id, mod.headerRow).map(r => ({ id: r.id, row: r.row_num, premade: r.observed ? 0 : 1, values: JSON.parse(r.values_json) }));
         const columns = columnsOf(mod, rows);
@@ -297,6 +300,7 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
         const insert = copy.prepare(`INSERT INTO ${quote(all)} VALUES (${Array(columns.length + 3).fill('?').join(',')})`);
         const kept = (c, v) => (c.kind === 'date' ? dateOf(v) : c.kind === 'date_text' ? notDate(v) : cell(c.kind, v));
         for (const r of rows) insert.run(r.row, ...columns.map(c => kept(c, r.values[c.key])), r.id, r.premade);
+        for (const key of new Set(mod.fields.map(f => f.key).filter(k => TUBE_COLUMN.test(k) && !NOT_TUBE_COLUMN.test(k)))) tubeCols.push([mod.id, key]);
         for (const t of tubesOf(mod, rows)) addTube.run(...t, null);
         copy.exec(`CREATE VIEW ${quote(mod.id)} AS SELECT * FROM ${quote(all)} WHERE _premade = 0`);
         copy.exec(`CREATE INDEX ${quote(`${all}:_row`)} ON ${quote(all)}(_row)`);
@@ -322,8 +326,28 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
       changeCount = copyHistory(source, copy, kinds);
       copyStaged(source, copy, kinds);
       // When each tube was first saved into its cell (by the app or read by a sync); none before the app's history.
-      copy.exec(`UPDATE tubes SET entered = (SELECT min(h.at) FROM history h
-          WHERE h.record_id = tubes._id AND h.field = tubes.column AND upper(trim(h.after)) = tubes.tube);
+      // Bulk saves (> BULK_TUBE_SAVE_LIMIT distinct records with tube values saved in one UTC minute by one source)
+      // are excluded so bulk sheet imports/reconciliations never fabricate recent entry dates.
+      copy.exec('CREATE TEMP TABLE _tube_cols(sheet TEXT, field TEXT, PRIMARY KEY(sheet, field));');
+      const addTubeCol = copy.prepare('INSERT OR IGNORE INTO _tube_cols VALUES (?,?)');
+      for (const [sheet, field] of tubeCols) addTubeCol.run(sheet, field);
+      const noneSql = [...NONE].map(v => `'${v}'`).join(',');
+      copy.exec(`CREATE TEMP TABLE _bulk_tube_minutes AS
+          SELECT substr(h.at, 1, 16) AS minute, coalesce(h.source, '') AS source
+          FROM history h
+          JOIN _tube_cols tc ON tc.sheet = h.sheet AND tc.field = h.field
+          WHERE h.after IS NOT NULL AND trim(h.after) != ''
+            AND upper(trim(h.after)) NOT IN (${noneSql})
+            AND substr(trim(h.after), 1, 1) != '#'
+          GROUP BY substr(h.at, 1, 16), coalesce(h.source, '')
+          HAVING count(DISTINCT h.record_id) > ${BULK_TUBE_SAVE_LIMIT};
+        CREATE INDEX _bulk_tube_minutes_idx ON _bulk_tube_minutes(minute, source);
+        UPDATE tubes SET entered = (SELECT min(h.at) FROM history h
+          WHERE h.record_id = tubes._id AND h.field = tubes.column AND upper(trim(h.after)) = tubes.tube
+            AND NOT EXISTS (SELECT 1 FROM _bulk_tube_minutes b
+              WHERE b.minute = substr(h.at, 1, 16) AND b.source = coalesce(h.source, '')));
+        DROP TABLE _bulk_tube_minutes;
+        DROP TABLE _tube_cols;
         CREATE INDEX tubes_tube ON tubes(tube);
         CREATE INDEX tubes_number ON tubes(prefix, number);`);
     } finally {

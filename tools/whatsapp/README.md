@@ -11,7 +11,7 @@ the app server, for a future project number; it sends nothing.
 | Receiver: signature, chat filter, loop guard, commands, @claude trigger, hourly limit, one turn at a time per chat, media, voice, sends | `tools/whatsapp/bridge.mjs` (`serve`; `install` copies it to `~/.local/share/ithomiini-wa-bridge` and writes `ithomiini-wa-bridge.service`) |
 | Pure parts (trigger, commands, reply blocks, step lines, media decryption) | `tools/whatsapp/bridge-lib.mjs` |
 | One T3 turn: send, wait, last message (and tool steps as they start); the group sender's app account and admin flag, read at turn time | `tools/whatsapp/t3-turn.mjs` (copied to claudeclaw's `~/ithomiini/work/wa-bridge/`) |
-| The chats' guide | `tools/whatsapp/bridge-skill/SKILL.md` (copied into both workspaces' `.claude/skills/whatsapp-bridge`) |
+| The chats' guide | `tools/whatsapp/bridge-skill/SKILL.md` (copied into both workspaces' `.claude/skills/whatsapp-bridge` and `.agents/skills/whatsapp-bridge` via `voice-push`, `skill-push`, or `t3-provision.mjs`) |
 | Simulator for dry-run chats | `tools/whatsapp/bridge-sim.mjs` |
 | Config shape | `tools/whatsapp/bridge-config.example.json` (the real one: `~/.config/ithomiini-wa-bridge/config.json`, 600) |
 | Tests | `tests/whatsapp-bridge.test.mjs` |

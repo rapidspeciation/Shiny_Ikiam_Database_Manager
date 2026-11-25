@@ -15,7 +15,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { t3CommandWay } from './t3commands.mjs';
-import { injectBridge } from './t3bridge.mjs';
+import { allowFraming, canInject, injectBridge } from './t3bridge.mjs';
 
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
 
@@ -23,6 +23,7 @@ const RELEASES = 'https://api.github.com/repos/pingdotgg/t3code/releases?per_pag
 const NOTES = version => `https://github.com/pingdotgg/t3code/releases/tag/v${version}`;
 const UNIT = version => `ithomiini-t3-update@${version}.service`;
 const STABLE = /^v?(\d+)\.(\d+)\.(\d+)$/;
+const BACKUP_DIR = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-(\d+\.\d+\.\d+)$/;
 /** The first stable T3 of Orchestrator V2 (its nightlies started at 0.0.46). */
 const V2 = '0.1.0';
 /** The update's steps, as scripts/t3-update.mjs names them; done and failed end it. */
@@ -171,13 +172,17 @@ export function t3Admin({ home = '/home/ubuntu/.t3', local = 'http://127.0.0.1:3
       return null;
     }
   }
-  /** Versions T3 keeps in runtime/versions (complete ones), newest first. */
+  /** Versions T3 keeps in runtime/versions or preserved in backups (complete ones), newest first. */
   async function installed() {
-    const names = await readdir(versionsDir).catch(() => []);
-    const kept = [];
-    for (const name of names)
-      if (STABLE.test(name) && existsSync(join(versionsDir, name, '.install-complete'))) kept.push(name);
-    return kept.sort((a, b) => (newer(a, b) ? -1 : newer(b, a) ? 1 : 0));
+    const kept = new Set();
+    for (const name of await readdir(versionsDir).catch(() => []))
+      if (STABLE.test(name) && existsSync(join(versionsDir, name, '.install-complete'))) kept.add(name);
+    const backupsDir = join(home, 'backups');
+    for (const name of await readdir(backupsDir).catch(() => [])) {
+      const m = BACKUP_DIR.exec(name);
+      if (m && existsSync(join(backupsDir, name, 'runtime-version', '.install-complete'))) kept.add(m[1]);
+    }
+    return [...kept].sort((a, b) => (newer(a, b) ? -1 : newer(b, a) ? 1 : 0));
   }
   /** The update under way or last run (scripts/t3-update.mjs), with whether it still runs. */
   async function lastRun() {
@@ -250,14 +255,41 @@ export function t3Admin({ home = '/home/ubuntu/.t3', local = 'http://127.0.0.1:3
   };
 }
 
+/** Normalizes Fetch Headers or a plain header map to a lowercase-keyed plain object. */
+function plainHeaders(headers) {
+  if (!headers) return {};
+  if (typeof headers.entries === 'function') {
+    const out = {};
+    for (const [k, v] of headers.entries()) out[k.toLowerCase()] = v;
+    return out;
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(headers)) out[k.toLowerCase()] = v;
+  return out;
+}
+
+/** Splits CSP header value(s) into comma-separated policies of trimmed directives. */
+function cspPolicies(value) {
+  const list = Array.isArray(value) ? value : value == null ? [] : [value];
+  return list
+    .flatMap(item => String(item).split(','))
+    .map(raw => raw.split(';').map(d => d.trim()).filter(Boolean))
+    .filter(d => d.length);
+}
+
+/** Whether a <meta http-equiv="Content-Security-Policy"> tag appears in the HTML. */
+const META_CSP = /<meta\b[^>]*http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>/i;
+
 /**
  * What the app needs from T3, checked after an update (or on demand): T3 answers; the app's token is
  * valid and holds what a sign-in link needs; a sign-in link is made; the app's commands get through
  * (a chat made, a message sent: their way is tried, nothing is sent); the chats are read from T3's
- * database; the bridge fits T3's page. `chats`: server/t3chats.mjs; `user`: the admin checking.
+ * database; the bridge can inject into T3's page (canInject, no <meta> CSP, bridge fits); and framing
+ * headers (X-Frame-Options, CSP frame-ancestors) rewrite cleanly for the Asistente iframe.
+ * `chats`: server/t3chats.mjs; `user`: the admin checking; `appOrigin`: the app's public origin.
  * Each check: { id, ok, detail }.
  */
-export async function t3Checks({ t3, admin, chats, user, fetchImpl = fetch, WebSocketImpl = globalThis.WebSocket }) {
+export async function t3Checks({ t3, admin, chats, user, appOrigin, fetchImpl = fetch, WebSocketImpl = globalThis.WebSocket }) {
   const checks = [];
   const check = async (id, fn) => {
     try {
@@ -300,11 +332,72 @@ export async function t3Checks({ t3, admin, chats, user, fetchImpl = fetch, WebS
     if (list[0] && owner !== user.username) throw new Error(`your latest chat reads as ${owner ?? 'nobody'}'s`);
     return `${chats.file?.split('/').pop() ?? ''} · ${own ? `your project, ${list.length} chats` : 'no project of yours yet'}`;
   });
-  await check('page', async () => {
-    const r = await fetchImpl(`${t3.local}/`, { headers: { accept: 'text/html' }, signal: AbortSignal.timeout(5000) });
+  let pageSnap = null;
+  const loadPage = async () => {
+    if (pageSnap) return pageSnap;
+    const r = await fetchImpl(`${t3.local}/`, {
+      headers: { accept: 'text/html', 'accept-encoding': 'identity' },
+      signal: AbortSignal.timeout(5000),
+    });
+    const status = r.status ?? (r.ok ? 200 : 500);
+    const headers = r.headers ? plainHeaders(r.headers) : { 'content-type': 'text/html' };
     const html = await r.text();
-    if (injectBridge(html, 'https://app.invalid') === html) throw new Error("the bridge's script does not fit T3's page");
+    pageSnap = { status, headers, html };
+    return pageSnap;
+  };
+  let originForCheck = 'https://app.invalid';
+  let invalidExplicitOrigin = false;
+  if (appOrigin !== undefined) {
+    try {
+      const parsed = new URL(appOrigin);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') originForCheck = parsed.origin;
+      else invalidExplicitOrigin = true;
+    } catch {
+      invalidExplicitOrigin = true;
+    }
+  }
+  await check('page', async () => {
+    const { status, headers, html } = await loadPage();
+    if (!canInject(status, headers)) {
+      if (status !== 200) throw new Error(`T3's page returned HTTP ${status}`);
+      const ct = String(headers['content-type'] ?? '');
+      if (!/^text\/html/i.test(ct)) throw new Error(`T3's page is ${ct || 'missing content-type'}, not text/html`);
+      const enc = headers['content-encoding'];
+      if (enc && String(enc).toLowerCase() !== 'identity')
+        throw new Error(`T3's page is compressed (${enc}) despite accept-encoding: identity`);
+      throw new Error(`T3's Content-Security-Policy blocks bridge script injection (${headers['content-security-policy']})`);
+    }
+    if (META_CSP.test(html)) throw new Error("T3's page carries a <meta> Content-Security-Policy that may block the bridge script");
+    if (injectBridge(html, originForCheck) === html) throw new Error("the bridge's script does not fit T3's page");
     return 'bridge fits';
+  });
+  await check('framing', async () => {
+    const { status, headers } = await loadPage();
+    if (status !== 200) throw new Error(`T3's page returned HTTP ${status}`);
+    const hadXfo = 'x-frame-options' in headers;
+    const hadFrameAncestors = cspPolicies(headers['content-security-policy']).some(directives =>
+      directives.some(d => d.split(/\s+/, 1)[0].toLowerCase() === 'frame-ancestors'),
+    );
+    if (invalidExplicitOrigin) {
+      if (hadXfo || hadFrameAncestors)
+        throw new Error("APP_PUBLIC_URL is unset or invalid: the bridge cannot rewrite T3's framing headers for the iframe");
+      return 'no framing headers (APP_PUBLIC_URL unset)';
+    }
+    const rewritten = allowFraming(headers, originForCheck);
+    const leftXfo = Object.keys(rewritten).find(k => k.toLowerCase() === 'x-frame-options');
+    if (leftXfo) throw new Error(`X-Frame-Options (${rewritten[leftXfo]}) still blocks iframe embedding after rewrite`);
+    const cspOut = Object.entries(rewritten)
+      .filter(([k]) => k.toLowerCase() === 'content-security-policy')
+      .map(([, v]) => v);
+    for (const directives of cspPolicies(cspOut)) {
+      for (const d of directives) {
+        if (d.split(/\s+/, 1)[0].toLowerCase() !== 'frame-ancestors') continue;
+        const tokens = d.split(/\s+/).slice(1);
+        if (!tokens.includes(originForCheck))
+          throw new Error(`CSP frame-ancestors (${d}) still blocks ${originForCheck} after rewrite`);
+      }
+    }
+    return hadXfo || hadFrameAncestors ? 'iframe allowed (framing headers rewritten)' : 'iframe allowed (no framing headers)';
   });
   return checks;
 }

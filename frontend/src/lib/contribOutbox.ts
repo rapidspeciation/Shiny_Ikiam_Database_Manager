@@ -171,14 +171,16 @@ export function createOutbox({
   lock?: <T>(fn: () => Promise<T>) => Promise<T | null>
 }) {
   let running: Promise<FlushResult> | null = null
+  let runningUser: string | null = null
   const mine = async (userId: string) => (await store.all()).filter(i => i.userId === userId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const waiting = (i: Item) => i.state === 'pending' || i.state === 'sending'
+  const activePending = (i: Item) => waiting(i) && !heldForConsent(i)
 
-  /** A new item for `userId` from Enviar; refused (OutboxFull) while MAX_PENDING wait for signal. */
+  /** A new item for `userId` from Enviar; refused (OutboxFull) while MAX_PENDING active items wait for signal (held old-consent items do not count). */
   async function add(userId: string, draft: Draft): Promise<Item> {
     const items = await mine(userId)
     if (items.some(i => i.sha256 === draft.sha256 && i.state !== 'deleting' && i.state !== 'failed')) throw new AlreadyListed('already')
-    if (items.filter(waiting).length >= MAX_PENDING) throw new OutboxFull('full')
+    if (items.filter(activePending).length >= MAX_PENDING) throw new OutboxFull('full')
     const item: Item = {
       id: uuid(),
       userId,
@@ -272,10 +274,20 @@ export function createOutbox({
 
   /**
    * Sends what waits for `userId`, oldest first. `force` (the signal back, the page shown, Enviar) does not wait for
-   * the backoff. One run at a time: a call during a run waits for it.
+   * the backoff. One run at a time: a call during a run waits for it and sweeps any items added or reconsented meanwhile
+   * (unless the in-flight pass for this user already stopped on auth/rate/offline), so a newly queued item does not
+   * flash as offline while older items finish sending.
    */
   async function flush(userId: string, { force = false } = {}): Promise<FlushResult> {
-    if (running) return running
+    if (running) {
+      const sameUser = runningUser === userId
+      const first = await running
+      if (first.stopped && sameUser) return first
+      const more = await flush(userId, { force })
+      return sameUser
+        ? { sent: first.sent + more.sent, stopped: more.stopped, already: [...first.already, ...more.already] }
+        : more
+    }
     const run = async (): Promise<FlushResult> => {
       const out: FlushResult = { sent: 0, stopped: null, already: [] }
       // Deletes first (a photo sent again after «Borrar» goes after its delete); sent ones are not walked.
@@ -296,11 +308,13 @@ export function createOutbox({
       }
       return out
     }
+    runningUser = userId
     running = (async () => {
       try {
         return (lock ? await lock(run) : await run()) ?? { sent: 0, stopped: null, already: [] }
       } finally {
         running = null
+        runningUser = null
       }
     })()
     return running
@@ -367,9 +381,9 @@ export function createOutbox({
     return due.length ? Math.min(...due) : null
   }
 
-  /** How many wait for signal (the page's «N envíos pendientes»). */
+  /** How many wait for signal (the page's «N envíos pendientes»; held old-consent items are counted by held()). */
   async function pending(userId: string): Promise<number> {
-    return (await mine(userId)).filter(waiting).length
+    return (await mine(userId)).filter(activePending).length
   }
 
   /** How many of the person's items wait for them to accept the current consent («Mis envíos» offers it). */

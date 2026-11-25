@@ -136,11 +136,19 @@ until printf '%s' "$health" | grep -q '"status":"ok"'; do
 done
 said health "$s" "status ok"
 
+# Refresh repo-tracked WhatsApp workspace core.md copies (and warn on custom ones) after the switch, before t3-provision.
+wa_updated=""
+if [ "${WA_VOICE_SYNC:-1}" != 0 ] && [ -f "$dir/scripts/wa-voice-sync.mjs" ]; then
+  wa_out="$("$node" "$dir/scripts/wa-voice-sync.mjs" --repo "$dir" --bridge-home "" --workspaces "${ITHOMIINI_T3_WORKSPACES:-$app/shared/t3-workspaces}" --sync --sync-workspaces --warn-only 2>&1 || true)"
+  [ -z "$wa_out" ] || printf '%s\n' "$wa_out"
+  printf '%s' "$wa_out" | grep -q '^WhatsApp workspace updated:' && wa_updated=1
+fi
+
 # Last, the app up: the T3 workspaces (every person's brief, skills and subagents; tokens kept), refreshed when what
 # they are made from changed. A missing or unreadable hash means a refresh.
 s=$(ms)
 stamp_file="$app/shared/.deploy-stamps/t3-provision"
-if [ -n "$stamp_now" ] && [ "$stamp_now" = "$(cat "$stamp_file" 2>/dev/null || true)" ]; then
+if [ -z "$wa_updated" ] && [ -n "$stamp_now" ] && [ "$stamp_now" = "$(cat "$stamp_file" 2>/dev/null || true)" ]; then
   said t3-provision "$s" "workspaces unchanged: not refreshed"
 elif (cd "$dir" && "$node" scripts/t3-provision.mjs --refresh-all) >"$logs/t3-provision" 2>&1 9>&-; then
   # The hash after the refresh (it rewrites the files it is made of): the next deploy compares with this one.

@@ -12,6 +12,11 @@
 //   checkout's assistant/ (brief, skills, subagents), MCP pointing at this app, gcloud and wacli denied, the
 //   project's Gmail read-only (scripts/lab-gmail-read.mjs).
 //   Its T3 project in the lab T3 is made once (`t3 project add`).
+// - Frozen on purpose: every task's ground truth was read from this base, so it is never refreshed from production,
+//   and it is not production either. What moves there (the CAM ranges on Lists, the latest dates and counts) stays as
+//   of the base's day, while the brief and skills follow the checkout. A case on such a fact takes its ground truth
+//   from this base and says the base's day in its `about`; a test meant to look like production today needs a copy of
+//   the deployed brief and data made for it, not this base.
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';

@@ -1510,7 +1510,7 @@ function serve() {
 /** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
 function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
-  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/asr-parakeet.mjs', 'tools/whatsapp/search-export.mjs', 'tools/whatsapp/dictation-words.json', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
+  for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/asr-parakeet.mjs', 'tools/whatsapp/search-export.mjs', 'tools/whatsapp/dictation-words.json', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'tools/whatsapp/bridge-skill/SKILL.md', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
     copyFileSync(join(ROOT, f), join(target, f));
   }
@@ -1566,8 +1566,57 @@ WantedBy=timers.target
 }
 
 /**
+ * Installs tools/whatsapp/bridge-skill/SKILL.md into BOTH `.claude/skills/whatsapp-bridge` (Claude Code)
+ * and `.agents/skills/whatsapp-bridge` (Codex / Antigravity) inside a route's workspace.
+ */
+async function syncBridgeSkill(route, { dry = false } = {}) {
+  const skillSrc = join(ROOT, 'tools/whatsapp/bridge-skill/SKILL.md');
+  if (!existsSync(skillSrc) || !route?.workspace) return null;
+  const text = readFileSync(skillSrc, 'utf8');
+  const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+  const dirs = [
+    join(route.workspace, '.claude', 'skills', 'whatsapp-bridge'),
+    join(route.workspace, '.agents', 'skills', 'whatsapp-bridge'),
+  ];
+  const q = s => `'${String(s).replaceAll("'", "'\\''")}'`;
+  const sh = (cmd, input = null) => (route.ssh ? run('ssh', [route.ssh, cmd], { input }) : run('sh', ['-c', cmd], { input }));
+  console.log(`whatsapp-bridge skill (${hash}) → ${route.ssh ? route.ssh + ':' : ''}${dirs.join(', ')}`);
+  if (dry) return hash;
+  for (const dir of dirs) {
+    await sh(`mkdir -p ${q(dir)}`);
+    await sh(`cat > ${q(join(dir, 'SKILL.md'))}`, text);
+  }
+  return hash;
+}
+
+/** Installs the whatsapp-bridge skill into .claude/skills and .agents/skills for one chat or all configured workspaces. */
+async function skillPush(key = null, { dry = false } = {}) {
+  const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  const targets = key
+    ? [[key, config.chats?.[key]]]
+    : Object.entries(config.chats ?? {}).filter(([, c]) => c?.enabled && !c.readOnly);
+  if (key && !targets[0]?.[1]) throw new Error(`Chat ${key}: no chat`);
+  const seen = new Set();
+  const hashes = [];
+  for (const [k, chat] of targets) {
+    const route = config.routes?.[chat?.route];
+    if (!route?.workspace) {
+      if (key) throw new Error(`Chat ${k}: its route has no workspace`);
+      continue;
+    }
+    const wsKey = `${route.ssh ?? 'local'}:${route.workspace}`;
+    if (seen.has(wsKey)) continue;
+    seen.add(wsKey);
+    const hash = await syncBridgeSkill(route, { dry });
+    if (hash) hashes.push({ chat: k, workspace: route.workspace, hash });
+  }
+  return hashes;
+}
+
+/**
  * Puts a chat's voice (its `soulFile` list, else the global one) in its route's workspace (`route.workspace`, on `route.ssh`
- * when set): .claude/voice/<files> and voice.json (the order, the source, a hash), then rewrites that workspace's brief
+ * when set): .claude/voice/<files> and voice.json (the order, the source, a hash), mirrors the whatsapp-bridge skill into
+ * both .claude/skills/whatsapp-bridge and .agents/skills/whatsapp-bridge, then rewrites that workspace's brief
  * (the app's scripts/t3-provision.mjs --refresh <folder>, `route.provision`: the node and the script). The brief is the
  * thread's CLAUDE.md: Claude Code reads it when a session starts (checked 4 Nov 2026: a running process keeps the copy it
  * started with), so a running thread gets the new voice with its next Claude process: after T3 stops it when idle, or at
@@ -1591,6 +1640,7 @@ async function voicePush(key, { dry = false, restart = false } = {}) {
   const sh = (cmd, input = null) => (route.ssh ? run('ssh', [route.ssh, cmd], { input }) : run('sh', ['-c', cmd], { input }));
   const [node, script] = route.provision ?? [];
   console.log(`${key}: ${names.join(', ')} (${hash}) → ${route.ssh ? route.ssh + ':' : ''}${folder}`);
+  await syncBridgeSkill(route, { dry });
   if (dry) return hash;
   await sh(`mkdir -p ${q(folder)}`);
   for (const [i, name] of names.entries()) await sh(`cat > ${q(join(folder, name))}`, texts[i]);
@@ -1649,10 +1699,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (cmd === 'install') install();
   else if (cmd === 'backfill') backfill(Number(process.argv[3]) || 30).catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'voice-push') voicePush(process.argv[3], { dry: process.argv.includes('--dry'), restart: process.argv.includes('--restart') }).catch(e => (console.error(e.message), process.exit(1)));
+  else if (cmd === 'skill-push') {
+    const target = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
+    skillPush(target, { dry: process.argv.includes('--dry') }).catch(e => (console.error(e.message), process.exit(1)));
+  }
   else if (cmd === 'search-export')
     import('./search-export.mjs')
       .then(({ searchExport }) => searchExport({ config: JSON.parse(readFileSync(CONFIG_FILE, 'utf8')), stateDir: STATE_DIR, push: process.argv.includes('--push') }))
       .catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'voice-check') voiceCheck(process.argv[3], process.argv.slice(4)).catch(e => (console.error(e.message), process.exit(1)));
-  else console.error('Usage: bridge.mjs serve | install | backfill [days] | search-export [--push] | voice-push <chat> [--dry] [--restart] | voice-check <audio file> [engine…]');
+  else console.error('Usage: bridge.mjs serve | install | backfill [days] | search-export [--push] | voice-push <chat> [--dry] [--restart] | skill-push [chat] [--dry] | voice-check <audio file> [engine…]');
 }

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 export const STANDINS = ['ssh', 'node', 'npm', 'npx', 'hostname', 'systemctl', 'curl'];
-const REAL = ['scripts/deploy.sh', 'scripts/install-release.sh', 'scripts/rollback-release.sh', 'scripts/deploy-record.mjs', 'scripts/deploy-stamp.mjs', 'scripts/wait-writes.sh', 'scripts/prune-releases.sh'];
+const REAL = ['scripts/deploy.sh', 'scripts/install-release.sh', 'scripts/rollback-release.sh', 'scripts/deploy-record.mjs', 'scripts/deploy-stamp.mjs', 'scripts/wa-voice-sync.mjs', 'scripts/wait-writes.sh', 'scripts/prune-releases.sh'];
 
 // One stand-in for all: records "<name> <args>"; `hostname` is a PC's, ssh fails at once, and the check named in
 // DEPLOY_TEST_FAIL (check, server, frontend, build, slow) exits 1. The build writes web/ and the instructions history;
@@ -27,7 +27,7 @@ printf '%s %s\\n' "$name" "$*" >> "$DEPLOY_TEST_CALLS"
 case "$name $*" in
   "hostname"*) echo test-pc; exit 0 ;;
   "node --version") echo v24.0.0-standin; exit 0 ;;
-  "node -e"* | "node "*deploy-record.mjs* | "node "*deploy-stamp.mjs*) exec "$DEPLOY_TEST_REAL_NODE" "$@" ;;
+  "node -e"* | "node "*deploy-record.mjs* | "node "*deploy-stamp.mjs* | "node "*wa-voice-sync.mjs*) exec "$DEPLOY_TEST_REAL_NODE" "$@" ;;
   "ssh "*" -O "*) exit 0 ;;
   "ssh "*)
     [ "\${DEPLOY_TEST_SSH:-}" = local ] || exit 97
@@ -85,7 +85,7 @@ export function deployFixture() {
     copyFileSync(join(root, rel), join(repo, rel));
   }
   // One small file for each shipped path; the steps that would build or install for real are stand-ins.
-  for (const rel of ['server/index.mjs', 'docs/a.md', 'assistant/AGENTS.md', 'package.json', 'rename-app.commit', 'licenses/x.txt', 'PRODUCT.md', 'DESIGN.md', 'frontend/src/lib/a.ts', 'tools/identifier/a.py'])
+  for (const rel of ['server/index.mjs', 'docs/a.md', 'assistant/AGENTS.md', 'assistant/voice/core.md', 'assistant/voice/whatsapp.md', 'package.json', 'rename-app.commit', 'licenses/x.txt', 'PRODUCT.md', 'DESIGN.md', 'frontend/src/lib/a.ts', 'tools/identifier/a.py', 'tools/whatsapp/bridge-skill/SKILL.md'])
     put(rel, `${rel}\n`);
   put('scripts/build-rename-app.sh', 'echo "Rename Photos app: up to date (stand-in)"\n');
   put('tools/wikiloc/install-worker.sh', 'echo "Wikiloc worker unchanged: not reinstalled. (stand-in)"\n');
@@ -138,7 +138,7 @@ export function deployFixture() {
     const head = sh('git rev-parse HEAD');
     const staged = join(app, 'staged', head);
     mkdirSync(join(staged, 'web'), { recursive: true });
-    sh(`git archive HEAD -- server docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier | tar -xf - -C ${JSON.stringify(staged)}`);
+    sh(`git archive HEAD -- server docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier tools/whatsapp/bridge-skill | tar -xf - -C ${JSON.stringify(staged)}`);
     writeFileSync(join(staged, 'web', 'index.html'), `<p>${build}</p>\n`);
     writeFileSync(join(staged, 'server', 'instructions-history.json'), '[]\n');
     const r = spawnSync(process.execPath, [join(repo, 'scripts', 'deploy-record.mjs'), 'write', staged, '--commit', commit ?? head, '--tree', sh('git rev-parse "HEAD^{tree}"'), '--jobs', jobs, '--slow', slow], { encoding: 'utf8' });
