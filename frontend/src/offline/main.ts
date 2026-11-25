@@ -8,6 +8,7 @@
  */
 import type * as Ort from 'onnxruntime-web'
 import {
+  applyP1aNms,
   chooseModel,
   cropBox,
   ENCODER_ROLE,
@@ -493,7 +494,7 @@ async function identify(photo: Photo) {
       tick('detector_run_ms', t)
       t = performance.now()
       const det = res[m.detector.outputNames[0]], proto = res[m.detector.outputNames[1]]
-      const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
+      const masks = applyP1aNms(readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp))
       const selected = selectMasks(masks)
       const { box, status } = cropBox(selected, orientation, img.width, img.height, override)
       const square = letterboxCrop(img, box)

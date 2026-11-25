@@ -10,6 +10,7 @@
  */
 import type * as Ort from 'onnxruntime-web'
 import {
+  applyP1aNms,
   chooseModel,
   cropBox,
   detectorInput,
@@ -903,7 +904,7 @@ export function createEngine(
     const res = await session.run({ [session.inputNames[0]]: new ortD.Tensor('float32', inp.x, [1, 3, 640, 640]) })
     const det = res[session.outputNames[0]], proto = res[session.outputNames[1]]
     const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
-    const { box, status } = cropBox(selectMasks(masks), orientation, img.width, img.height, override)
+    const { box, status } = cropBox(selectMasks(applyP1aNms(masks)), orientation, img.width, img.height, override)
     return { square: letterboxCrop(img, box), status }
   }
 

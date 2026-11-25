@@ -6,8 +6,9 @@
  * 1. The wing detector (wing_seg_s2.onnx since 5 Nov 2026, end-to-end head) on the photo as stored, not turned by its EXIF tag
  *    (the server gives it the raw pixels): a 640 px square letterbox as Ultralytics makes it (bilinear like
  *    cv2.INTER_LINEAR, grey 114).
- * 2. Its masks (prototypes upsampled to 640, > 0, cut to the box), each mask's outline measures, the masks under
- *    0.25 left out, rectangle artefacts dropped, duplicates merged; the union box of what is left, in the upright
+ * 2. Its masks (prototypes upsampled to 640, > 0, cut to the box, P3 multi-component cleanup via 3x3 close + largest
+ *    8-CC without bridge chords), each mask's outline measures, the masks under 0.25 left out, P1-A greedy pre-dedup
+ *    mask-IoU >= 0.65 NMS, rectangle artefacts dropped, duplicates merged; the union box of what is left, in the upright
  *    photo. Nothing found: the central 90 %.
  * 3. That box cut from the upright photo, padded to a grey (128) square and resized to 224 px with Pillow's
  *    bicubic filter in its own integer arithmetic.
@@ -134,6 +135,17 @@ export function detectorInput(upright: Rgba, orientation: number, S = 640): Dete
 
 // ---------------------------------------------------------------- 2. masks and the crop's box
 
+export interface MaskRoi {
+  x0: number
+  y0: number
+  w: number
+  h: number
+  /** Tight w x h binary occupancy in detector letterbox pixels (0 or 1). */
+  data: Uint8Array
+  /** Foreground pixel count in `data`. */
+  area: number
+}
+
 export interface Mask {
   uid: string
   confidence: number
@@ -145,14 +157,138 @@ export interface Mask {
   fill: number
   /** straight runs along its box (common.bbox_clamp_segments), from the pixels */
   clamp: number
+  /** Tight binary ROI in detector letterbox pixels (set by readMasks; used for exact P1-A mask IoU). */
+  roi?: MaskRoi
 }
 
 const RASTER = 64
 
+/** Fill interior holes via 4-connected exterior background BFS: pixels with result 1 form the hole-filled external contours. */
+function fillExternalContours(m: Uint8Array, W: number, H: number): Uint8Array {
+  const N = W * H
+  const extBg = new Uint8Array(N)
+  const queue = new Int32Array(N)
+  let head = 0, tail = 0
+  const push = (idx: number) => {
+    if (!m[idx] && !extBg[idx]) { extBg[idx] = 1; queue[tail++] = idx }
+  }
+  for (let c = 0; c < W; c++) { push(c); push((H - 1) * W + c) }
+  for (let r = 1; r < H - 1; r++) { push(r * W); push(r * W + W - 1) }
+  while (head < tail) {
+    const cur = queue[head++]
+    const cr = (cur / W) | 0, cc = cur - cr * W
+    if (cr > 0) push(cur - W)
+    if (cr + 1 < H) push(cur + W)
+    if (cc > 0) push(cur - 1)
+    if (cc + 1 < W) push(cur + 1)
+  }
+  const filled = new Uint8Array(N)
+  for (let i = 0; i < N; i++) if (!extBg[i]) filled[i] = 1
+  return filled
+}
+
+/** 8-connected components on a W x H binary ROI (0/1 Uint8Array), tracking each component's span for 2D area ranking. */
+function cc8(m: Uint8Array, W: number, H: number): { count: number; labels: Int32Array; sizes: number[]; is2d: Uint8Array } {
+  const N = W * H
+  const labels = new Int32Array(N)
+  const queue = new Int32Array(N)
+  const sizes = [0]
+  const is2dList = [0]
+  let cid = 0
+  for (let idx = 0; idx < N; idx++) {
+    if (!m[idx] || labels[idx]) continue
+    cid++
+    let head = 0, tail = 0
+    queue[tail++] = idx
+    labels[idx] = cid
+    let minR = H, maxR = -1, minC = W, maxC = -1
+    while (head < tail) {
+      const cur = queue[head++]
+      const cr = (cur / W) | 0, cc = cur - cr * W
+      if (cr < minR) minR = cr
+      if (cr > maxR) maxR = cr
+      if (cc < minC) minC = cc
+      if (cc > maxC) maxC = cc
+      const r0 = cr > 0 ? cr - 1 : 0, r1 = cr + 1 < H ? cr + 1 : H - 1
+      const c0 = cc > 0 ? cc - 1 : 0, c1 = cc + 1 < W ? cc + 1 : W - 1
+      for (let nr = r0; nr <= r1; nr++) {
+        const rowOff = nr * W
+        for (let nc = c0; nc <= c1; nc++) {
+          const ni = rowOff + nc
+          if (m[ni] && !labels[ni]) {
+            labels[ni] = cid
+            queue[tail++] = ni
+          }
+        }
+      }
+    }
+    sizes.push(tail)
+    is2dList.push(maxR > minR && maxC > minC ? 1 : 0)
+  }
+  return { count: cid, labels, sizes, is2d: Uint8Array.from(is2dList) }
+}
+
+/**
+ * P3 binary mask cleanup (pixel-ROI equivalent of v6_feature.py contour_p3):
+ * - External contours are identified via 4-connected exterior-background fill (matching OpenCV RETR_EXTERNAL count,
+ *   so specks inside an internal hole do not trigger closing).
+ * - Single-external-contour ROIs pass through unchanged.
+ * - Multi-external-contour ROIs run a 3x3 morphological close (matching OpenCV MORPH_CLOSE border semantics:
+ *   zero-padded dilate, one-padded erode) and retain only the largest external contour by hole-filled 2D area
+ *   (any 2D region outranks a 1-px line of zero contour area), eliminating distant specks and bridge-chord expansion.
+ */
+export function applyP3Roi(m: Uint8Array, W: number, H: number): Uint8Array {
+  if (W <= 0 || H <= 0) return m
+  const c1 = cc8(fillExternalContours(m, W, H), W, H)
+  if (c1.count <= 1) return m
+  const N = W * H
+  // 3x3 dilate (zero border padding, matching OpenCV BORDER_CONSTANT = 0 for dilate)
+  const dil = new Uint8Array(N)
+  for (let r = 0; r < H; r++) {
+    const r0 = r > 0 ? r - 1 : 0, r1 = r + 1 < H ? r + 1 : H - 1
+    for (let c = 0; c < W; c++) {
+      if (m[r * W + c]) { dil[r * W + c] = 1; continue }
+      const c0 = c > 0 ? c - 1 : 0, c1x = c + 1 < W ? c + 1 : W - 1
+      let hit = 0
+      outer: for (let nr = r0; nr <= r1; nr++) {
+        const off = nr * W
+        for (let nc = c0; nc <= c1x; nc++) if (m[off + nc]) { hit = 1; break outer }
+      }
+      if (hit) dil[r * W + c] = 1
+    }
+  }
+  // 3x3 erode (1-border padding, matching OpenCV morphologyDefaultBorderValue = +inf for erode)
+  const clo = new Uint8Array(N)
+  for (let r = 0; r < H; r++) {
+    const r0 = r > 0 ? r - 1 : 0, r1 = r + 1 < H ? r + 1 : H - 1
+    for (let c = 0; c < W; c++) {
+      if (!dil[r * W + c]) continue
+      const c0 = c > 0 ? c - 1 : 0, c1x = c + 1 < W ? c + 1 : W - 1
+      let all = 1
+      outer: for (let nr = r0; nr <= r1; nr++) {
+        const off = nr * W
+        for (let nc = c0; nc <= c1x; nc++) if (!dil[off + nc]) { all = 0; break outer }
+      }
+      if (all) clo[r * W + c] = 1
+    }
+  }
+  const c2 = cc8(fillExternalContours(clo, W, H), W, H)
+  let bestId = 1, bestArea = -1, bestSz = -1
+  for (let id = 1; id <= c2.count; id++) {
+    const area = c2.is2d[id] ? c2.sizes[id] : 0
+    if (area > bestArea || (area === bestArea && c2.sizes[id] > bestSz)) {
+      bestArea = area; bestSz = c2.sizes[id]; bestId = id
+    }
+  }
+  const out = new Uint8Array(N)
+  for (let i = 0; i < N; i++) if (c2.labels[i] === bestId && clo[i]) out[i] = 1
+  return out
+}
+
 /**
  * The detector's masks of confidence >= `minConf` (end-to-end output: [N, 38] rows x1 y1 x2 y2 score class
  * coef[32], 640 px input; prototypes [32, 160, 160]), as Ultralytics process_mask (upsample=True) and
- * masks.xyn give them, measured from the pixels.
+ * v6_feature.py P3 contour cleanup give them, measured from the pixels.
  */
 export function readMasks(det: Float32Array, N: number, D: number, proto: Float32Array, P: number, inp: DetectorInput, minConf = 0.25, S = 640): Mask[] {
   const out: Mask[] = []
@@ -171,9 +307,9 @@ export function readMasks(det: Float32Array, N: number, D: number, proto: Float3
     // F.interpolate(bilinear, align_corners=False) to S x S, > 0, then crop_mask: columns r >= x1 and r < x2
     const c0 = Math.max(0, Math.ceil(x1)), c1 = Math.min(S - 1, Math.ceil(x2) - 1)
     const r0 = Math.max(0, Math.ceil(y1)), r1 = Math.min(S - 1, Math.ceil(y2) - 1)
-    if (c1 < c0 || r1 < r0) continue
+    if (!(c1 >= c0 && r1 >= r0)) continue
     const W = c1 - c0 + 1, H = r1 - r0 + 1
-    const m = new Uint8Array(W * H)
+    let m: Uint8Array = new Uint8Array(W * H)
     const gx0 = new Int32Array(W), gx1 = new Int32Array(W), gwx = new Float32Array(W)
     for (let c = 0; c < W; c++) {
       let g = (c0 + c + 0.5) * k - 0.5
@@ -193,6 +329,10 @@ export function readMasks(det: Float32Array, N: number, D: number, proto: Float3
       }
     }
     if (count < 3) continue // no outline of three points: v6_feature leaves it out
+    m = applyP3Roi(m, W, H)
+    count = 0
+    for (let j = 0; j < m.length; j++) count += m[j]
+    if (count < 3) continue
     let mx0 = W, my0 = H, mx1 = -1, my1 = -1, edge = 0
     for (let r = 0; r < H; r++)
       for (let c = 0; c < W; c++) {
@@ -219,9 +359,79 @@ export function readMasks(det: Float32Array, N: number, D: number, proto: Float3
         if (px >= 0 && px < W && m[py * W + px]) raster[row * RASTER + col] = 1
       }
     }
-    out.push({ uid: `p${String(i).padStart(3, '0')}`, confidence: score, bbox, raster, fill: boxArea ? area / boxArea : 0, clamp: clampRuns(m, W, H, mx0, my0, mx1, my1, bbox) })
+    const rw = mx1 - mx0 + 1, rh = my1 - my0 + 1
+    const tight = new Uint8Array(rw * rh)
+    for (let r = 0; r < rh; r++) tight.set(m.subarray((my0 + r) * W + mx0, (my0 + r) * W + mx0 + rw), r * rw)
+    out.push({
+      uid: `p${String(i).padStart(3, '0')}`,
+      confidence: score,
+      bbox,
+      raster,
+      fill: boxArea ? area / boxArea : 0,
+      clamp: clampRuns(m, W, H, mx0, my0, mx1, my1, bbox),
+      roi: { x0: c0 + mx0, y0: r0 + my0, w: rw, h: rh, data: tight, area: count },
+    })
   }
   return out
+}
+
+function rasterIoU(a: Uint8Array, b: Uint8Array): number {
+  let inter = 0, ua = 0, ub = 0
+  for (let i = 0; i < a.length; i++) { inter += a[i] & b[i]; ua += a[i]; ub += b[i] }
+  const union = ua + ub - inter
+  return union ? inter / union : 0
+}
+
+function roiIoU(a: MaskRoi, b: MaskRoi): number {
+  const ox0 = Math.max(a.x0, b.x0), oy0 = Math.max(a.y0, b.y0)
+  const ox1 = Math.min(a.x0 + a.w, b.x0 + b.w), oy1 = Math.min(a.y0 + a.h, b.y0 + b.h)
+  if (ox1 <= ox0 || oy1 <= oy0) return 0
+  let inter = 0
+  const axOff = ox0 - a.x0, bxOff = ox0 - b.x0, ow = ox1 - ox0
+  for (let y = oy0; y < oy1; y++) {
+    const aRow = (y - a.y0) * a.w + axOff
+    const bRow = (y - b.y0) * b.w + bxOff
+    for (let dx = 0; dx < ow; dx++) inter += a.data[aRow + dx] & b.data[bRow + dx]
+  }
+  const union = a.area + b.area - inter
+  return union > 0 ? inter / union : 0
+}
+
+function maskArea(m: Mask): number {
+  if (m.roi) return m.roi.area
+  let area = 0
+  for (let i = 0; i < m.raster.length; i++) area += m.raster[i]
+  return area
+}
+
+function maskIoU(a: Mask, b: Mask): number {
+  if (a.roi && b.roi) return roiIoU(a.roi, b.roi)
+  return rasterIoU(a.raster, b.raster)
+}
+
+/**
+ * P1-A greedy pre-dedup mask-IoU NMS (pixel-ROI equivalent of v6_feature.py apply_mask_nms, which computes exact
+ * polygon IoU over normalized contours; on real 640px wing masks pixel-ROI IoU matched server UIDs 1,157/1,157):
+ * - Early-returns `masks` unchanged when <= 1 eligible (`confidence >= minConf`) masks exist.
+ * - Drops eligible masks with empty occupancy when > 1 eligible masks exist.
+ * - Suppresses lower-confidence duplicates with mask IoU >= `iouThr` (ties broken by `uid` ascending).
+ * - Passes `< minConf` masks through untouched after the kept eligible masks.
+ */
+export function applyP1aNms(masks: Mask[], iouThr = 0.65, minConf = 0.25): Mask[] {
+  const elig = masks.filter(m => m.confidence >= minConf)
+  if (elig.length <= 1) return masks
+  const below = masks.filter(m => m.confidence < minConf)
+  elig.sort((a, b) => (b.confidence - a.confidence) || (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0))
+  const kept: Mask[] = []
+  for (const m of elig) {
+    if (maskArea(m) <= 0) continue
+    let drop = false
+    for (const k of kept) {
+      if (maskIoU(m, k) >= iouThr) { drop = true; break }
+    }
+    if (!drop) kept.push(m)
+  }
+  return [...kept, ...below]
 }
 
 /** Runs of the mask along its own box's sides at least 12 % of that side long, not on the photo's border. */
