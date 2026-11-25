@@ -10,6 +10,7 @@ import {
   parseIsoDate,
   parseRecordedMonth,
   trackDistanceKm,
+  walkDate,
 } from '../tools/wikiloc/lib.mjs';
 
 /**
@@ -144,12 +145,17 @@ function backfillWikilocIndex(db) {
       } catch {
         data = {};
       }
+      // Legacy worker rows may hold an upload-day fallback in `date` when the title had no day:
+      // only treat a day as confirmed `recorded_date` if already stored in `recorded_date`, recoverable
+      // from title + `data.recorded` without upload fallback, or when no `data.recorded` month text exists.
+      const legacyRecordedDate =
+        r.recorded_date ?? (data.recorded ? walkDate(r.name, data.recorded, null) : r.date ?? null);
       const meta = normalizeTrailMeta({
         wikilocId: r.wikiloc_id,
         url: r.url,
         title: r.name,
         profileId: r.profile_id ?? data.author ?? null,
-        date: r.recorded_date ?? r.date ?? null,
+        recordedDate: legacyRecordedDate,
         recordedMonth: r.recorded_month ?? null,
         recorded: data.recorded ?? null,
         uploadedDate: r.uploaded_date ?? data.uploadedDate ?? null,
@@ -1054,8 +1060,13 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   const minutes = number(body.minutes, 0, 24 * 60);
   const recordedText = text(body.recorded, 60);
   // Explicit recordedDate (including null from readTrail when only the upload day is known) stays distinct from `date`.
+  // When an older worker sends `recorded` without `recordedDate`, recover only a title-backed day (never upload fallback).
   const hasExplicitRecordedDate = Object.hasOwn(body, 'recordedDate') || Object.hasOwn(body, 'recorded_date');
-  const recordedDate = hasExplicitRecordedDate ? parseIsoDate(body.recordedDate ?? body.recorded_date) : date || null;
+  const recordedDate = hasExplicitRecordedDate
+    ? parseIsoDate(body.recordedDate ?? body.recorded_date)
+    : recordedText
+      ? walkDate(name, recordedText, null)
+      : date || null;
   const recordedMonth =
     (recordedDate ? recordedDate.slice(0, 7) : null) ??
     parseRecordedMonth(body.recordedMonth ?? body.recorded_month) ??
@@ -1547,20 +1558,21 @@ export function upsertTrailIndex(store, trails, { profileId = null, walkId = nul
       }
       const prev = existingStmt.get(meta.wikilocId);
       const keepSaved = !authoritative && Boolean(prev?.walk_id);
-      const keepExistingDate = keepSaved || (!authoritative && Boolean(prev?.recorded_date));
+      const titleChanged = Boolean(prev && meta.title && prev.title !== meta.title);
+      const keepExistingDate = keepSaved || (!authoritative && !titleChanged && Boolean(prev?.recorded_date));
       const mergedProfileId = meta.profileId ?? prev?.profile_id ?? null;
       const mergedTitle = meta.title || prev?.title || `Wikiloc ${meta.wikilocId}`;
       const mergedPlace = keepSaved ? (prev.place ?? meta.place) : (meta.place ?? prev?.place ?? null);
       const mergedRecordedDate = keepExistingDate
         ? prev.recorded_date
-        : authoritative
+        : authoritative || titleChanged
           ? meta.recordedDate
           : (meta.recordedDate ?? prev?.recorded_date ?? null);
       const mergedRecordedMonth = keepExistingDate
         ? prev.recorded_month
         : mergedRecordedDate
           ? mergedRecordedDate.slice(0, 7)
-          : authoritative
+          : authoritative || titleChanged
             ? meta.recordedMonth
             : (meta.recordedMonth ?? prev?.recorded_month ?? null);
       const mergedUploadedDate = keepSaved ? (prev.uploaded_date ?? meta.uploadedDate) : (meta.uploadedDate ?? prev?.uploaded_date ?? null);

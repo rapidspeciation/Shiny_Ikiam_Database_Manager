@@ -170,7 +170,8 @@ test('backward-compatible SQLite migration adds columns, indexes and backfills l
       '120902281',
       'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281',
       'Colecta venecia misahualli',
-      null,
+      // Legacy worker stored same-month upload-day fallback in `date`, even though the title had no day.
+      '2022-12-08',
       JSON.stringify({ author: '11910200', recorded: 'diciembre 2022', track: [], waypoints: [] }),
       'waiting',
       null,
@@ -202,20 +203,27 @@ test('backward-compatible SQLite migration adds columns, indexes and backfills l
     assert.equal(w1.recorded_month, '2025-05');
     assert.ok(w1.distance_km > 1 && w1.distance_km < 1.2);
 
-    const w2 = db.prepare('SELECT profile_id, recorded_date, recorded_month FROM wikiloc_walks WHERE id=?').get('w-legacy-2');
+    // Legacy upload-day fallback stays null in recorded_date and appears only in month_candidates for exact-day lookup.
+    const w2 = db.prepare('SELECT profile_id, date, recorded_date, recorded_month FROM wikiloc_walks WHERE id=?').get('w-legacy-2');
     assert.equal(w2.profile_id, '11910200');
+    assert.equal(w2.date, '2022-12-08');
     assert.equal(w2.recorded_date, null);
     assert.equal(w2.recorded_month, '2022-12');
 
     // Backfilled into wikiloc_trail_index too.
     const indexed = db
-      .prepare('SELECT wikiloc_id, profile_id, recorded_month, walk_id FROM wikiloc_trail_index ORDER BY wikiloc_id_num')
+      .prepare('SELECT wikiloc_id, profile_id, recorded_date, recorded_month, walk_id FROM wikiloc_trail_index ORDER BY wikiloc_id_num')
       .all()
       .map(r => ({ ...r }));
     assert.deepEqual(indexed, [
-      { wikiloc_id: '120902281', profile_id: '11910200', recorded_month: '2022-12', walk_id: 'w-legacy-2' },
-      { wikiloc_id: '213523060', profile_id: '13756119', recorded_month: '2025-05', walk_id: 'w-legacy-1' },
+      { wikiloc_id: '120902281', profile_id: '11910200', recorded_date: null, recorded_month: '2022-12', walk_id: 'w-legacy-2' },
+      { wikiloc_id: '213523060', profile_id: '13756119', recorded_date: '2025-05-14', recorded_month: '2025-05', walk_id: 'w-legacy-1' },
     ]);
+
+    const exactLegacy = queryTrailIndex({ db }, { profileId: '11910200', dateFrom: '2022-12-08', dateTo: '2022-12-08' });
+    assert.equal(exactLegacy.total, 0);
+    assert.equal(exactLegacy.month_candidates.length, 1);
+    assert.equal(exactLegacy.month_candidates[0].wikiloc_id, '120902281');
   } finally {
     db.close();
   }
@@ -234,13 +242,14 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       ],
     );
 
-    // Save a full walk on 11910200 with exact recorded_date & uploaded_date.
+    // Save a full walk on 11910200 with confirmed recordedDate & uploadedDate.
     const saved = await saveWalk(
       s,
       {
         url: 'https://es.wikiloc.com/rutas-senderismo/colecta-venecia-misahualli-120902281',
         name: 'Colecta venecia misahualli',
         date: '2022-12-08',
+        recordedDate: '2022-12-08',
         recorded: 'diciembre 2022',
         uploadedDate: '2022-12-09',
         place: 'Misahuallí, Napo',
@@ -277,6 +286,7 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
         url: 'https://es.wikiloc.com/rutas-senderismo/t2-8-9-2025-220000002',
         name: 'T2 8/9/2025',
         date: '2025-08-09',
+        recordedDate: '2025-08-09',
         recorded: 'agosto 2025',
         author: '13756119',
         track: [],
@@ -284,6 +294,22 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       },
       editor,
     );
+
+    // Unsaved listing trail whose title is later edited on Wikiloc updates its title-derived date (Fable R2 F2).
+    upsertTrailIndex(
+      s,
+      [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-3-mayo-2025-230000001', title: 'Monitoreo 3 mayo 2025' }],
+      { profileId: '13756119' },
+    );
+    upsertTrailIndex(
+      s,
+      [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-13-mayo-2025-230000001', title: 'Monitoreo 13 mayo 2025' }],
+      { profileId: '13756119' },
+    );
+    const editedListing = queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-05-13', dateTo: '2025-05-13' });
+    assert.equal(editedListing.total, 1);
+    assert.equal(editedListing.walks[0].wikiloc_id, '230000001');
+    assert.equal(queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-05-03', dateTo: '2025-05-03' }).total, 0);
 
     // Profile sync reports list-page trails (must NEVER overwrite saved walk date/month/place/distance!).
     queueSync(s, editor);
