@@ -61,6 +61,7 @@ async function run(job) {
     }
     return {
       profileName: name,
+      trails,
       message: via(
         fresh.length ? `${fresh.length} rutas nuevas de ${trails.length}: ${done.join('; ')}` : `Sin rutas nuevas (${trails.length} rutas revisadas)`,
       ),
@@ -87,7 +88,12 @@ for (;;) {
     const message = typeof result === 'string' ? result : result.message;
     await client.request(`monitoring/wikiloc/jobs/${job.id}`, {
       method: 'POST',
-      body: { status: 'done', message, profileName: result.profileName },
+      body: {
+        status: 'done',
+        message,
+        profileName: result.profileName,
+        ...(Array.isArray(result.trails) ? { trails: result.trails } : {}),
+      },
     });
     log(`done: ${message}`);
   } catch (e) {

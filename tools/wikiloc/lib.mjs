@@ -28,10 +28,196 @@ const monthOf = word => {
   return MONTHS.indexOf(abbr) + 1 || EN.indexOf(abbr) + 1 || 0;
 };
 const iso = (y, m, d) => {
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d) || y < 1990 || y > 2100) return null;
   const t = new Date(Date.UTC(y, m - 1, d));
   return t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? t.toISOString().slice(0, 10) : null;
 };
 const fullYear = y => (y < 100 ? 2000 + y : y);
+
+/**
+ * Normalizes an ISO date/timestamp ("2022-12-08", "2022-12-09T14:22:10+0100")
+ * or a standalone Spanish/English full date ("8 de diciembre de 2022", "08/12/2022")
+ * to YYYY-MM-DD, validating the calendar date. Returns null if invalid.
+ */
+export function parseIsoDate(value) {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/.exec(s);
+  if (isoMatch) return iso(+isoMatch[1], +isoMatch[2], +isoMatch[3]);
+  const wordMatch = /^(\d{1,2})\s*(?:de\s*|[/.-])?\s*([a-záé]{3,})\.?\s*(?:de\s*|del\s*|[/.-])?\s*(\d{4}|\d{2})$/i.exec(s);
+  if (wordMatch) {
+    const m = monthOf(wordMatch[2]);
+    return m ? iso(fullYear(+wordMatch[3]), m, +wordMatch[1]) : null;
+  }
+  const numMatch = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})$/.exec(s);
+  if (numMatch) return iso(fullYear(+numMatch[3]), +numMatch[2], +numMatch[1]);
+  return null;
+}
+
+/**
+ * Extracts a normalized YYYY-MM recorded month from Wikiloc's "Fecha de realización"
+ * ("abril 2025", "diciembre de 2022", "Dec 2022"), ISO date/month ("2022-12", "2022-12-08"),
+ * or a title containing a full date. Returns null when unparseable.
+ */
+export function parseRecordedMonth(value) {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const ym = /^(\d{4})-(\d{2})(?:$|-\d{2}(?:$|[T\s]))/.exec(s);
+  if (ym) {
+    if (s.length >= 10 && s[7] === '-') {
+      const full = parseIsoDate(s);
+      return full ? full.slice(0, 7) : null;
+    }
+    const y = +ym[1];
+    const m = +ym[2];
+    return y >= 1990 && y <= 2100 && m >= 1 && m <= 12 ? `${ym[1]}-${ym[2]}` : null;
+  }
+  const word = /\b([a-záé]{3,})\.?\s+(?:de\s+|del\s+)?(\d{4})\b/i.exec(s);
+  if (word) {
+    const m = monthOf(word[1]);
+    const y = +word[2];
+    if (m && y >= 1990 && y <= 2100) return `${y}-${String(m).padStart(2, '0')}`;
+  }
+  const full = parseIsoDate(s) || dateFromName(s);
+  return full ? full.slice(0, 7) : null;
+}
+
+/**
+ * Parses a distance in km from a number or Wikiloc text ("1,11 km", "5.42 km", "850 m").
+ * Returns null for invalid, negative or out-of-range values.
+ */
+export function parseDistanceKm(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 && value <= 10000 ? Math.round(value * 100) / 100 : null;
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  const withUnit = /(\d+(?:[.,]\d+)?)\s*(km|kil[oó]metros?|kilometers?|m|metros?|meters?)\b/i.exec(s);
+  if (withUnit) {
+    const raw = Number(withUnit[1].replace(',', '.'));
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    const km = /^k/i.test(withUnit[2]) ? raw : raw / 1000;
+    return km <= 10000 ? Math.round(km * 100) / 100 : null;
+  }
+  if (/^\d+(?:[.,]\d+)?$/.test(s)) {
+    const km = Number(s.replace(',', '.'));
+    return Number.isFinite(km) && km >= 0 && km <= 10000 ? Math.round(km * 100) / 100 : null;
+  }
+  return null;
+}
+
+/** Total Haversine distance in km of a track [[lat, lon, ...], ...], or null when fewer than 2 points. */
+export function trackDistanceKm(track) {
+  if (!Array.isArray(track) || track.length < 2) return null;
+  const R = 6371;
+  const rad = d => (d * Math.PI) / 180;
+  let total = 0;
+  let prev = null;
+  for (const p of track) {
+    if (!Array.isArray(p)) continue;
+    const lat = Number(p[0]);
+    const lon = Number(p[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
+    if (prev) {
+      const dLat = rad(lat - prev[0]);
+      const dLon = rad(lon - prev[1]);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(prev[0])) * Math.cos(rad(lat)) * Math.sin(dLon / 2) ** 2;
+      total += 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    prev = [lat, lon];
+  }
+  return prev && total <= 10000 ? Math.round(total * 100) / 100 : null;
+}
+
+/**
+ * Normalizes a Wikiloc trail metadata record (from readProfile, readTrail or saveWalk)
+ * for multi-profile SQLite indexing. Returns null if no valid Wikiloc trail ID/URL exists.
+ */
+export function normalizeTrailMeta(raw, fallbackProfileId = null) {
+  if (!raw || typeof raw !== 'object') return null;
+  const rawUrl = String(raw.trailUrl ?? raw.trail_url ?? raw.url ?? '').trim().slice(0, 500);
+  const idFromUrl =
+    /^https:\/\/(?:[a-z]{2,3}\.|www\.)?wikiloc\.com\/[^\s?#]*?-(\d{6,12})\/?(?:[?#].*)?$/i.exec(rawUrl)?.[1] ??
+    /^https:\/\/(?:[a-z]{2,3}\.|www\.)?wikiloc\.com\/wikiloc\/(?:view|open-trail-link)\.do\?(?:[^\s#]*&)?id=(\d{6,12})(?:[&#].*)?$/i.exec(rawUrl)?.[1] ??
+    null;
+  const rawId = raw.wikilocId ?? raw.wikiloc_id;
+  const wikilocId = /^\d{6,12}$/.test(String(rawId ?? '')) ? String(rawId) : idFromUrl;
+  if (!wikilocId) return null;
+  const trailUrl =
+    /^https:\/\/(?:[a-z]{2,3}\.|www\.)?wikiloc\.com\//i.test(rawUrl)
+      ? rawUrl
+      : `https://www.wikiloc.com/wikiloc/open-trail-link.do?id=${wikilocId}`;
+  const rawProfile = String(raw.profileId ?? raw.profile_id ?? raw.author ?? fallbackProfileId ?? '').trim();
+  const profileId = /^\d{3,12}$/.test(rawProfile) ? rawProfile : /user\.do\?id=(\d{3,12})/.exec(rawProfile)?.[1] ?? null;
+  const title = String(raw.title ?? raw.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || `Wikiloc ${wikilocId}`;
+  const placeText = String(raw.place ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const place = placeText || null;
+  const uploadedDate = parseIsoDate(raw.uploadedDate ?? raw.uploaded_date ?? raw.created);
+  const doneText = raw.recorded ?? raw.done ?? null;
+  const explicitDate = parseIsoDate(raw.recordedDate ?? raw.recorded_date ?? raw.date);
+  const recordedDate = explicitDate ?? walkDate(title, doneText, uploadedDate ?? raw.created);
+  const recordedMonth =
+    (recordedDate ? recordedDate.slice(0, 7) : null) ??
+    parseRecordedMonth(raw.recordedMonth ?? raw.recorded_month) ??
+    parseRecordedMonth(doneText) ??
+    parseRecordedMonth(title);
+  const distanceKm = parseDistanceKm(raw.distanceKm ?? raw.distance_km ?? raw.distance);
+  return {
+    wikilocId,
+    profileId,
+    trailUrl,
+    title,
+    place,
+    recordedDate,
+    recordedMonth,
+    uploadedDate,
+    distanceKm,
+  };
+}
+
+/** Fast numeric ID-range and optional YYYY-MM month filter over a list of trail entries. */
+export function filterTrailsByIdRange(trails, { minId = null, maxId = null, month = null } = {}) {
+  const min = minId === null || minId === undefined ? null : Number(minId);
+  const max = maxId === null || maxId === undefined ? null : Number(maxId);
+  const targetMonth = month ? parseRecordedMonth(month) : null;
+  return (Array.isArray(trails) ? trails : []).filter(t => {
+    const id = Number(t?.wikilocId ?? t?.wikiloc_id);
+    if (!Number.isFinite(id)) return false;
+    if (min !== null && Number.isFinite(min) && id < min) return false;
+    if (max !== null && Number.isFinite(max) && id > max) return false;
+    if (targetMonth) {
+      const m = t.recordedMonth ?? t.recorded_month ?? parseRecordedMonth(t.recordedDate ?? t.recorded_date ?? t.title);
+      if (m !== targetMonth) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Computes the tightest numeric Wikiloc ID bracket { minId, maxId } for a target date range
+ * from already-indexed trails (Wikiloc trail IDs grow monotonically with upload time).
+ */
+export function bracketIdRange(indexedTrails, { dateFrom = null, dateTo = null } = {}) {
+  const from = dateFrom ? parseIsoDate(dateFrom) : null;
+  const to = dateTo ? parseIsoDate(dateTo) : null;
+  const anchors = [];
+  for (const t of Array.isArray(indexedTrails) ? indexedTrails : []) {
+    const id = Number(t?.wikilocId ?? t?.wikiloc_id);
+    const day =
+      parseIsoDate(t?.uploadedDate ?? t?.uploaded_date) ??
+      parseIsoDate(t?.recordedDate ?? t?.recorded_date);
+    if (Number.isFinite(id) && day) anchors.push({ id, day });
+  }
+  anchors.sort((a, b) => a.id - b.id);
+  let minId = null;
+  let maxId = null;
+  for (const a of anchors) {
+    if (from && a.day < from) minId = a.id;
+    if (to && a.day > to && maxId === null) maxId = a.id;
+  }
+  return { minId, maxId };
+}
 
 /**
  * Candidate dates written in a trail title, as typed in the field:
@@ -115,6 +301,10 @@ export async function readTrail(page, url) {
     // When the recording started, and how long it lasted ("Tiempo\nuna hora 51 minutos"): the walk's start and end.
     const start = Number(md.mapData?.[0]?.trackStartTimestamp);
     const took = /\nTiempo\s*\n\s*([^\n]+)/.exec(page)?.[1] || '';
+    const distance = /\n(?:Distancia|Distance)\s*\n\s*([^\n]+)/i.exec(page)?.[1] || '';
+    const place =
+      document.querySelector('.trail-location, .view__location, .trail-header__location, [itemprop="contentLocation"]')?.innerText?.replace(/\s+/g, ' ').trim() ||
+      '';
     // The trail's own description (the page repeats the title there when it has none).
     const said = document.querySelector('.view__description .description')?.innerText?.trim() || '';
     const description = said && said !== (md.mapData?.[0]?.nom || '').trim() ? said : '';
@@ -130,6 +320,8 @@ export async function readTrail(page, url) {
       done,
       author,
       created,
+      distance,
+      place: place.slice(0, 200),
       href: location.href,
       started: Number.isFinite(start) && start > 0 ? new Date(start).toISOString() : null,
       took,
@@ -140,12 +332,22 @@ export async function readTrail(page, url) {
   const trailPage = /^https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/[^?#]*-(\d{6,12})(?=[/?#]|$)/;
   const landed = trailPage.exec(trail.href || '');
   const id = /(\d{6,12})(?:[/?#&].*)?$/.exec(url)?.[1];
+  const date = walkDate(trail.name, trail.done, trail.created);
+  const uploadedDate = parseIsoDate(trail.created);
+  const recordedMonth = (date ? date.slice(0, 7) : null) ?? parseRecordedMonth(trail.done) ?? parseRecordedMonth(trail.name);
+  const distanceKm = parseDistanceKm(trail.distance) ?? trackDistanceKm(trail.track);
   return {
     url: !trailPage.test(url) && landed && (!id || landed[1] === id) ? landed[0] : url,
     name: trail.name,
-    date: walkDate(trail.name, trail.done, trail.created),
+    date,
+    recordedDate: date,
+    recordedMonth,
+    uploadedDate,
     recorded: trail.done || null,
+    place: trail.place || null,
+    distanceKm,
     author: trail.author,
+    profileId: trail.author,
     started: trail.started,
     minutes: durationMinutes(trail.took),
     description: trail.description || null,
@@ -166,29 +368,73 @@ export function durationMinutes(text) {
   return Number.isFinite(total) ? total : null;
 }
 
-/** All public trails of a profile (newest first): links, titles and trail numbers. */
-export async function readProfile(page, userId) {
+/**
+ * Public trails of a user-configured profile (newest first): links, titles, trail numbers
+ * and any card-level place, distance and date metadata shown on the list pages.
+ * Optional `minId` / `maxId` and `stopWhenKnown` stop pagination early once older trails are reached.
+ */
+export async function readProfile(page, userId, { minId = null, maxId = null, knownIds = null, stopWhenKnown = false, maxPages = 200 } = {}) {
   const trails = [];
+  const seen = new Set();
+  const known = knownIds ? new Set(knownIds) : null;
+  const min = minId === null || minId === undefined ? null : Number(minId);
+  const max = maxId === null || maxId === undefined ? null : Number(maxId);
+  const profileId = /^\d{3,12}$/.test(String(userId ?? '')) ? String(userId) : null;
   let name = null;
-  for (let from = 0; from < 2000; from += 10) {
+  const limit = Math.max(1, Math.min(Number(maxPages) || 200, 200)) * 10;
+  for (let from = 0; from < limit; from += 10) {
     await open(page, `https://es.wikiloc.com/wikiloc/user.do?id=${userId}&from=${from}&to=${from + 10}`);
     await page.waitForTimeout(2000);
     const found = await page.evaluate(() => ({
       name: /de (.+?) \| Wikiloc/.exec(document.title)?.[1] || null,
       links: [...document.querySelectorAll('a')]
         .filter(a => /-\d{6,12}$/.test(a.href) && a.innerText.trim())
-        .map(a => ({ url: a.href, title: a.innerText.trim().split('\n')[0] })),
+        .map(a => {
+          const card = a.closest('li, article, .trail-card, .trail__item, .row') || a.parentElement;
+          const cardText = card?.innerText || '';
+          const timeEl = card?.querySelector('time');
+          const placeEl = card?.querySelector('.trail-location, .location, [itemprop="contentLocation"]');
+          const distMatch = /\b(\d+(?:[.,]\d+)?\s*(?:km|m))\b/i.exec(cardText);
+          return {
+            url: a.href,
+            title: a.innerText.trim().split('\n')[0],
+            place: placeEl?.innerText?.replace(/\s+/g, ' ').trim() || null,
+            distance: distMatch?.[1] || null,
+            dateText: timeEl?.getAttribute('datetime') || timeEl?.innerText?.trim() || null,
+          };
+        }),
     }));
     name ||= found.name;
     // Each trail is linked more than once on the page (title, photo); keep one per trail number.
     let fresh = 0;
+    let pageAllBelowMin = found.links.length > 0 && min !== null && Number.isFinite(min);
+    let pageAllKnown = found.links.length > 0 && stopWhenKnown && !!known;
     for (const l of found.links) {
-      const wikilocId = /-(\d{6,12})$/.exec(l.url)[1];
-      if (trails.some(t => t.wikilocId === wikilocId)) continue;
-      trails.push({ ...l, wikilocId });
+      const wikilocId = /-(\d{6,12})$/.exec(l.url)?.[1];
+      if (!wikilocId || seen.has(wikilocId)) continue;
+      seen.add(wikilocId);
+      const idNum = Number(wikilocId);
+      if (min !== null && Number.isFinite(min) && idNum >= min) pageAllBelowMin = false;
+      if (known && !known.has(wikilocId)) pageAllKnown = false;
       fresh++;
+      if (min !== null && Number.isFinite(min) && idNum < min) continue;
+      if (max !== null && Number.isFinite(max) && idNum > max) continue;
+      const cardIsoDate = parseIsoDate(l.dateText);
+      const meta = normalizeTrailMeta(
+        {
+          url: l.url,
+          wikilocId,
+          title: l.title,
+          place: l.place,
+          distance: l.distance,
+          recorded: cardIsoDate ? null : l.dateText,
+          uploadedDate: cardIsoDate,
+        },
+        profileId,
+      );
+      if (meta) trails.push({ url: meta.trailUrl, title: meta.title, wikilocId: meta.wikilocId, ...meta });
     }
-    if (!fresh) break;
+    if (!fresh || pageAllBelowMin || pageAllKnown) break;
     await page.waitForTimeout(2000);
   }
   return { name, trails };

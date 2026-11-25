@@ -1,6 +1,6 @@
 ---
 name: monitoring
-description: Butterfly monitoring on the Ikiam transects T1–T4: a Wikiloc walk turned into Collection_data rows (queue_walk, get_walk), a monitoring capture recorded by hand, field marks (M/A/B series) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use it when the person sends a Wikiloc link, asks about a walk, a mark or a recapture, whether a species should be preserved or marked, or how monitoring data are recorded.
+description: Butterfly monitoring on Ikiam transects T1–T4: Wikiloc walks (find_walk, queue_walk, get_walk) turned into Collection_data rows, hand-recorded captures, field marks (M/A/B) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use when the person sends a Wikiloc link, looks up a past walk by date/place, asks about a mark or recapture, preserved vs marked, or monitoring rules.
 ---
 
 # Monitoring (Ikiam transects)
@@ -13,6 +13,10 @@ always from 9:00 to 11:00. Según la base al 01/11/2026 (SamplingDay_data): one
 round every month since 02/2023, 4 days (5 in 05/2026 and 10/2026), usually
 every other day, starting anywhere from the 3rd to the 22nd. There is no fixed
 window in the month.
+
+## Finding a past walk
+
+Use `find_walk({ date_from, date_to, month, place, profile_id, limit })` to search indexed Wikiloc walks across all configured profiles (for example Franz's `13756119` «Franz Chandi 1» and `11910200` «Franz Chandi») directly in SQLite — read-only and instant, without browsing. If a date range matches a walk whose title had no day, `month_candidates` lists month-only trails in that month. Only pass a returned `trail_url` to `queue_walk` → `get_walk` when full waypoints or photos are needed.
 
 ## A Wikiloc walk
 

@@ -4,6 +4,13 @@ import { sexOpen } from './sex-skip.mjs';
 import { unreliableFor } from './sex-check.mjs';
 // The pairing of walk points with sheet rows is shared with the browser (Node strips the types).
 import * as lib from '../frontend/src/lib/monitoring.ts';
+import {
+  normalizeTrailMeta,
+  parseDistanceKm,
+  parseIsoDate,
+  parseRecordedMonth,
+  trackDistanceKm,
+} from '../tools/wikiloc/lib.mjs';
 
 /**
  * GPS tracks and capture points of the Ikiam monitoring walks (Wikiloc GPX
@@ -35,10 +42,147 @@ export function initMonitoring(db) {
   if (!walkColumns.includes('proposal_id')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_id TEXT');
   // The proposal's revision as the app last saved it: a later one is someone's work (the person's, the chat's).
   if (!walkColumns.includes('proposal_revision')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_revision INTEGER');
+  // Added later: multi-profile date/month/place/distance metadata on wikiloc_walks for fast indexed lookups.
+  if (!walkColumns.includes('profile_id')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN profile_id TEXT');
+  if (!walkColumns.includes('recorded_date')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN recorded_date TEXT');
+  if (!walkColumns.includes('recorded_month')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN recorded_month TEXT');
+  if (!walkColumns.includes('uploaded_date')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN uploaded_date TEXT');
+  if (!walkColumns.includes('place')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN place TEXT');
+  if (!walkColumns.includes('distance_km')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN distance_km REAL');
+  db.exec(`CREATE INDEX IF NOT EXISTS wikiloc_walks_profile_date ON wikiloc_walks(profile_id, recorded_date);
+    CREATE INDEX IF NOT EXISTS wikiloc_walks_recorded_month ON wikiloc_walks(recorded_month);`);
+  // Lightweight multi-profile trail index (all trails seen across user-configured profiles + saved walks).
+  db.exec(`CREATE TABLE IF NOT EXISTS wikiloc_trail_index(
+      wikiloc_id TEXT PRIMARY KEY,
+      wikiloc_id_num INTEGER,
+      profile_id TEXT,
+      trail_url TEXT NOT NULL,
+      title TEXT NOT NULL,
+      place TEXT,
+      recorded_date TEXT,
+      recorded_month TEXT,
+      uploaded_date TEXT,
+      distance_km REAL,
+      search_text TEXT NOT NULL,
+      walk_id TEXT,
+      indexed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS wikiloc_trail_index_profile_date ON wikiloc_trail_index(profile_id, recorded_date);
+    CREATE INDEX IF NOT EXISTS wikiloc_trail_index_recorded_month ON wikiloc_trail_index(recorded_month);
+    CREATE INDEX IF NOT EXISTS wikiloc_trail_index_date ON wikiloc_trail_index(recorded_date);
+    CREATE INDEX IF NOT EXISTS wikiloc_trail_index_profile_id_num ON wikiloc_trail_index(profile_id, wikiloc_id_num);`);
   // Added later: a job Cloudflare stopped is tried again later (attempts, not before).
   const jobColumns = db.prepare('PRAGMA table_info(wikiloc_jobs)').all().map(c => c.name);
   if (!jobColumns.includes('attempts')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
   if (!jobColumns.includes('not_before')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN not_before TEXT');
+  backfillWikilocIndex(db);
+}
+
+/** Accent- and case-folded text for fast LIKE searches across trail titles and places. */
+function foldSearchText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const escapeLike = value => String(value).replace(/[\\%_]/g, '\\$&');
+
+/**
+ * Idempotent migration backfill: populates the new metadata columns on existing wikiloc_walks rows
+ * and mirrors them into wikiloc_trail_index so historical walks are immediately searchable.
+ */
+function backfillWikilocIndex(db) {
+  if (!db.prepare('SELECT 1 FROM wikiloc_walks LIMIT 1').get()) return;
+  const rows = db
+    .prepare(
+      `SELECT w.id, w.wikiloc_id, w.url, w.name, w.date, w.data_json, w.profile_id, w.recorded_date,
+              w.recorded_month, w.uploaded_date, w.place, w.distance_km, w.created_at, i.wikiloc_id AS indexed_id
+       FROM wikiloc_walks w
+       LEFT JOIN wikiloc_trail_index i ON i.wikiloc_id = w.wikiloc_id
+       WHERE i.wikiloc_id IS NULL
+          OR (w.date IS NOT NULL AND (w.recorded_date IS NULL OR w.recorded_month IS NULL))
+          OR (w.profile_id IS NULL AND json_extract(w.data_json, '$.author') IS NOT NULL)
+          OR (w.recorded_month IS NULL AND json_extract(w.data_json, '$.recorded') IS NOT NULL)`,
+    )
+    .all();
+  if (!rows.length) return;
+  const updateWalk = db.prepare(
+    `UPDATE wikiloc_walks
+     SET profile_id = COALESCE(?, profile_id),
+         recorded_date = COALESCE(?, recorded_date),
+         recorded_month = COALESCE(?, recorded_month),
+         uploaded_date = COALESCE(?, uploaded_date),
+         place = COALESCE(?, place),
+         distance_km = COALESCE(?, distance_km)
+     WHERE id = ?`,
+  );
+  const upsertIndex = db.prepare(
+    `INSERT INTO wikiloc_trail_index(
+       wikiloc_id, wikiloc_id_num, profile_id, trail_url, title, place,
+       recorded_date, recorded_month, uploaded_date, distance_km, search_text, walk_id, indexed_at
+     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(wikiloc_id) DO UPDATE SET
+       profile_id = COALESCE(excluded.profile_id, wikiloc_trail_index.profile_id),
+       trail_url = excluded.trail_url,
+       title = excluded.title,
+       place = COALESCE(excluded.place, wikiloc_trail_index.place),
+       recorded_date = COALESCE(excluded.recorded_date, wikiloc_trail_index.recorded_date),
+       recorded_month = COALESCE(excluded.recorded_month, wikiloc_trail_index.recorded_month),
+       uploaded_date = COALESCE(excluded.uploaded_date, wikiloc_trail_index.uploaded_date),
+       distance_km = COALESCE(excluded.distance_km, wikiloc_trail_index.distance_km),
+       search_text = excluded.search_text,
+       walk_id = COALESCE(excluded.walk_id, wikiloc_trail_index.walk_id),
+       indexed_at = excluded.indexed_at`,
+  );
+  const ownTx = !db.isTransaction;
+  if (ownTx) db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const r of rows) {
+      let data = {};
+      try {
+        data = JSON.parse(r.data_json || '{}');
+      } catch {
+        data = {};
+      }
+      const meta = normalizeTrailMeta({
+        wikilocId: r.wikiloc_id,
+        url: r.url,
+        title: r.name,
+        profileId: r.profile_id ?? data.author ?? null,
+        date: r.recorded_date ?? r.date ?? null,
+        recordedMonth: r.recorded_month ?? null,
+        recorded: data.recorded ?? null,
+        uploadedDate: r.uploaded_date ?? data.uploadedDate ?? null,
+        place: r.place ?? data.place ?? null,
+        distanceKm: r.distance_km ?? data.distanceKm ?? trackDistanceKm(data.track),
+      });
+      if (!meta) continue;
+      updateWalk.run(meta.profileId, meta.recordedDate, meta.recordedMonth, meta.uploadedDate, meta.place, meta.distanceKm, r.id);
+      const searchText = foldSearchText([meta.title, meta.place].filter(Boolean).join(' '));
+      upsertIndex.run(
+        meta.wikilocId,
+        Number(meta.wikilocId),
+        meta.profileId,
+        meta.trailUrl,
+        meta.title,
+        meta.place,
+        meta.recordedDate,
+        meta.recordedMonth,
+        meta.uploadedDate,
+        meta.distanceKm,
+        searchText,
+        r.id,
+        r.created_at || new Date().toISOString(),
+      );
+    }
+    if (ownTx) db.exec('COMMIT');
+  } catch (e) {
+    if (ownTx) db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 const text = (value, max = 300) => {
@@ -822,6 +966,12 @@ const walkRow = row => {
     url: row.url,
     name: row.name,
     date: row.date,
+    profileId: row.profile_id ?? data.author ?? null,
+    recordedDate: row.recorded_date ?? row.date ?? null,
+    recordedMonth: row.recorded_month ?? null,
+    uploadedDate: row.uploaded_date ?? data.uploadedDate ?? null,
+    place: row.place ?? data.place ?? null,
+    distanceKm: row.distance_km ?? data.distanceKm ?? null,
     status: row.status,
     trackId: row.track_id,
     proposalId: row.proposal_id ?? null,
@@ -902,7 +1052,8 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   }
   const name = text(body.name, 200) || `Wikiloc ${wikilocId}`;
   // The collector: given by the profile being checked, or known from the trail's author.
-  const author = /^\d{3,12}$/.test(String(body.author || '')) ? String(body.author) : null;
+  const rawAuthor = body.author ?? body.profileId ?? body.profile_id ?? '';
+  const author = /^\d{3,12}$/.test(String(rawAuthor)) ? String(rawAuthor) : null;
   const collector =
     text(body.collector, 120) ||
     (author && store.db.prepare('SELECT collector FROM wikiloc_profiles WHERE wikiloc_user=?').get(author)?.collector) ||
@@ -911,19 +1062,49 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   // the SamplingDay_data row (start, end, notes) of a walk read from its public page.
   const started = typeof body.started === 'string' && Number.isFinite(Date.parse(body.started)) ? new Date(body.started).toISOString() : null;
   const minutes = number(body.minutes, 0, 24 * 60);
+  const recordedText = text(body.recorded, 60);
+  const recordedDate = date || null;
+  const recordedMonth =
+    (recordedDate ? recordedDate.slice(0, 7) : null) ??
+    parseRecordedMonth(body.recordedMonth ?? body.recorded_month) ??
+    parseRecordedMonth(recordedText) ??
+    parseRecordedMonth(name);
+  const uploadedDate = parseIsoDate(body.uploadedDate ?? body.uploaded_date ?? body.created);
+  const place = text(body.place, 200);
+  const distanceKm = parseDistanceKm(body.distanceKm ?? body.distance_km ?? body.distance) ?? trackDistanceKm(track);
   const data = JSON.stringify({
     track,
     waypoints,
     collector,
-    recorded: text(body.recorded, 60),
+    recorded: recordedText,
     author,
     ...(started ? { started } : {}),
     ...(minutes !== null ? { minutes } : {}),
+    ...(uploadedDate ? { uploadedDate } : {}),
+    ...(place ? { place } : {}),
+    ...(distanceKm !== null ? { distanceKm } : {}),
     ...(text(body.description, 2000) ? { description: text(body.description, 2000) } : {}),
   });
   const existing = store.db.prepare('SELECT * FROM wikiloc_walks WHERE wikiloc_id=?').get(wikilocId);
   if (existing) {
-    store.db.prepare('UPDATE wikiloc_walks SET url=?, name=?, date=?, data_json=? WHERE id=?').run(url, name, date, data, existing.id);
+    store.db
+      .prepare(
+        `UPDATE wikiloc_walks
+         SET url=?, name=?, date=?, data_json=?,
+             profile_id=COALESCE(?, profile_id),
+             recorded_date=COALESCE(?, recorded_date),
+             recorded_month=COALESCE(?, recorded_month),
+             uploaded_date=COALESCE(?, uploaded_date),
+             place=COALESCE(?, place),
+             distance_km=COALESCE(?, distance_km)
+         WHERE id=?`,
+      )
+      .run(url, name, date, data, author, recordedDate, recordedMonth, uploadedDate, place, distanceKm, existing.id);
+    upsertTrailIndex(
+      store,
+      [{ wikilocId, profileId: author, trailUrl: url, title: name, place, recordedDate, recordedMonth, uploadedDate, distanceKm }],
+      { profileId: author, walkId: existing.id },
+    );
     return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(existing.id)), failed, updated: true };
   }
   const id = randomUUID();
@@ -931,9 +1112,32 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   store.db.prepare('DELETE FROM wikiloc_removed WHERE wikiloc_id=?').run(wikilocId);
   store.db
     .prepare(
-      "INSERT INTO wikiloc_walks(id,wikiloc_id,url,name,date,data_json,status,track_id,created_by,created_at) VALUES(?,?,?,?,?,?,'waiting',NULL,?,?)",
+      `INSERT INTO wikiloc_walks(
+         id, wikiloc_id, url, name, date, data_json, status, track_id, created_by, created_at,
+         profile_id, recorded_date, recorded_month, uploaded_date, place, distance_km
+       ) VALUES(?,?,?,?,?,?,'waiting',NULL,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, wikilocId, url, name, date, data, jobRequester(store, body.jobId) || user.username, new Date().toISOString());
+    .run(
+      id,
+      wikilocId,
+      url,
+      name,
+      date,
+      data,
+      jobRequester(store, body.jobId) || user.username,
+      new Date().toISOString(),
+      author,
+      recordedDate,
+      recordedMonth,
+      uploadedDate,
+      place,
+      distanceKm,
+    );
+  upsertTrailIndex(
+    store,
+    [{ wikilocId, profileId: author, trailUrl: url, title: name, place, recordedDate, recordedMonth, uploadedDate, distanceKm }],
+    { profileId: author, walkId: id },
+  );
   return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)), failed, updated: false };
 }
 
@@ -956,6 +1160,7 @@ export function deleteWalk(store, id, user) {
   if (row.created_by !== user.username && !dailyFound && !['reviewer', 'admin'].includes(user.role))
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this walk', 403);
   store.db.prepare('DELETE FROM wikiloc_walks WHERE id=?').run(id);
+  store.db.prepare('UPDATE wikiloc_trail_index SET walk_id=NULL WHERE walk_id=?').run(id);
   // Profile checks (daily and «Buscar nuevos») leave it out from now on; its pasted link brings it back (saveWalk).
   store.db
     .prepare('INSERT INTO wikiloc_removed(wikiloc_id,removed_by,removed_at) VALUES(?,?,?) ON CONFLICT(wikiloc_id) DO UPDATE SET removed_by=excluded.removed_by, removed_at=excluded.removed_at')
@@ -1193,8 +1398,10 @@ export function finishJob(store, id, body) {
   // In the app's log (journalctl --user -u ithomiini) as well as on Importar; /health's `wikiloc` and the nightly flag it.
   if (status === 'failed')
     console.error(`Wikiloc import failed: ${job.kind} job ${id} (try ${(job.attempts ?? 0) + 1}): ${text(body.message, 300) || 'no message'}`);
-  if (job.kind === 'profile' && status === 'done')
+  if (job.kind === 'profile' && status === 'done') {
     store.db.prepare('UPDATE wikiloc_profiles SET last_checked=?, name=COALESCE(?, name) WHERE wikiloc_user=?').run(now(), text(body.profileName, 120), job.target);
+    if (Array.isArray(body.trails) && body.trails.length) upsertTrailIndex(store, body.trails.slice(0, 5000), { profileId: job.target });
+  }
   return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };
 }
 
@@ -1272,8 +1479,8 @@ export function addProfile(store, body, user) {
   const existing = store.db.prepare('SELECT * FROM wikiloc_profiles WHERE wikiloc_user=?').get(id);
   if (existing) {
     store.db
-      .prepare('UPDATE wikiloc_profiles SET pattern=?, collector=COALESCE(?, collector) WHERE id=?')
-      .run(text(body.pattern, 100) || existing.pattern, collector, existing.id);
+      .prepare('UPDATE wikiloc_profiles SET pattern=?, collector=COALESCE(?, collector), name=COALESCE(?, name) WHERE id=?')
+      .run(text(body.pattern, 100) || existing.pattern, collector, text(body.name, 120), existing.id);
     return { profile: profileRow(store.db.prepare('SELECT * FROM wikiloc_profiles WHERE id=?').get(existing.id)) };
   }
   const row = {
@@ -1295,4 +1502,262 @@ export function addProfile(store, body, user) {
 export function removeProfile(store, id) {
   if (!store.db.prepare('DELETE FROM wikiloc_profiles WHERE id=?').run(id).changes) throw fail('PROFILE_NOT_FOUND', 'Profile not found', 404);
   return { ok: true };
+}
+
+// ------------------------------------------------ multi-profile trail index & read-only lookup
+
+const DEFAULT_FIND_LIMIT = 20;
+const MAX_FIND_LIMIT = 100;
+
+/**
+ * Upserts normalized trail metadata entries into `wikiloc_trail_index` (from profile syncs or saveWalk).
+ * Preserves richer non-null fields (such as an exact recorded_date or linked walk_id) on conflict.
+ */
+export function upsertTrailIndex(store, trails, { profileId = null, walkId = null } = {}) {
+  const list = Array.isArray(trails) ? trails : [];
+  if (!list.length) return { indexed: 0, skipped: 0 };
+  const db = store.db;
+  const existingStmt = db.prepare('SELECT title, place FROM wikiloc_trail_index WHERE wikiloc_id = ?');
+  const upsertStmt = db.prepare(
+    `INSERT INTO wikiloc_trail_index(
+       wikiloc_id, wikiloc_id_num, profile_id, trail_url, title, place,
+       recorded_date, recorded_month, uploaded_date, distance_km, search_text, walk_id, indexed_at
+     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(wikiloc_id) DO UPDATE SET
+       wikiloc_id_num = excluded.wikiloc_id_num,
+       profile_id = COALESCE(excluded.profile_id, wikiloc_trail_index.profile_id),
+       trail_url = excluded.trail_url,
+       title = excluded.title,
+       place = COALESCE(excluded.place, wikiloc_trail_index.place),
+       recorded_date = COALESCE(excluded.recorded_date, wikiloc_trail_index.recorded_date),
+       recorded_month = COALESCE(excluded.recorded_month, wikiloc_trail_index.recorded_month),
+       uploaded_date = COALESCE(excluded.uploaded_date, wikiloc_trail_index.uploaded_date),
+       distance_km = COALESCE(excluded.distance_km, wikiloc_trail_index.distance_km),
+       search_text = excluded.search_text,
+       walk_id = COALESCE(excluded.walk_id, wikiloc_trail_index.walk_id),
+       indexed_at = excluded.indexed_at`,
+  );
+  const stamp = now();
+  let indexed = 0;
+  let skipped = 0;
+  const ownTx = !db.isTransaction;
+  if (ownTx) db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const raw of list) {
+      const meta = normalizeTrailMeta(raw, profileId);
+      if (!meta) {
+        skipped++;
+        continue;
+      }
+      const prev = existingStmt.get(meta.wikilocId);
+      const mergedTitle = meta.title || prev?.title || `Wikiloc ${meta.wikilocId}`;
+      const mergedPlace = meta.place ?? prev?.place ?? null;
+      const searchText = foldSearchText([mergedTitle, mergedPlace].filter(Boolean).join(' '));
+      upsertStmt.run(
+        meta.wikilocId,
+        Number(meta.wikilocId),
+        meta.profileId,
+        meta.trailUrl,
+        mergedTitle,
+        meta.place,
+        meta.recordedDate,
+        meta.recordedMonth,
+        meta.uploadedDate,
+        meta.distanceKm,
+        searchText,
+        walkId ?? (typeof raw.walkId === 'string' ? raw.walkId : null),
+        stamp,
+      );
+      indexed++;
+    }
+    if (ownTx) db.exec('COMMIT');
+  } catch (e) {
+    if (ownTx) db.exec('ROLLBACK');
+    throw e;
+  }
+  return { indexed, skipped };
+}
+
+const formatIndexedWalk = r => ({
+  wikiloc_id: r.wikiloc_id,
+  profile_id: r.profile_id ?? null,
+  profile_name: r.profile_name ?? null,
+  collector: r.collector ?? null,
+  title: r.title,
+  place: r.place ?? null,
+  recorded_date: r.recorded_date ?? null,
+  recorded_month: r.recorded_month ?? null,
+  uploaded_date: r.uploaded_date ?? null,
+  distance_km: r.distance_km ?? null,
+  trail_url: r.trail_url,
+  walk_id: r.walk_id ?? null,
+  walk_status: r.walk_status ?? null,
+});
+
+/**
+ * Strictly read-only indexed SQLite query over `wikiloc_trail_index` across all configured profiles.
+ * Parameterized SQL only; zero network calls, zero DB writes.
+ */
+export function queryTrailIndex(
+  store,
+  { dateFrom, dateTo, month, place, profileId, idMin, idMax, limit } = {},
+) {
+  let from = null;
+  if (dateFrom !== undefined && dateFrom !== null && String(dateFrom).trim() !== '') {
+    const raw = String(dateFrom).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || !parseIsoDate(raw))
+      return { error: 'date_from must be a valid YYYY-MM-DD date' };
+    from = raw;
+  }
+  let to = null;
+  if (dateTo !== undefined && dateTo !== null && String(dateTo).trim() !== '') {
+    const raw = String(dateTo).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || !parseIsoDate(raw))
+      return { error: 'date_to must be a valid YYYY-MM-DD date' };
+    to = raw;
+  }
+  if (from && to && from > to) return { error: 'date_from must be on or before date_to' };
+
+  let monthFilter = null;
+  if (month !== undefined && month !== null && String(month).trim() !== '') {
+    const raw = String(month).trim();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw) || !parseRecordedMonth(raw))
+      return { error: 'month must be YYYY-MM (e.g. 2022-12)' };
+    monthFilter = raw;
+  }
+
+  let profileFilter = null;
+  if (profileId !== undefined && profileId !== null && String(profileId).trim() !== '') {
+    const raw = String(profileId).trim();
+    const extracted = /user\.do\?id=(\d{3,12})/.exec(raw)?.[1] ?? (/^\d{3,12}$/.test(raw) ? raw : null);
+    if (!extracted) return { error: 'profile_id must be a numeric Wikiloc user ID (e.g. 11910200 or 13756119)' };
+    profileFilter = extracted;
+  }
+
+  let minNum = null;
+  if (idMin !== undefined && idMin !== null && String(idMin).trim() !== '') {
+    const n = Number(idMin);
+    if (!Number.isInteger(n) || n < 1) return { error: 'id_min must be a positive integer' };
+    minNum = n;
+  }
+  let maxNum = null;
+  if (idMax !== undefined && idMax !== null && String(idMax).trim() !== '') {
+    const n = Number(idMax);
+    if (!Number.isInteger(n) || n < 1) return { error: 'id_max must be a positive integer' };
+    maxNum = n;
+  }
+  if (minNum !== null && maxNum !== null && minNum > maxNum) return { error: 'id_min must be <= id_max' };
+
+  let cappedLimit = DEFAULT_FIND_LIMIT;
+  if (limit !== undefined && limit !== null && String(limit).trim() !== '') {
+    const n = Number(limit);
+    if (!Number.isInteger(n) || n < 1) return { error: 'limit must be an integer >= 1 (max 100)' };
+    cappedLimit = Math.min(n, MAX_FIND_LIMIT);
+  }
+
+  const placeTokens = [];
+  if (place !== undefined && place !== null && String(place).trim() !== '') {
+    const folded = foldSearchText(String(place).slice(0, 120));
+    if (folded) placeTokens.push(...folded.split(' ').filter(Boolean).slice(0, 8));
+  }
+
+  const baseClauses = [];
+  const baseParams = [];
+  if (profileFilter) {
+    baseClauses.push('t.profile_id = ?');
+    baseParams.push(profileFilter);
+  }
+  if (minNum !== null) {
+    baseClauses.push('t.wikiloc_id_num >= ?');
+    baseParams.push(minNum);
+  }
+  if (maxNum !== null) {
+    baseClauses.push('t.wikiloc_id_num <= ?');
+    baseParams.push(maxNum);
+  }
+  for (const tok of placeTokens) {
+    baseClauses.push("t.search_text LIKE ? ESCAPE '\\'");
+    baseParams.push(`%${escapeLike(tok)}%`);
+  }
+
+  const mainClauses = [...baseClauses];
+  const mainParams = [...baseParams];
+  if (monthFilter) {
+    mainClauses.push('t.recorded_month = ?');
+    mainParams.push(monthFilter);
+  }
+  if (from) {
+    mainClauses.push('t.recorded_date >= ?');
+    mainParams.push(from);
+  }
+  if (to) {
+    mainClauses.push('t.recorded_date <= ?');
+    mainParams.push(to);
+  }
+
+  const where = mainClauses.length ? `WHERE ${mainClauses.join(' AND ')}` : '';
+  const total = store.db.prepare(`SELECT COUNT(*) AS n FROM wikiloc_trail_index t ${where}`).get(...mainParams).n;
+  const rows = store.db
+    .prepare(
+      `SELECT t.wikiloc_id, t.profile_id, t.trail_url, t.title, t.place,
+              t.recorded_date, t.recorded_month, t.uploaded_date, t.distance_km, t.walk_id,
+              p.name AS profile_name, p.collector AS collector, w.status AS walk_status
+       FROM wikiloc_trail_index t
+       LEFT JOIN wikiloc_profiles p ON p.wikiloc_user = t.profile_id
+       LEFT JOIN wikiloc_walks w ON w.wikiloc_id = t.wikiloc_id
+       ${where}
+       ORDER BY COALESCE(t.recorded_date, t.recorded_month || '-00', t.uploaded_date, '') DESC, t.wikiloc_id_num DESC
+       LIMIT ?`,
+    )
+    .all(...mainParams, cappedLimit);
+
+  // When filtering by exact date range without `month`, also surface any month-only trails
+  // (recorded_date IS NULL) whose recorded_month overlaps the range, using the recorded_month index.
+  let monthCandidates = [];
+  if ((from || to) && !monthFilter) {
+    const mcClauses = [...baseClauses, 't.recorded_date IS NULL'];
+    const mcParams = [...baseParams];
+    if (from) {
+      mcClauses.push('t.recorded_month >= ?');
+      mcParams.push(from.slice(0, 7));
+    }
+    if (to) {
+      mcClauses.push('t.recorded_month <= ?');
+      mcParams.push(to.slice(0, 7));
+    }
+    monthCandidates = store.db
+      .prepare(
+        `SELECT t.wikiloc_id, t.profile_id, t.trail_url, t.title, t.place,
+                t.recorded_date, t.recorded_month, t.uploaded_date, t.distance_km, t.walk_id,
+                p.name AS profile_name, p.collector AS collector, w.status AS walk_status
+         FROM wikiloc_trail_index t
+         LEFT JOIN wikiloc_profiles p ON p.wikiloc_user = t.profile_id
+         LEFT JOIN wikiloc_walks w ON w.wikiloc_id = t.wikiloc_id
+         WHERE ${mcClauses.join(' AND ')}
+         ORDER BY t.recorded_month DESC, t.wikiloc_id_num DESC
+         LIMIT ?`,
+      )
+      .all(...mcParams, Math.min(cappedLimit, DEFAULT_FIND_LIMIT))
+      .map(formatIndexedWalk);
+  }
+
+  const profiles = store.db
+    .prepare('SELECT wikiloc_user, name, collector, last_checked FROM wikiloc_profiles ORDER BY created_at')
+    .all()
+    .map(p => ({
+      profile_id: p.wikiloc_user,
+      name: p.name ?? null,
+      collector: p.collector ?? null,
+      last_checked: p.last_checked ?? null,
+    }));
+
+  const walks = rows.map(formatIndexedWalk);
+  return {
+    total,
+    returned: walks.length,
+    walks,
+    ...(monthCandidates.length ? { month_candidates: monthCandidates } : {}),
+    profiles,
+    truncated: total > walks.length,
+  };
 }

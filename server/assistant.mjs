@@ -14,7 +14,7 @@ import { msg, tpl, withoutMsgs } from './messages.mjs';
 import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
-import { monitoringLib, queueWalk, walkDraft, walkRows } from './walks.mjs';
+import { findWalk, monitoringLib, queueWalk, walkDraft, walkRows } from './walks.mjs';
 import { bestReading, createWalkIds } from './walk-ids.mjs';
 import { KINDS, isNone, kindByLabel, noteText, reviewColumns, show as showValue } from './notebook.mjs';
 import { HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
@@ -297,6 +297,25 @@ const TOOLS = [
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50 (agreed: 1 to 100, default 100)' },
           offset: { type: 'integer' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_walk',
+      description:
+        'Search indexed Wikiloc walks across configured team profiles (e.g. 13756119, 11910200) directly in SQLite (read-only, no browsing). Filter by date_from/date_to (YYYY-MM-DD), month (YYYY-MM), place/title keywords, or profile_id. Pass a returned trail_url to queue_walk → get_walk only when full waypoints/photos are needed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Start recorded date, YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'End recorded date, YYYY-MM-DD' },
+          month: { type: 'string', description: 'Recorded month, YYYY-MM (e.g. 2022-12)' },
+          place: { type: 'string', description: 'Place or title keywords (case and accents ignored)' },
+          profile_id: { type: 'string', description: 'Wikiloc numeric profile ID (e.g. 11910200 or 13756119)' },
+          limit: { type: 'integer', description: 'Max walks to return (1–100, default 20)' },
         },
       },
     },
@@ -6393,6 +6412,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
       return fitted.out;
     }
+    if (name === 'find_walk') return findWalk(store, args);
     if (name === 'queue_walk') {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
       return queueWalk(store, { url: clip(args.url, 500), refresh: !!args.refresh }, context.user);
