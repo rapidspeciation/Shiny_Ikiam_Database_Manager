@@ -295,7 +295,8 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       editor,
     );
 
-    // Unsaved listing trail whose title is later edited on Wikiloc updates its title-derived date (Fable R2 F2).
+    // Unsaved listing trail whose title is later edited on Wikiloc updates its title-derived date (Fable R2 F2),
+    // while empty-title upserts and independently supplied dates stay preserved (Sol R3 F1 / Fable R3 F1).
     upsertTrailIndex(
       s,
       [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-3-mayo-2025-230000001', title: 'Monitoreo 3 mayo 2025' }],
@@ -306,10 +307,31 @@ test('multi-profile sync (13756119 + 11910200) indexes trails via finishJob and 
       [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-13-mayo-2025-230000001', title: 'Monitoreo 13 mayo 2025' }],
       { profileId: '13756119' },
     );
+    upsertTrailIndex(
+      s,
+      [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-13-mayo-2025-230000001' }],
+      { profileId: '13756119' },
+    );
     const editedListing = queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-05-13', dateTo: '2025-05-13' });
     assert.equal(editedListing.total, 1);
     assert.equal(editedListing.walks[0].wikiloc_id, '230000001');
+    assert.equal(editedListing.walks[0].title, 'Monitoreo 13 mayo 2025');
     assert.equal(queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-05-03', dateTo: '2025-05-03' }).total, 0);
+
+    upsertTrailIndex(
+      s,
+      [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-230000002', title: 'Monitoreo', recordedDate: '2025-06-02' }],
+      { profileId: '13756119' },
+    );
+    upsertTrailIndex(
+      s,
+      [{ url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-tbs-230000002', title: 'Monitoreo TBS' }],
+      { profileId: '13756119' },
+    );
+    const preservedIndependent = queryTrailIndex(s, { profileId: '13756119', dateFrom: '2025-06-02', dateTo: '2025-06-02' });
+    assert.equal(preservedIndependent.total, 1);
+    assert.equal(preservedIndependent.walks[0].wikiloc_id, '230000002');
+    assert.equal(preservedIndependent.walks[0].title, 'Monitoreo TBS');
 
     // Profile sync reports list-page trails (must NEVER overwrite saved walk date/month/place/distance!).
     queueSync(s, editor);

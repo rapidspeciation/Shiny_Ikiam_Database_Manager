@@ -1557,22 +1557,28 @@ export function upsertTrailIndex(store, trails, { profileId = null, walkId = nul
         continue;
       }
       const prev = existingStmt.get(meta.wikilocId);
+      const rawTitle = String(raw.title ?? raw.name ?? '').replace(/\s+/g, ' ').trim();
       const keepSaved = !authoritative && Boolean(prev?.walk_id);
-      const titleChanged = Boolean(prev && meta.title && prev.title !== meta.title);
-      const keepExistingDate = keepSaved || (!authoritative && !titleChanged && Boolean(prev?.recorded_date));
+      const titleChanged = Boolean(prev && rawTitle && prev.title !== rawTitle);
+      const prevTitleDate = prev ? walkDate(prev.title, null, null) : null;
+      const prevTitleMonth = prev ? (prevTitleDate ? prevTitleDate.slice(0, 7) : parseRecordedMonth(prev.title)) : null;
+      const retitleDateFromTitle = titleChanged && prev.recorded_date !== null && prev.recorded_date === prevTitleDate;
+      const retitleMonthFromTitle = titleChanged && prev.recorded_month !== null && prev.recorded_month === prevTitleMonth;
+      const keepExistingDate = keepSaved || (!authoritative && !retitleDateFromTitle && Boolean(prev?.recorded_date));
+      const keepExistingMonth = keepSaved || (!authoritative && !retitleMonthFromTitle && Boolean(prev?.recorded_month));
       const mergedProfileId = meta.profileId ?? prev?.profile_id ?? null;
-      const mergedTitle = meta.title || prev?.title || `Wikiloc ${meta.wikilocId}`;
+      const mergedTitle = (rawTitle ? meta.title : prev?.title) || meta.title || `Wikiloc ${meta.wikilocId}`;
       const mergedPlace = keepSaved ? (prev.place ?? meta.place) : (meta.place ?? prev?.place ?? null);
       const mergedRecordedDate = keepExistingDate
         ? prev.recorded_date
-        : authoritative || titleChanged
+        : authoritative || retitleDateFromTitle
           ? meta.recordedDate
           : (meta.recordedDate ?? prev?.recorded_date ?? null);
-      const mergedRecordedMonth = keepExistingDate
-        ? prev.recorded_month
-        : mergedRecordedDate
-          ? mergedRecordedDate.slice(0, 7)
-          : authoritative || titleChanged
+      const mergedRecordedMonth = mergedRecordedDate
+        ? mergedRecordedDate.slice(0, 7)
+        : keepExistingMonth
+          ? prev.recorded_month
+          : authoritative || retitleMonthFromTitle
             ? meta.recordedMonth
             : (meta.recordedMonth ?? prev?.recorded_month ?? null);
       const mergedUploadedDate = keepSaved ? (prev.uploaded_date ?? meta.uploadedDate) : (meta.uploadedDate ?? prev?.uploaded_date ?? null);
