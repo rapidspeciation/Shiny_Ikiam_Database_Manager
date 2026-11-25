@@ -55,7 +55,10 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 | peak during a start (VmHWM) | 1975 MB+ | 0.9-1.3 GB |
 
 How a copy stays small:
-- The workbook's rows live in a SQLite file, not in memory (see below).
+- The workbook's rows live in a SQLite file, not in memory (see below). With rows in SQLite, `dev-app.sh` sets V8's
+  old-space cap to 1280 MB (`--max-old-space-size=1280 --expose-gc`) to trim the start peak and bound heap growth;
+  `--env LOCAL_SHEETS=memory` (or a failed rows-file build) automatically keeps 2048 MB so the in-memory snapshot still
+  fits.
 - Once the first sync is done, and again once the checks' warm-up (Inicio's summaries, alerts, issues, suggested
   edits) is done, the server runs a full garbage collection that hands the freed pages back at once
   (`gc({flavor: 'last-resort'})`, only in LOCAL_MODE when node runs with `--expose-gc`, as dev-app.sh starts it).
@@ -77,8 +80,9 @@ ran the assistant's tools held 2.6-2.8 GB, and the identifier added about 1.5 GB
 - **Disk per instance:** on btrfs (this PC) the copy shares the file and costs nothing until it is written. On ext4
   (claudeclaw) it is a real 442 MB copy in the instance's folder. Old `dev/<port>-<time>` folders can be deleted
   when their instance has stopped.
-- **Rollback:** `--env LOCAL_SHEETS=memory` keeps the rows in memory as before; `--env NODE_OPTIONS=--max-old-space-size=2048`
-  (without `--expose-gc`) turns the collection and the worker stop off.
+- **Rollback:** `--env LOCAL_SHEETS=memory` keeps the rows in memory as before (and keeps the 2048 MB heap cap);
+  `--env NODE_OPTIONS="--max-old-space-size=2048 --expose-gc"` raises only the heap cap;
+  `--env NODE_OPTIONS=--max-old-space-size=2048` (without `--expose-gc`) also turns the collection and the worker stop off.
 
 ## On claudeclaw
 

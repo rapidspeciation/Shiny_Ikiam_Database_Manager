@@ -26,6 +26,7 @@ PORT="" DIR="" TTL="${DEV_APP_TTL:-90m}" MAX="${DEV_APP_MAX:-3G}" ACTION=start F
 LIMIT="${DEV_APP_LIMIT:-}"
 OPEN="${LAB_OPEN_LOGIN:-1}"
 [[ "$OPEN" =~ ^[01]$ ]] || { echo "LAB_OPEN_LOGIN is 1 (any password logs in, the default) or 0" >&2; exit 2; }
+SHEETS_MODE=file
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +34,10 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; shift 2 ;;
     --ttl) TTL="$2"; shift 2 ;;
     --max) MAX="$2"; shift 2 ;;
-    --env) [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }; EXTRA+=(-E "$2"); shift 2 ;;
+    --env)
+      [[ "$2" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "--env K=V, not $2" >&2; exit 2; }
+      case "$2" in LOCAL_SHEETS=*) SHEETS_MODE="${2#LOCAL_SHEETS=}" ;; esac
+      EXTRA+=(-E "$2"); shift 2 ;;
     --fresh) FRESH=1; shift ;;
     --stop) ACTION=stop; shift ;;
     --list) ACTION=list; shift ;;
@@ -94,9 +98,16 @@ done
 # tools/assistant-eval/eval-app.mjs passes its environment on; by default none, and the tool says so. --env still wins.
 [ -z "${KNOWLEDGE_DIR:-}" ] || EXTRA=(-E "KNOWLEDGE_DIR=$KNOWLEDGE_DIR" "${EXTRA[@]}")
 # The workbook's rows file (server/file-sheets.mjs), one per snapshot and version of the code that shapes the rows,
-# made here (under the start lock) so the app only copies it.
-systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json" \
-  || echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
+# made here (under the start lock) so the app only copies it. With rows in SQLite, a 1280 MB V8 heap cap trims the
+# start peak and bounds heap growth; in-memory mode (LOCAL_SHEETS=memory, or if the file could not be made) keeps
+# 2048 MB so parsing and holding the snapshot does not hit the heap limit.
+HEAP=1280
+if [ "$SHEETS_MODE" = memory ]; then
+  HEAP=2048
+elif ! systemd-run --user --scope -q -p MemoryMax=3G node "$HERE/server/file-sheets.mjs" ensure "$LAB/snapshot.json"; then
+  HEAP=2048
+  echo "The rows file could not be made here: the app tries again itself, else keeps the workbook in memory (about 0.7 GB more)." >&2
+fi
 systemd-run --user --unit="$UNIT" --collect --quiet \
   --description="Ithomiini dev app :$PORT ($DIR), for pid $owner, $TTL at most" \
   -p WorkingDirectory="$HERE" -p RuntimeMaxSec="$TTL" -p MemoryMax="$MAX" -p MemorySwapMax=1G \
@@ -108,7 +119,7 @@ systemd-run --user --unit="$UNIT" --collect --quiet \
   -E ITHOMIINI_LAB_URL="http://127.0.0.1:$PORT" -E SECURE_COOKIES=0 -E SYNC_INTERVAL_MS=0 -E ITHOMIINI_LAB_OPEN_LOGIN="$OPEN" \
   -E SETUP_TOKEN="$(cat "$DIR/setup-token")" -E ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh" -E GOG_ACCOUNT=lab \
   -E READINGS=0 -E ASSISTANT_TOOL_WORKERS=1 -E SEARCH_WORKERS=1 -E WORKER_IDLE_MINUTES=5 -E IDENTIFIER_IDLE_MINUTES=2 \
-  -E NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
+  -E NODE_OPTIONS="--max-old-space-size=$HEAP --expose-gc" -E PATH="$PATH" -E HOME="$HOME" \
   "${EXTRA[@]}" \
   node server/index.mjs
 URL="http://127.0.0.1:$PORT"
