@@ -364,7 +364,7 @@ export function resolveRegionalRoute(
       if (intersection.length === 0) {
         return buildNullResolution(pair, 'conflicting_subspecies_inputs', locale)
       }
-      const route = intersection[0]
+      const route = (side ? intersection.find(r => r.side_andes.includes(side)) : null) ?? intersection[0]
       if (side && !route.side_andes.includes(side)) {
         return buildNullResolution(pair, 'conflicting_side_and_subspecies', locale, route)
       }
@@ -503,8 +503,9 @@ function findIntraspecificPair(manifest: ConfirmarVisualManifest, topPred: Predi
     // When subspecies scores exist, require the dominant subspecies to belong to this intraspecific pair
     if (ssps.length > 0) {
       if (!topSspNorm) continue
-      const isTopA = topSspNorm === pa || infraspecificPart(topSspNorm) === infraspecificPart(pa)
-      const isTopB = topSspNorm === pb || infraspecificPart(topSspNorm) === infraspecificPart(pb)
+      const topInfra = infraspecificPart(topSspNorm) ?? topSspNorm
+      const isTopA = topSspNorm === pa || topInfra === infraspecificPart(pa)
+      const isTopB = topSspNorm === pb || topInfra === infraspecificPart(pb)
       if (!isTopA && !isTopB) continue
       return {
         pair,

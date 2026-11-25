@@ -12,8 +12,29 @@
 import { computed, ref, watch } from 'vue'
 import { Info, ZoomIn } from 'lucide-vue-next'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
-import { t } from '../../lib/i18n'
+import { locale, t } from '../../lib/i18n'
 import type { ConfirmarCardMatch } from '../../lib/confirmarVisualRouter'
+
+// Component-scoped ES/EN UI copy so OFF builds ship zero Confirmar strings in the shared i18n bundle.
+const COPY = {
+  es: {
+    ariaCard: 'Guía visual para distinguir especies parecidas',
+    badge: 'Guía visual',
+    ariaRegion: 'Elegir región para la guía visual',
+    ariaZoom: 'Ampliar guía visual',
+    zoom: 'Ampliar',
+    imgError: 'No se pudo cargar la guía visual.',
+  },
+  en: {
+    ariaCard: 'Visual guide to tell look-alike species apart',
+    badge: 'Visual guide',
+    ariaRegion: 'Choose region for the visual guide',
+    ariaZoom: 'Enlarge visual guide',
+    zoom: 'Enlarge',
+    imgError: "Couldn't load the visual guide.",
+  },
+} as const
+const copy = computed(() => (locale.value === 'en' ? COPY.en : COPY.es))
 
 const props = defineProps<{
   match: ConfirmarCardMatch
@@ -75,14 +96,14 @@ function openLightbox() {
   <section
     v-if="match.displayKind === 'card' && match.imageUrl"
     class="confirmar-card overflow-hidden rounded-lg border border-brand/50 bg-surface shadow-xs transition-shadow hover:shadow-sm"
-    :aria-label="$t('Guía visual para distinguir especies parecidas')"
+    :aria-label="copy.ariaCard"
     data-testid="confirmar-visual-card"
     :data-card-id="match.cardId"
     :data-pair-id="match.pairId"
   >
     <div class="border-b border-border px-3.5 py-3">
       <div class="flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="rounded bg-brand-soft px-2 py-0.5 font-semibold text-brand-text">{{ $t('Guía visual') }}</span>
+        <span class="rounded bg-brand-soft px-2 py-0.5 font-semibold text-brand-text">{{ copy.badge }}</span>
         <span
           v-if="match.regionBadge && !hasRegionSwitcher"
           class="rounded border border-border-strong bg-surface-sunken px-2 py-0.5 font-medium text-fg"
@@ -109,7 +130,7 @@ function openLightbox() {
         v-if="hasRegionSwitcher"
         class="mt-2.5 flex flex-wrap gap-1.5"
         role="group"
-        :aria-label="$t('Elegir región para la guía visual')"
+        :aria-label="copy.ariaRegion"
         data-testid="confirmar-region-switcher"
       >
         <button
@@ -136,7 +157,7 @@ function openLightbox() {
         v-if="!imgError"
         type="button"
         class="confirmar-zoomable group relative block min-h-11 w-full overflow-hidden rounded-md border border-border-strong bg-photo-mat text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-        :aria-label="$t('Ampliar guía visual')"
+        :aria-label="copy.ariaZoom"
         data-testid="confirmar-zoom-trigger"
         @click="openLightbox"
       >
@@ -157,11 +178,11 @@ function openLightbox() {
           aria-hidden="true"
         >
           <ZoomIn :size="14" />
-          {{ $t('Ampliar') }}
+          {{ copy.zoom }}
         </span>
       </button>
       <p v-else class="rounded-md border border-border bg-surface p-3 text-sm text-fg-muted" role="status" data-testid="confirmar-img-error">
-        {{ $t('No se pudo cargar la guía visual.') }}
+        {{ copy.imgError }}
       </p>
     </div>
 

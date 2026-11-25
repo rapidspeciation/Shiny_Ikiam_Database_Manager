@@ -108,6 +108,12 @@ def _require_zero_int(mapping: dict[str, Any], key: str, label: str) -> int:
     return val
 
 
+KNOWN_WAVE_REQUIRED_OVERLAP_KEY = {
+    "wave2_regional": "locked_or_blind_or_curation_overlap",
+    "wave3a_dv": "leakage_or_integrity_errors",
+}
+
+
 def verify_receipt_dict(
     wave_id: str,
     receipt: dict[str, Any],
@@ -118,9 +124,23 @@ def verify_receipt_dict(
         raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT status is {receipt.get('status')!r}, expected 'PASS'")
 
     measured_overlap = 0
+
+    # Unconditionally reject any contradictory error or leakage field if present in any schema (Sol R2-F1)
+    if "leakage_hits" in receipt:
+        if not isinstance(receipt["leakage_hits"], list) or len(receipt["leakage_hits"]) != 0:
+            raise RuntimeError(f"[{wave_id}] Contradictory non-empty 'leakage_hits': {receipt['leakage_hits']!r}")
+    if "errors" in receipt:
+        if not isinstance(receipt["errors"], list) or len(receipt["errors"]) != 0:
+            raise RuntimeError(f"[{wave_id}] Contradictory non-empty 'errors': {receipt['errors']!r}")
+    for cross_key in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors"):
+        if cross_key in receipt:
+            measured_overlap += _require_zero_int(receipt, cross_key, f"[{wave_id}] AUDIT_RECEIPT")
+
     receipt_locked = receipt.get("locked_cohorts")
 
     if isinstance(receipt_locked, dict):
+        if wave_id in KNOWN_WAVE_REQUIRED_OVERLAP_KEY:
+            raise RuntimeError(f"[{wave_id}] Unexpected locked_cohorts schema for museum wave")
         # Wave 3B structured schema: every overlap counter + errors list is mandatory
         for key in (
             "locked_cam_overlap",
@@ -129,25 +149,29 @@ def verify_receipt_dict(
             "ref_blind_sha256_overlap",
         ):
             measured_overlap += _require_zero_int(receipt_locked, key, f"[{wave_id}] locked_cohorts")
-        if "errors" not in receipt or not isinstance(receipt["errors"], list) or len(receipt["errors"]) != 0:
+        if "errors" not in receipt:
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'errors'")
         locked_cams_n = receipt_locked.get("locked_cams")
         if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
             raise RuntimeError(f"[{wave_id}] locked_cohorts.locked_cams must be >= 1583, got {locked_cams_n!r}")
     else:
-        # Wave 2 / Wave 3A museum schema: explicit leakage_hits + explicit overlap/integrity counter mandatory
-        if "leakage_hits" not in receipt or not isinstance(receipt["leakage_hits"], list) or len(receipt["leakage_hits"]) != 0:
+        if wave_id == "wave3b_non_ithomiini":
+            raise RuntimeError(f"[{wave_id}] Missing required 'locked_cohorts' object")
+        # Wave 2 / Wave 3A museum schema: explicit leakage_hits + exact overlap/integrity counter mandatory
+        if "leakage_hits" not in receipt:
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'leakage_hits'")
-        overlap_keys = [
-            k for k in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors") if k in receipt
-        ]
-        if not overlap_keys:
-            raise RuntimeError(
-                f"[{wave_id}] AUDIT_RECEIPT missing required zero-overlap field "
-                "('locked_or_blind_or_curation_overlap' or 'leakage_or_integrity_errors')"
-            )
-        for key in overlap_keys:
-            measured_overlap += _require_zero_int(receipt, key, f"[{wave_id}] AUDIT_RECEIPT")
+        required_key = KNOWN_WAVE_REQUIRED_OVERLAP_KEY.get(wave_id)
+        if required_key:
+            _require_zero_int(receipt, required_key, f"[{wave_id}] AUDIT_RECEIPT")
+        else:
+            overlap_keys = [
+                k for k in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors") if k in receipt
+            ]
+            if not overlap_keys:
+                raise RuntimeError(
+                    f"[{wave_id}] AUDIT_RECEIPT missing required zero-overlap field "
+                    "('locked_or_blind_or_curation_overlap' or 'leakage_or_integrity_errors')"
+                )
         locked_cams_n = receipt.get("locked_cams_checked")
         if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
             raise RuntimeError(f"[{wave_id}] locked_cams_checked must be >= 1583, got {locked_cams_n!r}")
@@ -463,7 +487,7 @@ def build_bundle(
         "webp_quality": quality,
     }
     if removed_stale:
-        verification["removed_stale_webp"] = removed_stale
+        print(f"Pruned {removed_stale} stale WebP asset(s) under {out_dir / 'cards'}")
 
     manifest: dict[str, Any] = {
         "schema": "confirmar-visual-cards/1",
@@ -529,6 +553,30 @@ def run_self_tests() -> None:
                 "output_png_sha256": {"w3b_01_es": "0" * 64},
             },
         ),
+        (
+            "wave3b_non_ithomiini",
+            {
+                "status": "PASS",
+                "locked_cohorts": {
+                    "locked_cams": 1583,
+                    "locked_cam_overlap": 0,
+                    "locked_inat_obs_overlap": 0,
+                    "locked_inat_photo_overlap": 0,
+                    "ref_blind_sha256_overlap": 0,
+                },
+                "errors": [],
+                "leakage_hits": ["contradictory audit hit"],
+                "output_png_sha256": {"w3b_01_es": "0" * 64},
+            },
+        ),
+        (
+            "wave2_regional",
+            {
+                **bad_w2_missing_overlap,
+                "leakage_hits": [],
+                "leakage_or_integrity_errors": 0,
+            },
+        ),
     ]:
         try:
             verify_receipt_dict(label, bad_receipt, None)
@@ -539,7 +587,7 @@ def run_self_tests() -> None:
 
     # 2. Valid Wave 2 & Wave 3B receipts must pass with overlap=0
     _, ov2 = verify_receipt_dict(
-        "ok_w2",
+        "wave2_regional",
         {
             "status": "PASS",
             "locked_cams_checked": 1583,
@@ -552,7 +600,7 @@ def run_self_tests() -> None:
     )
     assert ov2 == 0
     _, ov3b = verify_receipt_dict(
-        "ok_w3b",
+        "wave3b_non_ithomiini",
         {
             "status": "PASS",
             "locked_cohorts": {
@@ -568,7 +616,7 @@ def run_self_tests() -> None:
         ({"CAM999999"}, {"111"}, {"222"}),
     )
     assert ov3b == 0
-    print("SELF-TEST PASS (8/8 negative & positive receipt checks)")
+    print("SELF-TEST PASS (10/10 negative & positive receipt checks)")
 
 
 def main() -> int:

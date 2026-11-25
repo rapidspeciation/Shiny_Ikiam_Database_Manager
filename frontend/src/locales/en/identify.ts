@@ -436,11 +436,4 @@ export default {
   'El servidor está ocupado. Pruebe de nuevo en un minuto.': 'The server is busy. Try again in a minute.',
   'Muchas fotos desde esta red. Espere unos minutos o use «En este teléfono».': 'Many photos from this network. Wait a few minutes or use «On this phone».',
   'El servidor tardó demasiado. Pruebe de nuevo o use «En este teléfono».': 'The server took too long. Try again or use «On this phone».',
-  // Confirmar visual field-ID cards (VITE_CONFIRM_VISUAL_CARDS=1, components/identify/ConfirmarVisualCard.vue).
-  'Guía visual para distinguir especies parecidas': 'Visual guide to tell look-alike species apart',
-  'Guía visual': 'Visual guide',
-  'Elegir región para la guía visual': 'Choose region for the visual guide',
-  'Ampliar guía visual': 'Enlarge visual guide',
-  'Ampliar': 'Enlarge',
-  'No se pudo cargar la guía visual.': "Couldn't load the visual guide.",
 }
