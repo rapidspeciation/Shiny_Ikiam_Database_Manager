@@ -4,23 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { locale, t, tn } from '../../lib/i18n'
 import { SEX_FILE } from '../../lib/sexModel'
-import { useSession } from '../../stores/session'
 import type { ConfirmarVisualManifest } from '../../lib/confirmarVisualRouter'
 
 const REAL_MANIFEST = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../../../public/identificar/confirmar/confirmar_visual_manifest.json'), 'utf8'),
 ) as ConfirmarVisualManifest
-
-const confirmarFlag = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../lib/confirmarVisualRouter', async orig => {
-  const real = await orig<typeof import('../../lib/confirmarVisualRouter')>()
-  return {
-    ...real,
-    confirmVisualCardsEnabled: () => confirmarFlag.enabled,
-  }
-})
 
 vi.mock('../../lib/offlineEngine', async orig => {
   const real = await orig<typeof import('../../lib/offlineEngine')>()
@@ -75,21 +64,19 @@ vi.mock('../../lib/identifyOnline', async orig => {
 let unmount = () => {}
 afterEach(async () => {
   unmount()
-  confirmarFlag.enabled = false
-  const routerMod = await import('../../lib/confirmarVisualRouter')
-  routerMod.resetConfirmarManifestCache()
+  vi.unstubAllEnvs()
   sessionStorage.clear()
   localStorage.clear()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   document.body.innerHTML = ''
-  locale.value = 'en'
 })
 
 function makeStoredResult(
   species: [string, number][],
   subspecies: [string, number][] = [],
   side: 'East' | 'West' | null = null,
+  country: string | null = null,
 ) {
   return {
     at: '2026-11-25T16:00:00.000Z',
@@ -99,6 +86,7 @@ function makeStoredResult(
     ms: 500,
     photo: 'AA==',
     side,
+    country,
     server: {
       species,
       subspecies,
@@ -116,7 +104,8 @@ async function mountIdentify(
   stored: Record<string, unknown>,
   opts: { flag: boolean; lang?: 'es' | 'en' },
 ) {
-  confirmarFlag.enabled = opts.flag
+  vi.resetModules()
+  vi.stubEnv('VITE_CONFIRM_VISUAL_CARDS', opts.flag ? '1' : '0')
   const fetchedUrls: string[] = []
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
@@ -137,8 +126,10 @@ async function mountIdentify(
   sessionStorage.setItem('identify:last', JSON.stringify(stored))
   const lang = opts.lang ?? 'es'
   localStorage.setItem('ui:locale', lang)
-  locale.value = lang
 
+  const { locale, t, tn } = await import('../../lib/i18n')
+  locale.value = lang
+  const { useSession } = await import('../../stores/session')
   const pinia = createPinia()
   setActivePinia(pinia)
   const session = useSession()
@@ -165,11 +156,13 @@ async function mountIdentify(
   unmount = () => app.unmount()
 
   const settle = async () => {
+    await vi.dynamicImportSettled()
     for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0))
+    await vi.dynamicImportSettled()
     await nextTick()
   }
   await settle()
-  return { host, settle, fetchedUrls }
+  return { host, settle, fetchedUrls, locale }
 }
 
 describe('IdentifyView: Confirmar visual cards integration', () => {
@@ -189,7 +182,7 @@ describe('IdentifyView: Confirmar visual cards integration', () => {
   })
 
   it('flag ON renders p01 visual card, switches region pill Occidente <-> Oriente, and syncs ES/EN locale', async () => {
-    const { host, settle } = await mountIdentify(
+    const { host, settle, locale } = await mountIdentify(
       makeStoredResult([
         ['Heliconius erato', 0.6],
         ['Heliconius melpomene', 0.35],
@@ -199,18 +192,18 @@ describe('IdentifyView: Confirmar visual cards integration', () => {
     const card = host.querySelector('[data-testid="confirmar-visual-card"]')
     expect(card).not.toBeNull()
     expect(card!.getAttribute('data-card-id')).toBe('p01_west')
-    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/es/p01_west.webp')
+    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/es/p01_west.webp?v=')
 
     // Tap region pill to switch to Oriente Napo
     host.querySelector<HTMLButtonElement>('[data-testid="confirmar-region-opt-p01_east_napo"]')!.click()
     await settle()
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')!.getAttribute('data-card-id')).toBe('p01_east_napo')
-    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/es/p01_east_napo.webp')
+    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/es/p01_east_napo.webp?v=')
 
     // Switch app locale to English -> image URL and active region pill switch cleanly (no duplicate region badge)
     locale.value = 'en'
     await settle()
-    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/en/p01_east_napo.webp')
+    expect(host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!.src).toContain('/cards/en/p01_east_napo.webp?v=')
     expect(host.querySelector('[data-testid="confirmar-region-badge"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-region-opt-p01_east_napo"]')!.textContent?.trim()).toBe('East · Napo & Amazonia')
   })
@@ -249,5 +242,22 @@ describe('IdentifyView: Confirmar visual cards integration', () => {
     expect(insep).not.toBeNull()
     expect(insep!.getAttribute('data-status')).toBe('not_reliably_separable_in_photos')
     expect(insep!.textContent).toContain('almost identical')
+  })
+
+  it('flag ON hides Ecuador-only visual guides when photo GPS places it in another country (Fable R1-F11)', async () => {
+    const { host } = await mountIdentify(
+      makeStoredResult(
+        [
+          ['Heliconius erato', 0.6],
+          ['Heliconius melpomene', 0.35],
+        ],
+        [],
+        null,
+        'CO',
+      ),
+      { flag: true, lang: 'es' },
+    )
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
   })
 })

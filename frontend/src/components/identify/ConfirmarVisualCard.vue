@@ -35,7 +35,9 @@ watch(
   },
 )
 
-const hasRegionSwitcher = computed(() => props.match.displayKind === 'card' && props.match.alternateCards.length > 1)
+const hasRegionSwitcher = computed(
+  () => props.match.displayKind === 'card' && props.match.canSwitchRegion && props.match.alternateCards.length > 1,
+)
 
 const viewerPhotos = computed<ViewerPhoto[]>(() => {
   if (!props.match.imageUrl) return []
@@ -106,7 +108,7 @@ function openLightbox() {
       <div
         v-if="hasRegionSwitcher"
         class="mt-2.5 flex flex-wrap gap-1.5"
-        role="radiogroup"
+        role="group"
         :aria-label="$t('Elegir región para la guía visual')"
         data-testid="confirmar-region-switcher"
       >
@@ -114,8 +116,7 @@ function openLightbox() {
           v-for="alt in match.alternateCards"
           :key="alt.cardId"
           type="button"
-          role="radio"
-          :aria-checked="match.cardId === alt.cardId"
+          :aria-pressed="match.cardId === alt.cardId"
           class="min-h-11 rounded-md border px-3 text-sm font-medium transition-colors"
           :class="
             match.cardId === alt.cardId

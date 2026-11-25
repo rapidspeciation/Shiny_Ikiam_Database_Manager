@@ -3,21 +3,23 @@
 
 Ingests verified Wave 2 Regional, Wave 3A (D+V), and Wave 3B (Non-Ithomiini)
 regional routing tables + ES/EN card PNGs (plus optional future waves via --wave),
-verifies every wave's AUDIT_RECEIPT.json (status=PASS, 0 locked/blind leakage,
-exact source PNG SHA-256 match), optimizes crisp full-resolution WebP copies for
-phone zoom legibility, and writes:
+verifies every wave's AUDIT_RECEIPT.json fail-closed (status=PASS, explicit zero
+locked/blind overlap fields required, exact source PNG SHA-256 match), optimizes
+crisp full-resolution WebP copies for phone zoom legibility, and writes:
   - frontend/public/identificar/confirmar/confirmar_visual_manifest.json
   - frontend/public/identificar/confirmar/cards/{es,en}/<card_id>.webp
 
 Re-runnable cleanly whenever Wave 3A/3B sol-loop updates a PNG or Wave 4 adds cards.
+Deterministic output (no wall-clock timestamp) so clean re-runs produce zero diff.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import sys
-from datetime import datetime, timezone
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -97,50 +99,67 @@ def load_optional_locked_cohorts() -> tuple[set[str], set[str], set[str]] | None
             sys.path.pop(0)
 
 
-def verify_wave_receipt(
-    wave_id: str,
-    wave_dir: Path,
-    locked_cohorts: tuple[set[str], set[str], set[str]] | None,
-) -> dict[str, Any]:
-    receipt_path = wave_dir / "AUDIT_RECEIPT.json"
-    if not receipt_path.is_file():
-        raise RuntimeError(f"[{wave_id}] Missing AUDIT_RECEIPT.json at {receipt_path}")
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+def _require_zero_int(mapping: dict[str, Any], key: str, label: str) -> int:
+    if key not in mapping:
+        raise RuntimeError(f"{label} missing required zero-overlap field {key!r}")
+    val = mapping[key]
+    if isinstance(val, bool) or not isinstance(val, int) or val != 0:
+        raise RuntimeError(f"{label} field {key!r} must be integer 0, got {val!r}")
+    return val
 
+
+def verify_receipt_dict(
+    wave_id: str,
+    receipt: dict[str, Any],
+    locked_cohorts: tuple[set[str], set[str], set[str]] | None,
+) -> tuple[dict[str, Any], int]:
+    """Fail-closed audit receipt validation; returns (receipt, measured_overlap_count)."""
     if receipt.get("status") != "PASS":
         raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT status is {receipt.get('status')!r}, expected 'PASS'")
 
-    # Check explicit zero-leakage fields across Wave 2, 3A, 3B schemas
-    if receipt.get("locked_or_blind_or_curation_overlap", 0) != 0:
-        raise RuntimeError(f"[{wave_id}] Non-zero locked_or_blind_or_curation_overlap")
-    if receipt.get("leakage_or_integrity_errors", 0) != 0:
-        raise RuntimeError(f"[{wave_id}] Non-zero leakage_or_integrity_errors")
-    if receipt.get("leakage_hits"):
-        raise RuntimeError(f"[{wave_id}] Non-empty leakage_hits: {receipt['leakage_hits']!r}")
-    if receipt.get("errors"):
-        raise RuntimeError(f"[{wave_id}] Non-empty errors: {receipt['errors']!r}")
-
+    measured_overlap = 0
     receipt_locked = receipt.get("locked_cohorts")
+
     if isinstance(receipt_locked, dict):
+        # Wave 3B structured schema: every overlap counter + errors list is mandatory
         for key in (
             "locked_cam_overlap",
             "locked_inat_obs_overlap",
             "locked_inat_photo_overlap",
             "ref_blind_sha256_overlap",
         ):
-            if receipt_locked.get(key, 0) != 0:
-                raise RuntimeError(f"[{wave_id}] Non-zero locked_cohorts.{key}: {receipt_locked.get(key)!r}")
-        if receipt_locked.get("locked_cams", 0) < 1583:
-            raise RuntimeError(f"[{wave_id}] locked_cohorts.locked_cams < 1583")
+            measured_overlap += _require_zero_int(receipt_locked, key, f"[{wave_id}] locked_cohorts")
+        if "errors" not in receipt or not isinstance(receipt["errors"], list) or len(receipt["errors"]) != 0:
+            raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'errors'")
+        locked_cams_n = receipt_locked.get("locked_cams")
+        if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
+            raise RuntimeError(f"[{wave_id}] locked_cohorts.locked_cams must be >= 1583, got {locked_cams_n!r}")
     else:
-        if receipt.get("locked_cams_checked", 0) < 1583:
-            raise RuntimeError(f"[{wave_id}] locked_cams_checked < 1583")
+        # Wave 2 / Wave 3A museum schema: explicit leakage_hits + explicit overlap/integrity counter mandatory
+        if "leakage_hits" not in receipt or not isinstance(receipt["leakage_hits"], list) or len(receipt["leakage_hits"]) != 0:
+            raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'leakage_hits'")
+        overlap_keys = [
+            k for k in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors") if k in receipt
+        ]
+        if not overlap_keys:
+            raise RuntimeError(
+                f"[{wave_id}] AUDIT_RECEIPT missing required zero-overlap field "
+                "('locked_or_blind_or_curation_overlap' or 'leakage_or_integrity_errors')"
+            )
+        for key in overlap_keys:
+            measured_overlap += _require_zero_int(receipt, key, f"[{wave_id}] AUDIT_RECEIPT")
+        locked_cams_n = receipt.get("locked_cams_checked")
+        if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
+            raise RuntimeError(f"[{wave_id}] locked_cams_checked must be >= 1583, got {locked_cams_n!r}")
+        if not isinstance(receipt.get("cams_used"), list) or not receipt["cams_used"]:
+            raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT missing non-empty 'cams_used' list")
 
     if locked_cohorts is not None:
         locked_cams, locked_obs, locked_photos = locked_cohorts
         if isinstance(receipt.get("cams_used"), list):
             used = {str(c).strip().upper() for c in receipt["cams_used"]}
             overlap = sorted(used & locked_cams)
+            measured_overlap += len(overlap)
             if overlap:
                 raise RuntimeError(f"[{wave_id}] Locked CAM overlap detected: {overlap}")
         if isinstance(receipt.get("card_used_photo_provenance"), dict):
@@ -148,15 +167,29 @@ def verify_wave_receipt(
                 obs_id = str(prov.get("obs_id") or "").strip()
                 photo_id = str(prov.get("photo_id") or "").strip()
                 if obs_id and obs_id in locked_obs:
+                    measured_overlap += 1
                     raise RuntimeError(f"[{wave_id}] Locked iNat obs overlap on {slot_key}: {obs_id}")
                 if photo_id and photo_id in locked_photos:
+                    measured_overlap += 1
                     raise RuntimeError(f"[{wave_id}] Locked iNat photo overlap on {slot_key}: {photo_id}")
 
     output_png_sha256 = receipt.get("output_png_sha256")
     if not isinstance(output_png_sha256, dict) or not output_png_sha256:
         raise RuntimeError(f"[{wave_id}] Missing output_png_sha256 map in AUDIT_RECEIPT.json")
 
-    return receipt
+    return receipt, measured_overlap
+
+
+def verify_wave_receipt(
+    wave_id: str,
+    wave_dir: Path,
+    locked_cohorts: tuple[set[str], set[str], set[str]] | None,
+) -> tuple[dict[str, Any], int]:
+    receipt_path = wave_dir / "AUDIT_RECEIPT.json"
+    if not receipt_path.is_file():
+        raise RuntimeError(f"[{wave_id}] Missing AUDIT_RECEIPT.json at {receipt_path}")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    return verify_receipt_dict(wave_id, receipt, locked_cohorts)
 
 
 def load_rendered_text(wave_dir: Path, lang: str) -> dict[str, list[dict[str, Any]]]:
@@ -180,8 +213,6 @@ def derive_view_badge(
     items_en = rendered_en.get(f"{card_id}_en") or []
     items_es = rendered_es.get(f"{card_id}_es") or []
 
-    for items, lang_key in ((items_es, "es"), (items_en, "en")):
-        pass
     pill_es = next((x["text"].strip() for x in items_es if x.get("role") == "view_pill" and x.get("text")), None)
     pill_en = next((x["text"].strip() for x in items_en if x.get("role") == "view_pill" and x.get("text")), None)
     if pill_es and pill_en:
@@ -201,6 +232,15 @@ def derive_view_badge(
     return None, None
 
 
+def detect_wave_routing_mode(reg_map: dict[str, Any]) -> str:
+    """Detect whether a wave's regional map routes by side-only (Wave 3B) or subspecies+side (Wave 2/3A)."""
+    purpose = str(reg_map.get("purpose", "")).lower()
+    lookup = " ".join(str(x).lower() for x in (reg_map.get("routing_contract", {}).get("lookup_order") or []))
+    if "subspecies" in lookup or "subspecies" in purpose:
+        return "subspecies_and_side"
+    return "side_only"
+
+
 def optimize_png_to_webp(
     src_png: Path, dst_webp: Path, quality: int, dry_run: bool
 ) -> tuple[int, int, int, str]:
@@ -209,8 +249,6 @@ def optimize_png_to_webp(
             im = im.convert("RGB")
         width, height = im.size
         if dry_run:
-            import io
-
             buf = io.BytesIO()
             im.save(buf, format="WEBP", quality=quality, method=6)
             data = buf.getvalue()
@@ -252,6 +290,7 @@ def build_bundle(
     total_deferred_routes = 0
     total_webp_bytes = 0
     total_src_png_bytes = 0
+    total_measured_overlap = 0
 
     for wave_id, wave_dir, map_name in waves:
         wave_dir = wave_dir.resolve()
@@ -259,9 +298,11 @@ def build_bundle(
         if not map_path.is_file():
             raise RuntimeError(f"[{wave_id}] Missing regional map at {map_path}")
 
-        receipt = verify_wave_receipt(wave_id, wave_dir, locked_cohorts)
+        receipt, wave_overlap = verify_wave_receipt(wave_id, wave_dir, locked_cohorts)
+        total_measured_overlap += wave_overlap
         receipt_png_sha = receipt["output_png_sha256"]
         reg_map = json.loads(map_path.read_text(encoding="utf-8"))
+        routing_mode = detect_wave_routing_mode(reg_map)
         rendered_es = load_rendered_text(wave_dir, "es")
         rendered_en = load_rendered_text(wave_dir, "en")
 
@@ -379,6 +420,7 @@ def build_bundle(
             unified_pairs[pair_id] = {
                 "pair_id": pair_id,
                 "wave": wave_id,
+                "routing_mode": routing_mode,
                 "species_a": species_a,
                 "species_b": species_b,
                 "classification": str(pair.get("classification", "single_region")),
@@ -389,6 +431,7 @@ def build_bundle(
         wave_summaries.append(
             {
                 "wave": wave_id,
+                "routing_mode": routing_mode,
                 "map_version": reg_map.get("version"),
                 "pairs": len(pairs_obj),
                 "active_cards": wave_active_cards,
@@ -397,7 +440,7 @@ def build_bundle(
             }
         )
 
-    # Prune stale .webp files in cards/{es,en} when re-running after updates
+    # Prune stale .webp files in cards/{es,en} before writing manifest
     removed_stale = 0
     if not check_only:
         for lang in ("es", "en"):
@@ -411,18 +454,21 @@ def build_bundle(
                         existing.unlink()
                         removed_stale += 1
 
+    verification: dict[str, Any] = {
+        "all_wave_receipts_passed": all(w["audit_status"] == "PASS" for w in wave_summaries),
+        "locked_or_blind_overlap": total_measured_overlap,
+        "canonical_locked_cams_cross_checked": len(locked_cohorts[0]) if locked_cohorts is not None else 0,
+        "canonical_locked_inat_obs_cross_checked": len(locked_cohorts[1]) if locked_cohorts is not None else 0,
+        "canonical_locked_inat_photos_cross_checked": len(locked_cohorts[2]) if locked_cohorts is not None else 0,
+        "webp_quality": quality,
+    }
+    if removed_stale:
+        verification["removed_stale_webp"] = removed_stale
+
     manifest: dict[str, Any] = {
         "schema": "confirmar-visual-cards/1",
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "waves": wave_summaries,
-        "verification": {
-            "all_wave_receipts_passed": True,
-            "locked_or_blind_overlap": 0,
-            "canonical_locked_cams_cross_checked": len(locked_cohorts[0]) if locked_cohorts is not None else 0,
-            "canonical_locked_inat_obs_cross_checked": len(locked_cohorts[1]) if locked_cohorts is not None else 0,
-            "canonical_locked_inat_photos_cross_checked": len(locked_cohorts[2]) if locked_cohorts is not None else 0,
-            "webp_quality": quality,
-        },
+        "verification": verification,
         "counts": {
             "total_pairs": len(unified_pairs),
             "active_pairs": total_active_pairs,
@@ -443,9 +489,86 @@ def build_bundle(
         tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         tmp.replace(manifest_path)
 
-    if removed_stale:
-        manifest["verification"]["removed_stale_webp"] = removed_stale
     return manifest
+
+
+def run_self_tests() -> None:
+    """Negative self-tests ensuring fail-closed receipt verification."""
+    # 1. Missing overlap fields must fail (Sol R1-F1 / Fable R1-F9)
+    bad_w2_missing_overlap = {
+        "status": "PASS",
+        "locked_cams_checked": 1583,
+        "cams_used": ["CAM000001"],
+        "output_png_sha256": {"p01_es": "0" * 64},
+    }
+    for label, bad_receipt in [
+        ("missing_overlap_and_leakage_hits", bad_w2_missing_overlap),
+        ("missing_overlap_only", {**bad_w2_missing_overlap, "leakage_hits": []}),
+        ("missing_leakage_hits", {**bad_w2_missing_overlap, "locked_or_blind_or_curation_overlap": 0}),
+        ("nonzero_overlap", {**bad_w2_missing_overlap, "leakage_hits": [], "locked_or_blind_or_curation_overlap": 1}),
+        (
+            "w3b_missing_field",
+            {
+                "status": "PASS",
+                "locked_cohorts": {"locked_cams": 1583, "locked_cam_overlap": 0},
+                "errors": [],
+                "output_png_sha256": {"w3b_01_es": "0" * 64},
+            },
+        ),
+        (
+            "w3b_missing_errors_list",
+            {
+                "status": "PASS",
+                "locked_cohorts": {
+                    "locked_cams": 1583,
+                    "locked_cam_overlap": 0,
+                    "locked_inat_obs_overlap": 0,
+                    "locked_inat_photo_overlap": 0,
+                    "ref_blind_sha256_overlap": 0,
+                },
+                "output_png_sha256": {"w3b_01_es": "0" * 64},
+            },
+        ),
+    ]:
+        try:
+            verify_receipt_dict(label, bad_receipt, None)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"Self-test failed: {label} was unexpectedly accepted")
+
+    # 2. Valid Wave 2 & Wave 3B receipts must pass with overlap=0
+    _, ov2 = verify_receipt_dict(
+        "ok_w2",
+        {
+            "status": "PASS",
+            "locked_cams_checked": 1583,
+            "cams_used": ["CAM000001"],
+            "leakage_hits": [],
+            "locked_or_blind_or_curation_overlap": 0,
+            "output_png_sha256": {"p01_es": "0" * 64},
+        },
+        ({"CAM999999"}, set(), set()),
+    )
+    assert ov2 == 0
+    _, ov3b = verify_receipt_dict(
+        "ok_w3b",
+        {
+            "status": "PASS",
+            "locked_cohorts": {
+                "locked_cams": 1583,
+                "locked_cam_overlap": 0,
+                "locked_inat_obs_overlap": 0,
+                "locked_inat_photo_overlap": 0,
+                "ref_blind_sha256_overlap": 0,
+            },
+            "errors": [],
+            "output_png_sha256": {"w3b_01_es": "0" * 64},
+        },
+        ({"CAM999999"}, {"111"}, {"222"}),
+    )
+    assert ov3b == 0
+    print("SELF-TEST PASS (8/8 negative & positive receipt checks)")
 
 
 def main() -> int:
@@ -471,7 +594,12 @@ def main() -> int:
     )
     parser.add_argument("--quality", type=int, default=92, help="WebP quality (default: 92)")
     parser.add_argument("--check", action="store_true", help="Verify inputs & SHA-256 without writing files")
+    parser.add_argument("--self-test", action="store_true", help="Run fail-closed verifier self-tests and exit")
     args = parser.parse_args()
+
+    if args.self_test:
+        run_self_tests()
+        return 0
 
     waves = list(args.wave) if args.wave else list(DEFAULT_WAVES)
     waves.extend(args.extra_wave)
@@ -483,7 +611,7 @@ def main() -> int:
         f"{c['total_pairs']} pairs, {c['active_cards']} active cards ({c['assets_total']} WebP assets, "
         f"{c['webp_bytes'] / 1e6:.2f} MB vs {c['source_png_bytes'] / 1e6:.2f} MB PNG), "
         f"{c['non_active_pairs']} non-active pairs, {c['deferred_routes']} deferred routes, "
-        f"locked_overlap=0"
+        f"locked_overlap={manifest['verification']['locked_or_blind_overlap']}"
     )
     return 0
 

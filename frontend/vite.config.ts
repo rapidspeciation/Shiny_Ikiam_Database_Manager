@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { brotliCompress, constants } from 'node:zlib'
@@ -63,6 +63,17 @@ const offlineRuntime = {
   },
 }
 
+// Keep Confirmar visual card static assets out of production builds unless VITE_CONFIRM_VISUAL_CARDS=1.
+const confirmarAssetsGate = {
+  name: 'confirmar-assets-gate',
+  apply: 'build' as const,
+  async writeBundle() {
+    if (process.env.VITE_CONFIRM_VISUAL_CARDS !== '1') {
+      await rm(join(outDir, 'identificar', 'confirmar'), { recursive: true, force: true })
+    }
+  },
+}
+
 // Lib tests that need a page (document, window or localStorage).
 const libWithPage = ['bestPhotos', 'camera', 'cellBar', 'clipboard', 'curatedPhotos', 'disabledReason', 'docReview', 'gridKeys', 'identifyHistory', 'identifyRefs', 'oldReader', 'packBundles', 'photoCountry', 'photoPacks', 'proposalColumns', 'theme'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
@@ -70,7 +81,7 @@ const libWithPage = ['bestPhotos', 'camera', 'cellBar', 'clipboard', 'curatedPho
 
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/ithomiini/' : './',
-  plugins: [vue(), tailwindcss(), version, precompress, offlineRuntime],
+  plugins: [vue(), tailwindcss(), version, confirmarAssetsGate, precompress, offlineRuntime],
   define: { __BUILD_ID__: JSON.stringify(command === 'serve' ? 'dev' : buildId) },
   build: {
     outDir: '../web',

@@ -20,7 +20,7 @@
  * then the sex (SexPanel); then the full list, the side of the Andes and the rest. «Mis identificaciones» keeps each
  * photo and result (lib/identifyHistory.ts), so an item loads again, with the models that read it.
  */
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, ChevronDown, Download, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
 import { choiceOrDefault, effectiveMode, identifyAsVisitor, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, visitorServer, type Mode, type ServerAnswer, type VisitorPlace } from '../lib/identifyOnline'
@@ -59,15 +59,17 @@ import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIt
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
 import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, exifGps, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
-import ConfirmarVisualCard from '../components/identify/ConfirmarVisualCard.vue'
 import {
-  confirmVisualCardsEnabled,
   ecuadorSideFromGps,
   loadConfirmarManifest,
   resolveConfirmarVisualCard,
   type ConfirmarCardMatch,
   type ConfirmarVisualManifest,
 } from '../lib/confirmarVisualRouter'
+const ConfirmarVisualCard =
+  import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
+    ? defineAsyncComponent(() => import('../components/identify/ConfirmarVisualCard.vue'))
+    : null
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -772,24 +774,27 @@ const noWings = computed(() => !!result.value && result.value.status !== 'succes
 
 // ---------------------------------------------------------------- Confirmar visual field-ID cards (VITE_CONFIRM_VISUAL_CARDS=1)
 
-const confirmarOn = computed(() => confirmVisualCardsEnabled())
+const confirmarOn = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
 const confirmarManifest = shallowRef<ConfirmarVisualManifest | null>(null)
 const confirmarPreferredCard = ref<string | null>(null)
-watch(
-  () => confirmarOn.value && !!result.value,
-  need => {
-    if (need && !confirmarManifest.value) {
-      loadConfirmarManifest(appRoot())
-        .then(m => (confirmarManifest.value = m))
-        .catch(() => null)
-    }
-  },
-  { immediate: true },
-)
-watch([() => result.value?.at, sideValue, compared], () => {
-  confirmarPreferredCard.value = null
-})
+if (confirmarOn) {
+  watch(
+    () => !!result.value,
+    need => {
+      if (need && !confirmarManifest.value) {
+        loadConfirmarManifest(appRoot())
+          .then(m => (confirmarManifest.value = m))
+          .catch(() => null)
+      }
+    },
+    { immediate: true },
+  )
+  watch([() => result.value?.at, sideValue, compared], () => {
+    confirmarPreferredCard.value = null
+  })
+}
 const confirmarSide = computed(() => {
+  if (!confirmarOn) return null
   if (sideValue.value) return sideValue.value
   const r = result.value
   const p = lastPhoto.value
@@ -798,7 +803,9 @@ const confirmarSide = computed(() => {
   return gps ? ecuadorSideFromGps(gps.lat, gps.lon) : null
 })
 const confirmarMatch = computed<ConfirmarCardMatch | null>(() => {
-  if (!confirmarOn.value || !confirmarManifest.value || !ranked.value?.species.length) return null
+  if (!confirmarOn || !confirmarManifest.value || !ranked.value?.species.length) return null
+  // Ecuador-only regional guides: hide when the photo's GPS clearly places it in another country
+  if (result.value?.country && result.value.country !== 'EC') return null
   const topPredictions = ranked.value.species.slice(0, 5).map(c => ({
     name: c.name,
     p: c.p,
@@ -2013,8 +2020,9 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <ConfirmarVisualCard
-            v-if="confirmarOn && confirmarMatch && confirmarMatch.displayKind !== 'hidden'"
+          <component
+            :is="ConfirmarVisualCard"
+            v-if="confirmarOn && ConfirmarVisualCard && confirmarMatch && confirmarMatch.displayKind !== 'hidden'"
             class="mt-3"
             :match="confirmarMatch"
             :user-photo-src="mineUrl ?? result.crop"

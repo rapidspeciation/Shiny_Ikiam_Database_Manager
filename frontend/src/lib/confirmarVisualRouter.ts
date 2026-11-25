@@ -3,18 +3,25 @@
  *
  * Strictly gated behind VITE_CONFIRM_VISUAL_CARDS=1 (default OFF).
  * Implements the exact Wave 2 + Wave 3A + Wave 3B regional & subspecies routing contract:
- *   1. Subspecies alias match (case-insensitive trimmed, a OR b); rejects conflicting
- *      subspecies or conflicting side+subspecies; returns explicit null for deferred rings
- *      and inseparable/held pairs (never silently substitutes another mimicry ring).
- *   2. Side-only match (East / West from user selector or conservative Ecuador GPS divide).
- *   3. Unspecified region fallback (pair.default_card_id with regionFallback=true), plus
- *      clean manual region switching when a pair has multiple active regional cards (e.g. p01).
+ *   - Wave 3B (`routing_mode: 'side_only'`): resolves strictly by `(pair_id, side_andes)`
+ *     (never rejects on subspecies predictions); inseparable pairs return explicit `null`.
+ *   - Wave 2 / Wave 3A (`routing_mode: 'subspecies_and_side'`):
+ *     1. Subspecies alias match (case-insensitive trimmed, full trinomial OR infraspecific
+ *        epithet against `a OR b` aliases); rejects conflicting subspecies or conflicting
+ *        side+subspecies; returns explicit `null` for deferred rings and inseparable/held
+ *        pairs (never silently substitutes another mimicry ring).
+ *     2. Side-only match (`East` / `West` from user selector or conservative Ecuador GPS divide).
+ *     3. Unspecified region fallback (`pair.default_card_id` with `regionFallback=true`),
+ *        where manual region switching (`preferredCardId`) is permitted among active regional
+ *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía).
  *
  * Pure TypeScript (no DOM requirement for routing logic; manifest fetch is lazy and optional).
  */
+import { SSP_MIN, SSP_SHARE } from './identifyResult'
 
 export type SideAndes = 'East' | 'West'
 export type ConfirmarLocale = 'es' | 'en'
+export type RoutingMode = 'subspecies_and_side' | 'side_only'
 
 export type RouteRawStatus =
   | 'active'
@@ -73,6 +80,7 @@ export interface ConfirmarRoute {
 export interface ConfirmarPair {
   pair_id: string
   wave: string
+  routing_mode?: RoutingMode
   species_a: string
   species_b: string
   classification: string
@@ -82,8 +90,7 @@ export interface ConfirmarPair {
 
 export interface ConfirmarVisualManifest {
   schema: 'confirmar-visual-cards/1'
-  generated_at: string
-  waves: { wave: string; map_version?: string | null; pairs: number; active_cards: number; non_active_pairs: number; audit_status: string }[]
+  waves: { wave: string; routing_mode?: RoutingMode; map_version?: string | null; pairs: number; active_cards: number; non_active_pairs: number; audit_status: string }[]
   counts: {
     total_pairs: number
     active_pairs: number
@@ -107,6 +114,8 @@ export interface RegionalRouteResolution {
   cardId: string | null
   status: RegionalRouteStatus
   regionFallback: boolean
+  /** True only when region is unspecified and the pair offers >1 active regional cards to toggle between. */
+  canSwitchRegion: boolean
   imageUrl: string | null
   imageWidth: number | null
   imageHeight: number | null
@@ -158,12 +167,14 @@ function mapNonActiveStatus(raw: RouteRawStatus): Exclude<RegionalRouteStatus, '
   return raw
 }
 
-function resolveAssetUrl(assetPath: string, rootUrl?: string): string {
-  if (!rootUrl) return assetPath
+/** Resolve asset URL with content-hash query string so sw.js cache-first updates cleanly when a card PNG changes. */
+function resolveAssetUrl(asset: ConfirmarCardAsset, rootUrl?: string): string {
+  const versioned = asset.sha256 ? `${asset.path}?v=${asset.sha256.slice(0, 10)}` : asset.path
+  if (!rootUrl) return versioned
   try {
-    return new URL(assetPath, rootUrl).href
+    return new URL(versioned, rootUrl).href
   } catch {
-    return assetPath
+    return versioned
   }
 }
 
@@ -214,6 +225,7 @@ function buildActiveResolution(
   route: ConfirmarRoute,
   locale: ConfirmarLocale,
   regionFallback: boolean,
+  canSwitchRegion: boolean,
   rootUrl?: string,
 ): RegionalRouteResolution {
   const asset = route.assets?.[locale]
@@ -224,13 +236,15 @@ function buildActiveResolution(
     locale === 'en'
       ? `Visual field guide comparing ${route.taxon_a} and ${route.taxon_b} (${regionBadge})`
       : `Guía visual de campo para comparar ${route.taxon_a} y ${route.taxon_b} (${regionBadge})`
+  const alternateCards = buildAlternates(pair, locale)
 
   return {
     pairId: pair.pair_id,
     cardId: route.card_id,
     status: 'active',
     regionFallback,
-    imageUrl: asset ? resolveAssetUrl(asset.path, rootUrl) : null,
+    canSwitchRegion: canSwitchRegion && alternateCards.length > 1,
+    imageUrl: asset ? resolveAssetUrl(asset, rootUrl) : null,
     imageWidth: asset?.width ?? null,
     imageHeight: asset?.height ?? null,
     regionBadge,
@@ -240,7 +254,7 @@ function buildActiveResolution(
     taxonB: route.taxon_b,
     altText,
     honestNote: null,
-    alternateCards: buildAlternates(pair, locale),
+    alternateCards,
   }
 }
 
@@ -257,6 +271,7 @@ function buildNullResolution(
     cardId: null,
     status,
     regionFallback: false,
+    canSwitchRegion: false,
     imageUrl: null,
     imageWidth: null,
     imageHeight: null,
@@ -271,9 +286,24 @@ function buildNullResolution(
   }
 }
 
+/** Extract the infraspecific epithet from a full trinomial (e.g. "mechanitis messenoides messenoides" -> "messenoides"). */
+function infraspecificPart(taxonNorm: string): string | null {
+  const words = taxonNorm.split(' ')
+  return words.length >= 3 ? words.slice(2).join(' ') : null
+}
+
+/** Match a normalized subspecies input against route aliases, supporting both full trinomials and bare epithets. */
 function aliasMatches(inputNorm: string, aliases: string[]): boolean {
   if (!inputNorm) return false
-  return aliases.some(a => norm(a) === inputNorm)
+  const infra = infraspecificPart(inputNorm)
+  return aliases.some(a => {
+    const na = norm(a)
+    return na === inputNorm || (infra !== null && na === infra)
+  })
+}
+
+function isSideOnlyPair(pair: ConfirmarPair): boolean {
+  return pair.routing_mode === 'side_only' || pair.wave === 'wave3b_non_ithomiini'
 }
 
 /**
@@ -298,6 +328,7 @@ export function resolveRegionalRoute(
       cardId: null,
       status: 'unknown_pair',
       regionFallback: false,
+      canSwitchRegion: false,
       imageUrl: null,
       imageWidth: null,
       imageHeight: null,
@@ -317,19 +348,13 @@ export function resolveRegionalRoute(
   const sspA = norm(input.subspeciesA)
   const sspB = norm(input.subspeciesB)
 
-  // Explicit user region toggle override (must match an active route of this pair)
-  if (input.preferredCardId) {
-    const chosen = pair.routes.find(r => r.status === 'active' && r.card_id === input.preferredCardId)
-    if (chosen) return buildActiveResolution(pair, chosen, locale, false, input.rootUrl)
-  }
-
   // Wave 3B contract Rule 1: pair explicitly classified as not_reliably_separable_in_photos
   if (pair.routes.length === 1 && pair.routes[0].status === 'not_reliably_separable_in_photos') {
     return buildNullResolution(pair, 'not_reliably_separable_in_photos', locale, pair.routes[0])
   }
 
-  // Step 1: Subspecies match (a OR b alias, trimmed case-insensitive)
-  const hasSspInput = sspA.length > 0 || sspB.length > 0
+  // Step 1: Subspecies match (Wave 2 / Wave 3A only — skipped for side-only Wave 3B contract)
+  const hasSspInput = !isSideOnlyPair(pair) && (sspA.length > 0 || sspB.length > 0)
   if (hasSspInput) {
     const matchesA = sspA ? pair.routes.filter(r => aliasMatches(sspA, r.subspecies_a_aliases)) : []
     const matchesB = sspB ? pair.routes.filter(r => aliasMatches(sspB, r.subspecies_b_aliases)) : []
@@ -346,12 +371,11 @@ export function resolveRegionalRoute(
       if (route.status !== 'active') {
         return buildNullResolution(pair, mapNonActiveStatus(route.status), locale, route)
       }
-      return buildActiveResolution(pair, route, locale, false, input.rootUrl)
+      return buildActiveResolution(pair, route, locale, false, false, input.rootUrl)
     }
 
     const matched = matchesA.length > 0 ? matchesA : matchesB
     if (matched.length > 0) {
-      // If multiple routes matched one alias (rare), narrow by side if supplied
       const route = (side ? matched.find(r => r.side_andes.includes(side)) : null) ?? matched[0]
       if (side && !route.side_andes.includes(side)) {
         return buildNullResolution(pair, 'conflicting_side_and_subspecies', locale, route)
@@ -359,7 +383,7 @@ export function resolveRegionalRoute(
       if (route.status !== 'active') {
         return buildNullResolution(pair, mapNonActiveStatus(route.status), locale, route)
       }
-      return buildActiveResolution(pair, route, locale, false, input.rootUrl)
+      return buildActiveResolution(pair, route, locale, false, false, input.rootUrl)
     }
 
     // Neither subspecies matched any alias: fail closed if side_andes is omitted
@@ -372,7 +396,7 @@ export function resolveRegionalRoute(
   if (side) {
     const activeForSide = pair.routes.filter(r => r.status === 'active' && r.side_default_for.includes(side))
     if (activeForSide.length === 1) {
-      return buildActiveResolution(pair, activeForSide[0], locale, false, input.rootUrl)
+      return buildActiveResolution(pair, activeForSide[0], locale, false, false, input.rootUrl)
     }
     const nonActiveForSide = pair.routes.find(r => r.status !== 'active' && r.side_andes.includes(side))
     if (nonActiveForSide) {
@@ -381,11 +405,17 @@ export function resolveRegionalRoute(
     return buildNullResolution(pair, 'no_card_for_side', locale)
   }
 
-  // Step 3: Unspecified region fallback (only when both subspecies and side_andes are omitted)
+  // Step 3: Unspecified region fallback (only here may a manual region preference switch between active cards)
+  if (input.preferredCardId) {
+    const chosen = pair.routes.find(r => r.status === 'active' && r.card_id === input.preferredCardId)
+    if (chosen) {
+      return buildActiveResolution(pair, chosen, locale, false, true, input.rootUrl)
+    }
+  }
   if (pair.default_card_id) {
     const defRoute = pair.routes.find(r => r.status === 'active' && r.card_id === pair.default_card_id)
     if (defRoute) {
-      return buildActiveResolution(pair, defRoute, locale, true, input.rootUrl)
+      return buildActiveResolution(pair, defRoute, locale, true, true, input.rootUrl)
     }
   }
   const firstNonActive = pair.routes.find(r => r.status !== 'active')
@@ -397,27 +427,27 @@ export function resolveRegionalRoute(
 
 /**
  * Conservative continental-Ecuador East/West Andes classifier from GPS coordinates.
- * Returns null outside continental Ecuador or inside the ~70 km inter-Andean crest corridor
- * so valley sites (e.g. Quito, Cuenca) are never forced onto the wrong slope.
+ * Returns null outside continental Ecuador or inside the inter-Andean crest corridor
+ * so valley towns (Quito, Tulcán, Cuenca, Loja, Otavalo, Riobamba) are never forced onto a slope.
  */
 export function ecuadorSideFromGps(lat: number, lon: number): SideAndes | null {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   if (lat > 1.5 || lat < -5.1 || lon < -81.2 || lon > -75.0) return null
-  const ridgeLon = -78.4 + 0.24 * lat
+  // North of the equator the Andes curve more steeply NE toward Tulcán (0.81, -77.72)
+  const ridgeLon = lat > 0 ? -78.4 + 0.85 * lat : -78.4 + 0.24 * lat
   const bufferDeg = 0.35
   if (lon > ridgeLon + bufferDeg) return 'East'
   if (lon < ridgeLon - bufferDeg) return 'West'
   return null
 }
 
-/** Extract the strongest confident subspecies name for a species prediction, if any. */
+/** Extract the strongest confident subspecies name using the app's SSP_MIN / SSP_SHARE thresholds. */
 function dominantSubspecies(pred: PredictionInput | undefined): string | null {
   const list = pred?.subspecies
   if (!list || list.length === 0) return null
   const best = list[0]
   if (!best?.name?.trim()) return null
-  // Only propagate a subspecies prediction when it carries meaningful support
-  if (best.p < 0.01 || (pred.p > 0 && best.p < 0.15 * pred.p)) return null
+  if (best.p < SSP_MIN || (pred.p > 0 && best.p < SSP_SHARE * pred.p)) return null
   return best.name.trim()
 }
 
@@ -458,29 +488,33 @@ function findPairForSpecies(
 function findIntraspecificPair(manifest: ConfirmarVisualManifest, topPred: PredictionInput): PairLookupMatch | null {
   const topNorm = norm(topPred.name)
   if (!topNorm) return null
-  const ssps = (topPred.subspecies ?? []).filter(s => s.p >= 0.01)
+  const ssps = topPred.subspecies ?? []
+  const topSsp = dominantSubspecies(topPred)
+  const topSspNorm = norm(topSsp)
 
   for (const pair of Object.values(manifest.pairs)) {
     const parentA = norm(parentSpeciesOf(pair.species_a))
     const parentB = norm(parentSpeciesOf(pair.species_b))
     if (parentA !== parentB || parentA !== topNorm) continue
-    // Species matches an intraspecific pair (e.g. Hypothyris euclea -> p07, Godyris zavaleta -> p15)
-    const sspNames = ssps.map(s => norm(s.name))
+
     const pa = norm(pair.species_a)
     const pb = norm(pair.species_b)
-    const hasA = sspNames.includes(pa)
-    const hasB = sspNames.includes(pb)
-    if (hasA && hasB) {
-      return { pair, subspeciesA: pair.species_a, subspeciesB: pair.species_b }
-    }
-    // Even if only top species is known (e.g. older head without subspecies or single ssp), surface the pair
-    if (ssps.length === 0 || hasA || hasB) {
+
+    // When subspecies scores exist, require the dominant subspecies to belong to this intraspecific pair
+    if (ssps.length > 0) {
+      if (!topSspNorm) continue
+      const isTopA = topSspNorm === pa || infraspecificPart(topSspNorm) === infraspecificPart(pa)
+      const isTopB = topSspNorm === pb || infraspecificPart(topSspNorm) === infraspecificPart(pb)
+      if (!isTopA && !isTopB) continue
       return {
         pair,
-        subspeciesA: hasA ? pair.species_a : null,
-        subspeciesB: hasB ? pair.species_b : null,
+        subspeciesA: isTopA ? pair.species_a : null,
+        subspeciesB: isTopB ? pair.species_b : null,
       }
     }
+
+    // Older head without subspecies predictions: allow species-level match
+    return { pair, subspeciesA: null, subspeciesB: null }
   }
   return null
 }
@@ -505,13 +539,14 @@ export function resolveConfirmarVisualCard(
   const top1 = preds[0]
   let found: PairLookupMatch | null = null
 
-  // 1. If the user actively selected a runner-up candidate to compare against #1, check that pair first
+  // 1. If the user explicitly selected a runner-up candidate to compare against #1, resolve ONLY that pair
   if (input.comparedSpecies && norm(input.comparedSpecies) !== norm(top1.name)) {
     const comparedPred = preds.find(p => norm(p.name) === norm(input.comparedSpecies)) ?? {
       name: input.comparedSpecies,
       p: 0,
     }
     found = findPairForSpecies(manifest, top1, comparedPred)
+    if (!found) return null
   }
 
   // 2. Check top-2 species pair

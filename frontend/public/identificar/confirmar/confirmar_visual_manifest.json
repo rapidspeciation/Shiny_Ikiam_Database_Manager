@@ -1,9 +1,9 @@
 {
   "schema": "confirmar-visual-cards/1",
-  "generated_at": "2026-11-25T21:07:26Z",
   "waves": [
     {
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "map_version": "2026-11-25-wave2-regional-v2",
       "pairs": 15,
       "active_cards": 16,
@@ -12,6 +12,7 @@
     },
     {
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "map_version": "2026-11-25-wave3a-regional-v1",
       "pairs": 16,
       "active_cards": 11,
@@ -20,6 +21,7 @@
     },
     {
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "map_version": "2026-11-25-wave3b-non-ithomiini-v1",
       "pairs": 16,
       "active_cards": 8,
@@ -49,6 +51,7 @@
     "p01": {
       "pair_id": "p01",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Heliconius erato",
       "species_b": "Heliconius melpomene",
       "classification": "multi_region_morph_split",
@@ -198,6 +201,7 @@
     "p02": {
       "pair_id": "p02",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Mechanitis messenoides",
       "species_b": "Melinaea mothone",
       "classification": "single_region",
@@ -252,6 +256,7 @@
     "p03": {
       "pair_id": "p03",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Methona confusa",
       "species_b": "Thyridia psidii",
       "classification": "widespread_single_card",
@@ -309,6 +314,7 @@
     "p04": {
       "pair_id": "p04",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Melinaea isocomma",
       "species_b": "Melinaea mothone",
       "classification": "single_region",
@@ -364,6 +370,7 @@
     "p05": {
       "pair_id": "p05",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Mechanitis mazaeus",
       "species_b": "Mechanitis messenoides",
       "classification": "single_region",
@@ -423,6 +430,7 @@
     "p06": {
       "pair_id": "p06",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Mechanitis menapis",
       "species_b": "Mechanitis polymnia",
       "classification": "single_region",
@@ -476,6 +484,7 @@
     "p07": {
       "pair_id": "p07",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Hypothyris euclea intermedia",
       "species_b": "Hypothyris euclea pyrippe",
       "classification": "single_region",
@@ -530,6 +539,7 @@
     "p08": {
       "pair_id": "p08",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Oleria onega",
       "species_b": "Oleria tigilla",
       "classification": "single_region",
@@ -587,6 +597,7 @@
     "p09": {
       "pair_id": "p09",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Greta andromica",
       "species_b": "Hypomenitis polissena",
       "classification": "widespread_single_card",
@@ -644,6 +655,7 @@
     "p10": {
       "pair_id": "p10",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Ithomia agnosia",
       "species_b": "Ithomia pseudoagalla",
       "classification": "cross_andes_allopatric_single_card",
@@ -699,6 +711,7 @@
     "p11": {
       "pair_id": "p11",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Napeogenes duessa",
       "species_b": "Napeogenes zurippa",
       "classification": "single_region",
@@ -755,6 +768,7 @@
     "p12": {
       "pair_id": "p12",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Hyposcada anchiala",
       "species_b": "Hyposcada illinissa",
       "classification": "single_region",
@@ -813,6 +827,7 @@
     "p13": {
       "pair_id": "p13",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Hypomenitis lydia",
       "species_b": "Pteronymia oneida",
       "classification": "single_region",
@@ -867,6 +882,7 @@
     "p14": {
       "pair_id": "p14",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Heliconius cydno",
       "species_b": "Heliconius timareta",
       "classification": "cross_andes_allopatric_single_card",
@@ -928,6 +944,7 @@
     "p15": {
       "pair_id": "p15",
       "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Godyris zavaleta matronalis",
       "species_b": "Godyris zavaleta telesilla",
       "classification": "cross_andes_allopatric_single_card",
@@ -983,6 +1000,7 @@
     "w3a_01": {
       "pair_id": "w3a_01",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Morpho achilles",
       "species_b": "Morpho helenor",
       "classification": "held_sex_confounded_small_n",
@@ -1014,6 +1032,7 @@
     "w3a_02": {
       "pair_id": "w3a_02",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Opsiphanes cassiae",
       "species_b": "Opsiphanes invirae",
       "classification": "held_suspect_reference_labels",
@@ -1047,6 +1066,7 @@
     "w3a_03": {
       "pair_id": "w3a_03",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Nessaea hewitsonii",
       "species_b": "Nessaea obrinus",
       "classification": "held_sex_confounded_small_n",
@@ -1081,6 +1101,7 @@
     "w3a_04": {
       "pair_id": "w3a_04",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Mechanitis mazaeus",
       "species_b": "Mechanitis polymnia",
       "classification": "single_region",
@@ -1140,6 +1161,7 @@
     "w3a_05": {
       "pair_id": "w3a_05",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Mechanitis lysimnia",
       "species_b": "Mechanitis polymnia",
       "classification": "single_region",
@@ -1198,6 +1220,7 @@
     "w3a_06": {
       "pair_id": "w3a_06",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Forbestra olivencia",
       "species_b": "Mechanitis mazaeus",
       "classification": "single_region",
@@ -1257,6 +1280,7 @@
     "w3a_07": {
       "pair_id": "w3a_07",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Hypothyris euclea",
       "species_b": "Hypothyris ninonia",
       "classification": "single_region",
@@ -1319,6 +1343,7 @@
     "w3a_08": {
       "pair_id": "w3a_08",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Scada reckia",
       "species_b": "Scada zibia",
       "classification": "single_region_one_way_caution",
@@ -1378,6 +1403,7 @@
     "w3a_09": {
       "pair_id": "w3a_09",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Brevioleria aelia",
       "species_b": "Brevioleria arzalia",
       "classification": "inseparable_in_photos",
@@ -1411,6 +1437,7 @@
     "w3a_10": {
       "pair_id": "w3a_10",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Dircenna dero",
       "species_b": "Dircenna loreta",
       "classification": "inseparable_or_unverified_refs",
@@ -1444,6 +1471,7 @@
     "w3a_11": {
       "pair_id": "w3a_11",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Oleria assimilis",
       "species_b": "Oleria tigilla",
       "classification": "single_region_subtle_caution",
@@ -1500,6 +1528,7 @@
     "w3a_12": {
       "pair_id": "w3a_12",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Methona confusa",
       "species_b": "Methona grandior",
       "classification": "single_region",
@@ -1557,6 +1586,7 @@
     "w3a_13": {
       "pair_id": "w3a_13",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Ithomia diasia",
       "species_b": "Ithomia hyala",
       "classification": "single_region_provisional_subtle",
@@ -1612,6 +1642,7 @@
     "w3a_14": {
       "pair_id": "w3a_14",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Heliconius eleuchia",
       "species_b": "Heliconius sapho",
       "classification": "single_region",
@@ -1669,6 +1700,7 @@
     "w3a_15": {
       "pair_id": "w3a_15",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Heliconius cydno",
       "species_b": "Heliconius sapho",
       "classification": "single_region",
@@ -1727,6 +1759,7 @@
     "w3a_16": {
       "pair_id": "w3a_16",
       "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
       "species_a": "Greta andromica",
       "species_b": "Hypoleria lavinia",
       "classification": "single_region",
@@ -1782,6 +1815,7 @@
     "w3b_01": {
       "pair_id": "w3b_01",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Adelpha irmina",
       "species_b": "Adelpha saundersii",
       "classification": "single_region",
@@ -1833,6 +1867,7 @@
     "w3b_02": {
       "pair_id": "w3b_02",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Catonephele acontius",
       "species_b": "Catonephele orites",
       "classification": "not_reliably_separable_in_photos",
@@ -1862,6 +1897,7 @@
     "w3b_03": {
       "pair_id": "w3b_03",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Gorgythion begga",
       "species_b": "Gorgythion beggina",
       "classification": "not_reliably_separable_in_photos",
@@ -1892,6 +1928,7 @@
     "w3b_04": {
       "pair_id": "w3b_04",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Opsiphanes cassina",
       "species_b": "Opsiphanes invirae",
       "classification": "not_reliably_separable_in_photos",
@@ -1922,6 +1959,7 @@
     "w3b_05": {
       "pair_id": "w3b_05",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Pronophila orcus",
       "species_b": "Pronophila unifasciata",
       "classification": "widespread_single_card",
@@ -1975,6 +2013,7 @@
     "w3b_06": {
       "pair_id": "w3b_06",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Parides iphidamas",
       "species_b": "Parides panares",
       "classification": "not_reliably_separable_in_photos",
@@ -2004,6 +2043,7 @@
     "w3b_07": {
       "pair_id": "w3b_07",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Adelpha iphicleola",
       "species_b": "Adelpha iphiclus",
       "classification": "not_reliably_separable_in_photos",
@@ -2034,6 +2074,7 @@
     "w3b_08": {
       "pair_id": "w3b_08",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Caligo brasiliensis",
       "species_b": "Caligo eurilochus",
       "classification": "single_region",
@@ -2085,6 +2126,7 @@
     "w3b_09": {
       "pair_id": "w3b_09",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Eunica alpais",
       "species_b": "Eunica volumna",
       "classification": "single_region",
@@ -2136,6 +2178,7 @@
     "w3b_10": {
       "pair_id": "w3b_10",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Epargyreus exadeus",
       "species_b": "Epargyreus socus",
       "classification": "not_reliably_separable_in_photos",
@@ -2165,6 +2208,7 @@
     "w3b_11": {
       "pair_id": "w3b_11",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Archaeoprepona demophon",
       "species_b": "Archaeoprepona demophoon",
       "classification": "widespread_single_card",
@@ -2218,6 +2262,7 @@
     "w3b_12": {
       "pair_id": "w3b_12",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Adelpha justina",
       "species_b": "Adelpha zina",
       "classification": "widespread_single_card",
@@ -2271,6 +2316,7 @@
     "w3b_13": {
       "pair_id": "w3b_13",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Morpho deidamia",
       "species_b": "Morpho helenor",
       "classification": "single_region",
@@ -2322,6 +2368,7 @@
     "w3b_14": {
       "pair_id": "w3b_14",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Diaethria clymena",
       "species_b": "Diaethria eluina",
       "classification": "not_reliably_separable_in_photos",
@@ -2351,6 +2398,7 @@
     "w3b_15": {
       "pair_id": "w3b_15",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Pyrrhogyra amphiro",
       "species_b": "Pyrrhogyra neaerea",
       "classification": "not_reliably_separable_in_photos",
@@ -2380,6 +2428,7 @@
     "w3b_16": {
       "pair_id": "w3b_16",
       "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
       "species_a": "Perisama dorbignyi",
       "species_b": "Perisama yeba",
       "classification": "single_region",

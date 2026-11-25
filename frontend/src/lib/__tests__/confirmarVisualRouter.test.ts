@@ -59,18 +59,20 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
 })
 
 describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract', () => {
-  it('p01 routes West (cyrbia/cythera) and East Napo (lativitta/malleti) cleanly, case-insensitively and trimmed', () => {
+  it('p01 routes West (cyrbia/cythera) and East Napo (lativitta/malleti) cleanly with content-hashed URLs', () => {
     const west = resolveRegionalRoute(manifest, {
       pairId: 'p01',
       subspeciesA: '  CYRBIA  ',
       locale: 'es',
       rootUrl: ROOT_URL,
     })
+    const expectedWestHash = manifest.pairs.p01.routes[0].assets!.es.sha256.slice(0, 10)
     expect(west.status).toBe('active')
     expect(west.cardId).toBe('p01_west')
     expect(west.regionFallback).toBe(false)
+    expect(west.canSwitchRegion).toBe(false)
     expect(west.regionBadge).toBe('Occidente')
-    expect(west.imageUrl).toBe('https://example.test/ithomiini/identificar/confirmar/cards/es/p01_west.webp')
+    expect(west.imageUrl).toBe(`https://example.test/ithomiini/identificar/confirmar/cards/es/p01_west.webp?v=${expectedWestHash}`)
     expect(west.alternateCards.map(a => a.cardId)).toEqual(['p01_west', 'p01_east_napo'])
 
     const eastNapo = resolveRegionalRoute(manifest, {
@@ -82,31 +84,73 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
     })
     expect(eastNapo.status).toBe('active')
     expect(eastNapo.cardId).toBe('p01_east_napo')
+    expect(eastNapo.canSwitchRegion).toBe(false)
     expect(eastNapo.regionBadge).toBe('East · Napo & Amazonia')
-    expect(eastNapo.imageUrl).toBe('https://example.test/ithomiini/identificar/confirmar/cards/en/p01_east_napo.webp')
+    expect(eastNapo.imageUrl).toContain('/cards/en/p01_east_napo.webp?v=')
   })
 
-  it('p01 Pastaza foothills (notabilis/plesseni) and South (etylus/ecuadorensis) return explicit null unavailable_deferred_ring, NEVER substituting Napo', () => {
+  it('matches full trinomial subspecies names against bare-epithet aliases (Fable R1-F1)', () => {
+    const p05 = resolveRegionalRoute(manifest, {
+      pairId: 'p05',
+      subspeciesB: 'Mechanitis messenoides messenoides',
+      locale: 'es',
+    })
+    expect(p05.status).toBe('active')
+    expect(p05.cardId).toBe('p05')
+
+    const w3a07 = resolveRegionalRoute(manifest, {
+      pairId: 'w3a_07',
+      subspeciesA: 'Hypothyris euclea peruviana',
+      locale: 'en',
+    })
+    expect(w3a07.status).toBe('active')
+    expect(w3a07.cardId).toBe('w3a_07')
+  })
+
+  it('applies Wave 3B side-only contract so subspecies predictions never hide valid W3B cards (Sol R1-F2 / Fable R1-F2)', () => {
+    const w3b01 = resolveRegionalRoute(manifest, {
+      pairId: 'w3b_01',
+      subspeciesA: 'Adelpha irmina irmina',
+      locale: 'es',
+    })
+    expect(w3b01.status).toBe('active')
+    expect(w3b01.cardId).toBe('w3b_01')
+    expect(w3b01.regionFallback).toBe(true)
+
+    const w3b13 = resolveRegionalRoute(manifest, {
+      pairId: 'w3b_13',
+      subspeciesB: 'Morpho helenor theodorus',
+      locale: 'en',
+    })
+    expect(w3b13.status).toBe('active')
+    expect(w3b13.cardId).toBe('w3b_13')
+    expect(w3b13.regionFallback).toBe(true)
+  })
+
+  it('p01 Pastaza foothills (notabilis/plesseni) and South (etylus/ecuadorensis) return explicit null unavailable_deferred_ring, NEVER overridden by preferredCardId (Sol R1-F3)', () => {
     for (const input of [
       { subspeciesA: 'notabilis', sideAndes: 'East' as const },
-      { subspeciesB: 'Heliconius melpomene plesseni' },
+      { subspeciesA: 'notabilis', preferredCardId: 'p01_west' },
+      { subspeciesB: 'Heliconius melpomene plesseni', preferredCardId: 'p01_east_napo' },
       { subspeciesA: 'etylus', sideAndes: 'East' as const },
       { subspeciesB: 'ecuadorensis' },
     ]) {
       const res = resolveRegionalRoute(manifest, { pairId: 'p01', ...input, locale: 'es' })
       expect(res.cardId).toBeNull()
       expect(res.status).toBe('unavailable_deferred_ring')
+      expect(res.canSwitchRegion).toBe(false)
       expect(res.imageUrl).toBeNull()
       expect(res.honestNote).toBeTruthy()
       expect(res.honestNote).not.toMatch(/CAM\d+|unlocked|A1|B1/i)
     }
   })
 
-  it('rejects conflicting subspecies inputs and conflicting side+subspecies inputs', () => {
+  it('rejects conflicting subspecies inputs and conflicting side+subspecies inputs even if preferredCardId is set', () => {
     const conflictSsp = resolveRegionalRoute(manifest, {
       pairId: 'p01',
       subspeciesA: 'cyrbia',
       subspeciesB: 'malleti',
+      preferredCardId: 'p01_west',
       locale: 'en',
     })
     expect(conflictSsp.cardId).toBeNull()
@@ -116,6 +160,7 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
       pairId: 'p01',
       sideAndes: 'East',
       subspeciesA: 'cyrbia',
+      preferredCardId: 'p01_west',
       locale: 'en',
     })
     expect(conflictSide.cardId).toBeNull()
@@ -124,23 +169,29 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
     const unknownSsp = resolveRegionalRoute(manifest, {
       pairId: 'p01',
       subspeciesA: 'hydara',
+      preferredCardId: 'p01_west',
       locale: 'en',
     })
     expect(unknownSsp.cardId).toBeNull()
     expect(unknownSsp.status).toBe('unknown_subspecies')
   })
 
-  it('handles side-only match, no_card_for_side, unspecified default fallback, and preferredCardId override', () => {
-    expect(resolveRegionalRoute(manifest, { pairId: 'p01', sideAndes: 'East', locale: 'en' }).cardId).toBe('p01_east_napo')
+  it('handles side-only match, no_card_for_side, unspecified default fallback, and manual region switch only on unspecified fallback', () => {
+    const eastOnly = resolveRegionalRoute(manifest, { pairId: 'p01', sideAndes: 'East', preferredCardId: 'p01_west', locale: 'en' })
+    expect(eastOnly.cardId).toBe('p01_east_napo')
+    expect(eastOnly.canSwitchRegion).toBe(false)
+
     expect(resolveRegionalRoute(manifest, { pairId: 'p01', sideAndes: 'West', locale: 'en' }).cardId).toBe('p01_west')
 
     const fallback = resolveRegionalRoute(manifest, { pairId: 'p01', locale: 'en' })
     expect(fallback.cardId).toBe('p01_west')
     expect(fallback.regionFallback).toBe(true)
+    expect(fallback.canSwitchRegion).toBe(true)
 
     const switched = resolveRegionalRoute(manifest, { pairId: 'p01', locale: 'en', preferredCardId: 'p01_east_napo' })
     expect(switched.cardId).toBe('p01_east_napo')
     expect(switched.regionFallback).toBe(false)
+    expect(switched.canSwitchRegion).toBe(true)
 
     // East-only pair p02 queried with West -> no_card_for_side
     const p02West = resolveRegionalRoute(manifest, { pairId: 'p02', sideAndes: 'West', locale: 'es' })
@@ -169,7 +220,6 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_02', sideAndes: 'East', locale: 'en' }).status).toBe('held_suspect_reference_labels')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_09', sideAndes: 'East', locale: 'en' }).status).toBe('inseparable_in_photos')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_10', sideAndes: 'East', locale: 'en' }).status).toBe('inseparable_or_unverified_refs')
-    // West side on East-only Wave 3A held pair -> no_card_for_side
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_09', sideAndes: 'West', locale: 'en' }).status).toBe('no_card_for_side')
   })
 })
@@ -187,7 +237,7 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
     expect(res).not.toBeNull()
     expect(res!.displayKind).toBe('card')
     expect(res!.cardId).toBe('p01_east_napo')
-    expect(res!.imageUrl).toContain('/cards/es/p01_east_napo.webp')
+    expect(res!.imageUrl).toContain('/cards/es/p01_east_napo.webp?v=')
   })
 
   it('switches imageUrl and badges cleanly between ES and EN locales', () => {
@@ -203,16 +253,16 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
     const en = resolveConfirmarVisualCard(manifest, { ...base, locale: 'en' })!
     expect(es.cardId).toBe('w3b_01')
     expect(en.cardId).toBe('w3b_01')
-    expect(es.imageUrl).toContain('/cards/es/w3b_01.webp')
-    expect(en.imageUrl).toContain('/cards/en/w3b_01.webp')
+    expect(es.imageUrl).toContain('/cards/es/w3b_01.webp?v=')
+    expect(en.imageUrl).toContain('/cards/en/w3b_01.webp?v=')
     expect(es.viewBadge).toBe('Solo vista ventral')
     expect(en.viewBadge).toBe('Underside view only')
     expect(es.regionBadge).toBe('Oriente')
     expect(en.regionBadge).toBe('East Ecuador')
   })
 
-  it('prioritizes comparedSpecies over #2 and supports intraspecific pairs (p07, p15)', () => {
-    const compared = resolveConfirmarVisualCard(manifest, {
+  it('resolves ONLY the compared pair when comparedSpecies is chosen, returning null if unmatched (Sol R1-F4 / Fable R1-F8)', () => {
+    const comparedMatch = resolveConfirmarVisualCard(manifest, {
       topPredictions: [
         { name: 'Mechanitis mazaeus', p: 0.52 },
         { name: 'Mechanitis lysimnia', p: 0.25 },
@@ -222,8 +272,21 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
       sideAndes: 'East',
       locale: 'en',
     })
-    expect(compared?.cardId).toBe('w3a_04')
+    expect(comparedMatch?.cardId).toBe('w3a_04')
 
+    const comparedUnmatched = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius erato', p: 0.55 },
+        { name: 'Heliconius melpomene', p: 0.35 },
+        { name: 'Danaus plexippus', p: 0.05 },
+      ],
+      comparedSpecies: 'Danaus plexippus',
+      locale: 'en',
+    })
+    expect(comparedUnmatched).toBeNull()
+  })
+
+  it('supports intraspecific pairs (p07, p15) only when dominant subspecies belongs to the pair (Fable R1-F6)', () => {
     const p07 = resolveConfirmarVisualCard(manifest, {
       topPredictions: [
         {
@@ -240,6 +303,23 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
       locale: 'es',
     })
     expect(p07?.cardId).toBe('p07')
+
+    // Dominant subspecies is valora (not intermedia/pyrippe) -> must NOT falsely surface p07
+    const valoraDom = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        {
+          name: 'Hypothyris euclea',
+          p: 0.9,
+          subspecies: [
+            { name: 'Hypothyris euclea valora', p: 0.7 },
+            { name: 'Hypothyris euclea intermedia', p: 0.18 },
+          ],
+        },
+      ],
+      sideAndes: 'East',
+      locale: 'es',
+    })
+    expect(valoraDom).toBeNull()
 
     const p15 = resolveConfirmarVisualCard(manifest, {
       topPredictions: [{ name: 'Godyris zavaleta', p: 0.91 }],
@@ -272,14 +352,16 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
     expect(wrongSide?.displayKind).toBe('hidden')
   })
 
-  it('classifies clear East/West Ecuador GPS sites conservatively and returns null in the inter-Andean valley or outside Ecuador', () => {
+  it('classifies clear East/West Ecuador GPS sites conservatively and returns null in inter-Andean towns incl. Quito & Tulcán (Fable R1-F5)', () => {
     expect(ecuadorSideFromGps(-0.64, -76.15)).toBe('East') // Tiputini
     expect(ecuadorSideFromGps(-0.95, -77.86)).toBe('East') // Tena / Ikiam
+    expect(ecuadorSideFromGps(0.09, -76.89)).toBe('East') // Lago Agrio
     expect(ecuadorSideFromGps(-4.07, -78.95)).toBe('East') // Zamora
     expect(ecuadorSideFromGps(-0.05, -78.78)).toBe('West') // Mindo
     expect(ecuadorSideFromGps(-2.19, -79.89)).toBe('West') // Guayaquil
     expect(ecuadorSideFromGps(0.96, -79.65)).toBe('West') // Esmeraldas
-    expect(ecuadorSideFromGps(-0.18, -78.47)).toBeNull() // Quito (inter-Andean valley)
+    expect(ecuadorSideFromGps(-0.18, -78.47)).toBeNull() // Quito
+    expect(ecuadorSideFromGps(0.81, -77.72)).toBeNull() // Tulcán
     expect(ecuadorSideFromGps(4.71, -74.07)).toBeNull() // Bogotá (outside Ecuador)
   })
 })

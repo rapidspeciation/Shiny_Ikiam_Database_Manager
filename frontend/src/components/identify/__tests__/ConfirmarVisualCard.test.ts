@@ -32,7 +32,8 @@ const activeMatch = (over: Partial<ConfirmarCardMatch> = {}): ConfirmarCardMatch
   status: 'active',
   displayKind: 'card',
   regionFallback: true,
-  imageUrl: 'https://example.test/identificar/confirmar/cards/es/p01_west.webp',
+  canSwitchRegion: true,
+  imageUrl: 'https://example.test/identificar/confirmar/cards/es/p01_west.webp?v=1234567890',
   imageWidth: 1400,
   imageHeight: 1539,
   regionBadge: 'Occidente',
@@ -50,18 +51,20 @@ const activeMatch = (over: Partial<ConfirmarCardMatch> = {}): ConfirmarCardMatch
 })
 
 describe('ConfirmarVisualCard', () => {
-  it('renders active card, region switcher pills (>=44px tap targets), and opens/closes zoomable PhotoViewer lightbox', async () => {
+  it('renders active card, region switcher pills (>=44px tap targets, aria-pressed), and opens/closes zoomable PhotoViewer lightbox', async () => {
     locale.value = 'es'
     const selected: string[] = []
     const host = mountCard(activeMatch(), id => selected.push(id))
 
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')).not.toBeNull()
-    // When the region switcher is shown, the region badge is hidden so the region is not repeated twice
     expect(host.querySelector('[data-testid="confirmar-region-badge"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-view-badge"]')!.textContent?.trim()).toBe('Anverso y reverso')
     expect(host.querySelector('[data-testid="confirmar-pair-title"]')!.textContent).toContain('Heliconius erato cyrbia')
 
+    const westBtn = host.querySelector<HTMLButtonElement>('[data-testid="confirmar-region-opt-p01_west"]')!
     const eastBtn = host.querySelector<HTMLButtonElement>('[data-testid="confirmar-region-opt-p01_east_napo"]')!
+    expect(westBtn.getAttribute('aria-pressed')).toBe('true')
+    expect(eastBtn.getAttribute('aria-pressed')).toBe('false')
     expect(eastBtn.className).toContain('min-h-11')
     expect(eastBtn.className).toContain('border-control')
     eastBtn.click()
@@ -79,6 +82,13 @@ describe('ConfirmarVisualCard', () => {
     expect(document.body.querySelector('[data-testid="photo-viewer"]')).toBeNull()
   })
 
+  it('hides the region switcher and shows the region badge when region is locked by side or subspecies', () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch({ canSwitchRegion: false, regionFallback: false }))
+    expect(host.querySelector('[data-testid="confirmar-region-switcher"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-region-badge"]')!.textContent?.trim()).toBe('Occidente')
+  })
+
   it('renders crisp honest note for inseparable/deferred pairs with zero internal machinery', () => {
     locale.value = 'en'
     const host = mountCard({
@@ -86,6 +96,7 @@ describe('ConfirmarVisualCard', () => {
       cardId: null,
       status: 'not_reliably_separable_in_photos',
       displayKind: 'honest_note',
+      canSwitchRegion: false,
       imageUrl: null,
       regionBadge: 'East & West Ecuador',
       taxonA: 'Gorgythion begga',
@@ -108,6 +119,7 @@ describe('ConfirmarVisualCard', () => {
       cardId: null,
       status: 'no_card_for_side',
       displayKind: 'hidden',
+      canSwitchRegion: false,
       imageUrl: null,
     })
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
