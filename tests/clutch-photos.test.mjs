@@ -92,6 +92,23 @@ test('JPEG segments: size, EXIF turn, and every metadata segment left out', () =
   assert.deepEqual(readJpeg(info.clean).orientation, 1);
   assert.equal(readJpeg(Buffer.from('not a jpeg')), null);
   assert.equal(readJpeg(Buffer.from([0x89, 0x50, 0x4e, 0x47])), null);
+  // Hand-made JPEGs carrying odd/reserved markers (JPG 0xc8, JPG0 0xf0, reserved 0x55) have them stripped;
+  // cut JPEGs (no EOI) and malformed 0x00 / duplicate SOI markers outside scans are rejected.
+  const base = readJpeg(jpeg({ width: 640, height: 480, gps: false })).clean;
+  const odd = (marker, text) => {
+    const payload = Buffer.from(text, 'latin1');
+    const head = Buffer.alloc(4);
+    head.writeUInt16BE(marker, 0);
+    head.writeUInt16BE(payload.length + 2, 2);
+    return Buffer.concat([head, payload]);
+  };
+  const smuggled = Buffer.concat([base.subarray(0, 2), odd(0xffc8, 'SECRET_C8'), odd(0xfff0, 'SECRET_F0'), odd(0xff55, 'SECRET_55'), base.subarray(2)]);
+  const stripped = readJpeg(smuggled);
+  assert.ok(stripped);
+  const strippedText = stripped.clean.toString('latin1');
+  assert.ok(!strippedText.includes('SECRET_C8') && !strippedText.includes('SECRET_F0') && !strippedText.includes('SECRET_55'));
+  assert.equal(readJpeg(base.subarray(0, base.length - 2)), null, 'missing EOI rejected');
+  assert.equal(readJpeg(Buffer.concat([base.subarray(0, 2), Buffer.from([0xff, 0xd8]), base.subarray(2)])), null, 'nested SOI rejected');
 });
 
 test('photos: uploaded in chunks that resume, stored without metadata, linked to an event or the day, listed with the clutch', async () => {

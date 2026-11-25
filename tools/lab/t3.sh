@@ -30,10 +30,23 @@ umask 077
 mkdir -p "$LAB" "$T3CODE_HOME/userdata" "$T3CODE_HOME/workspaces"
 
 stop() {
-  if [ -f "$LAB/t3.pid" ] && kill -0 "$(cat "$LAB/t3.pid")" 2>/dev/null; then
-    kill "$(cat "$LAB/t3.pid")" && echo "Lab T3 stopped"
+  if [ -f "$LAB/t3.pid" ]; then
+    local pid
+    pid="$(cat "$LAB/t3.pid")"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      for _ in $(seq 75); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.2
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "Lab T3 (pid $pid) did not exit after SIGTERM" >&2
+        return 1
+      fi
+      echo "Lab T3 stopped"
+    fi
+    rm -f "$LAB/t3.pid"
   fi
-  rm -f "$LAB/t3.pid"
 }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
 if [ "${1:-}" = "--install" ]; then
@@ -51,7 +64,7 @@ fi
 if [ "${1:-}" = "--update" ]; then
   HERE="$(cd "$(dirname "$0")/../.." && pwd)"
   exec node "$HERE/scripts/t3-update.mjs" ${2:+"$2"} --home "$T3CODE_HOME" --t3 "$T3" --local "http://127.0.0.1:$PORT" \
-    --restart "$HERE/tools/lab/t3.sh --bg" --token-file "$LAB/t3-admin-token" --token-label ithomiini-lab
+    --stop "$HERE/tools/lab/t3.sh --stop" --restart "$HERE/tools/lab/t3.sh --bg" --token-file "$LAB/t3-admin-token" --token-label ithomiini-lab
 fi
 
 # Provider settings: only Claude and Codex; the Claude models are chosen by the

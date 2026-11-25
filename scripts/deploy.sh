@@ -23,7 +23,7 @@ public="${DEPLOY_PUBLIC_URL-https://ithomiini-ikiam.com}"
 # What a release holds from the commit (git archive); the build adds web/ and server/instructions-history.json.
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
 # tools/identifier: the AI Identifier's worker (identify_species); its models stay in shared/identifier (tools/identifier/setup.sh).
-paths=(server docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier)
+paths=(server docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier tools/whatsapp/bridge-skill)
 # Runs from a PC (over ssh to claudeclaw) or on claudeclaw itself (the T3 assistant's checkout, /home/ubuntu/ithomiini/src).
 if [ "$(hostname)" = claudeclaw ] || [ "${DEPLOY_LOCAL:-}" = 1 ]; then
   local_install=1
@@ -144,6 +144,10 @@ after_install() {
     # The deployed app through its API (scripts/smoke-live.mjs: /health and direct calls, never a chat or a model),
     # with a test account file: TEST_ACCOUNT_FILE.
     if [ -n "${TEST_ACCOUNT_FILE:-}" ]; then LIVE_SMOKE_URL="$public" node scripts/smoke-live.mjs; fi
+  fi
+  # Refresh local WhatsApp copies of assistant/voice/core.md (and bridge skill) when installed on this PC; never sends WA messages or calls AI.
+  if [ -z "${local_install:-}" ] && [ "${WA_VOICE_SYNC:-1}" != 0 ] && [ -f scripts/wa-voice-sync.mjs ]; then
+    node scripts/wa-voice-sync.mjs --sync --warn-only || true
   fi
 }
 

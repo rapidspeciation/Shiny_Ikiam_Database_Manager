@@ -286,6 +286,22 @@ function provision(user, { freshToken, addProject, folder = user.username, title
       }
     }
   }
+  // WhatsApp workspaces (those with .claude/voice/voice.json or an existing .claude/skills/whatsapp-bridge)
+  // get the whatsapp-bridge skill in BOTH .claude/skills (Claude Code) and .agents/skills (Codex / Antigravity).
+  const claudeBridgeSkill = join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md');
+  const isWaWorkspace = existsSync(join(workspace, '.claude', 'voice', 'voice.json')) || existsSync(claudeBridgeSkill);
+  if (isWaWorkspace) {
+    const releaseBridgeSkill = join(release, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md');
+    const skillSource = existsSync(releaseBridgeSkill) ? releaseBridgeSkill : existsSync(claudeBridgeSkill) ? claudeBridgeSkill : null;
+    if (skillSource) {
+      const skillText = readFileSync(skillSource, 'utf8');
+      for (const folder of ['.claude', '.agents']) {
+        const target = join(workspace, folder, 'skills', 'whatsapp-bridge');
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, 'SKILL.md'), skillText);
+      }
+    }
+  }
 
   // Claude Code subagents (assistant/agents/*.md: notebook readers and reviewers on their own
   // model and effort) replace the workspace's .claude/agents. Codex has no subagent files.

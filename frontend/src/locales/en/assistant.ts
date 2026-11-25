@@ -71,13 +71,14 @@ export default {
   'Crear chats y enviar mensajes': 'Make chats and send messages',
   'Leer los chats (propuestas, dueño del chat)': "Read the chats (proposals, the chat's owner)",
   'Puente de la página de T3': "The bridge in T3's page",
+  'Marco (iframe) de T3': 'T3 iframe framing rewrite',
   'Comprobar la app con T3': 'Check the app with T3',
   'Volver a una versión anterior': 'Go back to an earlier version',
-  'T3 guarda las versiones que tuvo. Volver a una es lo mismo que actualizar a ella (con su copia de seguridad antes).':
-    'T3 keeps the versions it had. Going back to one is the same as updating to it (with its backup first).',
+  'Si la base de datos cambió de esquema, volver restaura la copia previa de statev2.sqlite (los chats posteriores quedan guardados en una copia nueva en ~/.t3/backups).':
+    'If the database schema changed, going back restores the pre-update statev2.sqlite backup (later chats are kept in a new backup under ~/.t3/backups).',
   'Volver a {version}': 'Go back to {version}',
-  '¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Lo que se hizo en {from} (chats nuevos, ajustes) no se ve en {to}; sigue guardado para cuando se actualice otra vez.':
-    'Go back to T3 {to}? T3 restarts on version {to}. What was done in {from} (new chats, settings) does not show in {to}; it stays saved for when it is updated again.',
+  '¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Si el esquema de la base no cambió, los chats actuales se conservan; si cambió, se restaura la copia previa de statev2.sqlite y los chats hechos en {from} quedan guardados en una copia aparte en ~/.t3/backups (no se restauran solos al actualizar).':
+    'Go back to T3 {to}? T3 restarts on version {to}. If the database schema did not change, current chats are kept; if it changed, the pre-update statev2.sqlite backup is restored and chats made in {from} stay in a separate backup under ~/.t3/backups (not automatically restored on upgrade).',
   'Arrastra para cambiar el tamaño': 'Drag to resize',
   // ProposalsView, ProposalsLive
   'Cambios propuestos': 'Proposed changes',

@@ -442,6 +442,19 @@ test('Antigravity MCP provisioning: installs 0555 proxy in shared/t3-tools, writ
     assert.equal(run('--refresh-all').status, 0);
     assert.equal(statSync(proxyPath).mode & 0o777, 0o555);
     assert.equal(readFileSync(proxyPath, 'utf8'), readFileSync(proxySrc, 'utf8'));
+
+    // 5. WhatsApp workspace gets whatsapp-bridge mirrored into BOTH .claude/skills and .agents/skills; regular workspace does not.
+    assert.equal(existsSync(join(workspaces, 'ana', '.claude', 'skills', 'whatsapp-bridge')), false);
+    assert.equal(existsSync(join(workspaces, 'ana', '.agents', 'skills', 'whatsapp-bridge')), false);
+    const waWs = join(workspaces, 'ana-wa');
+    mkdirSync(join(waWs, '.claude', 'voice'), { recursive: true });
+    writeFileSync(join(waWs, '.claude', 'ithomiini-workspace.json'), JSON.stringify({ user: 'ana', title: 'Ana WA' }));
+    writeFileSync(join(waWs, '.claude', 'voice', 'core.md'), 'WA voice\n');
+    writeFileSync(join(waWs, '.claude', 'voice', 'voice.json'), JSON.stringify({ files: ['core.md'] }));
+    assert.equal(run('--refresh', 'ana-wa').status, 0);
+    const expectedWaSkill = readFileSync(new URL('../tools/whatsapp/bridge-skill/SKILL.md', import.meta.url), 'utf8');
+    assert.equal(readFileSync(join(waWs, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedWaSkill);
+    assert.equal(readFileSync(join(waWs, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedWaSkill);
     db.close();
   } finally {
     rmSync(home, { recursive: true, force: true });

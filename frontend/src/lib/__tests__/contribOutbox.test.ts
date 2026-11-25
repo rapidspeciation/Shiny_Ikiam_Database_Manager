@@ -298,4 +298,47 @@ describe('contribOutbox', () => {
     await outbox.flush('ana')
     expect(JSON.stringify(calls[0].body)).not.toMatch(/gps|lat|lon|-0\.95|-77/)
   })
+
+  it('held old-consent items do not count toward the 50-item pending cap or pending() signal counter', async () => {
+    const { outbox, store } = setup(() => answer(0, null))
+    for (let k = 0; k < MAX_PENDING; k++) {
+      const base = draft(k)
+      const v1 = { ...base, sha256: k.toString(16).padStart(64, '0'), payload: { ...base.payload, consent: { version: 'v1-draft' } } }
+      await outbox.add('ana', v1)
+    }
+    expect(await outbox.held('ana')).toBe(MAX_PENDING)
+    expect(await outbox.pending('ana')).toBe(0)
+    // A new v2 item still fits because held old-consent items do not consume the 50-item active cap.
+    const fresh = await outbox.add('ana', { ...draft(99), sha256: 'f'.repeat(64) })
+    expect(store.items.has(fresh.id)).toBe(true)
+    expect(await outbox.pending('ana')).toBe(1)
+  })
+
+  it('concurrent flush sweeps an item added while an earlier flush (e.g. reconsent) is in flight so it finishes sent without flashing queued', async () => {
+    let releaseFirst: (a: Answer) => void = () => {}
+    let postCount = 0
+    const store = memoryStore()
+    const send: Send = async (method) => {
+      if (method !== 'POST') return answer(200, {})
+      postCount++
+      if (postCount === 1) return new Promise<Answer>(ok => (releaseFirst = ok))
+      return answer(201, OK)
+    }
+    let n = 0
+    const outbox = createOutbox({ store, send, now: () => 1_000_000, rand: () => 0.5, uuid: () => `00000000-0000-4000-8000-00000000001${++n}` })
+    const oldDraft = draft(1)
+    const heldItem = await outbox.add('ana', { ...oldDraft, sha256: '1'.repeat(64), payload: { ...oldDraft.payload, consent: { version: 'v1-draft' } } })
+    await outbox.reconsent('ana')
+    const firstFlush = outbox.flush('ana', { force: true })
+    await new Promise(r => setTimeout(r, 0))
+    // While reconsent's flush is still sending the held item, the user's new submission is added and flushed.
+    const newItem = await outbox.add('ana', { ...draft(2), sha256: '2'.repeat(64) })
+    const secondFlush = outbox.flush('ana', { force: true })
+    releaseFirst(answer(201, OK))
+    const [, res2] = await Promise.all([firstFlush, secondFlush])
+    expect(store.items.get(heldItem.id)!.state).toBe('sent')
+    expect(store.items.get(newItem.id)!.state).toBe('sent')
+    expect(res2.sent).toBe(2)
+    expect(res2.stopped).toBeNull()
+  })
 })

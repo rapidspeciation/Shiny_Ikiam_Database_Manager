@@ -2077,7 +2077,7 @@ export async function createApp(config = {}, options = {}) {
         if (!config.t3) throw fail('T3_DISABLED', 'T3 Code is not configured', 404);
         const admin = t3Admin({ home: config.t3.home, local: config.t3.local, command: config.t3.updateCommand });
         if (path === '/api/admin/t3/checks')
-          return json(res, 200, { checks: await t3Checks({ t3: config.t3, admin, chats: assistant?.t3 ?? null, user }) });
+          return json(res, 200, { checks: await t3Checks({ t3: config.t3, admin, chats: assistant?.t3 ?? null, user, appOrigin: config.publicUrl }) });
         return json(res, 200, method === 'GET' ? await admin.status() : await admin.update(body ?? {}));
       }
       if (method === 'POST' && path === '/api/t3/pair') {

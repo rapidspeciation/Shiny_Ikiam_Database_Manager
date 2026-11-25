@@ -263,7 +263,7 @@ const headerValues = (headers, name) =>
     .filter(([key]) => key.toLowerCase() === name)
     .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
 
-function validHttpOrigin(origin) {
+export function validHttpOrigin(origin) {
   if (typeof origin !== 'string' || !origin || /[\s;,]/.test(origin)) return false;
   try {
     const parsed = new URL(origin);
@@ -275,6 +275,18 @@ function validHttpOrigin(origin) {
   } catch {
     return false;
   }
+}
+
+/** Parses and validates `APP_PUBLIC_URL` / `appOrigin` consistently for bridge injection, framing rewrite, and admin self-checks. */
+export function normalizeAppOrigin(appOrigin) {
+  if (typeof appOrigin !== 'string' || !appOrigin) return '';
+  let parsedOrigin = '';
+  try {
+    parsedOrigin = new URL(appOrigin).origin;
+  } catch {
+    return '';
+  }
+  return validHttpOrigin(parsedOrigin) ? parsedOrigin : '';
 }
 
 /**
@@ -369,8 +381,7 @@ export function createT3Bridge({ t3, appOrigin }) {
   const local = new URL(t3.local);
   const upstream = { host: local.hostname, port: Number(local.port) || 80 };
   const publicHost = new URL(t3.url).host.toLowerCase();
-  const parsedOrigin = appOrigin ? new URL(appOrigin).origin : '';
-  const origin = validHttpOrigin(parsedOrigin) ? parsedOrigin : '';
+  const origin = normalizeAppOrigin(appOrigin);
   const agent = new http.Agent({ keepAlive: true, maxSockets: 64 });
 
   /** Whether a request to the app's server is for T3's host (production: Caddy sends T3's page loads here). */

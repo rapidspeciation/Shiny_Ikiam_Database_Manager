@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { named, command, decryptMedia, imageKind, ownAnswer, parsePayload, parseReply, sign, speakable, tagged, toWhatsApp, verify } from '../tools/whatsapp/bridge-lib.mjs';
@@ -1242,11 +1242,60 @@ test('a chat with soulInWorkspace sends no soul in its messages (its voice is in
   const configFile = join(dir, 'config.json');
   writeFileSync(configFile, JSON.stringify(config));
   const bridgeScript = new URL('../tools/whatsapp/bridge.mjs', import.meta.url).pathname;
+  const expectedSkill = readFileSync(new URL('../tools/whatsapp/bridge-skill/SKILL.md', import.meta.url), 'utf8');
   execFileSync(process.execPath, [bridgeScript, 'voice-push', 'self'], { env: { ...process.env, WA_BRIDGE_CONFIG: configFile }, encoding: 'utf8' });
   const voice = join(workspace, '.claude', 'voice');
   assert.deepEqual(JSON.parse(readFileSync(join(voice, 'voice.json'), 'utf8')).files, ['whatsapp.md', 'core.md', 'humor.md']);
   assert.equal(readFileSync(join(voice, 'humor.md'), 'utf8'), 'VOZ D3i humor.');
   assert.equal(readFileSync(join(dir, 'provisioned'), 'utf8'), '--refresh franz.chandi-whatsapp\n');
+  // voice-push also installs whatsapp-bridge into BOTH .claude/skills and .agents/skills (Antigravity / Codex).
+  assert.equal(readFileSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+
+  // skill-push installs whatsapp-bridge into both skill directories standalone too.
+  rmSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  rmSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  execFileSync(process.execPath, [bridgeScript, 'skill-push', 'self'], { env: { ...process.env, WA_BRIDGE_CONFIG: configFile }, encoding: 'utf8' });
+  assert.equal(readFileSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+
+  // install copies tools/whatsapp/bridge-skill/SKILL.md and assistant/voice/core.md into WA_BRIDGE_HOME,
+  // mirrors the skill into configured workspaces when WA_BRIDGE_CONFIG exists, and handles first install without config.
+  const fakeHome = join(dir, 'fake-home');
+  mkdirSync(join(fakeHome, '.config', 'systemd', 'user'), { recursive: true });
+  const bridgeHome = join(dir, 'bridge-home');
+  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome, WA_BRIDGE_CONFIG: join(dir, 'missing-config.json') }, encoding: 'utf8' });
+  assert.equal(readFileSync(join(bridgeHome, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(bridgeHome, 'assistant', 'voice', 'core.md'), 'utf8'), readFileSync(new URL('../assistant/voice/core.md', import.meta.url), 'utf8'));
+
+  rmSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  rmSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome, WA_BRIDGE_CONFIG: configFile }, encoding: 'utf8' });
+  assert.equal(readFileSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+
+  // If one configured route fails during install (e.g. unwritable/non-directory path), install still mirrors into later reachable workspaces.
+  const blocked = join(dir, 'not-a-dir');
+  writeFileSync(blocked, 'file-blocks-mkdir');
+  const workspace2 = join(dir, 'ws', 'second-workspace');
+  const multiConfigFile = join(dir, 'multi-config.json');
+  writeFileSync(
+    multiConfigFile,
+    JSON.stringify({
+      chats: {
+        broken: { jid: 'B@s.whatsapp.net', label: 'broken', route: 'bad', enabled: true, dryRun: true },
+        ok: { jid: 'O@s.whatsapp.net', label: 'ok', route: 'good', enabled: true, dryRun: true },
+      },
+      routes: {
+        bad: { script, workspace: blocked },
+        good: { script, workspace: workspace2 },
+      },
+      wacli: { bin: '/bin/false', store: dir },
+    }),
+  );
+  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome, WA_BRIDGE_CONFIG: multiConfigFile }, encoding: 'utf8' });
+  assert.equal(readFileSync(join(workspace2, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(workspace2, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
 });
 
 /** The live config's shape: the group and Franz's chat answer; the lab and check copies are off; «Ikiam» is only mirrored. */

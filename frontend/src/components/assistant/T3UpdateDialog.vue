@@ -105,6 +105,7 @@ const checkLabel = (id: string) =>
     commands: t('Crear chats y enviar mensajes'),
     chats: t('Leer los chats (propuestas, dueño del chat)'),
     page: t('Puente de la página de T3'),
+    framing: t('Marco (iframe) de T3'),
   })[id] ?? id
 
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -143,7 +144,7 @@ async function runChecks() {
 }
 async function start(version: string, back = false) {
   const from = status.value?.current
-  if (back && !confirm(t('¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Lo que se hizo en {from} (chats nuevos, ajustes) no se ve en {to}; sigue guardado para cuando se actualice otra vez.', { to: version, from }))) return
+  if (back && !confirm(t('¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Si el esquema de la base no cambió, los chats actuales se conservan; si cambió, se restaura la copia previa de statev2.sqlite y los chats hechos en {from} quedan guardados en una copia aparte en ~/.t3/backups (no se restauran solos al actualizar).', { to: version, from }))) return
   starting.value = true
   checks.value = null
   try {
@@ -302,11 +303,11 @@ const seconds = (n: number) => (n < 1 ? '<1 s' : `${Math.round(n)} s`)
         <button v-if="finished" class="btn-primary ml-auto" @click="emit('close')">{{ $t('Cerrar') }}</button>
       </div>
 
-      <!-- Going back: T3 keeps the versions it had. -->
+      <!-- Going back: T3 keeps the versions it had, or the updater backed them up. -->
       <details v-if="status?.previous.length && !running" class="mt-3 rounded border border-stone-200 p-2">
         <summary class="cursor-pointer font-medium"><History :size="14" class="inline" /> {{ $t('Volver a una versión anterior') }}</summary>
         <p class="mt-1 text-stone-600">
-          {{ $t('T3 guarda las versiones que tuvo. Volver a una es lo mismo que actualizar a ella (con su copia de seguridad antes).') }}
+          {{ $t('Si la base de datos cambió de esquema, volver restaura la copia previa de statev2.sqlite (los chats posteriores quedan guardados en una copia nueva en ~/.t3/backups).') }}
         </p>
         <div class="mt-2 flex flex-wrap gap-2">
           <button v-for="v in status.previous.slice(0, 3)" :key="v" class="btn" @click="start(v, true)">

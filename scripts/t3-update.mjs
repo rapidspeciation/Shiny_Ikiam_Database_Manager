@@ -3,35 +3,43 @@
 // (server/t3admin.mjs). On the server it is the user unit ithomiini-t3-update@<version>.service
 // (deploy/); in the lab, tools/lab/t3.sh --update. In order:
 //  1. a copy of T3's database (the file the running T3 uses: statev2.sqlite from 0.1.0, state.sqlite
-//     before), its settings and service state, in <home>/backups/<time>-<from version>; the newest
-//     --keep stay. T3's own `t3 update` keeps none;
-//  2. `t3 update <version> --yes` (--allow-downgrade to go back to a version still in runtime/versions):
-//     it downloads the version, moves ~/.local/bin/t3 to it and restarts T3's service;
-//  3. (the lab, which has no service) --restart, the command that starts T3 again;
-//  4. waits until T3 answers on the new version (/.well-known/t3/environment). The first start of
+//     before), its settings, service state, and runtime/versions/<from> (T3 0.1.11+ prunes older
+//     runtimes on startup) in <home>/backups/<time>-<from version>; the newest --keep stay. T3's
+//     own `t3 update` keeps none;
+//  2. on downgrade, restores runtime/versions/<to> from backup if pruned, and restores the pre-update
+//     statev2.sqlite backup cleanly (stopping T3 first via --stop or --service when given) so schema
+//     migrations from the newer version never break the older binary;
+//  3. `t3 update <version> --yes` (--allow-downgrade to go back to an earlier version):
+//     it downloads or activates the version, moves ~/.local/bin/t3 to it and restarts T3's service;
+//  4. (the lab, which has no service) --restart, the command that starts T3 again;
+//  5. waits until T3 answers on the new version (/.well-known/t3/environment). The first start of
 //     0.1.0 copies the old database into statev2.sqlite before it answers;
-//  5. (--token-file) the app's token for T3 issued again by the version now running, in its database
+//  6. (--token-file) the app's token for T3 issued again by the version now running, in its database
 //     (a token from an older T3 lacks the newer one's permissions, and its sign-in links with it; after
 //     going back, the older database does not know the newer token), and the earlier tokens of the
 //     app (same --token-label) revoked.
 // Each step goes to the log (stdout, appended by the unit) and to <home>/userdata/logs/t3-update.json,
 // which the app reads to show the progress.
 //   node scripts/t3-update.mjs [<version>] [--home ~/.t3] [--t3 ~/.local/bin/t3] [--local http://127.0.0.1:3773]
-//        [--restart '<command>'] [--keep 3] [--wait 900] [--token-file <file> --token-label ithomiini-broker]
+//        [--stop '<command>'] [--service t3code.service] [--restart '<command>'] [--keep 3] [--wait 900]
+//        [--token-file <file> --token-label ithomiini-broker]
 // Without <version>: the newest stable release.
 import { spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 
 const STABLE = /^\d+\.\d+\.\d+$/;
+const BACKUP_DIR = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-(.+)$/;
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     home: { type: 'string', default: process.env.T3CODE_HOME || join(process.env.HOME, '.t3') },
     t3: { type: 'string', default: join(process.env.HOME, '.local/bin/t3') },
     local: { type: 'string', default: 'http://127.0.0.1:3773' },
+    stop: { type: 'string' },
+    service: { type: 'string' },
     restart: { type: 'string' },
     keep: { type: 'string', default: '3' },
     wait: { type: 'string', default: '900' },
@@ -106,17 +114,101 @@ function databaseOf(protocol) {
   return v2;
 }
 
-/** A consistent copy of T3's database (VACUUM INTO reads it in one transaction while T3 runs) and its settings. */
-function backup(from, protocol) {
+/** Total file bytes inside a directory tree (best-effort, symlinks not followed). */
+function dirBytes(path) {
+  let total = 0;
+  try {
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) return 0;
+    if (!st.isDirectory()) return st.size;
+    for (const entry of readdirSync(path, { withFileTypes: true })) total += dirBytes(join(path, entry.name));
+  } catch {
+    /* unreadable entry: ignore */
+  }
+  return total;
+}
+
+/** Newest backup folder for `version` (with an optional predicate), or null. */
+function findBackup(version, predicate = () => true) {
+  const root = join(home, 'backups');
+  if (!existsSync(root)) return null;
+  const dirs = readdirSync(root)
+    .filter(name => BACKUP_DIR.exec(name)?.[1] === version)
+    .sort()
+    .reverse();
+  for (const name of dirs) {
+    const dir = join(root, name);
+    if (predicate(dir)) return dir;
+  }
+  return null;
+}
+
+/** Checks that a SQLite backup opens cleanly and passes PRAGMA quick_check. */
+function verifySqlite(path) {
+  const db = new DatabaseSync(path, { readOnly: true, timeout: 10_000 });
+  try {
+    const rows = db.prepare('PRAGMA quick_check').all();
+    const ok = rows.length === 1 && String(Object.values(rows[0])[0]).toLowerCase() === 'ok';
+    if (!ok) throw new Error(`PRAGMA quick_check failed: ${rows.map(r => Object.values(r)[0]).join('; ')}`);
+  } finally {
+    db.close();
+  }
+}
+
+/** Atomically replaces `target` SQLite DB with `source`, removing stale WAL/SHM sidecars. */
+function replaceSqlite(source, target) {
+  const staged = `${target}.restore-${process.pid}`;
+  rmSync(staged, { force: true });
+  copyFileSync(source, staged);
+  chmodSync(staged, 0o600);
+  rmSync(`${target}-wal`, { force: true });
+  rmSync(`${target}-shm`, { force: true });
+  renameSync(staged, target);
+}
+
+/** Atomically restores a pruned runtime/versions/<version> folder from its backup copy. */
+function restoreRuntime(backupDir, version) {
+  const src = join(backupDir, 'runtime-version');
+  const versionsRoot = join(home, 'runtime', 'versions');
+  mkdirSync(versionsRoot, { recursive: true });
+  const dest = join(versionsRoot, version);
+  const staged = join(versionsRoot, `.${version}.restore-${process.pid}`);
+  rmSync(staged, { recursive: true, force: true });
+  cpSync(src, staged, { recursive: true, verbatimSymlinks: true });
+  rmSync(dest, { recursive: true, force: true });
+  renameSync(staged, dest);
+}
+
+/** Reads backup-meta.json from a backup dir, or null when absent/unreadable. */
+function readBackupMeta(dir) {
+  if (!dir) return null;
+  try {
+    return JSON.parse(readFileSync(join(dir, 'backup-meta.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** A consistent copy of T3's database (VACUUM INTO reads it in one transaction while T3 runs), its settings, and its runtime. */
+function backup(from, protocol, { preserve = [], databaseMigration = null } = {}) {
+  const preserveSet = new Set((Array.isArray(preserve) ? preserve : [preserve]).filter(Boolean));
   const db = databaseOf(protocol);
+  const runtimeSrc = from && STABLE.test(from) && existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))
+    ? join(home, 'runtime', 'versions', from)
+    : null;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const root = join(home, 'backups');
   const dir = join(root, `${stamp}-${from ?? 'unknown'}`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if (db) {
-    const size = statSync(db).size;
+  const dbSize = db ? statSync(db).size : 0;
+  const runtimeSize = runtimeSrc ? dirBytes(runtimeSrc) : 0;
+  if (db || runtimeSrc) {
     const free = statfsSync(root);
-    if (free.bavail * free.bsize < size * 2 + 1e9) throw new Error(`not enough disk for a copy of ${db} (${Math.round(size / 1e6)} MB)`);
+    const needed = dbSize * 2 + runtimeSize + 1e9;
+    if (free.bavail * free.bsize < needed)
+      throw new Error(`not enough disk for a backup (${Math.round((dbSize + runtimeSize) / 1e6)} MB needed)`);
+  }
+  if (db) {
     const source = new DatabaseSync(db, { readOnly: true, timeout: 10_000 });
     try {
       source.exec(`VACUUM INTO '${join(dir, db.split('/').pop()).replace(/'/g, "''")}'`);
@@ -124,6 +216,7 @@ function backup(from, protocol) {
       source.close();
     }
   }
+  if (runtimeSrc) cpSync(runtimeSrc, join(dir, 'runtime-version'), { recursive: true, verbatimSymlinks: true });
   for (const file of ['userdata/settings.json', 'userdata/keybindings.json', 'userdata/environment-id', 'runtime/service-state.json'])
     if (existsSync(join(home, file))) copyFileSync(join(home, file), join(dir, file.split('/').pop()));
   // The app's token as this version knows it (step 5 replaces it): put back by hand, it works again after going back.
@@ -131,14 +224,23 @@ function backup(from, protocol) {
     copyFileSync(opts['token-file'], join(dir, 'app-token'));
     chmodSync(join(dir, 'app-token'), 0o600);
   }
-  // The newest copies stay (each about the size of the database).
+  writeFileSync(
+    join(dir, 'backup-meta.json'),
+    `${JSON.stringify({ version: from ?? null, protocol, databaseMigration, database: db ? db.split('/').pop() : null, runtimeBackedUp: Boolean(runtimeSrc), createdAt: new Date().toISOString() }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  // The newest copies stay (never pruning any backup targeted for restoration during this run).
   const keep = Math.max(1, Number(opts.keep) || 3);
   const ours = readdirSync(root)
-    .filter(name => /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-/.test(name))
+    .filter(name => BACKUP_DIR.test(name))
     .sort()
     .reverse();
-  for (const old of ours.slice(keep)) rmSync(join(root, old), { recursive: true, force: true });
-  return { dir, database: db };
+  for (const old of ours.slice(keep)) {
+    const candidate = join(root, old);
+    if (preserveSet.has(candidate)) continue;
+    rmSync(candidate, { recursive: true, force: true });
+  }
+  return { dir, database: db, runtimeBackedUp: Boolean(runtimeSrc) };
 }
 
 /** Runs a command, its output into the log; resolves with its exit code. */
@@ -209,24 +311,200 @@ if (from === to) {
   say('Already on this version: nothing to do.');
   process.exit(0);
 }
-if (back && !existsSync(join(home, 'runtime', 'versions', to, '.install-complete')))
-  fail(`${to} is not in ${join(home, 'runtime', 'versions')}: only a version T3 had before can be gone back to`);
-done('check', started, `${from} → ${to}`);
+const hasInstalledRuntime = existsSync(join(home, 'runtime', 'versions', to, '.install-complete'));
+const runtimeBackup = back && !hasInstalledRuntime
+  ? findBackup(to, dir => existsSync(join(dir, 'runtime-version', '.install-complete')))
+  : null;
+const v2Downgrade = back && order(to, '0.1.0') >= 0 && (protocol === null || protocol >= 2);
+const dbBackup = v2Downgrade
+  ? findBackup(to, dir => existsSync(join(dir, 'statev2.sqlite')))
+  : null;
+const dbBackupMeta = readBackupMeta(dbBackup);
+const sameMigration =
+  v2Downgrade &&
+  typeof before?.databaseMigration === 'number' &&
+  typeof dbBackupMeta?.databaseMigration === 'number' &&
+  before.databaseMigration === dbBackupMeta.databaseMigration;
+const needDbRestore = v2Downgrade && !sameMigration;
+if (back && !hasInstalledRuntime && !runtimeBackup)
+  fail(`${to} is not in ${join(home, 'runtime', 'versions')} or ${join(home, 'backups')}: only a version T3 had before (still installed or backed up) can be gone back to`);
+if (needDbRestore && !dbBackup)
+  fail(`cannot downgrade V2 ${from} → ${to} without a pre-update statev2.sqlite backup in ${join(home, 'backups')} (schema migrations cannot be reversed by the older binary)`);
+if (needDbRestore && !opts.stop && !opts.service)
+  fail(`restoring statev2.sqlite for ${to} requires stopping T3 first: pass --service t3code.service or --stop '<command>'`);
+if (needDbRestore) {
+  try {
+    verifySqlite(join(dbBackup, 'statev2.sqlite'));
+  } catch (e) {
+    fail(`backup database for ${to} (${join(dbBackup, 'statev2.sqlite')}) failed integrity check: ${e.message}`);
+  }
+}
+done('check', started, `${from} → ${to}${sameMigration ? ` (same DB migration ${before.databaseMigration}: keeping live statev2.sqlite)` : ''}`);
 
 save({ step: 'backup' });
 started = Date.now();
+let copy;
 try {
-  const copy = backup(from, protocol);
+  copy = backup(from, protocol, { preserve: [dbBackup, runtimeBackup], databaseMigration: before?.databaseMigration ?? null });
   save({ backup: copy.dir });
-  done('backup', started, copy.database ? `${copy.database} → ${copy.dir}` : `no database found; settings → ${copy.dir}`);
+  done(
+    'backup',
+    started,
+    `${copy.database ? `${copy.database} → ${copy.dir}` : `no database found; settings → ${copy.dir}`}${copy.runtimeBackedUp ? ' (+ runtime)' : ''}`,
+  );
 } catch (e) {
   fail(`the copy of T3's database failed, nothing was changed: ${e.message}`);
 }
 
+const stopT3 = async () => {
+  if (opts.stop) {
+    const sc = await run('sh', ['-c', opts.stop], t3Env());
+    if (sc !== 0) throw new Error(`stop command ended with code ${sc}`);
+  } else if (opts.service) {
+    const sc = await run('systemctl', ['--user', 'stop', opts.service], t3Env());
+    if (sc !== 0) throw new Error(`systemctl stop ${opts.service} ended with code ${sc}`);
+  }
+};
+const startT3 = async () => {
+  if (opts.restart) return run('sh', ['-c', opts.restart], t3Env());
+  if (opts.service) return run('systemctl', ['--user', 'start', opts.service], t3Env());
+  return 0;
+};
+const waitStopped = async (ms = 5000) => {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (!(await running())) return true;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return !(await running());
+};
+
 save({ step: 'installing' });
+let stoppedForRestore = false;
+let restoredDb = false;
+const targetV2 = join(home, 'userdata', 'statev2.sqlite');
+
+/** Reverts a failed downgrade after DB swap: stops T3, restores pre-downgrade DB and original runtime selection, restarts and checks. */
+async function recoverFailedDowngrade(reason) {
+  if (!restoredDb && !stoppedForRestore) return;
+  if (restoredDb) {
+    let stoppedCleanly = false;
+    try {
+      await stopT3();
+      stoppedCleanly = await waitStopped(5000);
+    } catch (e) {
+      say(`WARNING: could not stop T3 during downgrade recovery: ${e.message}`);
+    }
+    if (!stoppedCleanly) {
+      say(`WARNING: T3 is still answering during downgrade recovery (${reason}); refusing to swap statev2.sqlite or launcher while T3 may be open. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    let dbRestoredOk = false;
+    if (copy?.dir && existsSync(join(copy.dir, 'statev2.sqlite'))) {
+      try {
+        replaceSqlite(join(copy.dir, 'statev2.sqlite'), targetV2);
+        dbRestoredOk = true;
+        say(`Rolled back statev2.sqlite from ${copy.dir} after failed downgrade (${reason}).`);
+      } catch (e) {
+        say(`WARNING: could not roll back statev2.sqlite from ${copy.dir}: ${e.message}`);
+      }
+    } else {
+      say(`WARNING: pre-downgrade statev2.sqlite backup missing in ${copy?.dir ?? 'unknown'}; cannot roll back DB.`);
+    }
+    if (!dbRestoredOk) {
+      say(`WARNING: refusing to restart T3 after failed DB rollback (${reason}). Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    if (!from || !STABLE.test(from)) {
+      say(`WARNING: previous T3 version is unknown during downgrade recovery (${reason}); refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    if (copy?.dir && existsSync(join(copy.dir, 'service-state.json'))) {
+      try {
+        copyFileSync(join(copy.dir, 'service-state.json'), join(home, 'runtime', 'service-state.json'));
+      } catch {
+        /* best effort */
+      }
+    }
+    if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete')) && copy?.dir && existsSync(join(copy.dir, 'runtime-version', '.install-complete'))) {
+      try {
+        restoreRuntime(copy.dir, from);
+        say(`Restored pruned runtime ${from} from ${copy.dir}.`);
+      } catch (e) {
+        say(`WARNING: could not restore runtime ${from} from ${copy.dir}: ${e.message}`);
+      }
+    }
+    if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))) {
+      say(`WARNING: runtime ${from} is missing during downgrade recovery (${reason}); refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    const rc = await run(opts.t3, ['update', '--base-dir', home, '--yes', from], t3Env());
+    if (rc !== 0) {
+      say(`WARNING: restoring launcher to ${from} exited with code ${rc}; refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+  } else if (await running()) {
+    // Nothing was swapped yet and T3 is still up: no need to restart.
+    return;
+  }
+  const startCode = await startT3();
+  if (startCode !== 0) say(`WARNING: restarting T3 on ${from ?? 'previous version'} exited with code ${startCode}`);
+  const recoverUntil = Date.now() + 15_000;
+  let backUp = null;
+  while (Date.now() < recoverUntil) {
+    backUp = await running();
+    if (!from || backUp?.serverVersion === from) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  if (from && backUp?.serverVersion === from) say(`Recovered T3 on ${from}.`);
+  else say(`WARNING: after recovery, T3 reports ${backUp?.serverVersion ?? 'nothing'} (expected ${from ?? 'unknown'}).`);
+}
+
+if (back && (runtimeBackup || needDbRestore)) {
+  started = Date.now();
+  const details = [];
+  try {
+    if (runtimeBackup) {
+      restoreRuntime(runtimeBackup, to);
+      details.push(`runtime ${to} from ${runtimeBackup}`);
+    }
+    if (needDbRestore) {
+      stoppedForRestore = true;
+      await stopT3();
+      if (!(await waitStopped(5000)))
+        throw new Error('T3 is still answering after stop: refusing to replace statev2.sqlite while it may be open');
+      // Refresh the pre-downgrade DB snapshot AFTER confirmed shutdown so commits between backup() and stop are never lost on recovery.
+      if (existsSync(targetV2) && copy?.dir) {
+        const fresh = join(copy.dir, `statev2.sqlite.final-${process.pid}`);
+        rmSync(fresh, { force: true });
+        const srcDb = new DatabaseSync(targetV2, { readOnly: true, timeout: 10_000 });
+        try {
+          srcDb.exec(`VACUUM INTO '${fresh.replace(/'/g, "''")}'`);
+        } finally {
+          srcDb.close();
+        }
+        chmodSync(fresh, 0o600);
+        renameSync(fresh, join(copy.dir, 'statev2.sqlite'));
+      }
+      mkdirSync(join(home, 'userdata'), { recursive: true });
+      replaceSqlite(join(dbBackup, 'statev2.sqlite'), targetV2);
+      restoredDb = true;
+      const stamp = dbBackupMeta?.createdAt ?? dbBackup.split('/').pop();
+      details.push(`statev2.sqlite from ${dbBackup} (${stamp}; chats since then stay only in ${copy.dir})`);
+    }
+  } catch (e) {
+    await recoverFailedDowngrade(e.message);
+    fail(`could not restore pre-update state for ${to}: ${e.message}`);
+  }
+  done('restore', started, details.join('; '));
+}
+
 started = Date.now();
 const code = await run(opts.t3, ['update', '--base-dir', home, '--yes', ...(back ? ['--allow-downgrade'] : []), to], t3Env());
-if (code !== 0) fail(`t3 update ended with code ${code} (T3 keeps running ${from})`);
+if (code !== 0) {
+  await recoverFailedDowngrade(`t3 update exited ${code}`);
+  fail(`t3 update ended with code ${code} (T3 keeps running ${from})`);
+}
 done('t3 update', started);
 
 if (opts.restart) {
@@ -235,8 +513,18 @@ if (opts.restart) {
   // No service here (the lab): this home's T3 is started again on the version `t3 update` installed.
   writeFileSync(join(home, 'runtime', 'service-state.json'), `${JSON.stringify({ protocol: 3, activeVersion: to }, null, 2)}\n`);
   const restarted = await run('sh', ['-c', opts.restart], t3Env());
-  if (restarted !== 0) fail(`the restart command ended with code ${restarted}`);
+  if (restarted !== 0) {
+    await recoverFailedDowngrade(`restart exited ${restarted}`);
+    fail(`the restart command ended with code ${restarted}`);
+  }
   done('restart', started);
+} else if (stoppedForRestore && opts.service) {
+  // Ensure the systemd service is started again even if `t3 update` used try-restart while it was stopped.
+  const startedCode = await run('systemctl', ['--user', 'start', opts.service], t3Env());
+  if (startedCode !== 0) {
+    await recoverFailedDowngrade(`systemctl start ${opts.service} exited ${startedCode}`);
+    fail(`systemctl start ${opts.service} ended with code ${startedCode}`);
+  }
 }
 
 save({ step: 'waiting' });
@@ -248,7 +536,10 @@ while (Date.now() < deadline) {
   if (now?.serverVersion === to) break;
   await new Promise(resolve => setTimeout(resolve, 2000));
 }
-if (now?.serverVersion !== to) fail(`T3 does not answer on ${to} after ${opts.wait} s (it says: ${now?.serverVersion ?? 'nothing'})`);
+if (now?.serverVersion !== to) {
+  await recoverFailedDowngrade(`T3 did not answer on ${to} within ${opts.wait} s`);
+  fail(`T3 does not answer on ${to} after ${opts.wait} s (it says: ${now?.serverVersion ?? 'nothing'})`);
+}
 const v2 = join(home, 'userdata', 'statev2.sqlite');
 const copied = protocol === 1 && now.orchestrationProtocolVersion >= 2 && existsSync(v2);
 done('T3 answers', started, `${now.serverVersion}, protocol ${now.orchestrationProtocolVersion}${copied ? `; its chats copied into statev2.sqlite (${Math.round(statSync(v2).size / 1e6)} MB)` : ''}`);

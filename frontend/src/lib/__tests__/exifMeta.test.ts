@@ -91,4 +91,17 @@ describe('exifMeta', () => {
     // No end marker: refused.
     expect(stripJpegMeta(file.slice(0, 60))).toBeNull()
   })
+
+  it('stripJpegMeta: odd/reserved JPEG segments (0xc8, 0xf0, 0x55) are stripped and malformed 0x00/0xd8 markers rejected', () => {
+    const seg = (m: number, text: string) => {
+      const payload = [...text].map(c => c.charCodeAt(0))
+      return [0xff, m, (payload.length + 2) >> 8, (payload.length + 2) & 255, ...payload]
+    }
+    const bare = [0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xda, 0, 2, 1, 2, 3, 0xff, 0xd9]
+    const smuggled = new Uint8Array([0xff, 0xd8, ...seg(0xc8, 'HIDDEN_C8'), ...seg(0xf0, 'HIDDEN_F0'), ...seg(0x55, 'HIDDEN_55'), ...bare.slice(2)])
+    const cleaned = stripJpegMeta(smuggled)!
+    expect([...cleaned]).toEqual(bare)
+    expect(stripJpegMeta(new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0xff, 0xd9]))).toBeNull()
+    expect(stripJpegMeta(new Uint8Array([0xff, 0xd8, 0xff, 0xd8, 0xff, 0xd9]))).toBeNull()
+  })
 })
