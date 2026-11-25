@@ -1,8 +1,8 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { brotliCompress, constants } from 'node:zlib'
@@ -63,14 +63,30 @@ const offlineRuntime = {
   },
 }
 
+// Keep Confirmar visual card static assets out of production builds unless VITE_CONFIRM_VISUAL_CARDS=1.
+function confirmarAssetsGate(enabled: boolean) {
+  return {
+    name: 'confirmar-assets-gate',
+    apply: 'build' as const,
+    async writeBundle() {
+      if (!enabled) {
+        await rm(join(outDir, 'identificar', 'confirmar'), { recursive: true, force: true })
+      }
+    },
+  }
+}
+
 // Lib tests that need a page (document, window or localStorage).
 const libWithPage = ['bestPhotos', 'camera', 'cellBar', 'clipboard', 'curatedPhotos', 'disabledReason', 'docReview', 'gridKeys', 'identifyHistory', 'identifyRefs', 'oldReader', 'packBundles', 'photoCountry', 'photoPacks', 'proposalColumns', 'theme'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
 )
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => {
+  const env = loadEnv(mode, import.meta.dirname, '')
+  const confirmarEnabled = env.VITE_CONFIRM_VISUAL_CARDS === '1'
+  return {
   base: command === 'serve' ? '/ithomiini/' : './',
-  plugins: [vue(), tailwindcss(), version, precompress, offlineRuntime],
+  plugins: [vue(), tailwindcss(), version, confirmarAssetsGate(confirmarEnabled), precompress, offlineRuntime],
   define: { __BUILD_ID__: JSON.stringify(command === 'serve' ? 'dev' : buildId) },
   build: {
     outDir: '../web',
@@ -104,4 +120,5 @@ export default defineConfig(({ command }) => ({
       },
     ],
   },
-}))
+  }
+})

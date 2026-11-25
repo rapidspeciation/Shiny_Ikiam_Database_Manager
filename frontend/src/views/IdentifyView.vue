@@ -20,7 +20,7 @@
  * then the sex (SexPanel); then the full list, the side of the Andes and the rest. «Mis identificaciones» keeps each
  * photo and result (lib/identifyHistory.ts), so an item loads again, with the models that read it.
  */
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, ChevronDown, Download, ScanSearch, Search, TriangleAlert, WifiOff } from 'lucide-vue-next'
 import { choiceOrDefault, effectiveMode, identifyAsVisitor, identifyOnServer, jpegBase64, onlineError, photoCanvas, serverRanking, squareCrop, visitorServer, type Mode, type ServerAnswer, type VisitorPlace } from '../lib/identifyOnline'
@@ -58,7 +58,18 @@ import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
 import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
-import { comparePlace, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
+import { comparePlace, exifGps, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
+import {
+  ecuadorSideFromGps,
+  loadConfirmarManifest,
+  resolveConfirmarVisualCard,
+  type ConfirmarCardMatch,
+  type ConfirmarVisualManifest,
+} from '../lib/confirmarVisualRouter'
+const ConfirmarVisualCard =
+  import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
+    ? defineAsyncComponent(() => import('../components/identify/ConfirmarVisualCard.vue'))
+    : null
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -760,6 +771,55 @@ const recordedSides = computed<Map<string, { East: boolean; West: boolean }>>(()
       : new Map(),
 )
 const noWings = computed(() => !!result.value && result.value.status !== 'success')
+
+// ---------------------------------------------------------------- Confirmar visual field-ID cards (VITE_CONFIRM_VISUAL_CARDS=1)
+
+const confirmarOn = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
+const confirmarManifest = shallowRef<ConfirmarVisualManifest | null>(null)
+const confirmarPreferredCard = ref<string | null>(null)
+if (confirmarOn) {
+  watch(
+    () => !!result.value,
+    need => {
+      if (need && !confirmarManifest.value) {
+        loadConfirmarManifest(appRoot())
+          .then(m => (confirmarManifest.value = m))
+          .catch(() => null)
+      }
+    },
+    { immediate: true },
+  )
+  watch([() => result.value?.at, sideValue, compared], () => {
+    confirmarPreferredCard.value = null
+  })
+}
+const confirmarSide = computed(() => {
+  if (!confirmarOn) return null
+  if (sideValue.value) return sideValue.value
+  const r = result.value
+  const p = lastPhoto.value
+  if (!r || r.country !== 'EC' || !p || p.at !== r.at) return null
+  const gps = exifGps(p.photo.bytes)
+  return gps ? ecuadorSideFromGps(gps.lat, gps.lon) : null
+})
+const confirmarMatch = computed<ConfirmarCardMatch | null>(() => {
+  if (!confirmarOn || !confirmarManifest.value || !ranked.value?.species.length) return null
+  // Ecuador-only regional guides: hide when the photo's GPS clearly places it in another country
+  if (result.value?.country && result.value.country !== 'EC') return null
+  const topPredictions = ranked.value.species.slice(0, 5).map(c => ({
+    name: c.name,
+    p: c.p,
+    subspecies: subspecies.value.get(c.name) ?? [],
+  }))
+  return resolveConfirmarVisualCard(confirmarManifest.value, {
+    topPredictions,
+    comparedSpecies: compared.value,
+    sideAndes: confirmarSide.value,
+    locale: locale.value,
+    preferredCardId: confirmarPreferredCard.value,
+    rootUrl: appRoot(),
+  })
+})
 
 /** «Es esta»: the species compared is the person's answer (a tap again takes it back); kept with the item. */
 function choose(name: string) {
@@ -1959,6 +2019,15 @@ onBeforeUnmount(() => {
               <button class="btn min-h-11 px-4" :disabled="otherName.trim().length < 3" @click="chooseOther(null)">{{ $t('Usar') }}</button>
             </div>
           </section>
+
+          <component
+            :is="ConfirmarVisualCard"
+            v-if="confirmarOn && ConfirmarVisualCard && confirmarMatch && confirmarMatch.displayKind !== 'hidden'"
+            class="mt-3"
+            :match="confirmarMatch"
+            :user-photo-src="mineUrl ?? result.crop"
+            @select-card="id => (confirmarPreferredCard = id)"
+          />
 
           <SexPanel
             :key="result.at"

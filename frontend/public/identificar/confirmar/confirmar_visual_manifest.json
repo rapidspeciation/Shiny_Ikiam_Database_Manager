@@ -1,0 +1,2481 @@
+{
+  "schema": "confirmar-visual-cards/1",
+  "waves": [
+    {
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "2026-11-25-wave2-regional-v2",
+      "pairs": 15,
+      "active_cards": 16,
+      "non_active_pairs": 0,
+      "audit_status": "PASS"
+    },
+    {
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "2026-11-25-wave3a-regional-v1",
+      "pairs": 16,
+      "active_cards": 11,
+      "non_active_pairs": 5,
+      "audit_status": "PASS"
+    },
+    {
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "map_version": "2026-11-25-wave3b-non-ithomiini-v1",
+      "pairs": 16,
+      "active_cards": 8,
+      "non_active_pairs": 8,
+      "audit_status": "PASS"
+    }
+  ],
+  "verification": {
+    "all_wave_receipts_passed": true,
+    "locked_or_blind_overlap": 0,
+    "canonical_locked_cams_cross_checked": 1583,
+    "canonical_locked_inat_obs_cross_checked": 32776,
+    "canonical_locked_inat_photos_cross_checked": 1368,
+    "webp_quality": 92
+  },
+  "counts": {
+    "total_pairs": 47,
+    "active_pairs": 34,
+    "active_cards": 35,
+    "non_active_pairs": 13,
+    "deferred_routes": 2,
+    "assets_total": 70,
+    "source_png_bytes": 62111916,
+    "webp_bytes": 14766072
+  },
+  "pairs": {
+    "p01": {
+      "pair_id": "p01",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius erato",
+      "species_b": "Heliconius melpomene",
+      "classification": "multi_region_morph_split",
+      "default_card_id": "p01_west",
+      "routes": [
+        {
+          "card_id": "p01_west",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Heliconius erato cyrbia",
+          "taxon_b": "Heliconius melpomene cythera",
+          "subspecies_a_aliases": [
+            "cyrbia",
+            "Heliconius erato cyrbia"
+          ],
+          "subspecies_b_aliases": [
+            "cythera",
+            "cytherus",
+            "Heliconius melpomene cythera",
+            "Heliconius melpomene cytherus"
+          ],
+          "region_detail_es": "Occidente (Chocó y estribaciones occidentales)",
+          "region_detail_en": "West Ecuador (Chocó and western foothills)",
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p01_west.webp",
+              "width": 1400,
+              "height": 1590,
+              "bytes": 204962,
+              "sha256": "91cd72cde48589682e3b92f16b26103603acaf9128e61b61b8715b4cc7990503",
+              "source_png_sha256": "69337a6997db86455fe42f02048076231a91b9f437b385b1e196d4f7d7b40316"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p01_west.webp",
+              "width": 1400,
+              "height": 1539,
+              "bytes": 193806,
+              "sha256": "9439d06b07e585752904e92a1cf56d43dfa5f8434d8418e12a10fc1e2dfc70d6",
+              "source_png_sha256": "0550cd05f4bf5f4a2c325dbe3908a657829013faab38d085cc2482c2a4c5d081"
+            }
+          }
+        },
+        {
+          "card_id": "p01_east_napo",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente · Napo y Amazonía",
+          "region_en": "East · Napo & Amazonia",
+          "taxon_a": "Heliconius erato lativitta",
+          "taxon_b": "Heliconius melpomene malleti",
+          "subspecies_a_aliases": [
+            "lativitta",
+            "lattivita",
+            "lativitta f. ilia",
+            "Heliconius erato lativitta"
+          ],
+          "subspecies_b_aliases": [
+            "malleti",
+            "malletti",
+            "aglaope",
+            "Heliconius melpomene malleti",
+            "Heliconius melpomene aglaope"
+          ],
+          "region_detail_es": "Oriente amazónico (Napo, Orellana, Sucumbíos)",
+          "region_detail_en": "Amazonian lowlands (Napo, Orellana, Sucumbíos)",
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p01_east_napo.webp",
+              "width": 1400,
+              "height": 1651,
+              "bytes": 271208,
+              "sha256": "36364cd3ae79718fac481e005719738b548422257aadb024a10cdc50da3f4d9f",
+              "source_png_sha256": "55b1a519521226ba796d7ead918d4a5dfd0520097de57b4762d5315e1b09a339"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p01_east_napo.webp",
+              "width": 1400,
+              "height": 1600,
+              "bytes": 258270,
+              "sha256": "43936b9365f2e601f9924a679639316d8610eb95016d9afa9c7a83dc38df394b",
+              "source_png_sha256": "a0c3adb3e938f093e4b0608877657b6368067de052ba4381d546b7553150644c"
+            }
+          }
+        },
+        {
+          "card_id": null,
+          "status": "no_unlocked_museum_pair",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente · Piedemonte Pastaza",
+          "region_en": "East · Pastaza Foothills",
+          "taxon_a": "Heliconius erato notabilis",
+          "taxon_b": "Heliconius melpomene plesseni",
+          "subspecies_a_aliases": [
+            "notabilis",
+            "Heliconius erato notabilis"
+          ],
+          "subspecies_b_aliases": [
+            "plesseni",
+            "Heliconius melpomene plesseni"
+          ]
+        },
+        {
+          "card_id": null,
+          "status": "no_unlocked_museum_pair",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente · Sur (Macas / Zamora)",
+          "region_en": "East · South (Macas / Zamora)",
+          "taxon_a": "Heliconius erato etylus",
+          "taxon_b": "Heliconius melpomene ecuadorensis",
+          "subspecies_a_aliases": [
+            "etylus",
+            "Heliconius erato etylus"
+          ],
+          "subspecies_b_aliases": [
+            "ecuadorensis",
+            "Heliconius melpomene ecuadorensis"
+          ]
+        }
+      ]
+    },
+    "p02": {
+      "pair_id": "p02",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis messenoides",
+      "species_b": "Melinaea mothone",
+      "classification": "single_region",
+      "default_card_id": "p02",
+      "routes": [
+        {
+          "card_id": "p02",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Mechanitis messenoides deceptus",
+          "taxon_b": "Melinaea mothone",
+          "subspecies_a_aliases": [
+            "deceptus",
+            "Mechanitis messenoides deceptus"
+          ],
+          "subspecies_b_aliases": [
+            "mothone",
+            "Melinaea mothone",
+            "Melinaea mothone mothone"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p02.webp",
+              "width": 1400,
+              "height": 1951,
+              "bytes": 196858,
+              "sha256": "92ae7c8ca2481915d38d3c8828ed2169ef74f13535e9978f9771e473fae6ff17",
+              "source_png_sha256": "715216a808af029c4b23fbbc6cefe93d2e16a7c1e9f8de1424f51e1dad9de2b7"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p02.webp",
+              "width": 1400,
+              "height": 1925,
+              "bytes": 193078,
+              "sha256": "c8d60504a3af3258632b573a7689b87e4b1e35d9175ef973d09e4252d333f02e",
+              "source_png_sha256": "30adf8b91fec2680e24ee938e5505b3dee4c68c22a66fc73c0fc8d19f1e97d87"
+            }
+          }
+        }
+      ]
+    },
+    "p03": {
+      "pair_id": "p03",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Methona confusa",
+      "species_b": "Thyridia psidii",
+      "classification": "widespread_single_card",
+      "default_card_id": "p03",
+      "routes": [
+        {
+          "card_id": "p03",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Methona confusa",
+          "taxon_b": "Thyridia psidii",
+          "subspecies_a_aliases": [
+            "psamathe",
+            "Methona confusa psamathe",
+            "Methona confusa"
+          ],
+          "subspecies_b_aliases": [
+            "ino",
+            "Thyridia psidii ino",
+            "Thyridia psidii"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p03.webp",
+              "width": 1400,
+              "height": 1463,
+              "bytes": 169766,
+              "sha256": "79f74080e327517b74aba0efe8dea73f1585f6286c7c8c9fd0e031b821c2dd56",
+              "source_png_sha256": "68903a0b6d3d09182dec9c0ef0b6a0218ba6ebf305f3b2871a8e636b30a2de70"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p03.webp",
+              "width": 1400,
+              "height": 1463,
+              "bytes": 167000,
+              "sha256": "c96a719ba26b9a9514bc4d2aa58310bc9d7cb25caf68f66c4c372ba85bcea741",
+              "source_png_sha256": "2bfc267ed6e42563a8eab8933910430570270dda702169098bca8e0b8f8d3193"
+            }
+          }
+        }
+      ]
+    },
+    "p04": {
+      "pair_id": "p04",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Melinaea isocomma",
+      "species_b": "Melinaea mothone",
+      "classification": "single_region",
+      "default_card_id": "p04",
+      "routes": [
+        {
+          "card_id": "p04",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Melinaea isocomma simulator",
+          "taxon_b": "Melinaea mothone mothone",
+          "subspecies_a_aliases": [
+            "simulator",
+            "Melinaea isocomma simulator",
+            "Melinaea isocomma"
+          ],
+          "subspecies_b_aliases": [
+            "mothone",
+            "Melinaea mothone mothone",
+            "Melinaea mothone"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p04.webp",
+              "width": 1400,
+              "height": 1585,
+              "bytes": 190956,
+              "sha256": "20e84f348fefa5694716521ea8404db8131a1a950235b07cc032df4497151e43",
+              "source_png_sha256": "9db1ae0d5b4d90f24dbcdf6d14eccbf8ebfb99abf95e32bf9841beaac2537542"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p04.webp",
+              "width": 1400,
+              "height": 1585,
+              "bytes": 188302,
+              "sha256": "afd6743ca50bf86fc048953827fbec297f157744a23388f0c75fced0a9f803e9",
+              "source_png_sha256": "ce8cbb7f255eaf2a958539f958c2a23e8671429b707bdc4ac2c5bdb6044252d3"
+            }
+          }
+        }
+      ]
+    },
+    "p05": {
+      "pair_id": "p05",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis mazaeus",
+      "species_b": "Mechanitis messenoides",
+      "classification": "single_region",
+      "default_card_id": "p05",
+      "routes": [
+        {
+          "card_id": "p05",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Mechanitis mazaeus",
+          "taxon_b": "Mechanitis messenoides",
+          "subspecies_a_aliases": [
+            "fallax",
+            "mazaeus",
+            "Mechanitis mazaeus fallax",
+            "Mechanitis mazaeus mazaeus"
+          ],
+          "subspecies_b_aliases": [
+            "deceptus",
+            "intermedia",
+            "messenoides",
+            "phasianita",
+            "Mechanitis messenoides deceptus",
+            "Mechanitis messenoides intermedia"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p05.webp",
+              "width": 1400,
+              "height": 1336,
+              "bytes": 139938,
+              "sha256": "d08b0079dcf66dc764c2bc6b35a96bef0566930ab5c67cf04bf5e802a03e4cdd",
+              "source_png_sha256": "6787cab616f8a8eb054bca1e010b5d4481660477a31a2404b0e603a69c0b6934"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p05.webp",
+              "width": 1400,
+              "height": 1336,
+              "bytes": 135166,
+              "sha256": "507edec7ed1b5292e24fd93a9760cd9e11e84bc6b9c9f862347258a360def970",
+              "source_png_sha256": "ec1836ad841f86292debfc8afbdfc041c8b53cf71d3c0bf1f6c19964ccf619f9"
+            }
+          }
+        }
+      ]
+    },
+    "p06": {
+      "pair_id": "p06",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis menapis",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region",
+      "default_card_id": "p06",
+      "routes": [
+        {
+          "card_id": "p06",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Mechanitis menapis mantineus",
+          "taxon_b": "Mechanitis polymnia chimborazona",
+          "subspecies_a_aliases": [
+            "mantineus",
+            "Mechanitis menapis mantineus"
+          ],
+          "subspecies_b_aliases": [
+            "chimborazona",
+            "Mechanitis polymnia chimborazona"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p06.webp",
+              "width": 1400,
+              "height": 1356,
+              "bytes": 158840,
+              "sha256": "448d3c9f5d23dce0d58db430699c123464153ece1631b1807b60b5038715050a",
+              "source_png_sha256": "0b2aff93ee1e88d2d6afb1ed9ddbee6f42dc2f37f3969c48534c6c0df9551c5f"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p06.webp",
+              "width": 1400,
+              "height": 1356,
+              "bytes": 156376,
+              "sha256": "2f31184563a4ac33314eee2432c52e11660b80c9e1d12cce9839265fb5864523",
+              "source_png_sha256": "7332d2946670cfc1c6152ce03774198ab278f3fd1337a6c0d1922dd500ad41c1"
+            }
+          }
+        }
+      ]
+    },
+    "p07": {
+      "pair_id": "p07",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris euclea intermedia",
+      "species_b": "Hypothyris euclea pyrippe",
+      "classification": "single_region",
+      "default_card_id": "p07",
+      "routes": [
+        {
+          "card_id": "p07",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris euclea intermedia",
+          "taxon_b": "Hypothyris euclea pyrippe",
+          "subspecies_a_aliases": [
+            "intermedia",
+            "f. intermedia",
+            "Hypothyris euclea intermedia"
+          ],
+          "subspecies_b_aliases": [
+            "pyrippe",
+            "Hypothyris euclea pyrippe"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p07.webp",
+              "width": 1400,
+              "height": 1535,
+              "bytes": 170118,
+              "sha256": "681899e41aa998f3fd076b29d51f7a5e9c7e4c84f65273e5fdce115c074ebcc6",
+              "source_png_sha256": "a9a5b5b62ef02519d54f649f6faeccfd76b3a4fd61367189f637103c40dc4f51"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p07.webp",
+              "width": 1400,
+              "height": 1535,
+              "bytes": 162734,
+              "sha256": "a292bb847e1bcacd6710f799c7b3dd33a70304f967b229f22d673e256b12262d",
+              "source_png_sha256": "fbd904d586092d082209c6e1c1720a5a153ddb6abfce4d235932a068d1a4170e"
+            }
+          }
+        }
+      ]
+    },
+    "p08": {
+      "pair_id": "p08",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria onega",
+      "species_b": "Oleria tigilla",
+      "classification": "single_region",
+      "default_card_id": "p08",
+      "routes": [
+        {
+          "card_id": "p08",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria onega",
+          "taxon_b": "Oleria tigilla",
+          "subspecies_a_aliases": [
+            "janarilla",
+            "jaranilla",
+            "astigara",
+            "Oleria onega janarilla",
+            "Oleria onega astigara"
+          ],
+          "subspecies_b_aliases": [
+            "tigilla",
+            "Oleria tigilla tigilla",
+            "Oleria tigilla"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p08.webp",
+              "width": 1400,
+              "height": 1552,
+              "bytes": 164928,
+              "sha256": "87d8f536a2ea9e7f5367bcd3af366f789494ab726e474be0825f2d7a4a6c8f12",
+              "source_png_sha256": "01f22d4231476b2c06cb02a8bf3592aae86fa0d6ad50d063b1a1573758361a15"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p08.webp",
+              "width": 1400,
+              "height": 1552,
+              "bytes": 155046,
+              "sha256": "9e71ac884b04727333c31d43b962055a57b9169d44ba780b64cfa66c2fb6b5c2",
+              "source_png_sha256": "3c6d497e5eaa0aa5fb5533c37e0dd80044d45a446d0aca220b969b8fcd2d4be2"
+            }
+          }
+        }
+      ]
+    },
+    "p09": {
+      "pair_id": "p09",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Greta andromica",
+      "species_b": "Hypomenitis polissena",
+      "classification": "widespread_single_card",
+      "default_card_id": "p09",
+      "routes": [
+        {
+          "card_id": "p09",
+          "status": "active",
+          "side_andes": [
+            "West",
+            "East"
+          ],
+          "side_default_for": [
+            "West",
+            "East"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Greta andromica",
+          "taxon_b": "Hypomenitis polissena",
+          "subspecies_a_aliases": [
+            "andromica",
+            "andania",
+            "Greta andromica andromica",
+            "Greta andromica andania"
+          ],
+          "subspecies_b_aliases": [
+            "polissena",
+            "Hypomenitis polissena polissena"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p09.webp",
+              "width": 1400,
+              "height": 1437,
+              "bytes": 173916,
+              "sha256": "d91128e018c59c4e33ef6e44af5c56774690461e5ca3359c7a7bc5de83aa801a",
+              "source_png_sha256": "4c83a4436b058834aa1fef40e54eb89581ce258146a6cd0c9e4ed51259fe10e6"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p09.webp",
+              "width": 1400,
+              "height": 1437,
+              "bytes": 166332,
+              "sha256": "1d2853cda6bdcad7af604e19bf56e5ffb40a7a84a61586d95445b37026f93baa",
+              "source_png_sha256": "c6b467e8ae9eb801a39b5798d288d078e53ea4833682549c892ba4b746ff7bb7"
+            }
+          }
+        }
+      ]
+    },
+    "p10": {
+      "pair_id": "p10",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia agnosia",
+      "species_b": "Ithomia pseudoagalla",
+      "classification": "cross_andes_allopatric_single_card",
+      "default_card_id": "p10",
+      "routes": [
+        {
+          "card_id": "p10",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente vs. Occidente",
+          "region_en": "East vs. West Ecuador",
+          "taxon_a": "Ithomia agnosia",
+          "taxon_b": "Ithomia pseudoagalla",
+          "subspecies_a_aliases": [
+            "agnosia",
+            "Ithomia agnosia agnosia"
+          ],
+          "subspecies_b_aliases": [
+            "pseudoagalla",
+            "Ithomia pseudoagalla"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p10.webp",
+              "width": 1400,
+              "height": 1560,
+              "bytes": 171292,
+              "sha256": "94f5bd8f91e9af20d1314b20784c240949db740f5ff2ba8357479649923538f2",
+              "source_png_sha256": "e967e6089de7be83d75dcc6e244616f8e0f369632ea45681df2fc74f4e218a9e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p10.webp",
+              "width": 1400,
+              "height": 1560,
+              "bytes": 164460,
+              "sha256": "c35b9ed4ff1cdd9497dbeed2f3b3fb74b4fb93903aa5c51268302a310c36dce5",
+              "source_png_sha256": "435acaed698d62c9e57fccbc0a47255c405f947d6ea11be8bccea52cfd0d0a7f"
+            }
+          }
+        }
+      ]
+    },
+    "p11": {
+      "pair_id": "p11",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Napeogenes duessa",
+      "species_b": "Napeogenes zurippa",
+      "classification": "single_region",
+      "default_card_id": "p11",
+      "routes": [
+        {
+          "card_id": "p11",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Andes",
+          "taxon_a": "Napeogenes duessa",
+          "taxon_b": "Napeogenes zurippa",
+          "subspecies_a_aliases": [
+            "orellana",
+            "duessa",
+            "Napeogenes duessa orellana",
+            "Napeogenes duessa duessa"
+          ],
+          "subspecies_b_aliases": [
+            "otaxes",
+            "Napeogenes zurippa otaxes",
+            "Napeogenes zurippa"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p11.webp",
+              "width": 1400,
+              "height": 1534,
+              "bytes": 157474,
+              "sha256": "33e6963df948c38e02ef6de7598b6235c6e924dfd9452e2e04fde2efffedd100",
+              "source_png_sha256": "c6ada906e4b3769c34ab18b378226547a7083fbb5ffc63cdb6cbaa17b5584c85"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p11.webp",
+              "width": 1400,
+              "height": 1534,
+              "bytes": 153502,
+              "sha256": "1f9d6dcdd3fde5004d1ef76e3e558a16d095f5cb8aaf7c6b65a274c1467db74f",
+              "source_png_sha256": "8aa59d9a6db0540f1f14a7a399582155b42435c7689720cb8807e01787338468"
+            }
+          }
+        }
+      ]
+    },
+    "p12": {
+      "pair_id": "p12",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hyposcada anchiala",
+      "species_b": "Hyposcada illinissa",
+      "classification": "single_region",
+      "default_card_id": "p12",
+      "routes": [
+        {
+          "card_id": "p12",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hyposcada anchiala",
+          "taxon_b": "Hyposcada illinissa",
+          "subspecies_a_aliases": [
+            "ecuadorina",
+            "Hyposcada anchiala ecuadorina",
+            "Hyposcada anchiala"
+          ],
+          "subspecies_b_aliases": [
+            "ida",
+            "cynthia",
+            "cascada",
+            "Hyposcada illinissa ida",
+            "Hyposcada illinissa cynthia",
+            "Hyposcada illinissa cascada"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p12.webp",
+              "width": 1400,
+              "height": 1387,
+              "bytes": 147434,
+              "sha256": "13c95948f71e0d7c12ceddb3b81a09dac8818eb4f5544f5f8ae97ed92aff8de9",
+              "source_png_sha256": "d57442aa2cea5424712ec2c4ee1b8cba457d5ec8ebdb74115e0a931ee4515fd6"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p12.webp",
+              "width": 1400,
+              "height": 1361,
+              "bytes": 144346,
+              "sha256": "f80651b6af9b19ba8dedfcbacf28f79a10d796d562a7b691617bfd42582470a4",
+              "source_png_sha256": "b56f207e0a98af28531fb3939ee94d1d70c6cea40f9637e16fa85c8beb4b72a9"
+            }
+          }
+        }
+      ]
+    },
+    "p13": {
+      "pair_id": "p13",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypomenitis lydia",
+      "species_b": "Pteronymia oneida",
+      "classification": "single_region",
+      "default_card_id": "p13",
+      "routes": [
+        {
+          "card_id": "p13",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypomenitis lydia",
+          "taxon_b": "Pteronymia oneida",
+          "subspecies_a_aliases": [
+            "lydia",
+            "Hypomenitis lydia"
+          ],
+          "subspecies_b_aliases": [
+            "oneida",
+            "Pteronymia oneida oneida",
+            "Pteronymia oneida"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p13.webp",
+              "width": 1400,
+              "height": 1422,
+              "bytes": 153476,
+              "sha256": "d57930dca54f0b60398251ec557c6c08ff93be08d2afacdc3dac648c0ef60d22",
+              "source_png_sha256": "dfa6cfe532070c25763e00f6060bdbea09ea8b8ec412bd4e851341aa981580ee"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p13.webp",
+              "width": 1400,
+              "height": 1422,
+              "bytes": 148134,
+              "sha256": "356db9253a3e5d6f2df28e44372b233a1f75fac1952c9860d58f62a465ea5b1e",
+              "source_png_sha256": "7ab271d043b95465d89751b9f53d1ab2f01a4209b53dd2cd48ba73a6cd90d87f"
+            }
+          }
+        }
+      ]
+    },
+    "p14": {
+      "pair_id": "p14",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius cydno",
+      "species_b": "Heliconius timareta",
+      "classification": "cross_andes_allopatric_single_card",
+      "default_card_id": "p14",
+      "routes": [
+        {
+          "card_id": "p14",
+          "status": "active",
+          "side_andes": [
+            "West",
+            "East"
+          ],
+          "side_default_for": [
+            "West",
+            "East"
+          ],
+          "region_bucket": "both",
+          "region_es": "Occidente vs. Oriente",
+          "region_en": "West vs. East Ecuador",
+          "taxon_a": "Heliconius cydno",
+          "taxon_b": "Heliconius timareta",
+          "subspecies_a_aliases": [
+            "f. white",
+            "f. yellow",
+            "f. intermedia",
+            "Heliconius cydno f. white",
+            "Heliconius cydno f. yellow",
+            "Heliconius cydno f. intermedia"
+          ],
+          "subspecies_b_aliases": [
+            "timareta",
+            "insolita/contigua",
+            "Heliconius timareta timareta",
+            "Heliconius timareta insolita/contigua"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p14.webp",
+              "width": 1400,
+              "height": 2105,
+              "bytes": 250640,
+              "sha256": "ca1e2a36f8f22c6121b6a11d5843a0e8eb713825b63b978ceedf806d82f6eb72",
+              "source_png_sha256": "bd43874383b6f30b07a14ae2130388313ebc8037ea8b414f434707361f1a15ab"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p14.webp",
+              "width": 1400,
+              "height": 2131,
+              "bytes": 244880,
+              "sha256": "ac4a35496f147ac05e8835484c1b8ba1a59fc4755ad6dfdb9f94ae76750fd03b",
+              "source_png_sha256": "d67c7b6e93f552ea6e7ef084357de9f46df8d151a863f8563c2fd88b62f587b1"
+            }
+          }
+        }
+      ]
+    },
+    "p15": {
+      "pair_id": "p15",
+      "wave": "wave2_regional",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Godyris zavaleta matronalis",
+      "species_b": "Godyris zavaleta telesilla",
+      "classification": "cross_andes_allopatric_single_card",
+      "default_card_id": "p15",
+      "routes": [
+        {
+          "card_id": "p15",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente vs. Occidente",
+          "region_en": "East vs. West Ecuador",
+          "taxon_a": "Godyris zavaleta matronalis",
+          "taxon_b": "Godyris zavaleta telesilla",
+          "subspecies_a_aliases": [
+            "matronalis",
+            "Godyris zavaleta matronalis"
+          ],
+          "subspecies_b_aliases": [
+            "telesilla",
+            "Godyris zavaleta telesilla"
+          ],
+          "view_badge_es": "Vista ventral",
+          "view_badge_en": "Underside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/p15.webp",
+              "width": 1400,
+              "height": 1474,
+              "bytes": 173136,
+              "sha256": "b05989d214d3c1f8685210a6e64ee68c0f6187b7703f8fcea7a9476a95727807",
+              "source_png_sha256": "e9d36020a6f129b1878f84e9aea8555fcdc5d1570668d3e202337360b565df65"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/p15.webp",
+              "width": 1400,
+              "height": 1474,
+              "bytes": 171556,
+              "sha256": "de9cec514003fdec0dddb75270c2e902ac86b882a69f611a18260c762796e543",
+              "source_png_sha256": "cba96168c7d2771abdccbc67abda113371b694be717d15c779e8123498c6a000"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_01": {
+      "pair_id": "w3a_01",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Morpho achilles",
+      "species_b": "Morpho helenor",
+      "classification": "held_sex_confounded_small_n",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_sex_confounded_small_n",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Morpho achilles phokylides",
+          "taxon_b": "Morpho helenor",
+          "subspecies_a_aliases": [
+            "phokylides",
+            "Morpho achilles phokylides",
+            "Morpho achilles"
+          ],
+          "subspecies_b_aliases": [
+            "Morpho helenor"
+          ]
+        }
+      ]
+    },
+    "w3a_02": {
+      "pair_id": "w3a_02",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Opsiphanes cassiae",
+      "species_b": "Opsiphanes invirae",
+      "classification": "held_suspect_reference_labels",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_suspect_reference_labels",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Opsiphanes cassiae",
+          "taxon_b": "Opsiphanes invirae aequatorialis",
+          "subspecies_a_aliases": [
+            "rubigatus",
+            "Opsiphanes cassiae rubigatus",
+            "Opsiphanes cassiae"
+          ],
+          "subspecies_b_aliases": [
+            "aequatorialis",
+            "Opsiphanes invirae aequatorialis",
+            "Opsiphanes invirae"
+          ]
+        }
+      ]
+    },
+    "w3a_03": {
+      "pair_id": "w3a_03",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Nessaea hewitsonii",
+      "species_b": "Nessaea obrinus",
+      "classification": "held_sex_confounded_small_n",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_sex_confounded_small_n",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Nessaea hewitsonii",
+          "taxon_b": "Nessaea obrinus obrinus",
+          "subspecies_a_aliases": [
+            "hewitsonii",
+            "hewitsoni",
+            "Nessaea hewitsonii",
+            "Nessaea hewitsonii hewitsonii"
+          ],
+          "subspecies_b_aliases": [
+            "obrinus",
+            "Nessaea obrinus",
+            "Nessaea obrinus obrinus"
+          ]
+        }
+      ]
+    },
+    "w3a_04": {
+      "pair_id": "w3a_04",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis mazaeus",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region",
+      "default_card_id": "w3a_04",
+      "routes": [
+        {
+          "card_id": "w3a_04",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Mechanitis mazaeus",
+          "taxon_b": "Mechanitis polymnia",
+          "subspecies_a_aliases": [
+            "fallax",
+            "mazaeus",
+            "Mechanitis mazaeus fallax",
+            "Mechanitis mazaeus mazaeus",
+            "Mechanitis mazaeus"
+          ],
+          "subspecies_b_aliases": [
+            "eurydice",
+            "proceriformis",
+            "Mechanitis polymnia eurydice",
+            "Mechanitis polymnia proceriformis",
+            "Mechanitis polymnia"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_04.webp",
+              "width": 1400,
+              "height": 2052,
+              "bytes": 265376,
+              "sha256": "0a0829e9f9f04703a449afc83e164216d38d8d3fec256251a79444af0f69c601",
+              "source_png_sha256": "f2b5f6d070f56e178efcf0699bb6caa3af7db6033e8feccf6a31e8aebb6a5ab1"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_04.webp",
+              "width": 1400,
+              "height": 2027,
+              "bytes": 255686,
+              "sha256": "655e67eda8513b9b883ef5e9496c669a017e495ccefaa97c2e828787ee0197d5",
+              "source_png_sha256": "3630e82c7f0824a8353f07eaef2ee1e868b01afb2ba274386f204064625ef415"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_05": {
+      "pair_id": "w3a_05",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis lysimnia",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region",
+      "default_card_id": "w3a_05",
+      "routes": [
+        {
+          "card_id": "w3a_05",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Mechanitis lysimnia roqueensis",
+          "taxon_b": "Mechanitis polymnia",
+          "subspecies_a_aliases": [
+            "roqueensis",
+            "ocona",
+            "Mechanitis lysimnia roqueensis",
+            "Mechanitis lysimnia"
+          ],
+          "subspecies_b_aliases": [
+            "eurydice",
+            "proceriformis",
+            "Mechanitis polymnia eurydice",
+            "Mechanitis polymnia proceriformis",
+            "Mechanitis polymnia"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_05.webp",
+              "width": 1400,
+              "height": 1499,
+              "bytes": 215486,
+              "sha256": "1c0abcd2e26ab5888fed28b1b1fc6310668325e6ca0eb4c2d1e06c18f0f96824",
+              "source_png_sha256": "65c609aa92210642353d0aa6c0e889eb76fc713f942427ad2268608a408ff175"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_05.webp",
+              "width": 1400,
+              "height": 1499,
+              "bytes": 212728,
+              "sha256": "8be64a2c130708fdcb1e3062709fa2b4f413aa008759162856c92b11ff111545",
+              "source_png_sha256": "e07180f736666656271100e8d81245545ba3f54247975ce52bb995004eaa0cda"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_06": {
+      "pair_id": "w3a_06",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Forbestra olivencia",
+      "species_b": "Mechanitis mazaeus",
+      "classification": "single_region",
+      "default_card_id": "w3a_06",
+      "routes": [
+        {
+          "card_id": "w3a_06",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Forbestra olivencia juntana",
+          "taxon_b": "Mechanitis mazaeus",
+          "subspecies_a_aliases": [
+            "juntana",
+            "olivencia",
+            "Forbestra olivencia juntana",
+            "Forbestra olivencia olivencia",
+            "Forbestra olivencia"
+          ],
+          "subspecies_b_aliases": [
+            "fallax",
+            "mazaeus",
+            "Mechanitis mazaeus fallax",
+            "Mechanitis mazaeus mazaeus",
+            "Mechanitis mazaeus"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_06.webp",
+              "width": 1400,
+              "height": 2052,
+              "bytes": 274164,
+              "sha256": "fed76fd196bf5c55eccdbf172b2d589987d387ff5209689d7cb65cafe4e0912c",
+              "source_png_sha256": "44cb5634219b55a69b8a81dfa4dd076cfc201da52b66b8d29427ce063d1c62f7"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_06.webp",
+              "width": 1400,
+              "height": 2052,
+              "bytes": 266850,
+              "sha256": "447b005e6c8f53fd0b1781ab24c02527c402171f17427bc39593cd75e5b47c0b",
+              "source_png_sha256": "db7ada9a612334d7870a9f70abddc42310e34b729d75681295fcae4df2085fa2"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_07": {
+      "pair_id": "w3a_07",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris euclea",
+      "species_b": "Hypothyris ninonia",
+      "classification": "single_region",
+      "default_card_id": "w3a_07",
+      "routes": [
+        {
+          "card_id": "w3a_07",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris euclea",
+          "taxon_b": "Hypothyris ninonia",
+          "subspecies_a_aliases": [
+            "intermedia",
+            "pyrippe",
+            "peruviana",
+            "barii",
+            "Hypothyris euclea intermedia",
+            "Hypothyris euclea pyrippe",
+            "Hypothyris euclea"
+          ],
+          "subspecies_b_aliases": [
+            "mamercus",
+            "polymnides",
+            "completa",
+            "completomaculata",
+            "Hypothyris ninonia mamercus",
+            "Hypothyris ninonia"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_07.webp",
+              "width": 1400,
+              "height": 1519,
+              "bytes": 190318,
+              "sha256": "31d5f65e8c8289ff42e1d924b8f378708cc3519488620f961d4af1f5e7446108",
+              "source_png_sha256": "a3e0f25288e20935781eba8c3cee43f6caae328764d1eff4d85fdcf2c15e7bfc"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_07.webp",
+              "width": 1400,
+              "height": 1494,
+              "bytes": 185194,
+              "sha256": "c32f915e8db5c29b11f28bd31ed81de1f4b421e445f42a9052a72dc5bd4f8748",
+              "source_png_sha256": "6bc025a09a2056bd81568dd19cd4244713a1afcce5d3079f2943a759eefdc4f5"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_08": {
+      "pair_id": "w3a_08",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Scada reckia",
+      "species_b": "Scada zibia",
+      "classification": "single_region_one_way_caution",
+      "default_card_id": "w3a_08",
+      "routes": [
+        {
+          "card_id": "w3a_08",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Scada reckia ethica",
+          "taxon_b": "Scada zibia",
+          "subspecies_a_aliases": [
+            "ethica",
+            "ruiza",
+            "Scada reckia ethica",
+            "Scada reckia"
+          ],
+          "subspecies_b_aliases": [
+            "batesi",
+            "perpuncta",
+            "quotidiana",
+            "Scada zibia batesi",
+            "Scada zibia perpuncta",
+            "Scada zibia"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_08.webp",
+              "width": 1400,
+              "height": 1049,
+              "bytes": 134278,
+              "sha256": "b58c59289d9c26bb7ef9623d8d67a899959de163211e806364713e0f0e8a9d9c",
+              "source_png_sha256": "458b0c08561e3b904c86919741ad58768dcacf2aa56114a4d319526fda3ea2b8"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_08.webp",
+              "width": 1400,
+              "height": 999,
+              "bytes": 123104,
+              "sha256": "f32262a20ee182c65213a73d22cec76c29914f84e29c4ca409a5c3d93265328e",
+              "source_png_sha256": "87f0f888a3382b62111346d069226191efb6211e2386d2bf589167fb3c6c8160"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_09": {
+      "pair_id": "w3a_09",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Brevioleria aelia",
+      "species_b": "Brevioleria arzalia",
+      "classification": "inseparable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "inseparable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Brevioleria aelia oncidia",
+          "taxon_b": "Brevioleria arzalia loronia",
+          "subspecies_a_aliases": [
+            "oncidia",
+            "Brevioleria aelia oncidia",
+            "Brevioleria aelia"
+          ],
+          "subspecies_b_aliases": [
+            "loronia",
+            "Brevioleria arzalia loronia",
+            "Brevioleria arzalia"
+          ]
+        }
+      ]
+    },
+    "w3a_10": {
+      "pair_id": "w3a_10",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Dircenna dero",
+      "species_b": "Dircenna loreta",
+      "classification": "inseparable_or_unverified_refs",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "inseparable_or_unverified_refs",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Dircenna dero caliginosa",
+          "taxon_b": "Dircenna loreta loreta",
+          "subspecies_a_aliases": [
+            "caliginosa",
+            "Dircenna dero caliginosa",
+            "Dircenna dero"
+          ],
+          "subspecies_b_aliases": [
+            "loreta",
+            "Dircenna loreta loreta",
+            "Dircenna loreta"
+          ]
+        }
+      ]
+    },
+    "w3a_11": {
+      "pair_id": "w3a_11",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria assimilis",
+      "species_b": "Oleria tigilla",
+      "classification": "single_region_subtle_caution",
+      "default_card_id": "w3a_11",
+      "routes": [
+        {
+          "card_id": "w3a_11",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria assimilis",
+          "taxon_b": "Oleria tigilla",
+          "subspecies_a_aliases": [
+            "assimilis",
+            "Oleria assimilis assimilis",
+            "Oleria assimilis"
+          ],
+          "subspecies_b_aliases": [
+            "tigilla",
+            "raya",
+            "Oleria tigilla tigilla",
+            "Oleria tigilla"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_11.webp",
+              "width": 1400,
+              "height": 1517,
+              "bytes": 178010,
+              "sha256": "f52aaf16c976bc448587981f4ac90707640c02df7c7f8e7fafd24a26251531ef",
+              "source_png_sha256": "ffc14bd3f4b0178a659f387ab5010e71364de316f9fd505685d5ca9355d51d8e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_11.webp",
+              "width": 1400,
+              "height": 1517,
+              "bytes": 171422,
+              "sha256": "3af138111296fa8b5126ef405faf9e0a531393cfe0c97fc0e75578aa47937370",
+              "source_png_sha256": "b91e0beecd34839d2d5a05ae3a34ca3c0b01aafe7778289773382f9ad8537933"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_12": {
+      "pair_id": "w3a_12",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Methona confusa",
+      "species_b": "Methona grandior",
+      "classification": "single_region",
+      "default_card_id": "w3a_12",
+      "routes": [
+        {
+          "card_id": "w3a_12",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Methona confusa psamathe",
+          "taxon_b": "Methona grandior",
+          "subspecies_a_aliases": [
+            "psamathe",
+            "Methona confusa psamathe",
+            "Methona confusa"
+          ],
+          "subspecies_b_aliases": [
+            "incana",
+            "batesi",
+            "Methona grandior incana",
+            "Methona grandior batesi",
+            "Methona grandior"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_12.webp",
+              "width": 1400,
+              "height": 2107,
+              "bytes": 272552,
+              "sha256": "694665f982e5f37d7d7d04c2e9069ee2be5044394b9c1c5f64af2fb71838400a",
+              "source_png_sha256": "a66cb7491e69f17e46bb3755fafb75ef769e526f5e4e977b356b1e7cd5d2fd68"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_12.webp",
+              "width": 1400,
+              "height": 2082,
+              "bytes": 266778,
+              "sha256": "0e1a64faee31d6fe8ead0a2241bf0d9d7d50efe3bb5067601ef9090ddf8bd419",
+              "source_png_sha256": "152a252915464bd92a922916039518c32813a2daedc7c2ebfc743e5ad7cd4b75"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_13": {
+      "pair_id": "w3a_13",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia diasia",
+      "species_b": "Ithomia hyala",
+      "classification": "single_region_provisional_subtle",
+      "default_card_id": "w3a_13",
+      "routes": [
+        {
+          "card_id": "w3a_13",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Ithomia diasia morena",
+          "taxon_b": "Ithomia hyala hyala",
+          "subspecies_a_aliases": [
+            "morena",
+            "Ithomia diasia morena",
+            "Ithomia diasia"
+          ],
+          "subspecies_b_aliases": [
+            "hyala",
+            "Ithomia hyala hyala",
+            "Ithomia hyala"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_13.webp",
+              "width": 1400,
+              "height": 1034,
+              "bytes": 148400,
+              "sha256": "4571af1b3331c46fdf41c8a75168fe8942b32b6db2aba667a8a303ef72db5a4c",
+              "source_png_sha256": "5f34a0229d8b924e038cc8f169d2ffca855caff643f6bd5e06193f78a87fb648"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_13.webp",
+              "width": 1400,
+              "height": 1034,
+              "bytes": 137056,
+              "sha256": "4a28555d4dfa2ab36e8d37f57182cb24c91e32ea072964c4b870e1d5694efd24",
+              "source_png_sha256": "7c56f89d6768c05d1d0c766f7b56f5dd4deb0ffe2a701d61c5c0c8f5b74f98b4"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_14": {
+      "pair_id": "w3a_14",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius eleuchia",
+      "species_b": "Heliconius sapho",
+      "classification": "single_region",
+      "default_card_id": "w3a_14",
+      "routes": [
+        {
+          "card_id": "w3a_14",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Heliconius eleuchia",
+          "taxon_b": "Heliconius sapho candidus",
+          "subspecies_a_aliases": [
+            "primularis",
+            "eleusinus",
+            "Heliconius eleuchia primularis",
+            "Heliconius eleuchia eleusinus",
+            "Heliconius eleuchia"
+          ],
+          "subspecies_b_aliases": [
+            "candidus",
+            "Heliconius sapho candidus",
+            "Heliconius sapho"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_14.webp",
+              "width": 1400,
+              "height": 1529,
+              "bytes": 195020,
+              "sha256": "fdc6de860b946dd3263c12ca3afef00479b40d01df8870bbd72f7519b95cf7b6",
+              "source_png_sha256": "82a65bdb7e48f66f54c4b74b56f844dbaa3ff0bb353d34d740139f542940f3d8"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_14.webp",
+              "width": 1400,
+              "height": 1529,
+              "bytes": 184894,
+              "sha256": "badd37866e91c99d9728457120cdf598e9860796f6697e04e3103e943dd31f62",
+              "source_png_sha256": "e74038ff0678b61e2aa559a43af47f02ece6b49fac71d53ea4b96b2ded7ac6b3"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_15": {
+      "pair_id": "w3a_15",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius cydno",
+      "species_b": "Heliconius sapho",
+      "classification": "single_region",
+      "default_card_id": "w3a_15",
+      "routes": [
+        {
+          "card_id": "w3a_15",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Heliconius cydno",
+          "taxon_b": "Heliconius sapho candidus",
+          "subspecies_a_aliases": [
+            "f. white",
+            "f. yellow",
+            "f. intermedia",
+            "alisitoides",
+            "zelinde",
+            "Heliconius cydno"
+          ],
+          "subspecies_b_aliases": [
+            "candidus",
+            "Heliconius sapho candidus",
+            "Heliconius sapho"
+          ],
+          "view_badge_es": "Vista ventral",
+          "view_badge_en": "Underside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_15.webp",
+              "width": 1400,
+              "height": 1524,
+              "bytes": 238106,
+              "sha256": "77f26df70275a9c490179900e725b86600ba026f8f9714b796145d360199fe58",
+              "source_png_sha256": "ee0a057ef175d8a9aabd16b705bde4f6fcf112000244754c285546b668c178ac"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_15.webp",
+              "width": 1400,
+              "height": 1524,
+              "bytes": 233866,
+              "sha256": "b0c42194ad378133d1eaca5f81ecec83fd0a7470fa8605cf35eb824c311f711f",
+              "source_png_sha256": "8090ad906a22c62df50c7f385bb5d156eaf2ca984ac809eb4d8bf2d244560ae3"
+            }
+          }
+        }
+      ]
+    },
+    "w3a_16": {
+      "pair_id": "w3a_16",
+      "wave": "wave3a_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Greta andromica",
+      "species_b": "Hypoleria lavinia",
+      "classification": "single_region",
+      "default_card_id": "w3a_16",
+      "routes": [
+        {
+          "card_id": "w3a_16",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Greta andromica andromica",
+          "taxon_b": "Hypoleria lavinia riffarthi",
+          "subspecies_a_aliases": [
+            "andromica",
+            "Greta andromica andromica",
+            "Greta andromica"
+          ],
+          "subspecies_b_aliases": [
+            "riffarthi",
+            "Hypoleria lavinia riffarthi",
+            "Hypoleria lavinia"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3a_16.webp",
+              "width": 1400,
+              "height": 1494,
+              "bytes": 174380,
+              "sha256": "feeb3cab30487422b7791ccdaa55563d020baf15a9339599e2718b78dab3e5d5",
+              "source_png_sha256": "54a4d8074b7aca3ba45e33d32b18bbe0c4c7891e752f3e9deb46a7adc7d103c4"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3a_16.webp",
+              "width": 1400,
+              "height": 1468,
+              "bytes": 165540,
+              "sha256": "ef9f56430fb11f62f0909e270a17628dab8df16b3ba806615cd64a25f1580477",
+              "source_png_sha256": "7901ef5788e86ba28209e3517fecf0ff597e737bf363ae0dcdb6433bbd47b26d"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_01": {
+      "pair_id": "w3b_01",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Adelpha irmina",
+      "species_b": "Adelpha saundersii",
+      "classification": "single_region",
+      "default_card_id": "w3b_01",
+      "routes": [
+        {
+          "card_id": "w3b_01",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Adelpha irmina",
+          "taxon_b": "Adelpha saundersii",
+          "subspecies_a_aliases": [
+            "Adelpha irmina"
+          ],
+          "subspecies_b_aliases": [
+            "Adelpha saundersii"
+          ],
+          "view_badge_es": "Solo vista ventral",
+          "view_badge_en": "Underside view only",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_01.webp",
+              "width": 1400,
+              "height": 1502,
+              "bytes": 302764,
+              "sha256": "35f7f089d9480b204bb44c5c60bad07380585d7e7a49b9f283ce84b9f259a948",
+              "source_png_sha256": "176f86623f3fe45d6a46cdc75859eaa73ce042f8e43bfacc749674f261e58f1a"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_01.webp",
+              "width": 1400,
+              "height": 1502,
+              "bytes": 301250,
+              "sha256": "ce21c39672706fff990026f4b35b71e94a4ee8cba6462df1c7e558b8aadb798c",
+              "source_png_sha256": "ad5442990aa3ea21e310d9616879aca8366bbc68e39e8d8a617d26c85440ae9c"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_02": {
+      "pair_id": "w3b_02",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Catonephele acontius",
+      "species_b": "Catonephele orites",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Catonephele acontius",
+          "taxon_b": "Catonephele orites",
+          "subspecies_a_aliases": [
+            "Catonephele acontius"
+          ],
+          "subspecies_b_aliases": [
+            "Catonephele orites"
+          ]
+        }
+      ]
+    },
+    "w3b_03": {
+      "pair_id": "w3b_03",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Gorgythion begga",
+      "species_b": "Gorgythion beggina",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Gorgythion begga",
+          "taxon_b": "Gorgythion beggina",
+          "subspecies_a_aliases": [
+            "Gorgythion begga"
+          ],
+          "subspecies_b_aliases": [
+            "Gorgythion beggina"
+          ]
+        }
+      ]
+    },
+    "w3b_04": {
+      "pair_id": "w3b_04",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Opsiphanes cassina",
+      "species_b": "Opsiphanes invirae",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Opsiphanes cassina",
+          "taxon_b": "Opsiphanes invirae",
+          "subspecies_a_aliases": [
+            "Opsiphanes cassina"
+          ],
+          "subspecies_b_aliases": [
+            "Opsiphanes invirae"
+          ]
+        }
+      ]
+    },
+    "w3b_05": {
+      "pair_id": "w3b_05",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Pronophila orcus",
+      "species_b": "Pronophila unifasciata",
+      "classification": "widespread_single_card",
+      "default_card_id": "w3b_05",
+      "routes": [
+        {
+          "card_id": "w3b_05",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Pronophila orcus",
+          "taxon_b": "Pronophila unifasciata",
+          "subspecies_a_aliases": [
+            "Pronophila orcus"
+          ],
+          "subspecies_b_aliases": [
+            "Pronophila unifasciata"
+          ],
+          "view_badge_es": "Solo vista ventral · Con cautela",
+          "view_badge_en": "Underside only · Caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_05.webp",
+              "width": 1400,
+              "height": 1562,
+              "bytes": 336360,
+              "sha256": "ade58d2e0f0844a1d78a555ded74ddc00763ae1a62274781482bb5b3af28bb74",
+              "source_png_sha256": "085faf580f3d112f7cf34ba2059c13c9b75cdd5f66d3c6425ec441dc9fd1f589"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_05.webp",
+              "width": 1400,
+              "height": 1562,
+              "bytes": 332708,
+              "sha256": "6fe2ac38ab5558d0959734adc46bedf27879ea1f39d1fda768939f37486bf73e",
+              "source_png_sha256": "b72c23ba4b308b20c9c10ce4b2264258853d81acb1fdc53fe758b01484c47a3c"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_06": {
+      "pair_id": "w3b_06",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Parides iphidamas",
+      "species_b": "Parides panares",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Parides iphidamas",
+          "taxon_b": "Parides panares",
+          "subspecies_a_aliases": [
+            "Parides iphidamas"
+          ],
+          "subspecies_b_aliases": [
+            "Parides panares"
+          ]
+        }
+      ]
+    },
+    "w3b_07": {
+      "pair_id": "w3b_07",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Adelpha iphicleola",
+      "species_b": "Adelpha iphiclus",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Adelpha iphicleola",
+          "taxon_b": "Adelpha iphiclus",
+          "subspecies_a_aliases": [
+            "Adelpha iphicleola"
+          ],
+          "subspecies_b_aliases": [
+            "Adelpha iphiclus"
+          ]
+        }
+      ]
+    },
+    "w3b_08": {
+      "pair_id": "w3b_08",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Caligo brasiliensis",
+      "species_b": "Caligo eurilochus",
+      "classification": "single_region",
+      "default_card_id": "w3b_08",
+      "routes": [
+        {
+          "card_id": "w3b_08",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Caligo brasiliensis",
+          "taxon_b": "Caligo eurilochus",
+          "subspecies_a_aliases": [
+            "Caligo brasiliensis"
+          ],
+          "subspecies_b_aliases": [
+            "Caligo eurilochus"
+          ],
+          "view_badge_es": "Solo vista ventral",
+          "view_badge_en": "Underside view only",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_08.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 311168,
+              "sha256": "2acdb5e083165b8f7341224351293c1299eda0949ab21e2fa42997fef214d113",
+              "source_png_sha256": "4206ff6d22cff8d4c341f70a1d48e2f9a34a1b1eacdb62c87aed7179a23aba06"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_08.webp",
+              "width": 1400,
+              "height": 1532,
+              "bytes": 302148,
+              "sha256": "c4cd436dec82d98cfb711dff08a8ef255adb7db2d1c46b43e5a82ca9f4f66cdf",
+              "source_png_sha256": "ccf8982caced59f9abdee2f2edb86ad11ab00c61a766c529e65353c26e3e983c"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_09": {
+      "pair_id": "w3b_09",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Eunica alpais",
+      "species_b": "Eunica volumna",
+      "classification": "single_region",
+      "default_card_id": "w3b_09",
+      "routes": [
+        {
+          "card_id": "w3b_09",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Eunica alpais",
+          "taxon_b": "Eunica volumna",
+          "subspecies_a_aliases": [
+            "Eunica alpais"
+          ],
+          "subspecies_b_aliases": [
+            "Eunica volumna"
+          ],
+          "view_badge_es": "Reverso prioritario · Con cautela",
+          "view_badge_en": "Underside primary · Caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_09.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 309368,
+              "sha256": "39edd44543b7204c522918aa72d70934e915fab3b8e8b1b7db32276cc7289689",
+              "source_png_sha256": "8da61c6fccf95ea1688f24fb0ff0161e9e9b6b36da5db407b029bdaa60fda8bb"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_09.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 307116,
+              "sha256": "68931f0a7f95c9d7e6586cac86f5063ef472915c94863d32b42930cc732a6c30",
+              "source_png_sha256": "b91529f403b4f0ed5649cf892ca4a226d582f3f88677d19c79a48365ec0435dd"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_10": {
+      "pair_id": "w3b_10",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Epargyreus exadeus",
+      "species_b": "Epargyreus socus",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Epargyreus exadeus",
+          "taxon_b": "Epargyreus socus",
+          "subspecies_a_aliases": [
+            "Epargyreus exadeus"
+          ],
+          "subspecies_b_aliases": [
+            "Epargyreus socus"
+          ]
+        }
+      ]
+    },
+    "w3b_11": {
+      "pair_id": "w3b_11",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Archaeoprepona demophon",
+      "species_b": "Archaeoprepona demophoon",
+      "classification": "widespread_single_card",
+      "default_card_id": "w3b_11",
+      "routes": [
+        {
+          "card_id": "w3b_11",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Archaeoprepona demophon",
+          "taxon_b": "Archaeoprepona demophoon",
+          "subspecies_a_aliases": [
+            "Archaeoprepona demophon"
+          ],
+          "subspecies_b_aliases": [
+            "Archaeoprepona demophoon"
+          ],
+          "view_badge_es": "Solo vista ventral · Con cautela",
+          "view_badge_en": "Underside only · Caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_11.webp",
+              "width": 1400,
+              "height": 1502,
+              "bytes": 278646,
+              "sha256": "7c486fa83a64be0ab47fc53d16878aba16e9138c3306b5fdec04605ca004b7a6",
+              "source_png_sha256": "723b176ac369a221d4e067d20d074a2f2368645118456b44c3cd4bdd9190ab1e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_11.webp",
+              "width": 1400,
+              "height": 1502,
+              "bytes": 278004,
+              "sha256": "1aca29add632a33f0f3e28a9426464218d44424a142963bac01606d3ef6f81b8",
+              "source_png_sha256": "87be8fcac07b97c8503cca037492578d666ab348f0df7989bc78fa909e9802ba"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_12": {
+      "pair_id": "w3b_12",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Adelpha justina",
+      "species_b": "Adelpha zina",
+      "classification": "widespread_single_card",
+      "default_card_id": "w3b_12",
+      "routes": [
+        {
+          "card_id": "w3b_12",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Adelpha justina",
+          "taxon_b": "Adelpha zina",
+          "subspecies_a_aliases": [
+            "Adelpha justina"
+          ],
+          "subspecies_b_aliases": [
+            "Adelpha zina"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_12.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 305720,
+              "sha256": "9cfd3812b191882c4a66606ae529789e193c21c89ca34ade4943aa9b4374d99d",
+              "source_png_sha256": "860ae9456e1a8c4cf1b0abf29822e244ce8a83400b505dbde43e7d92d1294150"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_12.webp",
+              "width": 1400,
+              "height": 1532,
+              "bytes": 299512,
+              "sha256": "fae1bc2de6ea0f462e0ac657540866c719e224c9e781bb705bad85290dda04e8",
+              "source_png_sha256": "0f187ae7938f6bd4c938ad7b3c2951fb3acfeebd12cfd2a2de30b6d1d545a096"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_13": {
+      "pair_id": "w3b_13",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Morpho deidamia",
+      "species_b": "Morpho helenor",
+      "classification": "single_region",
+      "default_card_id": "w3b_13",
+      "routes": [
+        {
+          "card_id": "w3b_13",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Morpho deidamia",
+          "taxon_b": "Morpho helenor",
+          "subspecies_a_aliases": [
+            "Morpho deidamia"
+          ],
+          "subspecies_b_aliases": [
+            "Morpho helenor"
+          ],
+          "view_badge_es": "Solo vista ventral",
+          "view_badge_en": "Underside view only",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_13.webp",
+              "width": 1400,
+              "height": 1502,
+              "bytes": 267732,
+              "sha256": "7d19eac4b4c7f8bf921c4f1d8242a7db1873792ec9c04461b2800e0382c5e5a6",
+              "source_png_sha256": "1df8afe81f25ac7a29994b0a3208247f23cee0a61d3aa0d9f6aaaa238f9989dc"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_13.webp",
+              "width": 1400,
+              "height": 1479,
+              "bytes": 261610,
+              "sha256": "d388e14a6b38afc454696c8f72d49e6f8d62ab63eb1bcaf19e70f04a8d5b1983",
+              "source_png_sha256": "1fdbdbf1a9e0df9cab78baa248f88c7833ea6e59280d1e81d5000cbbb5992cf2"
+            }
+          }
+        }
+      ]
+    },
+    "w3b_14": {
+      "pair_id": "w3b_14",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Diaethria clymena",
+      "species_b": "Diaethria eluina",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Diaethria clymena",
+          "taxon_b": "Diaethria eluina",
+          "subspecies_a_aliases": [
+            "Diaethria clymena"
+          ],
+          "subspecies_b_aliases": [
+            "Diaethria eluina"
+          ]
+        }
+      ]
+    },
+    "w3b_15": {
+      "pair_id": "w3b_15",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Pyrrhogyra amphiro",
+      "species_b": "Pyrrhogyra neaerea",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Pyrrhogyra amphiro",
+          "taxon_b": "Pyrrhogyra neaerea",
+          "subspecies_a_aliases": [
+            "Pyrrhogyra amphiro"
+          ],
+          "subspecies_b_aliases": [
+            "Pyrrhogyra neaerea"
+          ]
+        }
+      ]
+    },
+    "w3b_16": {
+      "pair_id": "w3b_16",
+      "wave": "wave3b_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Perisama dorbignyi",
+      "species_b": "Perisama yeba",
+      "classification": "single_region",
+      "default_card_id": "w3b_16",
+      "routes": [
+        {
+          "card_id": "w3b_16",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Perisama dorbignyi",
+          "taxon_b": "Perisama yeba",
+          "subspecies_a_aliases": [
+            "Perisama dorbignyi"
+          ],
+          "subspecies_b_aliases": [
+            "Perisama yeba"
+          ],
+          "view_badge_es": "Solo vista ventral · Con cautela",
+          "view_badge_en": "Underside only · Caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w3b_16.webp",
+              "width": 1400,
+              "height": 1040,
+              "bytes": 193542,
+              "sha256": "80db9a057a745ac0fa35636f4551396d3a88803fd8c3469ecf2cb86e486d7bed",
+              "source_png_sha256": "c4f6afb74073de9fd826bd00eaa8c4f8c774394c5c84c1e0552324aeba747caf"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w3b_16.webp",
+              "width": 1400,
+              "height": 1017,
+              "bytes": 191286,
+              "sha256": "86613e7a3c0098943431382f23f80c7cedd5db9caa674a101d6adebbfec5d477",
+              "source_png_sha256": "2633bd66dcdcaff67df2420bd1d3945622693dfcf1a97ce77568adb0a848d26f"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
