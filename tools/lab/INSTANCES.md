@@ -56,9 +56,11 @@ tools/lab/dev-app.sh --stop --port 8822  # stop yours when done
 
 How a copy stays small:
 - The workbook's rows live in a SQLite file, not in memory (see below). With rows in SQLite, `dev-app.sh` sets V8's
-  old-space cap to 1280 MB (`--max-old-space-size=1280 --expose-gc`) to trim the start peak and bound heap growth;
-  `--env LOCAL_SHEETS=memory` (or a failed rows-file build) automatically keeps 2048 MB so the in-memory snapshot still
-  fits.
+  old-space cap to 1280 MB (`--max-old-space-size=1280 --expose-gc`), trimming the start peak (~1.1 GB `VmHWM` vs
+  ~1.3 GB at 2048 MB, measured 25 Nov, n=2); `--env LOCAL_SHEETS=memory` or a failed rows-file build keeps 2048 MB,
+  and a default-cap start that falls back to in-memory rows (`Workbook rows kept in memory`) and stops during startup
+  retries once at 2048 MB. Heavy use (assistant tools, eval, bench) was not measured at 1280 MB: if a session exits
+  with `Reached heap limit`, restart with `--env NODE_OPTIONS="--max-old-space-size=2048 --expose-gc"`.
 - Once the first sync is done, and again once the checks' warm-up (Inicio's summaries, alerts, issues, suggested
   edits) is done, the server runs a full garbage collection that hands the freed pages back at once
   (`gc({flavor: 'last-resort'})`, only in LOCAL_MODE when node runs with `--expose-gc`, as dev-app.sh starts it).
