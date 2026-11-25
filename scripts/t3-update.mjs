@@ -399,34 +399,49 @@ async function recoverFailedDowngrade(reason) {
       say(`WARNING: T3 is still answering during downgrade recovery (${reason}); refusing to swap statev2.sqlite or launcher while T3 may be open. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
       return;
     }
+    let dbRestoredOk = false;
     if (copy?.dir && existsSync(join(copy.dir, 'statev2.sqlite'))) {
       try {
         replaceSqlite(join(copy.dir, 'statev2.sqlite'), targetV2);
+        dbRestoredOk = true;
         say(`Rolled back statev2.sqlite from ${copy.dir} after failed downgrade (${reason}).`);
       } catch (e) {
         say(`WARNING: could not roll back statev2.sqlite from ${copy.dir}: ${e.message}`);
       }
+    } else {
+      say(`WARNING: pre-downgrade statev2.sqlite backup missing in ${copy?.dir ?? 'unknown'}; cannot roll back DB.`);
     }
-    if (from && STABLE.test(from)) {
-      if (copy?.dir && existsSync(join(copy.dir, 'service-state.json'))) {
-        try {
-          copyFileSync(join(copy.dir, 'service-state.json'), join(home, 'runtime', 'service-state.json'));
-        } catch {
-          /* best effort */
-        }
+    if (!dbRestoredOk) {
+      say(`WARNING: refusing to restart T3 after failed DB rollback (${reason}). Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    if (!from || !STABLE.test(from)) {
+      say(`WARNING: previous T3 version is unknown during downgrade recovery (${reason}); refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    if (copy?.dir && existsSync(join(copy.dir, 'service-state.json'))) {
+      try {
+        copyFileSync(join(copy.dir, 'service-state.json'), join(home, 'runtime', 'service-state.json'));
+      } catch {
+        /* best effort */
       }
-      if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete')) && copy?.dir && existsSync(join(copy.dir, 'runtime-version', '.install-complete'))) {
-        try {
-          restoreRuntime(copy.dir, from);
-          say(`Restored pruned runtime ${from} from ${copy.dir}.`);
-        } catch (e) {
-          say(`WARNING: could not restore runtime ${from} from ${copy.dir}: ${e.message}`);
-        }
+    }
+    if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete')) && copy?.dir && existsSync(join(copy.dir, 'runtime-version', '.install-complete'))) {
+      try {
+        restoreRuntime(copy.dir, from);
+        say(`Restored pruned runtime ${from} from ${copy.dir}.`);
+      } catch (e) {
+        say(`WARNING: could not restore runtime ${from} from ${copy.dir}: ${e.message}`);
       }
-      if (existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))) {
-        const rc = await run(opts.t3, ['update', '--base-dir', home, '--yes', from], t3Env());
-        if (rc !== 0) say(`WARNING: restoring launcher to ${from} exited with code ${rc}`);
-      }
+    }
+    if (!existsSync(join(home, 'runtime', 'versions', from, '.install-complete'))) {
+      say(`WARNING: runtime ${from} is missing during downgrade recovery (${reason}); refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
+    }
+    const rc = await run(opts.t3, ['update', '--base-dir', home, '--yes', from], t3Env());
+    if (rc !== 0) {
+      say(`WARNING: restoring launcher to ${from} exited with code ${rc}; refusing to restart T3 with a mismatched runtime. Restore by hand from ${copy?.dir ?? 'the pre-downgrade backup'}.`);
+      return;
     }
   } else if (await running()) {
     // Nothing was swapped yet and T3 is still up: no need to restart.

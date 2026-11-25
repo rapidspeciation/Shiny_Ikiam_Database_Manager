@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeYouUpdate, majorJump, newer, openSessions, openTerminals, runLog, t3Admin, t3Checks, t3Pairing } from '../server/t3admin.mjs';
+import { createT3Bridge, normalizeAppOrigin } from '../server/t3bridge.mjs';
 
 test('only a higher stable T3 version is an update', () => {
   assert.equal(newer('0.0.43', '0.0.42'), true);
@@ -267,8 +268,10 @@ test('the checks after an update: what the app needs from T3, each with what it 
   assert.equal(missingOriginNoFraming.find(c => c.id === 'page').ok, false);
   assert.match(missingOriginNoFraming.find(c => c.id === 'page').detail, /bridge script injection is disabled/);
 
-  // Origins rejected by validHttpOrigin in t3bridge.mjs (e.g. comma or wildcard in hostname) must fail 'page' and 'framing' identically.
-  for (const badOrigin of ['https://a,b.example.org', 'https://*.example.org']) {
+  // Origins rejected by normalizeAppOrigin in t3bridge.mjs (comma, wildcard, unparseable URL) fail identically without throwing in createT3Bridge.
+  for (const badOrigin of ['https://a,b.example.org', 'https://*.example.org', 'not-a-url']) {
+    assert.equal(normalizeAppOrigin(badOrigin), '', badOrigin);
+    assert.doesNotThrow(() => createT3Bridge({ t3, appOrigin: badOrigin }).close(), badOrigin);
     const bad = await pageCase(
       {
         ok: true,

@@ -161,6 +161,10 @@ esac
 if [ "$1" = update ]; then
   for v; do :; done
   if [ "$v" = 0.1.11 ]; then
+    if [ "$(cat '${root}/fail-recover-launcher' 2>/dev/null)" = 1 ]; then
+      echo "simulated launcher reactivation failure" >&2
+      exit 1
+    fi
     mkdir -p '${home}/runtime/versions/0.1.11' && echo "0.1.11" > '${home}/runtime/versions/0.1.11/.install-complete'
     # Simulate T3 0.1.11 pruning 0.1.9 on startup and migrating statev2.sqlite.
     rm -rf '${home}/runtime/versions/0.1.9'
@@ -316,6 +320,24 @@ db.close();
     const dbReset = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'));
     dbReset.exec("INSERT OR REPLACE INTO migration_log VALUES (102, 'migrated-0.1.11');");
     dbReset.close();
+
+    // 5c. If launcher reactivation fails during recovery, refuse to restart T3 with a mismatched runtime + DB.
+    writeFileSync(join(root, 'fail-recover-launcher'), '1');
+    const restartCountFile = join(root, 'restart-count');
+    writeFileSync(restartCountFile, '0');
+    const failRestartCount = `n=$(($(cat '${restartCountFile}') + 1)); printf '%s' "$n" > '${restartCountFile}'; exit 1`;
+    const refuseMismatched = await run([
+      '0.1.9',
+      ...common,
+      '--restart', failRestartCount,
+    ]);
+    assert.equal(refuseMismatched.code, 1);
+    assert.match(refuseMismatched.stdout, /refusing to restart T3 with a mismatched runtime\. Restore by hand from/);
+    assert.equal(readFileSync(restartCountFile, 'utf8'), '1', 'recovery did not call restart after launcher reactivation failed');
+    writeFileSync(join(root, 'fail-recover-launcher'), '0');
+    writeFileSync(join(root, 'version'), '0.1.11');
+    writeFileSync(join(root, 'migration'), '102');
+    writeFileSync(join(root, 'up'), '1');
 
     // 6. Successful downgrade 0.1.11 → 0.1.9: restores pruned runtime + restores 0.1.9 statev2.sqlite + removes WAL/SHM + logs backup notice.
     rmSync(join(home, 'runtime', 'versions', '0.1.9'), { recursive: true, force: true });
