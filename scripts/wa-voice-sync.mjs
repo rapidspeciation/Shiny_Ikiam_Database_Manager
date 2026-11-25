@@ -101,12 +101,21 @@ export function syncWaVoice({
         continue;
       }
       if (sync && syncWorkspaces && tracksRepoVoice(manifest)) {
-        writeFileSync(dstPath, srcText);
-        const allTexts = files.map(f => readFileSync(join(voiceDir, f.replace(/^.*\//, '')), 'utf8'));
-        const nextManifest = { ...manifest, hash: sha(allTexts.join('\0')), at: new Date().toISOString() };
-        writeFileSync(manifestPath, `${JSON.stringify(nextManifest, null, 1)}\n`);
-        result.updated++;
-        result.workspaces.push({ workspace: name, variant, source: repoRel, status: 'updated', fromHash: dstText === null ? null : sha(dstText), toHash: sha(srcText) });
+        try {
+          // Read all sibling voice files BEFORE writing core.md so a missing file never leaves a partial update.
+          const allTexts = files.map(f => {
+            const base = f.replace(/^.*\//, '');
+            return base === 'core.md' ? srcText : readFileSync(join(voiceDir, base), 'utf8');
+          });
+          writeFileSync(dstPath, srcText);
+          const nextManifest = { ...manifest, hash: sha(allTexts.join('\0')), at: new Date().toISOString() };
+          writeFileSync(manifestPath, `${JSON.stringify(nextManifest, null, 1)}\n`);
+          result.updated++;
+          result.workspaces.push({ workspace: name, variant, source: repoRel, status: 'updated', fromHash: dstText === null ? null : sha(dstText), toHash: sha(srcText) });
+        } catch (e) {
+          result.stale++;
+          result.workspaces.push({ workspace: name, variant, source: repoRel, status: 'error', detail: e.message });
+        }
       } else {
         result.stale++;
         result.workspaces.push({

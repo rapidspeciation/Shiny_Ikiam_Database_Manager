@@ -350,7 +350,8 @@ export async function t3Checks({ t3, admin, chats, user, appOrigin, fetchImpl = 
   if (appOrigin !== undefined) {
     try {
       const parsed = new URL(appOrigin);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') originForCheck = parsed.origin;
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.origin === appOrigin && !parsed.hostname.includes('*'))
+        originForCheck = parsed.origin;
       else invalidExplicitOrigin = true;
     } catch {
       invalidExplicitOrigin = true;
@@ -358,6 +359,7 @@ export async function t3Checks({ t3, admin, chats, user, appOrigin, fetchImpl = 
   }
   await check('page', async () => {
     const { status, headers, html } = await loadPage();
+    if (invalidExplicitOrigin) throw new Error('APP_PUBLIC_URL is unset or invalid: bridge script injection is disabled');
     if (!canInject(status, headers)) {
       if (status !== 200) throw new Error(`T3's page returned HTTP ${status}`);
       const ct = String(headers['content-type'] ?? '');

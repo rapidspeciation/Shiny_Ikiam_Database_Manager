@@ -1507,8 +1507,8 @@ function serve() {
   server.listen(config.port, '127.0.0.1', () => console.log(`WhatsApp bridge on 127.0.0.1:${config.port}`));
 }
 
-/** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout. */
-function install() {
+/** Copies the bridge (and the two app modules it uses) to a folder of its own, so the unit outlives this checkout, and mirrors the whatsapp-bridge skill to configured workspaces. */
+async function install() {
   const target = process.env.WA_BRIDGE_HOME || join(HOME, '.local/share/ithomiini-wa-bridge');
   for (const f of ['tools/whatsapp/bridge.mjs', 'tools/whatsapp/bridge-lib.mjs', 'tools/whatsapp/asr-parakeet.mjs', 'tools/whatsapp/search-export.mjs', 'tools/whatsapp/dictation-words.json', 'tools/whatsapp/t3-turn.mjs', 'tools/whatsapp/t3-progress.mjs', 'tools/whatsapp/bridge-skill/SKILL.md', 'assistant/voice/whatsapp.md', 'assistant/voice/core.md', 'server/t3commands.mjs', 'server/claude-usage.mjs']) {
     mkdirSync(dirname(join(target, f)), { recursive: true, mode: 0o700 });
@@ -1563,6 +1563,13 @@ WantedBy=timers.target
 `,
   );
   console.log(`Installed in ${target}; units ${unit}, ithomiini-wa-search.service and .timer`);
+  if (existsSync(CONFIG_FILE)) {
+    try {
+      await skillPush(null);
+    } catch (e) {
+      console.warn(`whatsapp-bridge skill push skipped (${e.message}); run bridge.mjs skill-push when the workspace host is reachable.`);
+    }
+  }
 }
 
 /**
@@ -1696,7 +1703,7 @@ async function voiceCheck(file, order) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const cmd = process.argv[2];
   if (cmd === 'serve') serve();
-  else if (cmd === 'install') install();
+  else if (cmd === 'install') install().catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'backfill') backfill(Number(process.argv[3]) || 30).catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'voice-push') voicePush(process.argv[3], { dry: process.argv.includes('--dry'), restart: process.argv.includes('--restart') }).catch(e => (console.error(e.message), process.exit(1)));
   else if (cmd === 'skill-push') {

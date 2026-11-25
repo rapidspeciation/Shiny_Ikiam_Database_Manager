@@ -303,11 +303,11 @@ const seconds = (n: number) => (n < 1 ? '<1 s' : `${Math.round(n)} s`)
         <button v-if="finished" class="btn-primary ml-auto" @click="emit('close')">{{ $t('Cerrar') }}</button>
       </div>
 
-      <!-- Going back: T3 keeps the versions it had. -->
+      <!-- Going back: T3 keeps the versions it had, or the updater backed them up. -->
       <details v-if="status?.previous.length && !running" class="mt-3 rounded border border-stone-200 p-2">
         <summary class="cursor-pointer font-medium"><History :size="14" class="inline" /> {{ $t('Volver a una versión anterior') }}</summary>
         <p class="mt-1 text-stone-600">
-          {{ $t('T3 guarda las versiones que tuvo. Volver a una es lo mismo que actualizar a ella (con su copia de seguridad antes).') }}
+          {{ $t('Si la base de datos cambió de esquema, volver restaura la copia previa de statev2.sqlite (los chats posteriores quedan guardados en una copia nueva en ~/.t3/backups).') }}
         </p>
         <div class="mt-2 flex flex-wrap gap-2">
           <button v-for="v in status.previous.slice(0, 3)" :key="v" class="btn" @click="start(v, true)">

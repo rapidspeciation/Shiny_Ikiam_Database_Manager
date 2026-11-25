@@ -260,9 +260,9 @@ test('tubes.entered excludes bulk sheet saves (>20 distinct records in one minut
   const dir = mkdtempSync(join(tmpdir(), 'sheets-copy-bulk-tubes-'));
   try {
     // 21 rows for a bulk save (>20), 20 rows for the exact <=20 boundary, 30 rows split across 2 sources (15+15),
-    // and 25 rows for a non-tube bulk edit alongside 2 tube saves.
+    // 25 rows for a non-tube bulk edit alongside 2 tube saves, and 21 rows split across 2 purposes of the same raw source ('app': 11 tubos + 10 tablas).
     const rows = [];
-    for (let i = 1; i <= 75; i++) {
+    for (let i = 1; i <= 96; i++) {
       rows.push({
         row: i + 1,
         values: {
@@ -351,6 +351,31 @@ test('tubes.entered excludes bulk sheet saves (>20 distinct records in one minut
       { recordId: rec(72).id, row: 73, field: 'Tube_1_id', after: 'FS90500072' },
       { recordId: rec(73).id, row: 74, field: 'Tube_1_id', after: 'FS90500073' },
     ]);
+    // 6. Same raw actions.source ('app') across two display purposes (11 'tubos' + 10 'tablas' = 21 > 20 in one minute) -> ALL 21 excluded!
+    addAction(
+      'act-split-purpose-a',
+      '2026-11-05T16:00:05.000Z',
+      'app',
+      'tubos',
+      Array.from({ length: 11 }, (_, k) => ({
+        recordId: rec(76 + k).id,
+        row: 77 + k,
+        field: 'Tube_1_id',
+        after: `FS90500${String(76 + k).padStart(3, '0')}`,
+      })),
+    );
+    addAction(
+      'act-split-purpose-b',
+      '2026-11-05T16:00:40.000Z',
+      'app',
+      'tablas',
+      Array.from({ length: 10 }, (_, k) => ({
+        recordId: rec(87 + k).id,
+        row: 88 + k,
+        field: 'Tube_1_id',
+        after: `FS90500${String(87 + k).padStart(3, '0')}`,
+      })),
+    );
 
     const out = join(dir, 'sheets.sqlite');
     buildCopy(store.db, out);
@@ -369,6 +394,10 @@ test('tubes.entered excludes bulk sheet saves (>20 distinct records in one minut
       // Bulk non-tube edits do not taint 2 tube saves in the same minute.
       assert.equal(enteredOf('FS90500072'), '2026-11-05T15:00:20.000Z');
       assert.equal(enteredOf('FS90500073'), '2026-11-05T15:00:20.000Z');
+      // 11 'tubos' + 10 'tablas' from the same raw actions.source ('app') in one minute -> all 21 excluded, display purposes preserved in history.
+      for (let i = 76; i <= 96; i++) assert.equal(enteredOf(`FS90500${String(i).padStart(3, '0')}`), null, `split-purpose bulk row ${i} excluded`);
+      assert.equal(copy.prepare("SELECT source FROM history WHERE action_id = 'act-split-purpose-a' LIMIT 1").get().source, 'Tubos');
+      assert.equal(copy.prepare("SELECT source FROM history WHERE action_id = 'act-split-purpose-b' LIMIT 1").get().source, 'Tablas');
     } finally {
       copy.close();
       store.close();

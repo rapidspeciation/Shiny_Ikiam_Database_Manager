@@ -130,7 +130,7 @@ test('an update: the database copied first, t3 update to the version asked, T3 w
   }
 });
 
-test('downgrade after T3 0.1.11+ prunes runtime/versions/<from>: restores runtime and pre-update statev2.sqlite cleanly, and rolls back DB if t3 update fails', async () => {
+test('downgrade after T3 0.1.11+ prunes runtime/versions/<from>: restores runtime and pre-update statev2.sqlite cleanly, verifies stop, skips DB overwrite on same migration, and recovers on failure', async () => {
   const root = mkdtempSync(join(tmpdir(), 't3-update-v2-'));
   const home = join(root, 'home');
   mkdirSync(join(home, 'userdata', 'logs'), { recursive: true });
@@ -142,7 +142,10 @@ test('downgrade after T3 0.1.11+ prunes runtime/versions/<from>: restores runtim
   db0.exec("CREATE TABLE migration_log (id INTEGER PRIMARY KEY, note TEXT); INSERT INTO migration_log VALUES (81, 'pre-0.1.11');");
   db0.close();
   writeFileSync(join(root, 'version'), '0.1.9');
+  writeFileSync(join(root, 'migration'), '81');
+  writeFileSync(join(root, 'up'), '1');
   writeFileSync(join(root, 'fail-downgrade'), '0');
+  writeFileSync(join(root, 'fail-restart'), '0');
   writeFileSync(join(root, 'token'), 'tok-019\n');
 
   const t3 = join(root, 't3');
@@ -162,6 +165,8 @@ if [ "$1" = update ]; then
     # Simulate T3 0.1.11 pruning 0.1.9 on startup and migrating statev2.sqlite.
     rm -rf '${home}/runtime/versions/0.1.9'
     printf '%s' "0.1.11" > '${root}/version'
+    printf '%s' "102" > '${root}/migration'
+    printf '%s' "1" > '${root}/up'
     exit 0
   fi
   if [ "$v" = 0.1.9 ]; then
@@ -171,6 +176,8 @@ if [ "$1" = update ]; then
     fi
     [ -f '${home}/runtime/versions/0.1.9/.install-complete' ] || { echo "missing 0.1.9 runtime" >&2; exit 1; }
     printf '%s' "0.1.9" > '${root}/version'
+    printf '%s' "81" > '${root}/migration'
+    if [ "$(cat '${root}/fail-restart')" != 1 ]; then printf '%s' "1" > '${root}/up'; fi
     exit 0
   fi
 fi
@@ -179,10 +186,15 @@ exit 2
     { mode: 0o755 },
   );
   const server = createServer((req, res) => {
+    if (readFileSync(join(root, 'up'), 'utf8') !== '1') {
+      res.writeHead(503).end();
+      return;
+    }
     if (req.url === '/.well-known/t3/environment') {
       const v = readFileSync(join(root, 'version'), 'utf8');
+      const m = Number(readFileSync(join(root, 'migration'), 'utf8'));
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ serverVersion: v, orchestrationProtocolVersion: 2, databaseMigration: v === '0.1.11' ? 102 : 81 }));
+      return res.end(JSON.stringify({ serverVersion: v, orchestrationProtocolVersion: 2, databaseMigration: m }));
     }
     if (req.url === '/api/auth/session') {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -193,9 +205,11 @@ exit 2
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const local = `http://127.0.0.1:${server.address().port}`;
   const stopLog = join(root, 'stops');
+  const stopCmd = `echo stopped >> '${stopLog}' && printf '%s' 0 > '${root}/up'`;
+  const restartCmd = `if [ "$(cat '${root}/fail-restart')" = 1 ]; then exit 1; fi; printf '%s' 1 > '${root}/up'`;
   const common = [
     '--home', home, '--t3', t3, '--local', local, '--wait', '10',
-    '--stop', `echo stopped >> '${stopLog}'`,
+    '--stop', stopCmd,
     '--token-file', join(root, 'token'), '--token-label', 'broker',
   ];
   try {
@@ -216,17 +230,43 @@ exit 2
     writeFileSync(join(home, 'userdata', 'statev2.sqlite-wal'), 'stale-wal');
     writeFileSync(join(home, 'userdata', 'statev2.sqlite-shm'), 'stale-shm');
 
-    // 2. If t3 update fails during downgrade after DB swap, statev2.sqlite is rolled back to 0.1.11's backup!
+    // 2. Without --stop or --service, a V2 DB-restoring downgrade fails fast before changing anything.
+    const noStop = await run(['0.1.9', '--home', home, '--t3', t3, '--local', local, '--wait', '10']);
+    assert.equal(noStop.code, 1);
+    assert.match(noStop.stdout, /requires stopping T3 first/);
+
+    // 3. If --stop leaves T3 answering (e.g. foreground process), refuse DB swap cleanly.
+    const stillUp = await run(['0.1.9', '--home', home, '--t3', t3, '--local', local, '--wait', '10', '--stop', 'true']);
+    assert.equal(stillUp.code, 1);
+    assert.match(stillUp.stdout, /still answering after stop/);
+    const dbUntouched = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'), { readOnly: true });
+    assert.deepEqual(dbUntouched.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 102]);
+    dbUntouched.close();
+
+    // 4. If t3 update fails during downgrade after DB swap, recovery restores 0.1.11 DB + launcher and verifies 0.1.11 answers.
     writeFileSync(join(root, 'fail-downgrade'), '1');
     const failBack = await run(['0.1.9', ...common]);
     assert.equal(failBack.code, 1);
     assert.match(failBack.stdout, /Rolled back statev2\.sqlite/);
+    assert.match(failBack.stdout, /Recovered T3 on 0\.1\.11/);
     const dbAfterFail = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'), { readOnly: true });
     assert.deepEqual(dbAfterFail.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 102]);
     dbAfterFail.close();
 
-    // 3. Successful downgrade 0.1.11 → 0.1.9: restores pruned runtime + restores 0.1.9 statev2.sqlite + removes WAL/SHM.
+    // 5. If --restart fails after t3 update switched to 0.1.9, recovery restores 0.1.11 DB + launcher and verifies 0.1.11 answers.
     writeFileSync(join(root, 'fail-downgrade'), '0');
+    writeFileSync(join(root, 'fail-restart'), '1');
+    const failRestart = await run(['0.1.9', ...common, '--restart', restartCmd]);
+    assert.equal(failRestart.code, 1);
+    assert.match(failRestart.stdout, /Rolled back statev2\.sqlite/);
+    assert.match(failRestart.stdout, /Recovered T3 on 0\.1\.11/);
+    assert.equal(readFileSync(join(root, 'version'), 'utf8'), '0.1.11');
+    const dbAfterRestartFail = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'), { readOnly: true });
+    assert.deepEqual(dbAfterRestartFail.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 102]);
+    dbAfterRestartFail.close();
+    writeFileSync(join(root, 'fail-restart'), '0');
+
+    // 6. Successful downgrade 0.1.11 → 0.1.9: restores pruned runtime + restores 0.1.9 statev2.sqlite + removes WAL/SHM + logs backup notice.
     rmSync(join(home, 'runtime', 'versions', '0.1.9'), { recursive: true, force: true });
     writeFileSync(join(home, 'userdata', 'statev2.sqlite-wal'), 'stale-wal-2');
     const down = await run(['0.1.9', ...common]);
@@ -239,10 +279,35 @@ exit 2
     assert.deepEqual(dbRestored.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81]);
     dbRestored.close();
     const downStatus = JSON.parse(readFileSync(join(home, 'userdata', 'logs', 't3-update.json'), 'utf8'));
-    assert.ok(downStatus.steps.some(s => s.step === 'restore' && s.detail.includes('runtime 0.1.9') && s.detail.includes('statev2.sqlite')));
+    assert.ok(
+      downStatus.steps.some(
+        s => s.step === 'restore' && s.detail.includes('runtime 0.1.9') && s.detail.includes('statev2.sqlite') && s.detail.includes('chats since then stay only in'),
+      ),
+    );
 
-    // 4. Corrupt backup DB fails fast before touching anything.
+    // 7. Same databaseMigration: downgrade skips DB overwrite and preserves chats made on the newer version.
     writeFileSync(join(root, 'version'), '0.1.11');
+    writeFileSync(join(root, 'migration'), '81');
+    const dbSame = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'));
+    dbSame.exec("INSERT INTO migration_log VALUES (999, 'chat-kept-same-migration');");
+    dbSame.close();
+    const sameDown = await run(['0.1.9', '--home', home, '--t3', t3, '--local', local, '--wait', '10']);
+    assert.equal(sameDown.code, 0, sameDown.stdout + sameDown.stderr);
+    assert.match(sameDown.stdout, /same DB migration 81: keeping live statev2\.sqlite/);
+    const dbKept = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'), { readOnly: true });
+    assert.deepEqual(dbKept.prepare('SELECT id FROM migration_log ORDER BY id').all().map(r => r.id), [81, 999]);
+    dbKept.close();
+
+    // 8. Missing target statev2.sqlite backup fails fast before activating an older V2 runtime (even when runtime is present).
+    writeFileSync(join(root, 'version'), '0.1.11');
+    writeFileSync(join(root, 'migration'), '102');
+    mkdirSync(join(home, 'runtime', 'versions', '0.1.8'), { recursive: true });
+    writeFileSync(join(home, 'runtime', 'versions', '0.1.8', '.install-complete'), '0.1.8\n');
+    const noDbBackup = await run(['0.1.8', ...common]);
+    assert.equal(noDbBackup.code, 1);
+    assert.match(noDbBackup.stdout, /without a pre-update statev2\.sqlite backup/);
+
+    // 9. Corrupt backup DB fails fast before touching anything.
     writeFileSync(join(home, 'backups', b019, 'statev2.sqlite'), 'not a sqlite file');
     const corrupt = await run(['0.1.9', ...common]);
     assert.equal(corrupt.code, 1);

@@ -323,31 +323,20 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
         rowCount += rows.length;
       }
       copy.exec('CREATE INDEX _columns_sheet ON _columns(sheet)');
-      changeCount = copyHistory(source, copy, kinds);
+      const tubeColSet = new Set(tubeCols.map(([s, f]) => `${s}\0${f}`));
+      const { count, bulkActionIds } = copyHistory(source, copy, kinds, tubeColSet);
+      changeCount = count;
       copyStaged(source, copy, kinds);
       // When each tube was first saved into its cell (by the app or read by a sync); none before the app's history.
-      // Bulk saves (> BULK_TUBE_SAVE_LIMIT distinct records with tube values saved in one UTC minute by one source)
-      // are excluded so bulk sheet imports/reconciliations never fabricate recent entry dates.
-      copy.exec('CREATE TEMP TABLE _tube_cols(sheet TEXT, field TEXT, PRIMARY KEY(sheet, field));');
-      const addTubeCol = copy.prepare('INSERT OR IGNORE INTO _tube_cols VALUES (?,?)');
-      for (const [sheet, field] of tubeCols) addTubeCol.run(sheet, field);
-      const noneSql = [...NONE].map(v => `'${v}'`).join(',');
-      copy.exec(`CREATE TEMP TABLE _bulk_tube_minutes AS
-          SELECT substr(h.at, 1, 16) AS minute, coalesce(h.source, '') AS source
-          FROM history h
-          JOIN _tube_cols tc ON tc.sheet = h.sheet AND tc.field = h.field
-          WHERE h.after IS NOT NULL AND trim(h.after) != ''
-            AND upper(trim(h.after)) NOT IN (${noneSql})
-            AND substr(trim(h.after), 1, 1) != '#'
-          GROUP BY substr(h.at, 1, 16), coalesce(h.source, '')
-          HAVING count(DISTINCT h.record_id) > ${BULK_TUBE_SAVE_LIMIT};
-        CREATE INDEX _bulk_tube_minutes_idx ON _bulk_tube_minutes(minute, source);
-        UPDATE tubes SET entered = (SELECT min(h.at) FROM history h
+      // Bulk saves (> BULK_TUBE_SAVE_LIMIT distinct records with non-empty, non-NONE tube values saved in one UTC minute
+      // by one raw actions.source) are excluded so bulk sheet imports/reconciliations never fabricate recent entry dates.
+      copy.exec('CREATE TEMP TABLE _bulk_tube_actions(action_id TEXT PRIMARY KEY);');
+      const addBulkAction = copy.prepare('INSERT OR IGNORE INTO _bulk_tube_actions VALUES (?)');
+      for (const actionId of bulkActionIds) addBulkAction.run(actionId);
+      copy.exec(`UPDATE tubes SET entered = (SELECT min(h.at) FROM history h
           WHERE h.record_id = tubes._id AND h.field = tubes.column AND upper(trim(h.after)) = tubes.tube
-            AND NOT EXISTS (SELECT 1 FROM _bulk_tube_minutes b
-              WHERE b.minute = substr(h.at, 1, 16) AND b.source = coalesce(h.source, '')));
-        DROP TABLE _bulk_tube_minutes;
-        DROP TABLE _tube_cols;
+            AND h.action_id NOT IN (SELECT action_id FROM _bulk_tube_actions));
+        DROP TABLE _bulk_tube_actions;
         CREATE INDEX tubes_tube ON tubes(tube);
         CREATE INDEX tubes_number ON tubes(prefix, number);`);
     } finally {
@@ -412,8 +401,8 @@ function copyStaged(source, copy, kinds) {
   }
 }
 
-/** The copy's `history` table; returns how many cells it holds. */
-function copyHistory(source, copy, kinds) {
+/** The copy's `history` table; returns { count, bulkActionIds } (bulk tube actions grouped by UTC minute and raw actions.source). */
+function copyHistory(source, copy, kinds, tubeColSet = new Set()) {
   copy.exec(`CREATE TABLE history(at TEXT, sheet TEXT, row INTEGER, id_label TEXT, record_id TEXT, field TEXT, before, after,
     who TEXT, source TEXT, reason TEXT, action_id TEXT)`);
   const insert = copy.prepare('INSERT INTO history VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
@@ -431,6 +420,8 @@ function copyHistory(source, copy, kinds) {
     return cell(kind === 'id' ? 'text' : kind, v);
   };
   let n = 0;
+  // Track distinct records & action_ids per (UTC minute, raw actions.source) for non-empty, non-NONE tube saves.
+  const tubeBuckets = new Map();
   for (const c of source
     .prepare(
       `SELECT a.created_at, c.sheet, c.row_num, r.label, c.record_id, c.field, c.before_json, c.after_json,
@@ -458,12 +449,31 @@ function copyHistory(source, copy, kinds) {
       fromSheet ? null : (c.reason ?? null),
       c.action_id,
     );
+    if (tubeColSet.has(`${c.sheet}\0${c.field}`) && after !== null && after !== undefined) {
+      const text = String(after).trim();
+      if (text && !isNone(text)) {
+        const key = `${String(c.created_at ?? '').slice(0, 16)}\0${c.source ?? ''}`;
+        let bucket = tubeBuckets.get(key);
+        if (!bucket) {
+          bucket = { records: new Set(), actions: new Set() };
+          tubeBuckets.set(key, bucket);
+        }
+        bucket.records.add(c.record_id);
+        bucket.actions.add(c.action_id);
+      }
+    }
     n++;
+  }
+  const bulkActionIds = new Set();
+  for (const bucket of tubeBuckets.values()) {
+    if (bucket.records.size > BULK_TUBE_SAVE_LIMIT) {
+      for (const id of bucket.actions) bulkActionIds.add(id);
+    }
   }
   copy.exec(`CREATE INDEX history_record ON history(record_id, at);
     CREATE INDEX history_sheet ON history(sheet, at);
     CREATE INDEX history_label ON history(id_label COLLATE NOCASE);`);
-  return n;
+  return { count: n, bulkActionIds };
 }
 
 /** The copy's _meta (built_at, state), or null when there is no copy yet. */

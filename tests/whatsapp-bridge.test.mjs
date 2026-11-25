@@ -1259,13 +1259,20 @@ test('a chat with soulInWorkspace sends no soul in its messages (its voice is in
   assert.equal(readFileSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
   assert.equal(readFileSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
 
-  // install copies tools/whatsapp/bridge-skill/SKILL.md and assistant/voice/core.md into WA_BRIDGE_HOME.
+  // install copies tools/whatsapp/bridge-skill/SKILL.md and assistant/voice/core.md into WA_BRIDGE_HOME,
+  // mirrors the skill into configured workspaces when WA_BRIDGE_CONFIG exists, and handles first install without config.
   const fakeHome = join(dir, 'fake-home');
   mkdirSync(join(fakeHome, '.config', 'systemd', 'user'), { recursive: true });
   const bridgeHome = join(dir, 'bridge-home');
-  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome }, encoding: 'utf8' });
+  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome, WA_BRIDGE_CONFIG: join(dir, 'missing-config.json') }, encoding: 'utf8' });
   assert.equal(readFileSync(join(bridgeHome, 'tools', 'whatsapp', 'bridge-skill', 'SKILL.md'), 'utf8'), expectedSkill);
   assert.equal(readFileSync(join(bridgeHome, 'assistant', 'voice', 'core.md'), 'utf8'), readFileSync(new URL('../assistant/voice/core.md', import.meta.url), 'utf8'));
+
+  rmSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  rmSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge'), { recursive: true, force: true });
+  execFileSync(process.execPath, [bridgeScript, 'install'], { env: { ...process.env, HOME: fakeHome, WA_BRIDGE_HOME: bridgeHome, WA_BRIDGE_CONFIG: configFile }, encoding: 'utf8' });
+  assert.equal(readFileSync(join(workspace, '.claude', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
+  assert.equal(readFileSync(join(workspace, '.agents', 'skills', 'whatsapp-bridge', 'SKILL.md'), 'utf8'), expectedSkill);
 });
 
 /** The live config's shape: the group and Franz's chat answer; the lab and check copies are off; «Ikiam» is only mirrored. */

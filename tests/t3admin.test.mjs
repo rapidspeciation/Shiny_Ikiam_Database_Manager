@@ -249,8 +249,23 @@ test('the checks after an update: what the app needs from T3, each with what it 
     },
     { appOrigin: '' },
   );
+  assert.equal(missingOrigin.find(c => c.id === 'page').ok, false);
+  assert.match(missingOrigin.find(c => c.id === 'page').detail, /bridge script injection is disabled/);
   assert.equal(missingOrigin.find(c => c.id === 'framing').ok, false);
   assert.match(missingOrigin.find(c => c.id === 'framing').detail, /APP_PUBLIC_URL is unset or invalid/);
+
+  // Even without upstream framing headers, an empty APP_PUBLIC_URL disables live bridge injection, so 'page' must fail.
+  const missingOriginNoFraming = await pageCase(
+    {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<html><head><script src="/a.js"></script></head></html>',
+    },
+    { appOrigin: '' },
+  );
+  assert.equal(missingOriginNoFraming.find(c => c.id === 'page').ok, false);
+  assert.match(missingOriginNoFraming.find(c => c.id === 'page').detail, /bridge script injection is disabled/);
 });
 
 test("a person's T3 sign-in link: T3's own client scopes; with an admin token older than the T3, the client scopes it has", async () => {

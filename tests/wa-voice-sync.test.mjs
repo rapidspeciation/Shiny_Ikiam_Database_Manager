@@ -78,6 +78,15 @@ test('wa-voice-sync: detects and refreshes stale bridge core.md, whatsapp.md and
     assert.equal(customEntry.status, 'stale');
     assert.equal(customEntry.customSource, true);
 
+    // Missing sibling voice file reports status: 'error' without modifying core.md or throwing.
+    const wsBroken = join(workspaces, 'ws-broken', '.claude', 'voice');
+    mkdirSync(wsBroken, { recursive: true });
+    writeFileSync(join(wsBroken, 'core.md'), 'KEEP OLD\n');
+    writeFileSync(join(wsBroken, 'voice.json'), JSON.stringify({ files: ['missing.md', 'core.md'], from: '/repo/assistant/voice', hash: 'old' }));
+    const withBroken = syncWaVoice({ repoRoot: repo, bridgeHome, workspacesDir: workspaces, sync: true, syncWorkspaces: true });
+    assert.equal(readFileSync(join(wsBroken, 'core.md'), 'utf8'), 'KEEP OLD\n');
+    assert.equal(withBroken.workspaces.find(w => w.workspace === 'ws-broken').status, 'error');
+
     // Absent bridge home: clean no-op, never creates it.
     const missingBridge = join(dir, 'never-installed');
     const noop = syncWaVoice({ repoRoot: repo, bridgeHome: missingBridge, sync: true });
