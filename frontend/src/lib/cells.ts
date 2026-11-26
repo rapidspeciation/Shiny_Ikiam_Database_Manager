@@ -1,5 +1,5 @@
 import { isSumField, simpleSum } from './sums'
-import { dayFirst, formatSerial, inDateRange, parseDateInput, serialToIso } from './dates'
+import { dayFirst, dayText, formatSerial, inDateRange, parseDateInput, serialToIso } from './dates'
 import type { CellValue, Field } from './types'
 import { t } from './i18n'
 
@@ -16,6 +16,16 @@ export function displayValue(value: CellValue | undefined, field?: Pick<Field, '
   }
   if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
   return String(value)
+}
+
+/**
+ * A cell's value to read outside a grid (a row's line in a list, a proposal's stacked cells): as the cell shows it,
+ * but a date in the app's own shape with the month in the interface language (lib/dates.ts dayText: 14-Ago-25).
+ * The grids keep displayValue: they show what the sheet shows and what people type back.
+ */
+export function readingValue(value: CellValue | undefined, field?: Pick<Field, 'type' | 'key'>): string {
+  if (field?.type === 'date' && typeof value === 'number' && inDateRange(value)) return dayText(value)
+  return displayValue(value, field)
 }
 
 /**

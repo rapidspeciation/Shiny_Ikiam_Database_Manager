@@ -210,7 +210,7 @@ onBeforeUnmount(stop)
     <header class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 max-sm:gap-x-2 max-sm:py-1.5">
       <button
         type="button"
-        class="flex min-w-0 items-center gap-1.5 text-left font-semibold text-stone-800"
+        class="hit-target flex min-w-0 items-center gap-1.5 text-left font-semibold text-stone-800 max-sm:min-h-11 max-sm:flex-1"
         :aria-expanded="open"
         @click="toggle"
       >
@@ -262,12 +262,16 @@ onBeforeUnmount(stop)
       <div v-else-if="!near" :style="{ height: GRID_HEIGHT }" />
       <!-- A phone: the matches as lines; a tap opens the row's form over them. -->
       <div v-else-if="list" class="bg-canvas" data-match-list>
-        <RowList :items="listItems" :mark="query" :current="formId" @open="id => (formId = id)" />
-        <div v-if="listLeft" class="px-2 pb-2">
-          <button type="button" class="btn min-h-11 w-full" :disabled="listBusy" data-more-matches @click="moreMatches">
-            {{ listBusy ? $t('Cargando…') : $tn(listLeft, 'Ver {n} coincidencia más', 'Ver {n} coincidencias más') }}
-          </button>
-        </div>
+        <RowList
+          :items="listItems"
+          :mark="query"
+          :current="formId"
+          :left="listLeft"
+          :busy="listBusy"
+          :more-label="listBusy ? $t('Cargando…') : $tn(listLeft, 'Ver {n} coincidencia más', 'Ver {n} coincidencias más')"
+          @open="id => (formId = id)"
+          @more="moreMatches"
+        />
         <RowDrawer
           v-if="formId"
           :module="module"

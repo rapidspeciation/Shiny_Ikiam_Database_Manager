@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stackRows, stackToDecide } from '../proposalStack'
+import { sharedNote, stackRows, stackToDecide } from '../proposalStack'
 import type { ProposalChange } from '../proposals'
 
 // A proposal's rows for a phone: each row's changed cells one under the other, the sheet's value over the new one.
@@ -64,6 +64,67 @@ describe('the stacked list of a proposal', () => {
     // Set back to the sheet's value: the assistant's is set aside, not written.
     expect(of('back')).toMatchObject({ state: 'reverted', value: 'male', aside: 'female', needsTable: false })
     expect(stackToDecide(rows)).toBe(3)
+  })
+  it('a new row whose pre-made row was used meanwhile is not written, and says so instead of showing its values', () => {
+    const taken: ProposalChange = {
+      index: 3,
+      key: 't',
+      clientId: 't',
+      recordId: null,
+      sheet: 'Insectary_data',
+      row: null,
+      label: 'S2E',
+      create: true,
+      values: { Sex: 'female', Death_cause: 'Natural_death' },
+      note: 'Cuaderno p. 41',
+      rowTaken: { row: 13699 } as ProposalChange['rowTaken'],
+    }
+    const [row] = stackRows([taken], FIELDS)
+    expect(row).toMatchObject({ key: 't', refused: true, look: false, fields: [] })
+    expect(row.note).toBe('Su fila sin usar (13699) ya se usó en la hoja: esta fila no se escribe · Cuaderno p. 41')
+  })
+  it('a page line with no row to write to stays, to look at, with why; a crossed-out one does not', () => {
+    const line = (key: string, status: string): ProposalChange =>
+      edited(key, {}, { context: true, placeholder: true, row: null, label: key, page: { photo: 0, line: 2, status, raw: 'Q9X ♀' } as ProposalChange['page'] })
+    const rows = stackRows([line('missing', 'missing'), line('ambiguous', 'ambiguous'), line('crossed', 'crossed')], FIELDS)
+    expect(rows.map(r => r.key)).toEqual(['missing', 'ambiguous'])
+    expect(rows[0]).toMatchObject({ look: true, refused: false, fields: [] })
+    expect(rows[0].note).toContain('No está en la hoja')
+    expect(rows[1].note).toContain('Varias filas de la hoja podrían ser esta')
+  })
+  it('nothing «Aplicar» writes is left out: the template\'s columns are there, flagged to fold', () => {
+    const created: ProposalChange = {
+      index: 1,
+      key: 'n1',
+      clientId: 'n1',
+      recordId: null,
+      sheet: 'Insectary_data',
+      row: null,
+      label: 'S2E',
+      create: true,
+      values: { Sex: 'female', Stock_of_origin: 'NA', Bait: 'NOT_COLLECTED' },
+    }
+    const [row] = stackRows([created], ['Sex', 'Stock_of_origin', 'Bait'], [], ['Stock_of_origin', 'Bait'])
+    expect(row.fields.map(f => [f.field, !!f.template, f.value])).toEqual([
+      ['Sex', false, 'female'],
+      ['Stock_of_origin', true, 'NA'],
+      ['Bait', true, 'NOT_COLLECTED'],
+    ])
+  })
+  it('keeps the table\'s marks: a value not written on the line, a row the assistant flags', () => {
+    const [row] = stackRows([edited('a', { Death_cause: 'Natural_death', Sex: 'female' }, { inferred: ['Death_cause'], highlight: true })], FIELDS)
+    expect(row.marked).toBe(true)
+    expect(row.fields.find(f => f.field === 'Death_cause')!.inferred).toBe(true)
+    expect(row.fields.find(f => f.field === 'Sex')!.inferred).toBe(false)
+  })
+  it('a note every row shares is said once', () => {
+    const same = stackRows([edited('a', { Sex: 'female' }, { note: 'Cuaderno p. 41' }), edited('b', { Sex: 'female' }, { note: 'Cuaderno p. 41' })], FIELDS)
+    expect(sharedNote(same)).toBe('Cuaderno p. 41')
+    const mixed = stackRows([edited('a', { Sex: 'female' }, { note: 'Cuaderno p. 41' }), edited('b', { Sex: 'female' }, { note: 'Foto 2' })], FIELDS)
+    expect(sharedNote(mixed)).toBe('')
+    // One row keeps its own note; rows without notes share nothing.
+    expect(sharedNote(same.slice(0, 1))).toBe('')
+    expect(sharedNote(stackRows([edited('a', { Sex: 'female' }), edited('b', { Sex: 'female' })], FIELDS))).toBe('')
   })
   it('leaves the lines shown only to follow the page to the table; a refused line stays, with why', () => {
     const rows = stackRows(

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ChevronRight, CircleHelp, SquarePen, Table2 } from 'lucide-vue-next'
-import { displayValue } from '../../lib/cells'
+import { computed, ref } from 'vue'
+import { ChevronRight, CircleHelp, Columns3, SquarePen, Table2 } from 'lucide-vue-next'
+import { readingValue } from '../../lib/cells'
 import { tx } from '../../lib/i18n'
-import { stackRows, type StackField } from '../../lib/proposalStack'
+import { sharedNote, stackRows, type StackField, type StackRow } from '../../lib/proposalStack'
 import type { ProposalChange } from '../../lib/proposals'
 import type { CellValue } from '../../lib/types'
 
@@ -11,19 +11,28 @@ import type { CellValue } from '../../lib/types'
  * A proposal's table on a phone (lib/proposalStack.ts): one box per row, its changed cells one under the other,
  * the sheet's value over the new one, in the table's colours (the assistant's green, the person's blue, a doubtful
  * reading amber, an unreadable cell hatched red, a cell edited in the sheet violet). Nothing scrolls sideways, so
- * every change is seen before «Aplicar». A cell that waits for a decision opens in the table with a tap.
+ * every change is seen before «Aplicar». A cell that waits for a decision opens in the table with a tap. Columns
+ * that only carry the template's NA or NOT_COLLECTED are counted on each row and opened on request, as the table
+ * folds them. Dates read in the interface language (the table shows them as the sheet does).
  */
 const props = defineProps<{
   rows: ProposalChange[]
-  /** The table's columns, in its order. */
+  /** Every column of the table, in its order (the folded ones too). */
   fields: string[]
   types: Record<string, string>
   newRowFormulas?: string[]
+  /** The template's columns (only NA or NOT_COLLECTED), folded until asked for. */
+  template?: string[]
 }>()
 const emit = defineEmits<{ cell: [key: string, field: string] }>()
 
-const items = computed(() => stackRows(props.rows, props.fields, props.newRowFormulas ?? []))
-const show = (field: string, value: CellValue | undefined) => displayValue(value, { key: field, type: (props.types[field] ?? 'text') as 'text' })
+const items = computed(() => stackRows(props.rows, props.fields, props.newRowFormulas ?? [], props.template ?? []))
+/** A note every row shares is said once, above them. */
+const common = computed(() => sharedNote(items.value))
+const templatesOpen = ref(false)
+const shownFields = (r: StackRow) => (templatesOpen.value ? r.fields : r.fields.filter(f => !f.template))
+const folded = (r: StackRow) => r.fields.filter(f => f.template).length
+const show = (field: string, value: CellValue | undefined) => readingValue(value, { key: field, type: (props.types[field] ?? 'text') as 'text' })
 const whyOf = (f: StackField) => (f.why ? tx(f.why, f.whyMsg) : '')
 /**
  * The few words of a cell that is not simply written, as the table's legend has them (Spanish keys). The
@@ -38,23 +47,40 @@ const TAG: Record<StackField['state'], string> = {
   reverted: 'IA sin aplicar',
   warned: 'falta',
 }
+const tagOf = (f: StackField) => TAG[f.state] || (f.inferred ? 'deducida' : '')
 </script>
 
 <template>
   <ul class="proposal-stack" data-proposal-stack>
-    <li v-for="r in items" :key="r.key" class="stack-row" :class="{ 'is-written': r.written, 'is-refused': r.refused }" :data-row="r.key">
+    <li v-if="common" class="px-1 text-xs leading-snug text-fg-muted" data-shared-note>{{ common }}</li>
+    <li
+      v-for="r in items"
+      :key="r.key"
+      class="stack-row"
+      :class="{ 'is-written': r.written, 'is-refused': r.refused, 'is-look': r.look, 'is-marked': r.marked }"
+      :data-row="r.key"
+    >
       <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <strong class="text-base leading-tight" :class="{ 'stack-dead': r.dead }">{{ r.label || '—' }}</strong>
-        <span v-if="r.create" class="stack-chip is-new">{{ $t('fila nueva') }}</span>
+        <span v-if="r.refused" class="stack-chip is-refused">{{ $t('no se escribe') }}</span>
+        <span v-else-if="r.create" class="stack-chip is-new">{{ $t('fila nueva') }}</span>
         <span v-if="r.dead" class="stack-chip is-dead">{{ $t('muerta en la hoja') }}</span>
+        <span v-if="r.marked" class="stack-chip is-marked">{{ $t('marcada') }}</span>
         <span v-if="r.written" class="stack-chip">{{ $t('ya escrita') }}</span>
         <span v-if="r.row" class="ml-auto text-xs text-fg-subtle tabular-nums">{{ $t('fila {row}', { row: r.row }) }}</span>
       </div>
-      <p v-if="r.note" class="mt-0.5 text-xs leading-snug" :class="r.refused ? 'text-error-text' : 'text-fg-muted'">{{ r.note }}</p>
+      <p
+        v-if="r.note && r.note !== common"
+        class="mt-0.5 text-xs leading-snug"
+        :class="r.refused ? 'text-error-text' : r.look ? 'text-pending-text' : 'text-fg-muted'"
+        data-note
+      >
+        {{ r.note }}
+      </p>
       <dl v-if="r.fields.length" class="stack-fields">
         <component
           :is="f.needsTable ? 'button' : 'div'"
-          v-for="f in r.fields"
+          v-for="f in shownFields(r)"
           :key="f.field"
           class="stack-field"
           :class="`is-${f.state}`"
@@ -65,7 +91,7 @@ const TAG: Record<StackField['state'], string> = {
         >
           <dt class="flex items-baseline gap-2">
             <span class="min-w-0 flex-1 truncate">{{ f.field }}</span>
-            <span v-if="TAG[f.state]" class="stack-tag">{{ $t(TAG[f.state]) }}</span>
+            <span v-if="tagOf(f)" class="stack-tag" :class="{ 'is-inferred': f.inferred }">{{ $t(tagOf(f)) }}</span>
           </dt>
           <dd>
             <!-- The sheet's value now: over the new one, struck when it is replaced. -->
@@ -95,6 +121,19 @@ const TAG: Record<StackField['state'], string> = {
             </span>
           </dd>
         </component>
+        <!-- The template's columns: written all the same, counted here and opened on request. -->
+        <button
+          v-if="folded(r)"
+          type="button"
+          class="stack-template"
+          :aria-expanded="templatesOpen"
+          data-template
+          @click="templatesOpen = !templatesOpen"
+        >
+          <Columns3 :size="14" aria-hidden="true" />
+          {{ templatesOpen ? $t('Plegar la plantilla') : $tn(folded(r), '+{n} columna de plantilla', '+{n} columnas de plantilla') }}
+          <span v-if="!templatesOpen" class="font-normal text-fg-subtle">· NA / NOT_COLLECTED</span>
+        </button>
       </dl>
     </li>
     <li v-if="!items.length" class="px-1 py-3 text-sm text-fg-muted">{{ $t('Esta tabla no cambia ninguna celda.') }}</li>
@@ -121,6 +160,38 @@ const TAG: Record<StackField['state'], string> = {
 }
 .stack-row.is-refused {
   border-left-color: var(--error-edge);
+}
+.stack-row.is-look {
+  border-left-color: var(--pending-edge);
+}
+/* Marked by the assistant for a look: the table's yellow row. */
+.stack-row.is-marked {
+  background: var(--color-yellow-100);
+}
+.stack-chip.is-refused {
+  background: var(--cell-error);
+  color: var(--error-text);
+}
+.stack-chip.is-marked {
+  background: var(--color-yellow-300);
+  color: var(--fg);
+}
+/* Not written on the notebook line: italic, as the table writes it. */
+.stack-tag.is-inferred {
+  font-style: italic;
+  font-weight: 400;
+}
+/* The template's columns, folded: a line a finger can hit. */
+.stack-template {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-muted);
 }
 .stack-dead {
   border-radius: 3px;

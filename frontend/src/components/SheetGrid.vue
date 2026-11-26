@@ -173,19 +173,36 @@ const formOrder = computed(() => {
 // The list view (a phone): a line per row (RowList in place of the grid), in the grid's order and with its filters;
 // a tap opens the row's form over it. The grid stays built underneath, as under the form view.
 const rowList = computed(() => !!props.list && !props.readonly && !rowForm.value)
-const listItems = computed<RowListItem[]>(() => {
+/** Lines drawn at a time: a sheet of thousands of rows builds only those on screen, more on request. */
+const LIST_STEP = 60
+const listShown = ref(LIST_STEP)
+watch(
+  () => props.module,
+  () => (listShown.value = LIST_STEP),
+)
+/** The rows' ids in the list's order: the grid's own (its filters and sort) once it is built; new rows first. */
+const listOrder = computed<string[]>(() => {
   if (!rowList.value) return []
   void orderTick.value
-  const identity = session.module(props.module)?.identityFields ?? (props.labelField ? [props.labelField] : [])
-  const items = new Map<string, RowListItem>()
-  for (const c of [...props.creates].reverse())
-    items.set(c.clientId, { ...rowListItem({ id: c.clientId, row: 0, values: c.values }, props.columns, identity), isNew: true })
-  const rows = [...props.rows]
-  if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
-  for (const r of rows) items.set(r.id, rowListItem(r, props.columns, identity))
-  if (table && built) return (table.getData('active') as GridRow[]).flatMap(d => items.get(d.__id) ?? [])
-  return [...items.values()]
+  if (table && built) return (table.getData('active') as GridRow[]).map(d => d.__id)
+  const rows = props.newestFirst ? [...props.rows].sort((a, b) => b.row - a.row) : props.rows
+  return [...[...props.creates].reverse().map(c => c.clientId), ...rows.map(r => r.id)]
 })
+const listItems = computed<RowListItem[]>(() => {
+  const identity = session.module(props.module)?.identityFields ?? (props.labelField ? [props.labelField] : [])
+  // The grid's own index of the rows once it has built them (before that, one made here).
+  const rowOf = rowIndex.size ? rowIndex : new Map(props.rows.map(r => [r.id, r]))
+  return listOrder.value.slice(0, listShown.value).flatMap((id): RowListItem[] => {
+    const created = props.creates.find(c => c.clientId === id)
+    if (created) return [{ ...rowListItem({ id, row: 0, values: created.values }, props.columns, identity), isNew: true }]
+    const row = rowOf.get(id)
+    return row ? [{ ...rowListItem(row, props.columns, identity), dirty: !!pending.edits[id] }] : []
+  })
+})
+const listLeft = computed(() => Math.max(0, listOrder.value.length - listShown.value))
+const listMore = computed(
+  () => `${tn(Math.min(LIST_STEP, listLeft.value), 'Mostrar {n} fila más', 'Mostrar {n} filas más')} · ${tn(listLeft.value, 'queda {n}', 'quedan {n}')}`,
+)
 // Tabulator lays nothing out while its box is hidden. A grid built under the list or the form (a phone opens on the
 // list), or under the Buscador's results, is laid out once its box has a size (`layOut`, also called when the box's
 // size changes), and again each time it comes back from the list or the form.
@@ -216,7 +233,10 @@ const formShown = computed(() =>
 watch(
   () => props.creates.length,
   (now, before) => {
-    if (now > before) formId.value = props.creates[now - 1].clientId
+    if (now <= before) return
+    formId.value = props.creates[now - 1].clientId
+    // In the list, a row added opens at once, to be filled (its line alone says nothing yet).
+    if (rowList.value) drawerId.value = props.creates[now - 1].clientId
   },
 )
 watch(
@@ -1090,7 +1110,14 @@ defineExpose({ refresh, fillDown, keepView })
     />
     <p v-if="rowForm && !formShown" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
     <div v-if="rowList" class="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas" data-list-view>
-      <RowList :items="listItems" :current="focusRow" @open="id => (drawerId = id)" />
+      <RowList
+        :items="listItems"
+        :current="drawerId ?? focusRow"
+        :left="listLeft"
+        :more-label="listMore"
+        @open="id => (drawerId = id)"
+        @more="listShown += LIST_STEP"
+      />
       <p v-if="!listItems.length" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
     </div>
     <CellBar v-show="!rowForm && !rowList" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">

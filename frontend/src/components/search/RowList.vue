@@ -1,49 +1,46 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 import { markParts, type RowListItem } from '../../lib/rowList'
 
 /**
  * A sheet's rows on a phone (lib/rowList.ts): one line per row, as tall as a finger needs, with its ID, species and
  * a few facts; a tap opens the row. In the Buscador's results the searched text is marked, with the cell where it is.
- * Long lists are drawn a part at a time (`step` rows, more on request).
+ * The one who shows the list gives it the lines to draw: a long sheet a part at a time, the rest on request (`left`,
+ * `more`), so a sheet of thousands of rows builds only the lines on screen.
  */
-const props = withDefaults(
+withDefaults(
   defineProps<{
     items: RowListItem[]
     /** The text searched, marked where a line shows it. */
     mark?: string
-    /** Rows drawn at a time. */
-    step?: number
     /** The row open now (its line stays marked). */
     current?: string | null
+    /** Rows not drawn yet: a button after the lines asks for more. */
+    left?: number
+    /** That button's words. */
+    moreLabel?: string
+    /** More are being read. */
+    busy?: boolean
   }>(),
-  { mark: '', step: 60, current: null },
+  { mark: '', current: null, left: 0, moreLabel: '', busy: false },
 )
-const emit = defineEmits<{ open: [id: string] }>()
-
-const shown = ref(props.step)
-// Another list (a sheet, a search, a filter): from its top again.
-watch(
-  () => [props.items.length, props.items[0]?.id],
-  () => (shown.value = props.step),
-)
-const visible = computed(() => props.items.slice(0, shown.value))
-const left = computed(() => Math.max(0, props.items.length - shown.value))
+const emit = defineEmits<{ open: [id: string]; more: [] }>()
+/** The searched text is in the species: its whole name shows (never cut where the match is). */
+const inSpecies = (item: RowListItem, mark: string) => !!mark.trim() && item.species.toLowerCase().includes(mark.trim().toLowerCase())
 </script>
 
 <template>
   <ul class="row-list" data-row-list>
-    <li v-for="item in visible" :key="item.id">
+    <li v-for="item in items" :key="item.id">
       <button
         type="button"
         class="row-item"
-        :class="{ 'is-current': item.id === current, 'is-new': item.isNew }"
+        :class="{ 'is-current': item.id === current, 'is-new': item.isNew, 'is-dirty': item.dirty }"
         :data-row="item.row || undefined"
         @click="emit('open', item.id)"
       >
         <span class="min-w-0 flex-1">
-          <span class="flex items-baseline gap-2">
+          <span class="flex items-baseline gap-x-2" :class="{ 'flex-wrap': inSpecies(item, mark) }">
             <span class="row-title">
               <template v-if="item.title"
                 ><template v-for="(p, i) in markParts(item.title, mark)" :key="i"
@@ -54,7 +51,8 @@ const left = computed(() => Math.max(0, props.items.length - shown.value))
               <template v-else>{{ $t('Sin ID') }}</template>
             </span>
             <span v-if="item.isNew" class="row-new">{{ $t('nueva') }}</span>
-            <span v-if="item.species" class="row-species"
+            <span v-if="item.dirty" class="row-new">{{ $t('sin guardar') }}</span>
+            <span v-if="item.species" class="row-species" :class="{ 'is-whole': inSpecies(item, mark) }"
               ><template v-for="(p, i) in markParts(item.species, mark)" :key="i"
                 ><mark v-if="p.hit">{{ p.text }}</mark
                 ><template v-else>{{ p.text }}</template></template
@@ -74,11 +72,8 @@ const left = computed(() => Math.max(0, props.items.length - shown.value))
         <ChevronRight :size="18" class="flex-none text-fg-subtle" aria-hidden="true" />
       </button>
     </li>
-    <li v-if="left">
-      <button type="button" class="btn min-h-11 w-full" data-more @click="shown += step">
-        {{ $tn(Math.min(step, left), 'Mostrar {n} fila más', 'Mostrar {n} filas más') }}
-        <span class="font-normal text-fg-subtle">· {{ $tn(left, 'queda {n}', 'quedan {n}') }}</span>
-      </button>
+    <li v-if="left > 0">
+      <button type="button" class="btn min-h-11 w-full" :disabled="busy" data-more @click="emit('more')">{{ moreLabel }}</button>
     </li>
   </ul>
 </template>
@@ -138,6 +133,16 @@ const left = computed(() => Math.max(0, props.items.length - shown.value))
   font-size: 14px;
   font-style: italic;
   color: var(--fg);
+}
+/* With the searched text in it: the whole name, on as many lines as it takes. */
+.row-species.is-whole {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.row-item.is-dirty {
+  border-color: var(--pending-edge);
+  box-shadow: inset 3px 0 0 var(--pending-edge);
 }
 .row-new {
   flex: none;

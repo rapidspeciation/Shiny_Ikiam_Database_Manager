@@ -153,7 +153,13 @@ const pending = computed(() => props.proposal.status === 'pending')
 const phone = usePhoneWidth()
 const phoneView = persistentRef<'list' | 'table'>(PROPOSAL_PHONE_VIEW_KEY, 'list', { lasting: true })
 const canStack = computed(() => phone.value && !props.reviewing && !props.proposal.deposit)
-const stacked = computed(() => canStack.value && phoneView.value !== 'table')
+/** A cell of the list opened in the table: this card shows its table without changing the choice kept on the device. */
+const jumped = ref(false)
+const stacked = computed(() => canStack.value && !jumped.value && phoneView.value !== 'table')
+function setPhoneView(view: 'list' | 'table') {
+  jumped.value = false
+  phoneView.value = view
+}
 /** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
 const repeatNotice = computed(() => repeatSummary(props.proposal.changes))
 /**
@@ -540,6 +546,8 @@ const tables = computed(() =>
       laid,
       rows: laid.flatMap(item => (item.change ? [item.change] : [])),
       columns: changesOnly.value ? changed : all,
+      /** Every column, the folded template's too: a phone's list leaves out nothing «Aplicar» writes. */
+      every: viewColumns(g),
       quiet: quietRows(own),
       /** Columns «Solo cambios» hides (or would hide). */
       still: all.length - changed.length,
@@ -705,7 +713,7 @@ function showCell(key: string, field: string) {
   const id = sections.value.flatMap(s => s.tables).find(g => g.rows.some(c => rowKey(c) === key))?.id
   if (!id) return
   if (!stacked.value) return void sheets.get(id)?.focusCell(key, field)
-  phoneView.value = 'table'
+  jumped.value = true
   let tries = 0
   const attempt = () => {
     if (sheets.get(id)?.focusCell(key, field) || ++tries >= 20) return
@@ -835,10 +843,10 @@ const statusText = computed(
     <!-- A phone: the changes as a list (every changed cell on the screen) or the table to edit them. -->
     <div v-if="canStack" class="flex items-center gap-2 border-b border-stone-200 px-2 py-1.5 text-xs text-stone-500" data-phone-view>
       <span class="view-switch is-roomy" role="group" :aria-label="$t('Ver los cambios como')">
-        <button type="button" :class="{ 'is-on': stacked }" :aria-pressed="stacked" data-view="list" @click="phoneView = 'list'">
+        <button type="button" :class="{ 'is-on': stacked }" :aria-pressed="stacked" data-view="list" @click="setPhoneView('list')">
           <List :size="14" aria-hidden="true" /> {{ $t('Lista') }}
         </button>
-        <button type="button" :class="{ 'is-on': !stacked }" :aria-pressed="!stacked" data-view="table" @click="phoneView = 'table'">
+        <button type="button" :class="{ 'is-on': !stacked }" :aria-pressed="!stacked" data-view="table" @click="setPhoneView('table')">
           <Table2 :size="14" aria-hidden="true" /> {{ editable ? $t('Editar en tabla') : $t('Tabla') }}
         </button>
       </span>
@@ -980,7 +988,8 @@ const statusText = computed(
         <p v-if="groups.length > 1 && !g.near" class="px-2 pt-2 text-xs font-medium text-stone-700">{{ g.sheet }}</p>
         <ProposalStack
           :rows="g.rows"
-          :fields="g.columns"
+          :fields="g.every"
+          :template="g.template"
           :types="typesOf(g.sheet)"
           :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
           @cell="showCell"

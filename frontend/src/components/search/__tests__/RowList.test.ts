@@ -64,21 +64,40 @@ describe('RowList', () => {
     const again = mount({ items: [item(5)], mark: 'q5e' })
     expect(again.host.querySelector('.row-title mark')!.textContent).toBe('Q5E')
   })
-  it('draws a long list a part at a time, the rest on request', async () => {
-    locale.value = 'es'
-    const { host } = mount({ items: Array.from({ length: 130 }, (_, i) => item(i + 1)), step: 60 })
-    expect(host.querySelectorAll('button.row-item')).toHaveLength(60)
+  it('draws the lines it is given; the rest is asked for with a finger-sized button', async () => {
+    let asked = 0
+    const { host, state } = mount({ items: [item(1), item(2)], left: 70, moreLabel: 'Mostrar 60 filas más · quedan 70', onMore: () => asked++ })
+    expect(host.querySelectorAll('button.row-item')).toHaveLength(2)
     const more = host.querySelector<HTMLButtonElement>('[data-more]')!
-    expect(more.textContent).toContain('Mostrar 60 filas más')
-    expect(more.textContent).toContain('quedan 70')
+    expect(more.textContent!.trim()).toBe('Mostrar 60 filas más · quedan 70')
     expect(more.className).toContain('min-h-11')
     more.click()
+    expect(asked).toBe(1)
+    // While more are read the button waits; with none left it goes. Lines already drawn stay as the list grows.
+    state.value = { ...state.value, items: [item(1), item(2), item(3)], busy: true }
     await nextTick()
-    expect(host.querySelectorAll('button.row-item')).toHaveLength(120)
-    host.querySelector<HTMLButtonElement>('[data-more]')!.click()
+    expect(host.querySelectorAll('button.row-item')).toHaveLength(3)
+    expect(host.querySelector<HTMLButtonElement>('[data-more]')!.disabled).toBe(true)
+    state.value = { ...state.value, left: 0, busy: false }
     await nextTick()
-    expect(host.querySelectorAll('button.row-item')).toHaveLength(130)
     expect(host.querySelector('[data-more]')).toBeNull()
+  })
+  it('a species holding the searched text shows whole (never cut where the match is)', () => {
+    const long = item(1, { species: 'Hypothyris euclea intermedia forma occidentalis' })
+    const { host } = mount({ items: [long, item(2)], mark: 'occidentalis' })
+    const [matched, other] = [...host.querySelectorAll('.row-species')]
+    expect(matched.classList.contains('is-whole')).toBe(true)
+    expect(matched.querySelector('mark')!.textContent).toBe('occidentalis')
+    expect(other.classList.contains('is-whole')).toBe(false)
+  })
+  it('a row with edits not saved yet says so on its line', () => {
+    locale.value = 'es'
+    const { host } = mount({ items: [item(1, { dirty: true }), item(2)] })
+    const [dirty, clean] = [...host.querySelectorAll('button.row-item')]
+    expect(dirty.classList.contains('is-dirty')).toBe(true)
+    expect(dirty.textContent).toContain('sin guardar')
+    expect(clean.classList.contains('is-dirty')).toBe(false)
+    expect(clean.textContent).not.toContain('sin guardar')
   })
   it('a row not saved yet says so, and one without an ID is still a line to open', () => {
     locale.value = 'es'

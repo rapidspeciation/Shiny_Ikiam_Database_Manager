@@ -104,6 +104,10 @@ describe("a sheet's matches as a list (a phone)", () => {
     expect(titles(host)).toEqual(['Q9000E', 'Q500E', 'Q10E'])
     // The two matches away from the first were read, each by its own short range.
     expect(asked.sort()).toEqual(['10-10', '500-500'])
+    // The sheet's name opens and folds its matches: a finger-sized target on a phone.
+    const toggle = host.querySelector<HTMLElement>('header button[aria-expanded]')!
+    expect(toggle.className).toContain('max-sm:min-h-11')
+    expect(toggle.className).toContain('hit-target')
     // No small stepping buttons: the list is the way to the other matches.
     expect(host.querySelector('header button[title="Coincidencia siguiente"]')).toBeNull()
     // The cell where the text is, marked.
@@ -130,16 +134,16 @@ describe("a sheet's matches as a list (a phone)", () => {
     const host = await mount(many, true)
     // The first one came with the answer; the 20 newest others were read.
     expect(titles(host)).toHaveLength(21)
-    const more = host.querySelector<HTMLButtonElement>('[data-more-matches]')!
+    const more = host.querySelector<HTMLButtonElement>('[data-more]')!
     expect(more.textContent).toContain('Ver 24 coincidencias más')
     expect(more.className).toContain('min-h-11')
     more.click()
     await settle()
     expect(titles(host)).toHaveLength(41)
-    host.querySelector<HTMLButtonElement>('[data-more-matches]')!.click()
+    host.querySelector<HTMLButtonElement>('[data-more]')!.click()
     await settle()
     expect(titles(host)).toHaveLength(45)
-    expect(host.querySelector('[data-more-matches]')).toBeNull()
+    expect(host.querySelector('[data-more]')).toBeNull()
   })
   it('the grid is the other view (and the only one on a computer)', async () => {
     const host = await mount([10, 500, 9000], false)

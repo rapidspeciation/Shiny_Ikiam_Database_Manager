@@ -139,12 +139,24 @@ function openLightbox() {
         >
           {{ match.viewBadge }}
         </span>
+        <!-- A computer: the zoom action beside the badges, so the card is no taller than its plate needs. -->
+        <button
+          v-if="!imgError"
+          type="button"
+          class="btn ml-auto px-2 py-0.5 text-xs text-brand-text max-sm:hidden"
+          data-testid="confirmar-zoom-button"
+          @click="openLightbox"
+        >
+          <ZoomIn :size="14" aria-hidden="true" />
+          {{ copy.zoom }}
+        </button>
       </div>
 
-      <!-- One taxon per line, so a long subspecies name never breaks mid-name on a phone. -->
+      <!-- A phone: one taxon per line, so a long subspecies name never breaks mid-name. A computer: one line. -->
       <h2 class="confirmar-pair mt-2 text-base leading-snug text-fg" :class="{ 'by-form': pair.byForm }" data-testid="confirmar-pair-title">
-        <span class="block"><i class="species">{{ pair.a.species }}</i>{{ ' ' }}<i v-if="pair.a.form" class="form">{{ pair.a.form }}</i></span>
-        <span class="block"
+        <span class="max-sm:block"><i class="species">{{ pair.a.species }}</i>{{ ' ' }}<i v-if="pair.a.form" class="form">{{ pair.a.form }}</i></span>
+        {{ ' ' }}
+        <span class="max-sm:block"
           ><span class="text-sm text-fg-muted">vs.</span>{{ ' ' }}<i class="species">{{ pair.b.species }}</i>{{ ' ' }}<i v-if="pair.b.form" class="form">{{ pair.b.form }}</i></span
         >
       </h2>
@@ -179,7 +191,7 @@ function openLightbox() {
     <button
       v-if="!imgError"
       type="button"
-      class="confirmar-zoomable group block min-h-11 w-full bg-surface-sunken text-left sm:p-2.5 sm:pb-0"
+      class="confirmar-zoomable group block min-h-11 w-full bg-surface-sunken text-left sm:p-2.5"
       :aria-label="copy.ariaZoom"
       data-testid="confirmar-zoom-trigger"
       @click="openLightbox"
@@ -212,7 +224,7 @@ function openLightbox() {
         />
       </span>
       <span
-        class="confirmar-zoom-row flex min-h-11 items-center justify-center gap-1.5 px-3.5 text-sm font-medium text-brand-text"
+        class="confirmar-zoom-row flex min-h-11 items-center justify-center gap-1.5 px-3.5 text-sm font-medium text-brand-text sm:hidden"
         data-testid="confirmar-zoom-hint"
       >
         <ZoomIn :size="16" aria-hidden="true" />
@@ -243,6 +255,14 @@ function openLightbox() {
     <div class="flex items-start gap-2.5">
       <Info :size="18" class="mt-0.5 shrink-0 text-pending-text" aria-hidden="true" />
       <div class="min-w-0 flex-1">
+        <!-- Its region as the card's badges are: a fill, no outline (it is not a control). -->
+        <p
+          v-if="match.regionBadge"
+          class="mb-1 inline-block rounded bg-pending-edge/15 px-2 py-0.5 text-xs font-medium text-pending-text"
+          data-testid="confirmar-note-region"
+        >
+          {{ match.regionBadge }}
+        </p>
         <p class="confirmar-pair text-[0.9375rem] leading-snug text-pending-text" :class="{ 'by-form': pair.byForm }">
           <span class="block"><i class="species">{{ pair.a.species }}</i>{{ ' ' }}<i v-if="pair.a.form" class="form">{{ pair.a.form }}</i></span>
           <span class="block"
@@ -250,13 +270,6 @@ function openLightbox() {
           >
         </p>
         <p class="mt-1.5 leading-snug text-fg" data-testid="confirmar-honest-note-text">{{ match.honestNote }}</p>
-        <p
-          v-if="match.regionBadge"
-          class="mt-2 inline-block rounded border border-pending-edge/50 px-2 py-0.5 text-xs font-medium text-pending-text"
-          data-testid="confirmar-note-region"
-        >
-          {{ match.regionBadge }}
-        </p>
       </div>
     </div>
   </section>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, h } from 'vue'
+import { createApp, h, nextTick } from 'vue'
 import ProposalStack from '../assistant/ProposalStack.vue'
 import { locale, t, tn } from '../../lib/i18n'
 import type { ProposalChange } from '../../lib/proposals'
@@ -26,10 +26,10 @@ const change = (key: string, values: ProposalChange['values'], extra: Partial<Pr
 const FIELDS = ['Death_date', 'Death_cause', 'Notes_Insectary_data', 'Sex']
 const TYPES = { Death_date: 'date', Death_cause: 'text', Notes_Insectary_data: 'text', Sex: 'text' }
 
-function mount(rows: ProposalChange[], onCell?: (key: string, field: string) => void) {
+function mount(rows: ProposalChange[], onCell?: (key: string, field: string) => void, extra: Record<string, unknown> = {}) {
   const host = document.createElement('div')
   document.body.append(host)
-  const app = createApp({ render: () => h(ProposalStack, { rows, fields: FIELDS, types: TYPES, onCell }) })
+  const app = createApp({ render: () => h(ProposalStack, { rows, fields: FIELDS, types: TYPES, onCell, ...extra }) })
   app.config.globalProperties.$t = t
   app.config.globalProperties.$tn = tn
   app.mount(host)
@@ -111,10 +111,79 @@ describe('ProposalStack', () => {
     expect(cell.querySelector('[data-aside] s')!.textContent).toBe('female')
     expect(cell.textContent).toContain('editada en la hoja')
   })
+  it('says a note all the rows share once, above them; a row\'s own note stays on the row', async () => {
+    locale.value = 'es'
+    const shared = mount([
+      change('a', { Sex: 'female' }, { note: 'Cuaderno de muertes, p. 41' }),
+      change('b', { Sex: 'female' }, { label: 'Q6E', note: 'Cuaderno de muertes, p. 41' }),
+    ])
+    expect(shared.querySelector('[data-shared-note]')!.textContent).toBe('Cuaderno de muertes, p. 41')
+    expect(shared.querySelectorAll('.stack-row [data-note]')).toHaveLength(0)
+    expect(shared.textContent!.split('Cuaderno de muertes, p. 41')).toHaveLength(2)
+    unmount()
+    const own = mount([change('a', { Sex: 'female' }, { note: 'Línea 3' }), change('b', { Sex: 'female' }, { label: 'Q6E', note: 'Línea 4' })])
+    expect(own.querySelector('[data-shared-note]')).toBeNull()
+    expect([...own.querySelectorAll('.stack-row [data-note]')].map(e => e.textContent!.trim())).toEqual(['Línea 3', 'Línea 4'])
+  })
+  it('a row that is not written says so, with why, and shows no value as if it were', () => {
+    locale.value = 'es'
+    const host = mount([
+      {
+        index: 3,
+        key: 't',
+        clientId: 't',
+        recordId: null,
+        sheet: 'Insectary_data',
+        row: null,
+        label: 'S2E',
+        create: true,
+        values: { Sex: 'female' },
+        rowTaken: { row: 13699 } as ProposalChange['rowTaken'],
+      },
+    ])
+    const row = host.querySelector('[data-row="t"]')!
+    expect(row.classList.contains('is-refused')).toBe(true)
+    expect(row.textContent).toContain('no se escribe')
+    expect(row.textContent).toContain('Su fila sin usar (13699) ya se usó en la hoja')
+    expect(row.textContent).not.toContain('fila nueva')
+    expect(row.querySelector('.stack-field')).toBeNull()
+  })
+  it("folds the template's columns as the table does: counted on the row, opened on request, written all the same", async () => {
+    locale.value = 'es'
+    const host = mount(
+      [{ index: 1, key: 'n', clientId: 'n', recordId: null, sheet: 'Insectary_data', row: null, label: 'S2E', create: true, values: { Sex: 'female', Death_cause: 'NA', Notes_Insectary_data: 'NOT_COLLECTED' } }],
+      undefined,
+      { template: ['Death_cause', 'Notes_Insectary_data'] },
+    )
+    const cells = () => [...host.querySelectorAll<HTMLElement>('.stack-field')].map(f => f.dataset.field)
+    expect(cells()).toEqual(['Sex'])
+    const fold = host.querySelector<HTMLButtonElement>('[data-template]')!
+    expect(fold.textContent).toContain('+2 columnas de plantilla')
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    fold.click()
+    await nextTick()
+    expect(cells()).toEqual(['Death_cause', 'Notes_Insectary_data', 'Sex'].sort((a, b) => FIELDS.indexOf(a) - FIELDS.indexOf(b)))
+    expect(host.querySelector('[data-template]')!.textContent).toContain('Plegar la plantilla')
+  })
+  it('keeps the table\'s marks and reads dates in the interface language', () => {
+    locale.value = 'es'
+    const host = mount([change('a', { Death_date: 46128, Death_cause: 'Natural_death' }, { inferred: ['Death_cause'], highlight: true, rowValues: { Death_date: 45883, Death_cause: '' } })])
+    const row = host.querySelector('[data-row="a"]')!
+    expect(row.classList.contains('is-marked')).toBe(true)
+    expect(row.textContent).toContain('marcada')
+    expect(row.querySelector('[data-field="Death_cause"] .stack-tag')!.textContent).toBe('deducida')
+    // 14 Aug 2025 → 16 Apr 2026: Spanish months here; the table keeps the sheet's own.
+    expect(row.querySelector('[data-field="Death_date"] [data-old] s')!.textContent).toBe('14-Ago-25')
+    expect(row.querySelector('[data-field="Death_date"] [data-new] b')!.textContent).toBe('16-Abr-26')
+    unmount()
+    locale.value = 'en'
+    const en = mount([change('a', { Death_date: 46128 }, { rowValues: { Death_date: 45883 } })])
+    expect(en.querySelector('[data-new] b')!.textContent).toBe('16-Apr-26')
+  })
   it('says so when a table changes nothing, in English too', () => {
     locale.value = 'en'
     const host = mount([change('a', { Sex: 'male' })])
     expect(host.querySelector('.stack-row')).toBeNull()
-    expect(host.textContent).toContain('This table changes no cell.')
+    expect(host.textContent).toContain('This table changes no cells.')
   })
 })

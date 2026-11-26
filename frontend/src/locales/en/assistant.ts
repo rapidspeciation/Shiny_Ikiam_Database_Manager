@@ -914,5 +914,6 @@ export default {
   'sin leer': 'not read',
   'Escribirla en la tabla': 'Type it in the table',
   'Revisarla en la tabla': 'Review it in the table',
-  'Esta tabla no cambia ninguna celda.': 'This table changes no cell.',
+  'Esta tabla no cambia ninguna celda.': 'This table changes no cells.',
+  'no se escribe': 'not written',
 } as Record<string, string>

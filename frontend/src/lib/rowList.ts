@@ -1,4 +1,4 @@
-import { displayValue } from './cells'
+import { displayValue, readingValue } from './cells'
 import { isNoteField } from './rowForm'
 import type { CellValue, Field } from './types'
 
@@ -20,6 +20,8 @@ export interface RowListItem {
   match: { field: string; text: string } | null
   /** Not saved yet (a row added here). */
   isNew: boolean
+  /** A saved row with edits not saved yet (typed in its form). */
+  dirty?: boolean
 }
 
 /** What a sheet writes when there is nothing to say: never a fact worth a line. */
@@ -30,13 +32,19 @@ const SEX = /^sex$/i
 const CLUTCH = /^clutch([ _]number)?$/i
 const CAM = /cam_?id/i
 
-/** A cell around the searched text, cut to a line's worth: «…wing torn, found on the floor…». */
+/**
+ * A cell around the searched text, cut to a line's worth: «…wing torn, found on the floor…». The whole searched
+ * text always stays in. A cell without spaces (a link, a file's path) is cut shorter: it is not read, only the place
+ * of the match in it.
+ */
 export function snippet(text: string, query: string, width = 64): string {
-  const at = text.toLowerCase().indexOf(query.trim().toLowerCase())
-  if (text.length <= width || at < 0) return text.length > width ? `${text.slice(0, width - 1).trimEnd()}…` : text
-  const from = Math.max(0, Math.min(at - Math.floor(width / 3), text.length - width))
-  const cut = text.slice(from, from + width).trim()
-  return `${from > 0 ? '…' : ''}${cut}${from + width < text.length ? '…' : ''}`
+  const q = query.trim()
+  const room = Math.max(/\s/.test(text) ? width : Math.min(width, 34), q.length + 12)
+  const at = text.toLowerCase().indexOf(q.toLowerCase())
+  if (text.length <= room || at < 0) return text.length > room ? `${text.slice(0, room - 1).trimEnd()}…` : text
+  const from = Math.max(0, Math.min(at - Math.floor((room - q.length) / 2), text.length - room))
+  const cut = text.slice(from, from + room).trim()
+  return `${from > 0 ? '…' : ''}${cut}${from + room < text.length ? '…' : ''}`
 }
 
 /**
@@ -69,7 +77,10 @@ export function rowListItem(
   query = '',
   matchColumns: string[] = [],
 ): RowListItem {
-  const text = (f: Field | undefined) => (f ? displayValue(row.values[f.key], f).trim() : '')
+  // What a person reads (a date with the month in the interface language), and what the sheet shows (the text the
+  // search looked in: a match is found and shown as the sheet has it).
+  const text = (f: Field | undefined) => (f ? readingValue(row.values[f.key], f).trim() : '')
+  const sheetText = (f: Field | undefined) => (f ? displayValue(row.values[f.key], f).trim() : '')
   const idField = columns.find(f => f.key === identity[0])
   const speciesField = columns.find(f => SPECIES.test(f.key))
   const title = text(idField)
@@ -92,10 +103,11 @@ export function rowListItem(
   let match: RowListItem['match'] = null
   if (q && !shows(named) && !shows(species)) {
     const order = [...matchColumns.flatMap(key => columns.find(f => f.key === key) ?? []), ...columns]
-    const hit = order.find(f => shows(text(f)))
-    if (hit) match = { field: hit.key, text: snippet(text(hit), q) }
+    const hit = order.find(f => shows(sheetText(f)))
+    if (hit) match = { field: hit.key, text: snippet(sheetText(hit), q) }
   }
   // The fact that is the match is said once, with its column.
-  if (match) facts = facts.filter(f => !shows(f))
+  const matched = match && columns.find(f => f.key === match.field)
+  if (matched) facts = facts.filter(f => f !== text(matched) && !shows(f))
   return { id: row.id, row: row.row, title: named, species, facts, match, isNew: false }
 }

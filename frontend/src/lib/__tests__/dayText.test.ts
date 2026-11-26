@@ -4,6 +4,7 @@ import { dayText, momentText, monthNames, parseDateInput, recentText, serialToIs
 import { dateLabel } from '../summary'
 import { whenText } from '../proposals'
 import { formatWhen } from '../history'
+import { displayValue, readingValue } from '../cells'
 
 // One date shape outside the grids (Inicio's tiles, alerts, proposals): the grid's own, 7-Nov-26, with the month in
 // the interface language.
@@ -88,5 +89,23 @@ describe('the same shape wherever the app says a date', () => {
     expect(dateLabel('2026-09-22')).toBe(text)
     const serial = parseDateInput(text)
     expect(serial === null ? null : serialToIso(serial)).toBe('2026-09-22')
+  })
+})
+
+describe('a date cell read outside a grid (a row\'s line, a proposal\'s stacked cells)', () => {
+  const date = { key: 'Death_date', type: 'date' as const }
+  it('has the month in the interface language; the grid keeps the sheet\'s own', () => {
+    locale.value = 'es'
+    expect(readingValue(45883, date)).toBe('14-Ago-25')
+    expect(displayValue(45883, date)).toBe('14-Aug-25')
+    locale.value = 'en'
+    expect(readingValue(45883, date)).toBe('14-Aug-25')
+  })
+  it('anything that is not a date in range reads as the cell shows it', () => {
+    locale.value = 'es'
+    expect(readingValue('NA', date)).toBe('NA')
+    expect(readingValue(null, date)).toBe('')
+    expect(readingValue(5, date)).toBe(displayValue(5, date))
+    expect(readingValue(45883, { key: 'CLUTCH NUMBER', type: 'number' })).toBe('45883')
   })
 })

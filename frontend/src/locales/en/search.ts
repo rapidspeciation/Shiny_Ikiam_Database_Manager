@@ -91,6 +91,7 @@ export default {
   Formulario: 'Form',
   'Ver las filas como': 'Show the rows as',
   'Sin ID': 'No ID',
+  'sin guardar': 'not saved',
   'Mostrar {n} fila más': 'Show {n} more row',
   'Mostrar {n} filas más': 'Show {n} more rows',
   'queda {n}': '{n} left',

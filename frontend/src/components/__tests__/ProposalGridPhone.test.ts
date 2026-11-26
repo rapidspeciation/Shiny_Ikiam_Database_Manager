@@ -129,11 +129,35 @@ describe('a proposal on a phone', () => {
     expect(host.querySelector('.sheet-stub')).not.toBeNull()
     expect(host.querySelector('[data-proposal-stack]')).toBeNull()
     expect(focused).toEqual(['b:Sex'])
-    expect(JSON.parse(localStorage.getItem('ithomiini:proposal-phone-view')!)).toBe('table')
+    // A jump is for this card, now: the view kept on the device is still the list (the next proposal opens as it).
+    expect(localStorage.getItem('ithomiini:proposal-phone-view')).toBeNull()
+    expect([...host.querySelectorAll<HTMLElement>('[data-phone-view] button')].map(b => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
     // Back to the list with its switch.
     host.querySelector<HTMLElement>('[data-phone-view] [data-view="list"]')!.click()
     await nextTick()
     expect(host.querySelector('[data-proposal-stack]')).not.toBeNull()
+    // The switch itself is the choice that is kept.
+    host.querySelector<HTMLElement>('[data-phone-view] [data-view="table"]')!.click()
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('ithomiini:proposal-phone-view')!)).toBe('table')
+  })
+  it("the list has every column «Aplicar» writes, the folded template's too", async () => {
+    locale.value = 'es'
+    const paged = proposal({
+      fields: ['Insectary_ID', 'Sex', 'Stock_of_origin'],
+      page: { sheet: 'Insectary_data', photos: 0, keys: ['Insectary_ID'], columns: ['Insectary_ID', 'Sex'] } as never,
+      changes: [
+        { index: 0, key: 'n', clientId: 'n', recordId: null, sheet: 'Insectary_data', row: null, label: 'S2E', create: true, values: { Insectary_ID: 'S2E', Sex: 'female', Stock_of_origin: 'NA' } },
+      ] as never,
+    })
+    const host = await mount(true, { proposal: paged })
+    // Stock_of_origin only carries the template's NA: folded in the table, counted here and opened with a tap.
+    expect([...host.querySelectorAll<HTMLElement>('.stack-field')].map(f => f.dataset.field)).toEqual(['Insectary_ID', 'Sex'])
+    const fold = host.querySelector<HTMLButtonElement>('[data-template]')!
+    expect(fold.textContent).toContain('+1 columna de plantilla')
+    fold.click()
+    await nextTick()
+    expect([...host.querySelectorAll<HTMLElement>('.stack-field')].map(f => f.dataset.field)).toContain('Stock_of_origin')
   })
   it('beside its photo the table stays (the rows follow the page there)', async () => {
     const host = await mount(true, { reviewing: true })

@@ -36,7 +36,14 @@ describe("a row's line in the phone list", () => {
     const columns = [field('File'), field('Kind'), field('Capture Date', 'date'), field('URL')]
     const item = rowListItem(row({ File: 'CAM074065v2.HEIC', Kind: 'File', 'Capture Date': 45388, URL: 'https://drive.google.com/file/d/x' }), columns, ['CAM_ID'])
     expect(item.title).toBe('CAM074065v2.HEIC')
-    expect(item.facts).toEqual(['File', '6-Apr-24'])
+    // A date reads in the interface language (Spanish here), not as the grid writes it.
+    expect(item.facts).toEqual(['File', '6-Abr-24'])
+  })
+  it('a match in a date is found and shown as the sheet writes it, and said once', () => {
+    const columns = [field('File'), field('Kind'), field('Capture Date', 'date')]
+    const item = rowListItem(row({ File: 'a.jpg', Kind: 'File', 'Capture Date': 45388 }), columns, [], 'apr', ['Capture Date'])
+    expect(item.match).toEqual({ field: 'Capture Date', text: '6-Apr-24' })
+    expect(item.facts).toEqual(['File'])
   })
   it('shows the cell where the searched text is, once, unless the ID or the species already shows it', () => {
     const values = { Insectary_ID: 'Q5E', SPECIES: 'Mechanitis lysimnia', Sex: 'female', Notes_Insectary_data: '25/11/26 L: Ala derecha rota; encontrada en el piso de la jaula 3' }
@@ -69,6 +76,17 @@ describe('the searched text in a line', () => {
     expect(cut).toContain('jaula')
     expect(cut.startsWith('…') && cut.endsWith('…')).toBe(true)
     expect(snippet('short', 'sh')).toBe('short')
+  })
+  it('the whole searched text stays in, however long', () => {
+    const query = 'Preserved alive 3rd instar larva, wing torn and found on the floor of cage three'
+    const cell = `5/10/26 FCH: ${query}; then moved to the freezer and recorded in the notebook page 41`
+    expect(snippet(cell, query)).toContain(query)
+  })
+  it('a link is cut short around the match: it is not read, only where the match is', () => {
+    const url = 'https://drive.google.com/file/d/14x2tHm_M2PXQ5EQOqpGyvPmXuiEtBxgd/view?usp=drivesdk'
+    const cut = snippet(url, 'q5e')
+    expect(cut.length).toBeLessThanOrEqual(36)
+    expect(cut).toContain('Q5E')
   })
 })
 

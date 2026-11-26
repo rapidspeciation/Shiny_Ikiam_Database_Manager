@@ -149,10 +149,32 @@ describe('ConfirmarVisualCard', () => {
     expect(hint.textContent!.trim()).toBe('Ampliar la guía')
     expect(hint.className).toContain('min-h-11')
     expect(plate.querySelector('.absolute.right-2')).toBeNull()
+    // A computer has the action beside the badges instead (the card no taller than before): each width shows one.
+    expect(hint.className).toContain('sm:hidden')
+    const button = es.querySelector<HTMLButtonElement>('[data-testid="confirmar-zoom-button"]')!
+    expect(button.className).toContain('max-sm:hidden')
+    expect(button.textContent!.trim()).toBe('Ampliar la guía')
+    expect(plate.contains(button)).toBe(false)
     unmount()
     locale.value = 'en'
     const en = mountCard(activeMatch())
     expect(en.querySelector('[data-testid="confirmar-zoom-hint"]')!.textContent!.trim()).toBe('Enlarge the guide')
+  })
+
+  it('a computer keeps the pair on one line and opens the viewer from the button beside the badges', async () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch())
+    const lines = [...host.querySelectorAll('[data-testid="confirmar-pair-title"] > span')]
+    // One taxon per line only below the phone width.
+    expect(lines.map(l => l.className)).toEqual(['max-sm:block', 'max-sm:block'])
+    expect(host.querySelector('[data-testid="confirmar-pair-title"]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'Heliconius erato cyrbia vs. Heliconius melpomene cythera',
+    )
+    host.querySelector<HTMLButtonElement>('[data-testid="confirmar-zoom-button"]')!.click()
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="photo-viewer"]')).not.toBeNull()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="viewer-close"]')!.click()
+    await nextTick()
   })
 
   it('holds the plate\'s shape and says it is loading until its file arrives (no dark box, no jump)', async () => {
@@ -209,7 +231,11 @@ describe('ConfirmarVisualCard', () => {
     const lines = [...note.querySelectorAll('.confirmar-pair > span')].map(e => e.textContent!.replace(/\s+/g, ' ').trim())
     expect(lines).toEqual(['Brevioleria aelia oncidia', 'vs. Brevioleria arzalia loronia'])
     expect([...note.querySelectorAll('.form')].map(e => e.textContent)).toEqual(['oncidia', 'loronia'])
-    expect(note.querySelector('[data-testid="confirmar-note-region"]')!.textContent!.trim()).toBe('Oriente')
+    const region = note.querySelector('[data-testid="confirmar-note-region"]')!
+    expect(region.textContent!.trim()).toBe('Oriente')
+    // A badge as the card's (a fill, no outline: it is not a control), before the names.
+    expect(region.className).not.toContain('border')
+    expect(region.compareDocumentPosition(note.querySelector('.confirmar-pair')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(note.textContent!.split('Oriente')).toHaveLength(2)
     expect(note.querySelector('button')).toBeNull()
   })
