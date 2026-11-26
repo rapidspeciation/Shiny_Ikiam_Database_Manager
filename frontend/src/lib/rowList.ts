@@ -39,7 +39,7 @@ const CAM = /cam_?id/i
  */
 export function snippet(text: string, query: string, width = 64): string {
   const q = query.trim()
-  const room = Math.max(/\s/.test(text) ? width : Math.min(width, 34), q.length + 12)
+  const room = Math.max(/\s/.test(text) ? width : Math.min(width, 24), q.length + 12)
   const at = text.toLowerCase().indexOf(q.toLowerCase())
   if (text.length <= room || at < 0) return text.length > room ? `${text.slice(0, room - 1).trimEnd()}…` : text
   const from = Math.max(0, Math.min(at - Math.floor((room - q.length) / 2), text.length - room))

@@ -85,7 +85,8 @@ describe('the searched text in a line', () => {
   it('a link is cut short around the match: it is not read, only where the match is', () => {
     const url = 'https://drive.google.com/file/d/14x2tHm_M2PXQ5EQOqpGyvPmXuiEtBxgd/view?usp=drivesdk'
     const cut = snippet(url, 'q5e')
-    expect(cut.length).toBeLessThanOrEqual(36)
+    // Short enough for one line beside its column's name on a phone.
+    expect(cut.length).toBeLessThanOrEqual(26)
     expect(cut).toContain('Q5E')
   })
 })
