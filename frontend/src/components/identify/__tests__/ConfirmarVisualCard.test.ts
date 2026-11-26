@@ -268,13 +268,13 @@ describe('ConfirmarVisualCard', () => {
     // At the top of the card, before its badges and its plate.
     const card = host.querySelector('[data-testid="confirmar-visual-card"]')!
     expect(card.firstElementChild).toBe(line)
-    // The two sides, West first, each a full tap target, neither chosen yet.
+    // The two sides, West first, each a full tap target; plain buttons (neither is a state: a tap sets the page's side).
     const group = line.querySelector('[data-testid="confirmar-side-switch"]')!
     expect(group.getAttribute('role')).toBe('group')
     expect(group.getAttribute('aria-label')).toBe('Lado de los Andes de la foto')
     const buttons = [...group.querySelectorAll('button')]
     expect(buttons.map(b => b.textContent!.trim())).toEqual(['Occidente', 'Oriente'])
-    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['false', 'false'])
+    expect(buttons.some(b => b.hasAttribute('aria-pressed'))).toBe(false)
     for (const b of buttons) expect(b.className).toContain('min-h-11')
     buttons[0].click()
     buttons[1].click()

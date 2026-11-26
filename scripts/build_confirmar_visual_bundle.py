@@ -97,6 +97,8 @@ ALIAS_ADDITIONS: dict[tuple[str, str, str], list[str]] = {
     ("p14", "p14", "a"): ["alithea", "Heliconius cydno alithea"],
     ("w3a_15", "w3a_15", "a"): ["alithea"],
     ("w4_11", "w4_11", "a"): ["alithea"],
+    # The map writes the third form of Eresia pelonia «calonia»; the head's leaf is «callonia».
+    ("w6_05", "w6_05", "b"): ["callonia"],
 }
 
 # What may never be left in an alias of a subspecies-routed pair: a question mark, a rank marker with no epithet
@@ -753,6 +755,10 @@ def build_bundle(
     if problems:
         raise RuntimeError("Subspecies aliases:\n  " + "\n  ".join(problems))
     if head_subspecies is None:
+        # A check that cannot check does not pass; nor does a list asked for by name. A plain build on a host
+        # without the list goes on, and says so in the manifest (`head_subspecies_checked`).
+        if check_only or leaf_map != HEAD_LEAF_MAP:
+            raise RuntimeError(f"The head's leaf list is not at {leaf_map}: the aliases cannot be checked against it")
         print(f"NOTE: {leaf_map} is not on this host: the aliases were not checked against the head's subspecies")
 
     # Prune stale .webp files in cards/{es,en} before writing manifest
@@ -1111,13 +1117,14 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Verify inputs, SHA-256 and the subspecies aliases (against the head's leaf list) without writing files",
+        help="Verify inputs, SHA-256 and the subspecies aliases without writing files; fails without the head's leaf list",
     )
     parser.add_argument(
         "--leaf-map",
         type=Path,
         default=HEAD_LEAF_MAP,
-        help=f"The head's leaf list, for the reachability check (default: {HEAD_LEAF_MAP}; skipped when absent)",
+        help=f"The head's leaf list, for the reachability check (default: {HEAD_LEAF_MAP}). A build skips the "
+        "check when the default is absent; --check, or a list named here that is absent, fails",
     )
     parser.add_argument("--self-test", action="store_true", help="Run fail-closed verifier self-tests and exit")
     args = parser.parse_args()
@@ -1144,7 +1151,8 @@ def main() -> int:
     if v["head_subspecies_checked"]:
         print(
             f"OK subspecies aliases: {v['subspecies_sides_reachable']} active sides reachable by a subspecies the head "
-            f"names, {v['subspecies_sides_without_head_subspecies']} of species the head does not split, 0 broken"
+            f"names, {v['subspecies_sides_without_head_subspecies']} of species the head does not split; "
+            "no question mark, rank marker or unnamed form left"
         )
     return 0
 

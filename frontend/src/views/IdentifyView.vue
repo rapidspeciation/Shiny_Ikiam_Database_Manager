@@ -52,7 +52,7 @@ import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
 import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { locale, t, tn } from '../lib/i18n'
-import { chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
+import { CACHE as OFFLINE_CACHE, chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
 import { displayHeadMeta, leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
@@ -68,10 +68,15 @@ import {
   type ConfirmarCardMatch,
   type ConfirmarVisualManifest,
 } from '../lib/confirmarVisualRouter'
-const ConfirmarVisualCard =
-  import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
-    ? defineAsyncComponent(() => import('../components/identify/ConfirmarVisualCard.vue'))
-    : null
+/** The guide's own script and styles: a separate file, so a build without the guides has none of it. */
+const confirmarCardFile = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1' ? () => import('../components/identify/ConfirmarVisualCard.vue') : null
+const ConfirmarVisualCard = confirmarCardFile ? defineAsyncComponent(confirmarCardFile) : null
+/**
+ * With the guides on, that file is asked for as the page opens with signal, not at the first guide: the browser then
+ * lists it and its styles among the page's files (`pageFiles`), so the copy of the page kept for airplane mode can
+ * draw a guide, or its note, on a phone that never saw one with signal. Settles either way.
+ */
+const confirmarCardAsked: Promise<unknown> = confirmarCardFile && navigator.onLine ? confirmarCardFile().catch(() => null) : Promise.resolve()
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -104,12 +109,13 @@ const PLACES: { id: Place; label: string; icon: typeof ScanSearch }[] = [
 ]
 const pageFiles = () => [
   location.href.split('#')[0],
-  ...[...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=manifest]')].map(
-    e => ('src' in e && e.src) || (e as HTMLLinkElement).href,
-  ),
-  // With the visual guides on, their list is one of the page's files: a phone that says «Listo para usar sin internet»
-  // has it (kept with the page when a model is downloaded). A guide's plate is kept once it has been seen.
-  ...(import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1' ? [new URL(CONFIRMAR_MANIFEST_PATH, appRoot()).href] : []),
+  // A script asked for after the page opened is listed as `modulepreload`, or as `preload` where the browser has no
+  // `modulepreload` (Safari before 17).
+  ...[
+    ...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
+      'script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=preload][as=script], link[rel=manifest]',
+    ),
+  ].map(e => ('src' in e && e.src) || (e as HTMLLinkElement).href),
 ].filter(Boolean)
 const signedIn = () => !!session.user
 // Signed in (a router navigation, not a reload): the visitors' limit no longer applies, Buscar's line goes too.
@@ -222,6 +228,8 @@ async function refresh() {
   checked.value = true
   if (ready.value.small || ready.value.full) {
     // Models from the test page: this page and its runtime are kept now (online) before it says it works offline.
+    // With the guides on, the guide's script first, so it is among the files kept.
+    await confirmarCardAsked
     pageOffline.value = await engine.pageOffline()
   }
 }
@@ -784,12 +792,28 @@ const confirmarManifest = shallowRef<ConfirmarVisualManifest | null>(null)
 const confirmarPreferredCard = ref<string | null>(null)
 /**
  * The guides' list (150 kB), asked once the page is idle with signal, so a phone that later identifies without signal
- * has it (the service worker keeps it). A fetch that fails is asked again: at each result, and when the signal returns.
+ * has it. A fetch that fails is asked again: at each result, and when the signal returns.
  */
 function warmConfirmar() {
   if (!confirmarOn || confirmarManifest.value) return
+  // The service worker keeps the list as it passes. On a first visit it does not have the page yet.
+  const unseen = !navigator.serviceWorker?.controller
   loadConfirmarManifest(appRoot())
-    .then(m => (confirmarManifest.value = m))
+    .then(m => {
+      confirmarManifest.value = m
+      if (unseen) keepConfirmarList()
+    })
+    .catch(() => null)
+}
+/**
+ * The list put where the service worker looks without signal (the identifier's cache, kept on sign-out). Best effort,
+ * apart from the page's own files: the guides are an extra, never a reason for a model's download to fail.
+ */
+function keepConfirmarList() {
+  if (typeof caches === 'undefined') return
+  caches
+    .open(OFFLINE_CACHE)
+    .then(cache => cache.add(new URL(CONFIRMAR_MANIFEST_PATH, appRoot()).href))
     .catch(() => null)
 }
 let confirmarIdle: (() => void) | null = null

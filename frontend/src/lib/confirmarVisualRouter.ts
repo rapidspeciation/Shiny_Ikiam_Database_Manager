@@ -13,9 +13,10 @@
  *     2. Side-only match (`East` / `West` from user selector or conservative Ecuador GPS divide).
  *     3. Unspecified region fallback (`pair.default_card_id` with `regionFallback=true`),
  *        where manual region switching (`preferredCardId`) is permitted among active regional
- *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía). A GPS point
- *        inside the ridge band but clearly on one side of the ridge line (`sideLean`) picks no
- *        card: it only hides a guide made for the other side alone.
+ *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía).
+ *   - With no side, a GPS point inside the ridge band but clearly on one side of the ridge line
+ *     (`sideLean`) picks no card: before any of the steps, it hides a pair whose guides are all
+ *     for the other side, whether or not the head names a subspecies.
  *   - Subspecies names are compared without rank markers (`f.`, `ssp.`, `subsp.`) or a trailing
  *     `?`, the same normal form scripts/build_confirmar_visual_bundle.py writes and checks.
  *   - Cross-wave superseding (`superseded_pairs`): when a newer wave rescues an earlier held
@@ -404,6 +405,15 @@ export function resolveRegionalRoute(
     return buildNullResolution(pair, 'not_reliably_separable_in_photos', locale, pair.routes[0])
   }
 
+  // No side, and a point that leans to one: a pair whose guides are all for the other side shows none, whatever
+  // subspecies the head names (as a known side does: `conflicting_side_and_subspecies`). The lean picks no card, so
+  // a pair with a guide for that side, or for both, goes on as with no position; a pair with no guide keeps its note.
+  const lean = side ? null : normalizeSide(input.sideLean)
+  const guides = pair.routes.filter(r => r.status === 'active')
+  if (lean && guides.length > 0 && !guides.some(r => r.side_andes.includes(lean))) {
+    return buildNullResolution(pair, 'no_card_for_side', locale)
+  }
+
   // Step 1: Subspecies match (Wave 2 / Wave 3A only — skipped for side-only Wave 3B contract)
   const hasSspInput = !isSideOnlyPair(pair) && (sspA.length > 0 || sspB.length > 0)
   if (hasSspInput) {
@@ -456,14 +466,7 @@ export function resolveRegionalRoute(
     return buildNullResolution(pair, 'no_card_for_side', locale)
   }
 
-  // Step 3: Unspecified region fallback (only here may a manual region preference switch between active cards).
-  // A point that leans to one side never picks a card; it hides a pair whose guides are all for the other side.
-  // A pair with no guide at all keeps its note.
-  const lean = normalizeSide(input.sideLean)
-  const guides = pair.routes.filter(r => r.status === 'active')
-  if (lean && guides.length > 0 && !guides.some(r => r.side_andes.includes(lean))) {
-    return buildNullResolution(pair, 'no_card_for_side', locale)
-  }
+  // Step 3: Unspecified region fallback (only here may a manual region preference switch between active cards)
   if (input.preferredCardId) {
     const chosen = pair.routes.find(r => r.status === 'active' && r.card_id === input.preferredCardId)
     if (chosen) {

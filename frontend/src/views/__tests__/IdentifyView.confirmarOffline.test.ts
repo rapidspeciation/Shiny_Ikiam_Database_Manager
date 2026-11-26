@@ -107,6 +107,7 @@ afterEach(() => {
   unmount()
   unmount = () => {}
   vi.unstubAllEnvs()
+  delete (navigator as { serviceWorker?: unknown }).serviceWorker
   sessionStorage.clear()
   localStorage.clear()
   vi.unstubAllGlobals()
@@ -116,7 +117,7 @@ afterEach(() => {
 })
 
 /** The page opened with no photo yet. `list`: what each request for the guides' list gets, in turn (the last one stays). */
-async function openIdentify(opts: { flag?: boolean; list?: ('ok' | 'fail' | 'http500')[]; online?: boolean; neverIdle?: boolean } = {}) {
+async function openIdentify(opts: { flag?: boolean; list?: ('ok' | 'fail' | 'http500')[]; online?: boolean; neverIdle?: boolean; worker?: boolean } = {}) {
   vi.resetModules()
   vi.stubEnv('VITE_CONFIRM_VISUAL_CARDS', opts.flag === false ? '0' : '1')
   const turns = [...(opts.list ?? ['ok'])]
@@ -132,6 +133,8 @@ async function openIdentify(opts: { flag?: boolean; list?: ('ok' | 'fail' | 'htt
     idle.cancelled++
     clearTimeout(id)
   })
+  // A page the service worker has (it keeps the list itself), or a first visit.
+  if (opts.worker) Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { controller: {} } })
   const signal = { on: opts.online !== false }
   vi.spyOn(navigator, 'onLine', 'get').mockImplementation(() => signal.on)
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
@@ -252,15 +255,53 @@ describe('IdentifyView: the guides\' list for a phone that works without signal 
     expect(card()!.getAttribute('data-card-id')).toBe('p01_west')
   })
 
-  it('the list is one of the files kept with the page for airplane mode, only with the guides on', async () => {
+  it('the list is no file of the page (a model\'s download never waits on it); the worker\'s cache gets it when the worker did not see it pass', async () => {
+    // A first visit: no worker has the page yet.
+    const added: string[] = []
+    const opened: string[] = []
+    const fakeCaches = { open: async (name: string) => (opened.push(name), { add: async (url: string) => void added.push(url) }) }
+    vi.stubGlobal('caches', fakeCaches)
     await openIdentify()
-    const kept = world.pageFiles!()
-    expect(kept.filter(u => u.endsWith('/identificar/confirmar/confirmar_visual_manifest.json'))).toHaveLength(1)
-    expect(kept[0]).toBe(location.href.split('#')[0]) // the page itself first, as before
+    expect(world.pageFiles!().some(u => u.includes('confirmar_visual_manifest'))).toBe(false)
+    expect(new Set(opened)).toEqual(new Set(['ithomiini-prueba-offline'])) // the identifier's cache, which the worker reads
+    expect(added).toHaveLength(1)
+    expect(added[0]).toMatch(/\/identificar\/confirmar\/confirmar_visual_manifest\.json$/)
+    // A page the worker has: it kept the list itself as it passed.
     unmount()
     unmount = () => {}
-    await openIdentify({ flag: false })
-    expect(world.pageFiles!().some(u => u.includes('confirmar'))).toBe(false)
+    added.length = 0
+    vi.stubGlobal('caches', fakeCaches)
+    await openIdentify({ worker: true })
+    expect(added).toHaveLength(0)
+    // A list that did not come is not kept; a cache that refuses is not an error of the page.
+    unmount()
+    unmount = () => {}
+    vi.stubGlobal('caches', { open: async () => Promise.reject(new Error('quota')) })
+    const { listRequests, sendPhoto, card } = await openIdentify({ list: ['fail', 'ok'] })
+    expect(listRequests).toHaveLength(1)
+    await sendPhoto(answer([['Heliconius erato', 0.6], ['Heliconius melpomene', 0.35]]))
+    expect(card()!.getAttribute('data-card-id')).toBe('p01_west')
+  })
+
+  it('the page\'s files for airplane mode are what the document lists, a script asked for later included', async () => {
+    await openIdentify()
+    const lazy = Object.assign(document.createElement('link'), { rel: 'modulepreload', href: 'https://example.test/assets/ConfirmarVisualCard-abc.js' })
+    const lazyOld = Object.assign(document.createElement('link'), { rel: 'preload', href: 'https://example.test/assets/info-abc.js' })
+    lazyOld.setAttribute('as', 'script')
+    const font = Object.assign(document.createElement('link'), { rel: 'preload', href: 'https://example.test/fonts/a.woff2' })
+    font.setAttribute('as', 'font')
+    document.head.append(lazy, lazyOld, font)
+    try {
+      const kept = world.pageFiles!()
+      expect(kept[0]).toBe(location.href.split('#')[0])
+      expect(kept).toContain('https://example.test/assets/ConfirmarVisualCard-abc.js')
+      expect(kept).toContain('https://example.test/assets/info-abc.js')
+      expect(kept).not.toContain('https://example.test/fonts/a.woff2')
+    } finally {
+      lazy.remove()
+      lazyOld.remove()
+      font.remove()
+    }
   })
 
   it('with the guides off the page asks for nothing, idle or at a photo', async () => {

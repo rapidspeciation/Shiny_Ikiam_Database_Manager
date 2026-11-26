@@ -136,6 +136,11 @@ describe('the stacked list of a proposal', () => {
     expect(sharedFold(differ)).toBe(0)
     expect(sharedFold(same.slice(0, 1))).toBe(0)
     expect(sharedFold(stackRows([created('a', { Sex: 'female' }), created('b', { Sex: 'male' })], ['Sex'], [], []))).toBe(0)
+    // A row that is not written (its pre-made row was taken) folds nothing: «cada fila» would not be true.
+    const taken = { ...created('c', { Sex: 'male', Bait: 'NA' }), rowTaken: { row: 13699 } as ProposalChange['rowTaken'] }
+    const withRefused = stackRows([created('a', { Sex: 'female', Bait: 'NA' }), created('b', { Sex: 'male', Bait: 'NA' }), taken], ['Sex', 'Bait'], [], ['Bait'])
+    expect(withRefused).toHaveLength(3)
+    expect(sharedFold(withRefused)).toBe(0)
   })
   it('keeps the table\'s marks: a value not written on the line, a row the assistant flags', () => {
     const [row] = stackRows([edited('a', { Death_cause: 'Natural_death', Sex: 'female' }, { inferred: ['Death_cause'], highlight: true })], FIELDS)

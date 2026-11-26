@@ -151,10 +151,11 @@ export const stackToDecide = (rows: StackRow[]) => rows.reduce((n, r) => n + r.f
 
 /**
  * How many template cells every row of the list folds, when it is the same on each (a page of new rows): said once
- * above the rows. 0 when the rows differ or fold nothing (then each row says its own).
+ * above the rows. 0 when the rows differ or fold nothing (then each row says its own). A row that is not written
+ * folds nothing, so with one in the list «cada fila» would not be true.
  */
 export function sharedFold(rows: StackRow[]): number {
-  const counts = new Set(rows.filter(r => r.fields.length).map(r => r.fields.filter(f => f.template).length))
+  const counts = new Set(rows.map(r => r.fields.filter(f => f.template).length))
   const [count] = counts
   return rows.length > 1 && counts.size === 1 && count ? count : 0
 }

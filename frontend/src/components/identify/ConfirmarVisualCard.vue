@@ -166,7 +166,6 @@ function openLightbox() {
           v-for="s in SIDES"
           :key="s"
           type="button"
-          aria-pressed="false"
           class="min-h-11 px-3.5 text-sm font-medium text-fg transition-colors first:rounded-l-md last:rounded-r-md hover:bg-surface-sunken active:bg-brand-soft [&+&]:border-l [&+&]:border-control"
           :data-testid="`confirmar-side-${s}`"
           @click="emit('select-side', s)"

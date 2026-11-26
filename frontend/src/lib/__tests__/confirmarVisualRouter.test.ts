@@ -626,6 +626,8 @@ describe('confirmarVisualRouter — subspecies names as the head sends them reac
     expect(card('w6_05', { subspeciesA: 'Eresia eunice gudruna' }).cardId).toBe('w6_05')
     expect(card('w6_05', { subspeciesB: 'Eresia pelonia ithomiola' }).cardId).toBe('w6_05')
     expect(card('w6_05', { subspeciesB: 'Eresia pelonia pelonia' }).cardId).toBe('w6_05')
+    // The head writes the third form «callonia»; the collection's «calonia» is kept beside it.
+    expect(card('w6_05', { subspeciesB: 'Eresia pelonia callonia' }).cardId).toBe('w6_05')
     expect(card('w6_05', { subspeciesA: 'Eresia eunice gudruna', subspeciesB: 'Eresia pelonia ithomiola' }).cardId).toBe('w6_05')
   })
 
@@ -744,8 +746,34 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
     }
     // A side the person chose, or the GPS gave, is the answer; the lean is not asked.
     expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', sideAndes: 'East', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
-    // So is a subspecies the head names.
-    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', subspeciesA: 'Eresia eunice gudruna', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
+  })
+
+  it('a subspecies the head names does not bring back a guide made for the other side alone', () => {
+    // Tandayapa, the head says Eresia eunice gudruna: the East-only guide stays hidden, as it is at Mindo (side West).
+    const leaned = resolveRegionalRoute(manifest, { pairId: 'w6_05', subspeciesA: 'Eresia eunice gudruna', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL })
+    expect(leaned.status).toBe('no_card_for_side')
+    expect(leaned.cardId).toBeNull()
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', subspeciesA: 'Eresia eunice gudruna', sideAndes: 'West', locale: 'es', rootUrl: ROOT_URL }).status).toBe('conflicting_side_and_subspecies')
+    // Every one-sided pair, every alias it lists, on either taxon: none shows with the lean on the other side.
+    let tried = 0
+    for (const pair of Object.values(manifest.pairs)) {
+      const guides = pair.routes.filter(r => r.status === 'active')
+      const sides = new Set(guides.flatMap(r => r.side_andes))
+      if (guides.length === 0 || sides.size !== 1) continue
+      const lean = sides.has('East') ? 'West' : 'East'
+      for (const route of guides) {
+        for (const [key, aliases] of [['subspeciesA', route.subspecies_a_aliases], ['subspeciesB', route.subspecies_b_aliases]] as const) {
+          for (const alias of aliases) {
+            tried++
+            expect(resolveRegionalRoute(manifest, { pairId: pair.pair_id, [key]: alias, sideLean: lean, locale: 'es', rootUrl: ROOT_URL }).cardId, `${pair.pair_id} ${alias}`).toBeNull()
+          }
+        }
+      }
+    }
+    expect(tried).toBeGreaterThan(150)
+    // The lean on the guide's own side, or a pair with a guide per region: the subspecies routes as with no position.
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', subspeciesA: 'Eresia eunice gudruna', sideLean: 'East', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
+    expect(resolveRegionalRoute(manifest, { pairId: 'p01', subspeciesA: 'Heliconius erato lativitta', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('p01_east_napo')
   })
 
   it('from the page: the two leading species at Tandayapa', () => {
