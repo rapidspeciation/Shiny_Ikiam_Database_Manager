@@ -2,10 +2,10 @@
  * Deterministic regional router for Confirmar visual field-ID cards in /identificar/.
  *
  * Strictly gated behind VITE_CONFIRM_VISUAL_CARDS=1 (default OFF).
- * Implements the exact Wave 2 + Wave 3A + Wave 3B regional & subspecies routing contract:
- *   - Wave 3B (`routing_mode: 'side_only'`): resolves strictly by `(pair_id, side_andes)`
+ * Implements the exact Waves 2, 3A, 3B, 4, 5, and 6 regional & subspecies routing contract:
+ *   - Wave 3B / Wave 5 (`routing_mode: 'side_only'`): resolves strictly by `(pair_id, side_andes)`
  *     (never rejects on subspecies predictions); inseparable pairs return explicit `null`.
- *   - Wave 2 / Wave 3A (`routing_mode: 'subspecies_and_side'`):
+ *   - Wave 2 / Wave 3A / Wave 4 / Wave 6 (`routing_mode: 'subspecies_and_side'`):
  *     1. Subspecies alias match (case-insensitive trimmed, full trinomial OR infraspecific
  *        epithet against `a OR b` aliases); rejects conflicting subspecies or conflicting
  *        side+subspecies; returns explicit `null` for deferred rings and inseparable/held
@@ -14,6 +14,9 @@
  *     3. Unspecified region fallback (`pair.default_card_id` with `regionFallback=true`),
  *        where manual region switching (`preferredCardId`) is permitted among active regional
  *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía).
+ *   - Cross-wave superseding (`superseded_pairs`): when a newer wave rescues an earlier held
+ *     pair (e.g. `w3a_03 -> w5_02`) or supersedes an earlier hold (`w3a_01 -> w5_01`), queries
+ *     for either the old or new pair_id resolve cleanly to the canonical active/verified entry.
  *
  * Pure TypeScript (no DOM requirement for routing logic; manifest fetch is lazy and optional).
  */
@@ -29,6 +32,7 @@ export type RouteRawStatus =
   | 'inseparable_in_photos'
   | 'not_reliably_separable_in_photos'
   | 'held_sex_confounded_small_n'
+  | 'held_small_n_co_mimics'
   | 'held_suspect_reference_labels'
   | 'inseparable_or_unverified_refs'
 
@@ -38,6 +42,7 @@ export type RegionalRouteStatus =
   | 'inseparable_in_photos'
   | 'not_reliably_separable_in_photos'
   | 'held_sex_confounded_small_n'
+  | 'held_small_n_co_mimics'
   | 'held_suspect_reference_labels'
   | 'inseparable_or_unverified_refs'
   | 'conflicting_subspecies_inputs'
@@ -85,20 +90,31 @@ export interface ConfirmarPair {
   species_b: string
   classification: string
   default_card_id: string | null
+  supersedes?: string[]
   routes: ConfirmarRoute[]
 }
 
 export interface ConfirmarVisualManifest {
   schema: 'confirmar-visual-cards/1'
   waves: { wave: string; routing_mode?: RoutingMode; map_version?: string | null; pairs: number; active_cards: number; non_active_pairs: number; audit_status: string }[]
+  verification?: {
+    all_wave_receipts_passed: boolean
+    locked_or_blind_overlap: number
+    canonical_locked_cams_cross_checked?: number
+    canonical_locked_inat_obs_cross_checked?: number
+    canonical_locked_inat_photos_cross_checked?: number
+    webp_quality?: number
+  }
   counts: {
     total_pairs: number
     active_pairs: number
     active_cards: number
     non_active_pairs: number
+    superseded_pairs?: number
     deferred_routes: number
     assets_total: number
   }
+  superseded_pairs?: Record<string, string>
   pairs: Record<string, ConfirmarPair>
 }
 
@@ -191,6 +207,7 @@ export function honestNoteForStatus(
   if (
     status === 'unavailable_deferred_ring' ||
     status === 'held_sex_confounded_small_n' ||
+    status === 'held_small_n_co_mimics' ||
     status === 'held_suspect_reference_labels'
   ) {
     return locale === 'en'
@@ -206,6 +223,7 @@ const HONEST_NOTE_STATUSES = new Set<RegionalRouteStatus>([
   'not_reliably_separable_in_photos',
   'inseparable_or_unverified_refs',
   'held_sex_confounded_small_n',
+  'held_small_n_co_mimics',
   'held_suspect_reference_labels',
 ])
 
@@ -303,11 +321,12 @@ function aliasMatches(inputNorm: string, aliases: string[]): boolean {
 }
 
 function isSideOnlyPair(pair: ConfirmarPair): boolean {
-  return pair.routing_mode === 'side_only' || pair.wave === 'wave3b_non_ithomiini'
+  return pair.routing_mode === 'side_only' || pair.wave === 'wave3b_non_ithomiini' || pair.wave === 'wave5_non_ithomiini'
 }
 
 /**
- * Deterministic Wave 2 / 3A / 3B route resolution for a known pair_id.
+ * Deterministic Waves 2 / 3A / 3B / 4 / 5 / 6 route resolution for a known pair_id
+ * (transparently following cross-wave `superseded_pairs` redirects like `w3a_03 -> w5_02`).
  */
 export function resolveRegionalRoute(
   manifest: ConfirmarVisualManifest,
@@ -321,7 +340,10 @@ export function resolveRegionalRoute(
     rootUrl?: string
   },
 ): RegionalRouteResolution {
-  const pair = manifest.pairs[input.pairId]
+  const canonicalPairId = manifest.pairs[input.pairId]
+    ? input.pairId
+    : (manifest.superseded_pairs?.[input.pairId] ?? input.pairId)
+  const pair = manifest.pairs[canonicalPairId]
   if (!pair) {
     return {
       pairId: input.pairId,
@@ -471,17 +493,22 @@ function findPairForSpecies(
   const n2 = norm(pred2.name)
   if (!n1 || !n2 || n1 === n2) return null
 
+  let fallbackMatch: PairLookupMatch | null = null
   for (const pair of Object.values(manifest.pairs)) {
     const pa = norm(pair.species_a)
     const pb = norm(pair.species_b)
+    let match: PairLookupMatch | null = null
     if (n1 === pa && n2 === pb) {
-      return { pair, subspeciesA: dominantSubspecies(pred1), subspeciesB: dominantSubspecies(pred2) }
+      match = { pair, subspeciesA: dominantSubspecies(pred1), subspeciesB: dominantSubspecies(pred2) }
+    } else if (n1 === pb && n2 === pa) {
+      match = { pair, subspeciesA: dominantSubspecies(pred2), subspeciesB: dominantSubspecies(pred1) }
     }
-    if (n1 === pb && n2 === pa) {
-      return { pair, subspeciesA: dominantSubspecies(pred2), subspeciesB: dominantSubspecies(pred1) }
-    }
+    if (!match) continue
+    // Prefer an active pair over a pure null hold so a legacy hold can never shadow an active card
+    if (pair.routes.some(r => r.status === 'active')) return match
+    fallbackMatch = match
   }
-  return null
+  return fallbackMatch
 }
 
 /** Handle intraspecific subspecies pairs (e.g. p07 Hypothyris euclea intermedia vs pyrippe, p15 Godyris zavaleta). */

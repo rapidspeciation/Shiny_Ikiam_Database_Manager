@@ -27,6 +27,33 @@
       "active_cards": 8,
       "non_active_pairs": 8,
       "audit_status": "PASS"
+    },
+    {
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "confirmar_regional_map_w4_v1",
+      "pairs": 16,
+      "active_cards": 12,
+      "non_active_pairs": 4,
+      "audit_status": "PASS"
+    },
+    {
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "map_version": "2026-11-25-wave5-non-ithomiini-v1",
+      "pairs": 14,
+      "active_cards": 4,
+      "non_active_pairs": 10,
+      "audit_status": "PASS"
+    },
+    {
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "confirmar_regional_map_w6_v1",
+      "pairs": 16,
+      "active_cards": 13,
+      "non_active_pairs": 3,
+      "audit_status": "PASS"
     }
   ],
   "verification": {
@@ -38,14 +65,19 @@
     "webp_quality": 92
   },
   "counts": {
-    "total_pairs": 47,
-    "active_pairs": 34,
-    "active_cards": 35,
-    "non_active_pairs": 13,
+    "total_pairs": 91,
+    "active_pairs": 63,
+    "active_cards": 64,
+    "non_active_pairs": 28,
+    "superseded_pairs": 2,
     "deferred_routes": 2,
-    "assets_total": 70,
-    "source_png_bytes": 62111916,
-    "webp_bytes": 14766072
+    "assets_total": 128,
+    "source_png_bytes": 106715822,
+    "webp_bytes": 26254776
+  },
+  "superseded_pairs": {
+    "w3a_01": "w5_01",
+    "w3a_03": "w5_02"
   },
   "pairs": {
     "p01": {
@@ -90,17 +122,17 @@
               "path": "identificar/confirmar/cards/es/p01_west.webp",
               "width": 1400,
               "height": 1590,
-              "bytes": 204962,
-              "sha256": "91cd72cde48589682e3b92f16b26103603acaf9128e61b61b8715b4cc7990503",
-              "source_png_sha256": "69337a6997db86455fe42f02048076231a91b9f437b385b1e196d4f7d7b40316"
+              "bytes": 204880,
+              "sha256": "d4e6a8e02509ea559511b49d584d490670a821a4f11f3b1d16463960c7bac3c9",
+              "source_png_sha256": "1ced7b8f00c31e902dd35908788c89eb7e71880a3c48ab70436cdfb98c351fee"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p01_west.webp",
               "width": 1400,
               "height": 1539,
-              "bytes": 193806,
-              "sha256": "9439d06b07e585752904e92a1cf56d43dfa5f8434d8418e12a10fc1e2dfc70d6",
-              "source_png_sha256": "0550cd05f4bf5f4a2c325dbe3908a657829013faab38d085cc2482c2a4c5d081"
+              "bytes": 193562,
+              "sha256": "4e86aebd7e40645d0bc470fb67171e25f42fbdca2b63da8f747c7dfea0f20066",
+              "source_png_sha256": "fec4c579b59666ff3d4b3073496d72f9665e6fa8e3c4917afd81ae67877589d7"
             }
           }
         },
@@ -140,17 +172,17 @@
               "path": "identificar/confirmar/cards/es/p01_east_napo.webp",
               "width": 1400,
               "height": 1651,
-              "bytes": 271208,
-              "sha256": "36364cd3ae79718fac481e005719738b548422257aadb024a10cdc50da3f4d9f",
-              "source_png_sha256": "55b1a519521226ba796d7ead918d4a5dfd0520097de57b4762d5315e1b09a339"
+              "bytes": 271102,
+              "sha256": "26deb2a80475dad5c3c1114113091d2f14bc6c5fa0696edf16aaa25a4f8c397d",
+              "source_png_sha256": "3ec2b9229fd9eb18a403bc4d18097a2517f608cf226500630ee28914c3f8ea4b"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p01_east_napo.webp",
               "width": 1400,
               "height": 1600,
-              "bytes": 258270,
-              "sha256": "43936b9365f2e601f9924a679639316d8610eb95016d9afa9c7a83dc38df394b",
-              "source_png_sha256": "a0c3adb3e938f093e4b0608877657b6368067de052ba4381d546b7553150644c"
+              "bytes": 258260,
+              "sha256": "b0ab082f670b87dc65308b3079d5a73b8480951cfa202a00a5838a9db5f068a4",
+              "source_png_sha256": "2fd6ab008fd6dbb5abb045f664986bfd61d840c74e65f866b7b5e552a008aaf8"
             }
           }
         },
@@ -237,17 +269,17 @@
               "path": "identificar/confirmar/cards/es/p02.webp",
               "width": 1400,
               "height": 1951,
-              "bytes": 196858,
-              "sha256": "92ae7c8ca2481915d38d3c8828ed2169ef74f13535e9978f9771e473fae6ff17",
-              "source_png_sha256": "715216a808af029c4b23fbbc6cefe93d2e16a7c1e9f8de1424f51e1dad9de2b7"
+              "bytes": 199044,
+              "sha256": "d6570324c2357ffca72600b0d66793769ac3db5ccdd671e8da2ccb648426b341",
+              "source_png_sha256": "ed2f9374e612ca7b8f55dd1bd8b58dbc519be69022d79b6edf899cbeb280af8b"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p02.webp",
               "width": 1400,
               "height": 1925,
-              "bytes": 193078,
-              "sha256": "c8d60504a3af3258632b573a7689b87e4b1e35d9175ef973d09e4252d333f02e",
-              "source_png_sha256": "30adf8b91fec2680e24ee938e5505b3dee4c68c22a66fc73c0fc8d19f1e97d87"
+              "bytes": 195504,
+              "sha256": "05e85897ce825f6c7827d15d44e00db81fa84d2bad2070e2c642924e0fba56f8",
+              "source_png_sha256": "4ff10a5fce4ce31d4520e50a5fed4e3416d7a4f678d81f123c2221469e5aa494"
             }
           }
         }
@@ -294,18 +326,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p03.webp",
               "width": 1400,
-              "height": 1463,
-              "bytes": 169766,
-              "sha256": "79f74080e327517b74aba0efe8dea73f1585f6286c7c8c9fd0e031b821c2dd56",
-              "source_png_sha256": "68903a0b6d3d09182dec9c0ef0b6a0218ba6ebf305f3b2871a8e636b30a2de70"
+              "height": 1485,
+              "bytes": 174930,
+              "sha256": "a7657e5bb79bc5d9d55d1c292abf39f88ed8e9b1cb7fb9e3b7ef64b621c2f08b",
+              "source_png_sha256": "c4335e6508b6c41459452f18ee843778aa6f34239c44033ddcf625d5ca6fab01"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p03.webp",
               "width": 1400,
-              "height": 1463,
-              "bytes": 167000,
-              "sha256": "c96a719ba26b9a9514bc4d2aa58310bc9d7cb25caf68f66c4c372ba85bcea741",
-              "source_png_sha256": "2bfc267ed6e42563a8eab8933910430570270dda702169098bca8e0b8f8d3193"
+              "height": 1485,
+              "bytes": 171104,
+              "sha256": "c7b0be4fa63427f42f202895c52a684aaee75833420dc5181f29d019f15d77e2",
+              "source_png_sha256": "ac354c3dcb63c8f1ba4b8f2b94d3a70d552ebfd65f483e136a8d5a4f6806bf04"
             }
           }
         }
@@ -351,17 +383,17 @@
               "path": "identificar/confirmar/cards/es/p04.webp",
               "width": 1400,
               "height": 1585,
-              "bytes": 190956,
-              "sha256": "20e84f348fefa5694716521ea8404db8131a1a950235b07cc032df4497151e43",
-              "source_png_sha256": "9db1ae0d5b4d90f24dbcdf6d14eccbf8ebfb99abf95e32bf9841beaac2537542"
+              "bytes": 190856,
+              "sha256": "ad91fbb5e96a816f7141ac07b764618c74af17df06ad845ab00612b4c6966243",
+              "source_png_sha256": "5a586924dc65abf391737ffa62d1061217d596641b78bac7e9019c133f7c7d22"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p04.webp",
               "width": 1400,
               "height": 1585,
-              "bytes": 188302,
-              "sha256": "afd6743ca50bf86fc048953827fbec297f157744a23388f0c75fced0a9f803e9",
-              "source_png_sha256": "ce8cbb7f255eaf2a958539f958c2a23e8671429b707bdc4ac2c5bdb6044252d3"
+              "bytes": 188272,
+              "sha256": "5e38fef26f3038f26a11d5f7a66899f2eb0471e2537f39e243bf719d6fe00e09",
+              "source_png_sha256": "7ce23cf0591c1c01edf5e760be21c5f5ab53e83a4cd48464c9ee58c678ddb52b"
             }
           }
         }
@@ -410,18 +442,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p05.webp",
               "width": 1400,
-              "height": 1336,
-              "bytes": 139938,
-              "sha256": "d08b0079dcf66dc764c2bc6b35a96bef0566930ab5c67cf04bf5e802a03e4cdd",
-              "source_png_sha256": "6787cab616f8a8eb054bca1e010b5d4481660477a31a2404b0e603a69c0b6934"
+              "height": 1358,
+              "bytes": 146778,
+              "sha256": "f07a0a78afb04c5d7ff4f70bdeb1c960b3a4bad23eeda60e5a69f2a4ea242033",
+              "source_png_sha256": "15a890eabf7120bbbe440f4398b04dca6efd78bb04a84dbe7063240c8a3b7bb3"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p05.webp",
               "width": 1400,
-              "height": 1336,
-              "bytes": 135166,
-              "sha256": "507edec7ed1b5292e24fd93a9760cd9e11e84bc6b9c9f862347258a360def970",
-              "source_png_sha256": "ec1836ad841f86292debfc8afbdfc041c8b53cf71d3c0bf1f6c19964ccf619f9"
+              "height": 1358,
+              "bytes": 142006,
+              "sha256": "2a1b4f3b3cd244e08fcdcf4e5a2abd915770e49c175ceda1a172181d656284f3",
+              "source_png_sha256": "8e0f10596fb9b8387225146171de66e470939760e45579cc395a4d219ad93412"
             }
           }
         }
@@ -465,17 +497,17 @@
               "path": "identificar/confirmar/cards/es/p06.webp",
               "width": 1400,
               "height": 1356,
-              "bytes": 158840,
-              "sha256": "448d3c9f5d23dce0d58db430699c123464153ece1631b1807b60b5038715050a",
-              "source_png_sha256": "0b2aff93ee1e88d2d6afb1ed9ddbee6f42dc2f37f3969c48534c6c0df9551c5f"
+              "bytes": 158842,
+              "sha256": "57abc70172b33868402db55fc4fdedb6f5cadc6b176ddef83b9196d1311568f2",
+              "source_png_sha256": "fed395805eb0232e63d5e0f89f8f966f7889477fc5f579708b461a8b5a2209f2"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p06.webp",
               "width": 1400,
               "height": 1356,
-              "bytes": 156376,
-              "sha256": "2f31184563a4ac33314eee2432c52e11660b80c9e1d12cce9839265fb5864523",
-              "source_png_sha256": "7332d2946670cfc1c6152ce03774198ab278f3fd1337a6c0d1922dd500ad41c1"
+              "bytes": 156708,
+              "sha256": "371bb956184786383bbe47625ca3e597bc9e8f361fea1ae08fd1d0aef0f64397",
+              "source_png_sha256": "f15149aef49569967be9129b4683eb38ce93f5385af0ab5bcea12b3ce02ba09c"
             }
           }
         }
@@ -520,17 +552,17 @@
               "path": "identificar/confirmar/cards/es/p07.webp",
               "width": 1400,
               "height": 1535,
-              "bytes": 170118,
-              "sha256": "681899e41aa998f3fd076b29d51f7a5e9c7e4c84f65273e5fdce115c074ebcc6",
-              "source_png_sha256": "a9a5b5b62ef02519d54f649f6faeccfd76b3a4fd61367189f637103c40dc4f51"
+              "bytes": 170238,
+              "sha256": "949f0602e139d3cb2527d14fe3509f2cc75c822445ae3d069f6807bd0453e70b",
+              "source_png_sha256": "6692c819302cbefbe0520712abe48d3b7ecc5523df6df9dbc0ad871170e7ce8b"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p07.webp",
               "width": 1400,
               "height": 1535,
-              "bytes": 162734,
-              "sha256": "a292bb847e1bcacd6710f799c7b3dd33a70304f967b229f22d673e256b12262d",
-              "source_png_sha256": "fbd904d586092d082209c6e1c1720a5a153ddb6abfce4d235932a068d1a4170e"
+              "bytes": 162832,
+              "sha256": "49357471b9ec315c253a6a6a6249bc491c512d3786c169240b8c203e152d843e",
+              "source_png_sha256": "2aa50bf9122f27cbdc4c762b42f19d7d3903d8db0d729b057cde610a9731c7fd"
             }
           }
         }
@@ -577,18 +609,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p08.webp",
               "width": 1400,
-              "height": 1552,
-              "bytes": 164928,
-              "sha256": "87d8f536a2ea9e7f5367bcd3af366f789494ab726e474be0825f2d7a4a6c8f12",
-              "source_png_sha256": "01f22d4231476b2c06cb02a8bf3592aae86fa0d6ad50d063b1a1573758361a15"
+              "height": 1574,
+              "bytes": 169630,
+              "sha256": "8fe26a7ac5df0745232e3007da4e1426eddbb0490ec07d30a3de7e3c0137cbe5",
+              "source_png_sha256": "54d4e816788d307bc0552f2ab0a53f362488af4c680d7c34c66507e04115062b"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p08.webp",
               "width": 1400,
-              "height": 1552,
-              "bytes": 155046,
-              "sha256": "9e71ac884b04727333c31d43b962055a57b9169d44ba780b64cfa66c2fb6b5c2",
-              "source_png_sha256": "3c6d497e5eaa0aa5fb5533c37e0dd80044d45a446d0aca220b969b8fcd2d4be2"
+              "height": 1574,
+              "bytes": 162842,
+              "sha256": "74ea781ea8cdcdd2b620972470ada8cdd011da8efd1f0d681813236405601a6d",
+              "source_png_sha256": "0b4de1fc50d0d14d4eb6a8e299df50bef4de3ca3d1ba9edd158ec907d330e742"
             }
           }
         }
@@ -635,18 +667,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p09.webp",
               "width": 1400,
-              "height": 1437,
-              "bytes": 173916,
-              "sha256": "d91128e018c59c4e33ef6e44af5c56774690461e5ca3359c7a7bc5de83aa801a",
-              "source_png_sha256": "4c83a4436b058834aa1fef40e54eb89581ce258146a6cd0c9e4ed51259fe10e6"
+              "height": 1459,
+              "bytes": 176268,
+              "sha256": "b4103cba20990b59c3117486b8dd89ea4e45662788e2683d6b98833c5806b028",
+              "source_png_sha256": "194fbc986782d1b03dccc58cfa9691f6ffe8e80f6202befa87d12518b8570582"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p09.webp",
               "width": 1400,
-              "height": 1437,
-              "bytes": 166332,
-              "sha256": "1d2853cda6bdcad7af604e19bf56e5ffb40a7a84a61586d95445b37026f93baa",
-              "source_png_sha256": "c6b467e8ae9eb801a39b5798d288d078e53ea4833682549c892ba4b746ff7bb7"
+              "height": 1459,
+              "bytes": 168726,
+              "sha256": "a3d937c478f2c6cbc4ec828098702f9324d401f092ae147e86b7e50ff48a19f9",
+              "source_png_sha256": "030feff029d5a94fe8eb87a7543f066410fcaf3dd7267eedaade7c69498e145b"
             }
           }
         }
@@ -692,17 +724,17 @@
               "path": "identificar/confirmar/cards/es/p10.webp",
               "width": 1400,
               "height": 1560,
-              "bytes": 171292,
-              "sha256": "94f5bd8f91e9af20d1314b20784c240949db740f5ff2ba8357479649923538f2",
-              "source_png_sha256": "e967e6089de7be83d75dcc6e244616f8e0f369632ea45681df2fc74f4e218a9e"
+              "bytes": 173092,
+              "sha256": "b10b96f3434b31fdfb634c95f2c5f47fdcc0e47eae8833f09bc503042ec5f4bb",
+              "source_png_sha256": "f54f471e2fd340267ed363cf660a524415fa69a0b438ed48a551559b43b6b4cf"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p10.webp",
               "width": 1400,
               "height": 1560,
-              "bytes": 164460,
-              "sha256": "c35b9ed4ff1cdd9497dbeed2f3b3fb74b4fb93903aa5c51268302a310c36dce5",
-              "source_png_sha256": "435acaed698d62c9e57fccbc0a47255c405f947d6ea11be8bccea52cfd0d0a7f"
+              "bytes": 166664,
+              "sha256": "ce6164b6e009a51020767f0531c01e297d5be7a158b015fb2a6b465287cbe5eb",
+              "source_png_sha256": "64b0870320c4f4c8322827e75a5951fffe9342937fbcde3d4a2f3360e2084b20"
             }
           }
         }
@@ -748,18 +780,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p11.webp",
               "width": 1400,
-              "height": 1534,
-              "bytes": 157474,
-              "sha256": "33e6963df948c38e02ef6de7598b6235c6e924dfd9452e2e04fde2efffedd100",
-              "source_png_sha256": "c6ada906e4b3769c34ab18b378226547a7083fbb5ffc63cdb6cbaa17b5584c85"
+              "height": 1556,
+              "bytes": 158362,
+              "sha256": "cd044e70596e96e9e6ae8dadd30140afbfc9d9fd08c091a0a0e162de42b83ede",
+              "source_png_sha256": "cceeae984c639cd4c3557489f2425723be2b9552f76f1d175c1bd2f2f26c477d"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p11.webp",
               "width": 1400,
-              "height": 1534,
-              "bytes": 153502,
-              "sha256": "1f9d6dcdd3fde5004d1ef76e3e558a16d095f5cb8aaf7c6b65a274c1467db74f",
-              "source_png_sha256": "8aa59d9a6db0540f1f14a7a399582155b42435c7689720cb8807e01787338468"
+              "height": 1556,
+              "bytes": 154334,
+              "sha256": "8c1b45139a0d82444ee1f5e6bc0df682fc00fc5589646e43206e459103a5dd8d",
+              "source_png_sha256": "b947f6a88bb0e930ef7a6218cd342efbcac0f1ed761cc6bfddaf97ae85e654cf"
             }
           }
         }
@@ -807,18 +839,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p12.webp",
               "width": 1400,
-              "height": 1387,
-              "bytes": 147434,
-              "sha256": "13c95948f71e0d7c12ceddb3b81a09dac8818eb4f5544f5f8ae97ed92aff8de9",
-              "source_png_sha256": "d57442aa2cea5424712ec2c4ee1b8cba457d5ec8ebdb74115e0a931ee4515fd6"
+              "height": 1409,
+              "bytes": 149710,
+              "sha256": "b3f0ec8031a40d0145b42693681c11f9fcf6a9b4c9028de2d6d2a5bde6a7829a",
+              "source_png_sha256": "c7b21e82d052fde5f5add3aed0189ac3f5d40410fdaee89d715ce0ff5d2bff31"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p12.webp",
               "width": 1400,
-              "height": 1361,
-              "bytes": 144346,
-              "sha256": "f80651b6af9b19ba8dedfcbacf28f79a10d796d562a7b691617bfd42582470a4",
-              "source_png_sha256": "b56f207e0a98af28531fb3939ee94d1d70c6cea40f9637e16fa85c8beb4b72a9"
+              "height": 1383,
+              "bytes": 147058,
+              "sha256": "90ca12c1739c24fdcd3509488703845491dc54b09b180203d7903c82bbca13e8",
+              "source_png_sha256": "893f9619291a7996b65d1c57b2364d7362e55b9538ded1539829259bdf7b7c05"
             }
           }
         }
@@ -863,17 +895,17 @@
               "path": "identificar/confirmar/cards/es/p13.webp",
               "width": 1400,
               "height": 1422,
-              "bytes": 153476,
-              "sha256": "d57930dca54f0b60398251ec557c6c08ff93be08d2afacdc3dac648c0ef60d22",
-              "source_png_sha256": "dfa6cfe532070c25763e00f6060bdbea09ea8b8ec412bd4e851341aa981580ee"
+              "bytes": 155108,
+              "sha256": "61b75af52e17a4de10348983085429fcac24b45e1c50cda6b511df6570006799",
+              "source_png_sha256": "3e32b9a86b3ef8b7ecb5e60d10e94d0b7bc5b1b71e7c777dd829f7b73b4adc80"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p13.webp",
               "width": 1400,
               "height": 1422,
-              "bytes": 148134,
-              "sha256": "356db9253a3e5d6f2df28e44372b233a1f75fac1952c9860d58f62a465ea5b1e",
-              "source_png_sha256": "7ab271d043b95465d89751b9f53d1ab2f01a4209b53dd2cd48ba73a6cd90d87f"
+              "bytes": 150188,
+              "sha256": "a9ea6008120ae990dc6f34eadbb86519c06f7593e88e60d0bc7f59979ea30530",
+              "source_png_sha256": "29f556b376b9204e4690dcd9b6edadffff4829cde9c03078278d542c357740ed"
             }
           }
         }
@@ -924,18 +956,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/p14.webp",
               "width": 1400,
-              "height": 2105,
-              "bytes": 250640,
-              "sha256": "ca1e2a36f8f22c6121b6a11d5843a0e8eb713825b63b978ceedf806d82f6eb72",
-              "source_png_sha256": "bd43874383b6f30b07a14ae2130388313ebc8037ea8b414f434707361f1a15ab"
+              "height": 2127,
+              "bytes": 254316,
+              "sha256": "c1a2b0e26332313e4872568a4b2f40aa74f9379f2c1976f0ac0c2247a3930b50",
+              "source_png_sha256": "1a0d8dfc606d48b262be1663ac1b989c5cf627992d4c4e1b5523fa188d82100c"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p14.webp",
               "width": 1400,
-              "height": 2131,
-              "bytes": 244880,
-              "sha256": "ac4a35496f147ac05e8835484c1b8ba1a59fc4755ad6dfdb9f94ae76750fd03b",
-              "source_png_sha256": "d67c7b6e93f552ea6e7ef084357de9f46df8d151a863f8563c2fd88b62f587b1"
+              "height": 2153,
+              "bytes": 249338,
+              "sha256": "cb9fd06ed581b85aa92573aa9459f308dfbbf70021d18d11e186718e79742ab4",
+              "source_png_sha256": "80e1f9358e9ed70d4c57311236d7343197f25e9166624040daf4bf4c5486e6b1"
             }
           }
         }
@@ -981,51 +1013,19 @@
               "path": "identificar/confirmar/cards/es/p15.webp",
               "width": 1400,
               "height": 1474,
-              "bytes": 173136,
-              "sha256": "b05989d214d3c1f8685210a6e64ee68c0f6187b7703f8fcea7a9476a95727807",
-              "source_png_sha256": "e9d36020a6f129b1878f84e9aea8555fcdc5d1570668d3e202337360b565df65"
+              "bytes": 172812,
+              "sha256": "d01df08f174398919105a8ff427e0a90ff2d0cb2be53c9f1615aa1f63b3cfe0e",
+              "source_png_sha256": "eff70c3464de01aa4b9888e36db217ac6be3e6028c987b8db6f0a76c6b542228"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p15.webp",
               "width": 1400,
               "height": 1474,
-              "bytes": 171556,
-              "sha256": "de9cec514003fdec0dddb75270c2e902ac86b882a69f611a18260c762796e543",
-              "source_png_sha256": "cba96168c7d2771abdccbc67abda113371b694be717d15c779e8123498c6a000"
+              "bytes": 171046,
+              "sha256": "44003bc95aacf44d76ec3c19d38a4076799462c4dc99f9f7c867a32152262dd3",
+              "source_png_sha256": "08fc5490d922a877dabd6935eb3c090b44d6fee13dbb4eff3d537463ccec4825"
             }
           }
-        }
-      ]
-    },
-    "w3a_01": {
-      "pair_id": "w3a_01",
-      "wave": "wave3a_dv",
-      "routing_mode": "subspecies_and_side",
-      "species_a": "Morpho achilles",
-      "species_b": "Morpho helenor",
-      "classification": "held_sex_confounded_small_n",
-      "default_card_id": null,
-      "routes": [
-        {
-          "card_id": null,
-          "status": "held_sex_confounded_small_n",
-          "side_andes": [
-            "East"
-          ],
-          "side_default_for": [],
-          "region_bucket": "oriente",
-          "region_es": "Oriente",
-          "region_en": "East Ecuador",
-          "taxon_a": "Morpho achilles phokylides",
-          "taxon_b": "Morpho helenor",
-          "subspecies_a_aliases": [
-            "phokylides",
-            "Morpho achilles phokylides",
-            "Morpho achilles"
-          ],
-          "subspecies_b_aliases": [
-            "Morpho helenor"
-          ]
         }
       ]
     },
@@ -1059,41 +1059,6 @@
             "aequatorialis",
             "Opsiphanes invirae aequatorialis",
             "Opsiphanes invirae"
-          ]
-        }
-      ]
-    },
-    "w3a_03": {
-      "pair_id": "w3a_03",
-      "wave": "wave3a_dv",
-      "routing_mode": "subspecies_and_side",
-      "species_a": "Nessaea hewitsonii",
-      "species_b": "Nessaea obrinus",
-      "classification": "held_sex_confounded_small_n",
-      "default_card_id": null,
-      "routes": [
-        {
-          "card_id": null,
-          "status": "held_sex_confounded_small_n",
-          "side_andes": [
-            "East"
-          ],
-          "side_default_for": [],
-          "region_bucket": "oriente",
-          "region_es": "Oriente",
-          "region_en": "East Ecuador",
-          "taxon_a": "Nessaea hewitsonii",
-          "taxon_b": "Nessaea obrinus obrinus",
-          "subspecies_a_aliases": [
-            "hewitsonii",
-            "hewitsoni",
-            "Nessaea hewitsonii",
-            "Nessaea hewitsonii hewitsonii"
-          ],
-          "subspecies_b_aliases": [
-            "obrinus",
-            "Nessaea obrinus",
-            "Nessaea obrinus obrinus"
           ]
         }
       ]
@@ -1141,18 +1106,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_04.webp",
               "width": 1400,
-              "height": 2052,
-              "bytes": 265376,
-              "sha256": "0a0829e9f9f04703a449afc83e164216d38d8d3fec256251a79444af0f69c601",
-              "source_png_sha256": "f2b5f6d070f56e178efcf0699bb6caa3af7db6033e8feccf6a31e8aebb6a5ab1"
+              "height": 2074,
+              "bytes": 261500,
+              "sha256": "80d310b10ebb459043c2a01bdfa4bb6aef97f1a62f2a1de2b2ef84d6a417dc3e",
+              "source_png_sha256": "4467906ed3f67ac187d6d76edbd967964e60b8f0327f4a55d7393ce655983444"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_04.webp",
               "width": 1400,
-              "height": 2027,
-              "bytes": 255686,
-              "sha256": "655e67eda8513b9b883ef5e9496c669a017e495ccefaa97c2e828787ee0197d5",
-              "source_png_sha256": "3630e82c7f0824a8353f07eaef2ee1e868b01afb2ba274386f204064625ef415"
+              "height": 2049,
+              "bytes": 251130,
+              "sha256": "2041b9f07ef56825bdcdca6845e01e34375f6ffae5976f0b02f1ecac2dde5ed9",
+              "source_png_sha256": "18a4cb873e8c15d207b895494765afcf3664026389914c367afc039b11787023"
             }
           }
         }
@@ -1200,18 +1165,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_05.webp",
               "width": 1400,
-              "height": 1499,
-              "bytes": 215486,
-              "sha256": "1c0abcd2e26ab5888fed28b1b1fc6310668325e6ca0eb4c2d1e06c18f0f96824",
-              "source_png_sha256": "65c609aa92210642353d0aa6c0e889eb76fc713f942427ad2268608a408ff175"
+              "height": 1521,
+              "bytes": 217034,
+              "sha256": "f8e59a31e4cc9e564a777731e34325df0debc86eb409533bea3ec79e7f1c9a28",
+              "source_png_sha256": "fb23b441c7e980749bba805d70807670e0d37d5cdd3c14e7b6093e967018c3ed"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_05.webp",
               "width": 1400,
-              "height": 1499,
-              "bytes": 212728,
-              "sha256": "8be64a2c130708fdcb1e3062709fa2b4f413aa008759162856c92b11ff111545",
-              "source_png_sha256": "e07180f736666656271100e8d81245545ba3f54247975ce52bb995004eaa0cda"
+              "height": 1521,
+              "bytes": 213754,
+              "sha256": "4f5a49404570fa3a16a4e5723af82c55fb5463405f5783145f4c83d5fbdf6490",
+              "source_png_sha256": "372cdd1f5c684eb453a2b3a57987cab5b776f886dd2a08022f9f65c7e9d2aaff"
             }
           }
         }
@@ -1260,18 +1225,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_06.webp",
               "width": 1400,
-              "height": 2052,
-              "bytes": 274164,
-              "sha256": "fed76fd196bf5c55eccdbf172b2d589987d387ff5209689d7cb65cafe4e0912c",
-              "source_png_sha256": "44cb5634219b55a69b8a81dfa4dd076cfc201da52b66b8d29427ce063d1c62f7"
+              "height": 2074,
+              "bytes": 277758,
+              "sha256": "557b95cfc4fd5f2554f9246daac23510a8bb6c7ca36877e2e6fda595d769c0e2",
+              "source_png_sha256": "cf3a98f6ca3a6cd3ff4c8ed92cff11b2e6fa07d118d5be527cc837b125a7a405"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_06.webp",
               "width": 1400,
-              "height": 2052,
-              "bytes": 266850,
-              "sha256": "447b005e6c8f53fd0b1781ab24c02527c402171f17427bc39593cd75e5b47c0b",
-              "source_png_sha256": "db7ada9a612334d7870a9f70abddc42310e34b729d75681295fcae4df2085fa2"
+              "height": 2074,
+              "bytes": 268542,
+              "sha256": "2106bd24aa3bc46717cd7908dee774f21761bf80047d40d373de660e830280be",
+              "source_png_sha256": "9493a8e2c3f1c07615f4954ca35f610a3ce72dbf52650ae4543c974100e559e7"
             }
           }
         }
@@ -1323,18 +1288,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_07.webp",
               "width": 1400,
-              "height": 1519,
-              "bytes": 190318,
-              "sha256": "31d5f65e8c8289ff42e1d924b8f378708cc3519488620f961d4af1f5e7446108",
-              "source_png_sha256": "a3e0f25288e20935781eba8c3cee43f6caae328764d1eff4d85fdcf2c15e7bfc"
+              "height": 1541,
+              "bytes": 194680,
+              "sha256": "6ab97d70b2b7313662f5fca084135aa711d166c911fec786bcec5866264b7df2",
+              "source_png_sha256": "5be6a7c5495eaffde7c1ebd7ef3f1d0236f9d9af12945fe1ba3884d32eb6f2a3"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_07.webp",
               "width": 1400,
-              "height": 1494,
-              "bytes": 185194,
-              "sha256": "c32f915e8db5c29b11f28bd31ed81de1f4b421e445f42a9052a72dc5bd4f8748",
-              "source_png_sha256": "6bc025a09a2056bd81568dd19cd4244713a1afcce5d3079f2943a759eefdc4f5"
+              "height": 1516,
+              "bytes": 188152,
+              "sha256": "d99c104268722231a66fb6147e6e637898d7b6d1ba7dd0b1805236f5fa0e414b",
+              "source_png_sha256": "6e35ee9e40a5c3fa6cfe46323c5f0016a55b6333ee5113ee2d492ccc2b929666"
             }
           }
         }
@@ -1383,18 +1348,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_08.webp",
               "width": 1400,
-              "height": 1049,
-              "bytes": 134278,
-              "sha256": "b58c59289d9c26bb7ef9623d8d67a899959de163211e806364713e0f0e8a9d9c",
-              "source_png_sha256": "458b0c08561e3b904c86919741ad58768dcacf2aa56114a4d319526fda3ea2b8"
+              "height": 1071,
+              "bytes": 138618,
+              "sha256": "a1b23eedcce04a6d34ba4941a4dbb4b54164bc18c81d8e337eec6d367574d381",
+              "source_png_sha256": "22542b57e9c79133961877a1264416ad96301ec70e8a5d56e30801fb33294b54"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_08.webp",
               "width": 1400,
-              "height": 999,
-              "bytes": 123104,
-              "sha256": "f32262a20ee182c65213a73d22cec76c29914f84e29c4ca409a5c3d93265328e",
-              "source_png_sha256": "87f0f888a3382b62111346d069226191efb6211e2386d2bf589167fb3c6c8160"
+              "height": 1021,
+              "bytes": 130366,
+              "sha256": "1f8d749cbbd9fd3fc794243162ec652896d2b215fe0223420c000711cb970f11",
+              "source_png_sha256": "8234749754f30bb7f5b07cfa35a63930fa441c8c7c17a0764e8cd94c93429aaa"
             }
           }
         }
@@ -1509,17 +1474,17 @@
               "path": "identificar/confirmar/cards/es/w3a_11.webp",
               "width": 1400,
               "height": 1517,
-              "bytes": 178010,
-              "sha256": "f52aaf16c976bc448587981f4ac90707640c02df7c7f8e7fafd24a26251531ef",
-              "source_png_sha256": "ffc14bd3f4b0178a659f387ab5010e71364de316f9fd505685d5ca9355d51d8e"
+              "bytes": 182218,
+              "sha256": "d5b78987c8ed1ce7138839269151b06b87ceff2e5353e0918bf4156131c6fd0f",
+              "source_png_sha256": "0ea3520fd026ee460138836c5984dc96afe2a71d0bed6b570002f3ef7e880998"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_11.webp",
               "width": 1400,
               "height": 1517,
-              "bytes": 171422,
-              "sha256": "3af138111296fa8b5126ef405faf9e0a531393cfe0c97fc0e75578aa47937370",
-              "source_png_sha256": "b91e0beecd34839d2d5a05ae3a34ca3c0b01aafe7778289773382f9ad8537933"
+              "bytes": 175608,
+              "sha256": "b07521dfeb5bcc08fdc90f7ced5d0e5d08ba9500bd7fdfa4a861ff9adf7f906b",
+              "source_png_sha256": "504b859443763eb3cd08507750cf5f01f699ca52e39c634f033738169b416b34"
             }
           }
         }
@@ -1566,18 +1531,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_12.webp",
               "width": 1400,
-              "height": 2107,
-              "bytes": 272552,
-              "sha256": "694665f982e5f37d7d7d04c2e9069ee2be5044394b9c1c5f64af2fb71838400a",
-              "source_png_sha256": "a66cb7491e69f17e46bb3755fafb75ef769e526f5e4e977b356b1e7cd5d2fd68"
+              "height": 2129,
+              "bytes": 273774,
+              "sha256": "ce70628fc17c33a8ca62bd0813c15a4b3392cb7aaceb0e2426d5c167b33bd221",
+              "source_png_sha256": "2aba4da5875ae9140da239f5199c062e958566ce86fcbc934136e2abd5c0ea3f"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_12.webp",
               "width": 1400,
-              "height": 2082,
-              "bytes": 266778,
-              "sha256": "0e1a64faee31d6fe8ead0a2241bf0d9d7d50efe3bb5067601ef9090ddf8bd419",
-              "source_png_sha256": "152a252915464bd92a922916039518c32813a2daedc7c2ebfc743e5ad7cd4b75"
+              "height": 2104,
+              "bytes": 266096,
+              "sha256": "610cc5ec11fba67d12128f8a3494c52325e10aaf2b6f0bb7b4605d8f83bc6b15",
+              "source_png_sha256": "5b8e66d9ca30803cbc69a47f57af97c107fa6e92ff7a0ab34095dd4eceb7b21b"
             }
           }
         }
@@ -1623,17 +1588,17 @@
               "path": "identificar/confirmar/cards/es/w3a_13.webp",
               "width": 1400,
               "height": 1034,
-              "bytes": 148400,
-              "sha256": "4571af1b3331c46fdf41c8a75168fe8942b32b6db2aba667a8a303ef72db5a4c",
-              "source_png_sha256": "5f34a0229d8b924e038cc8f169d2ffca855caff643f6bd5e06193f78a87fb648"
+              "bytes": 147936,
+              "sha256": "4f01c4057ea31917017e3b4153bd5bae29775e4022b5f737d2af2d1b5d6879cf",
+              "source_png_sha256": "c7e5b8875592134208b7f0589647183144c819f014a9c29311948589156f9ecf"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_13.webp",
               "width": 1400,
               "height": 1034,
-              "bytes": 137056,
-              "sha256": "4a28555d4dfa2ab36e8d37f57182cb24c91e32ea072964c4b870e1d5694efd24",
-              "source_png_sha256": "7c56f89d6768c05d1d0c766f7b56f5dd4deb0ffe2a701d61c5c0c8f5b74f98b4"
+              "bytes": 136282,
+              "sha256": "38cb35c53aad1144d7e2e310bf6a0910e111f377d0bf3016ba38f8a198538138",
+              "source_png_sha256": "21b068c344e898c5a3935f023de1b73cc21afa337cb4efabf65b6a4614b2b8d6"
             }
           }
         }
@@ -1680,18 +1645,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_14.webp",
               "width": 1400,
-              "height": 1529,
-              "bytes": 195020,
-              "sha256": "fdc6de860b946dd3263c12ca3afef00479b40d01df8870bbd72f7519b95cf7b6",
-              "source_png_sha256": "82a65bdb7e48f66f54c4b74b56f844dbaa3ff0bb353d34d740139f542940f3d8"
+              "height": 1551,
+              "bytes": 195970,
+              "sha256": "6f46fd1519852c26c68e9e99261e814292b612917d0df63ef0e644d023d2ee28",
+              "source_png_sha256": "3a05eb0d1814592311738ee660724606ee232d1f49401356d9681033c1a28ba4"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_14.webp",
               "width": 1400,
-              "height": 1529,
-              "bytes": 184894,
-              "sha256": "badd37866e91c99d9728457120cdf598e9860796f6697e04e3103e943dd31f62",
-              "source_png_sha256": "e74038ff0678b61e2aa559a43af47f02ece6b49fac71d53ea4b96b2ded7ac6b3"
+              "height": 1551,
+              "bytes": 184824,
+              "sha256": "06cb34ff3a2b4f9a90c34f78afa956cb52cb4ed777533e7da1a0f0b195ce3b84",
+              "source_png_sha256": "f4409eb05a30e69c21ec72f99ae4694db649402d02de1a92adea20d24241a496"
             }
           }
         }
@@ -1739,18 +1704,18 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_15.webp",
               "width": 1400,
-              "height": 1524,
-              "bytes": 238106,
-              "sha256": "77f26df70275a9c490179900e725b86600ba026f8f9714b796145d360199fe58",
-              "source_png_sha256": "ee0a057ef175d8a9aabd16b705bde4f6fcf112000244754c285546b668c178ac"
+              "height": 1546,
+              "bytes": 246486,
+              "sha256": "bf1f581a7b8a047d51bafaf06935f7de79bdaa82b58e84d28bf7bfb899bae494",
+              "source_png_sha256": "433cd06c64f56c7b3e909599ec59f2dc493e34a4900db446ecf2c2a9a2a60c1d"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_15.webp",
               "width": 1400,
-              "height": 1524,
-              "bytes": 233866,
-              "sha256": "b0c42194ad378133d1eaca5f81ecec83fd0a7470fa8605cf35eb824c311f711f",
-              "source_png_sha256": "8090ad906a22c62df50c7f385bb5d156eaf2ca984ac809eb4d8bf2d244560ae3"
+              "height": 1546,
+              "bytes": 237704,
+              "sha256": "0428e2bcb5751c9a633f51b0fc0f6b37162fe0c37d4d2da5d227aab27af60b16",
+              "source_png_sha256": "da2123a626107a3e66003d4406d344c6f83b0d2b5153670f9417993eec94d394"
             }
           }
         }
@@ -1796,17 +1761,17 @@
               "path": "identificar/confirmar/cards/es/w3a_16.webp",
               "width": 1400,
               "height": 1494,
-              "bytes": 174380,
-              "sha256": "feeb3cab30487422b7791ccdaa55563d020baf15a9339599e2718b78dab3e5d5",
-              "source_png_sha256": "54a4d8074b7aca3ba45e33d32b18bbe0c4c7891e752f3e9deb46a7adc7d103c4"
+              "bytes": 174436,
+              "sha256": "8d4173404821455076d4e9942ff898143c42e12d3b170efd0b1a49de72f55dcd",
+              "source_png_sha256": "aa76af9aef71e24b01849c2571ab48179cf5c560a2d1be513c0c726b1f218262"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_16.webp",
               "width": 1400,
               "height": 1468,
-              "bytes": 165540,
-              "sha256": "ef9f56430fb11f62f0909e270a17628dab8df16b3ba806615cd64a25f1580477",
-              "source_png_sha256": "7901ef5788e86ba28209e3517fecf0ff597e737bf363ae0dcdb6433bbd47b26d"
+              "bytes": 165534,
+              "sha256": "bc9496024b6d6b3bc81f5ef2429993eaad7084ba9c58b93b22dc13eef1b36c15",
+              "source_png_sha256": "c5ed18dfcf720153c53a537dac2dd2eb1ee4c8ea79d483e395bbb73ffeeaaa9e"
             }
           }
         }
@@ -2472,6 +2437,2100 @@
               "bytes": 191286,
               "sha256": "86613e7a3c0098943431382f23f80c7cedd5db9caa674a101d6adebbfec5d477",
               "source_png_sha256": "2633bd66dcdcaff67df2420bd1d3945622693dfcf1a97ce77568adb0a848d26f"
+            }
+          }
+        }
+      ]
+    },
+    "w4_01": {
+      "pair_id": "w4_01",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Brevioleria aelia",
+      "species_b": "Hypoleria alema",
+      "classification": "single_region",
+      "default_card_id": "w4_01",
+      "routes": [
+        {
+          "card_id": "w4_01",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Brevioleria aelia",
+          "taxon_b": "Hypoleria alema",
+          "subspecies_a_aliases": [
+            "oncidia",
+            "orolina"
+          ],
+          "subspecies_b_aliases": [
+            "chrysodonia",
+            "karschi",
+            "karsehi",
+            "f. mestiza",
+            "ina"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_01.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 165744,
+              "sha256": "351b05d9ec7b4033201069b8c9f57c7560f543b34675fa352149ae56d54de5da",
+              "source_png_sha256": "027de80a48ff2f81a976733aefaa741228495aa6935b1367664533559d79107d"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_01.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 156026,
+              "sha256": "b64c90f9427a12fec26f036e55392509534dacba996b1fe2d9f268774a588398",
+              "source_png_sha256": "1e5a9e637665430a1f729d3522386160b8c42d589e065971081219566f110061"
+            }
+          }
+        }
+      ]
+    },
+    "w4_02": {
+      "pair_id": "w4_02",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria makrena",
+      "species_b": "Oleria tremona",
+      "classification": "single_region",
+      "default_card_id": "w4_02",
+      "routes": [
+        {
+          "card_id": "w4_02",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria makrena makrenita",
+          "taxon_b": "Oleria tremona",
+          "subspecies_a_aliases": [
+            "makrenita",
+            "makrena"
+          ],
+          "subspecies_b_aliases": [
+            "tremona",
+            "benigna"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_02.webp",
+              "width": 1400,
+              "height": 1512,
+              "bytes": 184940,
+              "sha256": "a604142ef4fed871b63e102699cdccd62b7f25878a139832cb7f08158c8ccf8e",
+              "source_png_sha256": "079406c6fb9c73415c38f80062745a456ff2234b0cb4a7369d204985e23c8742"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_02.webp",
+              "width": 1400,
+              "height": 1487,
+              "bytes": 177848,
+              "sha256": "bbd90c6cdaa182aedfc644c4fab508eba9ea1b6ac40bb61d7726ab345ca25483",
+              "source_png_sha256": "5dce4c18d7b6794cc9c461d4ab1861cb48ecec5d15f5999786d7aa0462b1ba26"
+            }
+          }
+        }
+      ]
+    },
+    "w4_03": {
+      "pair_id": "w4_03",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria athalina",
+      "species_b": "Oleria santineza",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_suspect_reference_labels",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria athalina banjana",
+          "taxon_b": "Oleria santineza",
+          "subspecies_a_aliases": [
+            "banjana"
+          ],
+          "subspecies_b_aliases": [
+            "reducida",
+            "santineza"
+          ]
+        }
+      ]
+    },
+    "w4_04": {
+      "pair_id": "w4_04",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris fluonia",
+      "species_b": "Mechanitis mazaeus",
+      "classification": "single_region",
+      "default_card_id": "w4_04",
+      "routes": [
+        {
+          "card_id": "w4_04",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris fluonia",
+          "taxon_b": "Mechanitis mazaeus",
+          "subspecies_a_aliases": [
+            "berna"
+          ],
+          "subspecies_b_aliases": [
+            "fallax",
+            "mazaeus"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_04.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 202516,
+              "sha256": "f0fc4e471d3d41c797590f808bb66a8cbe865bbb48a660529af4932cef18751d",
+              "source_png_sha256": "cbcbcbf8d51c2deb4a4bc17a72511021a1e5039c64a016ae809cce759593675b"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_04.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 196410,
+              "sha256": "7082fa129b061a0135ec09066348bd66da1dfb9c0533eb83717873b06fe05831",
+              "source_png_sha256": "2baebcd3acb1d5b41e988c314f9859113ff0ac9f857d5b028106b9632d45c41b"
+            }
+          }
+        }
+      ]
+    },
+    "w4_05": {
+      "pair_id": "w4_05",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris anastasia",
+      "species_b": "Mechanitis messenoides",
+      "classification": "single_region",
+      "default_card_id": "w4_05",
+      "routes": [
+        {
+          "card_id": "w4_05",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris anastasia",
+          "taxon_b": "Mechanitis messenoides",
+          "subspecies_a_aliases": [
+            "honesta",
+            "bicolora",
+            "intermedia",
+            "ecuadorina"
+          ],
+          "subspecies_b_aliases": [
+            "deceptus",
+            "deceptus- phasianita",
+            "intermedia",
+            "f. intermedia",
+            "messenoides",
+            "phasianita"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_05.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 180976,
+              "sha256": "43e55739bc86b3223953a2125e308cfbc5de331f9ff4f9bb04be596e8fedb078",
+              "source_png_sha256": "a69242bd6c83fd946be418b565bf847a1655dcdb6c859b9d80ebe9eaa58ff778"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_05.webp",
+              "width": 1400,
+              "height": 1481,
+              "bytes": 171850,
+              "sha256": "24819259cf76dfd05a7757b9e14bd3fc1e465328c8ff101719f6450bd2cbc490",
+              "source_png_sha256": "752049ef1690a4c8638b98bef8e0ec5244bf1a46bac4ab8b58d727a8f588fb28"
+            }
+          }
+        }
+      ]
+    },
+    "w4_06": {
+      "pair_id": "w4_06",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Forbestra olivencia",
+      "species_b": "Hypothyris fluonia",
+      "classification": "single_region",
+      "default_card_id": "w4_06",
+      "routes": [
+        {
+          "card_id": "w4_06",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Forbestra olivencia",
+          "taxon_b": "Hypothyris fluonia",
+          "subspecies_a_aliases": [
+            "juntana"
+          ],
+          "subspecies_b_aliases": [
+            "berna"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_06.webp",
+              "width": 1400,
+              "height": 1997,
+              "bytes": 238278,
+              "sha256": "1875a909cc99b3ea6186ba3432cceb4e1dfc73222971e9feee72be1cc715a609",
+              "source_png_sha256": "6d75b88dffe49abf515c50d81e442e7bc81f0446b2711f2c995869970a55f3bd"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_06.webp",
+              "width": 1400,
+              "height": 1997,
+              "bytes": 232372,
+              "sha256": "03d72824c8a85f0d081461d10793603d9a0b5b0f4c5138a8422a19e8eb76aaa0",
+              "source_png_sha256": "70b7707f9b9b6cde2cc20e91f30471c974fa7c185de6001200e17f41fa606f69"
+            }
+          }
+        }
+      ]
+    },
+    "w4_07": {
+      "pair_id": "w4_07",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Forbestra proceris",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region",
+      "default_card_id": "w4_07",
+      "routes": [
+        {
+          "card_id": "w4_07",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Forbestra proceris",
+          "taxon_b": "Mechanitis polymnia",
+          "subspecies_a_aliases": [],
+          "subspecies_b_aliases": [
+            "proceriformis",
+            "eurydice"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_07.webp",
+              "width": 1400,
+              "height": 2044,
+              "bytes": 263914,
+              "sha256": "c9691d37fedd330b545f5add8274004ca6ef0254e6855e58144fad87f95b2d65",
+              "source_png_sha256": "c8eb20698d39a18a869f73d41804f6d1d15d38e4c4c882e8ad785887e6ca6e75"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_07.webp",
+              "width": 1400,
+              "height": 2044,
+              "bytes": 248876,
+              "sha256": "07cd1deb921d7801e24777e1f9049925365f639268da0356d5c5cc48d3201324",
+              "source_png_sha256": "82ad63420b0eb68caee33d00e62eb773d6c9be18f3cf4c1ce2e8acc441ecbce0"
+            }
+          }
+        }
+      ]
+    },
+    "w4_08": {
+      "pair_id": "w4_08",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris lycaste",
+      "species_b": "Ithomia iphianassa",
+      "classification": "single_region",
+      "default_card_id": "w4_08",
+      "routes": [
+        {
+          "card_id": "w4_08",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Hypothyris lycaste",
+          "taxon_b": "Ithomia iphianassa",
+          "subspecies_a_aliases": [
+            "antonia",
+            "ssp-f"
+          ],
+          "subspecies_b_aliases": [
+            "occidentissa",
+            "ethilla"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_08.webp",
+              "width": 1400,
+              "height": 1588,
+              "bytes": 212482,
+              "sha256": "4b7f77ad6874fed1b4ce53447d766093d8cee0543233c9b22fc3e4417425b506",
+              "source_png_sha256": "0222cf51fd9e59fb37ebed9cb7eec419a140b79f3770b1d79925df2b22a2d4c1"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_08.webp",
+              "width": 1400,
+              "height": 1537,
+              "bytes": 204438,
+              "sha256": "3cadb3b11add5797081d9f82cdea14c33c57d595d91ec17f163292f9832b7c79",
+              "source_png_sha256": "270ce679d6115a0f729bfbffb679632e6bd4fe1f2f6bc769823c1335a37ec4e8"
+            }
+          }
+        }
+      ]
+    },
+    "w4_09": {
+      "pair_id": "w4_09",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia cleora",
+      "species_b": "Ithomia iphianassa",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "inseparable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Ithomia cleora",
+          "taxon_b": "Ithomia iphianassa",
+          "subspecies_a_aliases": [],
+          "subspecies_b_aliases": [
+            "occidentissa",
+            "ethilla"
+          ]
+        }
+      ]
+    },
+    "w4_10": {
+      "pair_id": "w4_10",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Aeria eurimedia",
+      "species_b": "Scada zibia",
+      "classification": "single_region",
+      "default_card_id": "w4_10",
+      "routes": [
+        {
+          "card_id": "w4_10",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Aeria eurimedia latistriga",
+          "taxon_b": "Scada zibia xanthina",
+          "subspecies_a_aliases": [
+            "latistriga"
+          ],
+          "subspecies_b_aliases": [
+            "xanthina"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_10.webp",
+              "width": 1400,
+              "height": 1541,
+              "bytes": 212830,
+              "sha256": "3233ccf13732ea551dafd346ff6dc71d70b9fee8397bfdbe95532714ff3759a6",
+              "source_png_sha256": "a633485aeb4e440d40f83bb66c0af686df761636c726ddda90b58538c3479905"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_10.webp",
+              "width": 1400,
+              "height": 1515,
+              "bytes": 199880,
+              "sha256": "f8a53a19bb667bfe53f034ba1ead8a2eb7000e09efa4c9dace62f8b4b56d4c24",
+              "source_png_sha256": "2998cbd48bd30eb38a4460379c2ca528a0b9707e9e9c5df88f5d9aceaa41645a"
+            }
+          }
+        }
+      ]
+    },
+    "w4_11": {
+      "pair_id": "w4_11",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius cydno",
+      "species_b": "Heliconius eleuchia",
+      "classification": "single_region",
+      "default_card_id": "w4_11",
+      "routes": [
+        {
+          "card_id": "w4_11",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Heliconius cydno",
+          "taxon_b": "Heliconius eleuchia",
+          "subspecies_a_aliases": [
+            "f. yellow",
+            "f. white",
+            "f. intermedia"
+          ],
+          "subspecies_b_aliases": [
+            "primularis",
+            "eleusinus",
+            "eleusinus x primularis"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_11.webp",
+              "width": 1400,
+              "height": 1529,
+              "bytes": 204308,
+              "sha256": "bf96d0ce4e1c63631e4b138bc23b2e883785a1f42fa67e4a553633b6f027d4b1",
+              "source_png_sha256": "e00bd6ccb0b251a5fc08e1371fa33b5fcdd6b8074509181c57d3c0f5ac8f6524"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_11.webp",
+              "width": 1400,
+              "height": 1529,
+              "bytes": 198456,
+              "sha256": "20bbd46bd9d34c04cacdb0c61d0d43ba75168e04fca08464c23af937fc9ec0c7",
+              "source_png_sha256": "7e92b550ae4e3162bfc7d1396bc417194202156666a39cf55128a31d005305df"
+            }
+          }
+        }
+      ]
+    },
+    "w4_12": {
+      "pair_id": "w4_12",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia hyala",
+      "species_b": "Pteronymia glauca",
+      "classification": "single_region",
+      "default_card_id": "w4_12",
+      "routes": [
+        {
+          "card_id": "w4_12",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Ithomia hyala hyala",
+          "taxon_b": "Pteronymia glauca",
+          "subspecies_a_aliases": [
+            "hyala"
+          ],
+          "subspecies_b_aliases": [],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_12.webp",
+              "width": 1400,
+              "height": 1500,
+              "bytes": 177436,
+              "sha256": "160c8f0cc1f43d6dc0e0185e735d0b7cc32fbb4e3fb99258338cb7293aec8b23",
+              "source_png_sha256": "bd3900d16a4a2ce0a4ba48467d4039f8740d72ef64f52e0371b0a24bd9acb0b4"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_12.webp",
+              "width": 1400,
+              "height": 1500,
+              "bytes": 160872,
+              "sha256": "257b4f2621b5332d258f5f19e7bc3e041154f2357d3f44076c3106bc5b3a2580",
+              "source_png_sha256": "a9a45ed60cd4af34a66871c1fc028a01a659e38a2fb5b85548999158e0ad8563"
+            }
+          }
+        }
+      ]
+    },
+    "w4_13": {
+      "pair_id": "w4_13",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria padilla",
+      "species_b": "Pteronymia alissa",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_small_n_co_mimics",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Oleria padilla padilla",
+          "taxon_b": "Pteronymia alissa alissa",
+          "subspecies_a_aliases": [
+            "padilla"
+          ],
+          "subspecies_b_aliases": [
+            "alissa"
+          ]
+        }
+      ]
+    },
+    "w4_14": {
+      "pair_id": "w4_14",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypoleria lavinia",
+      "species_b": "Pseudoscada troetschi",
+      "classification": "single_region",
+      "default_card_id": "w4_14",
+      "routes": [
+        {
+          "card_id": "w4_14",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Hypoleria lavinia riffarthi",
+          "taxon_b": "Pseudoscada troetschi litoralis",
+          "subspecies_a_aliases": [
+            "riffarthi"
+          ],
+          "subspecies_b_aliases": [
+            "litoralis"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_14.webp",
+              "width": 1400,
+              "height": 1462,
+              "bytes": 165550,
+              "sha256": "8c636029e7e6fcff320b7df1c86bffbe82c55a11b00a84d1934879c424bba7b5",
+              "source_png_sha256": "f558271dc4c3709ed343450a5b2ae74590cf0f13d492a285dab391eebf344be5"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_14.webp",
+              "width": 1400,
+              "height": 1462,
+              "bytes": 160248,
+              "sha256": "6041675a191568d5e5baead494dabdea219a75323c5ad6435b165416898b2e18",
+              "source_png_sha256": "16e8256a1209a71b0cf24b9c688e3d70a07adfcc66977e38b68c1e463fd50bc3"
+            }
+          }
+        }
+      ]
+    },
+    "w4_15": {
+      "pair_id": "w4_15",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heterosais giulia",
+      "species_b": "Hypoleria lavinia",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_sex_confounded_small_n",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Heterosais giulia pallidula",
+          "taxon_b": "Hypoleria lavinia riffarthi",
+          "subspecies_a_aliases": [
+            "pallidula",
+            "caucaensis"
+          ],
+          "subspecies_b_aliases": [
+            "riffarthi"
+          ]
+        }
+      ]
+    },
+    "w4_16": {
+      "pair_id": "w4_16",
+      "wave": "wave4_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hyposcada schausi",
+      "species_b": "Oleria amalda",
+      "classification": "single_region",
+      "default_card_id": "w4_16",
+      "routes": [
+        {
+          "card_id": "w4_16",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Hyposcada schausi lactea",
+          "taxon_b": "Oleria amalda",
+          "subspecies_a_aliases": [
+            "lactea"
+          ],
+          "subspecies_b_aliases": [
+            "modesta",
+            "faunula"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w4_16.webp",
+              "width": 1400,
+              "height": 1600,
+              "bytes": 191178,
+              "sha256": "1b3ed33c231c10ebff0a0bc4cf3d1d8a3a34a0644ef500f7da9e34297713a6ed",
+              "source_png_sha256": "2fb0fc5719b68c18bc201c766ee032022f694281eb0a335d6671a19717150ee8"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w4_16.webp",
+              "width": 1400,
+              "height": 1600,
+              "bytes": 182918,
+              "sha256": "9419fdf42412fae6ecf29b9470e0a215d82f523f880803130623cb3d628f55e7",
+              "source_png_sha256": "dd49ddbd96ec59d5da204c6f456bbc746c7b52521a2a7b4b5f99bcb4680377aa"
+            }
+          }
+        }
+      ]
+    },
+    "w5_01": {
+      "pair_id": "w5_01",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Morpho achilles",
+      "species_b": "Morpho helenor",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Morpho achilles phokylides",
+          "taxon_b": "Morpho helenor theodorus",
+          "subspecies_a_aliases": [
+            "Morpho achilles phokylides (Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Morpho helenor theodorus (Oriente)",
+            "Morpho helenor rugitaeniatus / maculata (Occidente — allopatric)"
+          ]
+        }
+      ],
+      "supersedes": [
+        "w3a_01"
+      ]
+    },
+    "w5_02": {
+      "pair_id": "w5_02",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Nessaea hewitsonii",
+      "species_b": "Nessaea obrinus",
+      "classification": "single_region",
+      "default_card_id": "w5_02",
+      "routes": [
+        {
+          "card_id": "w5_02",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Nessaea hewitsonii hewitsonii",
+          "taxon_b": "Nessaea obrinus obrinus",
+          "subspecies_a_aliases": [
+            "Nessaea hewitsonii hewitsonii (Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Nessaea obrinus obrinus (Oriente)"
+          ],
+          "view_badge_es": "Anverso machos · con cautela",
+          "view_badge_en": "Dorsal males · with caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w5_02.webp",
+              "width": 1400,
+              "height": 1018,
+              "bytes": 217448,
+              "sha256": "58db0b5c4ead764724db82c2881c551550d1ba16b189465b0d49c47bb7370209",
+              "source_png_sha256": "298b7555f63e60d4bbe3204452de660b33695634daa076f7a05039b09e7d546e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w5_02.webp",
+              "width": 1400,
+              "height": 1018,
+              "bytes": 208810,
+              "sha256": "766a26d9697220c96752d8ea9fbacef41f9ded7aa54ca8c60abfb537f5cdd4a8",
+              "source_png_sha256": "1119b08388895126a9b966549135661da7cfc008fe6e56cec9dc590f769966bd"
+            }
+          }
+        }
+      ],
+      "supersedes": [
+        "w3a_03"
+      ]
+    },
+    "w5_03": {
+      "pair_id": "w5_03",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Heliconius elevatus",
+      "species_b": "Heliconius melpomene",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius elevatus willmotti",
+          "taxon_b": "Heliconius melpomene",
+          "subspecies_a_aliases": [
+            "Heliconius elevatus willmotti (Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Heliconius melpomene aglaope (Oriente)",
+            "Heliconius melpomene ecuadorensis (Oriente)",
+            "Heliconius melpomene malleti (Oriente)",
+            "Heliconius melpomene plesseni + 16+ ff. mestizas (Oriente)"
+          ]
+        }
+      ]
+    },
+    "w5_04": {
+      "pair_id": "w5_04",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Perisama dorbignyi",
+      "species_b": "Perisama lebasii",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Perisama dorbignyi dorbignyi",
+          "taxon_b": "Perisama lebasii",
+          "subspecies_a_aliases": [
+            "Perisama dorbignyi dorbignyi (paula/mola synonymised by Zubek et al. 2025; aldasi in SW Loja)"
+          ],
+          "subspecies_b_aliases": [
+            "Perisama lebasii ambatensis (Oriente)",
+            "Perisama lebasii selva (Oriente)",
+            "Perisama lebasii 'phenix' (South Oriente)"
+          ]
+        }
+      ]
+    },
+    "w5_05": {
+      "pair_id": "w5_05",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Perisama humboldtii",
+      "species_b": "Perisama tryphena",
+      "classification": "single_region",
+      "default_card_id": "w5_05",
+      "routes": [
+        {
+          "card_id": "w5_05",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Perisama humboldtii",
+          "taxon_b": "Perisama tryphena",
+          "subspecies_a_aliases": [
+            "Perisama humboldtii humboldtii (Oriente)",
+            "Perisama humboldtii ismaeli (Occidente)"
+          ],
+          "subspecies_b_aliases": [
+            "Perisama tryphena pastaza (North/Central Oriente)",
+            "Perisama tryphena pallida (South Oriente — clinal/weakly distinct per .eu)"
+          ],
+          "view_badge_es": "Solo vista ventral",
+          "view_badge_en": "Underside view only",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w5_05.webp",
+              "width": 1400,
+              "height": 1069,
+              "bytes": 185142,
+              "sha256": "d13e4263b1ff4d0cc71c3645f31545ae916311582336b44f830b6edc81b65fca",
+              "source_png_sha256": "3ebe8173c479d2b13ff6da8e99150debb64e63e9cc4564e998f33c2145dc088a"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w5_05.webp",
+              "width": 1400,
+              "height": 1022,
+              "bytes": 177290,
+              "sha256": "5d3bdcf492bb6e4106f77496637028a14502eac8f0977554be46fc6bace22899",
+              "source_png_sha256": "0e7215e4259c547207280508d3ca42f75cec181129129f64f298bc7bce3df498"
+            }
+          }
+        }
+      ]
+    },
+    "w5_06": {
+      "pair_id": "w5_06",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Perisama bomplandii",
+      "species_b": "Perisama dorbignyi",
+      "classification": "widespread_single_card",
+      "default_card_id": "w5_06",
+      "routes": [
+        {
+          "card_id": "w5_06",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Perisama bomplandii",
+          "taxon_b": "Perisama dorbignyi",
+          "subspecies_a_aliases": [
+            "Perisama bomplandii ultramarina (North/Central Oriente)",
+            "Perisama bomplandii albipennis (South Oriente)",
+            "Perisama bomplandii parabomplandii / aequatorialis (Occidente)"
+          ],
+          "subspecies_b_aliases": [
+            "Perisama dorbignyi dorbignyi (Oriente; paula/mola synonymised 2025)",
+            "Perisama dorbignyi aldasi (SW Loja / local Occidente)"
+          ],
+          "view_badge_es": "Solo vista ventral · con cautela",
+          "view_badge_en": "Underside only · with caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w5_06.webp",
+              "width": 1400,
+              "height": 1054,
+              "bytes": 203772,
+              "sha256": "88e6cd079963f0619c759bd3e75b32c0fb3a489d0b8586d7f31b24ba47b2dec8",
+              "source_png_sha256": "4b9370cbb43c14300852a6df77d52bcc910bbd1bfc9fe8283c2d468911b4780c"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w5_06.webp",
+              "width": 1400,
+              "height": 1054,
+              "bytes": 201834,
+              "sha256": "df97fba877dab4b7dbbb08e6520aff85696b4580ab9f79b1eebda317019c840b",
+              "source_png_sha256": "e55eb292b1d69718f5fc35b25371d9707e22557e7804adee19555459f3a916d6"
+            }
+          }
+        }
+      ]
+    },
+    "w5_07": {
+      "pair_id": "w5_07",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Morpho eugenia",
+      "species_b": "Morpho marcus",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Morpho eugenia",
+          "taxon_b": "Morpho marcus intermedia",
+          "subspecies_a_aliases": [
+            "Morpho eugenia (Oriente — subspecies unverified on .eu)"
+          ],
+          "subspecies_b_aliases": [
+            "Morpho marcus intermedia (Oriente)"
+          ]
+        }
+      ]
+    },
+    "w5_08": {
+      "pair_id": "w5_08",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Ceratinia neso",
+      "species_b": "Ceratinia tutia",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Ceratinia neso espriella",
+          "taxon_b": "Ceratinia tutia",
+          "subspecies_a_aliases": [
+            "Ceratinia neso espriella (Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Ceratinia tutia callichroma (Oriente)",
+            "Ceratinia tutia radiosa (Oriente)",
+            "Ceratinia tutia poecila / azarina / transversa (Oriente)",
+            "Ceratinia tutia singularis (Occidente — allopatric)"
+          ]
+        }
+      ]
+    },
+    "w5_09": {
+      "pair_id": "w5_09",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Dynamine paulina",
+      "species_b": "Dynamine postverta",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Dynamine paulina thalassina",
+          "taxon_b": "Dynamine postverta postverta",
+          "subspecies_a_aliases": [
+            "Dynamine paulina thalassina (Occidente; Oriente ssp. uncertain per .eu)"
+          ],
+          "subspecies_b_aliases": [
+            "Dynamine postverta postverta (Occidente & South)"
+          ]
+        }
+      ]
+    },
+    "w5_10": {
+      "pair_id": "w5_10",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Opsiphanes invirae",
+      "species_b": "Opsiphanes quiteria",
+      "classification": "widespread_single_card",
+      "default_card_id": "w5_10",
+      "routes": [
+        {
+          "card_id": "w5_10",
+          "status": "active",
+          "side_andes": [
+            "East",
+            "West"
+          ],
+          "side_default_for": [
+            "East",
+            "West"
+          ],
+          "region_bucket": "both",
+          "region_es": "Oriente y Occidente",
+          "region_en": "East & West Ecuador",
+          "taxon_a": "Opsiphanes invirae",
+          "taxon_b": "Opsiphanes quiteria",
+          "subspecies_a_aliases": [
+            "Opsiphanes invirae sticheli (Occidente)",
+            "Opsiphanes invirae aequatorialis (Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Opsiphanes quiteria angostura (Occidente)",
+            "Opsiphanes quiteria quaestor (Oriente)"
+          ],
+          "view_badge_es": "Solo vista ventral · con cautela",
+          "view_badge_en": "Underside only · with caution",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w5_10.webp",
+              "width": 1400,
+              "height": 1054,
+              "bytes": 201904,
+              "sha256": "bd592a35050eb0cbf86cf9b87cf35f253cc415a39beb336595aa24bf45598ad5",
+              "source_png_sha256": "343ee860cf26522a8fbd602e1d0bcb22630e407f095ef8618c596b8bc515e843"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w5_10.webp",
+              "width": 1400,
+              "height": 1054,
+              "bytes": 195540,
+              "sha256": "065f182ade2dd3e22d9e740d4e5f63e2a1835c70feb554c4fb6da010ac2302f2",
+              "source_png_sha256": "df3db6d80d3fa1980df422861ebaf6ef0add35c68fc169a55e0d3545fddccff4"
+            }
+          }
+        }
+      ]
+    },
+    "w5_11": {
+      "pair_id": "w5_11",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Prepona laertes",
+      "species_b": "Prepona pylene",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Prepona laertes",
+          "taxon_b": "Prepona pylene jordani",
+          "subspecies_a_aliases": [
+            "Prepona laertes (monotypic per Bonfantti 2014 / .eu)"
+          ],
+          "subspecies_b_aliases": [
+            "Prepona pylene jordani (Occidente)"
+          ]
+        }
+      ]
+    },
+    "w5_12": {
+      "pair_id": "w5_12",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Parides erithalion",
+      "species_b": "Parides iphidamas",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Parides erithalion",
+          "taxon_b": "Parides iphidamas calogyna",
+          "subspecies_a_aliases": [
+            "Parides erithalion palmasensis (NW Occidente)",
+            "Parides erithalion chinchipensis (SW Occidente)",
+            "Parides erithalion lacydes (Oriente — allopatric)"
+          ],
+          "subspecies_b_aliases": [
+            "Parides iphidamas calogyna (Occidente)"
+          ]
+        }
+      ]
+    },
+    "w5_13": {
+      "pair_id": "w5_13",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Parides erithalion",
+      "species_b": "Parides panares",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Parides erithalion",
+          "taxon_b": "Parides panares erythrus",
+          "subspecies_a_aliases": [
+            "Parides erithalion palmasensis (NW Occidente)",
+            "Parides erithalion chinchipensis (SW Occidente)"
+          ],
+          "subspecies_b_aliases": [
+            "Parides panares erythrus (Occidente)"
+          ]
+        }
+      ]
+    },
+    "w5_14": {
+      "pair_id": "w5_14",
+      "wave": "wave5_non_ithomiini",
+      "routing_mode": "side_only",
+      "species_a": "Epargyreus clavicornis",
+      "species_b": "Epargyreus exadeus",
+      "classification": "not_reliably_separable_in_photos",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "not_reliably_separable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Epargyreus clavicornis",
+          "taxon_b": "Epargyreus exadeus exadeus",
+          "subspecies_a_aliases": [
+            "Epargyreus clavicornis tenda (Occidente & North Oriente)",
+            "Epargyreus clavicornis clavicornis (Sangay Oriente)"
+          ],
+          "subspecies_b_aliases": [
+            "Epargyreus exadeus exadeus (Ecuador — queried on cotacachi.eu)"
+          ]
+        }
+      ]
+    },
+    "w6_01": {
+      "pair_id": "w6_01",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius numata",
+      "species_b": "Melinaea menophilus",
+      "classification": "single_region",
+      "default_card_id": "w6_01",
+      "routes": [
+        {
+          "card_id": "w6_01",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius numata",
+          "taxon_b": "Melinaea menophilus",
+          "subspecies_a_aliases": [
+            "bicoloratus",
+            "euphrasius",
+            "euphone",
+            "lenaeus",
+            "messene"
+          ],
+          "subspecies_b_aliases": [
+            "menophilus",
+            "zaneka"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_01.webp",
+              "width": 1400,
+              "height": 1598,
+              "bytes": 216648,
+              "sha256": "d974c24d90a984f747b4981ab0670f5f16bb779e2c0f77335180ea01e9852a33",
+              "source_png_sha256": "068a068f1536b7f19107506d30751daaab226e383a9b8becdaec0a02da79305e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_01.webp",
+              "width": 1400,
+              "height": 1547,
+              "bytes": 209654,
+              "sha256": "3a0da6fbab30616f7e1faac91833823a96f02dd1d5a81210bc7400df2b4d1378",
+              "source_png_sha256": "e8769aaeab03ebf5eef36fb5465a5f7c898e2297f7ab9f5e4b8d8cce8812464f"
+            }
+          }
+        }
+      ]
+    },
+    "w6_02": {
+      "pair_id": "w6_02",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius melpomene",
+      "species_b": "Heliconius timareta",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_suspect_reference_labels",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius melpomene malleti",
+          "taxon_b": "Heliconius timareta",
+          "subspecies_a_aliases": [
+            "malleti"
+          ],
+          "subspecies_b_aliases": [
+            "ssp. nov.",
+            "timareta",
+            "insolita/contigua"
+          ]
+        }
+      ]
+    },
+    "w6_03": {
+      "pair_id": "w6_03",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius telesiphe",
+      "species_b": "Podotricha telesiphe",
+      "classification": "single_region",
+      "default_card_id": "w6_03",
+      "routes": [
+        {
+          "card_id": "w6_03",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius telesiphe",
+          "taxon_b": "Podotricha telesiphe",
+          "subspecies_a_aliases": [
+            "sotericus",
+            "telesiphe"
+          ],
+          "subspecies_b_aliases": [
+            "tithaustes",
+            "tithoutes",
+            "tithraustes",
+            "telesiphe"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_03.webp",
+              "width": 1400,
+              "height": 1504,
+              "bytes": 219652,
+              "sha256": "950df7c08ceeae1b208ebd83e6e855e66077fea52f5441d72ccc59606132d31e",
+              "source_png_sha256": "afdde68f89865f3dcd726bc986fc739556c670c5b669392a0c64ca668bb9e454"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_03.webp",
+              "width": 1400,
+              "height": 1504,
+              "bytes": 219522,
+              "sha256": "7c84bc436b14907e83b211d7a024d6db0033a94c60f39513bb1f1807c0c3603f",
+              "source_png_sha256": "bed555df5f701dbc917f349f9242db01a8efa5a26d1c236d648ef2b7e3a1064d"
+            }
+          }
+        }
+      ]
+    },
+    "w6_04": {
+      "pair_id": "w6_04",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius congener",
+      "species_b": "Heliconius sara",
+      "classification": "single_region",
+      "default_card_id": "w6_04",
+      "routes": [
+        {
+          "card_id": "w6_04",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius congener congener",
+          "taxon_b": "Heliconius sara sara",
+          "subspecies_a_aliases": [
+            "congener"
+          ],
+          "subspecies_b_aliases": [
+            "sara",
+            "thamar"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_04.webp",
+              "width": 1400,
+              "height": 1578,
+              "bytes": 182394,
+              "sha256": "b7e3bc6232f093471002c27fbc2ea6efcc6641fcba7ad64c504f922c294af954",
+              "source_png_sha256": "f84277df5b968be974152f4e8bf5cbc5d73e7e9cfbf32f196c322552103fa076"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_04.webp",
+              "width": 1400,
+              "height": 1552,
+              "bytes": 167188,
+              "sha256": "141b839b077b9130e52890402f8014ea7585df4fb1f38e9455011146c2c88990",
+              "source_png_sha256": "815febc0941fff72da896455e93201f2a76bc6ac35b01af82515de694e4d728d"
+            }
+          }
+        }
+      ]
+    },
+    "w6_05": {
+      "pair_id": "w6_05",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Eresia eunice",
+      "species_b": "Eresia pelonia",
+      "classification": "single_region",
+      "default_card_id": "w6_05",
+      "routes": [
+        {
+          "card_id": "w6_05",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Eresia eunice",
+          "taxon_b": "Eresia pelonia",
+          "subspecies_a_aliases": [
+            "gudruna?"
+          ],
+          "subspecies_b_aliases": [
+            "f. ithomiola",
+            "f. calonia",
+            "f. pelonia"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_05.webp",
+              "width": 1400,
+              "height": 1593,
+              "bytes": 219624,
+              "sha256": "21f7e70c22e0d6abf080d5ae3341489677c1623ba11b2554f092f0b437af5712",
+              "source_png_sha256": "0f1195bb9d43d997e58ccfc29907639dc469c28891a7e55e17f0e9aae3e26acd"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_05.webp",
+              "width": 1400,
+              "height": 1542,
+              "bytes": 208420,
+              "sha256": "b43408d99cb682e05fa4c154724b277b8443e51a1bdec75dc3867411e9caa775",
+              "source_png_sha256": "ad58629020be71f32833acbaa2132ed14be0f49ae93e55b5beff3e0cd3ef6a20"
+            }
+          }
+        }
+      ]
+    },
+    "w6_06": {
+      "pair_id": "w6_06",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia salapia",
+      "species_b": "Napeogenes inachia",
+      "classification": "single_region",
+      "default_card_id": "w6_06",
+      "routes": [
+        {
+          "card_id": "w6_06",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Ithomia salapia",
+          "taxon_b": "Napeogenes inachia pozziana",
+          "subspecies_a_aliases": [
+            "salapia",
+            "travella/derasa",
+            "derasa",
+            "f. travella"
+          ],
+          "subspecies_b_aliases": [
+            "pozziana"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_06.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 201002,
+              "sha256": "b6d54cfb6ebbc78b8f92eb3b4cb4d2a43641e3c2dfdee532e39ebacc6f61b4a5",
+              "source_png_sha256": "b34e630648b30bb96ab16c0c3ec14ec71fb38443205d0c7a19cdcdc8bd07c30e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_06.webp",
+              "width": 1400,
+              "height": 1555,
+              "bytes": 190706,
+              "sha256": "e4cf4d4dda153df6d8aa533cfc459d6287ed0824a8d74e3366ca773c453f726d",
+              "source_png_sha256": "e8da6f75b78eb6fe08791665795829ac6798101d3c067d305e13d94ad554b3d8"
+            }
+          }
+        }
+      ]
+    },
+    "w6_07": {
+      "pair_id": "w6_07",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Godyris dircenna",
+      "species_b": "Godyris zavaleta",
+      "classification": "single_region",
+      "default_card_id": "w6_07",
+      "routes": [
+        {
+          "card_id": "w6_07",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Godyris dircenna dircenna",
+          "taxon_b": "Godyris zavaleta",
+          "subspecies_a_aliases": [
+            "dircenna"
+          ],
+          "subspecies_b_aliases": [
+            "matronalis"
+          ],
+          "view_badge_es": "Vista dorsal",
+          "view_badge_en": "Upperside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_07.webp",
+              "width": 1400,
+              "height": 1542,
+              "bytes": 196936,
+              "sha256": "c6dcfc1d53126818b2553d0410e1e7ad57fd002882b1c6bb68dfa33ca761597d",
+              "source_png_sha256": "1f5eba5b2e40593790305f9254f30a1f3861d32b0e62bf3cef1c2f2c2cd8701e"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_07.webp",
+              "width": 1400,
+              "height": 1567,
+              "bytes": 189968,
+              "sha256": "fa85c00c679102ab775b0119fcd0ff3a981c01a3412a93a5af1fd38b35b2a744",
+              "source_png_sha256": "494731365f59bb28c5d73ec508eb5e0c2cfe01a817768d77cbac36c37c73bb85"
+            }
+          }
+        }
+      ]
+    },
+    "w6_08": {
+      "pair_id": "w6_08",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria makrena",
+      "species_b": "Oleria santineza",
+      "classification": "single_region",
+      "default_card_id": "w6_08",
+      "routes": [
+        {
+          "card_id": "w6_08",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria makrena makrenita",
+          "taxon_b": "Oleria santineza",
+          "subspecies_a_aliases": [
+            "makrenita",
+            "makrena"
+          ],
+          "subspecies_b_aliases": [
+            "reducida",
+            "santineza"
+          ],
+          "view_badge_es": "Vista ventral",
+          "view_badge_en": "Underside view",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_08.webp",
+              "width": 1400,
+              "height": 1552,
+              "bytes": 202398,
+              "sha256": "1f7a7276a880b046601ad974e69eaf9426bb4bf0f98c93369f01975d21c13eb2",
+              "source_png_sha256": "7fc90e310b7f8f24bc84b2c75ad5abc3c2b9f57969927b4d7f5287004c59f780"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_08.webp",
+              "width": 1400,
+              "height": 1527,
+              "bytes": 192038,
+              "sha256": "8b9a2de7f8a2a2fbe0182813d6b7f6cb87edb71d0244bf7dd5c483627d843db6",
+              "source_png_sha256": "3ec711645a865023e657dd4cf728fa95bad18d392ac28e068ff985afbd4fe5e0"
+            }
+          }
+        }
+      ]
+    },
+    "w6_09": {
+      "pair_id": "w6_09",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria santineza",
+      "species_b": "Oleria tremona",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "inseparable_in_photos",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria santineza",
+          "taxon_b": "Oleria tremona",
+          "subspecies_a_aliases": [
+            "reducida",
+            "santineza"
+          ],
+          "subspecies_b_aliases": [
+            "tremona",
+            "benigna"
+          ]
+        }
+      ]
+    },
+    "w6_10": {
+      "pair_id": "w6_10",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Pteronymia primula",
+      "species_b": "Pteronymia vestilla",
+      "classification": "single_region",
+      "default_card_id": "w6_10",
+      "routes": [
+        {
+          "card_id": "w6_10",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Pteronymia primula primula",
+          "taxon_b": "Pteronymia vestilla sparsa",
+          "subspecies_a_aliases": [
+            "primula"
+          ],
+          "subspecies_b_aliases": [
+            "sparsa"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_10.webp",
+              "width": 1400,
+              "height": 1497,
+              "bytes": 188210,
+              "sha256": "dab1a98c8578033ba0ed51f63e3d3e2216863af644135f2365dbd813dd2da671",
+              "source_png_sha256": "be21eb00e84f3c1b5d881c697eb4e466696cc8fa959ae1e957a26099c6497a09"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_10.webp",
+              "width": 1400,
+              "height": 1497,
+              "bytes": 183868,
+              "sha256": "d7dcce0101cc033721a3a9c6b424d0607e19d8fa62c8f2aa29aea2564b675adb",
+              "source_png_sha256": "bcdfc828bfdc3d3d1e665820fc6676216123003c7eda01c6522c8cc000352dd0"
+            }
+          }
+        }
+      ]
+    },
+    "w6_11": {
+      "pair_id": "w6_11",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Napeogenes inachia",
+      "species_b": "Pteronymia primula",
+      "classification": "single_region",
+      "default_card_id": "w6_11",
+      "routes": [
+        {
+          "card_id": "w6_11",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Napeogenes inachia pozziana",
+          "taxon_b": "Pteronymia primula primula",
+          "subspecies_a_aliases": [
+            "pozziana"
+          ],
+          "subspecies_b_aliases": [
+            "primula"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_11.webp",
+              "width": 1400,
+              "height": 1459,
+              "bytes": 189424,
+              "sha256": "2358743461908be87ea3fe66bb776391923f4a1558532a06b719ead0f34310fa",
+              "source_png_sha256": "0cf43dca18b0d39b4f1fcdde896acf8b2f9afdccafd184b97d3c1a8b0fb609b0"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_11.webp",
+              "width": 1400,
+              "height": 1459,
+              "bytes": 183646,
+              "sha256": "abd0492173de7b00b995eec635b7a67ce86030e380c67ce6111697ac8c8895ca",
+              "source_png_sha256": "9e777be63bca2e5c3014c90879dcde8fde6403530f43b4f608fe0495f67b4f93"
+            }
+          }
+        }
+      ]
+    },
+    "w6_12": {
+      "pair_id": "w6_12",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Callithomia lenea",
+      "species_b": "Dircenna dero",
+      "classification": "single_region",
+      "default_card_id": "w6_12",
+      "routes": [
+        {
+          "card_id": "w6_12",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Callithomia lenea",
+          "taxon_b": "Dircenna dero caliginosa",
+          "subspecies_a_aliases": [
+            "zelie",
+            "pulcheria"
+          ],
+          "subspecies_b_aliases": [
+            "caliginosa"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_12.webp",
+              "width": 1400,
+              "height": 1517,
+              "bytes": 170370,
+              "sha256": "3cd1b8c2b77d27692b5e92e18027123b53f628d37ebcebb7c4a65ae6fd330e83",
+              "source_png_sha256": "d19c0c0bdd4b893ee8584737607bcc9ffcad2c4df89bd2aadad5c7b446058a28"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_12.webp",
+              "width": 1400,
+              "height": 1517,
+              "bytes": 170002,
+              "sha256": "242be7897082de3de912a0e7baf06e0522b232dc6898e3c825dea0be33b4a2f4",
+              "source_png_sha256": "7c1c0e5e480019b776f19f57d55f1c6d94a55457a47a89e8586a404441f03ca0"
+            }
+          }
+        }
+      ]
+    },
+    "w6_13": {
+      "pair_id": "w6_13",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Godyris duillia",
+      "species_b": "Hypomenitis alphesiboea",
+      "classification": "single_region",
+      "default_card_id": null,
+      "routes": [
+        {
+          "card_id": null,
+          "status": "held_small_n_co_mimics",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Godyris duillia",
+          "taxon_b": "Hypomenitis alphesiboea alphesiboea",
+          "subspecies_a_aliases": [
+            "duillia"
+          ],
+          "subspecies_b_aliases": [
+            "alphesiboea"
+          ]
+        }
+      ]
+    },
+    "w6_14": {
+      "pair_id": "w6_14",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris fluonia",
+      "species_b": "Hypothyris semifulva",
+      "classification": "single_region",
+      "default_card_id": "w6_14",
+      "routes": [
+        {
+          "card_id": "w6_14",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris fluonia",
+          "taxon_b": "Hypothyris semifulva",
+          "subspecies_a_aliases": [
+            "berna"
+          ],
+          "subspecies_b_aliases": [
+            "semifulva",
+            "satura",
+            "ssp f 1"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_14.webp",
+              "width": 1400,
+              "height": 1504,
+              "bytes": 185738,
+              "sha256": "57bfc174240697849781bb9b2ab420c6dd609c0b315d2f5579fd77f4a8ac0cf2",
+              "source_png_sha256": "defa50cdffd95fc7cd05aad17ba6edef678c154f126d530cd2d29961f56ac0a2"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_14.webp",
+              "width": 1400,
+              "height": 1479,
+              "bytes": 180802,
+              "sha256": "4979ac37a0c7900fcd633eed3b5bce4786d77a5f1225a607bec7b03989e69586",
+              "source_png_sha256": "422d32783870bb5f8de2841e9637f43556911971f22f20b80347dc6a0ca509bb"
+            }
+          }
+        }
+      ]
+    },
+    "w6_15": {
+      "pair_id": "w6_15",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria baizana",
+      "species_b": "Oleria cyrene",
+      "classification": "single_region",
+      "default_card_id": "w6_15",
+      "routes": [
+        {
+          "card_id": "w6_15",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria baizana baizana",
+          "taxon_b": "Oleria cyrene",
+          "subspecies_a_aliases": [
+            "baizana",
+            "munaycha"
+          ],
+          "subspecies_b_aliases": [
+            "cyrene",
+            "solida",
+            "susianoides"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_15.webp",
+              "width": 1400,
+              "height": 1713,
+              "bytes": 234556,
+              "sha256": "aa77f59ab7e4a3bffb8a8a5adc0f902fc8c61d92d5b090cffdf03c0520e80bb8",
+              "source_png_sha256": "506c5a6fa88d72cb28120e90a06e010191684fedb408e7bc34141e7693ee00c3"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_15.webp",
+              "width": 1400,
+              "height": 1687,
+              "bytes": 226104,
+              "sha256": "05bd579cc91da8af977c26d740e790a9bf69b1e187cb188e424e107b826ca7f2",
+              "source_png_sha256": "3c48721fe208b3d90fec7c7ea925544a8524dbb20d87546449b0595295cacf99"
+            }
+          }
+        }
+      ]
+    },
+    "w6_16": {
+      "pair_id": "w6_16",
+      "wave": "wave6_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Ithomia cleora",
+      "species_b": "Ithomia hyala",
+      "classification": "single_region",
+      "default_card_id": "w6_16",
+      "routes": [
+        {
+          "card_id": "w6_16",
+          "status": "active",
+          "side_andes": [
+            "West"
+          ],
+          "side_default_for": [
+            "West"
+          ],
+          "region_bucket": "occidente",
+          "region_es": "Occidente",
+          "region_en": "West Ecuador",
+          "taxon_a": "Ithomia cleora",
+          "taxon_b": "Ithomia hyala hyala",
+          "subspecies_a_aliases": [],
+          "subspecies_b_aliases": [
+            "hyala"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w6_16.webp",
+              "width": 1400,
+              "height": 1529,
+              "bytes": 185218,
+              "sha256": "bfacb86a0be6c1b5948e735828264a041d6aa9f08ade449324293ece964b58ae",
+              "source_png_sha256": "3a468eef2140c037ea940dad1ea5238f0e8c90de0f96f408c3a45b790090c949"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w6_16.webp",
+              "width": 1400,
+              "height": 1504,
+              "bytes": 186854,
+              "sha256": "7316ea8b5de45d9e27ff12cc9c2e9c3dd7896253993cd004bd0cba788bd500c3",
+              "source_png_sha256": "8b2659ab9294cd182606e5c3345f5e8ae73913eaf64529a6859746b85ab87a75"
             }
           }
         }

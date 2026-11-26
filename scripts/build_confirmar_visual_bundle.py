@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Build the unified Confirmar visual field-ID card bundle for /identificar/.
 
-Ingests verified Wave 2 Regional, Wave 3A (D+V), and Wave 3B (Non-Ithomiini)
-regional routing tables + ES/EN card PNGs (plus optional future waves via --wave),
-verifies every wave's AUDIT_RECEIPT.json fail-closed (status=PASS, explicit zero
-locked/blind overlap fields required, exact source PNG SHA-256 match), optimizes
-crisp full-resolution WebP copies for phone zoom legibility, and writes:
+Ingests verified Wave 2 Regional, Wave 3A (D+V), Wave 3B (Non-Ithomiini),
+Wave 4 (D+V), Wave 5 (Non-Ithomiini), and Wave 6 (D+V) regional routing tables
++ ES/EN card PNGs (plus optional future waves via --wave/--extra-wave), verifies
+every wave's AUDIT_RECEIPT.json fail-closed (status=PASS, explicit zero
+locked/blind overlap fields required, exact source PNG SHA-256 match), handles
+cross-wave superseding cleanly (active supersedes prior null hold; null+null
+deduplicates to newer verified hold; active+active conflicts fail closed),
+optimizes crisp full-resolution WebP copies for phone zoom legibility, and writes:
   - frontend/public/identificar/confirmar/confirmar_visual_manifest.json
   - frontend/public/identificar/confirmar/cards/{es,en}/<card_id>.webp
 
-Re-runnable cleanly whenever Wave 3A/3B sol-loop updates a PNG or Wave 4 adds cards.
 Deterministic output (no wall-clock timestamp) so clean re-runs produce zero diff.
 """
 from __future__ import annotations
@@ -47,6 +49,21 @@ DEFAULT_WAVES = [
         WINGS_REPORTS / "confirmar_wave3b_non_ithomiini_20261125",
         "REGIONAL_MAP_W3B.json",
     ),
+    (
+        "wave4_dv",
+        WINGS_REPORTS / "confirmar_wave4_dv_20261125",
+        "REGIONAL_MAP_W4.json",
+    ),
+    (
+        "wave5_non_ithomiini",
+        WINGS_REPORTS / "confirmar_wave5_non_ithomiini_20261125",
+        "REGIONAL_MAP_W5.json",
+    ),
+    (
+        "wave6_dv",
+        WINGS_REPORTS / "confirmar_wave6_dv_20261125",
+        "REGIONAL_MAP_W6.json",
+    ),
 ]
 
 LOCKED_AUDIT_SCRIPT_DIR = WINGS_REPORTS / "confirmar_visual_wave1_20261123" / "scripts"
@@ -56,8 +73,15 @@ ALLOWED_NON_ACTIVE_STATUSES = {
     "inseparable_in_photos",
     "not_reliably_separable_in_photos",
     "held_sex_confounded_small_n",
+    "held_small_n_co_mimics",
     "held_suspect_reference_labels",
     "inseparable_or_unverified_refs",
+}
+
+REGION_BUCKET_LABELS = {
+    "oriente": ("Oriente", "East Ecuador"),
+    "occidente": ("Occidente", "West Ecuador"),
+    "both": ("Oriente y Occidente", "East & West Ecuador"),
 }
 
 
@@ -111,6 +135,13 @@ def _require_zero_int(mapping: dict[str, Any], key: str, label: str) -> int:
 KNOWN_WAVE_REQUIRED_OVERLAP_KEY = {
     "wave2_regional": "locked_or_blind_or_curation_overlap",
     "wave3a_dv": "leakage_or_integrity_errors",
+    "wave4_dv": "leakage_hits_count",
+    "wave6_dv": "leakage_hits_count",
+}
+
+KNOWN_INAT_COHORT_WAVES = {
+    "wave3b_non_ithomiini",
+    "wave5_non_ithomiini",
 }
 
 
@@ -132,7 +163,7 @@ def verify_receipt_dict(
     if "errors" in receipt:
         if not isinstance(receipt["errors"], list) or len(receipt["errors"]) != 0:
             raise RuntimeError(f"[{wave_id}] Contradictory non-empty 'errors': {receipt['errors']!r}")
-    for cross_key in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors"):
+    for cross_key in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors", "leakage_hits_count"):
         if cross_key in receipt:
             measured_overlap += _require_zero_int(receipt, cross_key, f"[{wave_id}] AUDIT_RECEIPT")
 
@@ -141,23 +172,36 @@ def verify_receipt_dict(
     if isinstance(receipt_locked, dict):
         if wave_id in KNOWN_WAVE_REQUIRED_OVERLAP_KEY:
             raise RuntimeError(f"[{wave_id}] Unexpected locked_cohorts schema for museum wave")
-        # Wave 3B structured schema: every overlap counter + errors list is mandatory
-        for key in (
+        # Wave 3B / Wave 5 structured schema: every overlap counter + errors list is mandatory
+        required_cohort_keys = [
             "locked_cam_overlap",
             "locked_inat_obs_overlap",
             "locked_inat_photo_overlap",
             "ref_blind_sha256_overlap",
-        ):
+        ]
+        if wave_id == "wave5_non_ithomiini":
+            required_cohort_keys.extend(
+                ["fresh_s3_overlap", "w3b_blind_overlap", "ref_blind_pixel_sha256_overlap"]
+            )
+        for key in required_cohort_keys:
             measured_overlap += _require_zero_int(receipt_locked, key, f"[{wave_id}] locked_cohorts")
+        for extra_zero_key in (
+            "fresh_s3_overlap",
+            "w3b_blind_overlap",
+            "ref_blind_pixel_sha256_overlap",
+            "cam_ids_found_in_inputs",
+        ):
+            if extra_zero_key in receipt_locked and extra_zero_key not in required_cohort_keys:
+                measured_overlap += _require_zero_int(receipt_locked, extra_zero_key, f"[{wave_id}] locked_cohorts")
         if "errors" not in receipt:
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'errors'")
         locked_cams_n = receipt_locked.get("locked_cams")
         if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
             raise RuntimeError(f"[{wave_id}] locked_cohorts.locked_cams must be >= 1583, got {locked_cams_n!r}")
     else:
-        if wave_id == "wave3b_non_ithomiini":
+        if wave_id in KNOWN_INAT_COHORT_WAVES:
             raise RuntimeError(f"[{wave_id}] Missing required 'locked_cohorts' object")
-        # Wave 2 / Wave 3A museum schema: explicit leakage_hits + exact overlap/integrity counter mandatory
+        # Wave 2 / 3A / 4 / 6 museum schema: explicit leakage_hits + exact overlap/integrity counter mandatory
         if "leakage_hits" not in receipt:
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT must have empty list 'leakage_hits'")
         required_key = KNOWN_WAVE_REQUIRED_OVERLAP_KEY.get(wave_id)
@@ -165,12 +209,14 @@ def verify_receipt_dict(
             _require_zero_int(receipt, required_key, f"[{wave_id}] AUDIT_RECEIPT")
         else:
             overlap_keys = [
-                k for k in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors") if k in receipt
+                k
+                for k in ("locked_or_blind_or_curation_overlap", "leakage_or_integrity_errors", "leakage_hits_count")
+                if k in receipt
             ]
             if not overlap_keys:
                 raise RuntimeError(
                     f"[{wave_id}] AUDIT_RECEIPT missing required zero-overlap field "
-                    "('locked_or_blind_or_curation_overlap' or 'leakage_or_integrity_errors')"
+                    "('locked_or_blind_or_curation_overlap', 'leakage_or_integrity_errors', or 'leakage_hits_count')"
                 )
         locked_cams_n = receipt.get("locked_cams_checked")
         if isinstance(locked_cams_n, bool) or not isinstance(locked_cams_n, int) or locked_cams_n < 1583:
@@ -256,13 +302,97 @@ def derive_view_badge(
     return None, None
 
 
-def detect_wave_routing_mode(reg_map: dict[str, Any]) -> str:
-    """Detect whether a wave's regional map routes by side-only (Wave 3B) or subspecies+side (Wave 2/3A)."""
+def detect_wave_routing_mode(reg_map: dict[str, Any], wave_id: str = "") -> str:
+    """Detect whether a wave routes by side-only (Wave 3B/5) or subspecies+side (Wave 2/3A/4/6)."""
+    if wave_id in KNOWN_INAT_COHORT_WAVES:
+        return "side_only"
+    lookup_list = reg_map.get("routing_contract", {}).get("lookup_order") or []
     purpose = str(reg_map.get("purpose", "")).lower()
-    lookup = " ".join(str(x).lower() for x in (reg_map.get("routing_contract", {}).get("lookup_order") or []))
-    if "subspecies" in lookup or "subspecies" in purpose:
+    if lookup_list:
+        lookup = " ".join(str(x).lower() for x in lookup_list)
+        if "subspecies" in lookup or "subspecies" in purpose:
+            return "subspecies_and_side"
+        return "side_only"
+    if "subspecies" in purpose:
+        return "subspecies_and_side"
+    if wave_id in KNOWN_WAVE_REQUIRED_OVERLAP_KEY or "_dv" in str(reg_map.get("wave", "")).lower():
         return "subspecies_and_side"
     return "side_only"
+
+
+def resolve_region_labels(route: dict[str, Any], wave_id: str, pair_id: str) -> tuple[str, str]:
+    region_es = str(route.get("region_es") or "").strip()
+    region_en = str(route.get("region_en") or "").strip()
+    if region_es and region_en:
+        return region_es, region_en
+    bucket = str(route.get("region_bucket") or "").strip().lower()
+    if bucket not in REGION_BUCKET_LABELS:
+        raise RuntimeError(
+            f"[{wave_id}:{pair_id}] Missing region_es/region_en and unknown region_bucket {bucket!r}"
+        )
+    fallback_es, fallback_en = REGION_BUCKET_LABELS[bucket]
+    return region_es or fallback_es, region_en or fallback_en
+
+
+def resolve_taxon_display(route: dict[str, Any], pair: dict[str, Any], side_key: str, species: str) -> str:
+    raw_taxon = str(route.get(f"taxon_{side_key}") or "").strip()
+    display_name = str(pair.get(f"display_name_{side_key}") or "").strip()
+    if display_name and (not raw_taxon or raw_taxon.lower() == species.lower()):
+        return display_name
+    return raw_taxon or species
+
+
+def resolve_species_pair_collision(
+    sp_key: tuple[str, str],
+    prev_pair_id: str,
+    prev_pair: dict[str, Any],
+    new_pair_id: str,
+    new_routes: list[dict[str, Any]],
+) -> str:
+    """Validate cross-wave collision for the same species pair.
+
+    Returns 'supersede_prev' when the incoming pair cleanly supersedes an earlier
+    non-active hold (active rescues null hold, or newer verified null hold replaces
+    earlier null hold on the same region/sides). Raises RuntimeError fail-closed on
+    any active-vs-active conflict, active-vs-null regression, or disjoint-region hold.
+    """
+    prev_routes = prev_pair.get("routes", [])
+    prev_has_active = any(str(r.get("status", "")).strip() == "active" for r in prev_routes)
+    new_has_active = any(str(r.get("status", "")).strip() == "active" for r in new_routes)
+
+    if prev_has_active and new_has_active:
+        raise RuntimeError(
+            f"Duplicate active species pair {sp_key!r}: {new_pair_id!r} conflicts with active {prev_pair_id!r}"
+        )
+    if prev_has_active and not new_has_active:
+        raise RuntimeError(
+            f"Non-active species pair {sp_key!r} ({new_pair_id!r}) cannot overwrite active {prev_pair_id!r}"
+        )
+
+    prev_sides = {str(s).strip() for r in prev_routes for s in (r.get("side_andes") or []) if str(s).strip()}
+    if new_has_active:
+        new_active_sides = {
+            str(s).strip()
+            for r in new_routes
+            if str(r.get("status", "")).strip() == "active"
+            for s in (r.get("side_andes") or [])
+            if str(s).strip()
+        }
+        if prev_sides and not prev_sides.issubset(new_active_sides):
+            raise RuntimeError(
+                f"Active pair {new_pair_id!r} (sides={sorted(new_active_sides)}) does not cover "
+                f"prior held pair {prev_pair_id!r} (sides={sorted(prev_sides)}) for {sp_key!r}"
+            )
+        return "supersede_prev"
+
+    # Both non-active (null holds): deduplicate to the newer verified hold when sides match/subsume
+    new_sides = {str(s).strip() for r in new_routes for s in (r.get("side_andes") or []) if str(s).strip()}
+    if prev_sides and not prev_sides.issubset(new_sides):
+        raise RuntimeError(
+            f"Held pair {new_pair_id!r} (sides={sorted(new_sides)}) does not cover "
+            f"prior held pair {prev_pair_id!r} (sides={sorted(prev_sides)}) for {sp_key!r}"
+        )
+    return "supersede_prev"
 
 
 def optimize_png_to_webp(
@@ -305,6 +435,7 @@ def build_bundle(
     unified_pairs: dict[str, Any] = {}
     seen_card_ids: set[str] = set()
     seen_species_pairs: dict[tuple[str, str], str] = {}
+    superseded_pairs: dict[str, str] = {}
     expected_webp_relpaths: set[Path] = set()
     wave_summaries: list[dict[str, Any]] = []
 
@@ -326,7 +457,7 @@ def build_bundle(
         total_measured_overlap += wave_overlap
         receipt_png_sha = receipt["output_png_sha256"]
         reg_map = json.loads(map_path.read_text(encoding="utf-8"))
-        routing_mode = detect_wave_routing_mode(reg_map)
+        routing_mode = detect_wave_routing_mode(reg_map, wave_id=wave_id)
         rendered_es = load_rendered_text(wave_dir, "es")
         rendered_en = load_rendered_text(wave_dir, "en")
 
@@ -338,16 +469,31 @@ def build_bundle(
         wave_non_active_pairs = 0
 
         for pair_id, pair in pairs_obj.items():
-            if pair_id in unified_pairs:
+            if pair_id in unified_pairs or pair_id in superseded_pairs:
                 raise RuntimeError(f"Duplicate pair_id {pair_id!r} across waves")
 
             species_a = str(pair["species_a"]).strip()
             species_b = str(pair["species_b"]).strip()
             sp_key = norm_species_pair(species_a, species_b)
+            supersedes_list: list[str] = []
             if sp_key in seen_species_pairs:
-                raise RuntimeError(
-                    f"Duplicate species pair {sp_key!r}: {pair_id!r} conflicts with {seen_species_pairs[sp_key]!r}"
+                prev_pair_id = seen_species_pairs[sp_key]
+                prev_pair = unified_pairs[prev_pair_id]
+                resolve_species_pair_collision(
+                    sp_key=sp_key,
+                    prev_pair_id=prev_pair_id,
+                    prev_pair=prev_pair,
+                    new_pair_id=pair_id,
+                    new_routes=list(pair.get("routes", [])),
                 )
+                # Remove superseded non-active hold so it can never shadow the newer entry
+                prior_supersedes = list(prev_pair.get("supersedes", []))
+                for old_id in prior_supersedes:
+                    superseded_pairs[old_id] = pair_id
+                superseded_pairs[prev_pair_id] = pair_id
+                supersedes_list = [*prior_supersedes, prev_pair_id]
+                del unified_pairs[prev_pair_id]
+                total_non_active_pairs -= 1
             seen_species_pairs[sp_key] = pair_id
 
             routes_out: list[dict[str, Any]] = []
@@ -356,6 +502,7 @@ def build_bundle(
             for route in pair.get("routes", []):
                 status = str(route["status"]).strip()
                 card_id = route.get("card_id")
+                region_es, region_en = resolve_region_labels(route, wave_id, pair_id)
 
                 route_entry: dict[str, Any] = {
                     "card_id": card_id,
@@ -363,10 +510,10 @@ def build_bundle(
                     "side_andes": list(route.get("side_andes", [])),
                     "side_default_for": list(route.get("side_default_for", [])),
                     "region_bucket": str(route.get("region_bucket", "both")),
-                    "region_es": str(route["region_es"]).strip(),
-                    "region_en": str(route["region_en"]).strip(),
-                    "taxon_a": str(route.get("taxon_a") or species_a).strip(),
-                    "taxon_b": str(route.get("taxon_b") or species_b).strip(),
+                    "region_es": region_es,
+                    "region_en": region_en,
+                    "taxon_a": resolve_taxon_display(route, pair, "a", species_a),
+                    "taxon_b": resolve_taxon_display(route, pair, "b", species_b),
                     "subspecies_a_aliases": [str(x).strip() for x in route.get("subspecies_a_aliases", []) if str(x).strip()],
                     "subspecies_b_aliases": [str(x).strip() for x in route.get("subspecies_b_aliases", []) if str(x).strip()],
                 }
@@ -441,7 +588,7 @@ def build_bundle(
                 total_non_active_pairs += 1
                 wave_non_active_pairs += 1
 
-            unified_pairs[pair_id] = {
+            pair_record: dict[str, Any] = {
                 "pair_id": pair_id,
                 "wave": wave_id,
                 "routing_mode": routing_mode,
@@ -451,12 +598,15 @@ def build_bundle(
                 "default_card_id": pair.get("default_card_id"),
                 "routes": routes_out,
             }
+            if supersedes_list:
+                pair_record["supersedes"] = supersedes_list
+            unified_pairs[pair_id] = pair_record
 
         wave_summaries.append(
             {
                 "wave": wave_id,
                 "routing_mode": routing_mode,
-                "map_version": reg_map.get("version"),
+                "map_version": reg_map.get("version") or reg_map.get("schema_version"),
                 "pairs": len(pairs_obj),
                 "active_cards": wave_active_cards,
                 "non_active_pairs": wave_non_active_pairs,
@@ -498,11 +648,13 @@ def build_bundle(
             "active_pairs": total_active_pairs,
             "active_cards": total_active_cards,
             "non_active_pairs": total_non_active_pairs,
+            "superseded_pairs": len(superseded_pairs),
             "deferred_routes": total_deferred_routes,
             "assets_total": total_active_cards * 2,
             "source_png_bytes": total_src_png_bytes,
             "webp_bytes": total_webp_bytes,
         },
+        "superseded_pairs": superseded_pairs,
         "pairs": unified_pairs,
     }
 
@@ -616,7 +768,119 @@ def run_self_tests() -> None:
         ({"CAM999999"}, {"111"}, {"222"}),
     )
     assert ov3b == 0
-    print("SELF-TEST PASS (10/10 negative & positive receipt checks)")
+
+    # 3. Wave 4 / Wave 6 museum receipts & Wave 5 iNat cohort receipts (negative + positive)
+    for bad_w_label, bad_w_id, bad_rec in [
+        (
+            "w4_nonzero_leakage_hits_count",
+            "wave4_dv",
+            {
+                **bad_w2_missing_overlap,
+                "leakage_hits": [],
+                "leakage_hits_count": 1,
+            },
+        ),
+        (
+            "w6_missing_leakage_hits_count",
+            "wave6_dv",
+            {
+                **bad_w2_missing_overlap,
+                "leakage_hits": [],
+                "locked_or_blind_or_curation_overlap": 0,
+            },
+        ),
+        (
+            "w5_nonzero_fresh_s3_overlap",
+            "wave5_non_ithomiini",
+            {
+                "status": "PASS",
+                "locked_cohorts": {
+                    "locked_cams": 1583,
+                    "locked_cam_overlap": 0,
+                    "locked_inat_obs_overlap": 0,
+                    "locked_inat_photo_overlap": 0,
+                    "fresh_s3_overlap": 1,
+                    "w3b_blind_overlap": 0,
+                    "ref_blind_sha256_overlap": 0,
+                    "ref_blind_pixel_sha256_overlap": 0,
+                },
+                "errors": [],
+                "output_png_sha256": {"w5_02_es": "0" * 64},
+            },
+        ),
+    ]:
+        try:
+            verify_receipt_dict(bad_w_id, bad_rec, None)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"Self-test failed: {bad_w_label} was unexpectedly accepted")
+
+    _, ov4 = verify_receipt_dict(
+        "wave4_dv",
+        {
+            "status": "PASS",
+            "locked_cams_checked": 1583,
+            "cams_used": ["CAM000001"],
+            "leakage_hits": [],
+            "leakage_hits_count": 0,
+            "output_png_sha256": {"w4_01_es": "0" * 64},
+        },
+        ({"CAM999999"}, set(), set()),
+    )
+    assert ov4 == 0
+
+    _, ov5 = verify_receipt_dict(
+        "wave5_non_ithomiini",
+        {
+            "status": "PASS",
+            "locked_cohorts": {
+                "locked_cams": 1583,
+                "locked_cam_overlap": 0,
+                "locked_inat_obs_overlap": 0,
+                "locked_inat_photo_overlap": 0,
+                "fresh_s3_overlap": 0,
+                "w3b_blind_overlap": 0,
+                "ref_blind_sha256_overlap": 0,
+                "ref_blind_pixel_sha256_overlap": 0,
+            },
+            "errors": [],
+            "output_png_sha256": {"w5_02_es": "0" * 64},
+        },
+        ({"CAM999999"}, {"111"}, {"222"}),
+    )
+    assert ov5 == 0
+
+    # 4. Cross-wave species-pair superseding & fail-closed conflict checks
+    held_east = {"routes": [{"status": "held_sex_confounded_small_n", "card_id": None, "side_andes": ["East"]}]}
+    active_east = {"routes": [{"status": "active", "card_id": "w5_02", "side_andes": ["East"]}]}
+    cryptic_east = [{"status": "not_reliably_separable_in_photos", "card_id": None, "side_andes": ["East"]}]
+
+    assert (
+        resolve_species_pair_collision(
+            ("nessaea hewitsonii", "nessaea obrinus"), "w3a_03", held_east, "w5_02", active_east["routes"]
+        )
+        == "supersede_prev"
+    )
+    assert (
+        resolve_species_pair_collision(
+            ("morpho achilles", "morpho helenor"), "w3a_01", held_east, "w5_01", cryptic_east
+        )
+        == "supersede_prev"
+    )
+    for conflict_label, prev_p, new_r in [
+        ("active_vs_active", active_east, [{"status": "active", "card_id": "w6_99", "side_andes": ["East"]}]),
+        ("active_vs_null", active_east, cryptic_east),
+        ("disjoint_region_hold", held_east, [{"status": "active", "card_id": "w5_99", "side_andes": ["West"]}]),
+    ]:
+        try:
+            resolve_species_pair_collision(("a", "b"), "prev_id", prev_p, "new_id", new_r)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"Self-test failed: {conflict_label} was unexpectedly accepted")
+
+    print("SELF-TEST PASS (20/20 receipt & cross-wave superseding checks)")
 
 
 def main() -> int:

@@ -24,13 +24,31 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
     expect(confirmVisualCardsEnabled(false)).toBe(false)
   })
 
-  it('ships 47 pairs, 35 active cards, and 70 SHA-256 verified ES/EN WebP assets', () => {
+  it('ships 91 unified pairs, 64 active cards, 128 SHA-256 verified 1400px ES/EN WebP assets, and locked_overlap=0 across all 6 waves', () => {
     expect(manifest.schema).toBe('confirmar-visual-cards/1')
-    expect(manifest.counts.total_pairs).toBe(47)
-    expect(manifest.counts.active_cards).toBe(35)
-    expect(manifest.counts.assets_total).toBe(70)
-    expect(manifest.counts.non_active_pairs).toBe(13)
+    expect(manifest.waves.map(w => w.wave)).toEqual([
+      'wave2_regional',
+      'wave3a_dv',
+      'wave3b_non_ithomiini',
+      'wave4_dv',
+      'wave5_non_ithomiini',
+      'wave6_dv',
+    ])
+    expect(manifest.verification?.all_wave_receipts_passed).toBe(true)
+    expect(manifest.verification?.locked_or_blind_overlap).toBe(0)
+    expect(manifest.counts.total_pairs).toBe(91)
+    expect(manifest.counts.active_pairs).toBe(63)
+    expect(manifest.counts.active_cards).toBe(64)
+    expect(manifest.counts.assets_total).toBe(128)
+    expect(manifest.counts.non_active_pairs).toBe(28)
+    expect(manifest.counts.superseded_pairs).toBe(2)
     expect(manifest.counts.deferred_routes).toBe(2)
+    expect(manifest.superseded_pairs).toEqual({
+      w3a_01: 'w5_01',
+      w3a_03: 'w5_02',
+    })
+    expect(manifest.pairs.w3a_01).toBeUndefined()
+    expect(manifest.pairs.w3a_03).toBeUndefined()
 
     let checkedAssets = 0
     for (const pair of Object.values(manifest.pairs)) {
@@ -49,12 +67,12 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
           expect(buf.byteLength).toBe(asset.bytes)
           const sha = createHash('sha256').update(buf).digest('hex')
           expect(sha, `sha mismatch for ${asset.path}`).toBe(asset.sha256)
-          expect(asset.width).toBeGreaterThanOrEqual(1200)
+          expect(asset.width).toBe(1400)
           checkedAssets++
         }
       }
     }
-    expect(checkedAssets).toBe(70)
+    expect(checkedAssets).toBe(128)
   })
 })
 
@@ -216,11 +234,191 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
       }
     }
 
-    expect(resolveRegionalRoute(manifest, { pairId: 'w3a_01', sideAndes: 'East', locale: 'en' }).status).toBe('held_sex_confounded_small_n')
+    // w3a_01 was superseded by Wave 5 w5_01 (confirmed not_reliably_separable_in_photos)
+    expect(resolveRegionalRoute(manifest, { pairId: 'w3a_01', sideAndes: 'East', locale: 'en' }).status).toBe('not_reliably_separable_in_photos')
+    expect(resolveRegionalRoute(manifest, { pairId: 'w5_01', sideAndes: 'East', locale: 'en' }).status).toBe('not_reliably_separable_in_photos')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_02', sideAndes: 'East', locale: 'en' }).status).toBe('held_suspect_reference_labels')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_09', sideAndes: 'East', locale: 'en' }).status).toBe('inseparable_in_photos')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_10', sideAndes: 'East', locale: 'en' }).status).toBe('inseparable_or_unverified_refs')
     expect(resolveRegionalRoute(manifest, { pairId: 'w3a_09', sideAndes: 'West', locale: 'en' }).status).toBe('no_card_for_side')
+  })
+
+  it('supersedes Wave 3A hold w3a_03 with active Wave 5 rescue w5_02 (Nessaea) and never lets a legacy null hold shadow it', () => {
+    const directEs = resolveRegionalRoute(manifest, {
+      pairId: 'w5_02',
+      sideAndes: 'East',
+      subspeciesA: 'Nessaea hewitsonii hewitsonii',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })
+    expect(directEs.status).toBe('active')
+    expect(directEs.pairId).toBe('w5_02')
+    expect(directEs.cardId).toBe('w5_02')
+    expect(directEs.taxonA).toBe('Nessaea hewitsonii hewitsonii')
+    expect(directEs.taxonB).toBe('Nessaea obrinus obrinus')
+    expect(directEs.viewBadge).toBe('Anverso machos · con cautela')
+    expect(directEs.imageUrl).toContain('/cards/es/w5_02.webp?v=')
+
+    // Querying legacy pair_id w3a_03 transparently redirects to active w5_02
+    const legacyEn = resolveRegionalRoute(manifest, {
+      pairId: 'w3a_03',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(legacyEn.status).toBe('active')
+    expect(legacyEn.pairId).toBe('w5_02')
+    expect(legacyEn.cardId).toBe('w5_02')
+    expect(legacyEn.imageUrl).toContain('/cards/en/w5_02.webp?v=')
+
+    // Top-2 prediction matching for Nessaea resolves active w5_02 on East and hides on West
+    const matched = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Nessaea obrinus', p: 0.56, subspecies: [{ name: 'Nessaea obrinus obrinus', p: 0.51 }] },
+        { name: 'Nessaea hewitsonii', p: 0.39 },
+      ],
+      sideAndes: 'East',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })
+    expect(matched?.displayKind).toBe('card')
+    expect(matched?.cardId).toBe('w5_02')
+    expect(matched?.taxonA).toBe('Nessaea hewitsonii hewitsonii')
+
+    const westNessaea = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Nessaea hewitsonii', p: 0.6 },
+        { name: 'Nessaea obrinus', p: 0.35 },
+      ],
+      sideAndes: 'West',
+      locale: 'es',
+    })
+    expect(westNessaea?.status).toBe('no_card_for_side')
+    expect(westNessaea?.displayKind).toBe('hidden')
+
+    // Defense-in-depth: even in a synthetic manifest containing an older null hold before w5_02, active wins
+    const synthetic: ConfirmarVisualManifest = {
+      ...manifest,
+      pairs: {
+        w3a_03: {
+          pair_id: 'w3a_03',
+          wave: 'wave3a_dv',
+          routing_mode: 'subspecies_and_side',
+          species_a: 'Nessaea hewitsonii',
+          species_b: 'Nessaea obrinus',
+          classification: 'held_sex_confounded_small_n',
+          default_card_id: null,
+          routes: [
+            {
+              card_id: null,
+              status: 'held_sex_confounded_small_n',
+              side_andes: ['East'],
+              side_default_for: [],
+              region_bucket: 'oriente',
+              region_es: 'Oriente',
+              region_en: 'East Ecuador',
+              taxon_a: 'Nessaea hewitsonii',
+              taxon_b: 'Nessaea obrinus obrinus',
+              subspecies_a_aliases: ['hewitsonii'],
+              subspecies_b_aliases: ['obrinus'],
+            },
+          ],
+        },
+        w5_02: manifest.pairs.w5_02,
+      },
+    }
+    const syntheticMatch = resolveConfirmarVisualCard(synthetic, {
+      topPredictions: [
+        { name: 'Nessaea hewitsonii', p: 0.6 },
+        { name: 'Nessaea obrinus', p: 0.35 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(syntheticMatch?.displayKind).toBe('card')
+    expect(syntheticMatch?.cardId).toBe('w5_02')
+  })
+
+  it('routes Wave 4 (w4_05 East, w4_10 West, w4_13 held_small_n_co_mimics) and Wave 6 (w6_01 H. numata vs M. menophilus, w6_16 West, w6_13 held)', () => {
+    const w405 = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Hypothyris anastasia', p: 0.55, subspecies: [{ name: 'Hypothyris anastasia honesta', p: 0.5 }] },
+        { name: 'Mechanitis messenoides', p: 0.38, subspecies: [{ name: 'Mechanitis messenoides phasianita', p: 0.34 }] },
+      ],
+      sideAndes: 'East',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })
+    expect(w405?.displayKind).toBe('card')
+    expect(w405?.cardId).toBe('w4_05')
+    expect(w405?.regionBadge).toBe('Oriente')
+    expect(w405?.imageUrl).toContain('/cards/es/w4_05.webp?v=')
+
+    const w410West = resolveRegionalRoute(manifest, { pairId: 'w4_10', sideAndes: 'West', locale: 'en', rootUrl: ROOT_URL })
+    expect(w410West.status).toBe('active')
+    expect(w410West.cardId).toBe('w4_10')
+    expect(w410West.taxonA).toBe('Aeria eurimedia latistriga')
+    expect(w410West.taxonB).toBe('Scada zibia xanthina')
+    expect(resolveRegionalRoute(manifest, { pairId: 'w4_10', sideAndes: 'East', locale: 'en' }).status).toBe('no_card_for_side')
+
+    const w413Held = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Oleria padilla', p: 0.58 },
+        { name: 'Pteronymia alissa', p: 0.35 },
+      ],
+      sideAndes: 'West',
+      locale: 'es',
+    })
+    expect(w413Held?.displayKind).toBe('honest_note')
+    expect(w413Held?.status).toBe('held_small_n_co_mimics')
+    expect(w413Held?.honestNote).toBe('Aún no hay una guía visual revisada para esta región.')
+
+    const w601 = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Melinaea menophilus', p: 0.57, subspecies: [{ name: 'Melinaea menophilus zaneka', p: 0.51 }] },
+        { name: 'Heliconius numata', p: 0.36, subspecies: [{ name: 'Heliconius numata bicoloratus', p: 0.31 }] },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(w601?.displayKind).toBe('card')
+    expect(w601?.cardId).toBe('w6_01')
+    expect(w601?.regionBadge).toBe('East Ecuador')
+    expect(w601?.viewBadge).toBe('Upperside & underside')
+    expect(w601?.imageUrl).toContain('/cards/en/w6_01.webp?v=')
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_01', sideAndes: 'West', locale: 'es' }).status).toBe('no_card_for_side')
+
+    const w616 = resolveRegionalRoute(manifest, { pairId: 'w6_16', sideAndes: 'West', locale: 'es', rootUrl: ROOT_URL })
+    expect(w616.status).toBe('active')
+    expect(w616.cardId).toBe('w6_16')
+    expect(w616.imageUrl).toContain('/cards/es/w6_16.webp?v=')
+
+    const w613 = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Godyris duillia', p: 0.54 },
+        { name: 'Hypomenitis alphesiboea', p: 0.41 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+    })
+    expect(w613?.displayKind).toBe('honest_note')
+    expect(w613?.status).toBe('held_small_n_co_mimics')
+    expect(w613?.honestNote).toBe('No checked visual guide for this region yet.')
+
+    // Wave 5 deduplicated Morpho achilles vs Morpho helenor -> honest_note
+    const morpho = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Morpho achilles', p: 0.52 },
+        { name: 'Morpho helenor', p: 0.44 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+    })
+    expect(morpho?.displayKind).toBe('honest_note')
+    expect(morpho?.pairId).toBe('w5_01')
+    expect(morpho?.status).toBe('not_reliably_separable_in_photos')
   })
 })
 
