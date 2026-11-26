@@ -60,7 +60,9 @@ import { forHead, loadTaxonomy } from '../lib/taxonomy'
 import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, exifGps, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
 import {
+  CONFIRMAR_MANIFEST_PATH,
   ecuadorSideFromGps,
+  ecuadorSideLeanFromGps,
   loadConfirmarManifest,
   resolveConfirmarVisualCard,
   type ConfirmarCardMatch,
@@ -105,6 +107,9 @@ const pageFiles = () => [
   ...[...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[rel=stylesheet], link[rel=modulepreload], link[rel=manifest]')].map(
     e => ('src' in e && e.src) || (e as HTMLLinkElement).href,
   ),
+  // With the visual guides on, their list is one of the page's files: a phone that says «Listo para usar sin internet»
+  // has it (kept with the page when a model is downloaded). A guide's plate is kept once it has been seen.
+  ...(import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1' ? [new URL(CONFIRMAR_MANIFEST_PATH, appRoot()).href] : []),
 ].filter(Boolean)
 const signedIn = () => !!session.user
 // Signed in (a router navigation, not a reload): the visitors' limit no longer applies, Buscar's line goes too.
@@ -777,15 +782,37 @@ const noWings = computed(() => !!result.value && result.value.status !== 'succes
 const confirmarOn = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
 const confirmarManifest = shallowRef<ConfirmarVisualManifest | null>(null)
 const confirmarPreferredCard = ref<string | null>(null)
+/**
+ * The guides' list (150 kB), asked once the page is idle with signal, so a phone that later identifies without signal
+ * has it (the service worker keeps it). A fetch that fails is asked again: at each result, and when the signal returns.
+ */
+function warmConfirmar() {
+  if (!confirmarOn || confirmarManifest.value) return
+  loadConfirmarManifest(appRoot())
+    .then(m => (confirmarManifest.value = m))
+    .catch(() => null)
+}
+let confirmarIdle: (() => void) | null = null
+/** After the page's own first work: when the browser is idle, or shortly after where it cannot say. */
+function warmConfirmarWhenIdle() {
+  if (!confirmarOn || confirmarManifest.value || confirmarIdle) return
+  const run = () => {
+    confirmarIdle = null
+    if (navigator.onLine) warmConfirmar()
+  }
+  if (typeof requestIdleCallback === 'function') {
+    const id = requestIdleCallback(run, { timeout: 5000 })
+    confirmarIdle = () => cancelIdleCallback(id)
+  } else {
+    const id = setTimeout(run, 1500)
+    confirmarIdle = () => clearTimeout(id)
+  }
+}
 if (confirmarOn) {
   watch(
-    () => !!result.value,
-    need => {
-      if (need && !confirmarManifest.value) {
-        loadConfirmarManifest(appRoot())
-          .then(m => (confirmarManifest.value = m))
-          .catch(() => null)
-      }
+    () => result.value?.at,
+    at => {
+      if (at) warmConfirmar()
     },
     { immediate: true },
   )
@@ -793,14 +820,24 @@ if (confirmarOn) {
     confirmarPreferredCard.value = null
   })
 }
-const confirmarSide = computed(() => {
+/** Where this result's photo was taken, when its file says so and the place is in Ecuador. */
+const confirmarGps = computed(() => {
   if (!confirmarOn) return null
-  if (sideValue.value) return sideValue.value
   const r = result.value
   const p = lastPhoto.value
   if (!r || r.country !== 'EC' || !p || p.at !== r.at) return null
-  const gps = exifGps(p.photo.bytes)
+  return exifGps(p.photo.bytes)
+})
+const confirmarSide = computed(() => {
+  if (!confirmarOn) return null
+  if (sideValue.value) return sideValue.value
+  const gps = confirmarGps.value
   return gps ? ecuadorSideFromGps(gps.lat, gps.lon) : null
+})
+/** No side chosen and the photo inside the ridge band, clearly on one side of the line: hides a guide of the other side alone. */
+const confirmarLean = computed(() => {
+  const gps = confirmarGps.value
+  return !confirmarOn || sideValue.value || !gps ? null : ecuadorSideLeanFromGps(gps.lat, gps.lon)
 })
 const confirmarMatch = computed<ConfirmarCardMatch | null>(() => {
   if (!confirmarOn || !confirmarManifest.value || !ranked.value?.species.length) return null
@@ -815,6 +852,7 @@ const confirmarMatch = computed<ConfirmarCardMatch | null>(() => {
     topPredictions,
     comparedSpecies: compared.value,
     sideAndes: confirmarSide.value,
+    sideLean: confirmarLean.value,
     locale: locale.value,
     preferredCardId: confirmarPreferredCard.value,
     rootUrl: appRoot(),
@@ -1755,12 +1793,14 @@ const goOnline = () => {
   askVisitor()
   syncOutbox({ force: true })
   refresh().then(autoPack) // keeps the page too when it was opened without signal; a cut-off first save goes on
+  warmConfirmar()
   if (session.user) engine.refreshStock().then(async () => (stock.value = await engine.stock()))
 }
 const goOffline = () => (online.value = false)
 onMounted(async () => {
   // The countries' outlines, for a photo's GPS position later without signal (the service worker keeps them).
   if (navigator.onLine) warmShapes()
+  if (navigator.onLine) warmConfirmarWhenIdle()
   addEventListener('online', goOnline)
   addEventListener('offline', goOffline)
   addEventListener('paste', onPaste)
@@ -1802,6 +1842,7 @@ let stopSessionWatch: (() => void) | null = null
 let unmounted = false
 onBeforeUnmount(() => {
   unmounted = true
+  confirmarIdle?.()
   // Left through the app (another tab): a visitor's place is given up (DELETE) and nothing of this run lands after.
   run++
   visitorAbort?.abort()
@@ -2027,6 +2068,7 @@ onBeforeUnmount(() => {
             :match="confirmarMatch"
             :user-photo-src="mineUrl ?? result.crop"
             @select-card="id => (confirmarPreferredCard = id)"
+            @select-side="s => (side = s)"
           />
 
           <SexPanel

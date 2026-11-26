@@ -12,14 +12,20 @@ optimizes crisp full-resolution WebP copies for phone zoom legibility, and write
   - frontend/public/identificar/confirmar/confirmar_visual_manifest.json
   - frontend/public/identificar/confirmar/cards/{es,en}/<card_id>.webp
 
+Subspecies aliases are written clean (no rank marker, no trailing "?", no database placeholder) and, when the
+head's leaf list is on this host, every active subspecies-routed side must be reachable by at least one subspecies
+the head names, or the build (and --check) fails.
+
 Deterministic output (no wall-clock timestamp) so clean re-runs produce zero diff.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import io
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -68,6 +74,35 @@ DEFAULT_WAVES = [
 
 LOCKED_AUDIT_SCRIPT_DIR = WINGS_REPORTS / "confirmar_visual_wave1_20261123" / "scripts"
 
+# The identifier head's leaf names (one row per leaf; a leaf of three words is a subspecies the head can name).
+HEAD_LEAF_MAP = WINGS_REPORTS / "head_retrain_names_20261115" / "labels_q" / "leaf_map.tsv"
+HEAD_LEAF_COLUMNS = ("old_leaf", "new_leaf")
+
+# Rank markers the collection writes before an epithet. The head never sends them, so they are no part of a name.
+RANK_MARKERS = {"f.", "ssp.", "subsp."}
+
+# Aliases the wave maps copied from the collection's free text that are no name at all. Keyed by the normalized alias.
+ALIAS_REPAIRS: dict[str, list[str]] = {
+    "deceptus- phasianita": ["deceptus", "phasianita"],  # two subspecies of Mechanitis messenoides run together
+    "ssp-f": [],  # the collection's mark for an unnamed form of Hypothyris lycaste
+    "ssp f 1": [],  # the same, of Hypothyris semifulva
+    "nov.": [],  # "ssp. nov.": an undescribed subspecies of Heliconius timareta (w6_02)
+}
+
+# Subspecies the wave maps left out, keyed by (pair_id, card_id, side). The maps list Heliconius cydno by the colour
+# forms the collection records (f. white, f. yellow, f. intermedia). Those are the forms of H. cydno alithea, the
+# subspecies of West Ecuador, and the head names the subspecies, never the form: without this line no head output
+# reaches these sides.
+ALIAS_ADDITIONS: dict[tuple[str, str, str], list[str]] = {
+    ("p14", "p14", "a"): ["alithea", "Heliconius cydno alithea"],
+    ("w3a_15", "w3a_15", "a"): ["alithea"],
+    ("w4_11", "w4_11", "a"): ["alithea"],
+}
+
+# What may never be left in an alias of a subspecies-routed pair: a question mark, a rank marker with no epithet
+# ("ssp-f", "ssp f 1", "f.", "nov."), or a hyphen beside a space ("deceptus- phasianita").
+BROKEN_ALIAS_RE = re.compile(r"\?|(?:^|\s)(?:ssp|subsp|sp|f|nov)(?:[\s.\-]|$)|-\s|\s-")
+
 ALLOWED_NON_ACTIVE_STATUSES = {
     "no_unlocked_museum_pair",
     "inseparable_in_photos",
@@ -97,6 +132,90 @@ def norm_species_pair(a: str, b: str) -> tuple[str, str]:
     na = " ".join(a.strip().lower().split())
     nb = " ".join(b.strip().lower().split())
     return (na, nb) if na <= nb else (nb, na)
+
+
+def norm_subspecies(value: str) -> str:
+    """A subspecies name as the router compares it (normSubspecies in frontend/src/lib/confirmarVisualRouter.ts):
+    lower case, single spaces, no rank marker (f., ssp., subsp.), no trailing question mark."""
+    words = [w for w in value.lower().split() if w not in RANK_MARKERS]
+    return re.sub(r"(\s*\?)+$", "", " ".join(words))
+
+
+def clean_aliases(raw_aliases: list[Any], extra: list[str] | None = None) -> list[str]:
+    """The aliases the manifest carries: each as written but without rank marker or trailing "?", the broken ones
+    repaired (ALIAS_REPAIRS), then `extra`; one of each, compared as the router compares them."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in [*raw_aliases, *(extra or [])]:
+        words = [w for w in str(raw).split() if w.lower() not in RANK_MARKERS]
+        alias = re.sub(r"(\s*\?)+$", "", " ".join(words))
+        for fixed in ALIAS_REPAIRS.get(norm_subspecies(alias), [alias]):
+            key = norm_subspecies(fixed)
+            if key and key not in seen:
+                seen.add(key)
+                out.append(fixed)
+    return out
+
+
+def load_head_subspecies(path: Path) -> list[dict[str, set[str]]] | None:
+    """The subspecies the head can name, per species (lower case): one map per name column of the leaf list.
+    None when the list is not on this host."""
+    if not path.is_file():
+        return None
+    with path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+    columns = [c for c in HEAD_LEAF_COLUMNS if rows and c in rows[0]]
+    if not columns:
+        raise RuntimeError(f"{path} has none of the columns {HEAD_LEAF_COLUMNS}")
+    maps: list[dict[str, set[str]]] = []
+    for column in columns:
+        by_species: dict[str, set[str]] = {}
+        for row in rows:
+            words = str(row[column]).lower().split()
+            if len(words) >= 3:
+                by_species.setdefault(" ".join(words[:2]), set()).add(" ".join(words[2:]))
+        maps.append(by_species)
+    return maps
+
+
+def alias_problems(
+    pairs: dict[str, Any], head: list[dict[str, set[str]]] | None
+) -> tuple[list[str], dict[str, int]]:
+    """What is wrong with the aliases of the subspecies-routed pairs, and how many active sides were checked.
+
+    Always: no alias may be left unclean or broken. With the head's leaf list: every active side whose species the
+    head splits into subspecies must list at least one of them (under each name column), or no head output reaches it.
+    """
+    problems: list[str] = []
+    counts = {"reachable": 0, "no_head_subspecies": 0}
+    for pair_id, pair in pairs.items():
+        if pair.get("routing_mode") != "subspecies_and_side":
+            continue
+        for route in pair.get("routes", []):
+            where = f"{pair_id}:{route.get('card_id') or route.get('status')}"
+            for side in ("a", "b"):
+                aliases = list(route.get(f"subspecies_{side}_aliases", []))
+                for alias in aliases:
+                    if clean_aliases([alias]) != [alias] or BROKEN_ALIAS_RE.search(norm_subspecies(alias)):
+                        problems.append(f"{where} side {side}: broken alias {alias!r}")
+                if head is None or route.get("status") != "active":
+                    continue
+                species = " ".join(str(pair[f"species_{side}"]).lower().split()[:2])
+                epithets = {
+                    n[len(species) + 1 :] if n.startswith(species + " ") else n
+                    for n in (norm_subspecies(a) for a in aliases)
+                }
+                named = [leaves[species] for leaves in head if leaves.get(species)]
+                if not named:
+                    counts["no_head_subspecies"] += 1  # the head sends no subspecies of it: the side routes by region
+                elif all(epithets & leaves for leaves in named):
+                    counts["reachable"] += 1
+                else:
+                    problems.append(
+                        f"{where} side {side} ({species}): no alias {sorted(epithets)} is a subspecies the head "
+                        f"names ({sorted(set().union(*named))})"
+                    )
+    return problems, counts
 
 
 def load_optional_locked_cohorts() -> tuple[set[str], set[str], set[str]] | None:
@@ -429,8 +548,11 @@ def build_bundle(
     out_dir: Path,
     quality: int = 92,
     check_only: bool = False,
+    leaf_map: Path = HEAD_LEAF_MAP,
 ) -> dict[str, Any]:
     locked_cohorts = load_optional_locked_cohorts()
+    head_subspecies = load_head_subspecies(leaf_map)
+    additions_used: set[tuple[str, str, str]] = set()
 
     unified_pairs: dict[str, Any] = {}
     seen_card_ids: set[str] = set()
@@ -514,9 +636,18 @@ def build_bundle(
                     "region_en": region_en,
                     "taxon_a": resolve_taxon_display(route, pair, "a", species_a),
                     "taxon_b": resolve_taxon_display(route, pair, "b", species_b),
-                    "subspecies_a_aliases": [str(x).strip() for x in route.get("subspecies_a_aliases", []) if str(x).strip()],
-                    "subspecies_b_aliases": [str(x).strip() for x in route.get("subspecies_b_aliases", []) if str(x).strip()],
                 }
+                for side_key in ("a", "b"):
+                    add_key = (pair_id, str(card_id), side_key)
+                    if add_key in ALIAS_ADDITIONS:
+                        additions_used.add(add_key)
+                    raw_aliases = route.get(f"subspecies_{side_key}_aliases", [])
+                    # The side-only waves carry notes in these fields, which the router never reads: kept as written.
+                    route_entry[f"subspecies_{side_key}_aliases"] = (
+                        clean_aliases(raw_aliases, ALIAS_ADDITIONS.get(add_key))
+                        if routing_mode == "subspecies_and_side"
+                        else [str(x).strip() for x in raw_aliases if str(x).strip()]
+                    )
                 if route.get("region_detail_es"):
                     route_entry["region_detail_es"] = str(route["region_detail_es"]).strip()
                 if route.get("region_detail_en"):
@@ -614,6 +745,16 @@ def build_bundle(
             }
         )
 
+    # An addition whose pair is in this build but whose card is not: the map changed under it.
+    stale_additions = sorted(k for k in ALIAS_ADDITIONS if k not in additions_used and k[0] in unified_pairs)
+    if stale_additions:
+        raise RuntimeError(f"ALIAS_ADDITIONS names a card or side that is not in the maps: {stale_additions}")
+    problems, alias_counts = alias_problems(unified_pairs, head_subspecies)
+    if problems:
+        raise RuntimeError("Subspecies aliases:\n  " + "\n  ".join(problems))
+    if head_subspecies is None:
+        print(f"NOTE: {leaf_map} is not on this host: the aliases were not checked against the head's subspecies")
+
     # Prune stale .webp files in cards/{es,en} before writing manifest
     removed_stale = 0
     if not check_only:
@@ -635,6 +776,9 @@ def build_bundle(
         "canonical_locked_inat_obs_cross_checked": len(locked_cohorts[1]) if locked_cohorts is not None else 0,
         "canonical_locked_inat_photos_cross_checked": len(locked_cohorts[2]) if locked_cohorts is not None else 0,
         "webp_quality": quality,
+        "head_subspecies_checked": head_subspecies is not None,
+        "subspecies_sides_reachable": alias_counts["reachable"],
+        "subspecies_sides_without_head_subspecies": alias_counts["no_head_subspecies"],
     }
     if removed_stale:
         print(f"Pruned {removed_stale} stale WebP asset(s) under {out_dir / 'cards'}")
@@ -880,7 +1024,66 @@ def run_self_tests() -> None:
         else:
             raise AssertionError(f"Self-test failed: {conflict_label} was unexpectedly accepted")
 
-    print("SELF-TEST PASS (20/20 receipt & cross-wave superseding checks)")
+    # 5. Subspecies aliases: the same normal form as the router, broken ones repaired, unreachable sides refused
+    for raw, want in [
+        ("gudruna?", "gudruna"),
+        ("f. ithomiola", "ithomiola"),
+        ("  Heliconius  cydno\u00a0F. White ", "heliconius cydno white"),
+        ("ssp. cyrbia", "cyrbia"),
+        ("Heliconius erato subsp. cyrbia ?", "heliconius erato cyrbia"),
+        ("Hypoleria alema forma", "hypoleria alema forma"),
+    ]:
+        assert norm_subspecies(raw) == want, (raw, norm_subspecies(raw))
+    assert clean_aliases(["gudruna?"]) == ["gudruna"]
+    assert clean_aliases(["deceptus", "deceptus- phasianita", "f. intermedia", "intermedia", "phasianita"]) == [
+        "deceptus",
+        "phasianita",
+        "intermedia",
+    ]
+    assert clean_aliases(["antonia", "ssp-f"]) == ["antonia"]
+    assert clean_aliases(["semifulva", "ssp. nov."]) == ["semifulva"]
+    assert clean_aliases(["semifulva", "ssp f 1"], ["satura", "Semifulva"]) == ["semifulva", "satura"]
+
+    def one_pair(aliases_a: list[str], aliases_b: list[str], status: str = "active") -> dict[str, Any]:
+        return {
+            "x1": {
+                "routing_mode": "subspecies_and_side",
+                "species_a": "Eresia eunice",
+                "species_b": "Eresia pelonia",
+                "routes": [
+                    {"card_id": "x1", "status": status, "subspecies_a_aliases": aliases_a, "subspecies_b_aliases": aliases_b}
+                ],
+            }
+        }
+
+    head = [{"eresia eunice": {"gudruna", "eunice"}, "eresia pelonia": {"ithomiola", "pelonia"}}]
+    ok, counted = alias_problems(one_pair(["gudruna"], ["Eresia pelonia ithomiola", "calonia"]), head)
+    assert ok == [] and counted == {"reachable": 2, "no_head_subspecies": 0}, (ok, counted)
+    # A species the head does not split is routed by region: nothing to reach.
+    ok, counted = alias_problems(one_pair(["gudruna"], []), [{"eresia eunice": {"gudruna"}}])
+    assert ok == [] and counted == {"reachable": 1, "no_head_subspecies": 1}, (ok, counted)
+    # No leaf list on this host: the broken strings are still refused, the sides are not counted.
+    ok, counted = alias_problems(one_pair(["nothing the head names"], ["pelonia"]), None)
+    assert ok == [] and counted == {"reachable": 0, "no_head_subspecies": 0}, (ok, counted)
+    for label, bad_pairs, bad_head in [
+        ("question_mark", one_pair(["gudruna?"], ["pelonia"]), None),
+        ("rank_marker_left", one_pair(["gudruna"], ["f. ithomiola"]), None),
+        ("unnamed_form", one_pair(["gudruna", "ssp-f"], ["pelonia"]), None),
+        ("unnamed_form_spaced", one_pair(["gudruna", "ssp f 1"], ["pelonia"]), None),
+        ("undescribed", one_pair(["gudruna", "nov."], ["pelonia"]), None),
+        ("two_names_run_together", one_pair(["gudruna"], ["pelonia- ithomiola"]), None),
+        ("broken_on_a_held_route", one_pair(["gudruna?"], ["pelonia"], "inseparable_in_photos"), None),
+        ("colour_forms_only", one_pair(["white", "yellow"], ["pelonia"]), head),
+        ("no_alias_at_all", one_pair([], ["pelonia"]), head),
+        ("reachable_under_one_name_column_only", one_pair(["gudruna"], ["pelonia"]), [*head, {"eresia eunice": {"eunice"}}]),
+    ]:
+        found, _ = alias_problems(bad_pairs, bad_head)
+        if not found:
+            raise AssertionError(f"Self-test failed: {label} was unexpectedly accepted")
+    for add_key in ALIAS_ADDITIONS:
+        assert len(add_key) == 3 and add_key[2] in ("a", "b"), add_key
+
+    print("SELF-TEST PASS (20/20 receipt & cross-wave superseding checks, 25/25 subspecies alias checks)")
 
 
 def main() -> int:
@@ -905,7 +1108,17 @@ def main() -> int:
         help="Append an extra wave (e.g. Wave 4): wave_id:dir_path:regional_map_filename",
     )
     parser.add_argument("--quality", type=int, default=92, help="WebP quality (default: 92)")
-    parser.add_argument("--check", action="store_true", help="Verify inputs & SHA-256 without writing files")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify inputs, SHA-256 and the subspecies aliases (against the head's leaf list) without writing files",
+    )
+    parser.add_argument(
+        "--leaf-map",
+        type=Path,
+        default=HEAD_LEAF_MAP,
+        help=f"The head's leaf list, for the reachability check (default: {HEAD_LEAF_MAP}; skipped when absent)",
+    )
     parser.add_argument("--self-test", action="store_true", help="Run fail-closed verifier self-tests and exit")
     args = parser.parse_args()
 
@@ -916,15 +1129,23 @@ def main() -> int:
     waves = list(args.wave) if args.wave else list(DEFAULT_WAVES)
     waves.extend(args.extra_wave)
 
-    manifest = build_bundle(waves=waves, out_dir=args.out_dir, quality=args.quality, check_only=args.check)
+    manifest = build_bundle(
+        waves=waves, out_dir=args.out_dir, quality=args.quality, check_only=args.check, leaf_map=args.leaf_map
+    )
     c = manifest["counts"]
+    v = manifest["verification"]
     print(
         f"OK confirmar visual bundle ({'check-only' if args.check else args.out_dir}): "
         f"{c['total_pairs']} pairs, {c['active_cards']} active cards ({c['assets_total']} WebP assets, "
         f"{c['webp_bytes'] / 1e6:.2f} MB vs {c['source_png_bytes'] / 1e6:.2f} MB PNG), "
         f"{c['non_active_pairs']} non-active pairs, {c['deferred_routes']} deferred routes, "
-        f"locked_overlap={manifest['verification']['locked_or_blind_overlap']}"
+        f"locked_overlap={v['locked_or_blind_overlap']}"
     )
+    if v["head_subspecies_checked"]:
+        print(
+            f"OK subspecies aliases: {v['subspecies_sides_reachable']} active sides reachable by a subspecies the head "
+            f"names, {v['subspecies_sides_without_head_subspecies']} of species the head does not split, 0 broken"
+        )
     return 0
 
 

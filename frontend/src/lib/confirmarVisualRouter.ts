@@ -13,7 +13,11 @@
  *     2. Side-only match (`East` / `West` from user selector or conservative Ecuador GPS divide).
  *     3. Unspecified region fallback (`pair.default_card_id` with `regionFallback=true`),
  *        where manual region switching (`preferredCardId`) is permitted among active regional
- *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía).
+ *        cards for that pair (e.g. `p01` Occidente vs Oriente · Napo y Amazonía). A GPS point
+ *        inside the ridge band but clearly on one side of the ridge line (`sideLean`) picks no
+ *        card: it only hides a guide made for the other side alone.
+ *   - Subspecies names are compared without rank markers (`f.`, `ssp.`, `subsp.`) or a trailing
+ *     `?`, the same normal form scripts/build_confirmar_visual_bundle.py writes and checks.
  *   - Cross-wave superseding (`superseded_pairs`): when a newer wave rescues an earlier held
  *     pair (e.g. `w3a_03 -> w5_02`) or supersedes an earlier hold (`w3a_01 -> w5_01`), queries
  *     for either the old or new pair_id resolve cleanly to the canonical active/verified entry.
@@ -104,6 +108,10 @@ export interface ConfirmarVisualManifest {
     canonical_locked_inat_obs_cross_checked?: number
     canonical_locked_inat_photos_cross_checked?: number
     webp_quality?: number
+    /** Whether the builder had the head's leaf list to check the subspecies aliases against. */
+    head_subspecies_checked?: boolean
+    subspecies_sides_reachable?: number
+    subspecies_sides_without_head_subspecies?: number
   }
   counts: {
     total_pairs: number
@@ -130,6 +138,8 @@ export interface RegionalRouteResolution {
   cardId: string | null
   status: RegionalRouteStatus
   regionFallback: boolean
+  /** The one side of the Andes the card shown is for; null for a card of both sides, and when no card is shown. */
+  guideSide: SideAndes | null
   /** True only when region is unspecified and the pair offers >1 active regional cards to toggle between. */
   canSwitchRegion: boolean
   imageUrl: string | null
@@ -169,6 +179,20 @@ export function confirmVisualCardsEnabled(override?: boolean): boolean {
 }
 
 const norm = (value: string | null | undefined): string => (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+const RANK_MARKERS = new Set(['f.', 'ssp.', 'subsp.'])
+
+/**
+ * A subspecies name as it is compared: `norm`, without a rank marker (`f. ithomiola`, `Heliconius erato ssp. cyrbia`)
+ * and without a trailing question mark (`gudruna?`). The same rule as norm_subspecies in
+ * scripts/build_confirmar_visual_bundle.py, which writes the aliases and checks them against the head's names.
+ */
+export const normSubspecies = (value: string | null | undefined): string =>
+  norm(value)
+    .split(' ')
+    .filter(word => !RANK_MARKERS.has(word))
+    .join(' ')
+    .replace(/(\s*\?)+$/, '')
 
 function normalizeSide(side: string | null | undefined): SideAndes | null {
   const s = norm(side)
@@ -261,6 +285,7 @@ function buildActiveResolution(
     cardId: route.card_id,
     status: 'active',
     regionFallback,
+    guideSide: route.side_andes.length === 1 ? route.side_andes[0] : null,
     canSwitchRegion: canSwitchRegion && alternateCards.length > 1,
     imageUrl: asset ? resolveAssetUrl(asset, rootUrl) : null,
     imageWidth: asset?.width ?? null,
@@ -289,6 +314,7 @@ function buildNullResolution(
     cardId: null,
     status,
     regionFallback: false,
+    guideSide: null,
     canSwitchRegion: false,
     imageUrl: null,
     imageWidth: null,
@@ -315,7 +341,7 @@ function aliasMatches(inputNorm: string, aliases: string[]): boolean {
   if (!inputNorm) return false
   const infra = infraspecificPart(inputNorm)
   return aliases.some(a => {
-    const na = norm(a)
+    const na = normSubspecies(a)
     return na === inputNorm || (infra !== null && na === infra)
   })
 }
@@ -333,6 +359,8 @@ export function resolveRegionalRoute(
   input: {
     pairId: string
     sideAndes?: SideAndes | string | null
+    /** With no `sideAndes`: the side a GPS point inside the ridge band clearly lies on (ecuadorSideLeanFromGps). */
+    sideLean?: SideAndes | string | null
     subspeciesA?: string | null
     subspeciesB?: string | null
     locale: ConfirmarLocale
@@ -350,6 +378,7 @@ export function resolveRegionalRoute(
       cardId: null,
       status: 'unknown_pair',
       regionFallback: false,
+      guideSide: null,
       canSwitchRegion: false,
       imageUrl: null,
       imageWidth: null,
@@ -367,8 +396,8 @@ export function resolveRegionalRoute(
 
   const locale = input.locale
   const side = normalizeSide(input.sideAndes)
-  const sspA = norm(input.subspeciesA)
-  const sspB = norm(input.subspeciesB)
+  const sspA = normSubspecies(input.subspeciesA)
+  const sspB = normSubspecies(input.subspeciesB)
 
   // Wave 3B contract Rule 1: pair explicitly classified as not_reliably_separable_in_photos
   if (pair.routes.length === 1 && pair.routes[0].status === 'not_reliably_separable_in_photos') {
@@ -427,7 +456,14 @@ export function resolveRegionalRoute(
     return buildNullResolution(pair, 'no_card_for_side', locale)
   }
 
-  // Step 3: Unspecified region fallback (only here may a manual region preference switch between active cards)
+  // Step 3: Unspecified region fallback (only here may a manual region preference switch between active cards).
+  // A point that leans to one side never picks a card; it hides a pair whose guides are all for the other side.
+  // A pair with no guide at all keeps its note.
+  const lean = normalizeSide(input.sideLean)
+  const guides = pair.routes.filter(r => r.status === 'active')
+  if (lean && guides.length > 0 && !guides.some(r => r.side_andes.includes(lean))) {
+    return buildNullResolution(pair, 'no_card_for_side', locale)
+  }
   if (input.preferredCardId) {
     const chosen = pair.routes.find(r => r.status === 'active' && r.card_id === input.preferredCardId)
     if (chosen) {
@@ -447,19 +483,43 @@ export function resolveRegionalRoute(
   return buildNullResolution(pair, 'no_card_for_side', locale)
 }
 
+/** Half the width of the corridor along the ridge line where a point gets no side, in degrees of longitude. */
+const RIDGE_BAND_DEG = 0.35
+/** Inside that corridor, how far from the ridge line a point must be to lean to its side (about 22 km). */
+const RIDGE_CLEAR_DEG = 0.2
+
+/** The ridge line's longitude at a latitude; null for a point outside continental Ecuador. */
+function ridgeLonAt(lat: number, lon: number): number | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  if (lat > 1.5 || lat < -5.1 || lon < -81.2 || lon > -75.0) return null
+  // North of the equator the Andes curve more steeply NE toward Tulcán (0.81, -77.72)
+  return lat > 0 ? -78.4 + 0.85 * lat : -78.4 + 0.24 * lat
+}
+
 /**
  * Conservative continental-Ecuador East/West Andes classifier from GPS coordinates.
  * Returns null outside continental Ecuador or inside the inter-Andean crest corridor
  * so valley towns (Quito, Tulcán, Cuenca, Loja, Otavalo, Riobamba) are never forced onto a slope.
  */
 export function ecuadorSideFromGps(lat: number, lon: number): SideAndes | null {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
-  if (lat > 1.5 || lat < -5.1 || lon < -81.2 || lon > -75.0) return null
-  // North of the equator the Andes curve more steeply NE toward Tulcán (0.81, -77.72)
-  const ridgeLon = lat > 0 ? -78.4 + 0.85 * lat : -78.4 + 0.24 * lat
-  const bufferDeg = 0.35
-  if (lon > ridgeLon + bufferDeg) return 'East'
-  if (lon < ridgeLon - bufferDeg) return 'West'
+  const ridgeLon = ridgeLonAt(lat, lon)
+  if (ridgeLon === null) return null
+  if (lon > ridgeLon + RIDGE_BAND_DEG) return 'East'
+  if (lon < ridgeLon - RIDGE_BAND_DEG) return 'West'
+  return null
+}
+
+/**
+ * For a point `ecuadorSideFromGps` gives no side (inside the corridor): the side of the ridge line it clearly lies on,
+ * as the west-slope cloud forest does (Tandayapa, Bellavista, Nanegalito); null near the line (Quito, Tulcán, Cuenca)
+ * and wherever `ecuadorSideFromGps` answers. It is not sure enough to choose a guide, only to hide one made for the
+ * other side alone.
+ */
+export function ecuadorSideLeanFromGps(lat: number, lon: number): SideAndes | null {
+  const ridgeLon = ridgeLonAt(lat, lon)
+  if (ridgeLon === null || ecuadorSideFromGps(lat, lon)) return null
+  if (lon >= ridgeLon + RIDGE_CLEAR_DEG) return 'East'
+  if (lon <= ridgeLon - RIDGE_CLEAR_DEG) return 'West'
   return null
 }
 
@@ -517,7 +577,7 @@ function findIntraspecificPair(manifest: ConfirmarVisualManifest, topPred: Predi
   if (!topNorm) return null
   const ssps = topPred.subspecies ?? []
   const topSsp = dominantSubspecies(topPred)
-  const topSspNorm = norm(topSsp)
+  const topSspNorm = normSubspecies(topSsp)
 
   for (const pair of Object.values(manifest.pairs)) {
     const parentA = norm(parentSpeciesOf(pair.species_a))
@@ -556,6 +616,7 @@ export function resolveConfirmarVisualCard(
     topPredictions: PredictionInput[]
     comparedSpecies?: string | null
     sideAndes?: SideAndes | string | null
+    sideLean?: SideAndes | string | null
     locale: ConfirmarLocale
     preferredCardId?: string | null
     rootUrl?: string
@@ -597,6 +658,7 @@ export function resolveConfirmarVisualCard(
   const resolution = resolveRegionalRoute(manifest, {
     pairId: found.pair.pair_id,
     sideAndes: input.sideAndes,
+    sideLean: input.sideLean,
     subspeciesA: found.subspeciesA,
     subspeciesB: found.subspeciesB,
     locale: input.locale,

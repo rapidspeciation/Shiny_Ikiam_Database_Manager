@@ -62,7 +62,10 @@
     "canonical_locked_cams_cross_checked": 1583,
     "canonical_locked_inat_obs_cross_checked": 32776,
     "canonical_locked_inat_photos_cross_checked": 1368,
-    "webp_quality": 92
+    "webp_quality": 92,
+    "head_subspecies_checked": true,
+    "subspecies_sides_reachable": 99,
+    "subspecies_sides_without_head_subspecies": 5
   },
   "counts": {
     "total_pairs": 91,
@@ -153,7 +156,7 @@
           "subspecies_a_aliases": [
             "lativitta",
             "lattivita",
-            "lativitta f. ilia",
+            "lativitta ilia",
             "Heliconius erato lativitta"
           ],
           "subspecies_b_aliases": [
@@ -538,7 +541,6 @@
           "taxon_b": "Hypothyris euclea pyrippe",
           "subspecies_a_aliases": [
             "intermedia",
-            "f. intermedia",
             "Hypothyris euclea intermedia"
           ],
           "subspecies_b_aliases": [
@@ -937,12 +939,14 @@
           "taxon_a": "Heliconius cydno",
           "taxon_b": "Heliconius timareta",
           "subspecies_a_aliases": [
-            "f. white",
-            "f. yellow",
-            "f. intermedia",
-            "Heliconius cydno f. white",
-            "Heliconius cydno f. yellow",
-            "Heliconius cydno f. intermedia"
+            "white",
+            "yellow",
+            "intermedia",
+            "Heliconius cydno white",
+            "Heliconius cydno yellow",
+            "Heliconius cydno intermedia",
+            "alithea",
+            "Heliconius cydno alithea"
           ],
           "subspecies_b_aliases": [
             "timareta",
@@ -1686,12 +1690,13 @@
           "taxon_a": "Heliconius cydno",
           "taxon_b": "Heliconius sapho candidus",
           "subspecies_a_aliases": [
-            "f. white",
-            "f. yellow",
-            "f. intermedia",
+            "white",
+            "yellow",
+            "intermedia",
             "alisitoides",
             "zelinde",
-            "Heliconius cydno"
+            "Heliconius cydno",
+            "alithea"
           ],
           "subspecies_b_aliases": [
             "candidus",
@@ -2473,7 +2478,7 @@
             "chrysodonia",
             "karschi",
             "karsehi",
-            "f. mestiza",
+            "mestiza",
             "ina"
           ],
           "view_badge_es": "Anverso y reverso",
@@ -2668,11 +2673,9 @@
           ],
           "subspecies_b_aliases": [
             "deceptus",
-            "deceptus- phasianita",
+            "phasianita",
             "intermedia",
-            "f. intermedia",
-            "messenoides",
-            "phasianita"
+            "messenoides"
           ],
           "view_badge_es": "Vista dorsal",
           "view_badge_en": "Upperside view",
@@ -2824,8 +2827,7 @@
           "taxon_a": "Hypothyris lycaste",
           "taxon_b": "Ithomia iphianassa",
           "subspecies_a_aliases": [
-            "antonia",
-            "ssp-f"
+            "antonia"
           ],
           "subspecies_b_aliases": [
             "occidentissa",
@@ -2959,9 +2961,10 @@
           "taxon_a": "Heliconius cydno",
           "taxon_b": "Heliconius eleuchia",
           "subspecies_a_aliases": [
-            "f. yellow",
-            "f. white",
-            "f. intermedia"
+            "yellow",
+            "white",
+            "intermedia",
+            "alithea"
           ],
           "subspecies_b_aliases": [
             "primularis",
@@ -3827,7 +3830,6 @@
             "malleti"
           ],
           "subspecies_b_aliases": [
-            "ssp. nov.",
             "timareta",
             "insolita/contigua"
           ]
@@ -3967,12 +3969,12 @@
           "taxon_a": "Eresia eunice",
           "taxon_b": "Eresia pelonia",
           "subspecies_a_aliases": [
-            "gudruna?"
+            "gudruna"
           ],
           "subspecies_b_aliases": [
-            "f. ithomiola",
-            "f. calonia",
-            "f. pelonia"
+            "ithomiola",
+            "calonia",
+            "pelonia"
           ],
           "view_badge_es": "Vista dorsal",
           "view_badge_en": "Upperside view",
@@ -4024,7 +4026,7 @@
             "salapia",
             "travella/derasa",
             "derasa",
-            "f. travella"
+            "travella"
           ],
           "subspecies_b_aliases": [
             "pozziana"
@@ -4405,8 +4407,7 @@
           ],
           "subspecies_b_aliases": [
             "semifulva",
-            "satura",
-            "ssp f 1"
+            "satura"
           ],
           "view_badge_es": "Anverso y reverso",
           "view_badge_en": "Upperside & underside",

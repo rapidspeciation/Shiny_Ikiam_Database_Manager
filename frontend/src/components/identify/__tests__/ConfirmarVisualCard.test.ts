@@ -32,6 +32,7 @@ const activeMatch = (over: Partial<ConfirmarCardMatch> = {}): ConfirmarCardMatch
   status: 'active',
   displayKind: 'card',
   regionFallback: true,
+  guideSide: 'West',
   canSwitchRegion: true,
   imageUrl: 'https://example.test/identificar/confirmar/cards/es/p01_west.webp?v=1234567890',
   imageWidth: 1400,
@@ -248,6 +249,83 @@ describe('ConfirmarVisualCard', () => {
     expect(region.compareDocumentPosition(note.querySelector('.confirmar-pair')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(note.textContent!.split('Oriente')).toHaveLength(2)
     expect(note.querySelector('button')).toBeNull()
+  })
+
+  it('no side known and a guide for one side only: one line says so, with the two sides to choose from', () => {
+    locale.value = 'es'
+    const sides: string[] = []
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(ConfirmarVisualCard, {
+      match: activeMatch({ pairId: 'w6_05', cardId: 'w6_05', guideSide: 'East', canSwitchRegion: false, regionBadge: 'Oriente', alternateCards: [{ cardId: 'w6_05', regionBadge: 'Oriente', regionDetail: null, sideAndes: ['East'] }] }),
+      onSelectSide: (s: string) => sides.push(s),
+    })
+    app.mount(host)
+    unmount = () => app.unmount()
+
+    const line = host.querySelector('[data-testid="confirmar-region-unknown"]')!
+    expect(line.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Región no determinada: esta guía es de Oriente')
+    // At the top of the card, before its badges and its plate.
+    const card = host.querySelector('[data-testid="confirmar-visual-card"]')!
+    expect(card.firstElementChild).toBe(line)
+    // The two sides, West first, each a full tap target, neither chosen yet.
+    const group = line.querySelector('[data-testid="confirmar-side-switch"]')!
+    expect(group.getAttribute('role')).toBe('group')
+    expect(group.getAttribute('aria-label')).toBe('Lado de los Andes de la foto')
+    const buttons = [...group.querySelectorAll('button')]
+    expect(buttons.map(b => b.textContent!.trim())).toEqual(['Occidente', 'Oriente'])
+    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['false', 'false'])
+    for (const b of buttons) expect(b.className).toContain('min-h-11')
+    buttons[0].click()
+    buttons[1].click()
+    expect(sides).toEqual(['West', 'East'])
+    // The line named the region: the badge does not say it again.
+    expect(host.querySelector('[data-testid="confirmar-region-badge"]')).toBeNull()
+    expect(card.textContent!.split('Oriente')).toHaveLength(3) // the line and the button
+  })
+
+  it('a badge that says more than the side stays beside the line', () => {
+    locale.value = 'en'
+    const host = mountCard(activeMatch({ guideSide: 'East', canSwitchRegion: false, regionBadge: 'East Andes' }))
+    expect(host.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Region not determined: this guide is for East Ecuador')
+    expect(host.querySelector('[data-testid="confirmar-region-badge"]')!.textContent!.trim()).toBe('East Andes')
+  })
+
+  it('the line is in the reader\'s language and names the guide\'s own side', () => {
+    locale.value = 'en'
+    const east = mountCard(activeMatch({ guideSide: 'East', canSwitchRegion: false }))
+    expect(east.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Region not determined: this guide is for East Ecuador')
+    expect([...east.querySelectorAll('[data-testid="confirmar-side-switch"] button')].map(b => b.textContent!.trim())).toEqual(['West', 'East'])
+    unmount()
+    const west = mountCard(activeMatch({ guideSide: 'West', canSwitchRegion: false }))
+    expect(west.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Region not determined: this guide is for West Ecuador')
+    unmount()
+    locale.value = 'es'
+    const oeste = mountCard(activeMatch({ guideSide: 'West', canSwitchRegion: false }))
+    expect(oeste.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Región no determinada: esta guía es de Occidente')
+  })
+
+  it('no line when the side is known, when the guide is for both sides, or on a note', () => {
+    locale.value = 'es'
+    // The side came from the person, the GPS or a subspecies.
+    const known = mountCard(activeMatch({ regionFallback: false, canSwitchRegion: false }))
+    expect(known.querySelector('[data-testid="confirmar-region-unknown"]')).toBeNull()
+    unmount()
+    // One card for both sides (Heliconius cydno / timareta): no side to say.
+    const both = mountCard(activeMatch({ guideSide: null, canSwitchRegion: false, regionBadge: 'Occidente vs. Oriente' }))
+    expect(both.querySelector('[data-testid="confirmar-region-unknown"]')).toBeNull()
+    expect(both.querySelector('[data-testid="confirmar-side-switch"]')).toBeNull()
+    unmount()
+    const note = mountCard({ ...activeMatch(), cardId: null, status: 'inseparable_in_photos', displayKind: 'honest_note', imageUrl: null, guideSide: null, honestNote: 'x' })
+    expect(note.querySelector('[data-testid="confirmar-region-unknown"]')).toBeNull()
+  })
+
+  it('a pair with a guide per region says the line and keeps its own region switch as the one control', () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch())
+    expect(host.querySelector('[data-testid="confirmar-region-unknown-text"]')!.textContent).toBe('Región no determinada: esta guía es de Occidente')
+    expect(host.querySelector('[data-testid="confirmar-side-switch"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-region-switcher"]')).not.toBeNull()
   })
 
   it('renders nothing for hidden status', () => {

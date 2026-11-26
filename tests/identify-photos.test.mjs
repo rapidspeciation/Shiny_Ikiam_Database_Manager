@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fieldPhotos, ithomiiniSpecies, refPhotoUrl, sendRefPhoto } from '../server/identify-photos.mjs';
@@ -141,7 +142,6 @@ test('headSides: the sides of the Andes the head records per species; identifyUp
 
 test('the Identificar page: photo packs from PACKS_DIR, the list gzipped when its .gz is there', async () => {
   const { gzipSync, gunzipSync } = await import('node:zlib');
-  const { utimesSync } = await import('node:fs');
   const dir = mkdtempSync(join(tmpdir(), 'identify-packs-'));
   const web = join(dir, 'web');
   const packs = join(dir, 'packs');
@@ -200,4 +200,62 @@ test('the Identificar page: photo packs from PACKS_DIR, the list gzipped when it
   });
   // Without PACKS_DIR: the list beside the page.
   await run(null, async base => assert.deepEqual(await (await fetch(`${base}/packs/index.json`)).json(), { beside: 'page' }));
+});
+
+test('/identificar/confirmar/: a guide card asked by its version in the list is cached for good, any other way an hour', async () => {
+  const web = mkdtempSync(join(tmpdir(), 'confirmar-cards-'));
+  const cards = join(web, 'identificar', 'confirmar', 'cards');
+  mkdirSync(join(cards, 'es'), { recursive: true });
+  mkdirSync(join(cards, 'en'), { recursive: true });
+  const bytes = Buffer.from('RIFF0000WEBPcard');
+  writeFileSync(join(cards, 'es', 'p01_west.webp'), bytes);
+  writeFileSync(join(cards, 'en', 'p01_west.webp'), bytes);
+  writeFileSync(join(cards, 'es', 'unlisted.webp'), bytes);
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  const list = join(web, 'identificar', 'confirmar', 'confirmar_visual_manifest.json');
+  const listOf = hash =>
+    JSON.stringify({ pairs: { p01: { routes: [{ card_id: null }, { assets: { es: { path: 'identificar/confirmar/cards/es/p01_west.webp', sha256: hash } } }] } } });
+  writeFileSync(list, listOf(sha));
+  const server = http.createServer((req, res) => {
+    const path = new URL(req.url, 'http://x').pathname.slice('/identificar'.length);
+    serveOfflineId(req, res, { page: 'identificar', path, webRoot: web, identifierDir: null, user: null });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}/identificar/confirmar`;
+  const cache = async path => {
+    const r = await fetch(`${base}/${path}`);
+    assert.equal(r.status, 200, path);
+    return r.headers.get('cache-control');
+  };
+  const forGood = 'public, max-age=31536000, immutable';
+  const anHour = 'public, max-age=3600';
+  try {
+    const v = sha.slice(0, 10);
+    const card = await fetch(`${base}/cards/es/p01_west.webp?v=${v}`);
+    assert.equal(card.headers.get('cache-control'), forGood);
+    assert.equal(card.headers.get('content-type'), 'image/webp');
+    assert.deepEqual(Buffer.from(await card.arrayBuffer()), bytes);
+    // No version, another release's version, a longer one, a card the list does not name (the same bytes in another language).
+    assert.equal(await cache('cards/es/p01_west.webp'), anHour);
+    assert.equal(await cache('cards/es/p01_west.webp?v=0123456789'), anHour);
+    assert.equal(await cache(`cards/es/p01_west.webp?v=${sha}`), anHour);
+    assert.equal(await cache(`cards/en/p01_west.webp?v=${v}`), anHour);
+    assert.equal(await cache(`cards/es/unlisted.webp?v=${v}`), anHour);
+    // The list itself is never kept for good, and a card that is not there is a 404.
+    assert.equal(await cache(`confirmar_visual_manifest.json?v=${v}`), anHour);
+    assert.equal((await fetch(`${base}/cards/es/gone.webp?v=${v}`)).status, 404);
+    // A new list (a card rebuilt): the old version is no longer this release's.
+    const other = 'f'.repeat(64);
+    writeFileSync(list, listOf(other) + ' ');
+    const later = new Date(Date.now() + 5000);
+    utimesSync(list, later, later);
+    assert.equal(await cache(`cards/es/p01_west.webp?v=${v}`), anHour);
+    assert.equal(await cache(`cards/es/p01_west.webp?v=${other.slice(0, 10)}`), forGood);
+    // No list (a build without the guides): nothing is kept for good.
+    rmSync(list);
+    assert.equal(await cache(`cards/es/p01_west.webp?v=${v}`), anHour);
+  } finally {
+    server.close();
+    rmSync(web, { recursive: true, force: true });
+  }
 });

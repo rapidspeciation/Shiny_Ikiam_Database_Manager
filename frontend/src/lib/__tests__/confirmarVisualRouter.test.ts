@@ -6,6 +6,8 @@ import {
   CONFIRM_VISUAL_CARDS_ENABLED,
   confirmVisualCardsEnabled,
   ecuadorSideFromGps,
+  ecuadorSideLeanFromGps,
+  normSubspecies,
   resolveConfirmarVisualCard,
   resolveRegionalRoute,
   type ConfirmarVisualManifest,
@@ -561,5 +563,207 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
     expect(ecuadorSideFromGps(-0.18, -78.47)).toBeNull() // Quito
     expect(ecuadorSideFromGps(0.81, -77.72)).toBeNull() // Tulcán
     expect(ecuadorSideFromGps(4.71, -74.07)).toBeNull() // Bogotá (outside Ecuador)
+  })
+})
+
+describe('confirmarVisualRouter — subspecies names as the head sends them reach every card (audit 25 Nov 2026, 3.1)', () => {
+  it('compares names without rank markers or a trailing question mark', () => {
+    expect(normSubspecies('gudruna?')).toBe('gudruna')
+    expect(normSubspecies('f. ithomiola')).toBe('ithomiola')
+    expect(normSubspecies('  Heliconius  cydno\u00a0F. White ')).toBe('heliconius cydno white')
+    expect(normSubspecies('Heliconius erato ssp. cyrbia')).toBe('heliconius erato cyrbia')
+    expect(normSubspecies('Heliconius erato subsp. cyrbia ?')).toBe('heliconius erato cyrbia')
+    // A name that only begins like a marker is a name.
+    expect(normSubspecies('Hypoleria alema forma')).toBe('hypoleria alema forma')
+    expect(normSubspecies(null)).toBe('')
+  })
+
+  it('the list carries no rank marker, question mark or unnamed form in a subspecies-routed pair', () => {
+    const broken = /\?|(?:^|\s)(?:ssp|subsp|sp|f|nov)(?:[\s.-]|$)|-\s|\s-/
+    let aliases = 0
+    for (const pair of Object.values(manifest.pairs)) {
+      if (pair.routing_mode !== 'subspecies_and_side') continue
+      for (const route of pair.routes) {
+        for (const alias of [...route.subspecies_a_aliases, ...route.subspecies_b_aliases]) {
+          aliases++
+          expect(broken.test(alias.toLowerCase()), `${pair.pair_id}: ${alias}`).toBe(false)
+        }
+      }
+    }
+    expect(aliases).toBeGreaterThan(250)
+    // The builder checked every active side against the subspecies the head names.
+    expect(manifest.verification?.head_subspecies_checked).toBe(true)
+    expect(manifest.verification?.subspecies_sides_reachable).toBe(99)
+    expect(manifest.verification?.subspecies_sides_without_head_subspecies).toBe(5)
+  })
+
+  // The head's leading subspecies, with no side known: before, each of these four sides gave `unknown_subspecies`.
+  const card = (pairId: string, ssp: { subspeciesA?: string; subspeciesB?: string }) =>
+    resolveRegionalRoute(manifest, { pairId, locale: 'es', rootUrl: ROOT_URL, ...ssp })
+
+  it('p14 side A: Heliconius cydno alithea (West Ecuador) reaches the cydno / timareta card', () => {
+    for (const subspeciesA of ['Heliconius cydno alithea', 'alithea', 'Heliconius cydno ssp. alithea']) {
+      const r = card('p14', { subspeciesA })
+      expect(r.status, subspeciesA).toBe('active')
+      expect(r.cardId).toBe('p14')
+      expect(r.regionFallback).toBe(false)
+    }
+    // A subspecies of another country still shows nothing rather than a guess.
+    expect(card('p14', { subspeciesA: 'Heliconius cydno chioneus' }).status).toBe('unknown_subspecies')
+    // The other side of the same card was reachable and stays so.
+    expect(card('p14', { subspeciesB: 'Heliconius timareta timareta' }).cardId).toBe('p14')
+  })
+
+  it('w4_11 side A: Heliconius cydno alithea reaches the cydno / eleuchia card', () => {
+    const r = card('w4_11', { subspeciesA: 'Heliconius cydno alithea' })
+    expect(r.status).toBe('active')
+    expect(r.cardId).toBe('w4_11')
+    expect(r.guideSide).toBe('West')
+    expect(card('w4_11', { subspeciesA: 'Heliconius cydno alithea', subspeciesB: 'Heliconius eleuchia primularis' }).cardId).toBe('w4_11')
+  })
+
+  it('w6_05 both sides: Eresia eunice gudruna and Eresia pelonia ithomiola reach the card', () => {
+    expect(card('w6_05', { subspeciesA: 'Eresia eunice gudruna' }).cardId).toBe('w6_05')
+    expect(card('w6_05', { subspeciesB: 'Eresia pelonia ithomiola' }).cardId).toBe('w6_05')
+    expect(card('w6_05', { subspeciesB: 'Eresia pelonia pelonia' }).cardId).toBe('w6_05')
+    expect(card('w6_05', { subspeciesA: 'Eresia eunice gudruna', subspeciesB: 'Eresia pelonia ithomiola' }).cardId).toBe('w6_05')
+  })
+
+  it('the same four sides from the page: the two leading species with their leading subspecies', () => {
+    const shown = (a: [string, string], b: [string, string]) =>
+      resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: a[0], p: 0.55, subspecies: a[1] ? [{ name: a[1], p: 0.5 }] : [] },
+          { name: b[0], p: 0.35, subspecies: b[1] ? [{ name: b[1], p: 0.3 }] : [] },
+        ],
+        sideAndes: null,
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+    for (const [a, b, id] of [
+      [['Heliconius cydno', 'Heliconius cydno alithea'], ['Heliconius timareta', ''], 'p14'],
+      [['Heliconius eleuchia', ''], ['Heliconius cydno', 'Heliconius cydno alithea'], 'w4_11'],
+      [['Eresia eunice', 'Eresia eunice gudruna'], ['Eresia pelonia', ''], 'w6_05'],
+      [['Eresia pelonia', 'Eresia pelonia ithomiola'], ['Eresia eunice', ''], 'w6_05'],
+    ] as [[string, string], [string, string], string][]) {
+      const match = shown(a, b)
+      expect(match?.displayKind, id).toBe('card')
+      expect(match?.cardId).toBe(id)
+      expect(match?.imageUrl).toContain(`/cards/es/${id}.webp?v=`)
+    }
+  })
+
+  it('names the head never writes that way are read too (a rank before the epithet)', () => {
+    expect(card('p01', { subspeciesA: 'Heliconius erato ssp. cyrbia' }).cardId).toBe('p01_west')
+    expect(card('p01', { subspeciesA: 'subsp. lativitta' }).cardId).toBe('p01_east_napo')
+  })
+})
+
+describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () => {
+  // Approximate positions. The first three are west-slope cloud forest inside the 0.35° corridor.
+  const TANDAYAPA = [0.0044, -78.6769] as const
+  const BELLAVISTA = [-0.0126, -78.6817] as const
+  const NANEGALITO = [0.0655, -78.6781] as const
+
+  it('a point inside the corridor gets no side, and leans only when clearly off the ridge line', () => {
+    for (const [lat, lon] of [TANDAYAPA, BELLAVISTA, NANEGALITO]) {
+      expect(ecuadorSideFromGps(lat, lon)).toBeNull()
+      expect(ecuadorSideLeanFromGps(lat, lon)).toBe('West')
+    }
+    expect(ecuadorSideLeanFromGps(-3.69, -79.61)).toBe('West') // Zaruma
+    expect(ecuadorSideLeanFromGps(-1.396, -78.42)).toBe('East') // Baños
+    expect(ecuadorSideLeanFromGps(-0.37, -78.14)).toBe('East') // Papallacta
+    // Near the line: no lean (the valley towns).
+    expect(ecuadorSideLeanFromGps(-0.18, -78.47)).toBeNull() // Quito
+    expect(ecuadorSideLeanFromGps(0.81, -77.72)).toBeNull() // Tulcán
+    expect(ecuadorSideLeanFromGps(-2.9, -79.0)).toBeNull() // Cuenca
+    expect(ecuadorSideLeanFromGps(-0.93, -78.61)).toBeNull() // Latacunga
+    // Where the side is known there is nothing to lean: the side itself is the answer.
+    expect(ecuadorSideLeanFromGps(-0.05, -78.78)).toBeNull() // Mindo (West)
+    expect(ecuadorSideLeanFromGps(-0.95, -77.86)).toBeNull() // Tena (East)
+    expect(ecuadorSideLeanFromGps(4.71, -74.07)).toBeNull() // Bogotá
+    expect(ecuadorSideLeanFromGps(Number.NaN, -78.6)).toBeNull()
+  })
+
+  it('counts what a photo with no side shows: 63 pairs, 52 of them a guide for one side only', () => {
+    let shown = 0
+    let oneSide = 0
+    for (const pair of Object.values(manifest.pairs)) {
+      const r = resolveRegionalRoute(manifest, { pairId: pair.pair_id, locale: 'es', rootUrl: ROOT_URL })
+      if (r.status !== 'active') continue
+      shown++
+      expect(r.regionFallback).toBe(true)
+      if (r.guideSide && !r.canSwitchRegion) oneSide++
+    }
+    expect(shown).toBe(63)
+    expect(oneSide).toBe(52)
+  })
+
+  it('Tandayapa: a guide for the East alone is hidden, a guide for the West is shown as a fallback, a guide for both stays', () => {
+    const lean = ecuadorSideLeanFromGps(...TANDAYAPA)
+    const at = (pairId: string) => resolveRegionalRoute(manifest, { pairId, sideAndes: ecuadorSideFromGps(...TANDAYAPA), sideLean: lean, locale: 'es', rootUrl: ROOT_URL })
+    // East only (Eresia eunice / pelonia): without the lean it was shown with nothing but its badge to say so.
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
+    const east = at('w6_05')
+    expect(east.status).toBe('no_card_for_side')
+    expect(east.cardId).toBeNull()
+    // West only (Heliconius cydno / eleuchia): shown, still as a fallback (the side is not certain), with its side.
+    const west = at('w4_11')
+    expect(west.cardId).toBe('w4_11')
+    expect(west.regionFallback).toBe(true)
+    expect(west.guideSide).toBe('West')
+    // One card for both sides: no side to say, and it stays.
+    const both = at('p14')
+    expect(both.cardId).toBe('p14')
+    expect(both.guideSide).toBeNull()
+    // A guide per region: the lean chooses none, the switch stays.
+    const regions = at('p01')
+    expect(regions.cardId).toBe('p01_west')
+    expect(regions.canSwitchRegion).toBe(true)
+    expect(regions.guideSide).toBe('West')
+  })
+
+  it('the lean hides every one-sided guide of the other side and nothing else, and never overrides a side or a subspecies', () => {
+    for (const lean of ['East', 'West'] as const) {
+      const other = lean === 'East' ? 'West' : 'East'
+      let hidden = 0
+      for (const pair of Object.values(manifest.pairs)) {
+        const plain = resolveRegionalRoute(manifest, { pairId: pair.pair_id, locale: 'es', rootUrl: ROOT_URL })
+        const leaned = resolveRegionalRoute(manifest, { pairId: pair.pair_id, sideLean: lean, locale: 'es', rootUrl: ROOT_URL })
+        const sides = new Set(pair.routes.filter(r => r.status === 'active').flatMap(r => r.side_andes))
+        if (plain.status === 'active' && !sides.has(lean)) {
+          expect(sides.has(other)).toBe(true)
+          expect(leaned.status, pair.pair_id).toBe('no_card_for_side')
+          hidden++
+        } else {
+          expect(leaned, pair.pair_id).toEqual(plain)
+        }
+      }
+      // 39 pairs have a guide for the East alone, 13 for the West alone.
+      expect(hidden).toBe(lean === 'West' ? 39 : 13)
+    }
+    // A side the person chose, or the GPS gave, is the answer; the lean is not asked.
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', sideAndes: 'East', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
+    // So is a subspecies the head names.
+    expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', subspeciesA: 'Eresia eunice gudruna', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
+  })
+
+  it('from the page: the two leading species at Tandayapa', () => {
+    const at = (a: string, b: string) =>
+      resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: a, p: 0.6 },
+          { name: b, p: 0.3 },
+        ],
+        sideAndes: ecuadorSideFromGps(...TANDAYAPA),
+        sideLean: ecuadorSideLeanFromGps(...TANDAYAPA),
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+    expect(at('Eresia eunice', 'Eresia pelonia')?.displayKind).toBe('hidden')
+    const west = at('Heliconius cydno', 'Heliconius eleuchia')
+    expect(west?.displayKind).toBe('card')
+    expect(west?.regionFallback).toBe(true)
+    expect(west?.guideSide).toBe('West')
   })
 })

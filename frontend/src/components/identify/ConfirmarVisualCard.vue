@@ -5,7 +5,8 @@
  * Shows either:
  *  - an active, full-width readable visual comparison card with a tap-to-zoom full-screen
  *    pinch/pan lightbox (PhotoViewer) and a region switcher pill when multiple regional forms
- *    exist (e.g. Heliconius erato/melpomene Occidente vs Oriente · Napo y Amazonía), or
+ *    exist (e.g. Heliconius erato/melpomene Occidente vs Oriente · Napo y Amazonía); when the side of the
+ *    Andes is not known and the guide is for one side only, a line at its top says so, with the side to choose, or
  *  - a crisp, honest plain-language note when the top look-alike pair is known to be cryptic,
  *    inseparable in field photos, or lacks verified references for the selected region.
  */
@@ -13,7 +14,7 @@ import { computed, ref, watch } from 'vue'
 import { Info, ZoomIn } from 'lucide-vue-next'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 import { locale, t } from '../../lib/i18n'
-import type { ConfirmarCardMatch } from '../../lib/confirmarVisualRouter'
+import type { ConfirmarCardMatch, SideAndes } from '../../lib/confirmarVisualRouter'
 import { usePhoneWidth } from '../../composables/usePhone'
 
 // Component-scoped ES/EN UI copy so OFF builds ship zero Confirmar strings in the shared i18n bundle.
@@ -26,6 +27,10 @@ const COPY = {
     zoom: 'Ampliar la guía',
     loading: 'Cargando guía…',
     imgError: 'No se pudo cargar la guía visual.',
+    regionUnknown: 'Región no determinada: esta guía es de',
+    region: { East: 'Oriente', West: 'Occidente' },
+    ariaSide: 'Lado de los Andes de la foto',
+    side: { West: 'Occidente', East: 'Oriente' },
   },
   en: {
     ariaCard: 'Visual guide to tell look-alike species apart',
@@ -35,6 +40,10 @@ const COPY = {
     zoom: 'Enlarge the guide',
     loading: 'Loading guide…',
     imgError: "Couldn't load the visual guide.",
+    regionUnknown: 'Region not determined: this guide is for',
+    region: { East: 'East Ecuador', West: 'West Ecuador' },
+    ariaSide: "The photo's side of the Andes",
+    side: { West: 'West', East: 'East' },
   },
 } as const
 const copy = computed(() => (locale.value === 'en' ? COPY.en : COPY.es))
@@ -47,7 +56,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'select-card': [cardId: string]
+  /** The person says which side of the Andes the photo is from (the page's own setting, kept for the next photos). */
+  'select-side': [side: SideAndes]
 }>()
+
+/** West first, as on a map. */
+const SIDES: SideAndes[] = ['West', 'East']
 
 // A computer has the zoom action as a button beside the badges: that one is the keyboard's stop, the plate answers the mouse.
 const phone = usePhoneWidth()
@@ -82,6 +96,11 @@ const pair = computed(() => {
 const hasRegionSwitcher = computed(
   () => props.match.displayKind === 'card' && props.match.canSwitchRegion && props.match.alternateCards.length > 1,
 )
+
+/** The side is not known and the guide shown is for one side only: said at the top of the card, never left to the badge. */
+const unknownSide = computed(() => (props.match.displayKind === 'card' && props.match.regionFallback ? props.match.guideSide : null))
+/** The line already names the region in the badge's own words: the badge would say it twice. */
+const regionSaid = computed(() => !!unknownSide.value && props.match.regionBadge === copy.value.region[unknownSide.value])
 
 const viewerPhotos = computed<ViewerPhoto[]>(() => {
   if (!props.match.imageUrl) return []
@@ -125,11 +144,43 @@ function openLightbox() {
     :data-card-id="match.cardId"
     :data-pair-id="match.pairId"
   >
+    <!-- The side of the Andes is not known: which side this guide is for, and the two sides to choose from (a pair
+         with a guide per region has its own switch below, so only the line). -->
+    <div
+      v-if="unknownSide"
+      class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-pending-edge/60 bg-cell-pending px-3.5 py-2"
+      data-testid="confirmar-region-unknown"
+    >
+      <p class="flex min-w-0 flex-1 basis-56 items-start gap-2 text-sm leading-snug text-pending-text" role="status">
+        <Info :size="16" class="mt-0.5 shrink-0" aria-hidden="true" />
+        <span data-testid="confirmar-region-unknown-text">{{ copy.regionUnknown }} {{ copy.region[unknownSide] }}</span>
+      </p>
+      <div
+        v-if="!hasRegionSwitcher"
+        class="inline-flex shrink-0 rounded-md border border-control bg-surface"
+        role="group"
+        :aria-label="copy.ariaSide"
+        data-testid="confirmar-side-switch"
+      >
+        <button
+          v-for="s in SIDES"
+          :key="s"
+          type="button"
+          aria-pressed="false"
+          class="min-h-11 px-3.5 text-sm font-medium text-fg transition-colors first:rounded-l-md last:rounded-r-md hover:bg-surface-sunken active:bg-brand-soft [&+&]:border-l [&+&]:border-control"
+          :data-testid="`confirmar-side-${s}`"
+          @click="emit('select-side', s)"
+        >
+          {{ copy.side[s] }}
+        </button>
+      </div>
+    </div>
+
     <div class="border-b border-border px-3.5 py-3">
       <div class="flex flex-wrap items-center gap-1.5 text-xs">
         <span class="rounded bg-brand-soft px-2 py-0.5 font-semibold text-brand-text">{{ copy.badge }}</span>
         <span
-          v-if="match.regionBadge && !hasRegionSwitcher"
+          v-if="match.regionBadge && !hasRegionSwitcher && !regionSaid"
           class="rounded border border-border-strong bg-surface-sunken px-2 py-0.5 font-medium text-fg"
           data-testid="confirmar-region-badge"
         >

@@ -418,10 +418,12 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
     // still showed the old sizes); a pack's photos and bundles are named by their bytes, so never change under a name.
     const packList = clean.includes('packs/') && file.endsWith('.json');
     const named = inPacks && /^packs\/(photos|bundles)\//.test(clean);
+    // A guide card asked by the version the page read in the guides' list: that address never changes content.
+    const card = page === 'identificar' && !inPacks && (await cardVersioned(root, clean, new URL(req.url, 'http://x').searchParams.get('v')));
     return await sendFile(req, res, file, {
       'content-security-policy':
         "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' https://huggingface.co https://*.hf.co; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
-      'cache-control': html || packList || file.endsWith('.webmanifest') ? 'no-cache' : named ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+      'cache-control': html || packList || file.endsWith('.webmanifest') ? 'no-cache' : named || card ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
       ...(packList ? { vary: 'accept-encoding' } : {}),
     });
   } catch (e) {
@@ -432,6 +434,34 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
     res.end(body);
     if (status === 500) console.error('offline-id:', e);
   }
+}
+
+/** The guide cards' versions per guides' list read (scripts/build_confirmar_visual_bundle.py): file -> { stamp, versions }. */
+const cardLists = new Map();
+
+/**
+ * Whether `version` (the `?v=` of the request: the first 10 hex digits of the card's SHA-256, as
+ * frontend/src/lib/confirmarVisualRouter.ts writes it) is the version of the guide card `clean` in this release's
+ * list. Only then is the answer cached for good: a card asked with no version, or with another release's (a page
+ * still open across a deploy or a rollback), is kept an hour as before, so no browser holds other bytes under it.
+ */
+async function cardVersioned(pageRoot, clean, version) {
+  if (!/^confirmar\/cards\/(?:es|en)\/[\w-]+\.webp$/.test(clean) || !/^[0-9a-f]{10}$/.test(version ?? '')) return false;
+  const file = join(pageRoot, 'confirmar', 'confirmar_visual_manifest.json');
+  const s = await stat(file).catch(() => null);
+  if (!s?.isFile()) return false;
+  let known = cardLists.get(file);
+  if (known?.stamp !== etagOf(s)) {
+    const list = await readFile(file, 'utf8').then(JSON.parse).catch(() => null);
+    const versions = new Map();
+    for (const pair of Object.values(list?.pairs ?? {}))
+      for (const route of pair?.routes ?? [])
+        for (const asset of Object.values(route?.assets ?? {}))
+          if (typeof asset?.path === 'string' && typeof asset.sha256 === 'string') versions.set(asset.path.replace(/^identificar\//, ''), asset.sha256.slice(0, 10));
+    known = { stamp: etagOf(s), versions };
+    cardLists.set(file, known);
+  }
+  return known.versions.get(clean) === version;
 }
 
 /**

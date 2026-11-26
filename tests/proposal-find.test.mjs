@@ -60,6 +60,16 @@ async function setup() {
 
 const ids = list => list.proposals.map(p => p.proposalId ?? p.tableId).sort();
 
+/**
+ * Waits for the clock's next millisecond. list_proposals says who changed a proposal last only when its
+ * `updated_at` differs from its `created_at` (server/assistant.mjs, both to the millisecond): on a fast machine an
+ * edit made right after the proposal fell in the same millisecond, and the entry had no `lastChangedBy`.
+ */
+async function nextMillisecond() {
+  const from = Date.now();
+  while (Date.now() <= from) await new Promise(ok => setTimeout(ok, 1));
+}
+
 test('list_proposals: any of the person\'s proposals by status, sheet, row ID, photo, date and chat, each with its state', async () => {
   const { chat, franz, stock, close } = await setup();
   const { call, http } = franz;
@@ -73,6 +83,7 @@ test('list_proposals: any of the person\'s proposals by status, sheet, row ID, p
     });
     assert.equal(withPhoto.photos, 1, JSON.stringify(withPhoto));
     const edited = await call('propose_changes', { reason: 'Posturas 901', changes: [{ recordId: stock(3).id, values: { NOTES: 'dos' } }] });
+    await nextMillisecond();
     const typed = await http('POST', `/api/chat/proposals/${edited.proposalId}/edit`, { body: { cells: [{ key: stock(3).id, field: 'NOTES', value: 'tres' }] } });
     assert.equal(typed.status, 200, JSON.stringify(typed.body));
     // Another chat's, applied there.
