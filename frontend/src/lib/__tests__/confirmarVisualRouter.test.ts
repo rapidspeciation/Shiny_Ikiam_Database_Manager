@@ -409,8 +409,20 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
     expect(w613?.status).toBe('held_small_n_co_mimics')
     expect(w613?.honestNote).toBe('No checked visual guide for this region yet.')
 
-    // Wave 5 deduplicated Morpho achilles vs Morpho helenor -> honest_note
-    const morpho = resolveConfirmarVisualCard(manifest, {
+    // Wave 5 deduplicated Morpho achilles vs Morpho helenor: with no side, w5_01 honest_note directly (fail-closed);
+    // on East, #2 Morpho helenor (44 %) surfaces its active East co-mimic w3b_13 with w5_01 preserved as sideNote.
+    const morphoNoSide = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Morpho achilles', p: 0.52 },
+        { name: 'Morpho helenor', p: 0.44 },
+      ],
+      locale: 'en',
+    })
+    expect(morphoNoSide?.displayKind).toBe('honest_note')
+    expect(morphoNoSide?.pairId).toBe('w5_01')
+    expect(morphoNoSide?.status).toBe('not_reliably_separable_in_photos')
+
+    const morphoEast = resolveConfirmarVisualCard(manifest, {
       topPredictions: [
         { name: 'Morpho achilles', p: 0.52 },
         { name: 'Morpho helenor', p: 0.44 },
@@ -418,9 +430,11 @@ describe('confirmarVisualRouter — deterministic Wave 2/3A/3B routing contract'
       sideAndes: 'East',
       locale: 'en',
     })
-    expect(morpho?.displayKind).toBe('honest_note')
-    expect(morpho?.pairId).toBe('w5_01')
-    expect(morpho?.status).toBe('not_reliably_separable_in_photos')
+    expect(morphoEast?.displayKind).toBe('card')
+    expect(morphoEast?.cardId).toBe('w3b_13')
+    expect(morphoEast?.source).toBe('runner_up_comimic')
+    expect(morphoEast?.sideNote?.pairId).toBe('w5_01')
+    expect(morphoEast?.sideNote?.status).toBe('not_reliably_separable_in_photos')
   })
 })
 
@@ -928,5 +942,304 @@ describe('confirmarVisualRouter — a guide of #1 when its look-alike is not ran
     expect(res.cardId).toBe('p01_east_napo')
     expect(res.source).toBe('runner_up')
     expect(res.guideOptions).toEqual([])
+  })
+})
+
+describe('confirmarVisualRouter — runner-up pair & compared fallback guides (phone screenshot, 26 Nov 2026)', () => {
+  // Franz's live phone screenshot (26 Nov 2026, East Amazon): #1 H. elevatus 30 %, #2 H. melpomene 24 %,
+  // #3 H. xanthocles 15 %, #4 H. erato 7 % (lativitta 4 %).
+  const screenshotPreds = [
+    {
+      name: 'Heliconius elevatus',
+      p: 0.3,
+      subspecies: [
+        { name: 'Heliconius elevatus willmotti', p: 0.28 },
+        { name: 'Heliconius elevatus schmassmanni', p: 0.01 },
+      ],
+    },
+    { name: 'Heliconius melpomene', p: 0.24 },
+    { name: 'Heliconius xanthocles', p: 0.15 },
+    {
+      name: 'Heliconius erato',
+      p: 0.07,
+      subspecies: [{ name: 'Heliconius erato lativitta', p: 0.04 }],
+    },
+  ]
+
+  it('default view (East): surfaces p01_east_napo from (#2 H. melpomene, #4 H. erato) with w5_03 sideNote and NOT marked as unranked co-mimic', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(res.displayKind).toBe('card')
+    expect(res.pairId).toBe('p01')
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('runner_up_pair')
+    expect(res.regionFallback).toBe(false)
+    expect(res.sideNote?.pairId).toBe('w5_03')
+    expect(res.sideNote?.status).toBe('not_reliably_separable_in_photos')
+    expect(res.guideOptions).toEqual([])
+  })
+
+  it('default view (West and no-side fail-closed): West never shows East Napo; bare #2 without side fails closed', () => {
+    // West conflicts with H. erato lativitta -> never shows p01_east_napo; keeps w5_03 note only.
+    const west = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      sideAndes: 'West',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(west.cardId).not.toBe('p01_east_napo')
+    expect(west.displayKind).toBe('honest_note')
+    expect(west.pairId).toBe('w5_03')
+    expect(west.sideNote ?? null).toBeNull()
+
+    // No side, with confident lativitta on #4 H. erato: lativitta itself selects East Napo (not a fallback).
+    const noSideWithSsp = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      sideAndes: null,
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(noSideWithSsp.displayKind).toBe('card')
+    expect(noSideWithSsp.cardId).toBe('p01_east_napo')
+    expect(noSideWithSsp.regionFallback).toBe(false)
+    expect(noSideWithSsp.source).toBe('runner_up_pair')
+
+    // No side, H. erato absent, bare #2 H. melpomene (no ssp): #2 co-mimic fails closed -> w5_03 note only.
+    const noSideBare = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds.slice(0, 3),
+      sideAndes: null,
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(noSideBare.displayKind).toBe('honest_note')
+    expect(noSideBare.pairId).toBe('w5_03')
+
+    // No side, #4 H. erato carries unknown subspecies -> fails closed to w5_03 note only.
+    const unknownSspPreds = [
+      ...screenshotPreds.slice(0, 3),
+      { name: 'Heliconius erato', p: 0.07, subspecies: [{ name: 'Heliconius erato hydara', p: 0.05 }] },
+    ]
+    const noSideUnknown = resolveConfirmarVisualCard(manifest, {
+      topPredictions: unknownSspPreds,
+      sideAndes: null,
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(noSideUnknown.displayKind).toBe('honest_note')
+    expect(noSideUnknown.pairId).toBe('w5_03')
+  })
+
+  it('tapping H. erato (East): surfaces p01_east_napo paired with ranked #2 H. melpomene (source: compared)', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      comparedSpecies: 'Heliconius erato',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(res.displayKind).toBe('card')
+    expect(res.pairId).toBe('p01')
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('compared')
+    expect(res.regionFallback).toBe(false)
+    expect(res.sideNote ?? null).toBeNull()
+
+    // On West, lativitta conflicts with West -> fails closed (never shows p01_east_napo).
+    const westTap = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      comparedSpecies: 'Heliconius erato',
+      sideAndes: 'West',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(westTap).toBeNull()
+  })
+
+  it('tapping H. melpomene (East): surfaces p01_east_napo with w5_03 sideNote (source: compared)', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: screenshotPreds,
+      comparedSpecies: 'Heliconius melpomene',
+      sideAndes: 'East',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(res.displayKind).toBe('card')
+    expect(res.pairId).toBe('p01')
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('compared')
+    expect(res.sideNote?.pairId).toBe('w5_03')
+    expect(res.sideNote?.status).toBe('not_reliably_separable_in_photos')
+  })
+
+  it('H. erato absent from top 5 (East): strong #2 H. melpomene surfaces p01_east_napo + w5_03 sideNote as unranked co-mimic', () => {
+    const noErato = screenshotPreds.slice(0, 3)
+    const defaultRes = resolveConfirmarVisualCard(manifest, {
+      topPredictions: noErato,
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(defaultRes.displayKind).toBe('card')
+    expect(defaultRes.cardId).toBe('p01_east_napo')
+    expect(defaultRes.source).toBe('runner_up_comimic')
+    expect(defaultRes.regionFallback).toBe(false)
+    expect(defaultRes.sideNote?.pairId).toBe('w5_03')
+
+    // Tapping #2 H. melpomene when H. erato is absent -> compared_comimic + w5_03 sideNote.
+    const tappedRes = resolveConfirmarVisualCard(manifest, {
+      topPredictions: noErato,
+      comparedSpecies: 'Heliconius melpomene',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(tappedRes.displayKind).toBe('card')
+    expect(tappedRes.cardId).toBe('p01_east_napo')
+    expect(tappedRes.source).toBe('compared_comimic')
+    expect(tappedRes.regionFallback).toBe(false)
+    expect(tappedRes.sideNote?.pairId).toBe('w5_03')
+  })
+
+  it('weak #2 (#1 H. elevatus 0.85, #2 H. melpomene 0.08, no H. erato, East): does NOT fire #2 co-mimic; stays w5_03 note only', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius elevatus', p: 0.85 },
+        { name: 'Heliconius melpomene', p: 0.08 },
+        { name: 'Heliconius xanthocles', p: 0.04 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(res.displayKind).toBe('honest_note')
+    expect(res.pairId).toBe('w5_03')
+    expect(res.sideNote ?? null).toBeNull()
+  })
+
+  it('deferred ring fail-closed: (#1 H. melpomene plesseni, #2 H. erato) never resurrects p01_east_napo via #2 co-mimic', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius melpomene', p: 0.55, subspecies: [{ name: 'Heliconius melpomene plesseni', p: 0.5 }] },
+        { name: 'Heliconius erato', p: 0.35 },
+      ],
+      sideAndes: 'East',
+      locale: 'es',
+      rootUrl: ROOT_URL,
+    })!
+    expect(res.displayKind).toBe('honest_note')
+    expect(res.status).toBe('unavailable_deferred_ring')
+    expect(res.cardId).toBeNull()
+  })
+
+  it('deferred ring fail-closed (Sol R1-F1): sub-1 % ranked partner with Pastaza subspecies never leaks p01_east_napo via co-mimic in default or compared view', () => {
+    const pastazaSub1 = [
+      { name: 'Heliconius elevatus', p: 0.6 },
+      { name: 'Heliconius melpomene', p: 0.3 },
+      { name: 'Heliconius erato', p: 0.009, subspecies: [{ name: 'Heliconius erato notabilis', p: 0.008 }] },
+    ]
+    const defaultRes = resolveConfirmarVisualCard(manifest, {
+      topPredictions: pastazaSub1,
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(defaultRes.displayKind).toBe('honest_note')
+    expect(defaultRes.pairId).toBe('w5_03')
+    expect(defaultRes.cardId).toBeNull()
+
+    const tappedMelpomene = resolveConfirmarVisualCard(manifest, {
+      topPredictions: pastazaSub1,
+      comparedSpecies: 'Heliconius melpomene',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(tappedMelpomene.displayKind).toBe('honest_note')
+    expect(tappedMelpomene.pairId).toBe('w5_03')
+    expect(tappedMelpomene.cardId).toBeNull()
+
+    const tappedErato = resolveConfirmarVisualCard(manifest, {
+      topPredictions: pastazaSub1,
+      comparedSpecies: 'Heliconius erato',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(tappedErato).toBeNull()
+  })
+
+  it('multiple non-#1 runner-up pairs and multiple compared guides build clean pill labels and respect preferredPairId', () => {
+    // Two distinct non-#1 runner-up pairs -> unanchored "A vs. B" labels (no duplicated "vs.").
+    const multiRunnerUp = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius elevatus', p: 0.3 },
+        { name: 'Heliconius melpomene', p: 0.24 },
+        { name: 'Heliconius erato', p: 0.14 },
+        { name: 'Mechanitis mazaeus', p: 0.1 },
+        { name: 'Mechanitis polymnia', p: 0.08 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(multiRunnerUp.displayKind).toBe('card')
+    expect(multiRunnerUp.pairId).toBe('p01')
+    expect(multiRunnerUp.source).toBe('runner_up_pair')
+    expect(multiRunnerUp.guideOptions).toEqual([
+      { pairId: 'p01', label: 'Heliconius erato vs. Heliconius melpomene' },
+      { pairId: 'w3a_04', label: 'Mechanitis mazaeus vs. Mechanitis polymnia' },
+    ])
+
+    const switched = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius elevatus', p: 0.3 },
+        { name: 'Heliconius melpomene', p: 0.24 },
+        { name: 'Heliconius erato', p: 0.14 },
+        { name: 'Mechanitis mazaeus', p: 0.1 },
+        { name: 'Mechanitis polymnia', p: 0.08 },
+      ],
+      sideAndes: 'East',
+      locale: 'en',
+      preferredPairId: 'w3a_04',
+      rootUrl: ROOT_URL,
+    })!
+    expect(switched.pairId).toBe('w3a_04')
+    expect(switched.source).toBe('runner_up_pair')
+
+    // Tapping C with multiple active guides on West anchors guideOptions on C (without repeating C).
+    const multiCompared = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius elevatus', p: 0.45 },
+        { name: 'Heliconius cydno', p: 0.35 },
+      ],
+      comparedSpecies: 'Heliconius cydno',
+      sideAndes: 'West',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })!
+    expect(multiCompared.displayKind).toBe('card')
+    expect(multiCompared.source).toBe('compared_comimic')
+    expect(multiCompared.guideOptions!.length).toBeGreaterThan(1)
+    for (const opt of multiCompared.guideOptions!) {
+      expect(opt.label).not.toMatch(/cydno/i)
+      expect(opt.label).not.toContain('vs.')
+    }
+    const secondPairId = multiCompared.guideOptions![1].pairId
+    const pickedCompared = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius elevatus', p: 0.45 },
+        { name: 'Heliconius cydno', p: 0.35 },
+      ],
+      comparedSpecies: 'Heliconius cydno',
+      sideAndes: 'West',
+      locale: 'en',
+      preferredPairId: secondPairId,
+      rootUrl: ROOT_URL,
+    })!
+    expect(pickedCompared.pairId).toBe(secondPairId)
   })
 })

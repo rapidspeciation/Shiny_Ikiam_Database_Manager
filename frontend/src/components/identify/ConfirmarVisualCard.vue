@@ -104,12 +104,29 @@ const pair = computed(() => {
   return { a, b, byForm: !!a.form && !!b.form && a.species === b.species }
 })
 
-const guideOptions = computed(() => (props.match.displayKind === 'card' ? (props.match.guideOptions ?? []) : []))
-/** The look-alike's name as a pill says it: the genus shortened (`H. erato`), the forms of one species as they are. */
-const pillLabel = (label: string) => {
+/** Shorten a taxon for a pill (`Heliconius erato` -> `H. erato`), leaving intraspecific form pairs intact. */
+const shortTaxon = (label: string) => {
   const words = label.trim().split(/\s+/)
-  return words.length === 2 && !label.includes('/') ? `${words[0][0]}. ${words[1]}` : label
+  return words.length >= 2 && !label.includes('/') ? `${words[0][0]}. ${words.slice(1).join(' ')}` : label
 }
+const isComimicSource = computed(
+  () =>
+    props.match.source === 'top1_comimic' ||
+    props.match.source === 'compared_comimic' ||
+    props.match.source === 'runner_up_comimic',
+)
+const guideOptions = computed(() =>
+  props.match.displayKind === 'card'
+    ? (props.match.guideOptions ?? []).map(opt => {
+        const idx = opt.label.indexOf(' vs. ')
+        return {
+          pairId: opt.pairId,
+          pair: idx === -1 ? null : ([shortTaxon(opt.label.slice(0, idx)), shortTaxon(opt.label.slice(idx + 5))] as const),
+          single: idx === -1 ? shortTaxon(opt.label) : null,
+        }
+      })
+    : [],
+)
 const sideNote = computed(() => (props.match.displayKind === 'card' ? (props.match.sideNote ?? null) : null))
 const sideNotePair = computed(() => (sideNote.value ? { a: split(sideNote.value.taxonA), b: split(sideNote.value.taxonB) } : null))
 
@@ -233,11 +250,11 @@ function openLightbox() {
           ><span class="text-sm text-fg-muted">vs.</span>{{ ' ' }}<i class="species">{{ pair.b.species }}</i>{{ ' ' }}<i v-if="pair.b.form" class="form">{{ pair.b.form }}</i></span
         >
       </h2>
-      <p v-if="match.source === 'top1_comimic'" class="mt-1 text-sm leading-snug text-fg-muted" data-testid="confirmar-comimic-line">
+      <p v-if="isComimicSource" class="mt-1 text-sm leading-snug text-fg-muted" data-testid="confirmar-comimic-line">
         {{ copy.comimic }}
       </p>
 
-      <!-- #1 has more than one guide: which look-alike to compare it with. -->
+      <!-- Multiple guides available: let the person switch between them. -->
       <div
         v-if="guideOptions.length > 1"
         class="mt-2.5 flex flex-wrap gap-1.5"
@@ -259,7 +276,12 @@ function openLightbox() {
           :data-testid="`confirmar-guide-opt-${opt.pairId}`"
           @click="emit('select-guide', opt.pairId)"
         >
-          <span class="text-fg-muted">vs.</span>&nbsp;<i>{{ pillLabel(opt.label) }}</i>
+          <template v-if="opt.pair">
+            <i>{{ opt.pair[0] }}</i>&nbsp;<span class="text-fg-muted">vs.</span>&nbsp;<i>{{ opt.pair[1] }}</i>
+          </template>
+          <template v-else>
+            <span class="text-fg-muted">vs.</span>&nbsp;<i>{{ opt.single }}</i>
+          </template>
         </button>
       </div>
 

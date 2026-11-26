@@ -308,4 +308,38 @@ describe('IdentifyView: Confirmar visual cards integration', () => {
     expect(host.querySelector('[data-card-id="p01_east_napo"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
   })
+
+  it("Franz's live screenshot (26 Nov 2026, East): #1 H. elevatus 30 % / #2 H. melpomene 24 % / #4 H. erato 7 % shows p01_east_napo by default and when tapping H. erato or H. melpomene", async () => {
+    const species: [string, number][] = [
+      ['Heliconius elevatus', 0.3],
+      ['Heliconius melpomene', 0.24],
+      ['Heliconius xanthocles', 0.15],
+      ['Heliconius erato', 0.07],
+    ]
+    const ssp: [string, number][] = [
+      ['Heliconius elevatus willmotti', 0.28],
+      ['Heliconius elevatus schmassmanni', 0.01],
+      ['Heliconius erato lativitta', 0.04],
+    ]
+    const { host, settle } = await mountIdentify(makeStoredResult(species, ssp, 'East', 'EC'), { flag: true, lang: 'en' })
+
+    // Default view: p01_east_napo + w5_03 sideNote, NOT marked as unranked co-mimic
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')?.getAttribute('data-card-id')).toBe('p01_east_napo')
+    expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-side-note"]')?.getAttribute('data-pair-id')).toBe('w5_03')
+
+    // Tap #4 H. erato -> still shows p01_east_napo, NOT marked as unranked co-mimic
+    host.querySelector<HTMLButtonElement>('[data-candidate="Heliconius erato"]')!.click()
+    await settle()
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')?.getAttribute('data-card-id')).toBe('p01_east_napo')
+    expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-side-note"]')).toBeNull()
+
+    // Tap #2 H. melpomene -> shows p01_east_napo + w5_03 sideNote, NOT marked as unranked co-mimic
+    host.querySelector<HTMLButtonElement>('[data-candidate="Heliconius melpomene"]')!.click()
+    await settle()
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')?.getAttribute('data-card-id')).toBe('p01_east_napo')
+    expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-side-note"]')?.getAttribute('data-pair-id')).toBe('w5_03')
+  })
 })

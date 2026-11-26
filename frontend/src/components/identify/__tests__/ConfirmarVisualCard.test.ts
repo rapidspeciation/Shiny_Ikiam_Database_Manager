@@ -437,4 +437,39 @@ describe('ConfirmarVisualCard', () => {
     expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-side-note"]')).toBeNull()
   })
+
+  it('shows the unranked co-mimic line only for co-mimic sources, never for ranked runner-up or compared pairs', () => {
+    locale.value = 'en'
+    for (const source of ['runner_up', 'compared', 'runner_up_pair', 'intraspecific'] as const) {
+      const host = mountCard(activeMatch({ source }))
+      expect(host.querySelector('[data-testid="confirmar-comimic-line"]'), source).toBeNull()
+      unmount()
+    }
+    for (const source of ['top1_comimic', 'compared_comimic', 'runner_up_comimic'] as const) {
+      const host = mountCard(activeMatch({ source }))
+      expect(host.querySelector('[data-testid="confirmar-comimic-line"]')?.textContent, source).toContain("not among the AI's likely answers")
+      unmount()
+    }
+  })
+
+  it('renders unanchored pair pill labels as "H. erato vs. H. melpomene" without duplicating "vs."', () => {
+    locale.value = 'en'
+    const host = mountCard(
+      activeMatch({
+        source: 'runner_up_pair',
+        guideOptions: [
+          { pairId: 'p01', label: 'Heliconius erato vs. Heliconius melpomene' },
+          { pairId: 'w3a_04', label: 'Mechanitis mazaeus vs. Mechanitis polymnia' },
+        ],
+      }),
+    )
+    const pills = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="confirmar-guide-switcher"] button')]
+    expect(pills.map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+      'H. erato vs. H. melpomene',
+      'M. mazaeus vs. M. polymnia',
+    ])
+    for (const pill of pills) {
+      expect(pill.textContent).not.toMatch(/vs\.\s+.*\svs\./i)
+    }
+  })
 })
