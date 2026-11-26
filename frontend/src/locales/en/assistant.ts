@@ -907,4 +907,12 @@ export default {
   '{n} cambiadas por el asistente': '{n} changed by the assistant',
   '{n} foto sin leer': '{n} photo not read yet',
   '{n} fotos sin leer': '{n} photos not read yet',
+  // Cambios propuestos on a phone: the changes as a stacked list.
+  'Ver los cambios como': 'Show the changes as',
+  'Editar en tabla': 'Edit in table',
+  'ya escrita': 'already written',
+  'sin leer': 'not read',
+  'Escribirla en la tabla': 'Type it in the table',
+  'Revisarla en la tabla': 'Review it in the table',
+  'Esta tabla no cambia ninguna celda.': 'This table changes no cell.',
 } as Record<string, string>

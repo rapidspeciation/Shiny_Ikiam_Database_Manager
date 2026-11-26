@@ -1459,6 +1459,27 @@ html .sheet-grid .tabulator-row .tabulator-cell.is-formula.tabulator-range-selec
   color: var(--color-emerald-800);
   font-weight: 500;
 }
+/* The same switch as a phone's main choice of view (list or table): finger-sized, with its icons. */
+.view-switch.is-roomy {
+  border-color: var(--border-control);
+  border-radius: 6px;
+}
+.view-switch.is-roomy button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.view-switch.is-roomy button + button {
+  border-left-color: var(--border-control);
+}
+.view-switch.is-roomy button.is-on {
+  background: var(--brand);
+  color: var(--on-brand);
+}
 /* "Aplicar" with doubtful cells not reviewed: what to do with them. */
 .doubt-ask {
   margin: 0 8px 8px;

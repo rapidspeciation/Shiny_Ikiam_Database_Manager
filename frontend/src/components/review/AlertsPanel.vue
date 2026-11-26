@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { AlertTriangle, ExternalLink, Info, XCircle } from 'lucide-vue-next'
-import { dayFirst, tablesLink, type Alert, type AlertsData } from '../../lib/review'
+import { tablesLink, type Alert, type AlertsData } from '../../lib/review'
+import { dayText, unbroken } from '../../lib/dates'
 import { t, tx } from '../../lib/i18n'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
@@ -55,6 +56,8 @@ const levelTone: Record<string, string> = {
   done: 'text-stone-400',
   ok: '',
 }
+/** A day as the app writes it (7-Nov-26), never cut at a hyphen. */
+const dayLabel = (date: string | null | undefined) => unbroken(dayText(date))
 </script>
 
 <template>
@@ -109,7 +112,7 @@ const levelTone: Record<string, string> = {
             <li v-for="s in samples" :key="s.recordId" class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1">
               <strong class="w-12">{{ s.id }}</strong>
               <span class="italic">{{ s.species || '—' }}</span>
-              <span class="text-xs text-stone-500">{{ dayFirst(s.date) ?? '—' }}</span>
+              <span class="text-xs text-stone-500">{{ dayLabel(s.date) }}</span>
               <span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">{{
                 s.kind === 'preserved_na' ? $t('Killed_Preserved con NA') : $t('sin {fields}', { fields: s.missing.join(', ') })
               }}</span>
@@ -164,7 +167,7 @@ const levelTone: Record<string, string> = {
                     </td>
                     <td class="px-1.5 py-1 text-right tabular-nums">{{ r.gaps }}</td>
                     <td class="px-1.5 py-1 whitespace-nowrap">
-                      {{ r.lastUsed ? `${r.lastUsed.cam} · ${dayFirst(r.lastUsed.date)}` : '—' }}
+                      {{ r.lastUsed ? `${r.lastUsed.cam} · ${dayLabel(r.lastUsed.date)}` : '—' }}
                     </td>
                   </tr>
                 </tbody>
@@ -209,7 +212,7 @@ const levelTone: Record<string, string> = {
                     <td class="px-1.5 py-1 text-right tabular-nums">{{ s.preserved }}</td>
                     <td class="px-1.5 py-1 whitespace-nowrap">
                       <a :href="tablesLink(s.reachedRow.sheet, s.reachedRow.label)" class="text-brand-700 hover:underline">{{
-                        dayFirst(s.reachedOn) ?? '—'
+                        dayLabel(s.reachedOn)
                       }}</a>
                     </td>
                     <td class="px-1.5 py-1">
@@ -222,7 +225,7 @@ const levelTone: Record<string, string> = {
                           :href="tablesLink(r.sheet, r.label)"
                           class="text-brand-700 hover:underline"
                           :title="r.label"
-                          >{{ $t('fila {row}', { row: r.row }) }}{{ r.date ? ` (${dayFirst(r.date)})` : ''
+                          >{{ $t('fila {row}', { row: r.row }) }}{{ r.date ? ` (${dayLabel(r.date)})` : ''
                           }}{{ i < s.afterRows.length - 1 ? ', ' : '' }}</a
                         >
                       </span>

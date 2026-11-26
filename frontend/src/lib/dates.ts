@@ -56,6 +56,61 @@ export function formatSerial(serial: number): string {
   return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`
 }
 
+// ---------------------------------------------------------------- dates in sentences, tiles and lists
+// One shape everywhere outside the grids: the grid's own (14-Aug-25), with the month in the interface language
+// (14-Ago-25 in Spanish). Grid cells keep formatSerial: they show what the sheet shows and what people type back.
+const MONTHS_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+/** Short month names in the interface language (Spanish on the server). */
+export const monthNames = () => (intlLocale().startsWith('en') ? MONTHS : MONTHS_ES)
+
+const dayOf = (year: number, month: number, day: number) => `${day}-${monthNames()[month - 1]}-${String(year).slice(-2)}`
+/**
+ * A day as the app writes it in sentences, tiles and lists: 7-Nov-26 (7-Ene-26 in Spanish). Takes an ISO day
+ * (2026-11-07, or a timestamp's first ten characters) or a Sheets serial; `empty` for no date or one it cannot read.
+ */
+export function dayText(date: string | number | null | undefined, empty = '—'): string {
+  if (date === null || date === undefined || date === '') return empty
+  const iso = typeof date === 'number' ? (Number.isFinite(date) ? serialToIso(date) : '') : date
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return empty
+  return dayOf(+m[1], +m[2], +m[3])
+}
+
+/**
+ * The same text with hyphens a line never breaks at, for a date inside a sentence or a narrow box («…preservada
+ * el 22-Sep-26…» was cut after «22-»). parseDateInput reads them as plain hyphens, should one be copied into a cell.
+ */
+export const unbroken = (text: string) => text.replace(/-/g, '\u2011')
+
+const ECUADOR_CLOCK = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Guayaquil',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+/** A moment's day and time in Ecuador, or null when it is not a moment. */
+function ecuadorParts(at: string | number | Date | null | undefined) {
+  if (at === null || at === undefined || at === '') return null
+  const time = at instanceof Date ? at.getTime() : typeof at === 'number' ? at : Date.parse(at)
+  if (Number.isNaN(time)) return null
+  const p = Object.fromEntries(ECUADOR_CLOCK.formatToParts(time).map(x => [x.type, x.value]))
+  return { day: dayOf(+p.year, +p.month, +p.day), time: `${p.hour}:${p.minute}` }
+}
+/** When something happened, in Ecuador's time: 7-Nov-26 14:05. '' when it is not a moment. */
+export function momentText(at: string | number | Date | null | undefined): string {
+  const p = ecuadorParts(at)
+  return p ? `${p.day} ${p.time}` : ''
+}
+/** The same, without the day when it is today in Ecuador (a list of what just arrived): 14:05. */
+export function recentText(at: string | number | Date | null | undefined, now: number | Date = Date.now()): string {
+  const p = ecuadorParts(at)
+  if (!p) return ''
+  return p.day === ecuadorParts(now)?.day ? p.time : `${p.day} ${p.time}`
+}
+
 /** An ISO date as the team types it, day first: 2026-05-26 → 26/05/2026. */
 export function dayFirst(iso: string): string {
   const [y, m, d] = iso.split('-')
@@ -86,7 +141,8 @@ export function parseDateInput(text: string, today = todayIso()): number | null 
 }
 
 function readDate(text: string, today: string): number | null {
-  const s = text.trim().toLowerCase().replace(/\s+de\s+/g, ' ')
+  // A date copied from a sentence of the app has hyphens that do not break (see `unbroken`).
+  const s = text.trim().toLowerCase().replace(/\u2011/g, '-').replace(/\s+de\s+/g, ' ')
   if (!s) return null
   if (/^\d{4,5}(\.\d+)?$/.test(s)) return Math.round(Number(s))
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)

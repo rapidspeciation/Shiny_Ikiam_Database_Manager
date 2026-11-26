@@ -14,10 +14,11 @@ const keysOf = (sections: ReturnType<typeof formSections>, key: string) =>
   sections.find(s => s.key === key)?.fields.map(f => f.key)
 
 describe('phone view preference', () => {
-  it('is the grid unless the form was chosen', () => {
-    expect(phoneViewFor(null)).toBe('grid')
+  it('is the list unless the grid or the form was chosen', () => {
+    expect(phoneViewFor(null)).toBe('list')
+    expect(phoneViewFor('list')).toBe('list')
+    expect(phoneViewFor('1')).toBe('list')
     expect(phoneViewFor('grid')).toBe('grid')
-    expect(phoneViewFor('1')).toBe('grid')
     expect(phoneViewFor('form')).toBe('form')
   })
 })

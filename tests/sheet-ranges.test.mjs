@@ -454,7 +454,7 @@ test('nights with a protected dropdown: never sent, told the first night only, k
   assert.deepEqual(list.map(a => [a.id, a.level]), [['sheet-range:dropdown:Barcoding_DNA:A2', 'info']]);
   assert.equal(
     list[0].text,
-    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507, pero la lista ya llega a la fila 7732; debería ser =Lists!$T$2:$T$17732 (10000 filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12/11/2026.',
+    'Barcoding_DNA A2:A20: el desplegable toma sus opciones de =Lists!$T$2:$T$3507, pero la lista ya llega a la fila 7732; debería ser =Lists!$T$2:$T$17732 (10000 filas de margen). La app no puede cambiarlo (rango protegido): PAS puede hacerlo a mano (Datos → Validación de datos). Visto el 12-Nov-26.',
   );
   // The English, from the same descriptor.
   const en = readFileSync(new URL('../frontend/src/locales/en/server-built.ts', import.meta.url), 'utf8');

@@ -113,6 +113,107 @@ describe('ConfirmarVisualCard', () => {
     expect(note!.textContent).not.toContain('not_reliably_separable')
   })
 
+  it('names the pair one taxon per line: the species strongest, its subspecies lighter', () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch())
+    const title = host.querySelector('[data-testid="confirmar-pair-title"]')!
+    const lines = [...title.querySelectorAll(':scope > span')]
+    expect(lines).toHaveLength(2)
+    expect(lines[0].textContent!.trim()).toBe('Heliconius erato cyrbia')
+    expect(lines[1].textContent!.replace(/\s+/g, ' ').trim()).toBe('vs. Heliconius melpomene cythera')
+    expect([...title.querySelectorAll('.species')].map(e => e.textContent)).toEqual(['Heliconius erato', 'Heliconius melpomene'])
+    expect([...title.querySelectorAll('.form')].map(e => e.textContent)).toEqual(['cyrbia', 'cythera'])
+    expect(title.classList.contains('by-form')).toBe(false)
+  })
+
+  it('two forms of one species: the subspecies is what differs, so it reads strongest; a species pair has no empty form', () => {
+    const forms = mountCard(activeMatch({ taxonA: 'Hypothyris euclea intermedia', taxonB: 'Hypothyris euclea pyrippe' }))
+    expect(forms.querySelector('[data-testid="confirmar-pair-title"]')!.classList.contains('by-form')).toBe(true)
+    unmount()
+    const species = mountCard(activeMatch({ taxonA: 'Mechanitis menapis', taxonB: 'Mechanitis polymnia' }))
+    const title = species.querySelector('[data-testid="confirmar-pair-title"]')!
+    expect(title.classList.contains('by-form')).toBe(false)
+    expect(title.querySelector('.form')).toBeNull()
+    expect(title.textContent!.replace(/\s+/g, ' ').trim()).toBe('Mechanitis menapis vs. Mechanitis polymnia')
+  })
+
+  it('says what a tap does under the plate, never over its text, in both languages', () => {
+    locale.value = 'es'
+    const es = mountCard(activeMatch())
+    const trigger = es.querySelector('[data-testid="confirmar-zoom-trigger"]')!
+    const plate = trigger.querySelector('.confirmar-plate')!
+    const hint = trigger.querySelector('[data-testid="confirmar-zoom-hint"]')!
+    // One target: the plate and its «Ampliar» row; the row is after the plate, not inside it.
+    expect(plate.contains(hint)).toBe(false)
+    expect(plate.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(hint.textContent!.trim()).toBe('Ampliar la guía')
+    expect(hint.className).toContain('min-h-11')
+    expect(plate.querySelector('.absolute.right-2')).toBeNull()
+    unmount()
+    locale.value = 'en'
+    const en = mountCard(activeMatch())
+    expect(en.querySelector('[data-testid="confirmar-zoom-hint"]')!.textContent!.trim()).toBe('Enlarge the guide')
+  })
+
+  it('holds the plate\'s shape and says it is loading until its file arrives (no dark box, no jump)', async () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch())
+    const plate = host.querySelector<HTMLElement>('.confirmar-plate')!
+    expect(plate.style.aspectRatio.replace(/\s/g, '')).toBe('1400/1539')
+    expect(plate.className).not.toContain('bg-photo-mat')
+    expect(host.querySelector('[data-testid="confirmar-img-loading"]')!.textContent!.trim()).toBe('Cargando guía…')
+    const img = host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!
+    expect(img.classList.contains('opacity-0')).toBe(true)
+    img.dispatchEvent(new Event('load'))
+    await nextTick()
+    expect(host.querySelector('[data-testid="confirmar-img-loading"]')).toBeNull()
+    expect(img.classList.contains('opacity-0')).toBe(false)
+    // A file that does not arrive: said in words, and nothing to open.
+    img.dispatchEvent(new Event('error'))
+    await nextTick()
+    expect(host.querySelector('[data-testid="confirmar-img-error"]')!.textContent).toContain('No se pudo cargar')
+    expect(host.querySelector('[data-testid="confirmar-zoom-trigger"]')).toBeNull()
+  })
+
+  it('the full-screen viewer gives the plate the room: it names the guide and its region, not the pair again', async () => {
+    locale.value = 'es'
+    const host = mountCard(activeMatch({ canSwitchRegion: false }))
+    host.querySelector<HTMLButtonElement>('[data-testid="confirmar-zoom-trigger"]')!.click()
+    await nextTick()
+    const viewer = document.body.querySelector('[data-testid="photo-viewer"]')!
+    expect(viewer.querySelector('[data-testid="viewer-name"]')!.textContent!.trim()).toBe('Guía visual')
+    expect(viewer.textContent).toContain('Occidente · Anverso y reverso')
+    expect(viewer.textContent).not.toContain('Heliconius erato cyrbia vs.')
+    // The person's own photo is one swipe away.
+    expect(viewer.textContent).toContain('1 / 2')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="viewer-close"]')!.click()
+    await nextTick()
+  })
+
+  it('an honest note names the pair the same way and its region once, as a chip', () => {
+    locale.value = 'es'
+    const host = mountCard({
+      ...activeMatch(),
+      cardId: null,
+      status: 'inseparable_in_photos',
+      displayKind: 'honest_note',
+      canSwitchRegion: false,
+      imageUrl: null,
+      regionBadge: 'Oriente',
+      taxonA: 'Brevioleria aelia oncidia',
+      taxonB: 'Brevioleria arzalia loronia',
+      honestNote: 'Estas dos especies son casi idénticas en fotos de campo; una foto sola no basta para separarlas.',
+      alternateCards: [],
+    })
+    const note = host.querySelector('[data-testid="confirmar-honest-note"]')!
+    const lines = [...note.querySelectorAll('.confirmar-pair > span')].map(e => e.textContent!.replace(/\s+/g, ' ').trim())
+    expect(lines).toEqual(['Brevioleria aelia oncidia', 'vs. Brevioleria arzalia loronia'])
+    expect([...note.querySelectorAll('.form')].map(e => e.textContent)).toEqual(['oncidia', 'loronia'])
+    expect(note.querySelector('[data-testid="confirmar-note-region"]')!.textContent!.trim()).toBe('Oriente')
+    expect(note.textContent!.split('Oriente')).toHaveLength(2)
+    expect(note.querySelector('button')).toBeNull()
+  })
+
   it('renders nothing for hidden status', () => {
     const host = mountCard({
       ...activeMatch(),

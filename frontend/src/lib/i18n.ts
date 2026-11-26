@@ -20,6 +20,7 @@
 import { ref, watch } from 'vue'
 import { en } from '../locales/en'
 import { setTranslator } from './translate.ts'
+import { dayText, unbroken } from './dates.ts'
 
 export type Locale = 'en' | 'es'
 const KEY = 'ui:locale'
@@ -48,15 +49,26 @@ export function t(es: string, vars?: Vars): string {
 /**
  * A text the server built (server/messages.mjs): its Spanish template with
  * {placeholders} and the values. A value can be another descriptor (a Spanish
- * word, translated too) or a list (joined with ", "); sheet values are plain.
+ * word, translated too), a day ({ date }, written as the app writes days) or a
+ * list (joined with ", "); sheet values are plain.
  */
 export interface Msg {
   key: string
   vars?: Record<string, MsgVar>
 }
-export type MsgVar = string | number | boolean | null | Msg | MsgVar[]
+/** A day the server names in a text ({ date: '2026-11-07' }): written in the interface language (lib/dates.ts dayText). */
+export interface MsgDate {
+  date: string
+}
+export type MsgVar = string | number | boolean | null | Msg | MsgDate | MsgVar[]
 const varText = (v: MsgVar): string =>
-  Array.isArray(v) ? v.map(varText).join(', ') : v !== null && typeof v === 'object' ? tm(v) : String(v ?? '')
+  Array.isArray(v)
+    ? v.map(varText).join(', ')
+    : v !== null && typeof v === 'object'
+      ? 'date' in v
+        ? unbroken(dayText(v.date))
+        : tm(v)
+      : String(v ?? '')
 /** A server descriptor in the chosen language (its Spanish template when there is no English). */
 export function tm(m: Msg): string {
   const vars = m.vars ? Object.fromEntries(Object.entries(m.vars).map(([k, v]) => [k, varText(v)])) : undefined

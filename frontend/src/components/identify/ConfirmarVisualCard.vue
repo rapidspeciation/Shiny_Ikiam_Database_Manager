@@ -22,7 +22,8 @@ const COPY = {
     badge: 'Guía visual',
     ariaRegion: 'Elegir región para la guía visual',
     ariaZoom: 'Ampliar guía visual',
-    zoom: 'Ampliar',
+    zoom: 'Ampliar la guía',
+    loading: 'Cargando guía…',
     imgError: 'No se pudo cargar la guía visual.',
   },
   en: {
@@ -30,7 +31,8 @@ const COPY = {
     badge: 'Visual guide',
     ariaRegion: 'Choose region for the visual guide',
     ariaZoom: 'Enlarge visual guide',
-    zoom: 'Enlarge',
+    zoom: 'Enlarge the guide',
+    loading: 'Loading guide…',
     imgError: "Couldn't load the visual guide.",
   },
 } as const
@@ -48,13 +50,31 @@ const emit = defineEmits<{
 
 const lightboxOpen = ref(false)
 const imgError = ref(false)
+/** The plate's file arrived: until then its box (already at the plate's shape) says it is loading. */
+const imgLoaded = ref(false)
 
+// Another region or language is another file.
 watch(
   () => props.match.imageUrl,
   () => {
     imgError.value = false
+    imgLoaded.value = false
   },
 )
+
+/**
+ * A taxon as its species (genus and epithet) and what follows (the subspecies). The species reads strongest; in a pair
+ * of two forms of one species the subspecies does, since it is all that differs.
+ */
+const split = (taxon: string) => {
+  const words = taxon.trim().split(/\s+/)
+  return { species: words.slice(0, 2).join(' '), form: words.slice(2).join(' ') }
+}
+const pair = computed(() => {
+  const a = split(props.match.taxonA)
+  const b = split(props.match.taxonB)
+  return { a, b, byForm: !!a.form && !!b.form && a.species === b.species }
+})
 
 const hasRegionSwitcher = computed(
   () => props.match.displayKind === 'card' && props.match.canSwitchRegion && props.match.alternateCards.length > 1,
@@ -62,10 +82,11 @@ const hasRegionSwitcher = computed(
 
 const viewerPhotos = computed<ViewerPhoto[]>(() => {
   if (!props.match.imageUrl) return []
+  // The plate names both taxa itself: under it only what it is, so it gets the screen.
   const guide: ViewerPhoto = {
     src: props.match.imageUrl,
     name: `${props.match.taxonA} vs. ${props.match.taxonB}`,
-    caption: `${props.match.taxonA} vs. ${props.match.taxonB}`,
+    caption: copy.value.badge,
     kicker: [props.match.regionBadge, props.match.viewBadge].filter(Boolean).join(' · ') || undefined,
     credit: '',
     license: '',
@@ -120,10 +141,12 @@ function openLightbox() {
         </span>
       </div>
 
-      <h2 class="mt-1.5 text-base leading-snug font-semibold text-fg" data-testid="confirmar-pair-title">
-        <i>{{ match.taxonA }}</i>
-        <span class="mx-1 font-normal text-fg-muted">vs.</span>
-        <i>{{ match.taxonB }}</i>
+      <!-- One taxon per line, so a long subspecies name never breaks mid-name on a phone. -->
+      <h2 class="confirmar-pair mt-2 text-base leading-snug text-fg" :class="{ 'by-form': pair.byForm }" data-testid="confirmar-pair-title">
+        <span class="block"><i class="species">{{ pair.a.species }}</i>{{ ' ' }}<i v-if="pair.a.form" class="form">{{ pair.a.form }}</i></span>
+        <span class="block"
+          ><span class="text-sm text-fg-muted">vs.</span>{{ ' ' }}<i class="species">{{ pair.b.species }}</i>{{ ' ' }}<i v-if="pair.b.form" class="form">{{ pair.b.form }}</i></span
+        >
       </h2>
 
       <div
@@ -152,15 +175,27 @@ function openLightbox() {
       </div>
     </div>
 
-    <div class="bg-surface-sunken p-2 sm:p-2.5">
-      <button
-        v-if="!imgError"
-        type="button"
-        class="confirmar-zoomable group relative block min-h-11 w-full overflow-hidden rounded-md border border-border-strong bg-photo-mat text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-        :aria-label="copy.ariaZoom"
-        data-testid="confirmar-zoom-trigger"
-        @click="openLightbox"
+    <!-- The plate and, under it, what a tap does: nothing lies over the plate's own text. Edge to edge on a phone. -->
+    <button
+      v-if="!imgError"
+      type="button"
+      class="confirmar-zoomable group block min-h-11 w-full bg-surface-sunken text-left sm:p-2.5 sm:pb-0"
+      :aria-label="copy.ariaZoom"
+      data-testid="confirmar-zoom-trigger"
+      @click="openLightbox"
+    >
+      <span
+        class="confirmar-plate relative block overflow-hidden bg-surface-sunken sm:rounded-md sm:border sm:border-border-strong"
+        :style="match.imageWidth && match.imageHeight ? { aspectRatio: `${match.imageWidth} / ${match.imageHeight}` } : undefined"
       >
+        <span
+          v-if="!imgLoaded"
+          class="absolute inset-0 grid place-items-center text-sm text-fg-muted"
+          role="status"
+          data-testid="confirmar-img-loading"
+        >
+          {{ copy.loading }}
+        </span>
         <img
           :key="match.imageUrl"
           :src="match.imageUrl"
@@ -169,22 +204,24 @@ function openLightbox() {
           :height="match.imageHeight ?? undefined"
           loading="lazy"
           decoding="async"
-          class="block h-auto w-full transition-transform duration-150"
+          class="relative block h-auto w-full"
+          :class="{ 'opacity-0': !imgLoaded }"
           data-testid="confirmar-card-image"
+          @load="imgLoaded = true"
           @error="imgError = true"
         />
-        <span
-          class="pointer-events-none absolute right-2 bottom-2 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white shadow-xs"
-          aria-hidden="true"
-        >
-          <ZoomIn :size="14" />
-          {{ copy.zoom }}
-        </span>
-      </button>
-      <p v-else class="rounded-md border border-border bg-surface p-3 text-sm text-fg-muted" role="status" data-testid="confirmar-img-error">
-        {{ copy.imgError }}
-      </p>
-    </div>
+      </span>
+      <span
+        class="confirmar-zoom-row flex min-h-11 items-center justify-center gap-1.5 px-3.5 text-sm font-medium text-brand-text"
+        data-testid="confirmar-zoom-hint"
+      >
+        <ZoomIn :size="16" aria-hidden="true" />
+        {{ copy.zoom }}
+      </span>
+    </button>
+    <p v-else class="m-2 rounded-md border border-border bg-surface p-3 text-sm text-fg-muted" role="status" data-testid="confirmar-img-error">
+      {{ copy.imgError }}
+    </p>
 
     <PhotoViewer
       v-if="lightboxOpen && viewerPhotos.length"
@@ -206,34 +243,66 @@ function openLightbox() {
     <div class="flex items-start gap-2.5">
       <Info :size="18" class="mt-0.5 shrink-0 text-pending-text" aria-hidden="true" />
       <div class="min-w-0 flex-1">
-        <p class="font-semibold text-pending-text">
-          <i>{{ match.taxonA }}</i>
-          <span class="mx-1 font-normal">vs.</span>
-          <i>{{ match.taxonB }}</i>
-          <span v-if="match.regionBadge" class="ml-1.5 text-xs font-medium opacity-85">· {{ match.regionBadge }}</span>
+        <p class="confirmar-pair text-[0.9375rem] leading-snug text-pending-text" :class="{ 'by-form': pair.byForm }">
+          <span class="block"><i class="species">{{ pair.a.species }}</i>{{ ' ' }}<i v-if="pair.a.form" class="form">{{ pair.a.form }}</i></span>
+          <span class="block"
+            ><span class="text-sm">vs.</span>{{ ' ' }}<i class="species">{{ pair.b.species }}</i>{{ ' ' }}<i v-if="pair.b.form" class="form">{{ pair.b.form }}</i></span
+          >
         </p>
-        <p class="mt-1 leading-snug text-fg" data-testid="confirmar-honest-note-text">{{ match.honestNote }}</p>
+        <p class="mt-1.5 leading-snug text-fg" data-testid="confirmar-honest-note-text">{{ match.honestNote }}</p>
+        <p
+          v-if="match.regionBadge"
+          class="mt-2 inline-block rounded border border-pending-edge/50 px-2 py-0.5 text-xs font-medium text-pending-text"
+          data-testid="confirmar-note-region"
+        >
+          {{ match.regionBadge }}
+        </p>
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+/* The pair's names: the species strongest, its subspecies lighter; two forms of one species, the other way round. */
+.confirmar-pair .species {
+  font-weight: 600;
+}
+.confirmar-pair .form {
+  font-weight: 400;
+}
+.confirmar-pair.by-form .species {
+  font-weight: 400;
+}
+.confirmar-pair.by-form .form {
+  font-weight: 600;
+}
 .confirmar-zoomable {
   cursor: zoom-in;
-  transition: transform 120ms ease;
+}
+.confirmar-zoomable img {
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
 }
 @media (hover: hover) {
   .confirmar-zoomable:hover img {
     transform: scale(1.03);
   }
+  .confirmar-zoomable:hover .confirmar-zoom-row {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 }
-.confirmar-zoomable:active {
-  transform: scale(0.995);
+/* A press answers at once, on a phone too. */
+.confirmar-zoomable:active .confirmar-zoom-row {
+  background: var(--brand-soft);
+}
+.confirmar-zoomable:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .confirmar-zoomable img,
-  .confirmar-zoomable {
+  .confirmar-zoomable img {
     transition: none;
     transform: none;
   }

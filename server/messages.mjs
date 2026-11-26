@@ -11,8 +11,11 @@
 // A var can be another msg (a Spanish word the interface translates too, e.g.
 // msg('sin especie')) or a list, joined with ", ". Values from the sheets (IDs,
 // species, column names, codes) go as plain strings and are never translated.
+// A day goes as dateMsg('2026-11-07'), so each language writes it its own way.
 // Every template is a literal inside msg(…), msgn(…) or tpl(…): the frontend's
 // i18n test scans them and fails when one has no English.
+
+import { dayText } from '../frontend/src/lib/dates.ts';
 
 const isMsg = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.text === 'string' && v.msg;
 const textOf = v => (Array.isArray(v) ? v.map(textOf).join(', ') : isMsg(v) ? v.text : v === null || v === undefined ? '' : String(v));
@@ -28,6 +31,11 @@ export function msg(key, vars = {}) {
   );
   return { text, msg: Object.keys(sent).length ? { key, vars: sent } : { key } };
 }
+/**
+ * A day named in a text, as a var of msg(): the Spanish text has it as the app writes days (7-Nov-26, lib/dates.ts),
+ * and the interface writes it in its own language from { date } (the month's name differs). '—' for no date.
+ */
+export const dateMsg = iso => (iso ? { text: dayText(iso), msg: { date: iso } } : '—');
 /** Singular or plural template by n; {n} is filled with n. */
 export const msgn = (n, one, many, vars = {}) => msg(n === 1 ? one : many, { n, ...vars });
 /** { [name]: text, [name + 'Msg']: descriptor } from a msg(), or { [name]: text } from a plain text. */

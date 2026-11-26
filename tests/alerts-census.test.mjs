@@ -113,7 +113,7 @@ test('a CAM range not used for six months is information with its date, not a ca
   const cam = data.alerts.find(a => a.id === 'cam:CRISPRonly_CAMid:CAM078500');
   assert.equal(cam.level, 'info');
   // The pool in the team's words; the range behind «detail».
-  assert.equal(cam.text, 'CAM de CRISPR: queda 1 CAM, sin uso desde 19/11/2025.');
+  assert.equal(cam.text, 'CAM de CRISPR: queda 1 CAM, sin uso desde 19-Nov-25.');
   assert.equal(cam.detail, 'Rango CAM078500–CAM078549, último CAM078548.');
   assert.doesNotMatch(cam.text, /CAMid/);
   assert.doesNotMatch(cam.text, /Pidan/);
@@ -160,7 +160,7 @@ test('a census open in the Censo tab with no marks after a week is an alert; one
       [`census-open:${messenoides}`, 'warn', '#/censo', { kind: 'cancel-census', census: messenoides }],
     ],
   );
-  assert.match(shown[1].text, /^Censo de Mechanitis messenoides del 13\/10\/2026: abierto sin usar\. .*que abrió Kim .*\(142 mariposas esperadas\)/);
+  assert.match(shown[1].text, /^Censo de Mechanitis messenoides del 13-Oct-26: abierto sin usar\. .*que abrió Kim .*\(142 mariposas esperadas\)/);
   assert.deepEqual(shown[0].textMsg.vars.species, 'Mechanitis polymnia');
 
   // A first mark or a cancel ends it, and the kept alerts are computed again.
@@ -220,14 +220,14 @@ test('04/11/2026 replayed: the polymnia session is covered by the 01/10 census e
   assert.equal(covered.level, 'info');
   assert.equal(
     covered.text,
-    'Censo de Mechanitis polymnia del 06/10/2026: ya está en la base por otra vía (14 desapariciones de Mechanitis polymnia del 01/10/2026). La sesión de la pestaña Censo que abrió Franz quedó sin marcas; se puede cancelar.',
+    'Censo de Mechanitis polymnia del 6-Oct-26: ya está en la base por otra vía (14 desapariciones de Mechanitis polymnia del 1-Oct-26). La sesión de la pestaña Censo que abrió Franz quedó sin marcas; se puede cancelar.',
   );
   assert.deepEqual(covered.action, { kind: 'cancel-census', census: polymnia });
   const unused = open[`census-open:${messenoides}`];
   assert.equal(unused.level, 'warn');
   assert.equal(
     unused.text,
-    'Censo de Mechanitis messenoides del 13/10/2026: abierto sin usar. La sesión que abrió Kim en la pestaña Censo no tiene marcas (142 mariposas esperadas) y la base no tiene desapariciones de Mechanitis messenoides de esa semana. Si se contó en papel, pasen las marcas; si no se hizo, cancélenlo.',
+    'Censo de Mechanitis messenoides del 13-Oct-26: abierto sin usar. La sesión que abrió Kim en la pestaña Censo no tiene marcas (142 mariposas esperadas) y la base no tiene desapariciones de Mechanitis messenoides de esa semana. Si se contó en papel, pasen las marcas; si no se hizo, cancélenlo.',
   );
   assert.deepEqual(unused.action, { kind: 'cancel-census', census: messenoides });
 
@@ -241,7 +241,7 @@ test('04/11/2026 replayed: the polymnia session is covered by the 01/10 census e
   assert.equal(shown.level, 'warn');
   assert.equal(
     shown.text,
-    'Censo del 02/10/2026 (propuestas del 06/10/2026, chat «Actualizar censos» de Franz): 10 de las 14 mariposas que sus propuestas dan por desaparecidas siguen sin fecha de muerte y cuentan como vivas. Las propuestas quedaron viejas (4 de sus 14 filas cambiaron desde entonces): no las apliquen; rehagan esas desapariciones desde el cuaderno.',
+    'Censo del 2-Oct-26 (propuestas del 6-Oct-26, chat «Actualizar censos» de Franz): 10 de las 14 mariposas que sus propuestas dan por desaparecidas siguen sin fecha de muerte y cuentan como vivas. Las propuestas quedaron viejas (4 de sus 14 filas cambiaron desde entonces): no las apliquen; rehagan esas desapariciones desde el cuaderno.',
   );
   assert.doesNotMatch(shown.text, /aplíquen/);
   assert.equal(shown.action, undefined);
@@ -271,7 +271,7 @@ test('a census session is covered only by disappearances of its species within a
   // 13/10 is 7 days after (in), 28/09 8 days before (out); another species and a natural death do not count.
   assert.deepEqual([l.id, l.covered], [lysimnia, { count: 1, dates: ['2026-10-13'] }]);
   assert.equal(h.covered, null);
-  assert.match(alerts(store).alerts.find(a => a.id === `census-open:${lysimnia}`).text, /\(1 desaparición de Mechanitis lysimnia del 13\/10\/2026\)/);
+  assert.match(alerts(store).alerts.find(a => a.id === `census-open:${lysimnia}`).text, /\(1 desaparición de Mechanitis lysimnia del 13-Oct-26\)/);
   store.close();
 });
 
@@ -312,7 +312,7 @@ test('census proposals pending more than two weeks whose rows did not change are
   assert.equal(shown[0].link, '#/propuestas?chat=t3-censos');
   assert.equal(
     shown[0].text,
-    'Censo: 2 propuestas con 14 desaparecidas esperan desde el 06/10/2026 sin aplicar (chat «Actualizar censos» de Franz). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.',
+    'Censo: 2 propuestas con 14 desaparecidas esperan desde el 6-Oct-26 sin aplicar (chat «Actualizar censos» de Franz). Revísenlas y aplíquenlas o descártenlas; mientras tanto esas mariposas cuentan como vivas.',
   );
 
   // Applying them ends the alert (the stamp follows the pending proposals).
@@ -330,7 +330,7 @@ test('a proposal made outside the T3 chats links to itself; a single one reads i
   assert.equal(chat.link, `#/propuestas/${id}`);
   assert.equal(chat.title, 'T3 Code');
   const shown = alerts(store).alerts.find(a => a.id.startsWith('census-proposals:'));
-  assert.match(shown.text, /^Censo: 1 propuesta con 1 desaparecidas espera desde el 01\/10\/2026 sin aplicar \(chat «T3 Code» de Franz\)\. Revísenla/);
+  assert.match(shown.text, /^Censo: 1 propuesta con 1 desaparecidas espera desde el 1-Oct-26 sin aplicar \(chat «T3 Code» de Franz\)\. Revísenla/);
   store.close();
 });
 

@@ -85,4 +85,16 @@ export default {
   'Racks y manifiestos': 'Racks and manifests',
   'Manifiesto (fórmulas)': 'Manifest (formulas)',
   'Otras columnas': 'Other columns',
+  // The Buscador on a phone: its rows as a list, the grid or a form.
+  Lista: 'List',
+  Tabla: 'Table',
+  Formulario: 'Form',
+  'Ver las filas como': 'Show the rows as',
+  'Sin ID': 'No ID',
+  'Mostrar {n} fila más': 'Show {n} more row',
+  'Mostrar {n} filas más': 'Show {n} more rows',
+  'queda {n}': '{n} left',
+  'quedan {n}': '{n} left',
+  'Ver {n} coincidencia más': 'See {n} more match',
+  'Ver {n} coincidencias más': 'See {n} more matches',
 } as Record<string, string>

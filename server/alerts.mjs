@@ -49,7 +49,7 @@
 
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { msg, msgn, tpl } from './messages.mjs';
+import { dateMsg, msg, msgn, tpl } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
@@ -457,7 +457,8 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
   const out = [];
   const add = (id, level, m, link, action, detail) =>
     out.push({ id, level, text: m.text, textMsg: m.msg, link, ...(action ? { action } : {}), ...(detail ? { detail: detail.text, detailMsg: detail.msg } : {}) });
-  const day = date => (date ? date.split('-').reverse().join('/') : '—');
+  // Days as the app writes them (7-Nov-26), in the reader's language (messages.mjs dateMsg).
+  const day = dateMsg;
   for (const p of cams) {
     const pool = poolName(p.pool);
     if (p.level === 'out') add(`cam:${p.pool}`, 'warn', msg('{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.', { pool }), LINK);
@@ -493,7 +494,7 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
         );
     }
   }
-  const days = dates => dates.map(day).join(', ');
+  const days = dates => (dates.length ? dates.map(day) : '—');
   for (const c of censuses) {
     const action = { kind: 'cancel-census', census: c.id };
     if (c.covered)
@@ -522,7 +523,7 @@ export function alertList(cams, rule, samples, today, censuses = [], censusPropo
       );
   }
   for (const c of censusProposals) {
-    const vars = { gone: c.disappearances, open: c.open, date: day(c.since), census: days(c.censusDays) || '—', title: c.title, by: c.by, changed: c.changed, rows: c.rows };
+    const vars = { gone: c.disappearances, open: c.open, date: day(c.since), census: days(c.censusDays), title: c.title, by: c.by, changed: c.changed, rows: c.rows };
     if (c.stale && c.open)
       add(
         `census-proposals:${c.chat}`,

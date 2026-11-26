@@ -12,7 +12,7 @@ import { useTables } from '../../stores/tables'
  * a grid of the rows around its match (SearchSection). `pin` (the sheet picked
  * above, or named by a link) comes first.
  */
-const props = defineProps<{ query: string; pin: string }>()
+const props = defineProps<{ query: string; pin: string; /** A phone: each sheet's matches as a list of lines instead of a grid. */ list?: boolean }>()
 const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget] }>()
 
 const reply = shallowRef<SearchReply | null>(null)
@@ -130,6 +130,7 @@ function jump(module: string) {
         :result="s"
         :query="reply.query"
         :pinned="s.module === pin"
+        :list="list"
         @open="(module, row) => emit('open', module, row)"
         @history="target => emit('history', target)"
         @form="open => onForm(s.module, open)"

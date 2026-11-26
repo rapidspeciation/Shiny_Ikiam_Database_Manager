@@ -96,3 +96,22 @@ export function rangeFor(
   if (to > loaded.to) return { from: loaded.to + 1, to, replace: false }
   return null
 }
+
+/**
+ * A phone's list of a sheet's matches (SearchSection): the row ranges to read for the next `count` matches not
+ * read yet, the newest first (the sheet's last rows are the ones people look for). Matches near each other
+ * (`gap` rows) share a range, none longer than the server gives at once (`max`).
+ */
+export function matchRanges(matches: number[], have: ReadonlySet<number>, count = 20, gap = 30, max = 200): { from: number; to: number }[] {
+  const next = matches
+    .filter(r => !have.has(r))
+    .sort((a, b) => a - b)
+    .slice(-count)
+  const out: { from: number; to: number }[] = []
+  for (const row of next) {
+    const last = out[out.length - 1]
+    if (last && row - last.to <= gap && row - last.from < max) last.to = row
+    else out.push({ from: row, to: row })
+  }
+  return out
+}

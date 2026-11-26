@@ -2,9 +2,12 @@
 import { computed, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { ChevronDown, ChevronRight, ChevronUp, Maximize2 } from 'lucide-vue-next'
 import SheetGrid from '../SheetGrid.vue'
+import RowDrawer from '../RowDrawer.vue'
+import RowList from './RowList.vue'
 import { buildOptions } from '../../lib/options'
 import { notify, errorText } from '../../lib/notice'
-import { type Loaded, STEP, mergeRows, rangeFor, sheetRows, stepMatch, type SearchSheet } from '../../lib/search'
+import { type Loaded, STEP, matchRanges, mergeRows, rangeFor, sheetRows, stepMatch, type SearchSheet } from '../../lib/search'
+import { rowListItem } from '../../lib/rowList'
 import type { Field, Table, TableRow } from '../../lib/types'
 import type { HistoryTarget } from '../../lib/history'
 import { rowFromWire, toRow, useTables } from '../../stores/tables'
@@ -16,7 +19,7 @@ import { useSession } from '../../stores/session'
  * neighbours of a match (and their mistakes) can be followed; ↑ ↓ go to the
  * other matches, as Ctrl+F does.
  */
-const props = defineProps<{ result: SearchSheet; query: string; pinned?: boolean }>()
+const props = defineProps<{ result: SearchSheet; query: string; pinned?: boolean; /** A phone: the matches as a list of lines (a tap opens the row). */ list?: boolean }>()
 const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget]; form: [open: boolean] }>()
 
 const session = useSession()
@@ -94,6 +97,48 @@ function onEdge(side: 'top' | 'bottom') {
   if (side === 'bottom' && (last === null || loaded.to < last)) read(loaded.to + 1, loaded.to + STEP)
 }
 
+// ---------------------------------------------------------------- a phone's list of the matches
+/** The matches read so far (those among the rows shown, and those read for the list). */
+const listRows = shallowRef<TableRow[]>([])
+const listBusy = ref(false)
+const keepMatches = (more: TableRow[]) => {
+  const found = more.filter(r => matchRows.value.has(r.row))
+  if (found.length) listRows.value = mergeRows(listRows.value, found)
+}
+watch(rows, keepMatches, { immediate: true })
+/** The match the sheet opens at first, then the newest. */
+const listItems = computed(() => {
+  const identity = mod.value?.identityFields ?? []
+  return [...listRows.value]
+    .sort((a, b) => Number(b.row === props.result.focus) - Number(a.row === props.result.focus) || b.row - a.row)
+    .map(r => rowListItem(r, columns.value, identity, props.query, props.result.columns))
+})
+const listLeft = computed(() => Math.max(0, props.result.matches.length - listRows.value.length))
+/** Reads the next matches (the newest not read yet), a few ranges of rows at a time. */
+async function moreMatches() {
+  if (listBusy.value || !listLeft.value) return
+  listBusy.value = true
+  try {
+    const have = new Set(listRows.value.map(r => r.row))
+    for (const range of matchRanges(props.result.matches, have)) keepMatches(take(await sheetRows(module, range.from, range.to)))
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    listBusy.value = false
+  }
+}
+/** The row whose form is open over the list. */
+const formId = ref<string | null>(null)
+watch(
+  () => !!formId.value,
+  shown => emit('form', shown),
+)
+// Back to the grid: its own row form reports itself.
+watch(
+  () => props.list,
+  list => !list && (formId.value = null),
+)
+
 /** Where the text is: the first columns by number of matches. */
 const shownColumns = computed(() => {
   const list = props.result.columns
@@ -136,6 +181,12 @@ onMounted(() => {
   observer.observe(root.value)
 })
 onBeforeUnmount(() => observer?.disconnect())
+// The list starts with a screenful of matches, not only those beside the first one.
+watch(
+  () => props.list && open.value && near.value && rows.value.length > 0,
+  ready => ready && listRows.value.length < Math.min(props.result.matches.length, 12) && void moreMatches(),
+  { immediate: true },
+)
 
 // Saved rows (by anyone on this page) replace the ones shown.
 const stop = tables.$onAction(({ name, args, after }) => {
@@ -146,6 +197,8 @@ const stop = tables.$onAction(({ name, args, after }) => {
     )
     if (saved.size && rows.value.some(r => saved.has(r.id)))
       rows.value = rows.value.map(r => (saved.has(r.id) ? markRaw(toRow(saved.get(r.id)!)) : r))
+    if (saved.size && listRows.value.some(r => saved.has(r.id)))
+      listRows.value = listRows.value.map(r => (saved.has(r.id) ? markRaw(toRow(saved.get(r.id)!)) : r))
   })
 })
 onBeforeUnmount(stop)
@@ -172,7 +225,7 @@ onBeforeUnmount(stop)
           · {{ $t('en {columns}', { columns: shownColumns }) }}
         </span>
       </span>
-      <span class="ml-auto flex items-center gap-1">
+      <span v-if="!list" class="ml-auto flex items-center gap-1">
         <button
           type="button"
           class="btn px-2"
@@ -207,6 +260,27 @@ onBeforeUnmount(stop)
     <div v-if="open" class="border-t border-stone-200">
       <p v-if="!rows.length" class="p-4 text-sm text-stone-500">{{ $t('Cargando {sheet}…', { sheet: module }) }}</p>
       <div v-else-if="!near" :style="{ height: GRID_HEIGHT }" />
+      <!-- A phone: the matches as lines; a tap opens the row's form over them. -->
+      <div v-else-if="list" class="bg-canvas" data-match-list>
+        <RowList :items="listItems" :mark="query" :current="formId" @open="id => (formId = id)" />
+        <div v-if="listLeft" class="px-2 pb-2">
+          <button type="button" class="btn min-h-11 w-full" :disabled="listBusy" data-more-matches @click="moreMatches">
+            {{ listBusy ? $t('Cargando…') : $tn(listLeft, 'Ver {n} coincidencia más', 'Ver {n} coincidencias más') }}
+          </button>
+        </div>
+        <RowDrawer
+          v-if="formId"
+          :module="module"
+          :row-id="formId"
+          :rows="listRows"
+          :creates="[]"
+          :columns="columns"
+          :options="options"
+          :locked-fields="[]"
+          :create-formulas="[]"
+          @close="formId = null"
+        />
+      </div>
       <SheetGrid
         v-else
         ref="grid"

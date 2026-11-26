@@ -674,7 +674,8 @@ describe('cells edited in the sheet after the proposal', () => {
     expect(comment.kind).toBe('edited')
     expect(comment.text).toContain('male')
     expect(comment.text).toContain('NA')
-    expect(comment.text).toContain('Google Sheets, 2/10/26 14:05')
+    // The app's one date shape (lib/dates.ts), with hyphens a line never breaks at.
+    expect(comment.text.replace(/\u2011/g, '-')).toContain('Google Sheets, 2-Oct-26 14:05')
     expect(comment.text).toContain("the sheet's value is kept")
     // The row still writes its other cell; a row with only kept cells writes nothing.
     expect(rowsToWrite(proposal([c, edited('r2', { Sex: 'female' }, { sheetChanged: { Sex: sexEdited } })]))).toEqual([0])

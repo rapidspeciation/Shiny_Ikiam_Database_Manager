@@ -2,6 +2,7 @@ import type { CellValue, HistoryChange } from './types'
 import type { WireRow } from '../stores/tables'
 import { api } from './api'
 import { t, type Msg } from './i18n'
+import { monthNames } from './dates'
 
 /**
  * The purposes of saves (server/history.mjs PURPOSES): the tab or flow a save
@@ -54,7 +55,6 @@ export function mainPurpose(purposes: (string | undefined)[]): string | undefine
   return best
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const clock = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Guayaquil',
   year: 'numeric',
@@ -67,12 +67,12 @@ const clock = new Intl.DateTimeFormat('en-US', {
 function partsOf(iso: string) {
   const parts = Object.fromEntries(clock.formatToParts(new Date(iso)).map(p => [p.type, p.value]))
   return {
-    day: `${Number(parts.day)}-${MONTHS[Number(parts.month) - 1]}-${String(parts.year).slice(-2)}`,
+    day: `${Number(parts.day)}-${monthNames()[Number(parts.month) - 1]}-${String(parts.year).slice(-2)}`,
     time: `${parts.hour}:${parts.minute}`,
   }
 }
 
-/** "28-Sep-26 14:05", in Ecuador's time, day first like the rest of the app. */
+/** "28-Sep-26 14:05", in Ecuador's time, day first like the rest of the app (the month in the interface language). */
 export function formatWhen(iso: string): string {
   if (Number.isNaN(Date.parse(iso))) return ''
   const { day, time } = partsOf(iso)

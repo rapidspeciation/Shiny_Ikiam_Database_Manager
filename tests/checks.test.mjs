@@ -440,7 +440,6 @@ async function preservedFixture() {
   return store;
 }
 const ana = { id: 'u1', username: 'ana', displayName: 'Ana', role: 'editor' };
-const dayFirst = serial => isoOf(serial).split('-').reverse().join('/');
 
 test('missing_sample and preserved_na: an insectary butterfly preserved by its cells, without CAM or tube, and the team is asked', async () => {
   const store = await preservedFixture();
@@ -475,7 +474,9 @@ test('missing_sample and preserved_na: an insectary butterfly preserved by its c
   const D5D = store.getRecordBySheetRow('Insectary_data', 2);
   const alert = data.alerts.find(a => a.id === `sample:${D5D.id}`);
   assert.equal(alert.level, 'warn');
-  assert.deepEqual(alert.textMsg.vars, { id: 'D5D', species: 'Mechanitis lysimnia', date: dayFirst(today - 10) });
+  // The day goes as a day, for the interface to write in its language; the Spanish text has it as the app writes days.
+  assert.deepEqual(alert.textMsg.vars, { id: 'D5D', species: 'Mechanitis lysimnia', date: { date: isoOf(today - 10) } });
+  assert.match(alert.text, /^D5D \(Mechanitis lysimnia\) preservada el \d{1,2}-[A-Z][a-z]{2}-\d{2} sin CAM\/tubo/);
   assert.equal(alert.link, '#/tablas?hoja=Insectary_data&buscar=D5D');
   assert.equal(data.alerts.find(a => a.id === `sample:${K1K.id}`).textMsg.vars.id, 'K1K');
   // Older than 180 days: in the list, not an alert.

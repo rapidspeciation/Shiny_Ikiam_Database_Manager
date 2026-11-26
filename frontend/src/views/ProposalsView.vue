@@ -36,8 +36,8 @@ watch(locale, title)
     <ProposalsLive layout="page" :only="only" :chat="chat" :photo="photo" class="min-h-0 flex-1" @chat="pick" @photo="showPhoto" />
     <!-- The page has no header: the way back, and which database the changes go to. -->
     <div class="flex items-center gap-2 border-t border-stone-200 bg-surface px-3 py-1">
-      <RouterLink :to="back" class="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-800">
-        <ArrowLeft :size="12" /> {{ $t('Volver al Asistente') }}
+      <RouterLink :to="back" class="hit-target flex items-center gap-1 text-xs text-fg-muted hover:text-fg max-sm:min-h-9 max-sm:text-sm" data-back>
+        <ArrowLeft :size="14" /> {{ $t('Volver al Asistente') }}
       </RouterLink>
       <DatabaseBadge tone="surface" class="ml-auto" />
     </div>

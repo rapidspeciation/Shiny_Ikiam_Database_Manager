@@ -7,6 +7,7 @@ import {
   CircleHelp,
   Clock,
   Columns3,
+  List,
   ListFilter,
   Plus,
   Send,
@@ -17,6 +18,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
+import ProposalStack from './assistant/ProposalStack.vue'
 import ColumnChooser from './assistant/ColumnChooser.vue'
 import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
 import PhotoThumbs from './assistant/PhotoThumbs.vue'
@@ -61,10 +63,10 @@ import {
   type ProposalChange,
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
-import { CHANGES_ONLY_KEY, columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
+import { CHANGES_ONLY_KEY, PROPOSAL_PHONE_VIEW_KEY, columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
 import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
-import { useMedia } from '../composables/usePhone'
+import { useMedia, usePhoneWidth } from '../composables/usePhone'
 import { useLive } from '../stores/live'
 import { t, tx } from '../lib/i18n'
 
@@ -143,6 +145,15 @@ const wide = useMedia('(min-width: 768px)')
 const narrow = computed(() => !wide.value)
 
 const pending = computed(() => props.proposal.status === 'pending')
+/**
+ * A phone: the changes as a list, each row's changed cells one under the other (ProposalStack), or the table to
+ * edit them; the choice is kept on the device. Not beside the photo nor in a rack deposit, whose tables go with
+ * the rack's grid.
+ */
+const phone = usePhoneWidth()
+const phoneView = persistentRef<'list' | 'table'>(PROPOSAL_PHONE_VIEW_KEY, 'list', { lasting: true })
+const canStack = computed(() => phone.value && !props.reviewing && !props.proposal.deposit)
+const stacked = computed(() => canStack.value && phoneView.value !== 'table')
 /** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
 const repeatNotice = computed(() => repeatSummary(props.proposal.changes))
 /**
@@ -684,9 +695,26 @@ function reviewNext(
   const next = nextCell(cells, order.value, from)
   if (!next) return
   lastReviewed = next
-  const id = sections.value.flatMap(s => s.tables).find(g => g.rows.some(c => rowKey(c) === next.key))?.id
-  if (id) sheets.get(id)?.focusCell(next.key, next.field)
+  showCell(next.key, next.field)
 }
+/**
+ * Brings a cell into view in its table. From a phone's list the table is shown first, and it takes a moment to
+ * build: the cell is asked for until it is there (two seconds at most).
+ */
+function showCell(key: string, field: string) {
+  const id = sections.value.flatMap(s => s.tables).find(g => g.rows.some(c => rowKey(c) === key))?.id
+  if (!id) return
+  if (!stacked.value) return void sheets.get(id)?.focusCell(key, field)
+  phoneView.value = 'table'
+  let tries = 0
+  const attempt = () => {
+    if (sheets.get(id)?.focusCell(key, field) || ++tries >= 20) return
+    focusTimer = window.setTimeout(attempt, 100)
+  }
+  void nextTick(attempt)
+}
+let focusTimer: number | undefined
+onBeforeUnmount(() => window.clearTimeout(focusTimer))
 
 /**
  * «Avisar al asistente»: which cells the sheet changed since its proposal, to look
@@ -804,6 +832,17 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
+    <!-- A phone: the changes as a list (every changed cell on the screen) or the table to edit them. -->
+    <div v-if="canStack" class="flex items-center gap-2 border-b border-stone-200 px-2 py-1.5 text-xs text-stone-500" data-phone-view>
+      <span class="view-switch is-roomy" role="group" :aria-label="$t('Ver los cambios como')">
+        <button type="button" :class="{ 'is-on': stacked }" :aria-pressed="stacked" data-view="list" @click="phoneView = 'list'">
+          <List :size="14" aria-hidden="true" /> {{ $t('Lista') }}
+        </button>
+        <button type="button" :class="{ 'is-on': !stacked }" :aria-pressed="!stacked" data-view="table" @click="phoneView = 'table'">
+          <Table2 :size="14" aria-hidden="true" /> {{ editable ? $t('Editar en tabla') : $t('Tabla') }}
+        </button>
+      </span>
+    </div>
     <!-- Formulas it writes: what they cost the sheet's recalculation (amber when heavy). -->
     <FormulaCostNotice v-if="pending && proposal.formulaCost?.length" :cost="proposal.formulaCost" />
     <!-- Where the page and the sheet differ: repeated IDs with their rows away from their series, and lines of a
@@ -937,7 +976,17 @@ const statusText = computed(
       <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab), why it is there and how its lines compare with the sheet. -->
       <PhotoThumbs v-if="page && g.photos.length" :id="proposal.id" :page="page" :photos="g.photos" :reviewing="reviewing" @photo="n => emit('photo', n)" />
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
-      <div :class="{ 'flex min-w-0': rowPhotosOf(g.rows) }">
+      <template v-if="stacked">
+        <p v-if="groups.length > 1 && !g.near" class="px-2 pt-2 text-xs font-medium text-stone-700">{{ g.sheet }}</p>
+        <ProposalStack
+          :rows="g.rows"
+          :fields="g.columns"
+          :types="typesOf(g.sheet)"
+          :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
+          @cell="showCell"
+        />
+      </template>
+      <div v-else :class="{ 'flex min-w-0': rowPhotosOf(g.rows) }">
       <ProposalSheet
         :ref="sheetRef(g.id)"
         :class="{ 'min-w-0 flex-1': rowPhotosOf(g.rows) }"
@@ -1176,8 +1225,8 @@ const statusText = computed(
     <!-- While pending, «Aplicar» and «Descartar» stay at the foot of the screen as the table above scrolls by (not in
          a phone's half-screen beside the photo, where the rack's grid needs the room). -->
     <div
-      class="flex flex-wrap items-center gap-2 px-2 py-1.5"
-      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending, 'max-sm:py-1': pending && reviewing }"
+      class="flex flex-wrap items-center gap-2 px-2 py-1.5 max-sm:gap-3"
+      :class="{ 'sticky bottom-0 z-20 rounded-b-md border-t border-stone-200 bg-surface shadow-[0_-6px_10px_-8px_var(--shadow)]': pending, 'max-sm:py-1': pending && reviewing, 'max-sm:py-2': pending && !reviewing }"
       data-apply-bar
       ref="applyBar"
       tabindex="-1"
@@ -1197,7 +1246,7 @@ const statusText = computed(
         <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
         <button
           v-else-if="!perSheet.size || sheetsToApply.length > 1"
-          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong max-sm:min-h-11"
+          class="btn-primary bg-fill-emerald hover:bg-fill-emerald-strong max-sm:min-h-12 max-sm:flex-1 max-sm:text-base"
           :disabled="busy || !chosen.length"
           @click="applyRows(null)"
         >
@@ -1205,7 +1254,7 @@ const statusText = computed(
           {{ perSheet.size ? $tn(chosen.length, 'Aplicar todo ({n} fila)', 'Aplicar todo ({n} filas)') : $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
         </button>
         <button
-          class="btn max-sm:min-h-11"
+          class="btn max-sm:min-h-12 max-sm:px-4"
           :disabled="busy"
           :title="someWritten ? $t('Lo ya escrito se queda en la hoja; las filas que faltan no se aplican') : undefined"
           @click="emit('discard')"

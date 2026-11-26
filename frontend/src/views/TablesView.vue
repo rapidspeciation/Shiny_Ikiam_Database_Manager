@@ -16,6 +16,8 @@ import {
   X,
   ClipboardList,
   ChevronDown,
+  List,
+  Table2,
 } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import SearchResults from '../components/search/SearchResults.vue'
@@ -33,7 +35,7 @@ import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
 import { t } from '../lib/i18n'
 import { persistentRef } from '../lib/persist'
-import { PHONE_VIEW_KEY, phoneViewFor } from '../lib/rowForm'
+import { PHONE_VIEW_KEY, phoneViewFor, type PhoneView } from '../lib/rowForm'
 
 /**
  * The "Buscador": a text searched in every sheet, as Google Sheets' Ctrl+F,
@@ -49,9 +51,25 @@ import { PHONE_VIEW_KEY, phoneViewFor } from '../lib/rowForm'
 const session = useSession()
 const pending = usePending()
 const route = useRoute()
-// On a phone the sheet shows as the grid (default) or as a form, one row at a time; the choice is kept on the device.
+// On a phone the sheet shows as a list of rows (default; a tap opens the row), as the grid, or as a form, one row
+// at a time; the choice is kept on the device. A computer always has the grid.
 const phoneView = persistentRef<string | null>(PHONE_VIEW_KEY, null, { lasting: true })
-const formView = computed(() => phone.value && phoneViewFor(phoneView.value) === 'form')
+const view = computed<PhoneView>(() => (phone.value ? phoneViewFor(phoneView.value) : 'grid'))
+const formView = computed(() => view.value === 'form')
+const listView = computed(() => view.value === 'list')
+/** The views a phone can choose from: the form is one row of a whole sheet, so the results have the other two. */
+const views = computed(() =>
+  (
+    [
+      ['list', t('Lista'), List],
+      ['grid', t('Tabla'), Table2],
+      ['form', t('Formulario'), ClipboardList],
+    ] as [PhoneView, string, typeof List][]
+  ).filter(([v]) => v !== 'form' || !searching.value),
+)
+/** The results as lines unless the grid was chosen (the form's choice is the list there). */
+const resultsList = computed(() => phone.value && view.value !== 'grid')
+const viewShown = computed(() => (searching.value && view.value === 'form' ? 'list' : view.value))
 const router = useRouter()
 
 /** Group names in Spanish (the key of their English), translated where shown. */
@@ -228,7 +246,7 @@ const hintText = computed(() =>
   [
     touch
       ? t(
-          'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · 📋 ver una fila como formulario · gris = fórmula.',
+          'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.',
         )
       : t(
           'Escribe sobre una celda, o pulsa Enter o doble clic para editarla · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
@@ -328,18 +346,6 @@ const headerNotice = computed(() => {
       </label>
       <template v-if="!searching && !past">
         <button
-          v-if="phone"
-          type="button"
-          class="btn flex-none px-2"
-          :class="{ 'border-brand bg-brand text-on-brand hover:bg-brand-hover': formView }"
-          :aria-pressed="formView"
-          :aria-label="$t('Ver como formulario')"
-          :title="formView ? $t('Ver como tabla') : $t('Ver como formulario')"
-          @click="phoneView = formView ? null : 'form'"
-        >
-          <ClipboardList :size="17" />
-        </button>
-        <button
           type="button"
           class="btn flex-none px-2 sm:hidden"
           :class="{ 'bg-stone-100': menuOpen }"
@@ -374,7 +380,7 @@ const headerNotice = computed(() => {
             <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> {{ $t('Añadir fila') }}</button>
             <ExtendRowsButton v-if="session.isReviewer" :sheet="module" :count="50" @done="load(true)" />
             <button
-              v-if="!formView"
+              v-if="view === 'grid'"
               class="btn"
               :title="$t('Copiar la primera fila seleccionada hacia abajo (Ctrl+D)')"
               @click="grid?.fillDown()"
@@ -402,6 +408,40 @@ const headerNotice = computed(() => {
         </div>
       </template>
     </div>
+    <!-- A phone: how the rows show (list, grid or form), and with the grid its help behind one line. -->
+    <div v-if="phone && !past" class="border-b border-border bg-surface px-3 py-1.5" data-phone-views>
+      <div class="flex items-center gap-2">
+        <span class="view-switch is-roomy" role="group" :aria-label="$t('Ver las filas como')">
+          <button
+            v-for="[v, label, icon] in views"
+            :key="v"
+            type="button"
+            :class="{ 'is-on': viewShown === v }"
+            :aria-pressed="viewShown === v"
+            :data-view="v"
+            @click="phoneView = v"
+          >
+            <component :is="icon" :size="15" aria-hidden="true" /> {{ label }}
+          </button>
+        </span>
+        <button
+          v-if="view === 'grid' && !searching"
+          type="button"
+          class="hit-target ml-auto flex min-h-8 flex-none items-center gap-1 text-xs font-medium text-fg-muted"
+          :aria-expanded="phoneHintOpen"
+          :aria-label="$t('Cómo editar')"
+          aria-controls="buscador-help"
+          data-phone-hint
+          @click="togglePhoneHint"
+        >
+          <Info :size="15" aria-hidden="true" />
+          <ChevronDown :size="14" aria-hidden="true" :class="{ 'rotate-180': phoneHintOpen }" />
+        </button>
+      </div>
+      <p v-if="view === 'grid' && !searching && phoneHintOpen" id="buscador-help" class="hint pt-1.5">
+        {{ hintText }}
+      </p>
+    </div>
     <div class="flex min-h-0 flex-1">
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <SheetAsOf
@@ -416,7 +456,7 @@ const headerNotice = computed(() => {
           @history="target => (historyTarget = target)"
         />
         <div v-if="resultsQuery" v-show="searching && !past" class="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-stone-50">
-          <SearchResults :query="resultsQuery" :pin="module" @open="openRow" @history="target => (historyTarget = target)" />
+          <SearchResults :query="resultsQuery" :pin="module" :list="resultsList" @open="openRow" @history="target => (historyTarget = target)" />
         </div>
         <div v-if="sheetSeen" v-show="!searching && !past" class="flex min-h-0 flex-1 flex-col">
           <!-- A changed header: one line on a phone until tapped. -->
@@ -444,24 +484,7 @@ const headerNotice = computed(() => {
               $t('Esas columnas se muestran con su último valor y no se pueden editar.')
             }}</template>
           </p>
-          <!-- A phone: the help behind one line, so the grid starts higher. -->
-          <div v-if="phone && !formView" class="hint px-3">
-            <button
-              type="button"
-              class="hit-target flex min-h-8 items-center gap-1 font-medium text-fg-muted"
-              :aria-expanded="phoneHintOpen"
-              aria-controls="buscador-help"
-              data-phone-hint
-              @click="togglePhoneHint"
-            >
-              <Info :size="14" aria-hidden="true" /> {{ $t('Cómo editar') }}
-              <ChevronDown :size="14" aria-hidden="true" :class="{ 'rotate-180': phoneHintOpen }" />
-            </button>
-            <p v-if="phoneHintOpen" id="buscador-help" class="pb-1.5">
-              {{ hintText }}
-            </p>
-          </div>
-          <p v-else-if="!hintHidden && !formView" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
+          <p v-if="!phone && !hintHidden" class="hint flex items-start gap-2 px-4 py-1 max-sm:px-3">
             <span class="min-w-0 flex-1">
               {{ hintText }}
             </span>
@@ -492,6 +515,7 @@ const headerNotice = computed(() => {
               :mark="opened && lastSearch ? lastSearch.text : ''"
               cell-history
               :form="formView"
+              :list="listView"
               @notice="notify"
               @history="target => (historyTarget = target)"
               @remove-create="

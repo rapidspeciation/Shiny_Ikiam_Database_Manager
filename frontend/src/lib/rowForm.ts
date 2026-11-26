@@ -1,12 +1,13 @@
 import type { Field } from './types'
 
 /**
- * The Buscador on a phone: the grid (default) or one row at a time as a form.
- * The choice is kept in this browser; anything unknown stored there means the grid.
+ * The Buscador on a phone: its rows as a list of finger-sized lines (default; a tap opens the row), the grid as on a
+ * computer, or one row at a time as a form. The choice is kept in this browser; anything unknown stored there means
+ * the list.
  */
-export type PhoneView = 'grid' | 'form'
+export type PhoneView = 'list' | 'grid' | 'form'
 export const PHONE_VIEW_KEY = 'phone-view'
-export const phoneViewFor = (stored: unknown): PhoneView => (stored === 'form' ? 'form' : 'grid')
+export const phoneViewFor = (stored: unknown): PhoneView => (stored === 'form' || stored === 'grid' ? stored : 'list')
 
 /**
  * The form's sections, most used first. A column goes to the first section whose

@@ -1,4 +1,5 @@
 import type { RackDeposit } from './rackDeposit'
+import { momentText, unbroken } from './dates'
 import type { FormulaCost } from './formulaCost'
 import type { CellValue } from './types'
 import type { TableRow } from './rowsTable'
@@ -539,26 +540,8 @@ export function writtenFields(c: Pick<ProposalChange, 'values' | 'sheetChanged' 
   return Object.keys(c.values).filter(f => !c.sheetChanged?.[f] || keptOver(c.sheetChanged[f]))
 }
 
-/** When something was done, day first, in Ecuador's time: 2/10/26 14:05. */
-export function whenText(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return ''
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Guayaquil',
-      year: '2-digit',
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
-      .formatToParts(at)
-      .map(p => [p.type, p.value]),
-  )
-  return `${Number(parts.day)}/${Number(parts.month)}/${parts.year} ${parts.hour}:${parts.minute}`
-}
+/** When something was done, in Ecuador's time, in the app's one date shape (lib/dates.ts): 2-Oct-26 14:05. */
+export const whenText = (iso: string | null | undefined): string => unbroken(momentText(iso))
 /** Who edited a cell (or a row) in the sheet: the person of the app, else the sheet itself. */
 export const editedBy = (e: Pick<SheetEdit, 'by' | 'source'>) => e.by || (e.source === 'app' ? t('la app') : 'Google Sheets')
 

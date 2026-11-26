@@ -1,5 +1,5 @@
 /** GET /api/summary: the home page ("Inicio"). */
-import { locale } from './i18n'
+import { dayText, monthNames, unbroken } from './dates'
 
 export interface Named {
   name: string
@@ -145,13 +145,11 @@ export interface Summary {
   team: Team | null
 }
 
-export const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-/** Short month names in the interface language. */
-export const monthNames = () => (locale.value === 'en' ? MONTHS_EN : MONTHS)
+/** Short month names in the interface language (lib/dates.ts). */
+export { monthNames }
 export const monthLabel = (m: string) => `${monthNames()[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`
-export const dateLabel = (d: string | null) =>
-  d ? `${Number(d.slice(8))} ${monthNames()[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}` : '—'
+/** A day on Inicio: the app's one date shape (lib/dates.ts dayText), 7-Nov-26, never cut at a hyphen. */
+export const dateLabel = (d: string | null) => unbroken(dayText(d))
 export const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '—')
 export const table = (head: string[], rows: (string | number | null)[][]) => ({
   head,

@@ -227,6 +227,8 @@ export function columnChoices(user: string) {
 
 /** Where «Solo cambios» is kept (on unless the person turned it off). Not the old key: that one hid only rows. */
 export const CHANGES_ONLY_KEY = 'proposal-changes-only-2'
+/** A phone's view of a proposal: the stacked list of changes (default) or the table. Kept on the device. */
+export const PROPOSAL_PHONE_VIEW_KEY = 'proposal-phone-view'
 
 /**
  * The table's own columns before the sheet's: on a phone with «Solo cambios» on (`compact`), no «Fila» and a narrow

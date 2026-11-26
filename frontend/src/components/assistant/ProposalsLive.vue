@@ -34,7 +34,8 @@ import {
 import { afterMove, seenChat, type T3Seen } from '../../lib/t3Bridge'
 import { useTables } from '../../stores/tables'
 import { useSession } from '../../stores/session'
-import { intlLocale, t, tn } from '../../lib/i18n'
+import { t, tn } from '../../lib/i18n'
+import { recentText, unbroken } from '../../lib/dates'
 
 // The tables (Tabulator) load apart, so the Asistente tab and T3 start without waiting for them.
 const ProposalGrid = defineAsyncComponent({
@@ -488,10 +489,10 @@ watch(
     if (!open && reviewing.value && props.layout === 'page') reviewing.value = null
   },
 )
-/** Where a proposal came from and when («T3 Code · 06:18»): for admins only, the team does not need the machinery. */
+/** Where a proposal came from and when («T3 Code · 06:18», with its day when it is not today's): for admins only, the team does not need the machinery. */
 const origin = (p: Proposal) =>
   session.isAdmin
-    ? [mixed.value ? p.source : '', p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
+    ? [mixed.value ? p.source : '', unbroken(recentText(p.createdAt))]
         .filter(Boolean)
         .join(' · ')
     : ''
@@ -600,7 +601,7 @@ const origin = (p: Proposal) =>
           <button
             v-if="photosOf(p)"
             type="button"
-            class="ml-auto flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-surface px-1.5 py-0.5 text-stone-700 hover:border-emerald-600 hover:text-emerald-800"
+            class="hit-target ml-auto flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-surface px-1.5 py-0.5 text-stone-700 hover:border-emerald-600 hover:text-emerald-800 max-sm:min-h-8 max-sm:px-2.5 max-sm:text-sm"
             :title="$t('La tabla y la foto del cuaderno juntas, en esta pestaña: la foto se acerca, se mueve y se gira')"
             @click="review(p)"
           >

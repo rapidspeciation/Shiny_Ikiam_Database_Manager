@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRaw, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -37,6 +37,8 @@ import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
 import { listProblem, repeats, verificationsFor } from '../lib/verifications'
 import RowDrawer from './RowDrawer.vue'
+import RowList from './search/RowList.vue'
+import { rowListItem, type RowListItem } from '../lib/rowList'
 import CellBar from './CellBar.vue'
 import { History } from 'lucide-vue-next'
 import type { HistoryTarget, Stored } from '../lib/history'
@@ -88,6 +90,8 @@ const props = withDefaults(
     staged?: Record<string, StagedMark>
     /** One row at a time as a form instead of the grid (a phone's choice in the Buscador). */
     form?: boolean
+    /** The rows as a list of finger-sized lines instead of the grid (a phone's default in the Buscador): a tap opens the row. */
+    list?: boolean
   }>(),
   {
     creates: () => [],
@@ -166,6 +170,44 @@ const formOrder = computed(() => {
   }
   return [...entries.values()]
 })
+// The list view (a phone): a line per row (RowList in place of the grid), in the grid's order and with its filters;
+// a tap opens the row's form over it. The grid stays built underneath, as under the form view.
+const rowList = computed(() => !!props.list && !props.readonly && !rowForm.value)
+const listItems = computed<RowListItem[]>(() => {
+  if (!rowList.value) return []
+  void orderTick.value
+  const identity = session.module(props.module)?.identityFields ?? (props.labelField ? [props.labelField] : [])
+  const items = new Map<string, RowListItem>()
+  for (const c of [...props.creates].reverse())
+    items.set(c.clientId, { ...rowListItem({ id: c.clientId, row: 0, values: c.values }, props.columns, identity), isNew: true })
+  const rows = [...props.rows]
+  if (props.newestFirst) rows.sort((a, b) => b.row - a.row)
+  for (const r of rows) items.set(r.id, rowListItem(r, props.columns, identity))
+  if (table && built) return (table.getData('active') as GridRow[]).flatMap(d => items.get(d.__id) ?? [])
+  return [...items.values()]
+})
+// Tabulator lays nothing out while its box is hidden. A grid built under the list or the form (a phone opens on the
+// list), or under the Buscador's results, is laid out once its box has a size (`layOut`, also called when the box's
+// size changes), and again each time it comes back from the list or the form.
+let layoutPending = false
+/** Built while hidden: the row asked for is brought into view once the grid shows. */
+let focusAfterLayout = false
+function layOut() {
+  if (!layoutPending || !table || !built || !host.value?.offsetWidth) return
+  layoutPending = false
+  table.redraw(true)
+  if (focusAfterLayout) focusPending = !!props.focusRow
+  focusAfterLayout = false
+  showFocus()
+}
+watch(
+  () => rowForm.value || rowList.value,
+  hidden => {
+    if (hidden) return
+    layoutPending = true
+    void nextTick(layOut)
+  },
+)
 const formId = ref<string | null>(null)
 const formShown = computed(() =>
   formId.value && formOrder.value.some(o => o.id === formId.value) ? formId.value : formOrder.value[0]?.id || null,
@@ -181,6 +223,8 @@ watch(
   [() => props.focusRow, () => props.focusToken],
   ([id]) => {
     if (id) formId.value = id
+    // In the list, a row asked for (a link to it, an alert's) opens at once: its line may be far down.
+    if (id && rowList.value) drawerId.value = id
   },
   { immediate: true },
 )
@@ -797,6 +841,7 @@ function build() {
     built = true
     orderTick.value++
     focusPending = !!props.focusRow
+    if (!host.value?.offsetWidth) layoutPending = focusAfterLayout = true
     if (refreshWhenBuilt) refresh()
     else {
       applySearch()
@@ -953,6 +998,10 @@ onMounted(() => {
   host.value?.addEventListener('keydown', onEditingKey, true)
   // Its height is fixed (the rows area follows by CSS): the cell bar growing a line or two needs no redraw.
   if (host.value) sizeWatch = watchSize(() => table, host.value, { followsHeight: true })
+  if (host.value && typeof ResizeObserver !== 'undefined') {
+    shownWatch = new ResizeObserver(layOut)
+    shownWatch.observe(host.value)
+  }
 })
 // Kept alive while another tab is open (see App.vue): its size may have changed meanwhile.
 onActivated(() => {
@@ -966,9 +1015,11 @@ onDeactivated(() => (active = false))
 
 // Size changes are followed by watchSize (lib/gridKit.ts), which ignores the tab being hidden and waits for open editors.
 let sizeWatch: { disconnect: () => void } | null = null
+let shownWatch: ResizeObserver | null = null
 
 onBeforeUnmount(() => {
   sizeWatch?.disconnect()
+  shownWatch?.disconnect()
   fill?.destroy()
   copied?.destroy()
   fit?.destroy()
@@ -1038,7 +1089,11 @@ defineExpose({ refresh, fillDown, keepView })
       @remove-create="id => emit('removeCreate', id)"
     />
     <p v-if="rowForm && !formShown" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
-    <CellBar v-show="!rowForm" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
+    <div v-if="rowList" class="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas" data-list-view>
+      <RowList :items="listItems" :current="focusRow" @open="id => (drawerId = id)" />
+      <p v-if="!listItems.length" class="p-6 text-fg-muted">{{ $t('Esta hoja no tiene filas.') }}</p>
+    </div>
+    <CellBar v-show="!rowForm && !rowList" :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
       <template v-if="cellHistory" #actions>
         <button
           type="button"
@@ -1053,7 +1108,7 @@ defineExpose({ refresh, fillDown, keepView })
       </template>
     </CellBar>
     <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, so they move with the grid. -->
-    <div v-show="!rowForm" class="relative min-h-0 flex-1">
+    <div v-show="!rowForm && !rowList" class="relative min-h-0 flex-1">
       <div ref="host" class="h-full" tabindex="-1" />
     </div>
     <RowDrawer
