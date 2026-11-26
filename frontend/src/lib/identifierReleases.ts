@@ -15,15 +15,27 @@
  * - head_6fa6ab78.json: head_hier 6fa6ab78, alias_w075 on V5N crops with label fixes (3fc6082c, 4 Nov 2026).
  * - head_6fa6ab78.json+merges48: Option 1A display-time 48-pair taxonomic name merge (labels_q/leaf_map.tsv,
  *   Greta diaphanus quisqueya kept separate) on unchanged head_hier 6fa6ab78 weights (23 Nov 2026).
+ * - head_slot1_7d54b54f.json: Slot 1 3-backbone fusion head (BioCLIP 2.5-H + DINOv2-S/14 + Meta DINOv3-S/16,
+ *   Option 1A merges bundled via compat_live_head_sha256; 26 Nov 2026).
  * The server's earlier head_hier 749fbffd (19 Oct 2026) was never listed as a file, so no item can name it.
  */
 export const MERGED_HEAD_6FA6AB78 = 'head_6fa6ab78.json+merges48'
+export const FUSION_HEAD_SLOT1 = 'head_slot1_7d54b54f.json'
 
 export const IDENTIFIER_HEADS: readonly { file: string; released: string }[] = [
   { file: 'head_b8127dbf.json', released: '2026-10-29' },
   { file: 'head_6fa6ab78.json', released: '2026-11-04' },
   { file: MERGED_HEAD_6FA6AB78, released: '2026-11-23' },
+  { file: FUSION_HEAD_SLOT1, released: '2026-11-26' },
 ]
+
+/** Map a worker.py `head` id (e.g. 'head_slot1_3bb_dist_rel_7d54b54f' or 'head_hier_6fa6ab78') to its head-meta file name. */
+export function onlineHeadFile(headId: string | null | undefined): string | null {
+  if (!headId) return null
+  if (headId === 'head_slot1_3bb_dist_rel_7d54b54f') return FUSION_HEAD_SLOT1
+  if (headId === 'head_hier_6fa6ab78') return 'head_6fa6ab78.json'
+  return headId.endsWith('.json') ? headId : null
+}
 
 /** The active identifier release token for a head-meta file (reflects bundled Option 1A merges on head_6fa6ab78). */
 export function activeHeadRelease(file: string | null | undefined): string | null {

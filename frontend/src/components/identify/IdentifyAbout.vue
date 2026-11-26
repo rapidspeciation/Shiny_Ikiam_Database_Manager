@@ -40,7 +40,8 @@ defineProps<{ team?: boolean; serverOpen?: boolean }>()
       </li>
       <li>
         <strong>Built with DINOv3.</strong>
-        {{ $t('En línea (servidor): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3; estos pesos adicionales se ejecutan solo en el servidor y no se descargan ni se redistribuyen a los dispositivos.') }}
+        {{ $t('En línea (servidor) y modelo descargable «Más preciso» (equipo): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3 bajo la Licencia de Meta DINOv3.') }}
+        <a href="DINOv3-LICENSE.txt" target="_blank" rel="noopener" class="text-brand-text underline">{{ $t('Licencia de Meta DINOv3 (copia incluida)') }}</a> ·
         <a :href="MODEL_PAGES.dinov3License" target="_blank" rel="noopener" class="text-brand-text underline">{{ $t('Licencia de Meta DINOv3') }}</a>
       </li>
       <li v-if="team">{{ $t('También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).') }}</li>

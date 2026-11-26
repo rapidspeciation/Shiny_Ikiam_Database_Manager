@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { COMPAT_MODELS, contentVersion, phoneModels, SEX_MANIFEST, STUDENT, STUDENT_MANIFEST } from '../../server/offline-id.mjs';
+import { COMPAT_MODELS, contentVersion, FUSION_MODELS, phoneModels, SEX_MANIFEST, STUDENT, STUDENT_MANIFEST } from '../../server/offline-id.mjs';
 
 const dir = process.argv[2];
 if (!dir) {
@@ -24,37 +24,56 @@ const sha = file =>
       .on('end', () => ok(h.digest('hex')))
       .on('error', fail);
   });
-const { models, problems } = await phoneModels(dir);
+const { models, problems } = await phoneModels(dir, { versioned: true, fusion: true });
+const fusionRoles = new Set(FUSION_MODELS.map(m => m.role));
 const manifest = await stat(join(dir, SEX_MANIFEST)).catch(() => null);
 console.log(`Sex model: ${manifest ? SEX_MANIFEST : `no ${SEX_MANIFEST}, model B (built in)`}`);
 const smallManifest = await stat(join(dir, STUDENT_MANIFEST)).catch(() => null);
 console.log(`Small model: ${smallManifest ? STUDENT_MANIFEST : `no ${STUDENT_MANIFEST}, ${STUDENT.version} (built in)`}`);
 let sexOffered = false;
+let fusionPresent = 0;
+let fusionValid = 0;
+const fusionIssues = [];
 for (const m of models) {
   const file = join(dir, m.path);
   const s = await stat(file).catch(() => null);
+  const isFusion = fusionRoles.has(m.role);
   if (!s?.isFile()) {
-    console.log(`${m.role.padEnd(9)} ${m.name}: MISSING${m.optional ? ' (optional: not offered)' : ''}`);
+    console.log(`${m.role.padEnd(16)} ${m.name}: MISSING${m.optional ? ' (optional: not offered)' : ''}`);
     // The sex model and the small model («Rápido y liviano», the recommended first download) must be offered.
     if (m.role === 'sex' || m.role === 'student') problems.push(`${m.path} is missing`);
+    if (isFusion) fusionIssues.push(`${m.path} is missing`);
     continue;
   }
+  if (isFusion) fusionPresent++;
   const got = await sha(file);
   const bad = (m.bytes && s.size !== m.bytes ? [`size ${s.size}, expected ${m.bytes}`] : []).concat(m.sha256 && got !== m.sha256 ? [`sha256 ${got}, expected ${m.sha256}`] : []);
-  console.log(`${m.role.padEnd(9)} ${m.name}: ${s.size} B, version "${m.version ?? contentVersion(got)}", sha256 ${got}${bad.length ? `: NOT OFFERED (${bad.join('; ')})` : ''}`);
+  console.log(`${m.role.padEnd(16)} ${m.name}: ${s.size} B, version "${m.version ?? contentVersion(got)}", sha256 ${got}${bad.length ? `: NOT OFFERED (${bad.join('; ')})` : ''}`);
   if (m.role === 'sex') {
     if (bad.length) problems.push(`${m.name}: ${bad.join('; ')}`);
     else sexOffered = true;
-    if (m.calibration) console.log(`          calibration ${JSON.stringify(m.calibration)}`);
+    if (m.calibration) console.log(`                 calibration ${JSON.stringify(m.calibration)}`);
   }
   if (m.role === 'student' && bad.length) problems.push(`${m.name}: ${bad.join('; ')}`);
-  if (m.input) console.log(`          input ${m.input.size} x ${m.input.size} (${m.input.values})`);
+  if (isFusion) {
+    if (bad.length) fusionIssues.push(`${m.name}: ${bad.join('; ')}`);
+    else fusionValid++;
+  }
+  if (m.input) console.log(`                 input ${m.input.size} x ${m.input.size} (${m.input.values})`);
+}
+if (fusionValid === FUSION_MODELS.length) {
+  console.log(`Slot 1 fusion: READY (${fusionValid}/${FUSION_MODELS.length} verified, offered to ?caps=versions,fusion clients)`);
+} else if (fusionPresent === 0) {
+  console.log(`Slot 1 fusion: not installed (0/${FUSION_MODELS.length}; clients use legacy head_6fa6ab78)`);
+} else {
+  console.log(`Slot 1 fusion: INCOMPLETE (${fusionValid}/${FUSION_MODELS.length} valid; fail-closed: not offered)`);
+  for (const issue of fusionIssues) problems.push(`Slot 1 fusion: ${issue}`);
 }
 // Pages from before model versions get L1 and B (server/offline-id.mjs COMPAT_MODELS): keep their files. A warning only.
 for (const m of COMPAT_MODELS.filter(c => !models.some(x => x.name === c.name))) {
   const file = join(dir, m.path);
   const ok = (await stat(file).catch(() => null))?.isFile() && (!m.sha256 || (await sha(file)) === m.sha256);
-  console.log(`for older pages: ${m.role.padEnd(9)} ${m.name}: ${ok ? 'present' : 'MISSING or other bytes (older open pages cannot download it)'}`);
+  console.log(`for older pages: ${m.role.padEnd(16)} ${m.name}: ${ok ? 'present' : 'MISSING or other bytes (older open pages cannot download it)'}`);
 }
 for (const p of problems) console.error(`Problem: ${p}`);
 process.exit(sexOffered && !problems.length ? 0 : 1);

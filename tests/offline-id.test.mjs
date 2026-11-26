@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { serveOfflineId, MODELS, COMPAT_MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, STUDENT_L1, STUDENT_MANIFEST, checkPhoneManifest, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
+import { serveOfflineId, MODELS, FUSION_MODELS, FUSION_VERSION, FUSION_NOTES, COMPAT_MODELS, PART_BYTES, SEX, SEX_B, SEX_MANIFEST, STUDENT, STUDENT_L1, STUDENT_MANIFEST, checkPhoneManifest, checkSexManifest, contentVersion, modelsWithoutParts, phoneModels, pickEncoding, precompressParts } from '../server/offline-id.mjs';
 
 const student = MODELS.find(m => m.role === 'student');
 const sex = MODELS.find(m => m.role === 'sex');
@@ -615,6 +615,105 @@ test('a page from before model versions gets L1 and B only; the versioned list (
     const other = JSON.parse((await raw(port, `${p}/list.json?caps=other`)).body);
     assert.equal(other.files.find(f => f.role === 'sex').name, SEX.name);
   } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
+
+// ---------------------------------------------------------------- Slot 1 3-backbone offline fusion (?caps=versions,fusion)
+
+test('Slot 1 fusion: gated behind caps=versions,fusion, fail-closed on missing/corrupt file, precompressed zstd/gzip parts', async () => {
+  const { port, ident, server, signIn } = await setup();
+  const p = '/prueba-offline/models';
+  const origFusion = FUSION_MODELS.map(m => ({ bytes: m.bytes, sha256: m.sha256 }));
+  try {
+    signIn();
+    // Write all 4 fusion files and pin their test bytes/hashes.
+    for (let idx = 0; idx < FUSION_MODELS.length; idx++) {
+      const m = FUSION_MODELS[idx];
+      const b = Buffer.alloc(1200 + idx * 100);
+      for (let i = 0; i < b.length; i++) b[i] = ((i * (idx + 3)) % 251) & 0x7f;
+      writeFileSync(join(ident, m.path), b);
+      m.bytes = b.length;
+      m.sha256 = sha256Of(b);
+    }
+
+    // 1. Legacy ?caps=versions (without fusion) does NOT receive the 4 fusion entries (100% backward compatible).
+    const noFusion = JSON.parse((await raw(port, `${p}/list.json?caps=versions`)).body);
+    assert.equal(noFusion.files.length, MODELS.length);
+    assert.equal(noFusion.files.some(f => f.role === 'dino-w1c' || f.role === 'fusion-head'), false);
+
+    // 2. ?caps=fusion alone (without versions) stays on COMPAT_MODELS (no fusion).
+    const fusionOnly = JSON.parse((await raw(port, `${p}/list.json?caps=fusion`)).body);
+    assert.equal(fusionOnly.files.some(f => f.role === 'dino-w1c'), false);
+
+    // 3. ?caps=versions,fusion receives all 4 fusion files with version, pinned SHA-256, and bilingual notes.
+    const withFusion = JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`, { 'accept-encoding': 'zstd, gzip' })).body);
+    assert.equal(withFusion.files.length, MODELS.length + FUSION_MODELS.length);
+    for (const m of FUSION_MODELS) {
+      const entry = withFusion.files.find(f => f.name === m.name);
+      assert.ok(entry, `missing ${m.name}`);
+      assert.equal(entry.role, m.role);
+      assert.equal(entry.bytes, m.bytes);
+      assert.equal(entry.sha256, m.sha256);
+      assert.equal(entry.version, FUSION_VERSION);
+      if (m.role === 'fusion-head-meta') assert.deepEqual(entry.notes, FUSION_NOTES);
+    }
+
+    // 4. Precompress covers all 4 fusion files and serves zstd/gzip parts cleanly.
+    const without = await modelsWithoutParts(ident);
+    for (const m of FUSION_MODELS) assert.ok(without.includes(m.name), `${m.name} should need parts`);
+    await precompressParts(ident, { stamp: '20261126T150000Z' });
+    assert.deepEqual(await modelsWithoutParts(ident), []);
+    const listZst = JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`, { 'accept-encoding': 'zstd' })).body);
+    const w1cEntry = listZst.files.find(f => f.role === 'dino-w1c');
+    assert.equal(w1cEntry.encoding, 'zstd');
+    assert.equal(w1cEntry.parts.length, 1);
+    const rZst = await raw(port, `${p}/${FUSION_MODELS[0].name}?part=0`, { 'accept-encoding': 'zstd' });
+    assert.equal(rZst.status, 200);
+    assert.equal(rZst.headers['content-encoding'], 'zstd');
+    assert.deepEqual(zstdDecompressSync(rZst.body), readFileSync(join(ident, FUSION_MODELS[0].path)));
+
+    // 5. Fail-closed: actual same-size file replacement with restored mtime invalidates hashMemo and hides ALL 4
+    // from list.json AND refuses serving all 4 (404), while base models stay offered cleanly.
+    const w1dPath = join(ident, FUSION_MODELS[1].path);
+    const origW1d = readFileSync(w1dPath);
+    const origMtime = new Date(Date.now() - 10_000);
+    utimesSync(w1dPath, origMtime, origMtime);
+    // Warm hashMemo at origMtime
+    assert.equal(JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`)).body).files.some(f => f.role === 'dino-w1d'), true);
+    // Atomically replace with same-size different bytes and restore the exact same mtime!
+    const badW1d = Buffer.from(origW1d);
+    badW1d[0] ^= 0xff;
+    writeFileSync(w1dPath + '.bad', badW1d);
+    utimesSync(w1dPath + '.bad', origMtime, origMtime);
+    renameSync(w1dPath + '.bad', w1dPath);
+    const tampered = JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`)).body);
+    assert.equal(tampered.files.length, MODELS.length);
+    assert.equal(tampered.files.some(f => f.role.startsWith('dino-') || f.role.startsWith('fusion-')), false);
+    assert.equal((await raw(port, `${p}/${FUSION_MODELS[0].name}?part=0`)).status, 404);
+    assert.equal((await raw(port, `${p}/${FUSION_MODELS[1].name}?part=0`)).status, 404);
+    // Restore original valid file
+    writeFileSync(w1dPath + '.ok', origW1d);
+    renameSync(w1dPath + '.ok', w1dPath);
+    assert.equal(JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`)).body).files.some(f => f.role === 'dino-w1d'), true);
+
+    // 6. Fail-closed: missing 1 of the 4 fusion files hides ALL 4.
+    const missingFile = join(ident, FUSION_MODELS[3].path);
+    renameSync(missingFile, missingFile + '.away');
+    const partial = JSON.parse((await raw(port, `${p}/list.json?caps=versions,fusion`)).body);
+    assert.equal(partial.files.length, MODELS.length);
+    assert.equal((await raw(port, `${p}/${FUSION_MODELS[2].name}?part=0`)).status, 404);
+    renameSync(missingFile + '.away', missingFile);
+
+    // 7. checkPhoneManifest rejects colliding with a fusion filename.
+    const nb = Buffer.from('x');
+    assert.match(checkPhoneManifest({ ...newManifest(nb), file: FUSION_MODELS[0].name }).why ?? '', /identifier model/);
+  } finally {
+    FUSION_MODELS.forEach((m, i) => {
+      m.bytes = origFusion[i].bytes;
+      m.sha256 = origFusion[i].sha256;
+    });
     server.close();
     server.closeAllConnections();
   }

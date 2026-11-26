@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { memoryHistory, outdated, prune, reprocessable, versionDay } from '../identifyHistory'
-import { activeHeadRelease, headRelease, IDENTIFIER_HEADS, MERGED_HEAD_6FA6AB78 } from '../identifierReleases'
+import { activeHeadRelease, FUSION_HEAD_SLOT1, headRelease, IDENTIFIER_HEADS, MERGED_HEAD_6FA6AB78, onlineHeadFile } from '../identifierReleases'
 import { PUBLIC_FILES } from '../publicModels'
 import { readLog, writeLog, writeLogAll, type LogEntry } from '../identifyLog'
 
@@ -43,15 +43,23 @@ describe('identifyHistory', () => {
     expect(outdated({ id: now, sex: null }, { id: 'head_ffffffff.json', sex: null })).toBe(false)
     expect(outdated({ id: 'head_ffffffff.json', sex: null }, { id: now, sex: null })).toBe(false)
   })
-  it('the release list ends with the head the app lists now, each file once, days in order', () => {
+  it('the release list includes the public head and ends with Slot 1 fusion, each file once, days in order', () => {
     const headMeta = PUBLIC_FILES.find(f => f.role === 'head-meta')!.name
-    expect(IDENTIFIER_HEADS.at(-1)!.file).toBe(activeHeadRelease(headMeta))
+    expect(IDENTIFIER_HEADS.map(h => h.file)).toContain(activeHeadRelease(headMeta))
+    expect(IDENTIFIER_HEADS.at(-1)!.file).toBe(FUSION_HEAD_SLOT1)
     expect(new Set(IDENTIFIER_HEADS.map(h => h.file)).size).toBe(IDENTIFIER_HEADS.length)
     const days = IDENTIFIER_HEADS.map(h => h.released)
     expect([...days].sort()).toEqual(days)
-    expect(headRelease('head_6fa6ab78.json')).toBe(IDENTIFIER_HEADS.length - 2)
-    expect(headRelease(MERGED_HEAD_6FA6AB78)).toBe(IDENTIFIER_HEADS.length - 1)
+    expect(headRelease('head_6fa6ab78.json')).toBe(IDENTIFIER_HEADS.length - 3)
+    expect(headRelease(MERGED_HEAD_6FA6AB78)).toBe(IDENTIFIER_HEADS.length - 2)
+    expect(headRelease(FUSION_HEAD_SLOT1)).toBe(IDENTIFIER_HEADS.length - 1)
+    expect(outdated({ id: MERGED_HEAD_6FA6AB78, sex: null }, { id: FUSION_HEAD_SLOT1, sex: null })).toBe(true)
+    expect(outdated({ id: FUSION_HEAD_SLOT1, sex: null }, { id: MERGED_HEAD_6FA6AB78, sex: null })).toBe(false)
     expect(activeHeadRelease('head_6fa6ab78.json')).toBe(MERGED_HEAD_6FA6AB78)
+    expect(activeHeadRelease(FUSION_HEAD_SLOT1)).toBe(FUSION_HEAD_SLOT1)
+    expect(onlineHeadFile('head_slot1_3bb_dist_rel_7d54b54f')).toBe(FUSION_HEAD_SLOT1)
+    expect(onlineHeadFile('head_hier_6fa6ab78')).toBe('head_6fa6ab78.json')
+    expect(onlineHeadFile(null)).toBeNull()
     expect(activeHeadRelease('head_b8127dbf.json')).toBe('head_b8127dbf.json')
     expect(activeHeadRelease('head_ffffffff.json')).toBe('head_ffffffff.json')
     expect(activeHeadRelease(null)).toBeNull()

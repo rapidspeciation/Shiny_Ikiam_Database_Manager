@@ -102,8 +102,61 @@ export const MODELS = [
   { name: STUDENT.name, path: `offline/${STUDENT.name}`, role: 'student', sha256: STUDENT.sha256, optional: true, version: STUDENT.version, input: STUDENT.input, notes: STUDENT.notes },
   { name: SEX.name, path: `offline/${SEX.name}`, role: 'sex', sha256: SEX.sha256, optional: true, packed: false, version: SEX_B.version, calibration: SEX_B.calibration },
 ];
+
+/**
+ * Slot 1 3-backbone offline fusion bundle («Más preciso», signed-in team download via list.json?caps=versions,fusion):
+ * BioCLIP 2.5-H INT8 (shared role 'encoder') + DINOv2-S/14 (w1c) + Meta DINOv3-S/16 (w1d) Weights-FP16 ONNX +
+ * FP16 residual-adapter fusion head (ithomiini-offline-fusion-head/1, tools/identifier/export_offline_fusion_head.py).
+ * Offered fail-closed: all 4 files must exist and match their pinned bytes + SHA-256 on disk; otherwise none are
+ * listed and clients seamlessly continue using legacy head_6fa6ab78.
+ */
+export const FUSION_VERSION = 'slot1-3bb-20261126';
+export const FUSION_NOTES = {
+  es: 'Mejor en fotos nuevas de campo: acierta la especie en el 93,4\u00a0% frente al 88,6\u00a0% de la versión anterior (+4,8 pp).',
+  en: 'Better on new field photos: the species right in 93.4\u00a0% against 88.6\u00a0% for the previous version (+4.8 pp).',
+};
+export const FUSION_MODELS = [
+  {
+    name: 'w1c_pre384_fp16.onnx',
+    path: 'offline/w1c_pre384_fp16.onnx',
+    role: 'dino-w1c',
+    bytes: 43438418,
+    sha256: '7d0a9607a87a83806ef7b43b7e91869e59ce05be5937518c633801c94788beb8',
+    optional: true,
+    version: FUSION_VERSION,
+  },
+  {
+    name: 'w1d_pre384_fp16.onnx',
+    path: 'offline/w1d_pre384_fp16.onnx',
+    role: 'dino-w1d',
+    bytes: 45535968,
+    sha256: 'e556ca8cedda24c26696b02ec2e80024e9b13f743f151f682ed4e910dd3463b4',
+    optional: true,
+    version: FUSION_VERSION,
+  },
+  {
+    name: 'head_slot1_7d54b54f.json',
+    path: 'offline/head_slot1_7d54b54f.json',
+    role: 'fusion-head-meta',
+    bytes: 850728,
+    sha256: '345d066647d13e5474d53d51e13b58d55504b5b03ec831cc3779d64bda8cb06d',
+    optional: true,
+    version: FUSION_VERSION,
+    notes: FUSION_NOTES,
+  },
+  {
+    name: 'head_slot1_7d54b54f_fp16.bin',
+    path: 'offline/head_slot1_7d54b54f_fp16.bin',
+    role: 'fusion-head',
+    bytes: 58673664,
+    sha256: '54fdde1ac6158438d537c1217cde2b781f3d4db01df39706938ceca4a6dd56b9',
+    optional: true,
+    version: FUSION_VERSION,
+  },
+];
+const FUSION_ROLES = new Set(FUSION_MODELS.map(m => m.role));
 /** The models whose parts are precompressed. */
-const PACKED = MODELS.filter(m => m.packed !== false);
+const PACKED = [...MODELS, ...FUSION_MODELS].filter(m => m.packed !== false);
 
 const types = {
   '.html': 'text/html; charset=utf-8',
@@ -111,6 +164,7 @@ const types = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm',
   '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
   '.webmanifest': 'application/manifest+json',
   // The Identificar page's field photos (identificar/field/).
   '.jpg': 'image/jpeg',
@@ -151,7 +205,7 @@ export function checkPhoneManifest(m) {
   if (!Object.hasOwn(MANIFESTS, m.role)) return fail('role must be "sex" or "student"');
   if (typeof m.version !== 'string' || !/^[\w .:+()-]{1,80}$/.test(m.version) || !m.version.trim()) return fail('version: 1 to 80 letters, digits, spaces or . _ : + ( ) -');
   if (typeof m.file !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.onnx$/.test(m.file) || m.file.includes('..')) return fail('file: a bare .onnx file name (in offline/)');
-  if (MODELS.some(x => x.role !== m.role && x.name === m.file)) return fail('file: the name of an identifier model');
+  if ([...MODELS, ...FUSION_MODELS].some(x => x.role !== m.role && x.name === m.file)) return fail('file: the name of an identifier model');
   if (!Number.isSafeInteger(m.bytes) || m.bytes <= 0) return fail('bytes: the file size, a positive integer');
   if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) return fail('sha256: 64 lowercase hex characters');
   const n = m.notes;
@@ -214,29 +268,47 @@ async function fromManifest(identifierDir, role) {
 
 /**
  * The phone's models on this server: MODELS, with the sex model and the small model from their manifests when there
- * are any (left out when a manifest is invalid). `problems`: why something is not offered (a manifest), for
- * tools/identifier/check_phone_models.mjs.
+ * are any (left out when a manifest is invalid), plus FUSION_MODELS when `fusion` is requested. `problems`: why
+ * something is not offered (a manifest), for tools/identifier/check_phone_models.mjs.
  */
-export async function phoneModels(identifierDir, { versioned = true } = {}) {
+export async function phoneModels(identifierDir, { versioned = true, fusion = false } = {}) {
   if (!versioned) return { models: COMPAT_MODELS, problems: [] };
   const manifests = Object.fromEntries(await Promise.all(Object.keys(MANIFESTS).map(async role => [role, await fromManifest(identifierDir, role)])));
   const models = MODELS.flatMap(m => {
     const man = manifests[m.role];
     return !man ? [m] : man.entry ? [man.entry] : [];
   });
+  if (fusion) models.push(...FUSION_MODELS);
   return { models, problems: Object.values(manifests).flatMap(v => (v?.why ? [v.why] : [])) };
 }
 
 /**
- * The capability a client names to get the versioned listing (list.json?caps=versions; frontend/src/lib/offlineEngine.ts
- * and src/offline/main.ts send it). A client that does not name it is a build from before model versions (production
- * up to 11 Nov 2026): it feeds any small model 192 px and takes the sex model only under model B's name, and a page
- * left open keeps running that code. It gets COMPAT_MODELS: L1 and B, never the current small model or a manifest's model.
+ * The capabilities a client names to get the versioned listing (list.json?caps=versions) and optional Slot 1 fusion
+ * entries (list.json?caps=versions,fusion; frontend/src/lib/offlineEngine.ts sends both). A client that does not name
+ * `versions` is a build from before model versions (production up to 11 Nov 2026): it gets COMPAT_MODELS (L1 and B).
+ * A client that names `versions` without `fusion` gets the exact prior listing without FUSION_MODELS.
  */
 export const LIST_CAPS = 'versions';
+export const LIST_CAPS_FUSION = 'fusion';
 const L1_ENTRY = { name: STUDENT_L1.name, path: `offline/${STUDENT_L1.name}`, role: 'student', sha256: STUDENT_L1.sha256, optional: true, packed: false, version: STUDENT_L1.version, input: STUDENT_L1.input };
 export const COMPAT_MODELS = MODELS.map(m => (m.role === 'student' ? L1_ENTRY : m));
-const namesCaps = req => (new URL(req.url, 'http://x').searchParams.get('caps') ?? '').split(',').includes(LIST_CAPS);
+const parseCaps = req => new Set((new URL(req.url, 'http://x').searchParams.get('caps') ?? '').split(',').filter(Boolean));
+const namesCaps = req => parseCaps(req).has(LIST_CAPS);
+const namesFusion = req => {
+  const c = parseCaps(req);
+  return c.has(LIST_CAPS) && c.has(LIST_CAPS_FUSION);
+};
+
+/** Fail-closed check for the 4-file Slot 1 fusion bundle: all 4 must exist with pinned bytes & SHA-256. */
+async function fusionBundleUsable(identifierDir) {
+  const checks = await Promise.all(
+    FUSION_MODELS.map(async m => {
+      const s = await stat(join(identifierDir, m.path)).catch(() => null);
+      return (await usable(identifierDir, m, s)) ? { m, s } : null;
+    }),
+  );
+  return checks.every(Boolean) ? checks : null;
+}
 
 /** A file's version when its metadata names none: its content (frontend/src/lib/offlineEngine.ts contentVersion). */
 export const contentVersion = sha256 => `sha256-${sha256.slice(0, 12)}`;
@@ -254,7 +326,8 @@ async function usable(identifierDir, m, s) {
 }
 async function fileSha256(identifierDir, m, s) {
   const file = join(identifierDir, m.path);
-  const key = `${file}|${etagOf(s)}`;
+  // Key on inode + ctime as well as size + mtime so a same-size replacement that preserves mtime never hits a stale hash.
+  const key = `${file}|${s.dev}:${s.ino}:${s.size}:${Math.floor(s.mtimeMs)}:${Math.floor(s.ctimeMs)}`;
   if (!hashMemo.has(key)) {
     const h = createHash('sha256');
     hashMemo.set(
@@ -357,12 +430,8 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
         const files = [];
         const encoding = pickEncoding(req.headers['accept-encoding']);
         const packed = await compressedParts(identifierDir);
-        for (const m of (await phoneModels(identifierDir, { versioned: namesCaps(req) })).models) {
-          const s = await stat(join(identifierDir, m.path)).catch(() => null);
-          if (!(await usable(identifierDir, m, s))) {
-            if (m.optional) continue; // the small model or the sex model: not offered
-            throw new HttpError(404, `${m.name} is missing on the server`);
-          }
+        const includeFusion = namesFusion(req);
+        const pushEntry = async (m, s) => {
           const parts = packed[m.name]?.parts;
           // `wire`: the bytes the parts take on the wire for this browser's Accept-Encoding.
           const wire = parts && encoding ? parts.reduce((a, p) => a + wireBytes(p, encoding), 0) : s.size;
@@ -387,15 +456,32 @@ export async function serveOfflineId(req, res, { page = 'prueba-offline', path, 
             ...(m.role === 'student' && m.input ? { input: m.input } : {}),
             ...(parts ? { parts: parts.map(p => p.sha256) } : {}),
           });
+        };
+        for (const m of (await phoneModels(identifierDir, { versioned: namesCaps(req), fusion: false })).models) {
+          const s = await stat(join(identifierDir, m.path)).catch(() => null);
+          if (!(await usable(identifierDir, m, s))) {
+            if (m.optional) continue; // the small model or the sex model: not offered
+            throw new HttpError(404, `${m.name} is missing on the server`);
+          }
+          await pushEntry(m, s);
+        }
+        if (includeFusion) {
+          // Fail-closed: offer the 4 Slot 1 fusion files only when every one of them passes size + SHA-256 verification.
+          const bundle = await fusionBundleUsable(identifierDir);
+          if (bundle) for (const { m, s } of bundle) await pushEntry(m, s);
         }
         const body = JSON.stringify({ files, partBytes: PART_BYTES });
         res.writeHead(200, { ...isolated, 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'accept-encoding', 'content-length': Buffer.byteLength(body) });
         return res.end(req.method === 'HEAD' ? undefined : body);
       }
-      // Either listing's files: a page from before model versions still downloads L1 and B by name.
-      const model = (await phoneModels(identifierDir)).models.find(m => m.name === name) ?? COMPAT_MODELS.find(m => m.name === name);
+      // Either listing's files: a page from before model versions still downloads L1 and B by name; fusion-capable pages download Slot 1 files.
+      const model = (await phoneModels(identifierDir, { versioned: true, fusion: true })).models.find(m => m.name === name) ?? COMPAT_MODELS.find(m => m.name === name);
       if (!model) throw new HttpError(404, 'File not found');
-      if (model.sha256 && !(await usable(identifierDir, model, await stat(join(identifierDir, model.path)).catch(() => null)))) throw new HttpError(404, 'File not found');
+      if (FUSION_ROLES.has(model.role)) {
+        if (!(await fusionBundleUsable(identifierDir))) throw new HttpError(404, 'File not found');
+      } else if (model.sha256 && !(await usable(identifierDir, model, await stat(join(identifierDir, model.path)).catch(() => null)))) {
+        throw new HttpError(404, 'File not found');
+      }
       const query = new URL(req.url, 'http://x').searchParams;
       if (query.has('part')) return await sendPart(req, res, identifierDir, model, query.get('part'));
       return await sendFile(req, res, join(identifierDir, model.path), { 'cache-control': 'private, no-store' });

@@ -43,17 +43,17 @@ import { bestPhotos, bestThumb, fieldAndMuseum, loadCurated, viewerPhoto } from 
 import { curatedPhotos } from '../lib/curatedPhotos'
 import type { RefPhoto } from '../lib/identifyRefs'
 import { base64Jpeg, canvasJpeg, copyPhoto, downloadPhoto, historyStore, outdated, prune, reprocessable, type HistoryRecord, type Versions } from '../lib/identifyHistory'
-import { activeHeadRelease } from '../lib/identifierReleases'
+import { activeHeadRelease, onlineHeadFile } from '../lib/identifierReleases'
 import { fieldSexState as fieldSexOf, type FieldSexState } from '../lib/fieldSex'
 import { phoneTiming, timed, timingLine, type PhoneTiming } from '../lib/identifyTiming'
 import { parseCalibration, SEX_DEFAULT, SEX_FILE, sexApplies, sexShown, type SexCalibration, type SexModelInfo } from '../lib/sexModel'
 import { PUBLIC_FILES } from '../lib/publicModels'
 import { ITHOMIINI_GENERA } from '../lib/ithomiiniGenera'
-import { isCurrent, MODEL_ROLES, storedName } from '../lib/offlineId'
+import { fullRolesFor, fullStoredAny, isCurrent, MODEL_ROLES, rolesStored, storedName } from '../lib/offlineId'
 import { appRoot } from '../lib/appRoot'
 import { locale, t, tn } from '../lib/i18n'
 import { CACHE as OFFLINE_CACHE, chooseModel, createEngine, KINDS, type Listing, type ModelFile, type Offer } from '../lib/offlineEngine'
-import { displayHeadMeta, leafScores, speciesSides, subspeciesBySpecies, sumSpecies, type Head, type ModelKind, type Side } from '../lib/offlineId'
+import { applyGeoPrior, displayHeadMeta, leafScoreStages, speciesSides, subspeciesBySpecies, sumSpecies, type FusionFeatures, type Head, type ModelKind, type Side } from '../lib/offlineId'
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
@@ -115,6 +115,8 @@ const PLACES: { id: Place; label: string; icon: typeof ScanSearch }[] = [
 ]
 const pageFiles = () => [
   location.href.split('#')[0],
+  // Ship the full Meta DINOv3 License copy into the offline cache alongside the downloaded models (Section 1.b.i).
+  new URL('DINOv3-LICENSE.txt', location.href).href,
   // A script asked for after the page opened is listed as `modulepreload`, or as `preload` where the browser has no
   // `modulepreload` (Safari before 17).
   ...[
@@ -204,7 +206,8 @@ async function refresh() {
   if (files.value && !headTried) {
     const list = files.value
     for (const k of KINDS) {
-      const need = list.filter(f => MODEL_ROLES[k].includes(f.role) && !isCurrent(s?.files[f.name], f))
+      const roles = k === 'full' ? fullRolesFor(list) : MODEL_ROLES.small
+      const need = list.filter(f => roles.includes(f.role) && !isCurrent(s?.files[f.name], f))
       if (engine.offer(k, list, s).state !== 'update' || need.some(f => f.role !== 'head-meta') || sexDownload.value || download.value || engine.busy(k)) continue
       headTried = true
       head.value = null
@@ -213,11 +216,13 @@ async function refresh() {
       s = await engine.stored()
     }
     // A result on screen is ranked again with the new JSON.
-    if (headTried && result.value) head.value = await engine.loadHead().catch(() => null)
+    if (headTried && result.value) head.value = await engine.loadHead(result.value.fusionFeatures ? 'full' : 'small').catch(() => null)
   }
-  storedHead.value = s ? (storedName(s.files, 'head-meta') ?? null) : null
+  storedHead.value = s ? (storedName(s.files, 'head-meta') ?? storedName(s.files, 'fusion-head-meta') ?? null) : null
+  storedFusionHead.value = s ? (storedName(s.files, 'fusion-head-meta') ?? null) : null
   for (const k of KINDS) sizes.value[k] = files.value ? engine.toDownload(k, files.value, s) : null
-  for (const k of KINDS) stored.value[k] = !!s && MODEL_ROLES[k].every(r => storedName(s!.files, r) != null)
+  stored.value.small = rolesStored(MODEL_ROLES.small, s?.files ?? null)
+  stored.value.full = fullStoredAny(s?.files)
   for (const k of KINDS) offers.value[k] = files.value ? engine.offer(k, files.value, s) : null
   offers.value.sex = session.user && files.value ? engine.offer('sex', files.value, s) : null
   sexStored.value = !!s && storedName(s.files, 'sex') != null
@@ -243,7 +248,10 @@ async function refresh() {
 let headTried = false
 /** The identifier's head on this phone and the one the server lists (its file name): the version of a result. */
 const storedHead = ref<string | null>(null)
+const storedFusionHead = ref<string | null>(null)
+const serverHead = ref<string | null>(null)
 const listedHead = computed(() => files.value?.find(f => f.role === 'head-meta')?.name ?? null)
+const listedFusionHead = computed(() => files.value?.find(f => f.role === 'fusion-head-meta')?.name ?? null)
 /** Whether this page opens without signal: null while it is being checked (and kept, online). */
 const pageOffline = ref<boolean | null>(null)
 
@@ -392,6 +400,8 @@ interface Result {
   /** Who read it: this phone's model (`feature`, `kind`) or the server (`server`, `photo`, `side`). */
   source: Mode
   feature?: Float32Array
+  /** Per-branch Slot 1 embeddings (`{ bio, w1c, w1d }`) when `Más preciso` ran with the offline fusion bundle. */
+  fusionFeatures?: FusionFeatures
   crop: string
   status: string
   kind?: ModelKind
@@ -479,11 +489,24 @@ async function identify(photo: Photo, known?: Known) {
     if (mine !== run) return
     const out = phase.value
     const timing = phoneTiming(phase, out.ms)
-    head.value = engine.head()
+    head.value = engine.head(kind)
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, cut: { square: out.square, status: out.status }, takenAt: known?.takenAt }
-    result.value = { at, source: 'phone', feature: out.feature, crop: cropUrl(out.square), status: out.status, kind, ms: out.ms, country, timing, idVersion: activeHeadRelease(storedHead.value) }
+    const usedHead = out.fusionFeatures ? (storedFusionHead.value ?? storedHead.value) : storedHead.value
+    result.value = {
+      at,
+      source: 'phone',
+      feature: out.feature,
+      ...(out.fusionFeatures ? { fusionFeatures: out.fusionFeatures } : {}),
+      crop: cropUrl(out.square),
+      status: out.status,
+      kind,
+      ms: out.ms,
+      country,
+      timing,
+      idVersion: activeHeadRelease(usedHead),
+    }
     compared.value = null
     pick.value = null
     keepLast()
@@ -519,12 +542,14 @@ async function identifyOnline(photo: Photo, known?: Known) {
     const started = performance.now()
     const out = await readOnServer(sent, side)
     if (mine !== run) return
+    const answeredHead = onlineHeadFile(out.head)
+    if (answeredHead) serverHead.value = answeredHead
     firstRun.value = false
     const at = new Date().toISOString()
     lastPhoto.value = { at, photo, takenAt: known?.takenAt }
     result.value = {
       at,
-      idVersion: activeHeadRelease(listedHead.value),
+      idVersion: activeHeadRelease(answeredHead ?? listedFusionHead.value ?? listedHead.value),
       source: 'online',
       crop: squareCrop(canvas, out.wingBox),
       status: out.crop ?? 'success',
@@ -562,8 +587,11 @@ async function rereadOnline() {
     const started = performance.now()
     const out = await readOnServer(r.photo, side)
     if (result.value !== r || mine !== run) return
+    const answeredHead = onlineHeadFile(out.head)
+    if (answeredHead) serverHead.value = answeredHead
+    const idVersion = answeredHead ? activeHeadRelease(answeredHead) : (r.idVersion ?? activeHeadRelease(listedFusionHead.value ?? listedHead.value))
     // the timing line shows this read's time, not the first one's
-    result.value = { ...r, server: out, status: out.crop ?? r.status, side, ms: Math.round(performance.now() - started) }
+    result.value = { ...r, idVersion, server: out, status: out.crop ?? r.status, side, ms: Math.round(performance.now() - started) }
     keepLast()
   } catch (err) {
     if (mine !== run) return
@@ -670,9 +698,14 @@ const onDragLeave = (e: DragEvent) => {
 // On the phone: every leaf's score (after the side's prior): the species sum them, the subspecies are the subspecies
 // leaves. From the server: its lists (it applied the side).
 const fromServer = computed(() => (result.value?.source === 'online' && result.value.server ? serverRanking(result.value.server) : null))
-const leafP = computed(() =>
-  result.value?.source === 'phone' && result.value.feature && head.value ? leafScores(head.value, result.value.feature, sideValue.value) : null,
+// Pre-prior display-merged leaf probabilities cached per photo so toggling «Side of the Andes» re-scores instantly
+// without re-running ONNX or the 3-branch fusion matvec. Guard against intermediate head/result mismatches during tab/history swaps.
+const mergedLeafP = computed(() =>
+  result.value?.source === 'phone' && result.value.feature && head.value && !!head.value.fusion === !!result.value.fusionFeatures
+    ? leafScoreStages(head.value, result.value.fusionFeatures ?? result.value.feature, null).mergedP
+    : null,
 )
+const leafP = computed(() => (mergedLeafP.value && head.value ? applyGeoPrior(mergedLeafP.value, head.value.geo, sideValue.value) : null))
 const scores = computed(() => (leafP.value && head.value ? sumSpecies(head.value, leafP.value) : null))
 const ranked = computed<{ species: Candidate[]; genus: Map<string, number>; best?: Map<string, Candidate> } | null>(() =>
   fromServer.value ? { species: fromServer.value.species, genus: fromServer.value.genus } : scores.value && head.value ? rank(scores.value, head.value.meta.species, 5) : null,
@@ -704,7 +737,7 @@ watch(
 )
 const higher = computed<Higher | null>(() => {
   if (fromServer.value) return fromServer.value.higher
-  const tax = forHead(taxonomy.value, head.value?.meta.head_sha256)
+  const tax = forHead(taxonomy.value, head.value?.meta.head_sha256, head.value?.meta.compat_live_head_sha256)
   return scores.value && head.value && tax ? higherRanks(scores.value, head.value.meta.species, tax) : null
 })
 /** The cuts of the model that read the photo (THRESHOLDS): the server and «Más preciso» are BioCLIP. */
@@ -952,26 +985,48 @@ watch(result, r => {
   img.src = r.crop
 })
 
-/** The result as kept (sessionStorage for a tab switch, the history for «Mis identificaciones»): its feature as base64. */
-function serialResult(r: Result) {
-  let feature: string | undefined
-  if (r.feature) {
-    const f = new Uint8Array(r.feature.buffer.slice(0))
-    let bin = ''
-    for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
-    feature = btoa(bin)
-  }
-  return { ...r, feature }
+function f32ToB64(arr: Float32Array): string {
+  const f = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)
+  let bin = ''
+  for (let i = 0; i < f.length; i++) bin += String.fromCharCode(f[i])
+  return btoa(bin)
 }
-/** A kept result back; a phone result needs the phone's head to be ranked (null when no model is on the phone). */
-async function revive(v: Result & { feature?: string | Float32Array }): Promise<Result | null> {
-  if (v.source === 'online') return session.user || v.visitor ? { ...v, feature: undefined } : null
-  if (!anyReady.value || typeof v.feature !== 'string') return null
-  const bin = atob(v.feature)
+function b64ToF32(b64: string): Float32Array {
+  const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  head.value = await engine.loadHead()
-  return { ...v, source: 'phone', feature: new Float32Array(bytes.buffer) }
+  return new Float32Array(bytes.buffer)
+}
+
+/** The result as kept (sessionStorage for a tab switch, the history for «Mis identificaciones»): its feature(s) as base64. */
+function serialResult(r: Result) {
+  const feature = r.feature ? f32ToB64(r.feature) : undefined
+  let fusionFeatures: Record<string, string> | undefined
+  if (r.fusionFeatures) {
+    fusionFeatures = {}
+    for (const [k, v] of Object.entries(r.fusionFeatures)) if (k !== 'bio') fusionFeatures[k] = f32ToB64(v)
+  }
+  return { ...r, feature, ...(fusionFeatures ? { fusionFeatures } : {}) }
+}
+/** A kept result back; a phone result needs the phone's head to be ranked (null when no matching head is on the phone). */
+async function revive(v: Result & { feature?: string | Float32Array; fusionFeatures?: Record<string, string | Float32Array> }): Promise<Result | null> {
+  if (v.source === 'online') return session.user || v.visitor ? { ...v, feature: undefined, fusionFeatures: undefined } : null
+  if (!anyReady.value || typeof v.feature !== 'string') return null
+  const feature = b64ToF32(v.feature)
+  if (v.fusionFeatures && typeof v.fusionFeatures === 'object') {
+    const restored: FusionFeatures = { bio: feature }
+    for (const [k, raw] of Object.entries(v.fusionFeatures)) {
+      if (typeof raw === 'string') restored[k] = b64ToF32(raw)
+    }
+    const h = await engine.loadHead('full').catch(() => null)
+    if (!h?.fusion) return null
+    head.value = h
+    return { ...v, source: 'phone', feature, fusionFeatures: restored }
+  }
+  const h = await engine.loadHead('small').catch(() => null)
+  if (!h || h.fusion) return null
+  head.value = h
+  return { ...v, source: 'phone', feature, fusionFeatures: undefined }
 }
 
 // Kept for this browser session: going to another tab and back shows the result again.
@@ -1266,7 +1321,12 @@ function prediction() {
     model: r.kind ?? null,
     // The head that read it: the phone's (its sha256), or the file the server lists (online).
     head: r.source === 'phone' ? (head.value?.meta.head_sha256 ?? null) : null,
-    headFile: files.value?.find(f => f.role === 'head-meta')?.name ?? null,
+    headFile:
+      r.source === 'phone'
+        ? r.fusionFeatures
+          ? (storedFusionHead.value ?? storedHead.value)
+          : storedHead.value
+        : (onlineHeadFile(r.server?.head) ?? listedFusionHead.value ?? listedHead.value),
     status: r.status,
     wingBox: r.server?.wingBox ?? null,
     prior: r.server?.prior ?? null,
@@ -1631,7 +1691,13 @@ const versionsOf = (r: Result): Versions => ({
   sex: r.sex && 'z' in r.sex ? (r.sex.m?.version ?? r.sex.m?.sha256 ?? null) : null,
 })
 const currentVersions = computed<Versions>(() => ({
-  id: activeHeadRelease(mode.value === 'online' ? listedHead.value : storedHead.value),
+  id: activeHeadRelease(
+    mode.value === 'online'
+      ? (serverHead.value ?? listedFusionHead.value ?? listedHead.value)
+      : active.value === 'full' && storedFusionHead.value
+        ? storedFusionHead.value
+        : storedHead.value,
+  ),
   sex: sexInstalled.value?.version ?? sexInstalled.value?.sha256 ?? null,
 }))
 const entries = computed(() =>

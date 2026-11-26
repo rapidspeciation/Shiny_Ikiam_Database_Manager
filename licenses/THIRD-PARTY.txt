@@ -27,19 +27,24 @@ server/vendor/zxing-wasm/LICENSE), the reader build of zxing-cpp (Apache
 License 2.0, see ZXing-LICENSE), for the tube racks' 2D codes. Code 128
 patterns: see ZXing-LICENSE.
 
-Built with DINOv3. The server-side species identification pipeline
-(tools/identifier/worker.py) incorporates fine-tuned representations derived
-from Meta DINOv3 (vit_small_patch16_dinov3.lvd1689m, licensed under the Meta
-DINOv3 License: https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md),
-alongside BioCLIP 2.5-H (MIT License) and DINOv2
-(vit_small_patch14_reg4_dinov2, Apache-2.0 License). These additional model
-weights are hosted strictly for server-side inference and are not redistributed
-to clients.
+Built with DINOv3. The Slot 1 species identification pipeline
+(server-side tools/identifier/worker.py and the downloadable offline
+"More accurate" bundle: w1d_pre384_fp16.onnx and head_slot1_7d54b54f_fp16.bin)
+incorporates fine-tuned representations derived from Meta DINOv3
+(vit_small_patch16_dinov3.lvd1689m, licensed under the Meta DINOv3 License —
+full text included in licenses/DINOv3-LICENSE.txt and served alongside the app
+at /identificar/DINOv3-LICENSE.txt; upstream:
+https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md), alongside
+BioCLIP 2.5-H (MIT License) and DINOv2 (vit_small_patch14_reg4_dinov2,
+Apache-2.0 License).
 
-Built with DINOv3. El identificador de especies en el servidor
-(tools/identifier/worker.py) incorpora representaciones ajustadas derivadas de
-Meta DINOv3 (vit_small_patch16_dinov3.lvd1689m, bajo la licencia de Meta DINOv3:
+Built with DINOv3. El identificador de especies Slot 1 (en el servidor
+tools/identifier/worker.py y en el modelo descargable sin conexión
+«Más preciso»: w1d_pre384_fp16.onnx y head_slot1_7d54b54f_fp16.bin)
+incorpora representaciones ajustadas derivadas de Meta DINOv3
+(vit_small_patch16_dinov3.lvd1689m, bajo la licencia de Meta DINOv3 — texto
+completo incluido en licenses/DINOv3-LICENSE.txt y disponible junto a la app en
+/identificar/DINOv3-LICENSE.txt; original:
 https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md), junto con
 BioCLIP 2.5-H (licencia MIT) y DINOv2 (vit_small_patch14_reg4_dinov2, licencia
-Apache-2.0). Estos pesos adicionales se ejecutan estrictamente en el servidor y
-no se descargan ni se redistribuyen a los dispositivos.
+Apache-2.0).

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, h } from 'vue'
 import { locale, t } from '../../lib/i18n'
@@ -22,14 +24,18 @@ afterEach(() => {
 })
 
 describe('IdentifyAbout', () => {
-  it('shows required Meta DINOv3 server-only attribution and license link in ES and EN for visitors and team', () => {
+  it('shows required Meta DINOv3 server and downloadable offline attribution and license link in ES and EN for visitors and team', () => {
     for (const lang of ['es', 'en'] as const) {
       locale.value = lang
       for (const props of [{ team: false, serverOpen: false }, { team: false, serverOpen: true }, { team: true, serverOpen: true }]) {
         const el = show(props)
         const content = el.textContent ?? ''
         expect(content).toContain('Built with DINOv3.')
-        expect(content).toMatch(lang === 'es' ? /solo en el servidor/i : /strictly on the server/i)
+        expect(content).toMatch(lang === 'es' ? /modelo descargable «Más preciso»/i : /downloadable “More accurate” model/i)
+        expect(content).not.toMatch(lang === 'es' ? /no se descargan ni se redistribuyen/i : /not downloaded or redistributed/i)
+        const localLink = el.querySelector<HTMLAnchorElement>('a[href="DINOv3-LICENSE.txt"]')
+        expect(localLink).not.toBeNull()
+        expect(localLink!.textContent).toBe(lang === 'es' ? 'Licencia de Meta DINOv3 (copia incluida)' : 'Meta DINOv3 License (included copy)')
         const link = el.querySelector<HTMLAnchorElement>('a[href="https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md"]')
         expect(link).not.toBeNull()
         expect(link!.textContent).toBe(lang === 'es' ? 'Licencia de Meta DINOv3' : 'Meta DINOv3 License')
@@ -37,6 +43,14 @@ describe('IdentifyAbout', () => {
         host = null
       }
     }
+  })
+
+  it('ships byte-identical Meta DINOv3 License copies in licenses/ and frontend/public/identificar/', () => {
+    const root = resolve(import.meta.dirname, '../../../..')
+    const canonical = readFileSync(resolve(root, 'licenses/DINOv3-LICENSE.txt'), 'utf8')
+    const publicCopy = readFileSync(resolve(root, 'frontend/public/identificar/DINOv3-LICENSE.txt'), 'utf8')
+    expect(publicCopy).toBe(canonical)
+    expect(canonical).toContain('DINOv3 License')
   })
 
   it('describes photo handling accurately by mode when visitor server identification is open vs offline-only', () => {

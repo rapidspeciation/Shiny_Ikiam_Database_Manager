@@ -15,8 +15,9 @@ export default {
   'original': 'original',
   'Modelo «Rápido y liviano»: entrenado por el proyecto para imitar a BioCLIP 2.5.': '“Fast and light” model: trained by the project to imitate BioCLIP 2.5.',
   'Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.': 'Species classifier: trained by the project on photos and names from Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist and other databases.',
-  'En línea (servidor): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3; estos pesos adicionales se ejecutan solo en el servidor y no se descargan ni se redistribuyen a los dispositivos.':
-    'Online (server): the identifier combines BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) and representations derived from Meta DINOv3; these additional weights run strictly on the server and are not downloaded or redistributed to devices.',
+  'En línea (servidor) y modelo descargable «Más preciso» (equipo): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3 bajo la Licencia de Meta DINOv3.':
+    'Online (server) and downloadable “More accurate” model (team): the identifier combines BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) and representations derived from Meta DINOv3 under the Meta DINOv3 License.',
+  'Licencia de Meta DINOv3 (copia incluida)': 'Meta DINOv3 License (included copy)',
   'Licencia de Meta DINOv3': 'Meta DINOv3 License',
   'Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.': 'Reference photos: iNaturalist, under Creative Commons licences; under each photo, its author (a link to the photo) and its licence.',
   Identificar: 'Identify',

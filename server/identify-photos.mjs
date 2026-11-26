@@ -94,7 +94,7 @@ export function fieldPhotos(photosOf, names, { batch = 300 } = {}) {
  * (server/identifier.mjs, the same process as identify_species), with the side of the Andes. The photo is written to
  * a file of its own for the identifier and removed after, whatever the answer: nothing is kept.
  * Returns { status, body }: 200 { species, subspecies, genus, tribe, subfamily, recorded, crop, wingBox, prior, ms } (the worker's lists),
- * plus fieldSex (fieldSexBlock) only when the worker gave one; 400 a bad photo, 503 no identifier here or it failed.
+ * plus head (the worker's head id) and fieldSex (fieldSexBlock) when the worker gave them; 400 a bad photo, 503 no identifier here or it failed.
  */
 export const MAX_UPLOAD = 6 * 1024 * 1024;
 
@@ -183,6 +183,7 @@ export async function identifyUpload({ identifier, body, scratch, sides = async 
         wingBox: Array.isArray(out.wingBox) && out.wingBox.length === 4 ? out.wingBox.map(Number) : null,
         prior: out.prior ?? null,
         ms: Number(out.ms) || null,
+        ...(typeof out.head === 'string' && out.head ? { head: out.head } : {}),
         // Only when there is one (one of the general sex line's species): other answers stay as they were.
         ...(fieldSex ? { fieldSex } : {}),
       },

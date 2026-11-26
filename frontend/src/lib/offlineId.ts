@@ -616,6 +616,8 @@ export function letterboxCrop(img: Rgba, box: [number, number, number, number], 
 
 const MEAN = [0.48145466, 0.4578275, 0.40821073]
 const STD = [0.26862954, 0.26130258, 0.27577711]
+const IMN_MEAN = [0.485, 0.456, 0.406]
+const IMN_STD = [0.229, 0.224, 0.225]
 
 /** The encoder's input (worker.py feature): RGB bytes / 255, the CLIP mean and std, CHW. */
 export function encoderInput(rgb: Uint8Array, size = 224): Float32Array {
@@ -623,6 +625,42 @@ export function encoderInput(rgb: Uint8Array, size = 224): Float32Array {
   for (let i = 0; i < plane; i++) for (let c = 0; c < 3; c++) x[c * plane + i] = (rgb[i * 3 + c] / 255 - MEAN[c]) / STD[c]
   return x
 }
+
+/**
+ * DINO backbone input (worker.py _encode_dino): RGB bytes / 255 in CHW, optionally resized with bilinear
+ * (align_corners=False, antialias=False) to `outSize`, then ImageNet mean/std normalised.
+ * - w1c (DINOv2-S/14): outSize = 224 (identity_224)
+ * - w1d (Meta DINOv3-S/16): outSize = 208 (bilinear 224 -> 208)
+ */
+export function dinoInput(rgb: Uint8Array, outSize = 224, size = 224): Float32Array {
+  const inPlane = size * size
+  if (outSize === size) {
+    const x = new Float32Array(3 * inPlane)
+    for (let i = 0; i < inPlane; i++) {
+      const base = i * 3
+      x[i] = (rgb[base] / 255 - IMN_MEAN[0]) / IMN_STD[0]
+      x[inPlane + i] = (rgb[base + 1] / 255 - IMN_MEAN[1]) / IMN_STD[1]
+      x[2 * inPlane + i] = (rgb[base + 2] / 255 - IMN_MEAN[2]) / IMN_STD[2]
+    }
+    return x
+  }
+  const x01 = new Float32Array(3 * inPlane)
+  for (let i = 0; i < inPlane; i++) {
+    const base = i * 3
+    x01[i] = rgb[base] / 255
+    x01[inPlane + i] = rgb[base + 1] / 255
+    x01[2 * inPlane + i] = rgb[base + 2] / 255
+  }
+  const resized = resizeBilinear(x01, 3, size, size, outSize, outSize)
+  const outPlane = outSize * outSize
+  for (let c = 0; c < 3; c++) {
+    const m = IMN_MEAN[c], s = IMN_STD[c], off = c * outPlane
+    for (let i = 0; i < outPlane; i++) resized[off + i] = (resized[off + i] - m) / s
+  }
+  return resized
+}
+export const dinoW1cInput = (rgb: Uint8Array, size = 224): Float32Array => dinoInput(rgb, 224, size)
+export const dinoW1dInput = (rgb: Uint8Array, size = 224, out = 208): Float32Array => dinoInput(rgb, out, size)
 
 /**
  * torch F.interpolate(mode='bilinear', align_corners=False, antialias=False) of a CHW image: half-pixel centres,
@@ -676,18 +714,44 @@ export function studentInput(rgb: Uint8Array, size = 224, out = STUDENT_SIZE): F
 
 // ---------------------------------------------------------------- the two models of the page
 
-/** «modelo completo» (BioCLIP 2.5-H int8) or «modelo pequeño» (the distilled ViT-S, server/offline-id.mjs STUDENT). */
+/** «modelo completo» (BioCLIP 2.5-H int8, optionally with Slot 1 3-backbone fusion) or «modelo pequeño» (the distilled ViT-S, server/offline-id.mjs STUDENT). */
 export type ModelKind = 'full' | 'small'
-/** `sex`: the team's experimental sex model (lib/sexModel.ts), not part of either identifier model. */
-export type FileRole = 'detector' | 'encoder' | 'student' | 'head' | 'head-meta' | 'sex'
+/**
+ * `sex`: the team's experimental sex model (lib/sexModel.ts), not part of either identifier model.
+ * `dino-w1c`, `dino-w1d`, `fusion-head-meta`, `fusion-head`: optional Slot 1 3-backbone fusion files for `full`.
+ */
+export type FileRole = 'detector' | 'encoder' | 'student' | 'head' | 'head-meta' | 'sex' | 'dino-w1c' | 'dino-w1d' | 'fusion-head' | 'fusion-head-meta'
 
-/** The files each model needs: the detector and the head serve both, each has its own encoder. */
+/** The base files each model needs: the detector and legacy head serve both, each has its own encoder. */
 export const MODEL_ROLES: Record<ModelKind, FileRole[]> = {
   full: ['detector', 'encoder', 'head-meta', 'head'],
   small: ['detector', 'student', 'head-meta', 'head'],
 }
+/** The 4 files that upgrade `full` («Más preciso») from legacy BioCLIP-only to Slot 1 3-backbone fusion. */
+export const FUSION_ROLES: FileRole[] = ['dino-w1c', 'dino-w1d', 'fusion-head-meta', 'fusion-head']
+/** All 6 roles needed to run `full` with Slot 1 3-backbone fusion (detector + shared BioCLIP encoder + 4 fusion files). */
+export const FUSION_FULL_ROLES: FileRole[] = ['detector', 'encoder', ...FUSION_ROLES]
+/** Union of legacy and fusion roles for `full` (used when removing `full`). */
+export const ALL_FULL_ROLES: FileRole[] = [...MODEL_ROLES.full, ...FUSION_ROLES]
 export const ENCODER_ROLE: Record<ModelKind, FileRole> = { full: 'encoder', small: 'student' }
 export const MODEL_LABEL: Record<ModelKind, string> = { full: 'modelo completo', small: 'modelo pequeño' }
+
+/** Whether a server/public listing offers all 4 Slot 1 fusion files. */
+export function hasFusionListing(listed: ListedFile[] | null | undefined): boolean {
+  return !!listed && FUSION_ROLES.every(r => listed.some(f => f.role === r))
+}
+/** The roles `full` targets against a given listing: Slot 1 fusion when offered, else legacy head_6fa6ab78. */
+export function fullRolesFor(listed: ListedFile[] | null | undefined): FileRole[] {
+  return hasFusionListing(listed) ? FUSION_FULL_ROLES : MODEL_ROLES.full
+}
+/** Whether the phone has the complete 6-file Slot 1 fusion bundle stored for `full`. */
+export function fullStoredFusion(stored: Record<string, StoredFile> | null | undefined): boolean {
+  return rolesStored(FUSION_FULL_ROLES, stored ?? null)
+}
+/** Whether the phone can run `full` from stored files (either Slot 1 fusion or legacy head_6fa6ab78). */
+export function fullStoredAny(stored: Record<string, StoredFile> | null | undefined): boolean {
+  return fullStoredFusion(stored) || rolesStored(MODEL_ROLES.full, stored ?? null)
+}
 
 /** A stored file's role: as stored, else from its name (stored.json written before the small model had none). */
 export function roleOf(name: string, role?: string | null): FileRole {
@@ -696,6 +760,9 @@ export function roleOf(name: string, role?: string | null): FileRole {
   if (name.startsWith('student')) return 'student'
   if (name.startsWith('sex_')) return 'sex'
   if (name.startsWith('bioclip')) return 'encoder'
+  if (name.startsWith('w1c_')) return 'dino-w1c'
+  if (name.startsWith('w1d_')) return 'dino-w1d'
+  if (name.startsWith('head_slot')) return name.endsWith('.json') ? 'fusion-head-meta' : 'fusion-head'
   return name.endsWith('.json') ? 'head-meta' : 'head'
 }
 
@@ -808,36 +875,101 @@ export function chooseModel(wanted: ModelKind | null, ready: Record<ModelKind, b
 
 // ---------------------------------------------------------------- 4. the head
 
+export interface FusionBranchMeta {
+  name: string
+  role: string
+  backbone_file?: string
+  backbone_sha256?: string
+  input_size: number
+  norm: string
+  resize?: string
+  l2_normalize_input: boolean
+  weight: number
+  arch: string
+  dim: number
+  bottleneck: number
+  residual_scale: number
+  s: number
+  ln_eps: number
+  dtype: string
+  offsets: {
+    down_w: [number, number, number]
+    up_w: [number, number, number]
+    W: [number, number, number]
+  }
+  down_b: number[]
+  up_b: number[]
+  ln_w: number[]
+  ln_b: number[]
+}
+
 export interface HeadMeta {
   schema: string
   head_sha256: string
+  /** Fusion head (`ithomiini-offline-fusion-head/1`): live head SHA-256 for Option 1A leaf merges & taxonomy compatibility. */
+  compat_live_head_sha256?: string
+  slot?: string
   weights: string
+  weights_sha256?: string
+  weights_bytes?: number
   rows: number
-  dim: number
+  dim?: number
   K: number
-  s: number
-  ln_eps: number
-  ln_w: number[]
-  ln_b: number[]
+  s?: number
+  ln_eps?: number
+  ln_w?: number[]
+  ln_b?: number[]
+  blend_mode?: 'prob'
+  T_disp?: number
+  branches?: FusionBranchMeta[]
   species: string[]
   leaf2sp: number[]
-  /** Schema 2 (ithomiini-offline-head/2): each leaf's name, and "1" where the leaf is a subspecies (worker.py is_ssp). */
+  /** Schema 2 (ithomiini-offline-head/2) and fusion head (/1): each leaf's name, and "1" where the leaf is a subspecies (worker.py is_ssp). */
   leaves?: string[]
   is_ssp?: string
   geo: string | null
   full_photo_overrides: string[]
 }
 
-/* Schemas read: ithomiini-offline-head/1 (no leaf names: no subspecies shown) and /2, which adds them. */
+/** Per-branch backbone embeddings for `ithomiini-offline-fusion-head/1` (e.g. `{ bio, w1c, w1d }`). */
+export type FusionFeatures = Record<string, Float32Array>
+
+export interface LoadedFusionBranch {
+  name: string
+  weight: number
+  dim: number
+  bottleneck: number
+  rs: number
+  s: number
+  ln_eps: number
+  l2NormIn: boolean
+  dw: Float32Array
+  db: Float32Array
+  uw: Float32Array
+  ub: Float32Array
+  ln_w: Float32Array
+  ln_b: Float32Array
+  W: Uint16Array
+}
+
+export interface FusionHeadData {
+  blendMode: 'prob'
+  tDisp: number
+  branches: LoadedFusionBranch[]
+}
+
+/* Schemas read: ithomiini-offline-head/1 (no leaf names), /2 (adds leaves + is_ssp), and ithomiini-offline-fusion-head/1 (multi-backbone res_adapter fusion). */
 
 /** Option 1A display-time 48-pair leaf merges bundled for head_hier_6fa6ab78.pt (labels_q/leaf_map.tsv). */
 export const LEAF_MERGES_6FA6AB78: { head: string; count: number; merges: Record<string, string> } = leafMerges6fa6ab78
 
 /** `rawRows`: rows in `w` (15,347); `old2new`: Option 1A projection to display leaves (15,300), or null.
- *  `ssp`: per display leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file). */
+ *  `ssp`: per display leaf 1 when it is a subspecies; null with a schema 1 head (a phone that kept the older file).
+ *  `fusion`: populated for `ithomiini-offline-fusion-head/1`; null/undefined for single-branch legacy heads. */
 export interface Head {
   meta: HeadMeta
   w: Uint16Array
+  fusion?: FusionHeadData | null
   rawRows: number
   old2new: Int32Array | null
   leaf2sp: Int32Array
@@ -850,9 +982,10 @@ function speciesOfLeaf(leaf: string): string {
   return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : leaf
 }
 
-function resolveMerges(headSha: string | undefined, explicit?: Record<string, string> | null): Record<string, string> | null {
+function resolveMerges(headSha: string | undefined, compatSha?: string | undefined, explicit?: Record<string, string> | null): Record<string, string> | null {
   if (explicit !== undefined) return explicit && Object.keys(explicit).length ? explicit : null
-  return headSha === LEAF_MERGES_6FA6AB78.head ? LEAF_MERGES_6FA6AB78.merges : null
+  if (headSha === LEAF_MERGES_6FA6AB78.head || compatSha === LEAF_MERGES_6FA6AB78.head) return LEAF_MERGES_6FA6AB78.merges
+  return null
 }
 
 /**
@@ -866,7 +999,7 @@ export function buildDisplaySpace(
 ): { meta: HeadMeta; old2new: Int32Array | null; leaf2sp: Int32Array; geo: Uint8Array | null; ssp: Uint8Array | null } {
   const rawGeo = meta.geo ? Uint8Array.from(meta.geo, c => parseInt(c, 16)) : null
   const rawSsp = meta.leaves?.length === meta.rows && meta.is_ssp?.length === meta.rows ? Uint8Array.from(meta.is_ssp, c => (c === '1' ? 1 : 0)) : null
-  const active = resolveMerges(meta.head_sha256, merges)
+  const active = resolveMerges(meta.head_sha256, meta.compat_live_head_sha256, merges)
   if (!active || !meta.leaves || meta.leaves.length !== meta.rows || !meta.leaves.some(lf => Object.hasOwn(active, lf))) {
     return { meta, old2new: null, leaf2sp: Int32Array.from(meta.leaf2sp), geo: rawGeo, ssp: rawSsp }
   }
@@ -958,11 +1091,97 @@ function halfTable(): Float32Array {
   return half
 }
 
+/** Abramowitz & Stegun 7.1.26 erf approximation (max error < 1.5e-7) for PyTorch exact GELU. */
+function erfApprox(x: number): number {
+  const sign = x < 0 ? -1 : 1
+  const ax = Math.abs(x)
+  const t = 1 / (1 + 0.3275911 * ax)
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * Math.exp(-ax * ax)
+  return sign * y
+}
+const INV_SQRT2 = 1 / Math.SQRT2
+const geluExact = (x: number) => 0.5 * x * (1 + erfApprox(x * INV_SQRT2))
+
+function softmaxInPlace(arr: Float64Array): Float64Array {
+  let max = -Infinity
+  for (let i = 0; i < arr.length; i++) if (arr[i] > max) max = arr[i]
+  let sum = 0
+  for (let i = 0; i < arr.length; i++) { arr[i] = Math.exp(arr[i] - max); sum += arr[i] }
+  for (let i = 0; i < arr.length; i++) arr[i] /= sum
+  return arr
+}
+
+function l2NormalizeF32(v: Float32Array): Float32Array {
+  let n = 0
+  for (let i = 0; i < v.length; i++) n += v[i] * v[i]
+  n = Math.sqrt(n) || 1
+  const out = new Float32Array(v.length)
+  for (let i = 0; i < v.length; i++) out[i] = v[i] / n
+  return out
+}
+
 export function makeHead(meta: HeadMeta, weights: ArrayBuffer, merges?: Record<string, string> | null): Head {
-  if (weights.byteLength !== meta.rows * meta.dim * 2) throw new Error('head weights: wrong size')
   if (meta.K !== 1) throw new Error('head: K > 1 not supported here')
+  if (meta.schema === 'ithomiini-offline-fusion-head/1') {
+    if (typeof meta.weights_bytes === 'number' && weights.byteLength !== meta.weights_bytes) throw new Error('fusion head weights: wrong size')
+    if (meta.blend_mode !== 'prob') throw new Error(`fusion head: unsupported blend_mode ${String(meta.blend_mode)}`)
+    const tDisp = meta.T_disp
+    if (typeof tDisp !== 'number' || !Number.isFinite(tDisp) || tDisp <= 0) throw new Error('fusion head: invalid T_disp')
+    if (!Array.isArray(meta.branches) || !meta.branches.length) throw new Error('fusion head: no branches')
+    const tab = halfTable()
+    const viewU16 = (spec: [number, number, number], wantR: number, wantC: number, label: string): Uint16Array => {
+      const [off, r, c] = spec
+      if (r !== wantR || c !== wantC) throw new Error(`fusion head: ${label} shape mismatch`)
+      const byteLen = r * c * 2
+      if (off < 0 || off % 2 !== 0 || off + byteLen > weights.byteLength) throw new Error(`fusion head: ${label} out of bounds`)
+      return new Uint16Array(weights, off, r * c)
+    }
+    const unpackF32 = (spec: [number, number, number], wantR: number, wantC: number, label: string): Float32Array => {
+      const u16 = viewU16(spec, wantR, wantC, label)
+      const out = new Float32Array(u16.length)
+      for (let i = 0; i < u16.length; i++) out[i] = tab[u16[i]]
+      return out
+    }
+    const branches: LoadedFusionBranch[] = meta.branches.map(b => {
+      if (b.arch !== 'res_adapter') throw new Error(`fusion head: unsupported branch arch ${b.arch}`)
+      if (b.down_b.length !== b.bottleneck || b.up_b.length !== b.dim || b.ln_w.length !== b.dim || b.ln_b.length !== b.dim) {
+        throw new Error(`fusion head: branch ${b.name} vector length mismatch`)
+      }
+      return {
+        name: b.name,
+        weight: b.weight,
+        dim: b.dim,
+        bottleneck: b.bottleneck,
+        rs: b.residual_scale,
+        s: b.s,
+        ln_eps: b.ln_eps,
+        l2NormIn: !!b.l2_normalize_input,
+        dw: unpackF32(b.offsets.down_w, b.bottleneck, b.dim, `${b.name}.down_w`),
+        db: Float32Array.from(b.down_b),
+        uw: unpackF32(b.offsets.up_w, b.dim, b.bottleneck, `${b.name}.up_w`),
+        ub: Float32Array.from(b.up_b),
+        ln_w: Float32Array.from(b.ln_w),
+        ln_b: Float32Array.from(b.ln_b),
+        // Zero-copy Uint16Array view onto the fp16 buffer (keeps peak RAM minimal on phones).
+        W: viewU16(b.offsets.W, meta.rows, b.dim, `${b.name}.W`),
+      }
+    })
+    const space = buildDisplaySpace(meta, merges)
+    return {
+      meta: space.meta,
+      w: new Uint16Array(0),
+      fusion: { blendMode: meta.blend_mode, tDisp, branches },
+      rawRows: meta.rows,
+      old2new: space.old2new,
+      leaf2sp: space.leaf2sp,
+      geo: space.geo,
+      ssp: space.ssp,
+    }
+  }
+  const dim = meta.dim ?? 0
+  if (weights.byteLength !== meta.rows * dim * 2) throw new Error('head weights: wrong size')
   const space = buildDisplaySpace(meta, merges)
-  return { meta: space.meta, w: new Uint16Array(weights), rawRows: meta.rows, old2new: space.old2new, leaf2sp: space.leaf2sp, geo: space.geo, ssp: space.ssp }
+  return { meta: space.meta, w: new Uint16Array(weights), fusion: null, rawRows: meta.rows, old2new: space.old2new, leaf2sp: space.leaf2sp, geo: space.geo, ssp: space.ssp }
 }
 
 export type Side = 'East' | 'West' | null
@@ -971,14 +1190,14 @@ export type Side = 'East' | 'West' | null
  * worker.py tops (species): softmax of the cosine head, the geographic prior when a side of the Andes is
  * given (names off that side, or not recorded in Ecuador, weigh 2 %), summed per species, the first `top`.
  */
-export function speciesTop(head: Head, feature: Float32Array, side: Side = null, top = 5): [string, number][] {
+export function speciesTop(head: Head, feature: Float32Array | FusionFeatures, side: Side = null, top = 5): [string, number][] {
   const agg = speciesScores(head, feature, side)
   const order = Array.from(agg.keys()).sort((a, b) => agg[b] - agg[a] || a - b)
   return order.slice(0, top).map(j => [head.meta.species[j], Math.round(agg[j] * 1e4) / 1e4])
 }
 
 /** Every species' probability (the order of head.meta.species), as speciesTop sums them: the genus totals come from it. */
-export function speciesScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
+export function speciesScores(head: Head, feature: Float32Array | FusionFeatures, side: Side = null): Float64Array {
   return sumSpecies(head, leafScores(head, feature, side))
 }
 
@@ -1017,47 +1236,133 @@ export function subspeciesBySpecies(head: Head, p: Float64Array, species: number
   return out
 }
 
+/** Apply the geographic prior (worker.py weights, eps 0.02) to display-merged leaf probabilities. Pure. */
+export function applyGeoPrior(mergedP: Float64Array, geo: Uint8Array | null, side: Side): Float64Array {
+  if (!geo || (side !== 'East' && side !== 'West')) return mergedP
+  const m = mergedP.length
+  const p = Float64Array.from(mergedP)
+  const sideBit = side === 'East' ? 4 : 8
+  let sum = 0
+  for (let r = 0; r < m; r++) {
+    const g = geo[r]
+    if (g & 1 && (!(g & sideBit) || !(g & 2))) p[r] *= 0.02
+    sum += p[r]
+  }
+  if (sum > 0) for (let r = 0; r < m; r++) p[r] /= sum
+  return p
+}
+
+/** Single branch of `ithomiini-offline-fusion-head/1` (matching worker.py _fwd_adapter). */
+function forwardFusionBranchLogits(br: LoadedFusionBranch, rawFeat: Float32Array, nRows: number): Float64Array {
+  const d = br.dim, b = br.bottleneck
+  if (rawFeat.length !== d) throw new Error(`fusion branch ${br.name}: expected dim ${d}, got ${rawFeat.length}`)
+  const x = br.l2NormIn ? l2NormalizeF32(rawFeat) : rawFeat
+  // 1. down projection + exact GELU
+  const hid = new Float32Array(b)
+  for (let i = 0; i < b; i++) {
+    let s = br.db[i]
+    const off = i * d
+    for (let j = 0; j < d; j++) s += br.dw[off + j] * x[j]
+    hid[i] = geluExact(s)
+  }
+  // 2. up projection + residual
+  const h = new Float64Array(d)
+  let mean = 0
+  for (let i = 0; i < d; i++) {
+    let s = br.ub[i]
+    const off = i * b
+    for (let j = 0; j < b; j++) s += br.uw[off + j] * hid[j]
+    const val = x[i] + br.rs * s
+    h[i] = val
+    mean += val
+  }
+  mean /= d
+  // 3. LayerNorm + L2 normalize
+  let v = 0
+  for (let i = 0; i < d; i++) v += (h[i] - mean) ** 2
+  const inv = 1 / Math.sqrt(v / d + br.ln_eps)
+  const z = new Float32Array(d)
+  let zn = 0
+  for (let i = 0; i < d; i++) {
+    z[i] = (h[i] - mean) * inv * br.ln_w[i] + br.ln_b[i]
+    zn += z[i] * z[i]
+  }
+  zn = Math.sqrt(zn) || 1
+  for (let i = 0; i < d; i++) z[i] /= zn
+  // 4. Cosine prototypes (fp16 LUT)
+  const tab = halfTable()
+  const W = br.W
+  const logits = new Float64Array(nRows)
+  for (let r = 0; r < nRows; r++) {
+    let s = 0
+    const o = r * d
+    for (let i = 0; i < d; i++) s += tab[W[o + i]] * z[i]
+    logits[r] = Math.min(Math.max(s, -1 + 1e-6), 1 - 1e-6) * br.s
+  }
+  return logits
+}
+
 /**
  * Every leaf's probability stages (worker.py tops): raw softmax (`rawP`), display-merged (`mergedP`, Option 1A),
  * and post-prior normalized (`p`, when a side of the Andes is given).
+ * Supports both legacy single-branch heads (`Float32Array`) and `ithomiini-offline-fusion-head/1` (`FusionFeatures`).
  */
 export function leafScoreStages(
   head: Head,
-  feature: Float32Array,
+  feature: Float32Array | FusionFeatures,
   side: Side = null,
 ): { rawP: Float64Array; mergedP: Float64Array; p: Float64Array } {
-  const { meta, w, geo, rawRows, old2new, leaf2sp } = head
-  const d = meta.dim, n = rawRows
-  let norm = 0
-  for (let i = 0; i < d; i++) norm += feature[i] * feature[i]
-  norm = Math.sqrt(norm) || 1
-  const f = new Float64Array(d)
-  let mean = 0
-  for (let i = 0; i < d; i++) { f[i] = feature[i] / norm; mean += f[i] }
-  mean /= d
-  let v = 0
-  for (let i = 0; i < d; i++) v += (f[i] - mean) ** 2
-  const inv = 1 / Math.sqrt(v / d + meta.ln_eps)
-  const x = new Float32Array(d)
-  let xn = 0
-  for (let i = 0; i < d; i++) { x[i] = (f[i] - mean) * inv * meta.ln_w[i] + meta.ln_b[i]; xn += x[i] * x[i] }
-  xn = Math.sqrt(xn) || 1
-  for (let i = 0; i < d; i++) x[i] /= xn
-  const tab = halfTable()
-  const logits = new Float64Array(n)
-  let max = -Infinity
-  for (let r = 0; r < n; r++) {
-    let s = 0
-    const o = r * d
-    for (let i = 0; i < d; i++) s += tab[w[o + i]] * x[i]
-    const c = Math.min(Math.max(s, -1 + 1e-6), 1 - 1e-6) * meta.s
-    logits[r] = c
-    if (c > max) max = c
+  const { meta, w, fusion, geo, rawRows, old2new, leaf2sp } = head
+  const n = rawRows
+  let rawP: Float64Array
+  if (fusion) {
+    if (feature instanceof Float32Array) throw new Error('fusion head requires per-branch features')
+    const invT = 1 / fusion.tDisp
+    const pMix = new Float64Array(n)
+    for (const br of fusion.branches) {
+      const bf = feature[br.name]
+      if (!bf) throw new Error(`fusion head: missing feature for branch "${br.name}"`)
+      const p = softmaxInPlace(forwardFusionBranchLogits(br, bf, n))
+      const bw = br.weight
+      for (let i = 0; i < n; i++) pMix[i] += bw * p[i]
+    }
+    const zEff = new Float64Array(n)
+    for (let i = 0; i < n; i++) zEff[i] = Math.log(Math.max(pMix[i], 1e-12)) * invT
+    rawP = softmaxInPlace(zEff)
+  } else {
+    const vec = feature instanceof Float32Array ? feature : feature.bio
+    const d = meta.dim!, lnEps = meta.ln_eps!, lnW = meta.ln_w!, lnB = meta.ln_b!, scale = meta.s!
+    let norm = 0
+    for (let i = 0; i < d; i++) norm += vec[i] * vec[i]
+    norm = Math.sqrt(norm) || 1
+    const f = new Float64Array(d)
+    let mean = 0
+    for (let i = 0; i < d; i++) { f[i] = vec[i] / norm; mean += f[i] }
+    mean /= d
+    let v = 0
+    for (let i = 0; i < d; i++) v += (f[i] - mean) ** 2
+    const inv = 1 / Math.sqrt(v / d + lnEps)
+    const x = new Float32Array(d)
+    let xn = 0
+    for (let i = 0; i < d; i++) { x[i] = (f[i] - mean) * inv * lnW[i] + lnB[i]; xn += x[i] * x[i] }
+    xn = Math.sqrt(xn) || 1
+    for (let i = 0; i < d; i++) x[i] /= xn
+    const tab = halfTable()
+    const logits = new Float64Array(n)
+    let max = -Infinity
+    for (let r = 0; r < n; r++) {
+      let s = 0
+      const o = r * d
+      for (let i = 0; i < d; i++) s += tab[w[o + i]] * x[i]
+      const c = Math.min(Math.max(s, -1 + 1e-6), 1 - 1e-6) * scale
+      logits[r] = c
+      if (c > max) max = c
+    }
+    let total = 0
+    for (let r = 0; r < n; r++) { logits[r] = Math.exp(logits[r] - max); total += logits[r] }
+    rawP = logits
+    for (let r = 0; r < n; r++) rawP[r] /= total
   }
-  let total = 0
-  for (let r = 0; r < n; r++) { logits[r] = Math.exp(logits[r] - max); total += logits[r] }
-  const rawP = logits
-  for (let r = 0; r < n; r++) rawP[r] /= total
   // Option 1A display-time leaf probability sum BEFORE geographic prior and rank roll-up.
   let mergedP: Float64Array
   if (old2new) {
@@ -1066,19 +1371,7 @@ export function leafScoreStages(
   } else {
     mergedP = rawP
   }
-  let p = mergedP
-  const m = p.length
-  if (geo && (side === 'East' || side === 'West')) {
-    p = Float64Array.from(mergedP)
-    const sideBit = side === 'East' ? 4 : 8
-    let sum = 0
-    for (let r = 0; r < m; r++) {
-      const g = geo[r]
-      if (g & 1 && (!(g & sideBit) || !(g & 2))) p[r] *= 0.02
-      sum += p[r]
-    }
-    if (sum > 0) for (let r = 0; r < m; r++) p[r] /= sum
-  }
+  const p = applyGeoPrior(mergedP, geo, side)
   return { rawP, mergedP, p }
 }
 
@@ -1086,7 +1379,7 @@ export function leafScoreStages(
  * Every leaf's probability (worker.py tops): softmax of the cosine head, then the geographic prior when a side of
  * the Andes is given (names off that side, or not recorded in Ecuador, weigh 2 %), normalised again.
  */
-export function leafScores(head: Head, feature: Float32Array, side: Side = null): Float64Array {
+export function leafScores(head: Head, feature: Float32Array | FusionFeatures, side: Side = null): Float64Array {
   return leafScoreStages(head, feature, side).p
 }
 

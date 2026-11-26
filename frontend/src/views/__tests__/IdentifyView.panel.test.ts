@@ -475,4 +475,26 @@ describe('IdentifyView: the answer', () => {
     expect(text(host, 'not-ithomiini')).toBe('No parece una Ithomiini.')
     expect(host.querySelector('[data-testid=ithomiini-badge]')).toBeNull()
   })
+
+  it('online side re-read updates idVersion when the worker head switches between requests', async () => {
+    const { host, settle } = await mountWith(restored)
+    server.answers.push(
+      { ...three, head: 'head_hier_6fa6ab78' },
+      { ...three, prior: 'East', head: 'head_slot1_3bb_dist_rel_7d54b54f' },
+    )
+    host.querySelector<HTMLInputElement>('input[type=file]:not([capture])')!.dispatchEvent(new Event('change'))
+    await settle()
+    const first = JSON.parse(sessionStorage.getItem('identify:last')!)
+    expect(first.idVersion).toBe('head_6fa6ab78.json+merges48')
+    expect(first.server.head).toBe('head_hier_6fa6ab78')
+
+    const eastBtn = [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('Este (Amazonía)'))
+    expect(eastBtn).not.toBeUndefined()
+    eastBtn!.click()
+    await settle()
+    const second = JSON.parse(sessionStorage.getItem('identify:last')!)
+    expect(second.side).toBe('East')
+    expect(second.server.head).toBe('head_slot1_3bb_dist_rel_7d54b54f')
+    expect(second.idVersion).toBe('head_slot1_7d54b54f.json')
+  })
 })

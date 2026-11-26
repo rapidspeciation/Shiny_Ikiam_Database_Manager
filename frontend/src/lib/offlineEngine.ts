@@ -10,13 +10,22 @@
  */
 import type * as Ort from 'onnxruntime-web'
 import {
+  ALL_FULL_ROLES,
   applyP1aNms,
   chooseModel,
   cropBox,
   detectorInput,
+  dinoW1cInput,
+  dinoW1dInput,
   encoderInput,
   ENCODER_ROLE,
   exifOrientation,
+  fullRolesFor,
+  fullStoredAny,
+  fullStoredFusion,
+  FUSION_FULL_ROLES,
+  FUSION_ROLES,
+  hasFusionListing,
   letterboxCrop,
   makeHead,
   MODEL_ROLES,
@@ -32,6 +41,7 @@ import {
   studentInput,
   studentSizeOf,
   type FileRole,
+  type FusionFeatures,
   type Head,
   type HeadMeta,
   type ModelKind,
@@ -91,10 +101,11 @@ export interface Stored { files: Record<string, StoredFile>; at: string }
 
 export const CACHE = 'ithomiini-prueba-offline'
 /**
- * The list this build asks for: the versioned one (server/offline-id.mjs LIST_CAPS), which may offer models a build
- * from before versions cannot run (the small model at another input size, a sex model under another name).
+ * The list this build asks for: the versioned one plus Slot 1 fusion support (server/offline-id.mjs LIST_CAPS,
+ * LIST_CAPS_FUSION). Servers without fusion (or public Hugging Face listings) omit the 4 fusion roles and this build
+ * transparently runs legacy head_6fa6ab78.
  */
-export const LIST_PATH = 'models/list.json?caps=versions'
+export const LIST_PATH = 'models/list.json?caps=versions,fusion'
 export const PART = 32 * 1024 * 1024
 /**
  * A part comes in pieces of this size, each kept on the phone as it arrives (pieceKey), so a download cut off by a
@@ -105,6 +116,7 @@ export const pieceKey = (name: string, i: number, slot: string | undefined, k: n
 /** A download's progress: bytes done, bytes in all, and 'waiting' while the connection is down. */
 export type Progress = (done: number, total: number, state?: 'waiting') => void
 interface Inflight {
+  roles: FileRole[]
   listeners: Set<Progress>
   last: [number, number, ('waiting' | undefined)?] | null
   promise: Promise<void>
@@ -149,9 +161,10 @@ async function sha256Hex(data: BufferSource): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** What a photo gave: the feature for the head, the square the AI looked at (224 px RGB) and how it was cut. */
+/** What a photo gave: the feature for the head (1024-D BioCLIP/student), optional Slot 1 fusion branch features, the 224 px RGB square and how it was cut. */
 export interface RunResult {
   feature: Float32Array
+  fusionFeatures?: FusionFeatures
   square: Uint8Array
   status: 'success' | 'centre_crop_fallback' | string
   ms: number
@@ -212,8 +225,8 @@ export interface Engine {
    * model): a photo whose phase saw it move had to load (lib/identifyTiming.ts timed), whatever the durations. */
   loadGeneration(): number
   run(photo: Photo, kind: ModelKind): Promise<RunResult>
-  head(): Head | null
-  loadHead(): Promise<Head>
+  head(kind?: ModelKind): Head | null
+  loadHead(kind?: ModelKind): Promise<Head>
   stock(): Promise<{ stock: FrozenStock; asOf: string } | null>
   refreshStock(): Promise<void>
   /** Removes the team's inventory kept on this phone (someone without an account is using it). */
@@ -274,11 +287,29 @@ export function createEngine(
       const listed = [...files.filter(f => f.role !== 'sex'), ...sex]
       if (adoptVersions(s.files, listed, f => extraOf(f as ModelFile))) await putStored(await caches.open(CACHE), s)
     }
-    return { full: rolesStored(MODEL_ROLES.full, s?.files ?? null), small: rolesStored(MODEL_ROLES.small, s?.files ?? null) }
+    return { full: fullStoredAny(s?.files), small: rolesStored(MODEL_ROLES.small, s?.files ?? null) }
   }
 
+  /** Target roles for `kind` against `files` and `s` (preserves an already-installed Slot 1 fusion bundle on non-fusion listings). */
+  function targetRoles(kind: ModelKind, files: ModelFile[] | null, s: Stored | null): FileRole[] {
+    if (kind === 'small') return MODEL_ROLES.small
+    if (hasFusionListing(files)) return FUSION_FULL_ROLES
+    if (fullStoredFusion(s?.files)) return ['detector', 'encoder']
+    return MODEL_ROLES.full
+  }
+
+  const storedBytesOf = (s: Stored | null, roles: FileRole[]) =>
+    roles.reduce((a, r) => {
+      const n = s && storedName(s.files, r)
+      return a + (n ? s!.files[n].bytes : 0)
+    }, 0)
+
   function toDownload(kind: ModelKind, files: ModelFile[], s: Stored | null) {
-    return roleSizes(MODEL_ROLES[kind], files, s)
+    if (kind === 'full' && !hasFusionListing(files) && fullStoredFusion(s?.files)) {
+      const shared = roleSizes(['detector', 'encoder'], files, s)
+      return { plain: shared.plain, wire: shared.wire, total: storedBytesOf(s, FUSION_FULL_ROLES) }
+    }
+    return roleSizes(kind === 'full' ? fullRolesFor(files) : MODEL_ROLES.small, files, s)
   }
 
   function roleSizes(roles: FileRole[], files: ModelFile[], s: Stored | null) {
@@ -292,6 +323,50 @@ export function createEngine(
   }
 
   function offer(which: ModelKind | 'sex', files: ModelFile[], s: Stored | null): Offer {
+    if (which === 'full') {
+      if (hasFusionListing(files)) {
+        const res = offerFor(FUSION_FULL_ROLES, s?.files ?? null, files)
+        // A phone that already has legacy «Más preciso» gets a seamless delta update (no re-download of BioCLIP 638 MB).
+        const state = res.state === 'missing' && rolesStored(MODEL_ROLES.full, s?.files ?? null) ? 'update' : res.state
+        const mainListed = files.find(f => f.role === 'fusion-head-meta')
+        const haveMeta = s && storedName(s.files, 'fusion-head-meta')
+        const sizes = roleSizes(FUSION_FULL_ROLES, files, s)
+        const fromBytes = fullStoredFusion(s?.files)
+          ? storedBytesOf(s, FUSION_FULL_ROLES)
+          : rolesStored(MODEL_ROLES.full, s?.files ?? null)
+            ? storedBytesOf(s, MODEL_ROLES.full)
+            : null
+        return {
+          state,
+          ...sizes,
+          from: haveMeta ? (s.files[haveMeta].version ?? null) : null,
+          to: mainListed?.version ?? null,
+          fromBytes,
+          toBytes: sizes.total,
+          notes: mainListed?.notes ?? null,
+        }
+      }
+      if (fullStoredFusion(s?.files)) {
+        // Already running Slot 1 fusion while viewing a non-fusion listing (e.g. signed-out HF): never nag to downgrade.
+        const shared: FileRole[] = ['detector', 'encoder']
+        const res = offerFor(shared, s?.files ?? null, files)
+        const sizes = roleSizes(shared, files, s)
+        const haveMeta = s && storedName(s.files, 'fusion-head-meta')
+        const ver = haveMeta ? (s.files[haveMeta].version ?? null) : null
+        const total = storedBytesOf(s, FUSION_FULL_ROLES)
+        return {
+          state: res.state === 'none' ? 'current' : res.state,
+          plain: sizes.plain,
+          wire: sizes.wire,
+          total,
+          from: ver,
+          to: ver,
+          fromBytes: total,
+          toBytes: total,
+          notes: null,
+        }
+      }
+    }
     const roles = which === 'sex' ? SEX_ROLES : MODEL_ROLES[which]
     const list = which === 'sex' ? sexFiles(files) : files
     const { state } = offerFor(roles, s?.files ?? null, list)
@@ -359,7 +434,8 @@ export function createEngine(
     return l.files
   }
   async function download(kind: ModelKind, files: ModelFile[], progress: Progress) {
-    return downloadRoles(kind, MODEL_ROLES[kind], files, progress, relist)
+    const s = await stored()
+    return downloadRoles(kind, targetRoles(kind, files, s), files, progress, relist)
   }
 
   /**
@@ -443,7 +519,25 @@ export function createEngine(
         delete encoders[k]
         delete encoderSize[k]
       }
-    if (roles.includes('head') || roles.includes('head-meta')) headLoaded = null
+    if (roles.includes('dino-w1c')) {
+      retire(dinoW1c)
+      dinoW1c = null
+    }
+    if (roles.includes('dino-w1d')) {
+      retire(dinoW1d)
+      dinoW1d = null
+    }
+    if (roles.includes('head') || roles.includes('head-meta')) {
+      if (lastHeadLoaded === legacyHeadLoaded) lastHeadLoaded = null
+      legacyHeadLoaded = null
+    }
+    if (roles.includes('fusion-head') || roles.includes('fusion-head-meta')) {
+      if (lastHeadLoaded === fusionHeadLoaded) lastHeadLoaded = null
+      fusionHeadLoaded = null
+    }
+    if (roles.some(r => r === 'encoder' || r === 'head' || r === 'head-meta' || FUSION_ROLES.includes(r))) {
+      fullLoadedFusion = null
+    }
     if (roles.includes('sex')) {
       retire(sexSession)
       sexSession = null
@@ -513,9 +607,9 @@ export function createEngine(
   /** What a download cut off (page closed, phone restarted) left of a model's update or first download: «Continuar». */
   async function saved(which: ModelKind | 'sex', files: ModelFile[]): Promise<{ done: number; total: number }> {
     if (!(await begun())[which]) return { done: 0, total: 0 }
-    const roles = which === 'sex' ? SEX_ROLES : MODEL_ROLES[which]
-    const list = (which === 'sex' ? sexFiles(files) : files).filter(f => roles.includes(f.role))
     const before = await stored()
+    const roles = which === 'sex' ? SEX_ROLES : targetRoles(which, files, before)
+    const list = (which === 'sex' ? sexFiles(files) : files).filter(f => roles.includes(f.role))
     const cache = await caches.open(CACHE)
     let done = 0, total = 0
     for (const f of list) {
@@ -632,14 +726,14 @@ export function createEngine(
    * cleanly from a new list (twice at most).
    */
   function downloadRoles(which: ModelKind | 'sex', roles: FileRole[], files: ModelFile[], progress: Progress, relist: () => Promise<ModelFile[]>): Promise<void> {
-    const key = `${base}|${roles.join(',')}`
+    const key = `${base}|${which}`
     const running = inflight.get(key)
     if (running) {
       running.listeners.add(progress)
       if (running.last) progress(...running.last)
       return running.promise.finally(() => running.listeners.delete(progress))
     }
-    const job: Inflight = { listeners: new Set([progress]), last: null, promise: Promise.resolve(), stop: new AbortController() }
+    const job: Inflight = { roles, listeners: new Set([progress]), last: null, promise: Promise.resolve(), stop: new AbortController() }
     const signal = job.stop.signal
     const tell: Progress = (...a) => {
       job.last = a
@@ -731,21 +825,26 @@ export function createEngine(
     }
     if (signal.aborted) throw new DownloadError('cancelled')
     // The swap, one write of stored.json. Read again: another download (the sex model beside an identifier model)
-    // may have finished meanwhile, and its files stay. The roles downloaded here now name the new files.
+    // may have finished meanwhile, and its files stay. Legacy head_6fa6ab78 is retained on fusion upgrades so
+    // older cached tabs and saved pre-fusion history entries stay readable (removeModel('full') still cleans it up).
     const latest = (await stored())?.files ?? {}
     const next: Stored = { files: {}, at: new Date().toISOString() }
-    for (const [name, f] of Object.entries(latest)) if (!roles.includes(roleOf(name, f.role))) next.files[name] = { ...f, role: roleOf(name, f.role) }
+    const replacedRoles = new Set<FileRole>(roles)
+    for (const [name, f] of Object.entries(latest)) if (!replacedRoles.has(roleOf(name, f.role))) next.files[name] = { ...f, role: roleOf(name, f.role) }
     Object.assign(next.files, fresh)
     await putStored(cache, next)
-    forgetLoaded(roles)
+    // Only invalidate sessions whose installed bytes changed (keeps the 638 MB BioCLIP session in memory on delta upgrades;
+    // any fusion role change still resets fullLoadedFusion inside forgetLoaded so the next load('full') loads w1c/w1d/fusionHead).
+    const changedRoles = roles.filter(r => !wanted.some(f => f.role === r && have.has(f.name)))
+    if (changedRoles.length) forgetLoaded(changedRoles)
     // Then the old versions' parts go: a replaced file entirely, a file kept under its name its other slots.
-    const names = new Set([...Object.keys(latest).filter(n => roles.includes(roleOf(n, latest[n].role))), ...Object.keys(fresh)])
+    const names = new Set([...Object.keys(latest).filter(n => replacedRoles.has(roleOf(n, latest[n].role))), ...Object.keys(fresh)])
     for (const name of names) await dropParts(cache, name, fresh[name] ? { slot: fresh[name].slot } : undefined)
   }
 
   /** Stops the downloads of these roles running on this page, and waits until they have stopped. */
   async function cancel(roles: FileRole[]) {
-    const jobs = [...inflight].filter(([k]) => k.startsWith(`${base}|`) && k.slice(base.length + 1).split(',').some(r => roles.includes(r as FileRole)))
+    const jobs = [...inflight].filter(([k, j]) => k.startsWith(`${base}|`) && j.roles.some(r => roles.includes(r)))
     for (const [, j] of jobs) j.stop.abort()
     await Promise.all(jobs.map(([, j]) => j.promise.catch(() => {})))
   }
@@ -791,7 +890,14 @@ export function createEngine(
   const encoders: Partial<Record<ModelKind, Ort.InferenceSession>> = {}
   /** The input size of each encoder in memory (the small model's own, from the file it was read from). */
   const encoderSize: Partial<Record<ModelKind, number>> = {}
-  let headLoaded: Head | null = null
+  /** Optional Slot 1 3-backbone fusion sessions (loaded only when `full` has the 4 fusion files stored). */
+  let dinoW1c: Ort.InferenceSession | null = null
+  let dinoW1d: Ort.InferenceSession | null = null
+  let legacyHeadLoaded: Head | null = null
+  let fusionHeadLoaded: Head | null = null
+  let lastHeadLoaded: Head | null = null
+  /** Whether the currently loaded `full` sessions are Slot 1 fusion (true), legacy (false), or not yet loaded (null). */
+  let fullLoadedFusion: boolean | null = null
 
   /** Reads into memory so far (Engine.loadGeneration). */
   let generation = 0
@@ -823,7 +929,29 @@ export function createEngine(
       bytes = null
       lastMs[`${kind}_load`] = Math.round(performance.now() - t)
     }
-    await loadHead()
+    if (kind === 'full' && fullStoredFusion(s.files)) {
+      if (!dinoW1c) {
+        const t = performance.now()
+        let bytes: Uint8Array | null = await readModel(name('dino-w1c'))
+        dinoW1c = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+        generation++
+        bytes = null
+        lastMs.w1c_load = Math.round(performance.now() - t)
+      }
+      if (!dinoW1d) {
+        const t = performance.now()
+        let bytes: Uint8Array | null = await readModel(name('dino-w1d'))
+        dinoW1d = await ort!.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+        generation++
+        bytes = null
+        lastMs.w1d_load = Math.round(performance.now() - t)
+      }
+      await loadHead('full')
+      fullLoadedFusion = true
+    } else {
+      await loadHead(kind)
+      if (kind === 'full') fullLoadedFusion = false
+    }
   }
 
   /** The runtime and the wing detector in memory (the first time from storage). */
@@ -851,20 +979,44 @@ export function createEngine(
     lastMs.detector_load = Math.round(performance.now() - t)
   }
 
-  /** The head alone (about 30 MB): enough to rank a feature again, e.g. a result restored after another tab. */
-  async function loadHead(): Promise<Head> {
-    if (headLoaded) return headLoaded
-    const s = await stored()
-    const name = (role: FileRole) => {
-      const n = s && storedName(s.files, role)
-      if (!n) throw new Error('not-downloaded')
-      return n
+  /**
+   * The head alone (~30 MB legacy, ~59 MB Slot 1 fusion): enough to rank a feature again, e.g. a result restored after
+   * another tab. With `kind === 'small'`, loads the legacy head; with `kind === 'full'`, loads the Slot 1 fusion head
+   * when stored else the legacy head; with no argument, returns an already-loaded head from memory first, otherwise
+   * loads whichever head is stored (legacy first, then fusion).
+   */
+  async function loadHead(kind?: ModelKind): Promise<Head> {
+    if (!kind) {
+      const inMem = lastHeadLoaded ?? fusionHeadLoaded ?? legacyHeadLoaded
+      if (inMem) return inMem
     }
-    const meta = JSON.parse(new TextDecoder().decode(await readModel(name('head-meta')))) as HeadMeta
-    const w = await readModel(name('head'))
-    headLoaded = makeHead(meta, w.buffer as ArrayBuffer)
+    const s = await stored()
+    if (!s) throw new Error('not-downloaded')
+    const hasFusion = storedName(s.files, 'fusion-head-meta') != null && storedName(s.files, 'fusion-head') != null
+    const hasLegacy = storedName(s.files, 'head-meta') != null && storedName(s.files, 'head') != null
+    const wantFusion = kind === 'full' ? hasFusion : kind === 'small' ? false : !hasLegacy && hasFusion
+    if (wantFusion) {
+      if (fusionHeadLoaded) return (lastHeadLoaded = fusionHeadLoaded)
+      const metaName = storedName(s.files, 'fusion-head-meta')
+      const binName = storedName(s.files, 'fusion-head')
+      if (!metaName || !binName) throw new Error('not-downloaded')
+      const meta = JSON.parse(new TextDecoder().decode(await readModel(metaName))) as HeadMeta
+      const w = await readModel(binName)
+      fusionHeadLoaded = makeHead(meta, w.buffer as ArrayBuffer)
+      lastHeadLoaded = fusionHeadLoaded
+      generation++
+      return fusionHeadLoaded
+    }
+    if (legacyHeadLoaded) return (lastHeadLoaded = legacyHeadLoaded)
+    const metaName = storedName(s.files, 'head-meta')
+    const binName = storedName(s.files, 'head')
+    if (!metaName || !binName) throw new Error('not-downloaded')
+    const meta = JSON.parse(new TextDecoder().decode(await readModel(metaName))) as HeadMeta
+    const w = await readModel(binName)
+    legacyHeadLoaded = makeHead(meta, w.buffer as ArrayBuffer)
+    lastHeadLoaded = legacyHeadLoaded
     generation++
-    return headLoaded
+    return legacyHeadLoaded
   }
 
   async function decode(file: Blob): Promise<Rgba> {
@@ -895,7 +1047,7 @@ export function createEngine(
   /** The detector's box and the 224 px square (the head's reviewed full-photo list applies when the head is loaded). */
   async function cut(photo: Photo): Promise<{ square: Uint8Array; status: string }> {
     // Taken before the first await: an update landing meanwhile replaces these (forgetLoaded), not this photo's run.
-    const session = detector!, ortD = detectorOnGpu && gpuOrt ? gpuOrt : ort!, head = headLoaded
+    const session = detector!, ortD = detectorOnGpu && gpuOrt ? gpuOrt : ort!, head = lastHeadLoaded ?? fusionHeadLoaded ?? legacyHeadLoaded
     const raw = photo.bytes
     const orientation = exifOrientation(raw)
     const override = !!head && head.meta.full_photo_overrides.includes(await sha256(raw))
@@ -904,6 +1056,8 @@ export function createEngine(
     const res = await session.run({ [session.inputNames[0]]: new ortD.Tensor('float32', inp.x, [1, 3, 640, 640]) })
     const det = res[session.outputNames[0]], proto = res[session.outputNames[1]]
     const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
+    ;(det as { dispose?: () => void }).dispose?.()
+    ;(proto as { dispose?: () => void }).dispose?.()
     const { box, status } = cropBox(selectMasks(applyP1aNms(masks)), orientation, img.width, img.height, override)
     return { square: letterboxCrop(img, box), status }
   }
@@ -911,18 +1065,35 @@ export function createEngine(
   async function run(photo: Photo, kind: ModelKind): Promise<RunResult> {
     await load(kind)
     const t0 = performance.now()
-    // Taken before the first await (see cut): the encoder and its input size of this photo's run.
+    // Taken before the first await (see cut): the encoder(s) and input size of this photo's run.
     const encoder = encoders[kind]!, size = encoderSize[kind]!
+    const useFusion = kind === 'full' && fullLoadedFusion === true && !!dinoW1c && !!dinoW1d
+    const w1c = useFusion ? dinoW1c : null
+    const w1d = useFusion ? dinoW1d : null
     const { square, status } = await cut(photo)
     const x =
       kind === 'small'
         ? new ort!.Tensor('float32', studentInput(square, 224, size), [1, 3, size, size])
         : new ort!.Tensor('float32', encoderInput(square), [1, 3, 224, 224])
     const enc = await encoder.run({ [encoder.inputNames[0]]: x })
-    const feature = Float32Array.from(enc[encoder.outputNames[0]].data as Float32Array)
+    const encOut = enc[encoder.outputNames[0]]
+    const feature = Float32Array.from(encOut.data as Float32Array)
+    ;(encOut as { dispose?: () => void }).dispose?.()
+    let fusionFeatures: FusionFeatures | undefined
+    if (w1c && w1d) {
+      const cRes = await w1c.run({ [w1c.inputNames[0]]: new ort!.Tensor('float32', dinoW1cInput(square), [1, 3, 224, 224]) })
+      const cOut = cRes[w1c.outputNames[0]]
+      const fW1c = Float32Array.from(cOut.data as Float32Array)
+      ;(cOut as { dispose?: () => void }).dispose?.()
+      const dRes = await w1d.run({ [w1d.inputNames[0]]: new ort!.Tensor('float32', dinoW1dInput(square), [1, 3, 208, 208]) })
+      const dOut = dRes[w1d.outputNames[0]]
+      const fW1d = Float32Array.from(dOut.data as Float32Array)
+      ;(dOut as { dispose?: () => void }).dispose?.()
+      fusionFeatures = { bio: feature, w1c: fW1c, w1d: fW1d }
+    }
     const ms = Math.round(performance.now() - t0)
     lastMs.photo = ms
-    return { feature, square, status, ms }
+    return { feature, ...(fusionFeatures ? { fusionFeatures } : {}), square, status, ms }
   }
 
   // ---------------------------------------------------------------- the sex estimate (team only, lib/sexModel.ts)
@@ -1000,44 +1171,75 @@ export function createEngine(
   }
 
   async function removeModel(kind: ModelKind) {
-    await cancel([ENCODER_ROLE[kind]])
+    await cancel(kind === 'full' ? ['encoder', ...FUSION_ROLES] : ['student'])
     await markBegun(kind, false)
     const s = await stored()
     if (!s) return
-    const other = KINDS.find(k => k !== kind)!
     const has = (role: FileRole) => storedName(s.files, role) != null
-    const otherKept = MODEL_ROLES[other].every(has)
-    const keepRoles = new Set<FileRole>([...(otherKept ? MODEL_ROLES[other] : []), ...(has('sex') ? SEX_ROLES : [])])
+    const keepRoles = new Set<FileRole>([
+      ...(kind === 'full'
+        ? rolesStored(MODEL_ROLES.small, s.files)
+          ? MODEL_ROLES.small
+          : []
+        : fullStoredFusion(s.files)
+          ? ALL_FULL_ROLES
+          : rolesStored(MODEL_ROLES.full, s.files)
+            ? MODEL_ROLES.full
+            : []),
+      ...(has('sex') ? SEX_ROLES : []),
+    ])
+    const myRoles = kind === 'full' ? ALL_FULL_ROLES : MODEL_ROLES.small
     const cache = await caches.open(CACHE)
     const gone: string[] = []
     for (const [name, f] of Object.entries(s.files)) {
       const role = roleOf(name, f.role)
-      if (!MODEL_ROLES[kind].includes(role) || keepRoles.has(role)) continue
+      if (!myRoles.includes(role) || keepRoles.has(role)) continue
       gone.push(name)
       delete s.files[name]
       if (role === 'detector') {
         detector?.release().catch(() => {})
         detector = null
       }
-      if (role === 'head' || role === 'head-meta') headLoaded = null
+      if (role === 'head' || role === 'head-meta') {
+        if (lastHeadLoaded === legacyHeadLoaded) lastHeadLoaded = null
+        legacyHeadLoaded = null
+      }
+      if (role === 'fusion-head' || role === 'fusion-head-meta') {
+        if (lastHeadLoaded === fusionHeadLoaded) lastHeadLoaded = null
+        fusionHeadLoaded = null
+      }
     }
     encoders[kind]?.release().catch(() => {})
     delete encoders[kind]
+    if (kind === 'full') {
+      dinoW1c?.release().catch(() => {})
+      dinoW1d?.release().catch(() => {})
+      dinoW1c = null
+      dinoW1d = null
+      fullLoadedFusion = null
+    }
     await putStored(cache, s)
     for (const name of gone) await dropParts(cache, name)
     // And the parts of this model's own files that stored.json does not name (a download or update cut halfway).
-    await dropRoles(cache, new Set(MODEL_ROLES[kind].filter(r => !keepRoles.has(r))), new Set(Object.keys(s.files)))
+    await dropRoles(cache, new Set(myRoles.filter(r => !keepRoles.has(r))), new Set(Object.keys(s.files)))
   }
 
   async function remove() {
-    await cancel([...MODEL_ROLES.full, ...MODEL_ROLES.small, ...SEX_ROLES])
+    await cancel([...ALL_FULL_ROLES, ...MODEL_ROLES.small, ...SEX_ROLES])
     detector?.release().catch(() => {})
     sexSession?.release().catch(() => {})
+    dinoW1c?.release().catch(() => {})
+    dinoW1d?.release().catch(() => {})
     sexSession = null
+    dinoW1c = null
+    dinoW1d = null
     for (const e of Object.values(encoders)) e?.release().catch(() => {})
     detector = null
     for (const k of KINDS) delete encoders[k]
-    headLoaded = null
+    legacyHeadLoaded = null
+    fusionHeadLoaded = null
+    lastHeadLoaded = null
+    fullLoadedFusion = null
     await caches.delete(CACHE)
   }
 
@@ -1090,7 +1292,7 @@ export function createEngine(
     sexLoaded: () => sexSessionInfo,
     sexToDownload: (files, s) => roleSizes(SEX_ROLES, sexFiles(files), s),
     downloadSex: (files, progress) => downloadRoles('sex', SEX_ROLES, sexFiles(files), progress, async () => sexFiles(await relist())),
-    busy: which => inflight.has(`${base}|${(which === 'sex' ? SEX_ROLES : MODEL_ROLES[which]).join(',')}`),
+    busy: which => inflight.has(`${base}|${which}`),
     saved,
     square,
     sexLogit,
@@ -1099,10 +1301,24 @@ export function createEngine(
     remove,
     removeModel,
     load,
-    loaded: kind => !!encoders[kind] && !!detector && !!headLoaded,
+    loaded: kind =>
+      !!encoders[kind] &&
+      !!detector &&
+      (kind === 'small'
+        ? !!legacyHeadLoaded
+        : fullLoadedFusion === true
+          ? !!dinoW1c && !!dinoW1d && !!fusionHeadLoaded
+          : fullLoadedFusion === false && !!legacyHeadLoaded),
     loadGeneration: () => generation,
     run,
-    head: () => headLoaded,
+    head: kind =>
+      kind === 'small'
+        ? legacyHeadLoaded
+        : kind === 'full'
+          ? fullLoadedFusion
+            ? fusionHeadLoaded
+            : legacyHeadLoaded
+          : lastHeadLoaded ?? fusionHeadLoaded ?? legacyHeadLoaded,
     loadHead,
     stock,
     refreshStock,

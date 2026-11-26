@@ -1,8 +1,8 @@
 /**
  * Identificar's «En línea (servidor)» (views/IdentifyView.vue): the photo made smaller here, read by the team's AI
- * Identifier on the server (POST api/ai/identify-photo, server/identify-photos.mjs; signed in only), and its answer
- * in the shape the tab's result already shows. The server runs the same head as the phone's models
- * (head_6fa6ab78), so the names and the subspecies leaves are the same.
+ * Identifier on the server (POST api/ai/identify-photo, server/identify-photos.mjs; signed in, or visitors when open),
+ * and its answer in the shape the tab's result already shows. The server runs Slot 1 3-backbone fusion (or falls back
+ * to head_6fa6ab78), sharing the same 15,300 display leaves and subspecies names as the phone's models.
  */
 import { api, apiRoot, ApiError } from './api'
 import { t } from './i18n'
@@ -25,6 +25,8 @@ export interface ServerAnswer {
   wingBox: [number, number, number, number] | null
   prior: string | null
   ms: number | null
+  /** The worker's active head identifier (e.g. 'head_slot1_3bb_dist_rel_7d54b54f' or 'head_hier_6fa6ab78'). */
+  head?: string | null
   /** The general sex line (lib/fieldSex.ts): only for the six species it covers. */
   fieldSex?: FieldSexAnswer | null
 }

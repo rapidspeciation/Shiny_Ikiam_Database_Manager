@@ -13,5 +13,6 @@ export function loadTaxonomy(): Promise<Taxonomy | null> {
   return memo
 }
 
-/** The file, only when it was made for this head (its totals need the head's species list). */
-export const forHead = (tax: Taxonomy | null, headSha: string | undefined | null) => (tax && headSha && tax.head === headSha ? tax : null)
+/** The file, only when it was made for this head (or its compat live head SHA-256 for fusion heads). */
+export const forHead = (tax: Taxonomy | null, headSha: string | undefined | null, compatSha?: string | null) =>
+  tax && ((headSha && tax.head === headSha) || (compatSha && tax.head === compatSha)) ? tax : null
