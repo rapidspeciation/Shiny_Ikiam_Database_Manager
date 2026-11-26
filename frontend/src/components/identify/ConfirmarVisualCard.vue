@@ -342,12 +342,14 @@ function openLightbox() {
       :data-status="sideNote.status"
     >
       <Info :size="16" class="mt-0.5 shrink-0 text-pending-text" aria-hidden="true" />
-      <p class="confirmar-pair min-w-0 flex-1 leading-snug">
+      <p class="confirmar-pair min-w-0 flex-1 leading-snug" data-testid="confirmar-side-note-body">
         <span class="text-pending-text"
-          ><i class="species">{{ sideNotePair.a.species }}</i>{{ ' ' }}<i v-if="sideNotePair.a.form" class="form">{{ sideNotePair.a.form }}</i>
-          <span class="text-xs">vs.</span>{{ ' ' }}<i class="species">{{ sideNotePair.b.species }}</i>{{ ' ' }}<i v-if="sideNotePair.b.form" class="form">{{ sideNotePair.b.form }}</i></span
-        >:
-        <span data-testid="confirmar-side-note-text">{{ sideNote.honestNote }}</span>
+          ><i class="species">{{ sideNotePair.a.species }}</i
+          ><template v-if="sideNotePair.a.form">{{ ' ' }}<i class="form">{{ sideNotePair.a.form }}</i></template
+          >{{ ' ' }}<span class="text-xs">vs.</span>{{ ' ' }}<i class="species">{{ sideNotePair.b.species }}</i
+          ><template v-if="sideNotePair.b.form">{{ ' ' }}<i class="form">{{ sideNotePair.b.form }}</i></template
+          >:</span
+        >{{ ' ' }}<span data-testid="confirmar-side-note-text">{{ sideNote.honestNote }}</span>
       </p>
     </div>
 

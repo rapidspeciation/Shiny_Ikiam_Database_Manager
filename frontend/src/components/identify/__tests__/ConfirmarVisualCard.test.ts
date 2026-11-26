@@ -387,6 +387,10 @@ describe('ConfirmarVisualCard', () => {
     expect(note.getAttribute('data-pair-id')).toBe('w5_03')
     expect(note.textContent).toContain('elevatus')
     expect(note.textContent).toContain('casi idénticas')
+    // One space between the words, none before the colon (the phone shot of 26 Nov 2026 read «willmottivs.» and «melpomene :»).
+    expect(host.querySelector('[data-testid="confirmar-side-note-body"]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'Heliconius elevatus willmotti vs. Heliconius melpomene: Estas dos especies son casi idénticas en fotos de campo; una foto sola no basta para separarlas.',
+    )
     // The note sits under the plate, never in its place.
     expect(host.querySelector('[data-testid="confirmar-card-image"]')).not.toBeNull()
     expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
