@@ -87,9 +87,11 @@ export function createIdentifier({ dir = null, python = null, script = SCRIPT, a
       env: { ...process.env, YOLO_CONFIG_DIR: scratch, MPLCONFIGDIR: scratch, YOLO_OFFLINE: '1' },
     });
     const state = { proc, waiting: new Map(), exited: false, code: null };
-    proc.stderr.on('data', d => {
-      const line = String(d).trim();
+    createInterface({ input: proc.stderr }).on('line', raw => {
+      const line = raw.trim();
+      if (!line) return;
       if (/error|traceback/i.test(line)) console.error('Identifier:', line.slice(0, 300));
+      else if (/^(Identifier loaded:|Slot 1 fusion)/i.test(line)) console.log(line.slice(0, 300));
     });
     proc.on('error', e => finish(state, null, e));
     proc.on('exit', code => finish(state, code));

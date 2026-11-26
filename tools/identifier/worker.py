@@ -3,15 +3,17 @@
 The same pipeline as the identifier's Space (WingsClassificator/hf-space, crop of 18 Oct 2026):
 the photo upright by its EXIF tag, the nano wing detector (V5N retrained, wing_seg_s2, since 5 Nov 2026) at 640 px (as ONNX with its one-to-one
 head, the head the Space's PyTorch model runs), the wings cropped (the central 90 % when nothing is
-found) and padded to a 224 px square, BioCLIP 2.5-H's image encoder (ONNX, dynamic int8), then the
-trained hierarchical head (15,347 names). Optionally the Space's geographic prior: names not recorded
-on that side of the Andes in Ecuador weigh 2 %.
+found) and padded to a 224 px square, BioCLIP 2.5-H's image encoder (ONNX, dynamic int8), then either
+the server-only Slot 1 3-backbone fusion (BioCLIP 2.5-H + DINOv2-S w1c + Meta DINOv3-S w1d with
+head_slot1_3bb_dist_rel_7d54b54f.pt when all three fusion assets are present under --dir) or the legacy
+hierarchical head (head_hier_6fa6ab78.pt, automatic fallback when any fusion asset is absent; 15,347 names).
+Optionally the Space's geographic prior: names not recorded on that side of the Andes in Ecuador weigh 2 %.
 
 Started by the app (server/identifier.mjs), one per app. JSON lines on stdin, one answer per
 line on stdout, one photo at a time:
   {"id": "1", "path": "/abs/photo.jpg", "side": "East"|"West"|null, "box": [x0,y0,x1,y1]|null}
   -> {"id": "1", "species": [[name, p], ...], "subspecies": [...], "genus": [...], "tribe": [...], "subfamily": [...],
-      "crop": ..., "ms": ...}   (tribe, subfamily: with taxonomy_6fa6ab78.json beside this file, placeholders left out)
+      "head": ..., "crop": ..., "ms": ...}   (tribe, subfamily: with taxonomy_6fa6ab78.json beside this file, placeholders left out)
      or {"id": "1", "error": "..."}
 The models load on the first photo (about 4 s, 2.3 GB) and the process ends after --idle seconds
 without photos (the memory goes back to the server), or when stdin closes (the app stopped).
@@ -67,9 +69,21 @@ HEAD_SHA256 = "6fa6ab78c6c3b76566a15d322061d2a5bec95c7dd705797c75c95799e1603552"
 # Its own file name (5 Nov 2026: alias recipe retrained on V5N serving crops with label fixes, WingsClassificator
 # reports/wingseg_next_20261103); head_hier_b8127dbf.pt and head_hier.pt (749fbffd, hard-linked) stay for earlier releases.
 HEAD_FILE = "head_hier_6fa6ab78.pt"
+# Slot 1 3-backbone server-only fusion (26 Nov 2026: BioCLIP 2.5-H int8 + Apache-2.0 DINOv2-S w1c + Meta DINOv3-S w1d,
+# WingsClassificator reports/bioclip_dino_fusion_step_b1_20261126). Used automatically when all three files are present
+# under --dir; otherwise falls back cleanly to HEAD_FILE (head_hier_6fa6ab78.pt).
+FUSION_HEAD_FILE = "head_slot1_3bb_dist_rel_7d54b54f.pt"
+FUSION_HEAD_SHA256 = "7d54b54f9853c9b6bd41df66138f3695190c3f47fe52880c03a031801712b6d1"
+FUSION_SCHEMA = "slot1_3bb_decoupled_release_bundle/1"
+W1C_ONNX = os.path.join("onnx", "w1c_pre384_fp32.onnx")
+W1C_SHA256 = "baddedde2f528b39f6f2a643c2630cb7f325101e9e12b4b2df66104cb1ce1366"
+W1D_ONNX = os.path.join("onnx", "w1d_pre384_fp32.onnx")
+W1D_SHA256 = "6e5174daddfca36843fcbf9db52ce593469454ffc24ae946c38c12d41358aa27"
 DETECTOR = "wing_seg_s2"  # 5 Nov 2026: V5N retrained on mined photos (WingsClassificator wingseg_next_20261103 step 2/2c); v6_feature.py knows its SHA
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
+IMN_MEAN = (0.485, 0.456, 0.406)
+IMN_STD = (0.229, 0.224, 0.225)
 TOP = 5
 # The head's tribe and subfamily per species, placeholders left out (export_taxonomy.py): the worker adds each
 # tribe's and subfamily's total to a photo's answer (Identificar's tribe / subfamily answer).
@@ -140,6 +154,56 @@ def load_field_sex(root):
         return None
 
 
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _fusion_assets(root):
+    """Paths to the three server-only Slot 1 fusion artifacts and which ones are present/missing."""
+    assets = os.path.join(root, "app", "assets")
+    items = (
+        ("head", os.path.join(assets, FUSION_HEAD_FILE), FUSION_HEAD_SHA256),
+        ("w1c", os.path.join(root, W1C_ONNX), W1C_SHA256),
+        ("w1d", os.path.join(root, W1D_ONNX), W1D_SHA256),
+    )
+    present = [name for name, path, _ in items if os.path.exists(path)]
+    missing = [name for name, path, _ in items if not os.path.exists(path)]
+    return items, present, missing
+
+
+def _unpack_adapter_branch(b_obj, F):
+    st0 = b_obj["state"]
+    return {
+        "lnw": st0["layer_norm.weight"].float(),
+        "lnb": st0["layer_norm.bias"].float(),
+        "dw": st0["down.weight"].float(),
+        "db": st0["down.bias"].float(),
+        "uw": st0["up.weight"].float(),
+        "ub": st0["up.bias"].float(),
+        "rs": float(st0.get("residual_scale", 0.2)),
+        "W": F.normalize(st0["weight_normalized"].float(), dim=1),
+        "s": float(b_obj["s"]),
+    }
+
+
+def _fwd_adapter(hp, arr, torch, F, np):
+    xb = torch.from_numpy(np.asarray(arr, dtype=np.float32))
+    h = xb + hp["rs"] * F.linear(F.gelu(F.linear(xb, hp["dw"], hp["db"])), hp["uw"], hp["ub"])
+    z = F.normalize(F.layer_norm(h, (h.shape[1],), hp["lnw"], hp["lnb"]), dim=1)
+    return hp["s"] * F.linear(z, hp["W"]).clamp(-1.0 + 1e-6, 1.0 - 1e-6)
+
+
+def _slot1_blend_probs(zb, zc, zd, blend_weights, t_disp, torch, np):
+    wb, wc, wd = blend_weights
+    p_blend = wb * zb.double().softmax(1) + wc * zc.double().softmax(1) + wd * zd.double().softmax(1)
+    z_eff = torch.log(p_blend.clamp_min(1e-12)) / float(t_disp)
+    return z_eff.softmax(1)[0].numpy().astype(np.float64)
+
+
 class Identifier:
     def __init__(self, root, encoder, threads):
         t0 = time.perf_counter()
@@ -180,30 +244,77 @@ class Identifier:
         self.v6.detector = YOLO(os.path.join(assets, DETECTOR + ".onnx"), task="segment")
         gc.collect()
 
-        head_path = os.path.join(assets, HEAD_FILE)
-        with open(head_path, "rb") as f:
-            if hashlib.sha256(f.read()).hexdigest() != HEAD_SHA256:
+        self.fusion = False
+        self.head = None
+        self.hp_bio = None
+        self.hp_w1c = None
+        self.hp_w1d = None
+        self.w1c_sess = None
+        self.w1d_sess = None
+        self.blend_weights = (0.50, 0.25, 0.25)
+        self.t_disp = 0.97
+
+        fusion_items, fusion_present, fusion_missing = _fusion_assets(root)
+        if not fusion_missing:
+            fusion_paths = {}
+            for name, path, want_sha in fusion_items:
+                if _sha256_file(path) != want_sha:
+                    raise ValueError(f"{os.path.basename(path)} is not the release's fusion asset (SHA-256 differs)")
+                fusion_paths[name] = path
+            ck = torch.load(fusion_paths["head"], map_location="cpu", weights_only=False)
+            if ck.get("schema") != FUSION_SCHEMA:
+                raise ValueError(f"{FUSION_HEAD_FILE}: unexpected schema {ck.get('schema')!r}")
+            spec = ck.get("serving_spec") or {}
+            if spec.get("blend_mode") != "prob":
+                raise ValueError(f"{FUSION_HEAD_FILE}: unsupported blend_mode {spec.get('blend_mode')!r}")
+            weights_cfg = spec["weights"]
+            self.blend_weights = (
+                float(weights_cfg["bio"]),
+                float(weights_cfg["w1c"]),
+                float(weights_cfg["w1d"]),
+            )
+            self.t_disp = float(spec["T_disp"])
+            if not (self.t_disp > 0):
+                raise ValueError(f"{FUSION_HEAD_FILE}: invalid T_disp {self.t_disp!r}")
+            raw_leaves = list(ck["leaves"])
+            self.hp_bio = _unpack_adapter_branch(ck["branches"]["bio"], F)
+            self.hp_w1c = _unpack_adapter_branch(ck["branches"]["w1c"], F)
+            self.hp_w1d = _unpack_adapter_branch(ck["branches"]["w1d"], F)
+            self.w1c_sess = base(fusion_paths["w1c"], so, providers=["CPUExecutionProvider"])
+            self.w1d_sess = base(fusion_paths["w1d"], so, providers=["CPUExecutionProvider"])
+            self.fusion = True
+            self.head_id = FUSION_HEAD_FILE[:-3]
+        else:
+            if fusion_present:
+                print(
+                    f"Slot 1 fusion assets incomplete (missing {', '.join(fusion_missing)}); falling back to {HEAD_FILE}",
+                    file=sys.stderr,
+                )
+            head_path = os.path.join(assets, HEAD_FILE)
+            if _sha256_file(head_path) != HEAD_SHA256:
                 raise ValueError(HEAD_FILE + " is not the release's head (SHA-256 differs)")
-        ck = torch.load(head_path, map_location="cpu", weights_only=False)
+            ck = torch.load(head_path, map_location="cpu", weights_only=False)
 
-        class CosineHead(nn.Module):
-            def __init__(self, d, n, s=30.0, K=1):
-                super().__init__()
-                self.s, self.K, self.n = s, K, n
-                self.layer_norm = nn.LayerNorm(d)
-                self.weight = nn.Parameter(torch.empty(n * K, d))
+            class CosineHead(nn.Module):
+                def __init__(self, d, n, s=30.0, K=1):
+                    super().__init__()
+                    self.s, self.K, self.n = s, K, n
+                    self.layer_norm = nn.LayerNorm(d)
+                    self.weight = nn.Parameter(torch.empty(n * K, d))
 
-            def forward(self, x):
-                x = self.layer_norm(x)
-                cos = F.linear(F.normalize(x, dim=1), F.normalize(self.weight, dim=1)).clamp(-1 + 1e-6, 1 - 1e-6)
-                if self.K > 1:
-                    cos = cos.view(cos.size(0), self.n, self.K).max(dim=2).values
-                return self.s * cos
+                def forward(self, x):
+                    x = self.layer_norm(x)
+                    cos = F.linear(F.normalize(x, dim=1), F.normalize(self.weight, dim=1)).clamp(-1 + 1e-6, 1 - 1e-6)
+                    if self.K > 1:
+                        cos = cos.view(cos.size(0), self.n, self.K).max(dim=2).values
+                    return self.s * cos
 
-        raw_leaves = list(ck["leaves"])
-        self.head = CosineHead(ck["feat_dim"], len(raw_leaves), K=ck.get("K", 1))
-        self.head.load_state_dict(ck["head_state_dict"])
-        self.head.eval()
+            raw_leaves = list(ck["leaves"])
+            self.head = CosineHead(ck["feat_dim"], len(raw_leaves), K=ck.get("K", 1))
+            self.head.load_state_dict(ck["head_state_dict"])
+            self.head.eval()
+            self.head_id = HEAD_FILE[:-3]
+
         import importlib.util
 
         lm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaf_merges.py")
@@ -253,12 +364,19 @@ class Identifier:
                 east[i] = e.get("East", 0) > 0
                 west[i] = e.get("West", 0) > 0
             self.geo = {"known": known, "inec": inec, "East": east, "West": west}
-        self.np, self.torch = np, torch
+        self.np, self.torch, self.F = np, torch, F
         self.mean = np.array(MEAN, np.float32)[:, None, None]
         self.std = np.array(STD, np.float32)[:, None, None]
+        self.imn_mean = np.array(IMN_MEAN, np.float32)[:, None, None]
+        self.imn_std = np.array(IMN_STD, np.float32)[:, None, None]
         self.field_sex = load_field_sex(root)
         gc.collect()
         self.load_ms = round((time.perf_counter() - t0) * 1000)
+        missing_note = f", fusion_missing={','.join(fusion_missing)}" if (not self.fusion and fusion_present) else ""
+        print(
+            f"Identifier loaded: {self.head_id} (mode={'fusion' if self.fusion else 'legacy'}{missing_note}, loadMs={self.load_ms}, rssMb={rss_mb()})",
+            file=sys.stderr,
+        )
 
     def weights(self, side, ecuador=None):
         """hf-space geo_prior.py leaf_weights, eps 0.02: off that side of the Andes, and (in Ecuador) not recorded
@@ -275,30 +393,66 @@ class Identifier:
         w[self.geo["known"] & off] = 0.02
         return w
 
+    def _encode_dino(self, rgb_u8):
+        np = self.np
+        x01 = rgb_u8.astype(np.float32).transpose(2, 0, 1) / 255.0
+        x224 = ((x01 - self.imn_mean) / self.imn_std)[None]
+        f_w1c = self.w1c_sess.run(None, {"pixel_values": x224})[0]
+        xt = self.torch.from_numpy(x01)[None]
+        x208_01 = self.F.interpolate(xt, size=(208, 208), mode="bilinear", align_corners=False, antialias=False).numpy()[0]
+        x208 = ((x208_01 - self.imn_mean) / self.imn_std)[None]
+        f_w1d = self.w1d_sess.run(None, {"pixel_values": x208})[0]
+        return f_w1c, f_w1d
+
     def feature(self, raw, box=None):
-        """The photo's BioCLIP feature (normalised) and its crop's provenance."""
+        """The photo's normalised BioCLIP feature (or Slot 1 {bio, w1c, w1d} dict) and its crop's provenance."""
         np = self.np
         square, prov = self.v6.crop(raw, manual_box=box) if box else self.v6.crop(raw)
-        x = ((np.asarray(square.convert("RGB"), np.float32).transpose(2, 0, 1) / 255.0 - self.mean) / self.std)[None]
+        rgb_u8 = np.asarray(square.convert("RGB"), dtype=np.uint8)
+        x = ((rgb_u8.astype(np.float32).transpose(2, 0, 1) / 255.0 - self.mean) / self.std)[None]
         feat = self.encoder.run(None, {"pixel_values": x})[0]
-        return feat / np.linalg.norm(feat, axis=1, keepdims=True), prov
+        feat_bio = feat / np.linalg.norm(feat, axis=1, keepdims=True)
+        if getattr(self, "fusion", False):
+            f_w1c, f_w1d = self._encode_dino(rgb_u8)
+            return {"bio": feat_bio, "w1c": f_w1c, "w1d": f_w1d}, prov
+        return feat_bio, prov
+
+    def _combine_features(self, feat_list):
+        """Average features across deduplicated specimen photos (unit-sphere mean for BioCLIP; native-scale mean for DINO)."""
+        np = self.np
+        if isinstance(feat_list[0], dict):
+            fb = np.concatenate([f["bio"] for f in feat_list]).mean(0, keepdims=True)
+            fb = fb / np.linalg.norm(fb)
+            fc = np.concatenate([f["w1c"] for f in feat_list]).mean(0, keepdims=True)
+            fd = np.concatenate([f["w1d"] for f in feat_list]).mean(0, keepdims=True)
+            return {"bio": fb, "w1c": fc, "w1d": fd}
+        f = np.concatenate(feat_list).mean(0, keepdims=True)
+        return f / np.linalg.norm(f)
 
     def _merged_probs(self, feat):
         np, torch = self.np, self.torch
-        with torch.no_grad():
-            logits = self.head(torch.from_numpy(feat.astype(np.float32)))
-            # field-sex-gate-check.py stubs Logits without .double() and constructs Identifier via __new__.
-            if hasattr(logits, "double"):
-                logits = logits.double()
-            raw = logits.softmax(1)[0].numpy().astype(np.float64)
+        if getattr(self, "fusion", False) and isinstance(feat, dict):
+            with torch.inference_mode():
+                zb = _fwd_adapter(self.hp_bio, feat["bio"], torch, self.F, np)
+                zc = _fwd_adapter(self.hp_w1c, feat["w1c"], torch, self.F, np)
+                zd = _fwd_adapter(self.hp_w1d, feat["w1d"], torch, self.F, np)
+                raw = _slot1_blend_probs(zb, zc, zd, self.blend_weights, self.t_disp, torch, np)
+        else:
+            bio_feat = feat["bio"] if isinstance(feat, dict) else feat
+            with torch.no_grad():
+                logits = self.head(torch.from_numpy(bio_feat.astype(np.float32)))
+                # field-sex-gate-check.py stubs Logits without .double() and constructs Identifier via __new__.
+                if hasattr(logits, "double"):
+                    logits = logits.double()
+                raw = logits.softmax(1)[0].numpy().astype(np.float64)
         old_to_new = getattr(self, "old_to_new", None)
         if old_to_new is None:
             return raw
         return self._merge_leaf_probs(raw, old_to_new, len(self.leaves), np)
 
-    def _score_distributions(self, feat, side=None, ecuador=None):
+    def _score_distributions(self, feat, side=None, ecuador=None, merged_probs=None):
         np = self.np
-        probs = self._merged_probs(feat)
+        probs = self._merged_probs(feat) if merged_probs is None else merged_probs
         w = self.weights(side, ecuador)
         prior = bool((w < 1).any())
         if prior:
@@ -310,9 +464,9 @@ class Identifier:
         np.add.at(ge, self.leaf2ge, probs)
         return probs, sp, ge, prior
 
-    def tops(self, feat, side=None, ecuador=None, higher=False):
+    def tops(self, feat, side=None, ecuador=None, higher=False, merged_probs=None):
         np = self.np
-        probs, sp, ge, prior = self._score_distributions(feat, side, ecuador)
+        probs, sp, ge, prior = self._score_distributions(feat, side, ecuador, merged_probs=merged_probs)
 
         def top_k(agg, vocab, k):
             return [[vocab[j], round(float(agg[j]), 4)] for j in np.argsort(-agg, kind="stable")[:k]]
@@ -335,21 +489,22 @@ class Identifier:
             out.update(higher_totals(sp, self.higher, np))
         return out
 
-    def species_noprior(self, feat, name):
+    def species_noprior(self, feat, name, merged_probs=None):
         """The species marginal of `name` WITHOUT the geographic prior (the field sex line's gate, whatever side the
         person chose), unrounded; 0 for a name the head does not have."""
         if name not in self.sp_index:
             return 0.0
-        probs = self._merged_probs(feat)
+        probs = self._merged_probs(feat) if merged_probs is None else merged_probs
         return float(probs[self.leaf2sp == self.sp_index[name]].sum())
 
-    def field_sex_block(self, feat, crop, name):
+    def field_sex_block(self, feat, crop, name, merged_probs=None):
         """The general sex line for the species the page names (the answer's top species, after the prior when a side
-        was chosen), gated on that species' no-prior score."""
+        was chosen), gated on that species' no-prior score. Always passes the untouched 1024-D BioCLIP feature."""
         if self.field_sex is None or not name or self.field_sex.model_name(name) is None:
             return None
+        bio_feat = feat["bio"] if isinstance(feat, dict) else feat
         try:
-            return self.field_sex.score(feat, name, self.species_noprior(feat, name), crop)
+            return self.field_sex.score(bio_feat, name, self.species_noprior(feat, name, merged_probs=merged_probs), crop)
         except Exception as e:  # the species answer stands without it
             return {"status": f"error:{type(e).__name__}"}
 
@@ -359,15 +514,19 @@ class Identifier:
             raw = f.read()
         feat, prov = self.feature(raw, box)
         geometry = prov.get("geometry") or {}
-        out = self.tops(feat, side, ecuador, higher=True)
+        merged_probs = self._merged_probs(feat)
+        out = self.tops(feat, side, ecuador, higher=True, merged_probs=merged_probs)
         if out["prior"] == "Ecuador":
             out["prior"] = None
         extra = {}
         if self.field_sex is not None:
-            extra["fieldSex"] = self.field_sex_block(feat, geometry.get("status"), (out["species"] or [[None]])[0][0])
+            extra["fieldSex"] = self.field_sex_block(
+                feat, geometry.get("status"), (out["species"] or [[None]])[0][0], merged_probs=merged_probs
+            )
         return {
             **out,
             **extra,
+            "head": getattr(self, "head_id", HEAD_FILE[:-3]),
             "crop": geometry.get("status"),
             "wingBox": prov.get("wing_box"),
             "ms": round((time.perf_counter() - t0) * 1000),
@@ -401,8 +560,7 @@ class Identifier:
                 photos[key] = {"error": f"{type(e).__name__}: {e}"[:300]}
         combined = None
         if used:
-            f = np.concatenate([feats[k] for k in used]).mean(0, keepdims=True)
-            f = f / np.linalg.norm(f)
+            f = self._combine_features([feats[k] for k in used])
             combined = {**self.tops(f, side, ecuador), "used": used}
             combined.pop("prior", None)
         sex = None

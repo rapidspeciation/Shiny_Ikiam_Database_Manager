@@ -3,15 +3,15 @@
 // licences (lib/publicModels.ts MODEL_PAGES, the Hugging Face model cards) and the reference photos' credit.
 import { MODEL_PAGES } from '../../lib/publicModels'
 import { CONTRIB_ENABLED } from '../../lib/contribConfig'
-/** Signed in: the tab also offers «En línea (servidor)», which sends the photo. */
-defineProps<{ team?: boolean }>()
+/** Signed in (`team`) or visitor server mode enabled (`serverOpen`): the tab offers «En línea (servidor)». */
+defineProps<{ team?: boolean; serverOpen?: boolean }>()
 </script>
 
 <template>
   <details class="rounded-lg border border-border bg-surface p-3 text-sm">
     <summary class="cursor-pointer font-medium">{{ $t('Acerca de y licencias') }}</summary>
-    <p v-if="team" class="mt-2 text-fg-muted">
-      {{ $t('Gratis y sin fines comerciales. «En este teléfono»: la foto se analiza en este dispositivo y no sale de él. «En línea (servidor)», solo para el equipo: la foto va al servidor del proyecto, que la analiza y no la guarda.') }}
+    <p v-if="team || serverOpen" class="mt-2 text-fg-muted">
+      {{ $t('Gratis y sin fines comerciales. «En este teléfono»: la foto se analiza en este dispositivo y no sale de él. «En línea (servidor)»: la foto va al servidor del proyecto, que la analiza y no la guarda.') }}
     </p>
     <p v-else class="mt-2 text-fg-muted">
       {{ $t('Gratis y sin fines comerciales. Las fotos se analizan en este dispositivo: no se envían a ningún servidor.') }}
@@ -37,6 +37,11 @@ defineProps<{ team?: boolean }>()
       <li>
         {{ $t('Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.') }}
         <a :href="MODEL_PAGES.head" target="_blank" rel="noopener" class="text-brand-text underline">CC BY-NC 4.0</a>
+      </li>
+      <li>
+        <strong>Built with DINOv3.</strong>
+        {{ $t('En línea (servidor): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3; estos pesos adicionales se ejecutan solo en el servidor y no se descargan ni se redistribuyen a los dispositivos.') }}
+        <a :href="MODEL_PAGES.dinov3License" target="_blank" rel="noopener" class="text-brand-text underline">{{ $t('Licencia de Meta DINOv3') }}</a>
       </li>
       <li v-if="team">{{ $t('También estima el sexo, en línea, en fotos de seis especies fuera de las Ithomiini (experimental, probado en mariposas vivas).') }}</li>
       <li>{{ $t('Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.') }}</li>

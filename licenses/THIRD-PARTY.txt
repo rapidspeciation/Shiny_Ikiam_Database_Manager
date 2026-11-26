@@ -26,3 +26,20 @@ third-party runtime dependency is vendored: zxing-wasm 3.1.6 (MIT,
 server/vendor/zxing-wasm/LICENSE), the reader build of zxing-cpp (Apache
 License 2.0, see ZXing-LICENSE), for the tube racks' 2D codes. Code 128
 patterns: see ZXing-LICENSE.
+
+Built with DINOv3. The server-side species identification pipeline
+(tools/identifier/worker.py) incorporates fine-tuned representations derived
+from Meta DINOv3 (vit_small_patch16_dinov3.lvd1689m, licensed under the Meta
+DINOv3 License: https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md),
+alongside BioCLIP 2.5-H (MIT License) and DINOv2
+(vit_small_patch14_reg4_dinov2, Apache-2.0 License). These additional model
+weights are hosted strictly for server-side inference and are not redistributed
+to clients.
+
+Built with DINOv3. El identificador de especies en el servidor
+(tools/identifier/worker.py) incorpora representaciones ajustadas derivadas de
+Meta DINOv3 (vit_small_patch16_dinov3.lvd1689m, bajo la licencia de Meta DINOv3:
+https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md), junto con
+BioCLIP 2.5-H (licencia MIT) y DINOv2 (vit_small_patch14_reg4_dinov2, licencia
+Apache-2.0). Estos pesos adicionales se ejecutan estrictamente en el servidor y
+no se descargan ni se redistribuyen a los dispositivos.

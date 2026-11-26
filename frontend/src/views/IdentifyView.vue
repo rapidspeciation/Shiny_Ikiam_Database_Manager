@@ -2332,7 +2332,7 @@ onBeforeUnmount(() => {
           <!-- what is on the phone for no signal; with signal and nothing saved, nothing to say -->
           <span v-if="!packs.progress.value && (packs.pack.value || !online)" class="font-normal text-fg-muted">{{ packs.pack.value ? $t('{n} fotos', { n: numText(packs.pack.value.installed.photos) }) : $t('nada descargado') }}</span>
         </button>
-        <IdentifyAbout :team="!!session.user" />
+        <IdentifyAbout :team="!!session.user" :server-open="serverOpen" />
         <p v-if="result" class="text-xs text-fg-subtle" data-testid="result-source">
           {{ result.source === 'online' ? $t('Analizada en línea, en el servidor del proyecto.') : $t('Analizada en este teléfono ({model}).', { model: label(result.kind ?? 'small') }) }}
           <span v-if="timeText" class="tabular-nums" data-testid="result-time">{{ timeText }}</span>

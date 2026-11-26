@@ -15,6 +15,9 @@ export default {
   'original': 'original',
   'Modelo «Rápido y liviano»: entrenado por el proyecto para imitar a BioCLIP 2.5.': '“Fast and light” model: trained by the project to imitate BioCLIP 2.5.',
   'Clasificador de especies: entrenado por el proyecto con fotos y nombres de Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist y otras bases.': 'Species classifier: trained by the project on photos and names from Butterflies of America, Sangay, Noreste, Cotacachi, GBIF, iNaturalist and other databases.',
+  'En línea (servidor): el identificador combina BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) y representaciones derivadas de Meta DINOv3; estos pesos adicionales se ejecutan solo en el servidor y no se descargan ni se redistribuyen a los dispositivos.':
+    'Online (server): the identifier combines BioCLIP 2.5-H (MIT), DINOv2 (Apache-2.0) and representations derived from Meta DINOv3; these additional weights run strictly on the server and are not downloaded or redistributed to devices.',
+  'Licencia de Meta DINOv3': 'Meta DINOv3 License',
   'Fotos de referencia: iNaturalist, con licencias Creative Commons; bajo cada foto, su autor (enlace a la foto) y su licencia.': 'Reference photos: iNaturalist, under Creative Commons licences; under each photo, its author (a link to the photo) and its licence.',
   Identificar: 'Identify',
   'Actualizar fotos': 'Update photos',
@@ -169,7 +172,7 @@ export default {
   'Analizada en este teléfono ({model}).': 'Analysed on this phone ({model}).',
   'Enviando la foto al servidor y analizándola…': 'Sending the photo to the server and analysing it…',
   'ninguno en este teléfono': 'none on this phone',
-  'Gratis y sin fines comerciales. «En este teléfono»: la foto se analiza en este dispositivo y no sale de él. «En línea (servidor)», solo para el equipo: la foto va al servidor del proyecto, que la analiza y no la guarda.': 'Free and non-commercial. “On this phone”: the photo is analysed on this device and does not leave it. “Online (server)”, only for the team: the photo goes to the project’s server, which analyses it and does not keep it.',
+  'Gratis y sin fines comerciales. «En este teléfono»: la foto se analiza en este dispositivo y no sale de él. «En línea (servidor)»: la foto va al servidor del proyecto, que la analiza y no la guarda.': 'Free and non-commercial. “On this phone”: the photo is analysed on this device and does not leave it. “Online (server)”: the photo goes to the project’s server, which analyses it and does not keep it.',
   'Sin conexión con el servidor. Pruebe de nuevo o use «En este teléfono».': 'No connection to the server. Try again or use “On this phone”.',
   'Su sesión terminó. Inicie sesión de nuevo o use «En este teléfono».': 'Your session ended. Sign in again or use “On this phone”.',
   'No se pudo leer la foto. Pruebe con otra.': 'The photo could not be read. Try another one.',

@@ -65,4 +65,5 @@ export const MODEL_PAGES = {
   upstream: 'https://huggingface.co/imageomics/bioclip-2.5-vith14',
   small: 'https://huggingface.co/fr4nzzch/butterfly-id-small-onnx',
   head: 'https://huggingface.co/fr4nzzch/butterfly-id-classifier',
+  dinov3License: 'https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md',
 }

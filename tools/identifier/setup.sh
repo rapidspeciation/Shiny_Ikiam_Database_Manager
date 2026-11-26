@@ -32,6 +32,19 @@ check "$src/app/assets/head_hier_6fa6ab78.pt" 6fa6ab78c6c3b76566a15d322061d2a5be
 check "$src/app/assets/wing_seg_s2.pt" 65704837040293197371b4e45c7504e9e014407c32fb8c650caa0245deb71ac0
 check "$src/app/assets/wing_seg_s2.onnx" 32763314aa910988a50c80569b5803075aeae5544a4cdc7e20a6524f5ea9e836
 check "$src/$encoder" bf27f8e52aa74c295fb725b98fb6bd2fd467f7d4a9e1e2e7f04c610f1245cca1
+# Optional server-only Slot 1 3-backbone fusion assets (26 Nov 2026: head_slot1_3bb_dist_rel_7d54b54f.pt +
+# Apache-2.0 DINOv2-S w1c_pre384_fp32.onnx + Meta DINOv3-S w1d_pre384_fp32.onnx). Verify any present in $src
+# before linking/copying app/assets so bad source copies never reach $dest.
+fusion_pairs=(
+  "app/assets/head_slot1_3bb_dist_rel_7d54b54f.pt:7d54b54f9853c9b6bd41df66138f3695190c3f47fe52880c03a031801712b6d1"
+  "onnx/w1c_pre384_fp32.onnx:baddedde2f528b39f6f2a643c2630cb7f325101e9e12b4b2df66104cb1ce1366"
+  "onnx/w1d_pre384_fp32.onnx:6e5174daddfca36843fcbf9db52ce593469454ffc24ae946c38c12d41358aa27"
+)
+for pair in "${fusion_pairs[@]}"; do
+  rel=${pair%%:*}
+  want=${pair#*:}
+  [ ! -f "$src/$rel" ] || check "$src/$rel" "$want"
+done
 grep -q V5N_WEIGHT_SHA256 "$src/app/v6_feature.py" || { echo "$src/app/v6_feature.py: not the Space's crop code of 18 Oct 2026 (no V5N)" >&2; exit 1; }
 version=$("$src/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("ultralytics"))')
 [ "$version" = 8.4.132 ] || { echo "Ultralytics $version in $src/venv: the crop was measured with 8.4.132" >&2; exit 1; }
@@ -45,6 +58,16 @@ link() { cp -al "$1" "$2" 2>/dev/null || cp -a "$1" "$2"; }
 [ -e "$dest/app/scripts" ] || link "$src/app/scripts" "$dest/app/"
 [ -e "$dest/app/assets" ] || link "$src/app/assets" "$dest/app/"
 [ -e "$dest/$encoder" ] || link "$src/$encoder" "$dest/$encoder"
+for pair in "${fusion_pairs[@]}"; do
+  rel=${pair%%:*}
+  want=${pair#*:}
+  if [ -f "$src/$rel" ]; then
+    [ -e "$dest/$rel" ] || link "$src/$rel" "$dest/$rel"
+  fi
+  if [ -f "$dest/$rel" ]; then
+    check "$dest/$rel" "$want"
+  fi
+done
 if [ -n "${IDENTIFIER_CHECKLIST:-}" ]; then cp "$IDENTIFIER_CHECKLIST" "$dest/app/assets/region_checklist.json"; fi
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 if [ -n "${SEX_SRC:-}" ] && [ -f "$SEX_SRC/model.json" ]; then
