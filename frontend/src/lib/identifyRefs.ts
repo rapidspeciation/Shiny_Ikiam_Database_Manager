@@ -169,7 +169,13 @@ async function kept(): Promise<Record<string, Refs>> {
     return {}
   }
 }
-async function keep(add: Record<string, Refs>) {
+/** One write at a time: a species' list and a subspecies' list kept at once must not drop each other's entry. */
+let keeping: Promise<void> = Promise.resolve()
+function keep(add: Record<string, Refs>): Promise<void> {
+  keeping = keeping.then(() => keepNow(add))
+  return keeping
+}
+async function keepNow(add: Record<string, Refs>) {
   try {
     // Only iNaturalist's photos are kept (the project's specimens need the network).
     const all = { ...(await kept()) }
@@ -426,4 +432,62 @@ export async function retireFieldSet(keep: Set<string> = new Set()): Promise<voi
   } catch {
     /* no storage */
   }
+}
+
+const sameTaxon = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a && !!b && a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/**
+ * iNaturalist's own photos of one subspecies (`Heliconius melpomene schunkei`), as the subspecies' photos: only when
+ * the server found the subspecies itself (a subspecies without photos falls back there to its species, which the
+ * species' list already has). Specimens are left out: the server does not say which are of the subspecies. Online
+ * asked to the server and kept on the phone; without signal (or on any error) what the phone kept. `pending`: the
+ * server is still looking it up.
+ */
+export async function subspeciesRefPhotos(ssp: string): Promise<{ photos: RefPhoto[]; pending: boolean }> {
+  const name = ssp.trim().replace(/\s+/g, ' ')
+  if (name.split(' ').length < 3) return { photos: [], pending: false }
+  const keptOf = async () => ({ photos: ((await kept())[name]?.photos ?? []).filter(p => p.level === 'subspecies'), pending: false })
+  if (!navigator.onLine) return keptOf()
+  try {
+    const { species } = await api<{ species: Record<string, ApiEntry> }>('species-photos', { method: 'POST', body: { names: [name] }, signal: AbortSignal.timeout(12_000) })
+    const e = species?.[name]
+    if (!e) return keptOf()
+    if (e.inat?.level !== 'subspecies') return e.pending && !e.inat ? { ...(await keptOf()), pending: true } : { photos: [], pending: false }
+    const photos: RefPhoto[] = e.inat.photos.map(p => ({
+      src: refPhotoSrc(p.thumb),
+      credit: shortCredit(p.attribution),
+      license: p.license,
+      level: 'subspecies',
+      taxon: name,
+      source: inatPhotoPage(p.thumb),
+      country: p.country ?? null,
+    }))
+    if (photos.length) await keep({ [name]: { photos, taxonUrl: e.inat.taxon?.url ?? null } })
+    return { photos, pending: false }
+  } catch (err) {
+    noteLimit(err)
+    return keptOf()
+  }
+}
+
+/**
+ * A species' reference photos with those of the subspecies the model names first (Franz, 26 Nov 2026: a rayed Napo
+ * H. melpomene showed a red-band postman first): the subspecies' photos in `photos` (a pack's, the field set's) and
+ * `extra` (subspeciesRefPhotos), each once, then every other photo in the order it had (curated or by country), a
+ * photo already shown as the subspecies' left out. Without `ssp`, or with no photo of it, `photos` as they are.
+ */
+export function subspeciesFirst(photos: RefPhoto[], ssp: string | null | undefined, extra: RefPhoto[] = []): RefPhoto[] {
+  if (!ssp) return photos
+  const isSsp = (p: RefPhoto) => p.level === 'subspecies' && sameTaxon(p.taxon, ssp)
+  const first: RefPhoto[] = []
+  const seen = new Set<string>()
+  const key = (p: RefPhoto) => [p.src, p.source ?? ''].filter(Boolean)
+  for (const p of [...photos.filter(isSsp), ...extra.filter(isSsp)]) {
+    if (key(p).some(k => seen.has(k))) continue
+    key(p).forEach(k => seen.add(k))
+    first.push(p)
+  }
+  if (!first.length) return photos
+  return [...first, ...photos.filter(p => !isSsp(p) && !key(p).some(k => seen.has(k)))]
 }

@@ -170,6 +170,12 @@ export interface PredictionInput {
 export interface ConfirmarCardMatch extends RegionalRouteResolution {
   /** Whether the UI should render a card or honest note for this resolution. */
   displayKind: 'card' | 'honest_note' | 'hidden'
+  /** Why this pair was chosen (absent in matches built by hand, which read as a runner-up). */
+  source?: ConfirmarGuideSource
+  /** #1's guides to switch between: empty unless there are two or more. */
+  guideOptions?: ConfirmarGuideOption[]
+  /** A runner-up's note the card was shown ahead of. */
+  sideNote?: ConfirmarSideNote | null
 }
 
 /** Feature flag: strictly OFF unless built with VITE_CONFIRM_VISUAL_CARDS=1. */
@@ -610,8 +616,56 @@ function findIntraspecificPair(manifest: ConfirmarVisualManifest, topPred: Predi
   return null
 }
 
+/** Why a guide is shown: the species the person tapped, a runner-up of #1, two forms of #1, or a look-alike of #1 the head did not rank. */
+export type ConfirmarGuideSource = 'compared' | 'runner_up' | 'intraspecific' | 'top1_comimic'
+
+/** One of #1's guides the person can switch to (shown as pills when there are more than one). */
+export interface ConfirmarGuideOption {
+  pairId: string
+  /** What tells the guides apart: the look-alike of #1 (`Heliconius erato`), or the two forms of an intraspecific pair. */
+  label: string
+}
+
+/** A runner-up pair with no guide (a plain note) that a guide of #1 was shown ahead of: said under the card. */
+export interface ConfirmarSideNote {
+  pairId: string
+  status: RegionalRouteStatus
+  taxonA: string
+  taxonB: string
+  regionBadge: string | null
+  honestNote: string
+}
+
+/** The runner-ups after #2 checked for a guide when the person picked none: their index and the least score each needs. */
+const LATER_RUNNER_UPS: [index: number, minP: number][] = [
+  [2, 0.05], // #3
+  [3, 0.01], // #4
+]
+
+function displayKindOf(resolution: RegionalRouteResolution): ConfirmarCardMatch['displayKind'] {
+  if (resolution.status === 'active' && resolution.imageUrl) return 'card'
+  return HONEST_NOTE_STATUSES.has(resolution.status) && resolution.honestNote ? 'honest_note' : 'hidden'
+}
+
+function optionLabel(pair: ConfirmarPair, top1Norm: string): string {
+  const a = norm(pair.species_a)
+  const b = norm(pair.species_b)
+  if (a === top1Norm) return pair.species_b
+  if (b === top1Norm) return pair.species_a
+  // Two forms of #1: the forms are what differ.
+  const fa = infraspecificPart(a) ?? pair.species_a
+  const fb = infraspecificPart(b) ?? pair.species_b
+  return `${fa} / ${fb}`
+}
+
 /**
  * Resolve top AI predictions + side of Andes + locale into a Confirmar visual card match for /identificar/.
+ *
+ * With a species the person tapped (`comparedSpecies`), only that pair. Otherwise the first guide among
+ * (#1, #2), two forms of #1, (#1, #3 ≥ 5 %) and (#1, #4 ≥ 1 %); a pair with only a note never hides a guide further
+ * down that list. With none, a guide of #1 and a look-alike the head did not rank (Napo's H. erato lativitta, the
+ * co-mimic of H. melpomene malleti, whom the head can leave out of its top four), when #1's subspecies or the side
+ * reaches one of the pair's cards. With no guide at all, the first pair's note (or nothing), as before.
  */
 export function resolveConfirmarVisualCard(
   manifest: ConfirmarVisualManifest,
@@ -622,6 +676,8 @@ export function resolveConfirmarVisualCard(
     sideLean?: SideAndes | string | null
     locale: ConfirmarLocale
     preferredCardId?: string | null
+    /** The guide of #1 the person switched to (a pill), when #1 has more than one. */
+    preferredPairId?: string | null
     rootUrl?: string
   },
 ): ConfirmarCardMatch | null {
@@ -629,57 +685,89 @@ export function resolveConfirmarVisualCard(
   if (!preds || preds.length === 0) return null
 
   const top1 = preds[0]
-  let found: PairLookupMatch | null = null
+  const top1Norm = norm(top1.name)
+  const resolve = (found: PairLookupMatch): RegionalRouteResolution =>
+    resolveRegionalRoute(manifest, {
+      pairId: found.pair.pair_id,
+      sideAndes: input.sideAndes,
+      sideLean: input.sideLean,
+      subspeciesA: found.subspeciesA,
+      subspeciesB: found.subspeciesB,
+      locale: input.locale,
+      preferredCardId: input.preferredCardId,
+      rootUrl: input.rootUrl,
+    })
+  const finish = (
+    resolution: RegionalRouteResolution,
+    source: ConfirmarGuideSource,
+    guideOptions: ConfirmarGuideOption[] = [],
+    sideNote: ConfirmarSideNote | null = null,
+  ): ConfirmarCardMatch => ({ ...resolution, displayKind: displayKindOf(resolution), source, guideOptions, sideNote })
 
-  // 1. If the user explicitly selected a runner-up candidate to compare against #1, resolve ONLY that pair
-  if (input.comparedSpecies && norm(input.comparedSpecies) !== norm(top1.name)) {
+  // 1. The person tapped a runner-up to compare with #1: that pair only, a guide or its note or nothing.
+  if (input.comparedSpecies && norm(input.comparedSpecies) !== top1Norm) {
     const comparedPred = preds.find(p => norm(p.name) === norm(input.comparedSpecies)) ?? {
       name: input.comparedSpecies,
       p: 0,
     }
-    found = findPairForSpecies(manifest, top1, comparedPred)
-    if (!found) return null
+    const found = findPairForSpecies(manifest, top1, comparedPred)
+    return found ? finish(resolve(found), 'compared') : null
   }
 
-  // 2. Check top-2 species pair
-  if (!found && preds.length >= 2) {
-    found = findPairForSpecies(manifest, top1, preds[1])
+  // 2. The runner-ups, in order: (#1, #2), two forms of #1, (#1, #3), (#1, #4).
+  const candidates: { found: PairLookupMatch; source: ConfirmarGuideSource }[] = []
+  const pushCandidate = (found: PairLookupMatch | null, source: ConfirmarGuideSource) => {
+    if (found && !candidates.some(c => c.found.pair.pair_id === found.pair.pair_id)) candidates.push({ found, source })
+  }
+  if (preds.length >= 2) pushCandidate(findPairForSpecies(manifest, top1, preds[1]), 'runner_up')
+  pushCandidate(findIntraspecificPair(manifest, top1), 'intraspecific')
+  for (const [index, minP] of LATER_RUNNER_UPS) {
+    const pred = preds[index]
+    if (pred && pred.p >= minP) pushCandidate(findPairForSpecies(manifest, top1, pred), 'runner_up')
+  }
+  const resolved = candidates.map(c => ({ ...c, resolution: resolve(c.found) }))
+  const firstNote = resolved.find(r => displayKindOf(r.resolution) === 'honest_note') ?? null
+
+  // 3. Every guide of #1 with a look-alike, reached by #1's own subspecies or the side (never by a runner-up's).
+  const top1Ssp = dominantSubspecies(top1)
+  const comimics: RegionalRouteResolution[] = []
+  for (const pair of Object.values(manifest.pairs)) {
+    if (resolved.some(r => r.found.pair.pair_id === pair.pair_id)) continue
+    const isA = norm(pair.species_a) === top1Norm
+    const isB = norm(pair.species_b) === top1Norm
+    if (isA === isB || !pair.routes.some(r => r.status === 'active')) continue
+    const resolution = resolve({ pair, subspeciesA: isA ? top1Ssp : null, subspeciesB: isB ? top1Ssp : null })
+    // Only a card #1's subspecies or the side chose: never a pair's default card, shown for want of a region.
+    if (displayKindOf(resolution) === 'card' && !resolution.regionFallback) comimics.push(resolution)
   }
 
-  // 3. Check intraspecific subspecies pair on top-1 species (e.g. p07, p15)
-  if (!found) {
-    found = findIntraspecificPair(manifest, top1)
+  const cards: { resolution: RegionalRouteResolution; source: ConfirmarGuideSource }[] = [
+    ...resolved.filter(r => displayKindOf(r.resolution) === 'card'),
+    ...comimics.map(resolution => ({ resolution, source: 'top1_comimic' as const })),
+  ]
+  if (cards.length === 0) {
+    const first = resolved[0]
+    return first ? finish(first.resolution, first.source) : null
   }
 
-  // 4. Check (top1, top3) when #3 is a plausible runner-up (>= 5%)
-  if (!found && preds.length >= 3 && preds[2].p >= 0.05) {
-    found = findPairForSpecies(manifest, top1, preds[2])
-  }
-
-  if (!found) return null
-
-  const resolution = resolveRegionalRoute(manifest, {
-    pairId: found.pair.pair_id,
-    sideAndes: input.sideAndes,
-    sideLean: input.sideLean,
-    subspeciesA: found.subspeciesA,
-    subspeciesB: found.subspeciesB,
-    locale: input.locale,
-    preferredCardId: input.preferredCardId,
-    rootUrl: input.rootUrl,
-  })
-
-  const displayKind: ConfirmarCardMatch['displayKind'] =
-    resolution.status === 'active' && resolution.imageUrl
-      ? 'card'
-      : HONEST_NOTE_STATUSES.has(resolution.status) && resolution.honestNote
-        ? 'honest_note'
-        : 'hidden'
-
-  return {
-    ...resolution,
-    displayKind,
-  }
+  const chosen = cards.find(c => c.resolution.pairId === input.preferredPairId) ?? cards[0]
+  const guideOptions: ConfirmarGuideOption[] =
+    cards.length > 1
+      ? cards.map(c => ({ pairId: c.resolution.pairId, label: optionLabel(manifest.pairs[c.resolution.pairId], top1Norm) }))
+      : []
+  const note = firstNote?.resolution
+  const sideNote: ConfirmarSideNote | null =
+    note?.honestNote
+      ? {
+          pairId: note.pairId,
+          status: note.status,
+          taxonA: note.taxonA,
+          taxonB: note.taxonB,
+          regionBadge: note.regionBadge,
+          honestNote: note.honestNote,
+        }
+      : null
+  return finish(chosen.resolution, chosen.source, guideOptions, sideNote)
 }
 
 export const CONFIRMAR_MANIFEST_PATH = 'identificar/confirmar/confirmar_visual_manifest.json'

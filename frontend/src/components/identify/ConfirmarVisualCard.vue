@@ -31,6 +31,8 @@ const COPY = {
     region: { East: 'Oriente', West: 'Occidente' },
     ariaSide: 'Lado de los Andes de la foto',
     side: { West: 'Occidente', East: 'Oriente' },
+    ariaGuides: 'Elegir con qué especie parecida comparar',
+    comimic: 'Una especie parecida que no está entre las respuestas probables de la IA.',
   },
   en: {
     ariaCard: 'Visual guide to tell look-alike species apart',
@@ -44,6 +46,8 @@ const COPY = {
     region: { East: 'East Ecuador', West: 'West Ecuador' },
     ariaSide: "The photo's side of the Andes",
     side: { West: 'West', East: 'East' },
+    ariaGuides: 'Choose which look-alike to compare with',
+    comimic: "A look-alike that is not among the AI's likely answers.",
   },
 } as const
 const copy = computed(() => (locale.value === 'en' ? COPY.en : COPY.es))
@@ -58,6 +62,8 @@ const emit = defineEmits<{
   'select-card': [cardId: string]
   /** The person says which side of the Andes the photo is from (the page's own setting, kept for the next photos). */
   'select-side': [side: SideAndes]
+  /** Another of #1's guides (a pill). */
+  'select-guide': [pairId: string]
 }>()
 
 /** West first, as on a map. */
@@ -92,6 +98,15 @@ const pair = computed(() => {
   const b = split(props.match.taxonB)
   return { a, b, byForm: !!a.form && !!b.form && a.species === b.species }
 })
+
+const guideOptions = computed(() => (props.match.displayKind === 'card' ? (props.match.guideOptions ?? []) : []))
+/** The look-alike's name as a pill says it: the genus shortened (`H. erato`), the forms of one species as they are. */
+const pillLabel = (label: string) => {
+  const words = label.trim().split(/\s+/)
+  return words.length === 2 && !label.includes('/') ? `${words[0][0]}. ${words[1]}` : label
+}
+const sideNote = computed(() => (props.match.displayKind === 'card' ? (props.match.sideNote ?? null) : null))
+const sideNotePair = computed(() => (sideNote.value ? { a: split(sideNote.value.taxonA), b: split(sideNote.value.taxonB) } : null))
 
 const hasRegionSwitcher = computed(
   () => props.match.displayKind === 'card' && props.match.canSwitchRegion && props.match.alternateCards.length > 1,
@@ -213,6 +228,35 @@ function openLightbox() {
           ><span class="text-sm text-fg-muted">vs.</span>{{ ' ' }}<i class="species">{{ pair.b.species }}</i>{{ ' ' }}<i v-if="pair.b.form" class="form">{{ pair.b.form }}</i></span
         >
       </h2>
+      <p v-if="match.source === 'top1_comimic'" class="mt-1 text-sm leading-snug text-fg-muted" data-testid="confirmar-comimic-line">
+        {{ copy.comimic }}
+      </p>
+
+      <!-- #1 has more than one guide: which look-alike to compare it with. -->
+      <div
+        v-if="guideOptions.length > 1"
+        class="mt-2.5 flex flex-wrap gap-1.5"
+        role="group"
+        :aria-label="copy.ariaGuides"
+        data-testid="confirmar-guide-switcher"
+      >
+        <button
+          v-for="opt in guideOptions"
+          :key="opt.pairId"
+          type="button"
+          :aria-pressed="match.pairId === opt.pairId"
+          class="min-h-11 rounded-md border px-3 text-sm font-medium transition-colors"
+          :class="
+            match.pairId === opt.pairId
+              ? 'border-brand bg-brand-soft text-brand-text'
+              : 'border-control bg-surface text-fg hover:border-brand hover:bg-surface-sunken'
+          "
+          :data-testid="`confirmar-guide-opt-${opt.pairId}`"
+          @click="emit('select-guide', opt.pairId)"
+        >
+          <span class="text-fg-muted">vs.</span>&nbsp;<i>{{ pillLabel(opt.label) }}</i>
+        </button>
+      </div>
 
       <div
         v-if="hasRegionSwitcher"
@@ -288,6 +332,24 @@ function openLightbox() {
     <p v-else class="m-2 rounded-md border border-border bg-surface p-3 text-sm text-fg-muted" role="status" data-testid="confirmar-img-error">
       {{ copy.imgError }}
     </p>
+
+    <!-- A runner-up of #1 with no guide, only a note: said here, small, so it never takes the guide's place. -->
+    <div
+      v-if="sideNote && sideNotePair"
+      class="flex items-start gap-2 border-t border-pending-edge/60 bg-cell-pending px-3.5 py-2.5 text-sm text-fg"
+      data-testid="confirmar-side-note"
+      :data-pair-id="sideNote.pairId"
+      :data-status="sideNote.status"
+    >
+      <Info :size="16" class="mt-0.5 shrink-0 text-pending-text" aria-hidden="true" />
+      <p class="confirmar-pair min-w-0 flex-1 leading-snug">
+        <span class="text-pending-text"
+          ><i class="species">{{ sideNotePair.a.species }}</i>{{ ' ' }}<i v-if="sideNotePair.a.form" class="form">{{ sideNotePair.a.form }}</i>
+          <span class="text-xs">vs.</span>{{ ' ' }}<i class="species">{{ sideNotePair.b.species }}</i>{{ ' ' }}<i v-if="sideNotePair.b.form" class="form">{{ sideNotePair.b.form }}</i></span
+        >:
+        <span data-testid="confirmar-side-note-text">{{ sideNote.honestNote }}</span>
+      </p>
+    </div>
 
     <PhotoViewer
       v-if="lightboxOpen && viewerPhotos.length"

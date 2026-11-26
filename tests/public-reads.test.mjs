@@ -344,6 +344,25 @@ test("the head's names are read again after a failed or empty read and when a ne
   assert.equal(b('Oleria baizana'), 'Oleria baizana');
 });
 
+test("the head's named subspecies (its leaves marked is_ssp) are known names too, its other leaves are not", async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'public-head-ssp-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'offline'));
+  writeFileSync(
+    join(dir, 'offline', 'head_6fa6ab78.json'),
+    JSON.stringify({
+      species: ['Heliconius melpomene'],
+      leaves: ['Heliconius melpomene', 'Heliconius melpomene schunkei', 'Heliconius melpomene malleti'],
+      is_ssp: [false, true, false],
+    }),
+  );
+  const lists = createPublicLists(null, { webRoot: dir, identifierDir: dir, retryMs: 1000, now: () => 0 });
+  const canonical = await lists.canonicalNames();
+  assert.equal(canonical('heliconius melpomene SCHUNKEI'), 'Heliconius melpomene schunkei');
+  assert.equal(canonical('Heliconius melpomene'), 'Heliconius melpomene');
+  assert.equal(canonical('Heliconius melpomene malleti'), null);
+});
+
 test('queue admission: fewer than `waiting` names wait, and the day refills its cap', () => {
   let now = 0;
   let size = 0;

@@ -99,6 +99,10 @@ ALIAS_ADDITIONS: dict[tuple[str, str, str], list[str]] = {
     ("w4_11", "w4_11", "a"): ["alithea"],
     # The map writes the third form of Eresia pelonia «calonia»; the head's leaf is «callonia».
     ("w6_05", "w6_05", "b"): ["callonia"],
+    # Napo's rayed Heliconius melpomene malleti (the co-mimic of H. erato lativitta) is read by the head as the rayed
+    # Amazonian H. m. schunkei (a real phone photo of 26 Nov 2026: schunkei 77 %). Without this line that photo reaches
+    # no East guide of this pair; schunkei lives in the same rayed ring, east of the Andes only.
+    ("p01", "p01_east_napo", "b"): ["schunkei", "Heliconius melpomene schunkei"],
 }
 
 # What may never be left in an alias of a subspecies-routed pair: a question mark, a rank marker with no epithet

@@ -57,7 +57,7 @@ import { displayHeadMeta, leafScores, speciesSides, subspeciesBySpecies, sumSpec
 import { readPhoto, takePhoto, type Photo } from '../lib/offlinePhoto'
 import { engineOf, epithet, genusPair, groupByGenus, headline, higherRanks, isIthomiini, percent, rank, ranksAbove, rungs, shortName, taxonOf, SSP_MIN, SSP_SHARE, subspeciesHint, THRESHOLDS, type Candidate, type Higher, type StockDetail, type Taxonomy } from '../lib/identifyResult'
 import { forHead, loadTaxonomy } from '../lib/taxonomy'
-import { referencePhotos, savedPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
+import { referencePhotos, savedPhotos, subspeciesFirst, subspeciesRefPhotos, taxonRange, type Refs } from '../lib/identifyRefs'
 import { comparePlace, exifGps, photoCountry, warmShapes, type Place as PhotoPlace } from '../lib/photoCountry'
 import {
   CONFIRMAR_MANIFEST_PATH,
@@ -797,6 +797,8 @@ const noWings = computed(() => !!result.value && result.value.status !== 'succes
 const confirmarOn = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1'
 const confirmarManifest = shallowRef<ConfirmarVisualManifest | null>(null)
 const confirmarPreferredCard = ref<string | null>(null)
+/** Which of #1's guides the person switched to (a pill), when #1 has more than one. */
+const confirmarPreferredPair = ref<string | null>(null)
 /**
  * The guides' list (150 kB), asked once the page is idle with signal, so a phone that later identifies without signal
  * has it. A fetch that fails is asked again: at each result, and when the signal returns.
@@ -849,6 +851,7 @@ if (confirmarOn) {
   )
   watch([() => result.value?.at, sideValue, compared], () => {
     confirmarPreferredCard.value = null
+    confirmarPreferredPair.value = null
   })
 }
 /** Where this result's photo was taken, when its file says so and the place is in Ecuador. */
@@ -886,6 +889,7 @@ const confirmarMatch = computed<ConfirmarCardMatch | null>(() => {
     sideLean: confirmarLean.value,
     locale: locale.value,
     preferredCardId: confirmarPreferredCard.value,
+    preferredPairId: confirmarPreferredPair.value,
     rootUrl: appRoot(),
   })
 })
@@ -1386,22 +1390,26 @@ watch(
 )
 /**
  * The photos of the species compared in the order of their countries (photoPlace); in the same rank its own photos
- * first, then its subspecies' in the model's order (the closest first).
+ * first, then its subspecies' in the model's order (the closest first). The subspecies the model names (sspNamed)
+ * comes before all, its curated hero included (26 Nov 2026: a rayed Napo H. melpomene first showed a red-band
+ * postman); without one, or with no photo of it, the order as it was.
  */
 const refsShown = computed<Refs | undefined>(() => {
   const r = refs.value[showing.value]
   if (!r) return r
+  const ssp = sspNamed.value
+  const sspFirst = (photos: RefPhoto[]) => subspeciesFirst(photos, ssp, ssp ? sspRefs.value[ssp] : undefined)
   // The curated order (lib/curatedPhotos.ts), its best field photo first, once it is in for these photos.
   const c = curatedShown.value
   if (c && c.name === showing.value && c.of === r.photos && c.place === photoPlace.value) {
-    return { ...r, photos: c.hero ? [c.hero, ...c.photos.filter(p => p !== c.hero)] : c.photos }
+    return { ...r, photos: sspFirst(c.hero ? [c.hero, ...c.photos.filter(p => p !== c.hero)] : c.photos) }
   }
   const order = (subspecies.value.get(showing.value) ?? []).map(c => c.name)
   const at = (taxon: string) => {
     const i = order.indexOf(taxon)
     return i < 0 ? order.length : i
   }
-  return { ...r, photos: bestPhotos(showing.value, r.photos, photoPlace.value, at) }
+  return { ...r, photos: sspFirst(bestPhotos(showing.value, r.photos, photoPlace.value, at)) }
 })
 const thumbOf = (name: string) => bestThumb(name, refs.value[name]?.photos, photoPlace.value)
 /** The candidates under the comparison: the AI's most likely species (up to 5), each with its best photo. */
@@ -1425,6 +1433,29 @@ const sspNamed = computed(() => {
   return s && s.p >= SSP_MIN && s.p >= SSP_SHARE * c.p ? s.name : null
 })
 const sspRange = ref<string[] | null>(null)
+/** iNaturalist's photos of the subspecies the model names, by its name (identifyRefs subspeciesRefPhotos). */
+const sspRefs = ref<Record<string, RefPhoto[]>>({})
+watch(
+  // Again when the signal comes or goes, as the species' photos. A run the next one (or leaving the page) replaced
+  // writes nothing and asks nothing again.
+  () => [sspNamed.value, online.value] as const,
+  ([name], _, onCleanup) => {
+    let live = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    onCleanup(() => {
+      live = false
+      if (timer) clearTimeout(timer)
+    })
+    const load = async (tries: number) => {
+      const { photos, pending } = await subspeciesRefPhotos(name!)
+      if (!live) return
+      if (photos.length || !sspRefs.value[name!]) sspRefs.value = { ...sspRefs.value, [name!]: photos }
+      if (pending && tries < 8) timer = setTimeout(() => load(tries + 1), 4000)
+    }
+    if (name) load(0)
+  },
+  { immediate: true },
+)
 watch(
   [sspNamed, () => packs.pack.value],
   async ([name]) => {
@@ -2099,6 +2130,7 @@ onBeforeUnmount(() => {
             :match="confirmarMatch"
             :user-photo-src="mineUrl ?? result.crop"
             @select-card="id => (confirmarPreferredCard = id)"
+            @select-guide="id => ((confirmarPreferredPair = id), (confirmarPreferredCard = null))"
             @select-side="s => (side = s)"
           />
 

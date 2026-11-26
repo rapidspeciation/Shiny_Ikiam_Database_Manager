@@ -340,4 +340,62 @@ describe('ConfirmarVisualCard', () => {
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
   })
+
+  it('a guide of #1 its look-alike unranked: the line saying so, pills for #1\'s guides, and the runner-up note under it', async () => {
+    locale.value = 'es'
+    const host = document.createElement('div')
+    document.body.append(host)
+    const picked: string[] = []
+    const app = createApp(ConfirmarVisualCard, {
+      match: activeMatch({
+        cardId: 'p01_east_napo',
+        regionFallback: false,
+        guideSide: 'East',
+        canSwitchRegion: false,
+        regionBadge: 'Oriente · Napo y Amazonía',
+        taxonA: 'Heliconius erato lativitta',
+        taxonB: 'Heliconius melpomene malleti',
+        source: 'top1_comimic',
+        guideOptions: [
+          { pairId: 'p01', label: 'Heliconius erato' },
+          { pairId: 'w6_99', label: 'Heliconius timareta' },
+        ],
+        sideNote: {
+          pairId: 'w5_03',
+          status: 'not_reliably_separable_in_photos',
+          taxonA: 'Heliconius elevatus willmotti',
+          taxonB: 'Heliconius melpomene',
+          regionBadge: 'Oriente',
+          honestNote: 'Estas dos especies son casi idénticas en fotos de campo; una foto sola no basta para separarlas.',
+        },
+      }),
+      onSelectGuide: (id: string) => picked.push(id),
+    })
+    app.config.globalProperties.$t = t
+    app.config.globalProperties.$tn = tn
+    app.mount(host)
+    unmount = () => app.unmount()
+
+    expect(host.querySelector('[data-testid="confirmar-comimic-line"]')!.textContent).toContain('no está entre las respuestas probables')
+    const pills = host.querySelectorAll<HTMLButtonElement>('[data-testid="confirmar-guide-switcher"] button')
+    expect([...pills].map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['vs. H. erato', 'vs. H. timareta'])
+    expect(pills[0].getAttribute('aria-pressed')).toBe('true')
+    expect(pills[1].className).toContain('min-h-11')
+    pills[1].click()
+    expect(picked).toEqual(['w6_99'])
+    const note = host.querySelector('[data-testid="confirmar-side-note"]')!
+    expect(note.getAttribute('data-pair-id')).toBe('w5_03')
+    expect(note.textContent).toContain('elevatus')
+    expect(note.textContent).toContain('casi idénticas')
+    // The note sits under the plate, never in its place.
+    expect(host.querySelector('[data-testid="confirmar-card-image"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
+  })
+
+  it('one guide, from a runner-up, with no note: no pills, no line, no note', () => {
+    const host = mountCard(activeMatch({ source: 'runner_up', guideOptions: [], sideNote: null }))
+    expect(host.querySelector('[data-testid="confirmar-guide-switcher"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-side-note"]')).toBeNull()
+  })
 })

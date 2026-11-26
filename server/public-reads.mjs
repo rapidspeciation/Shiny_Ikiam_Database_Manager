@@ -251,8 +251,12 @@ export function createPublicLists(store, { webRoot, identifierDir = null, retryM
       const s = await stat(headPath);
       const stamp = `${s.size}:${s.mtimeMs}`;
       if (stamp === head.stamp && head.names.length) return (head = { ...head, at: now() });
-      const names = JSON.parse(await readFile(headPath, 'utf8'))?.species;
-      head = { at: now(), stamp, names: Array.isArray(names) ? names.filter(n => typeof n === 'string') : [] };
+      const meta = JSON.parse(await readFile(headPath, 'utf8'));
+      // Its species, and the subspecies it names (the leaves marked is_ssp): the page asks for a named subspecies'
+      // photos too (IdentifyView, 26 Nov 2026), so a visitor's cold request for one may join the queue.
+      const leaves = Array.isArray(meta?.leaves) && Array.isArray(meta?.is_ssp) ? meta.leaves.filter((n, i) => meta.is_ssp[i]) : [];
+      const names = [...(Array.isArray(meta?.species) ? meta.species : []), ...leaves];
+      head = { at: now(), stamp, names: names.filter(n => typeof n === 'string') };
     } catch {
       head = { at: now(), stamp: null, names: [] };
     }

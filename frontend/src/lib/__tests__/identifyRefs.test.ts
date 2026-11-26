@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RefPhoto } from '../identifyRefs'
 
 // «Fotos para el campo»: the choice of what to save, its size, the save itself (a fake Cache Storage) and the
 // subspecies photos after their species' photo.
@@ -125,5 +126,128 @@ describe('field photos', () => {
       ['subspecies', 'Mechanitis polymnia casabranca'],
     ])
     expect(refs['Mechanitis lysimnia'].photos).toHaveLength(1)
+  })
+})
+
+// The subspecies the model names, first among a species' reference photos (Franz's phone photo of 26 Nov 2026: a
+// rayed Napo Heliconius melpomene read as H. m. schunkei showed a red-band postman first).
+
+const SCHUNKEI = 'Heliconius melpomene schunkei'
+const sp = (id: number, country: string | null = 'EC'): RefPhoto => ({
+  src: `https://x.test/sp${id}.jpg`,
+  credit: `© S${id}`,
+  license: 'CC-BY',
+  level: 'species',
+  source: `https://www.inaturalist.org/photos/${id}`,
+  country,
+})
+const ssp = (id: number, taxon: string): RefPhoto => ({
+  src: `https://x.test/ssp${id}.jpg`,
+  credit: `© P${id}`,
+  license: 'CC-BY',
+  level: 'subspecies',
+  taxon,
+  source: `https://www.inaturalist.org/photos/${id}`,
+  country: 'PE',
+})
+const specimen: RefPhoto = { src: 'https://x.test/api/photo/abc?w=400', credit: 'CAM000001', license: '', level: 'specimen', sex: 'male' }
+const wing: RefPhoto = { src: 'https://x.test/wing.webp', credit: 'Sanger', license: '', level: 'species', kind: 'preserved', specimen: 'CAM1' }
+
+describe('subspeciesFirst', () => {
+  it('puts the named subspecies ahead of the curated hero and every species photo, the rest in their order', async () => {
+    const { subspeciesFirst } = await import('../identifyRefs')
+    // As refsShown gets them from the curation: the hero (a red-band postman), then the rest.
+    const curated = [sp(1), sp(2, 'BR'), ssp(10, 'Heliconius melpomene malleti'), ssp(11, SCHUNKEI), specimen, wing]
+    const extra = [ssp(20, SCHUNKEI), ssp(21, SCHUNKEI)]
+    const out = subspeciesFirst(curated, SCHUNKEI, extra)
+    expect(out.map(p => p.src)).toEqual([
+      'https://x.test/ssp11.jpg',
+      'https://x.test/ssp20.jpg',
+      'https://x.test/ssp21.jpg',
+      'https://x.test/sp1.jpg',
+      'https://x.test/sp2.jpg',
+      'https://x.test/ssp10.jpg',
+      specimen.src,
+      wing.src,
+    ])
+    expect(out.slice(0, 3).every(p => p.level === 'subspecies' && p.taxon === SCHUNKEI)).toBe(true)
+  })
+
+  it('shows each photo once: the same iNaturalist photo as the species and as the subspecies goes first, once', async () => {
+    const { subspeciesFirst } = await import('../identifyRefs')
+    const sameAsSpecies = { ...ssp(1, SCHUNKEI), src: 'https://x.test/other-size.jpg' }
+    const out = subspeciesFirst([sp(1), sp(2)], SCHUNKEI, [sameAsSpecies, sameAsSpecies])
+    expect(out.map(p => p.src)).toEqual(['https://x.test/other-size.jpg', 'https://x.test/sp2.jpg'])
+  })
+
+  it('matches the name in any case and spacing', async () => {
+    const { subspeciesFirst } = await import('../identifyRefs')
+    const out = subspeciesFirst([sp(1), ssp(5, 'heliconius  melpomene SCHUNKEI')], SCHUNKEI)
+    expect(out[0].src).toBe('https://x.test/ssp5.jpg')
+  })
+
+  it('without a subspecies, or with no photo of it, leaves the order exactly as it was', async () => {
+    const { subspeciesFirst } = await import('../identifyRefs')
+    const photos = [sp(1), sp(2), ssp(10, 'Heliconius melpomene malleti'), specimen, wing]
+    expect(subspeciesFirst(photos, null)).toBe(photos)
+    expect(subspeciesFirst(photos, undefined, [ssp(20, SCHUNKEI)])).toBe(photos)
+    expect(subspeciesFirst(photos, SCHUNKEI)).toBe(photos)
+    expect(subspeciesFirst(photos, SCHUNKEI, [ssp(30, 'Heliconius melpomene rosina')])).toBe(photos)
+  })
+})
+
+describe('subspeciesRefPhotos', () => {
+  const thumb = 'https://inaturalist-open-data.s3.amazonaws.com/photos/88/small.jpg'
+  const answer = (level: string) => ({
+    species: {
+      [SCHUNKEI]: {
+        inat: { level, taxon: { url: 'https://www.inaturalist.org/taxa/9' }, photos: [{ thumb, attribution: '(c) Ana, some rights reserved', license: 'CC-BY', country: 'PE' }] },
+        pending: false,
+        specimens: [{ cam: 'CAM000002', sex: 'female', dorsal: '1abcdefghijklmnopqrstuvwxyz0123' }],
+      },
+    },
+  })
+  const server = (body: unknown, asked: string[] = []) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string, init?: RequestInit) => {
+        if (!String(u).includes('api/species-photos')) return new Response('{}', { status: 404 })
+        asked.push(String(init?.body))
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+      }),
+    )
+
+  it('takes iNaturalist’s photos of the subspecies itself, labelled as it, without the specimens', async () => {
+    fakeCaches()
+    const asked: string[] = []
+    server(answer('subspecies'), asked)
+    const { subspeciesRefPhotos } = await import('../identifyRefs')
+    const got = await subspeciesRefPhotos(SCHUNKEI)
+    expect(JSON.parse(asked[0])).toEqual({ names: [SCHUNKEI] })
+    expect(got.pending).toBe(false)
+    expect(got.photos).toHaveLength(1)
+    expect(got.photos[0]).toMatchObject({ level: 'subspecies', taxon: SCHUNKEI, credit: '© Ana', country: 'PE', source: 'https://www.inaturalist.org/photos/88' })
+    expect(got.photos[0].src).toContain('api/identify/ref-photo?u=')
+  })
+
+  it('a subspecies iNaturalist has no photos of (the server fell back to the species) adds nothing', async () => {
+    fakeCaches()
+    server(answer('species'))
+    const { subspeciesRefPhotos } = await import('../identifyRefs')
+    expect(await subspeciesRefPhotos(SCHUNKEI)).toEqual({ photos: [], pending: false })
+  })
+
+  it('a binomial is not asked; without signal, what the phone kept', async () => {
+    fakeCaches()
+    const asked: string[] = []
+    server(answer('subspecies'), asked)
+    const { subspeciesRefPhotos } = await import('../identifyRefs')
+    expect(await subspeciesRefPhotos('Heliconius melpomene')).toEqual({ photos: [], pending: false })
+    expect(asked).toHaveLength(0)
+    await subspeciesRefPhotos(SCHUNKEI) // kept on the phone
+    vi.stubGlobal('navigator', { ...navigator, onLine: false })
+    const offline = await subspeciesRefPhotos(SCHUNKEI)
+    expect(offline.photos.map(p => p.taxon)).toEqual([SCHUNKEI])
+    expect(asked).toHaveLength(1)
   })
 })

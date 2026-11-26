@@ -260,4 +260,52 @@ describe('IdentifyView: Confirmar visual cards integration', () => {
     expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
     expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
   })
+
+  it("Franz's Napo photo (26 Nov 2026): #1 H. melpomene schunkei with H. erato unranked shows the lativitta / malleti guide, the elevatus note under it, and only the note on tapping #2", async () => {
+    const species: [string, number][] = [
+      ['Heliconius melpomene', 0.79],
+      ['Heliconius elevatus', 0.09],
+      ['Heliconius xanthocles', 0.05],
+      ['Heliconius aoede', 0.01],
+    ]
+    const ssp: [string, number][] = [['Heliconius melpomene schunkei', 0.77]]
+    for (const side of ['East', null] as const) {
+      const { host } = await mountIdentify(makeStoredResult(species, ssp, side, 'EC'), { flag: true, lang: 'es' })
+      const card = host.querySelector('[data-testid="confirmar-visual-card"]')
+      expect(card?.getAttribute('data-card-id')).toBe('p01_east_napo')
+      expect(host.querySelector('[data-testid="confirmar-comimic-line"]')).not.toBeNull()
+      expect(host.querySelector('[data-testid="confirmar-region-unknown"]')).toBeNull()
+      const note = host.querySelector('[data-testid="confirmar-side-note"]')
+      expect(note?.getAttribute('data-pair-id')).toBe('w5_03')
+      expect(note?.textContent).toContain('elevatus')
+      expect(host.querySelector('[data-testid="confirmar-honest-note"]')).toBeNull()
+      unmount()
+      document.body.innerHTML = ''
+    }
+
+    const { host, settle } = await mountIdentify(makeStoredResult(species, ssp, 'East', 'EC'), { flag: true, lang: 'es' })
+    host.querySelector<HTMLButtonElement>('[data-candidate="Heliconius elevatus"]')!.click()
+    await settle()
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-honest-note"]')?.getAttribute('data-pair-id')).toBe('w5_03')
+  })
+
+  it("the same photo from the West never shows the East Napo guide", async () => {
+    const { host } = await mountIdentify(
+      makeStoredResult(
+        [
+          ['Heliconius melpomene', 0.79],
+          ['Heliconius elevatus', 0.09],
+          ['Heliconius xanthocles', 0.05],
+          ['Heliconius aoede', 0.01],
+        ],
+        [['Heliconius melpomene schunkei', 0.77]],
+        'West',
+        'EC',
+      ),
+      { flag: true, lang: 'es' },
+    )
+    expect(host.querySelector('[data-card-id="p01_east_napo"]')).toBeNull()
+    expect(host.querySelector('[data-testid="confirmar-visual-card"]')).toBeNull()
+  })
 })

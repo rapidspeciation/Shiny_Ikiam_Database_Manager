@@ -519,7 +519,10 @@ describe('confirmarVisualRouter — /identificar/ prediction matching & GPS help
       sideAndes: 'East',
       locale: 'es',
     })
-    expect(valoraDom).toBeNull()
+    // (Since 26 Nov 2026 a guide of #1 and a look-alike may show instead, reached by the side: never p07.)
+    expect(valoraDom?.pairId).not.toBe('p07')
+    expect(valoraDom?.source).toBe('top1_comimic')
+    expect(valoraDom?.cardId).toBe('w3a_07')
 
     const p15 = resolveConfirmarVisualCard(manifest, {
       topPredictions: [{ name: 'Godyris zavaleta', p: 0.91 }],
@@ -793,5 +796,137 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
     expect(west?.displayKind).toBe('card')
     expect(west?.regionFallback).toBe(true)
     expect(west?.guideSide).toBe('West')
+  })
+})
+
+describe('confirmarVisualRouter — a guide of #1 when its look-alike is not ranked (phone photo, 26 Nov 2026)', () => {
+  // Franz's photo of H. erato lativitta from Napo: the head left H. erato out of its top four.
+  const franz = [
+    { name: 'Heliconius melpomene', p: 0.79, subspecies: [{ name: 'Heliconius melpomene schunkei', p: 0.77 }] },
+    { name: 'Heliconius elevatus', p: 0.09 },
+    { name: 'Heliconius xanthocles', p: 0.05 },
+    { name: 'Heliconius aoede', p: 0.01 },
+  ]
+
+  it('the list names schunkei on the East Napo side of p01', () => {
+    const east = manifest.pairs.p01.routes.find(r => r.card_id === 'p01_east_napo')!
+    expect(east.subspecies_b_aliases).toContain('schunkei')
+    expect(manifest.pairs.p01.routes.find(r => r.card_id === 'p01_west')!.subspecies_b_aliases).not.toContain('schunkei')
+  })
+
+  it('East: the lativitta / malleti guide, with the elevatus note under it', () => {
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: franz, sideAndes: 'East', locale: 'es', rootUrl: ROOT_URL })!
+    expect(res.displayKind).toBe('card')
+    expect(res.pairId).toBe('p01')
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('top1_comimic')
+    expect(res.regionFallback).toBe(false)
+    expect(res.sideNote?.pairId).toBe('w5_03')
+    expect(res.sideNote?.status).toBe('not_reliably_separable_in_photos')
+    expect(res.sideNote?.honestNote).toContain('casi idénticas')
+    expect(res.guideOptions).toEqual([])
+  })
+
+  it('no side: schunkei alone reaches the East Napo guide, with no region line', () => {
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: franz, sideAndes: null, locale: 'en', rootUrl: ROOT_URL })!
+    expect(res.displayKind).toBe('card')
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.regionFallback).toBe(false)
+    expect(res.sideNote?.pairId).toBe('w5_03')
+  })
+
+  it('West: never the East Napo guide; the elevatus note as before', () => {
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: franz, sideAndes: 'West', locale: 'es', rootUrl: ROOT_URL })!
+    expect(res.cardId).not.toBe('p01_east_napo')
+    expect(res.displayKind).toBe('honest_note')
+    expect(res.pairId).toBe('w5_03')
+    expect(res.sideNote ?? null).toBeNull()
+  })
+
+  it('a lean to the West hides nothing p01 can show (it has a West guide) but schunkei still picks the East one', () => {
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: franz, sideLean: 'West', locale: 'es' })!
+    expect(res.cardId).toBe('p01_east_napo')
+  })
+
+  it('tapping #2 (H. elevatus) shows only the w5_03 note', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: franz,
+      comparedSpecies: 'Heliconius elevatus',
+      sideAndes: 'East',
+      locale: 'es',
+    })!
+    expect(res.displayKind).toBe('honest_note')
+    expect(res.pairId).toBe('w5_03')
+    expect(res.source).toBe('compared')
+    expect(res.sideNote ?? null).toBeNull()
+  })
+
+  it('tapping #3 (H. xanthocles), which has no pair, shows nothing (no fallback for a picked species)', () => {
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: franz, comparedSpecies: 'Heliconius xanthocles', sideAndes: 'East', locale: 'es' })
+    expect(res).toBeNull()
+  })
+
+  it('a subspecies no p01 card names, with no side, shows no guide (fail closed)', () => {
+    const rosina = [{ ...franz[0], subspecies: [{ name: 'Heliconius melpomene rosina', p: 0.7 }] }, ...franz.slice(1)]
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: rosina, locale: 'es' })!
+    expect(res.displayKind).toBe('honest_note')
+    expect(res.pairId).toBe('w5_03')
+  })
+
+  it('a note at #2 never hides a guide at #3 or #4', () => {
+    // #4 at 1 % is still read; (melpomene, erato) is p01.
+    const withErato4 = [...franz.slice(0, 3), { name: 'Heliconius erato', p: 0.01, subspecies: [{ name: 'Heliconius erato lativitta', p: 0.01 }] }]
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: withErato4, sideAndes: 'East', locale: 'es' })!
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('runner_up')
+    expect(res.sideNote?.pairId).toBe('w5_03')
+    // Under 1 %, #4 is not a runner-up: the same guide comes as a look-alike of #1.
+    const low = [...franz.slice(0, 3), { name: 'Heliconius erato', p: 0.009 }]
+    expect(resolveConfirmarVisualCard(manifest, { topPredictions: low, sideAndes: 'East', locale: 'es' })!.source).toBe('top1_comimic')
+  })
+
+  it('#1 with several guides: the first shown, pills for all, and a pill picks another', () => {
+    const preds = [{ name: 'Heliconius cydno', p: 0.9 }]
+    const res = resolveConfirmarVisualCard(manifest, { topPredictions: preds, sideAndes: 'West', locale: 'es' })!
+    expect(res.displayKind).toBe('card')
+    expect(res.guideOptions!.length).toBeGreaterThan(1)
+    expect(res.guideOptions![0].pairId).toBe(res.pairId)
+    for (const o of res.guideOptions!) expect(o.label).not.toMatch(/cydno/i)
+    const other = res.guideOptions![1].pairId
+    const picked = resolveConfirmarVisualCard(manifest, { topPredictions: preds, sideAndes: 'West', locale: 'es', preferredPairId: other })!
+    expect(picked.pairId).toBe(other)
+    expect(picked.guideOptions!.map(o => o.pairId)).toEqual(res.guideOptions!.map(o => o.pairId))
+    // A pill of another result is ignored.
+    const stale = resolveConfirmarVisualCard(manifest, { topPredictions: preds, sideAndes: 'West', locale: 'es', preferredPairId: 'p01' })!
+    expect(stale.pairId).toBe(res.pairId)
+  })
+
+  it('never a look-alike guide shown only for want of a region (Sol F2 / Opus F2, 26 Nov 2026)', () => {
+    // #1 alone, no subspecies, no side: p01's default (the West card) must not show as a look-alike.
+    const bare = [{ name: 'Heliconius melpomene', p: 0.9 }]
+    expect(resolveConfirmarVisualCard(manifest, { topPredictions: bare, locale: 'es' })).toBeNull()
+    expect(resolveConfirmarVisualCard(manifest, { topPredictions: bare, sideLean: 'East', locale: 'es' })).toBeNull()
+    // A side chooses one: East gives the Napo guide.
+    expect(resolveConfirmarVisualCard(manifest, { topPredictions: bare, sideAndes: 'East', locale: 'es' })!.cardId).toBe('p01_east_napo')
+    // Across the list: no look-alike card is ever a region fallback.
+    for (const pair of Object.values(manifest.pairs))
+      for (const name of [pair.species_a, pair.species_b]) {
+        const res = resolveConfirmarVisualCard(manifest, { topPredictions: [{ name, p: 0.9 }], locale: 'en' })
+        if (res?.source === 'top1_comimic') expect(res.regionFallback).toBe(false)
+      }
+  })
+
+  it('a runner-up guide comes first among the pills, ahead of the look-alikes', () => {
+    const res = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Heliconius melpomene', p: 0.6, subspecies: [{ name: 'Heliconius melpomene malleti', p: 0.55 }] },
+        { name: 'Heliconius erato', p: 0.3, subspecies: [{ name: 'Heliconius erato lativitta', p: 0.28 }] },
+      ],
+      sideAndes: 'East',
+      locale: 'es',
+    })!
+    expect(res.cardId).toBe('p01_east_napo')
+    expect(res.source).toBe('runner_up')
+    expect(res.guideOptions).toEqual([])
   })
 })
