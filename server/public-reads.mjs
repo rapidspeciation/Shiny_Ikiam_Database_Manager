@@ -252,9 +252,12 @@ export function createPublicLists(store, { webRoot, identifierDir = null, retryM
       const stamp = `${s.size}:${s.mtimeMs}`;
       if (stamp === head.stamp && head.names.length) return (head = { ...head, at: now() });
       const meta = JSON.parse(await readFile(headPath, 'utf8'));
-      // Its species, and the subspecies it names (the leaves marked is_ssp): the page asks for a named subspecies'
-      // photos too (IdentifyView, 26 Nov 2026), so a visitor's cold request for one may join the queue.
-      const leaves = Array.isArray(meta?.leaves) && Array.isArray(meta?.is_ssp) ? meta.leaves.filter((n, i) => meta.is_ssp[i]) : [];
+      // Its species, and the subspecies it names (leaves whose is_ssp bitstring char is '1', as written by
+      // tools/identifier/export_offline_head.py): the page asks for a named subspecies' photos too
+      // (IdentifyView, 26 Nov 2026), so a visitor's cold request for one may join the queue.
+      const leaves = Array.isArray(meta?.leaves) && typeof meta?.is_ssp === 'string'
+        ? meta.leaves.filter((n, i) => meta.is_ssp[i] === '1')
+        : [];
       const names = [...(Array.isArray(meta?.species) ? meta.species : []), ...leaves];
       head = { at: now(), stamp, names: names.filter(n => typeof n === 'string') };
     } catch {

@@ -75,6 +75,7 @@ const lightboxOpen = ref(false)
 const imgError = ref(false)
 /** The plate's file arrived: until then its box (already at the plate's shape) says it is loading. */
 const imgLoaded = ref(false)
+const imgEl = ref<HTMLImageElement | null>(null)
 
 // Another region or language is another file.
 watch(
@@ -84,6 +85,10 @@ watch(
     imgLoaded.value = false
   },
 )
+// A cached plate can already be complete on mount without firing a fresh load event.
+watch(imgEl, el => {
+  if (el?.complete && el.naturalWidth > 0) imgLoaded.value = true
+})
 
 /**
  * A taxon as its species (genus and epithet) and what follows (the subspecies). The species reads strongest; in a pair
@@ -307,12 +312,13 @@ function openLightbox() {
           {{ copy.loading }}
         </span>
         <img
+          ref="imgEl"
           :key="match.imageUrl"
           :src="match.imageUrl"
           :alt="match.altText ?? ''"
           :width="match.imageWidth ?? undefined"
           :height="match.imageHeight ?? undefined"
-          loading="lazy"
+          loading="eager"
           decoding="async"
           class="relative block h-auto w-full"
           :class="{ 'opacity-0': !imgLoaded }"

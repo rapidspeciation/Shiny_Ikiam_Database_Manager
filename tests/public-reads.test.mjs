@@ -344,16 +344,17 @@ test("the head's names are read again after a failed or empty read and when a ne
   assert.equal(b('Oleria baizana'), 'Oleria baizana');
 });
 
-test("the head's named subspecies (its leaves marked is_ssp) are known names too, its other leaves are not", async t => {
+test("the head's named subspecies (leaves marked '1' in is_ssp string mask) are known names too, its other leaves are not", async t => {
   const dir = mkdtempSync(join(tmpdir(), 'public-head-ssp-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, 'offline'));
   writeFileSync(
     join(dir, 'offline', 'head_6fa6ab78.json'),
     JSON.stringify({
+      schema: 'ithomiini-offline-head/2',
       species: ['Heliconius melpomene'],
       leaves: ['Heliconius melpomene', 'Heliconius melpomene schunkei', 'Heliconius melpomene malleti'],
-      is_ssp: [false, true, false],
+      is_ssp: '010',
     }),
   );
   const lists = createPublicLists(null, { webRoot: dir, identifierDir: dir, retryMs: 1000, now: () => 0 });

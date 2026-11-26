@@ -20,7 +20,7 @@ const run = (command, args, options = {}) =>
     const child = spawn(command, args, { stdio: ['ignore', 'inherit', 'pipe'], ...options });
     let stderr = '';
     child.stderr?.on('data', chunk => (stderr += chunk));
-    child.on('close', status => done({ status, stderr }));
+    child.on('close', (status, signal) => done({ status, signal, stderr }));
   });
 
 // The frontend is TypeScript + Vue; its type check needs `npm --prefix frontend install` once.
@@ -46,17 +46,26 @@ for (const path of process.argv.slice(1)) {
   catch { console.error(path); }
 }`;
 const syntax = await run(process.execPath, ['--experimental-vm-modules', '--no-warnings', '--input-type=module', '-e', SYNTAX, ...targets]);
-const failing = syntax.stderr.split('\n').filter(Boolean);
-if (syntax.status || failing.length) {
-  for (const path of failing) {
-    const check = spawnSync(process.execPath, ['--check', path], { encoding: 'utf8' });
-    process.stderr.write(check.status ? check.stderr : `${path}\n`);
+const failing = syntax.status === 0 ? syntax.stderr.split('\n').filter(Boolean) : [];
+if (syntax.status !== 0 || failing.length) {
+  if (syntax.status !== 0) {
+    if (syntax.stderr) process.stderr.write(syntax.stderr);
+    process.stderr.write(syntax.signal ? `The syntax check was killed (${syntax.signal})\n` : `The syntax check failed (exit ${syntax.status})\n`);
+  } else {
+    for (const path of failing) {
+      const check = spawnSync(process.execPath, ['--check', path], { encoding: 'utf8' });
+      process.stderr.write(check.status !== 0 && check.stderr ? check.stderr : `${path}\n`);
+    }
   }
-  if (!failing.length) process.stderr.write(syntax.stderr || 'The syntax check failed\n');
-  await typecheck;
+  const tc = await typecheck;
+  if (tc.signal) process.stderr.write(`The frontend type check was killed (${tc.signal})\n`);
   process.exit(1);
 }
 console.log(`Syntax checked ${targets.length} JavaScript files`);
 
-if ((await typecheck).status) process.exit(1);
+const tc = await typecheck;
+if (tc.status !== 0) {
+  if (tc.signal) process.stderr.write(`The frontend type check was killed (${tc.signal})\n`);
+  process.exit(1);
+}
 console.log('Type checked the frontend');

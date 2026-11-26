@@ -1,7 +1,7 @@
 /**
  * Deterministic regional router for Confirmar visual field-ID cards in /identificar/.
  *
- * Strictly gated behind VITE_CONFIRM_VISUAL_CARDS=1 (default OFF).
+ * Gated behind VITE_CONFIRM_VISUAL_CARDS=1 (OFF unless built with =1; production sets it in frontend/.env.production).
  * Implements the exact Waves 2, 3A, 3B, 4, 5, and 6 regional & subspecies routing contract:
  *   - Wave 3B / Wave 5 (`routing_mode: 'side_only'`): resolves strictly by `(pair_id, side_andes)`
  *     (never rejects on subspecies predictions); inseparable pairs return explicit `null`.

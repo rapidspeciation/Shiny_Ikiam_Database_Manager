@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, nextTick } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 import ConfirmarVisualCard from '../ConfirmarVisualCard.vue'
 import { locale, t, tn } from '../../../lib/i18n'
 import type { ConfirmarCardMatch } from '../../../lib/confirmarVisualRouter'
@@ -196,6 +196,7 @@ describe('ConfirmarVisualCard', () => {
     expect(plate.className).not.toContain('bg-photo-mat')
     expect(host.querySelector('[data-testid="confirmar-img-loading"]')!.textContent!.trim()).toBe('Cargando guía…')
     const img = host.querySelector<HTMLImageElement>('[data-testid="confirmar-card-image"]')!
+    expect(img.getAttribute('loading')).toBe('eager')
     expect(img.classList.contains('opacity-0')).toBe(true)
     img.dispatchEvent(new Event('load'))
     await nextTick()
@@ -206,6 +207,40 @@ describe('ConfirmarVisualCard', () => {
     await nextTick()
     expect(host.querySelector('[data-testid="confirmar-img-error"]')!.textContent).toContain('No se pudo cargar')
     expect(host.querySelector('[data-testid="confirmar-zoom-trigger"]')).toBeNull()
+  })
+
+  it('reveals a cached plate that is already complete on mount and after switching imageUrl', async () => {
+    const completeDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'complete')
+    const widthDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'naturalWidth')
+    Object.defineProperty(HTMLImageElement.prototype, 'complete', { configurable: true, get: () => true })
+    Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', { configurable: true, get: () => 1400 })
+    try {
+      const current = ref(activeMatch())
+      const host = document.createElement('div')
+      document.body.append(host)
+      const app = createApp({ render: () => h(ConfirmarVisualCard, { match: current.value }) })
+      app.config.globalProperties.$t = t
+      app.config.globalProperties.$tn = tn
+      app.mount(host)
+      unmount = () => app.unmount()
+      await nextTick()
+      await nextTick()
+      expect(host.querySelector('[data-testid="confirmar-img-loading"]')).toBeNull()
+      expect(host.querySelector('[data-testid="confirmar-card-image"]')!.classList.contains('opacity-0')).toBe(false)
+
+      // Switching region/language changes imageUrl; a cached second plate must also reveal without a fresh load event.
+      current.value = activeMatch({
+        cardId: 'p01_east_napo',
+        imageUrl: 'https://example.test/identificar/confirmar/cards/es/p01_east_napo.webp?v=1234567890',
+      })
+      await nextTick()
+      await nextTick()
+      expect(host.querySelector('[data-testid="confirmar-img-loading"]')).toBeNull()
+      expect(host.querySelector('[data-testid="confirmar-card-image"]')!.classList.contains('opacity-0')).toBe(false)
+    } finally {
+      if (completeDesc) Object.defineProperty(HTMLImageElement.prototype, 'complete', completeDesc)
+      if (widthDesc) Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', widthDesc)
+    }
   })
 
   it('the full-screen viewer gives the plate the room: it names the guide and its region, not the pair again', async () => {
