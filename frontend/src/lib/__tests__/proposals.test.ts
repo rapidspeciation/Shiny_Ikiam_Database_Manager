@@ -202,6 +202,19 @@ describe('the columns a table always shows', () => {
     expect(g.fields.slice(-2)).toEqual(['LIFESTAGE', 'Tube_2_rack'])
     expect(g.template).toEqual(['Tube_2_rack'])
   })
+  it('never folds a template column with a cell that waits for a look (edited in the sheet since, or a missing tube)', () => {
+    const page = { kind: 'emergence', sheet: 'Insectary_data', columns: ['Insectary_ID', 'SPECIES', 'Sex'], keys: ['Insectary_ID'], photos: 1 }
+    const withEdit = proposal(
+      [edited('r1', { Sex: 'male', Tube_2_rack: 'NA' }, { sheet: 'Insectary_data', sheetChanged: { Tube_2_rack: { read: '', now: 'R4' } } })],
+      { shownColumns, page },
+    )
+    expect(sheetGroups(withEdit, {}, order)[0].template).toEqual([])
+    const withWarning = proposal(
+      [edited('r1', { Sex: 'male', Tube_2_rack: 'NA' }, { sheet: 'Insectary_data', warnings: { Tube_2_rack: { text: 'Falta' } } })],
+      { shownColumns, page },
+    )
+    expect(sheetGroups(withWarning, {}, order)[0].template).toEqual([])
+  })
   it("gives Collection_data a Notebook view without a page: a wild-caught butterfly's columns first", () => {
     const columns = {
       ...shownColumns,

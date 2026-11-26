@@ -475,7 +475,7 @@ test('missing_sample and preserved_na: an insectary butterfly preserved by its c
   const alert = data.alerts.find(a => a.id === `sample:${D5D.id}`);
   assert.equal(alert.level, 'warn');
   // The day goes as a day, for the interface to write in its language; the Spanish text has it as the app writes days.
-  assert.deepEqual(alert.textMsg.vars, { id: 'D5D', species: 'Mechanitis lysimnia', date: { date: isoOf(today - 10) } });
+  assert.deepEqual({ ...alert.textMsg.vars, date: alert.textMsg.vars.date.date }, { id: 'D5D', species: 'Mechanitis lysimnia', date: isoOf(today - 10) });
   assert.match(alert.text, /^D5D \(Mechanitis lysimnia\) preservada el \d{1,2}-[A-Z][a-z]{2}-\d{2} sin CAM\/tubo/);
   assert.equal(alert.link, '#/tablas?hoja=Insectary_data&buscar=D5D');
   assert.equal(data.alerts.find(a => a.id === `sample:${K1K.id}`).textMsg.vars.id, 'K1K');

@@ -129,6 +129,16 @@ describe("a sheet's matches as a list (a phone)", () => {
     expect(host.querySelector('.drawer-stub')).toBeNull()
     expect(events).toEqual([true, false])
   })
+  it('a match with edits not saved yet says so on its line', async () => {
+    const host = await mount([10, 500, 9000], true)
+    expect(host.querySelector('.row-item.is-dirty')).toBeNull()
+    const { usePending } = await import('../../../stores/pending')
+    usePending().edits.rec500 = { module: 'Insectary_data', id: 'rec500', row: 500, label: 'Q500E', version: 1, values: { Sex: 'male' }, before: { Sex: 'female' } }
+    await settle()
+    const dirty = [...host.querySelectorAll<HTMLElement>('.row-item.is-dirty')]
+    expect(dirty.map(e => e.dataset.row)).toEqual(['500'])
+    expect(dirty[0].textContent).toContain('sin guardar')
+  })
   it('reads many matches a screenful at a time, the rest on request', async () => {
     const many = Array.from({ length: 45 }, (_, i) => 100 + i * 200)
     const host = await mount(many, true)

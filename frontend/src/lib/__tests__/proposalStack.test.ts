@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sharedNote, stackRows, stackToDecide } from '../proposalStack'
+import { sharedFold, sharedNote, stackRows, stackToDecide } from '../proposalStack'
 import type { ProposalChange } from '../proposals'
 
 // A proposal's rows for a phone: each row's changed cells one under the other, the sheet's value over the new one.
@@ -110,6 +110,32 @@ describe('the stacked list of a proposal', () => {
       ['Stock_of_origin', true, 'NA'],
       ['Bait', true, 'NOT_COLLECTED'],
     ])
+  })
+  it('only a plain write folds: a template column\'s cell that waits for a decision always shows', () => {
+    const rows = stackRows(
+      [
+        edited('kept', { Stock_of_origin: 'NA' }, { rowValues: { Stock_of_origin: '' }, sheetChanged: { Stock_of_origin: { read: '', now: 'Ikiam' } } }),
+        edited('doubt', { Stock_of_origin: 'NA' }, { rowValues: { Stock_of_origin: '' }, doubts: { Stock_of_origin: { reason: 'borroso' } } }),
+        edited('plain', { Stock_of_origin: 'NA' }, { rowValues: { Stock_of_origin: '' } }),
+      ],
+      ['Stock_of_origin'],
+      [],
+      ['Stock_of_origin'],
+    )
+    expect(rows.map(r => [r.key, r.fields[0].state, !!r.fields[0].template])).toEqual([
+      ['kept', 'kept', false],
+      ['doubt', 'doubtful', false],
+      ['plain', 'ai', true],
+    ])
+  })
+  it('a fold every row shares is counted once; rows that differ count their own', () => {
+    const created = (key: string, values: ProposalChange['values']): ProposalChange => ({ index: 1, key, clientId: key, recordId: null, sheet: 'Insectary_data', row: null, label: key, create: true, values })
+    const same = stackRows([created('a', { Sex: 'female', Bait: 'NA' }), created('b', { Sex: 'male', Bait: 'NA' })], ['Sex', 'Bait'], [], ['Bait'])
+    expect(sharedFold(same)).toBe(1)
+    const differ = stackRows([created('a', { Sex: 'female', Bait: 'NA' }), created('b', { Sex: 'male' })], ['Sex', 'Bait'], [], ['Bait'])
+    expect(sharedFold(differ)).toBe(0)
+    expect(sharedFold(same.slice(0, 1))).toBe(0)
+    expect(sharedFold(stackRows([created('a', { Sex: 'female' }), created('b', { Sex: 'male' })], ['Sex'], [], []))).toBe(0)
   })
   it('keeps the table\'s marks: a value not written on the line, a row the assistant flags', () => {
     const [row] = stackRows([edited('a', { Death_cause: 'Natural_death', Sex: 'female' }, { inferred: ['Death_cause'], highlight: true })], FIELDS)

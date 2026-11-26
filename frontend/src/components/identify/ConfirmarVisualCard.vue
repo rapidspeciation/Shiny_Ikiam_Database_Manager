@@ -14,6 +14,7 @@ import { Info, ZoomIn } from 'lucide-vue-next'
 import PhotoViewer, { type ViewerPhoto } from './PhotoViewer.vue'
 import { locale, t } from '../../lib/i18n'
 import type { ConfirmarCardMatch } from '../../lib/confirmarVisualRouter'
+import { usePhoneWidth } from '../../composables/usePhone'
 
 // Component-scoped ES/EN UI copy so OFF builds ship zero Confirmar strings in the shared i18n bundle.
 const COPY = {
@@ -48,6 +49,8 @@ const emit = defineEmits<{
   'select-card': [cardId: string]
 }>()
 
+// A computer has the zoom action as a button beside the badges: that one is the keyboard's stop, the plate answers the mouse.
+const phone = usePhoneWidth()
 const lightboxOpen = ref(false)
 const imgError = ref(false)
 /** The plate's file arrived: until then its box (already at the plate's shape) says it is loading. */
@@ -192,6 +195,7 @@ function openLightbox() {
       v-if="!imgError"
       type="button"
       class="confirmar-zoomable group block min-h-11 w-full bg-surface-sunken text-left sm:p-2.5"
+      :tabindex="phone ? undefined : -1"
       :aria-label="copy.ariaZoom"
       data-testid="confirmar-zoom-trigger"
       @click="openLightbox"

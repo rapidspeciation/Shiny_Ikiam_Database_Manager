@@ -165,6 +165,19 @@ describe('ProposalStack', () => {
     expect(cells()).toEqual(['Death_cause', 'Notes_Insectary_data', 'Sex'].sort((a, b) => FIELDS.indexOf(a) - FIELDS.indexOf(b)))
     expect(host.querySelector('[data-template]')!.textContent).toContain('Plegar la plantilla')
   })
+  it('a fold every row shares is said once above the rows, not on each', async () => {
+    locale.value = 'es'
+    const row = (key: string): ProposalChange => ({ index: 1, key, clientId: key, recordId: null, sheet: 'Insectary_data', row: null, label: key, create: true, values: { Sex: 'female', Death_cause: 'NA' } })
+    const host = mount([row('a'), row('b'), row('c')], undefined, { template: ['Death_cause'] })
+    const folds = host.querySelectorAll<HTMLButtonElement>('[data-template]')
+    expect(folds).toHaveLength(1)
+    expect(folds[0].closest('.stack-row')).toBeNull()
+    expect(folds[0].textContent).toContain('Cada fila: +1 columna de plantilla')
+    expect(host.querySelectorAll('.stack-field')).toHaveLength(3)
+    folds[0].click()
+    await nextTick()
+    expect(host.querySelectorAll('.stack-field')).toHaveLength(6)
+  })
   it('keeps the table\'s marks and reads dates in the interface language', () => {
     locale.value = 'es'
     const host = mount([change('a', { Death_date: 46128, Death_cause: 'Natural_death' }, { inferred: ['Death_cause'], highlight: true, rowValues: { Death_date: 45883, Death_cause: '' } })])

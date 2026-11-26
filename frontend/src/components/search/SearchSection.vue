@@ -12,6 +12,7 @@ import type { Field, Table, TableRow } from '../../lib/types'
 import type { HistoryTarget } from '../../lib/history'
 import { rowFromWire, toRow, useTables } from '../../stores/tables'
 import { useSession } from '../../stores/session'
+import { usePending } from '../../stores/pending'
 
 /**
  * One sheet in the Buscador's results: its rows around a match, as an editable
@@ -24,6 +25,7 @@ const emit = defineEmits<{ open: [module: string, row: number]; history: [target
 
 const session = useSession()
 const tables = useTables()
+const pending = usePending()
 const module = props.result.module
 const mod = computed(() => session.module(module))
 /** Every column in sheet order (as the server sends values), and each once for the grid. */
@@ -111,7 +113,7 @@ const listItems = computed(() => {
   const identity = mod.value?.identityFields ?? []
   return [...listRows.value]
     .sort((a, b) => Number(b.row === props.result.focus) - Number(a.row === props.result.focus) || b.row - a.row)
-    .map(r => rowListItem(r, columns.value, identity, props.query, props.result.columns))
+    .map(r => ({ ...rowListItem(r, columns.value, identity, props.query, props.result.columns), dirty: !!pending.edits[r.id] }))
 })
 const listLeft = computed(() => Math.max(0, props.result.matches.length - listRows.value.length))
 /** Reads the next matches (the newest not read yet), a few ranges of rows at a time. */

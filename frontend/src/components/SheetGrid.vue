@@ -345,6 +345,8 @@ function updateChanged(): boolean {
     rowIndex.delete(id)
     table.deleteRow(id)
   }
+  // A row only removed (nothing else changed) leaves the list and the form's order too.
+  if (removed.length) orderTick.value++
   if (changed.length)
     table.updateOrAddData(changed.map(r => gridRow(r, keys, edits))).then(() => {
       // Tabulator repaints only cells whose value changed; the markers (unsaved,

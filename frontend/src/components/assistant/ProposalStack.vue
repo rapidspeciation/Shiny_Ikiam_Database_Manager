@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { ChevronRight, CircleHelp, Columns3, SquarePen, Table2 } from 'lucide-vue-next'
 import { readingValue } from '../../lib/cells'
 import { tx } from '../../lib/i18n'
-import { sharedNote, stackRows, type StackField, type StackRow } from '../../lib/proposalStack'
+import { sharedFold, sharedNote, stackRows, type StackField, type StackRow } from '../../lib/proposalStack'
 import type { ProposalChange } from '../../lib/proposals'
 import type { CellValue } from '../../lib/types'
 
@@ -29,6 +29,8 @@ const emit = defineEmits<{ cell: [key: string, field: string] }>()
 const items = computed(() => stackRows(props.rows, props.fields, props.newRowFormulas ?? [], props.template ?? []))
 /** A note every row shares is said once, above them. */
 const common = computed(() => sharedNote(items.value))
+/** The template's cells every row folds alike: counted once, above the rows (else each row counts its own). */
+const commonFold = computed(() => sharedFold(items.value))
 const templatesOpen = ref(false)
 const shownFields = (r: StackRow) => (templatesOpen.value ? r.fields : r.fields.filter(f => !f.template))
 const folded = (r: StackRow) => r.fields.filter(f => f.template).length
@@ -53,6 +55,17 @@ const tagOf = (f: StackField) => TAG[f.state] || (f.inferred ? 'deducida' : '')
 <template>
   <ul class="proposal-stack" data-proposal-stack>
     <li v-if="common" class="px-1 text-xs leading-snug text-fg-muted" data-shared-note>{{ common }}</li>
+    <li v-if="commonFold" class="px-1">
+      <button type="button" class="stack-template" :aria-expanded="templatesOpen" data-template @click="templatesOpen = !templatesOpen">
+        <Columns3 :size="14" aria-hidden="true" />
+        {{
+          templatesOpen
+            ? $t('Plegar la plantilla')
+            : $tn(commonFold, 'Cada fila: +{n} columna de plantilla', 'Cada fila: +{n} columnas de plantilla')
+        }}
+        <span v-if="!templatesOpen" class="font-normal text-fg-subtle">· NA / NOT_COLLECTED</span>
+      </button>
+    </li>
     <li
       v-for="r in items"
       :key="r.key"
@@ -123,7 +136,7 @@ const tagOf = (f: StackField) => TAG[f.state] || (f.inferred ? 'deducida' : '')
         </component>
         <!-- The template's columns: written all the same, counted here and opened on request. -->
         <button
-          v-if="folded(r)"
+          v-if="folded(r) && !commonFold"
           type="button"
           class="stack-template"
           :aria-expanded="templatesOpen"

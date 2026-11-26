@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import ConfirmarVisualCard from '../ConfirmarVisualCard.vue'
 import { locale, t, tn } from '../../../lib/i18n'
@@ -170,11 +170,21 @@ describe('ConfirmarVisualCard', () => {
     expect(host.querySelector('[data-testid="confirmar-pair-title"]')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
       'Heliconius erato cyrbia vs. Heliconius melpomene cythera',
     )
+    // One keyboard stop for the zoom: the button; the plate answers the mouse.
+    expect(host.querySelector('[data-testid="confirmar-zoom-trigger"]')!.getAttribute('tabindex')).toBe('-1')
+    expect(host.querySelector('[data-testid="confirmar-zoom-button"]')!.hasAttribute('tabindex')).toBe(false)
     host.querySelector<HTMLButtonElement>('[data-testid="confirmar-zoom-button"]')!.click()
     await nextTick()
     expect(document.body.querySelector('[data-testid="photo-viewer"]')).not.toBeNull()
     document.body.querySelector<HTMLButtonElement>('[data-testid="viewer-close"]')!.click()
     await nextTick()
+  })
+
+  it('a phone has the plate itself as the one stop (the button beside the badges is not shown there)', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: /max-width: 639/.test(query), addEventListener() {}, removeEventListener() {} }))
+    const host = mountCard(activeMatch())
+    expect(host.querySelector('[data-testid="confirmar-zoom-trigger"]')!.hasAttribute('tabindex')).toBe(false)
+    vi.unstubAllGlobals()
   })
 
   it('holds the plate\'s shape and says it is loading until its file arrives (no dark box, no jump)', async () => {

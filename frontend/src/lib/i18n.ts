@@ -56,8 +56,12 @@ export interface Msg {
   key: string
   vars?: Record<string, MsgVar>
 }
-/** A day the server names in a text ({ date: '2026-11-07' }): written in the interface language (lib/dates.ts dayText). */
+/**
+ * A day the server names in a text ({ key: '7-Nov-26', date: '2026-11-07' }): written in the interface language
+ * (lib/dates.ts dayText). Its `key` is the Spanish text, which a page loaded before this existed still shows.
+ */
 export interface MsgDate {
+  key?: string
   date: string
 }
 export type MsgVar = string | number | boolean | null | Msg | MsgDate | MsgVar[]

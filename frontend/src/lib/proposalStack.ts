@@ -116,7 +116,8 @@ export function stackRows(rows: ProposalChange[], fields: string[], newRowFormul
         ? []
         : fields.flatMap((f): StackField[] => {
             const cell = fieldOf(c, f, newRowFormulas)
-            return cell ? [folded.has(f) ? { ...cell, template: true } : cell] : []
+            // Only a plain write folds: a cell that waits for a decision or carries a warning always shows.
+            return cell ? [folded.has(f) && cell.state === 'ai' ? { ...cell, template: true } : cell] : []
           })
     if (!list.length && !refused && !look) return []
     return [
@@ -147,3 +148,13 @@ export function sharedNote(rows: StackRow[]): string {
 
 /** How many cells of the list wait for a decision in the table. */
 export const stackToDecide = (rows: StackRow[]) => rows.reduce((n, r) => n + r.fields.filter(f => f.needsTable).length, 0)
+
+/**
+ * How many template cells every row of the list folds, when it is the same on each (a page of new rows): said once
+ * above the rows. 0 when the rows differ or fold nothing (then each row says its own).
+ */
+export function sharedFold(rows: StackRow[]): number {
+  const counts = new Set(rows.filter(r => r.fields.length).map(r => r.fields.filter(f => f.template).length))
+  const [count] = counts
+  return rows.length > 1 && counts.size === 1 && count ? count : 0
+}

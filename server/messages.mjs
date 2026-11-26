@@ -33,9 +33,10 @@ export function msg(key, vars = {}) {
 }
 /**
  * A day named in a text, as a var of msg(): the Spanish text has it as the app writes days (7-Nov-26, lib/dates.ts),
- * and the interface writes it in its own language from { date } (the month's name differs). '—' for no date.
+ * and the interface writes it in its own language from { date } (the month's name differs). Its `key` is that
+ * Spanish text: a page still open from before the interface knew { date } shows it as a plain word. '—' for no date.
  */
-export const dateMsg = iso => (iso ? { text: dayText(iso), msg: { date: iso } } : '—');
+export const dateMsg = iso => (iso ? { text: dayText(iso), msg: { key: dayText(iso), date: iso } } : '—');
 /** Singular or plural template by n; {n} is filled with n. */
 export const msgn = (n, one, many, vars = {}) => msg(n === 1 ? one : many, { n, ...vars });
 /** { [name]: text, [name + 'Msg']: descriptor } from a msg(), or { [name]: text } from a plain text. */

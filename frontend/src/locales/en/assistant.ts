@@ -916,4 +916,6 @@ export default {
   'Revisarla en la tabla': 'Review it in the table',
   'Esta tabla no cambia ninguna celda.': 'This table changes no cells.',
   'no se escribe': 'not written',
+  'Cada fila: +{n} columna de plantilla': 'Each row: +{n} template column',
+  'Cada fila: +{n} columnas de plantilla': 'Each row: +{n} template columns',
 } as Record<string, string>

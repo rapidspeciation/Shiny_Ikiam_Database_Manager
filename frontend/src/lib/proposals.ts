@@ -775,7 +775,8 @@ export function sheetGroups(
         used.has(f) &&
         !notebook.includes(f) &&
         changes.every(c => {
-          if (c.personEdits?.[f] || c.unreadable?.[f] || c.doubts?.[f]) return false
+          // A cell that waits for a look is never folded: edited in the sheet since, or a missing CAM or tube.
+          if (c.personEdits?.[f] || c.unreadable?.[f] || c.doubts?.[f] || c.sheetChanged?.[f] || c.warnings?.[f]) return false
           const v = c.values[f]
           return v === undefined || (typeof v === 'string' && TEMPLATE_VALUE.has(v))
         }),
