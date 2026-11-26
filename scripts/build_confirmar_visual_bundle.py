@@ -554,6 +554,10 @@ def build_bundle(
 ) -> dict[str, Any]:
     locked_cohorts = load_optional_locked_cohorts()
     head_subspecies = load_head_subspecies(leaf_map)
+    # A check that cannot check does not pass; nor does a list asked for by name. Said before any card is written.
+    # A plain build on a host without the list goes on, and says so in the manifest (`head_subspecies_checked`).
+    if head_subspecies is None and (check_only or leaf_map != HEAD_LEAF_MAP):
+        raise RuntimeError(f"The head's leaf list is not at {leaf_map}: the aliases cannot be checked against it")
     additions_used: set[tuple[str, str, str]] = set()
 
     unified_pairs: dict[str, Any] = {}
@@ -755,10 +759,6 @@ def build_bundle(
     if problems:
         raise RuntimeError("Subspecies aliases:\n  " + "\n  ".join(problems))
     if head_subspecies is None:
-        # A check that cannot check does not pass; nor does a list asked for by name. A plain build on a host
-        # without the list goes on, and says so in the manifest (`head_subspecies_checked`).
-        if check_only or leaf_map != HEAD_LEAF_MAP:
-            raise RuntimeError(f"The head's leaf list is not at {leaf_map}: the aliases cannot be checked against it")
         print(f"NOTE: {leaf_map} is not on this host: the aliases were not checked against the head's subspecies")
 
     # Prune stale .webp files in cards/{es,en} before writing manifest

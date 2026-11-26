@@ -26,6 +26,8 @@ const world = vi.hoisted(() => ({
   country: null as string | null,
   /** The files the page hands the engine to keep for airplane mode. */
   pageFiles: null as null | (() => string[]),
+  /** How many times the guide's own file was loaded (once per page: the module is fresh for each). */
+  cardLoads: 0,
 }))
 
 vi.mock('../../lib/offlineEngine', async orig => {
@@ -113,12 +115,17 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   document.body.innerHTML = ''
-  Object.assign(world, { answers: [], last: null, sides: [], gps: null, country: null, pageFiles: null })
+  Object.assign(world, { answers: [], last: null, sides: [], gps: null, country: null, pageFiles: null, cardLoads: 0 })
 })
 
 /** The page opened with no photo yet. `list`: what each request for the guides' list gets, in turn (the last one stays). */
 async function openIdentify(opts: { flag?: boolean; list?: ('ok' | 'fail' | 'http500')[]; online?: boolean; neverIdle?: boolean; worker?: boolean } = {}) {
   vi.resetModules()
+  // Each page loads the guide's own file afresh: counted.
+  vi.doMock('../../components/identify/ConfirmarVisualCard.vue', async orig => {
+    world.cardLoads++
+    return orig<typeof import('../../components/identify/ConfirmarVisualCard.vue')>()
+  })
   vi.stubEnv('VITE_CONFIRM_VISUAL_CARDS', opts.flag === false ? '0' : '1')
   const turns = [...(opts.list ?? ['ok'])]
   const listRequests: string[] = []
@@ -302,6 +309,27 @@ describe('IdentifyView: the guides\' list for a phone that works without signal 
       lazyOld.remove()
       font.remove()
     }
+  })
+
+  it('the guide\'s own file is asked for with no photo, while there is signal: as the page opens, or when the signal returns', async () => {
+    await openIdentify()
+    expect(world.cardLoads).toBe(1)
+    unmount()
+    unmount = () => {}
+    world.cardLoads = 0
+    // Opened without signal: not asked (it could not come), then asked when the signal is back.
+    const { signal, settle } = await openIdentify({ online: false })
+    expect(world.cardLoads).toBe(0)
+    signal.on = true
+    dispatchEvent(new Event('online'))
+    await settle()
+    expect(world.cardLoads).toBe(1)
+    unmount()
+    unmount = () => {}
+    world.cardLoads = 0
+    // With the guides off there is no such file.
+    await openIdentify({ flag: false })
+    expect(world.cardLoads).toBe(0)
   })
 
   it('with the guides off the page asks for nothing, idle or at a photo', async () => {

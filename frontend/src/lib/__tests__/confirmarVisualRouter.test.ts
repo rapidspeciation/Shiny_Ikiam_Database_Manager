@@ -725,7 +725,7 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
     expect(regions.guideSide).toBe('West')
   })
 
-  it('the lean hides every one-sided guide of the other side and nothing else, and never overrides a side or a subspecies', () => {
+  it('the lean hides every one-sided guide of the other side and nothing else, and never overrides a side', () => {
     for (const lean of ['East', 'West'] as const) {
       const other = lean === 'East' ? 'West' : 'East'
       let hidden = 0

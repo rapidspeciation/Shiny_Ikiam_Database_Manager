@@ -72,11 +72,17 @@ import {
 const confirmarCardFile = import.meta.env.VITE_CONFIRM_VISUAL_CARDS === '1' ? () => import('../components/identify/ConfirmarVisualCard.vue') : null
 const ConfirmarVisualCard = confirmarCardFile ? defineAsyncComponent(confirmarCardFile) : null
 /**
- * With the guides on, that file is asked for as the page opens with signal, not at the first guide: the browser then
- * lists it and its styles among the page's files (`pageFiles`), so the copy of the page kept for airplane mode can
- * draw a guide, or its note, on a phone that never saw one with signal. Settles either way.
+ * With the guides on, that file is asked for while there is signal, not at the first guide (as the page opens, and
+ * again when the signal returns to a page opened without it): the browser then lists it and its styles among the
+ * page's files (`pageFiles`), so the copy of the page kept for airplane mode can draw a guide, or its note, on a phone
+ * that never saw one with signal. Settles either way; a request that failed is made again at the next call.
  */
-const confirmarCardAsked: Promise<unknown> = confirmarCardFile && navigator.onLine ? confirmarCardFile().catch(() => null) : Promise.resolve()
+let confirmarCardAsked: Promise<unknown> | null = null
+function askConfirmarCard(): Promise<unknown> {
+  if (!confirmarCardFile || !navigator.onLine) return Promise.resolve()
+  return (confirmarCardAsked ??= confirmarCardFile().catch(() => (confirmarCardAsked = null)))
+}
+askConfirmarCard()
 import { readLog, writeLog, writeLogAll, clearLog, type LogEntry } from '../lib/identifyLog'
 import type { FrozenStock } from '../lib/frozenStock'
 import { useSession } from '../stores/session'
@@ -189,6 +195,7 @@ const installed = matchMedia('(display-mode: standalone)').matches || (navigator
 
 async function refresh() {
   online.value = navigator.onLine
+  askConfirmarCard()
   listing.value = await engine.list()
   ready.value = await engine.ready(files.value)
   let s = await engine.stored()
@@ -229,7 +236,7 @@ async function refresh() {
   if (ready.value.small || ready.value.full) {
     // Models from the test page: this page and its runtime are kept now (online) before it says it works offline.
     // With the guides on, the guide's script first, so it is among the files kept.
-    await confirmarCardAsked
+    await askConfirmarCard()
     pageOffline.value = await engine.pageOffline()
   }
 }
