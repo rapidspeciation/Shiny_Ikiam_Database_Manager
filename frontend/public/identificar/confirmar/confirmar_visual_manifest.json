@@ -54,6 +54,15 @@
       "active_cards": 13,
       "non_active_pairs": 3,
       "audit_status": "PASS"
+    },
+    {
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "confirmar_regional_map_w7_v1",
+      "pairs": 5,
+      "active_cards": 5,
+      "non_active_pairs": 0,
+      "audit_status": "PASS"
     }
   ],
   "verification": {
@@ -62,21 +71,22 @@
     "canonical_locked_cams_cross_checked": 1583,
     "canonical_locked_inat_obs_cross_checked": 32776,
     "canonical_locked_inat_photos_cross_checked": 1368,
+    "verified_override_cards_applied": 17,
     "webp_quality": 92,
     "head_subspecies_checked": true,
-    "subspecies_sides_reachable": 99,
+    "subspecies_sides_reachable": 109,
     "subspecies_sides_without_head_subspecies": 5
   },
   "counts": {
-    "total_pairs": 91,
-    "active_pairs": 63,
-    "active_cards": 64,
+    "total_pairs": 96,
+    "active_pairs": 68,
+    "active_cards": 69,
     "non_active_pairs": 28,
     "superseded_pairs": 2,
     "deferred_routes": 2,
-    "assets_total": 128,
-    "source_png_bytes": 106715822,
-    "webp_bytes": 26254776
+    "assets_total": 138,
+    "source_png_bytes": 113498481,
+    "webp_bytes": 28032332
   },
   "superseded_pairs": {
     "w3a_01": "w5_01",
@@ -448,17 +458,19 @@
               "path": "identificar/confirmar/cards/es/p05.webp",
               "width": 1400,
               "height": 1358,
-              "bytes": 146778,
-              "sha256": "f07a0a78afb04c5d7ff4f70bdeb1c960b3a4bad23eeda60e5a69f2a4ea242033",
-              "source_png_sha256": "15a890eabf7120bbbe440f4398b04dca6efd78bb04a84dbe7063240c8a3b7bb3"
+              "bytes": 149246,
+              "sha256": "5a857b4b66f2662a6a15883dc08435ea408dd9056ea98f25a69c14d01d95cd2e",
+              "source_png_sha256": "b53ec7928e399a75443f7bf8b727872a13ab20dc18b80963feac41e0150ee185",
+              "override_source": "confirmar_opus_audit_20261127/wave2"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p05.webp",
               "width": 1400,
               "height": 1358,
-              "bytes": 142006,
-              "sha256": "2a1b4f3b3cd244e08fcdcf4e5a2abd915770e49c175ceda1a172181d656284f3",
-              "source_png_sha256": "8e0f10596fb9b8387225146171de66e470939760e45579cc395a4d219ad93412"
+              "bytes": 144652,
+              "sha256": "8904f965b65b0dbb17af0f154fdb1d23a656fc20497f574161d09e1d3e4b3516",
+              "source_png_sha256": "31d5dccae53b4db498a6703288308c00d2b2226c9934b311f62162f4db5313b6",
+              "override_source": "confirmar_opus_audit_20261127/wave2"
             }
           }
         }
@@ -556,17 +568,19 @@
               "path": "identificar/confirmar/cards/es/p07.webp",
               "width": 1400,
               "height": 1535,
-              "bytes": 170238,
-              "sha256": "949f0602e139d3cb2527d14fe3509f2cc75c822445ae3d069f6807bd0453e70b",
-              "source_png_sha256": "6692c819302cbefbe0520712abe48d3b7ecc5523df6df9dbc0ad871170e7ce8b"
+              "bytes": 170342,
+              "sha256": "ab55e3195f63f65ac5680f87462237591e242fe1f857e89e6e183bd7fd3322b4",
+              "source_png_sha256": "249dad123a214fd5714fd3642eb4e062629abe351c0789746dbf40b2721fd335",
+              "override_source": "confirmar_opus_audit_20261127/wave2_en_visual"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p07.webp",
               "width": 1400,
               "height": 1535,
-              "bytes": 162832,
-              "sha256": "49357471b9ec315c253a6a6a6249bc491c512d3786c169240b8c203e152d843e",
-              "source_png_sha256": "2aa50bf9122f27cbdc4c762b42f19d7d3903d8db0d729b057cde610a9731c7fd"
+              "bytes": 162960,
+              "sha256": "12d8b4ec8cb47adeaab5cfb15493b573b66cd5b6d128264b0a882ac24cc3ffba",
+              "source_png_sha256": "c025585f908f1ab8c722b106b19fd098b581ede2cc932889fbb2858fd2737543",
+              "override_source": "confirmar_opus_audit_20261127/wave2_en_visual"
             }
           }
         }
@@ -963,9 +977,10 @@
               "path": "identificar/confirmar/cards/es/p14.webp",
               "width": 1400,
               "height": 2127,
-              "bytes": 254316,
-              "sha256": "c1a2b0e26332313e4872568a4b2f40aa74f9379f2c1976f0ac0c2247a3930b50",
-              "source_png_sha256": "1a0d8dfc606d48b262be1663ac1b989c5cf627992d4c4e1b5523fa188d82100c"
+              "bytes": 254482,
+              "sha256": "f994ecfb53fa1dedf731c020df00da2dd573192a9c2f90b8b9d3558d7b61a083",
+              "source_png_sha256": "308755f7aecd1a00ffddb2936b85ada6d16ca02080ca40c0727297e8e96c3ad7",
+              "override_source": "confirmar_opus_audit_20261127/wave2"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/p14.webp",
@@ -973,7 +988,8 @@
               "height": 2153,
               "bytes": 249338,
               "sha256": "cb9fd06ed581b85aa92573aa9459f308dfbbf70021d18d11e186718e79742ab4",
-              "source_png_sha256": "80e1f9358e9ed70d4c57311236d7343197f25e9166624040daf4bf4c5486e6b1"
+              "source_png_sha256": "750dc6212de13b9d02b19ff9013388d5ced6e48eca6086a47b7a6b5e703ade28",
+              "override_source": "confirmar_opus_audit_20261127/wave2"
             }
           }
         }
@@ -1172,9 +1188,10 @@
               "path": "identificar/confirmar/cards/es/w3a_05.webp",
               "width": 1400,
               "height": 1521,
-              "bytes": 217034,
-              "sha256": "f8e59a31e4cc9e564a777731e34325df0debc86eb409533bea3ec79e7f1c9a28",
-              "source_png_sha256": "fb23b441c7e980749bba805d70807670e0d37d5cdd3c14e7b6093e967018c3ed"
+              "bytes": 217128,
+              "sha256": "2a38b2c94f43fb06856f67b848ff64a032fa4fff5149fc865450411b3bbbdf03",
+              "source_png_sha256": "bc0741f448c9066ee2ef5258a8c65024368d6691d727cc766975685cb455b6e0",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_05.webp",
@@ -1182,7 +1199,8 @@
               "height": 1521,
               "bytes": 213754,
               "sha256": "4f5a49404570fa3a16a4e5723af82c55fb5463405f5783145f4c83d5fbdf6490",
-              "source_png_sha256": "372cdd1f5c684eb453a2b3a57987cab5b776f886dd2a08022f9f65c7e9d2aaff"
+              "source_png_sha256": "372cdd1f5c684eb453a2b3a57987cab5b776f886dd2a08022f9f65c7e9d2aaff",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             }
           }
         }
@@ -1712,9 +1730,10 @@
               "path": "identificar/confirmar/cards/es/w3a_15.webp",
               "width": 1400,
               "height": 1546,
-              "bytes": 246486,
-              "sha256": "bf1f581a7b8a047d51bafaf06935f7de79bdaa82b58e84d28bf7bfb899bae494",
-              "source_png_sha256": "433cd06c64f56c7b3e909599ec59f2dc493e34a4900db446ecf2c2a9a2a60c1d"
+              "bytes": 246788,
+              "sha256": "b0a87cc475cf9b90da5e4e8f85e85aef493352d3dd7420d6a0ad394b36261ab7",
+              "source_png_sha256": "94ae83e9fdaca2d8b22bbd107d6ac135277e0788dcc68f09c12a0c54dc1c5256",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_15.webp",
@@ -1722,7 +1741,8 @@
               "height": 1546,
               "bytes": 237704,
               "sha256": "0428e2bcb5751c9a633f51b0fc0f6b37162fe0c37d4d2da5d227aab27af60b16",
-              "source_png_sha256": "da2123a626107a3e66003d4406d344c6f83b0d2b5153670f9417993eec94d394"
+              "source_png_sha256": "da2123a626107a3e66003d4406d344c6f83b0d2b5153670f9417993eec94d394",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             }
           }
         }
@@ -1767,18 +1787,20 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w3a_16.webp",
               "width": 1400,
-              "height": 1494,
-              "bytes": 174436,
-              "sha256": "8d4173404821455076d4e9942ff898143c42e12d3b170efd0b1a49de72f55dcd",
-              "source_png_sha256": "aa76af9aef71e24b01849c2571ab48179cf5c560a2d1be513c0c726b1f218262"
+              "height": 961,
+              "bytes": 120560,
+              "sha256": "c90b15dec46f2891d1d4bcc9c92946ec344b8faf5ea39e55a5cd159097c68ec5",
+              "source_png_sha256": "e80dc64f8bdc006ef58232d6bdefad2ea9bc34bb832eefb29e8b01aab1684d9f",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3a_16.webp",
               "width": 1400,
-              "height": 1468,
-              "bytes": 165534,
-              "sha256": "bc9496024b6d6b3bc81f5ef2429993eaad7084ba9c58b93b22dc13eef1b36c15",
-              "source_png_sha256": "c5ed18dfcf720153c53a537dac2dd2eb1ee4c8ea79d483e395bbb73ffeeaaa9e"
+              "height": 935,
+              "bytes": 117148,
+              "sha256": "2bf213df3412169db66cba6961c21cb05f9b8ee97c401ac8b9f6abefbe860e79",
+              "source_png_sha256": "a868852c473578b8f85a4dbce2a5f48cc5cc1f3326c7e5b73c32f2259e373569",
+              "override_source": "confirmar_opus_audit_20261127/wave3a"
             }
           }
         }
@@ -1966,17 +1988,19 @@
               "path": "identificar/confirmar/cards/es/w3b_05.webp",
               "width": 1400,
               "height": 1562,
-              "bytes": 336360,
-              "sha256": "ade58d2e0f0844a1d78a555ded74ddc00763ae1a62274781482bb5b3af28bb74",
-              "source_png_sha256": "085faf580f3d112f7cf34ba2059c13c9b75cdd5f66d3c6425ec441dc9fd1f589"
+              "bytes": 337396,
+              "sha256": "afdceace419ee9c5418e4922d388195cac6a936d46c593a8ebf75311aae11713",
+              "source_png_sha256": "8381f4f0548bcd601363aa22d0233ef6f066b8ed1a51fb7672cb0d9d48437baa",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3b_05.webp",
               "width": 1400,
               "height": 1562,
-              "bytes": 332708,
-              "sha256": "6fe2ac38ab5558d0959734adc46bedf27879ea1f39d1fda768939f37486bf73e",
-              "source_png_sha256": "b72c23ba4b308b20c9c10ce4b2264258853d81acb1fdc53fe758b01484c47a3c"
+              "bytes": 334100,
+              "sha256": "070bdb87b673adf1680a71ea007aa9552465b494e687d450e954eb9dfff246f2",
+              "source_png_sha256": "ffd7112d040f9c4e817d2a833a3d32e4a745162b0edddc020499516a6155249b",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             }
           }
         }
@@ -2081,15 +2105,17 @@
               "height": 1555,
               "bytes": 311168,
               "sha256": "2acdb5e083165b8f7341224351293c1299eda0949ab21e2fa42997fef214d113",
-              "source_png_sha256": "4206ff6d22cff8d4c341f70a1d48e2f9a34a1b1eacdb62c87aed7179a23aba06"
+              "source_png_sha256": "4206ff6d22cff8d4c341f70a1d48e2f9a34a1b1eacdb62c87aed7179a23aba06",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3b_08.webp",
               "width": 1400,
-              "height": 1532,
-              "bytes": 302148,
-              "sha256": "c4cd436dec82d98cfb711dff08a8ef255adb7db2d1c46b43e5a82ca9f4f66cdf",
-              "source_png_sha256": "ccf8982caced59f9abdee2f2edb86ad11ab00c61a766c529e65353c26e3e983c"
+              "height": 1555,
+              "bytes": 302638,
+              "sha256": "db4064f500ed87d4726a44000d9070d5124bdee96d02cfeaa5c38c4e28541160",
+              "source_png_sha256": "16eb7d7faab02ad5a4f79aa5f09ea07b4c6ff549a132d485d898089047bde1a9",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             }
           }
         }
@@ -2433,17 +2459,19 @@
               "path": "identificar/confirmar/cards/es/w3b_16.webp",
               "width": 1400,
               "height": 1040,
-              "bytes": 193542,
-              "sha256": "80db9a057a745ac0fa35636f4551396d3a88803fd8c3469ecf2cb86e486d7bed",
-              "source_png_sha256": "c4f6afb74073de9fd826bd00eaa8c4f8c774394c5c84c1e0552324aeba747caf"
+              "bytes": 194088,
+              "sha256": "0005390b167248aa13115f184d52d1c92b5344b78b90cb3cee3d6808d7176d56",
+              "source_png_sha256": "dbeb1b4a9cd3a83b7e43ac4f8a5d4cb341db377efd3afd30b00bb6f90eb9df0d",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w3b_16.webp",
               "width": 1400,
               "height": 1017,
-              "bytes": 191286,
-              "sha256": "86613e7a3c0098943431382f23f80c7cedd5db9caa674a101d6adebbfec5d477",
-              "source_png_sha256": "2633bd66dcdcaff67df2420bd1d3945622693dfcf1a97ce77568adb0a848d26f"
+              "bytes": 191504,
+              "sha256": "d967c0d9383ad85748d2d8b0c0ee1e71b879f56e57e4ac82983ad8560c521d5c",
+              "source_png_sha256": "d4d6be4101c6e487df909696618bedb03843e9032a7d93e51d725afe9fd18ec4",
+              "override_source": "confirmar_opus_audit_20261127/wave3b_5"
             }
           }
         }
@@ -2544,17 +2572,19 @@
               "path": "identificar/confirmar/cards/es/w4_02.webp",
               "width": 1400,
               "height": 1512,
-              "bytes": 184940,
-              "sha256": "a604142ef4fed871b63e102699cdccd62b7f25878a139832cb7f08158c8ccf8e",
-              "source_png_sha256": "079406c6fb9c73415c38f80062745a456ff2234b0cb4a7369d204985e23c8742"
+              "bytes": 185046,
+              "sha256": "498ec1627ffe0eb58452ebb6911ec45e1c0910152d754c0eebc6a69a134efa46",
+              "source_png_sha256": "f4a17a76ed289d436385425aa02b4d3d01dcee0469071ffea8225593179d7f95",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w4_02.webp",
               "width": 1400,
               "height": 1487,
-              "bytes": 177848,
-              "sha256": "bbd90c6cdaa182aedfc644c4fab508eba9ea1b6ac40bb61d7726ab345ca25483",
-              "source_png_sha256": "5dce4c18d7b6794cc9c461d4ab1861cb48ecec5d15f5999786d7aa0462b1ba26"
+              "bytes": 177926,
+              "sha256": "99c58d67b88a57904ddfabc70297c14dd2aab26d5b491d2715da26f5ff8131f1",
+              "source_png_sha256": "540eacff10f89a4ba2fc0945477c1515948520a38b8f6eb0eb0460ee5164954f",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             }
           }
         }
@@ -2923,9 +2953,10 @@
               "path": "identificar/confirmar/cards/es/w4_10.webp",
               "width": 1400,
               "height": 1541,
-              "bytes": 212830,
-              "sha256": "3233ccf13732ea551dafd346ff6dc71d70b9fee8397bfdbe95532714ff3759a6",
-              "source_png_sha256": "a633485aeb4e440d40f83bb66c0af686df761636c726ddda90b58538c3479905"
+              "bytes": 214554,
+              "sha256": "c152347f5e879c316fb8fd5563b7d5c6190ddbf2f3b881976274728f01b36553",
+              "source_png_sha256": "2beeb892de689b24522d1e54fda0741a555475e716a4fa8169f59abde251f8dd",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w4_10.webp",
@@ -2933,7 +2964,8 @@
               "height": 1515,
               "bytes": 199880,
               "sha256": "f8a53a19bb667bfe53f034ba1ead8a2eb7000e09efa4c9dace62f8b4b56d4c24",
-              "source_png_sha256": "2998cbd48bd30eb38a4460379c2ca528a0b9707e9e9c5df88f5d9aceaa41645a"
+              "source_png_sha256": "2998cbd48bd30eb38a4460379c2ca528a0b9707e9e9c5df88f5d9aceaa41645a",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             }
           }
         }
@@ -2979,18 +3011,20 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w4_11.webp",
               "width": 1400,
-              "height": 1529,
-              "bytes": 204308,
-              "sha256": "bf96d0ce4e1c63631e4b138bc23b2e883785a1f42fa67e4a553633b6f027d4b1",
-              "source_png_sha256": "e00bd6ccb0b251a5fc08e1371fa33b5fcdd6b8074509181c57d3c0f5ac8f6524"
+              "height": 1554,
+              "bytes": 204764,
+              "sha256": "9e1c15b8793cfc20d80ab2bc2541181436ad304d93fb0eb7a358d90dd6eba274",
+              "source_png_sha256": "90bcd688f04bfe25e4c01695435401f2c6c8cc573d602ade2042b306b0d08c14",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w4_11.webp",
               "width": 1400,
               "height": 1529,
-              "bytes": 198456,
-              "sha256": "20bbd46bd9d34c04cacdb0c61d0d43ba75168e04fca08464c23af937fc9ec0c7",
-              "source_png_sha256": "7e92b550ae4e3162bfc7d1396bc417194202156666a39cf55128a31d005305df"
+              "bytes": 199222,
+              "sha256": "4228aae0978323669c86969d4f17c152522479770f94fffb07601f6ae9f80e87",
+              "source_png_sha256": "b99a061ee0fc96465d4a17c271ac29141abbd2d49ceb4599ba162c1a39958dcb",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             }
           }
         }
@@ -3196,17 +3230,19 @@
               "path": "identificar/confirmar/cards/es/w4_16.webp",
               "width": 1400,
               "height": 1600,
-              "bytes": 191178,
-              "sha256": "1b3ed33c231c10ebff0a0bc4cf3d1d8a3a34a0644ef500f7da9e34297713a6ed",
-              "source_png_sha256": "2fb0fc5719b68c18bc201c766ee032022f694281eb0a335d6671a19717150ee8"
+              "bytes": 190980,
+              "sha256": "ae080740065bf639b088b15dd4796dee6bc254cf89656d8a17ed73cf15faedc3",
+              "source_png_sha256": "21ef55b3946a45b6e9e3ebfb876ffe5beef06de9f200057847d79f99e1a658dd",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w4_16.webp",
               "width": 1400,
               "height": 1600,
-              "bytes": 182918,
-              "sha256": "9419fdf42412fae6ecf29b9470e0a215d82f523f880803130623cb3d628f55e7",
-              "source_png_sha256": "dd49ddbd96ec59d5da204c6f456bbc746c7b52521a2a7b4b5f99bcb4680377aa"
+              "bytes": 183270,
+              "sha256": "1bb4f5741055c1a4d0139c4c65fdf0b7d15dcefde0b5b5577bba3b326cb98701",
+              "source_png_sha256": "0d0b2262d30e0c5da2ad325606b2611e0187fbe72382c64f5345a536a41425f0",
+              "override_source": "confirmar_opus_audit_20261127/wave4"
             }
           }
         }
@@ -3986,17 +4022,19 @@
               "path": "identificar/confirmar/cards/es/w6_05.webp",
               "width": 1400,
               "height": 1593,
-              "bytes": 219624,
-              "sha256": "21f7e70c22e0d6abf080d5ae3341489677c1623ba11b2554f092f0b437af5712",
-              "source_png_sha256": "0f1195bb9d43d997e58ccfc29907639dc469c28891a7e55e17f0e9aae3e26acd"
+              "bytes": 219684,
+              "sha256": "284898cfa94deca62e15a05dd7144ae11edc48fd58a2c7302f7ec62957edf509",
+              "source_png_sha256": "ae168b00945840f392296ebcd297c1e3b054a653f4ec3fb0076d23c62327c1fb",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w6_05.webp",
               "width": 1400,
               "height": 1542,
-              "bytes": 208420,
-              "sha256": "b43408d99cb682e05fa4c154724b277b8443e51a1bdec75dc3867411e9caa775",
-              "source_png_sha256": "ad58629020be71f32833acbaa2132ed14be0f49ae93e55b5beff3e0cd3ef6a20"
+              "bytes": 208712,
+              "sha256": "4b604a4ad7f6c2160abd99f30d3d9e4e01e2067f8d42e8f7fdf9f8c50e3153d4",
+              "source_png_sha256": "e4ddb7075013eaddeef1ef8cc88a6057f86a370cf7efb0a45e5bc1442df16c5f",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             }
           }
         }
@@ -4041,17 +4079,19 @@
               "path": "identificar/confirmar/cards/es/w6_06.webp",
               "width": 1400,
               "height": 1555,
-              "bytes": 201002,
-              "sha256": "b6d54cfb6ebbc78b8f92eb3b4cb4d2a43641e3c2dfdee532e39ebacc6f61b4a5",
-              "source_png_sha256": "b34e630648b30bb96ab16c0c3ec14ec71fb38443205d0c7a19cdcdc8bd07c30e"
+              "bytes": 202968,
+              "sha256": "4dd33dac8844ed48f6730dd4df1114812393a02be91cea2aaf5a2d48ae1e1755",
+              "source_png_sha256": "cd2aaff62061d1a3910a4b85ea3b3f8bab351588ca838a3be79b655255845dc7",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w6_06.webp",
               "width": 1400,
               "height": 1555,
-              "bytes": 190706,
-              "sha256": "e4cf4d4dda153df6d8aa533cfc459d6287ed0824a8d74e3366ca773c453f726d",
-              "source_png_sha256": "e8da6f75b78eb6fe08791665795829ac6798101d3c067d305e13d94ad554b3d8"
+              "bytes": 192350,
+              "sha256": "98479d9b23c47ef0330f0eb47bc7db339f9f06b6f8aa1134e25a8e56a7e040d0",
+              "source_png_sha256": "fc392b5214add34a66560b5f937f2fea889713c7b23ab4e902a098067edfe8cc",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             }
           }
         }
@@ -4092,18 +4132,20 @@
             "es": {
               "path": "identificar/confirmar/cards/es/w6_07.webp",
               "width": 1400,
-              "height": 1542,
-              "bytes": 196936,
-              "sha256": "c6dcfc1d53126818b2553d0410e1e7ad57fd002882b1c6bb68dfa33ca761597d",
-              "source_png_sha256": "1f5eba5b2e40593790305f9254f30a1f3861d32b0e62bf3cef1c2f2c2cd8701e"
+              "height": 1567,
+              "bytes": 198694,
+              "sha256": "0b961837dbc58253c438f8d351d0d0c98a2d446c20fb0d563a25e4addcf57f05",
+              "source_png_sha256": "f6d11aa715530405832fd1d202fb6f42f7273a2032a233ae5a9490a86b16b420",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w6_07.webp",
               "width": 1400,
               "height": 1567,
-              "bytes": 189968,
-              "sha256": "fa85c00c679102ab775b0119fcd0ff3a981c01a3412a93a5af1fd38b35b2a744",
-              "source_png_sha256": "494731365f59bb28c5d73ec508eb5e0c2cfe01a817768d77cbac36c37c73bb85"
+              "bytes": 189640,
+              "sha256": "c822cf9be1b4460e5ca08fed6edf8de04f0717f789614aba4fce57281c0d91ec",
+              "source_png_sha256": "c20417c7d0e7b859ce963bdc2c96f889d9499408738c364c0142d47f580687db",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             }
           }
         }
@@ -4147,9 +4189,10 @@
               "path": "identificar/confirmar/cards/es/w6_08.webp",
               "width": 1400,
               "height": 1552,
-              "bytes": 202398,
-              "sha256": "1f7a7276a880b046601ad974e69eaf9426bb4bf0f98c93369f01975d21c13eb2",
-              "source_png_sha256": "7fc90e310b7f8f24bc84b2c75ad5abc3c2b9f57969927b4d7f5287004c59f780"
+              "bytes": 201862,
+              "sha256": "1205c82dc8671891fe09c57ef8bd1e87866b601592905b2a11591880d5e646e0",
+              "source_png_sha256": "23120cac9a319cbd5e0946656e704f4c71e0ceb7f72f26e2c9e66fa9d0484c52",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             },
             "en": {
               "path": "identificar/confirmar/cards/en/w6_08.webp",
@@ -4157,7 +4200,8 @@
               "height": 1527,
               "bytes": 192038,
               "sha256": "8b9a2de7f8a2a2fbe0182813d6b7f6cb87edb71d0244bf7dd5c483627d843db6",
-              "source_png_sha256": "3ec711645a865023e657dd4cf728fa95bad18d392ac28e068ff985afbd4fe5e0"
+              "source_png_sha256": "3ec711645a865023e657dd4cf728fa95bad18d392ac28e068ff985afbd4fe5e0",
+              "override_source": "confirmar_opus_audit_20261127/wave6"
             }
           }
         }
@@ -4535,6 +4579,282 @@
               "bytes": 186854,
               "sha256": "7316ea8b5de45d9e27ff12cc9c2e9c3dd7896253993cd004bd0cba788bd500c3",
               "source_png_sha256": "8b2659ab9294cd182606e5c3345f5e8ae73913eaf64529a6859746b85ab87a75"
+            }
+          }
+        }
+      ]
+    },
+    "w7_01": {
+      "pair_id": "w7_01",
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Heliconius sara",
+      "species_b": "Heliconius wallacei",
+      "classification": "single_region",
+      "default_card_id": "w7_01",
+      "routes": [
+        {
+          "card_id": "w7_01",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Heliconius sara sara",
+          "taxon_b": "Heliconius wallacei flavescens",
+          "subspecies_a_aliases": [
+            "sara",
+            "Heliconius sara sara"
+          ],
+          "subspecies_b_aliases": [
+            "flavescens",
+            "Heliconius wallacei flavescens"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_01.webp",
+              "width": 1400,
+              "height": 1587,
+              "bytes": 168746,
+              "sha256": "519ccfa8bfc78ab03533bcb244a4b35c49b0dc4b4d7696a6a16831f3de5eaf7a",
+              "source_png_sha256": "b8a95dd284703d9f489bfd1bed796b53bec22981a91ee92f6f4bd1f167d34d68"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_01.webp",
+              "width": 1400,
+              "height": 1587,
+              "bytes": 162338,
+              "sha256": "8d0785c81f3b8002810746b185a0e50d093a9962a0b645c30b0682d7ea2a934d",
+              "source_png_sha256": "7e38f687be43a5d9e4f34ef35b0e2fb52f7c5f7bd9323483bdea4af3f9f30e25"
+            }
+          }
+        }
+      ]
+    },
+    "w7_02": {
+      "pair_id": "w7_02",
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Oleria gunilla",
+      "species_b": "Oleria onega",
+      "classification": "single_region",
+      "default_card_id": "w7_02",
+      "routes": [
+        {
+          "card_id": "w7_02",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Oleria gunilla lota",
+          "taxon_b": "Oleria onega janarilla",
+          "subspecies_a_aliases": [
+            "lota",
+            "Oleria gunilla lota"
+          ],
+          "subspecies_b_aliases": [
+            "janarilla",
+            "Oleria onega janarilla"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_02.webp",
+              "width": 1400,
+              "height": 1477,
+              "bytes": 174950,
+              "sha256": "b8b4e0de5e62ce3c89b761ef72e7aa04e737494376f4e6b2c6e5ae7bbc4efbb8",
+              "source_png_sha256": "e5091003424ff65d149f35d4812f69b3a43f4b2aeca2920872400ed895e74615"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_02.webp",
+              "width": 1400,
+              "height": 1427,
+              "bytes": 162442,
+              "sha256": "b833f73c5d5f3c0baecae4ad691ba8ea87e490cde72ba598f9869be1ac17459b",
+              "source_png_sha256": "df2431367316e22169ee6fea83df4ff3d167a104766411b0a53a2507ea74611c"
+            }
+          }
+        }
+      ]
+    },
+    "w7_03": {
+      "pair_id": "w7_03",
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Callithomia lenea",
+      "species_b": "Godyris zavaleta",
+      "classification": "single_region_small_n_caution",
+      "default_card_id": "w7_03",
+      "routes": [
+        {
+          "card_id": "w7_03",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Callithomia lenea zelie",
+          "taxon_b": "Godyris zavaleta matronalis",
+          "subspecies_a_aliases": [
+            "zelie",
+            "zelia",
+            "Callithomia lenea zelie"
+          ],
+          "subspecies_b_aliases": [
+            "matronalis",
+            "Godyris zavaleta matronalis"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_03.webp",
+              "width": 1400,
+              "height": 1447,
+              "bytes": 178528,
+              "sha256": "0027daa481c37a267ce6ed9f16234f607823d9b60183b1ddbc3d3933cb7402fc",
+              "source_png_sha256": "c8bcdbb37629b7e87bfcacdf914aee3fa305de85cce3901958a723a3d8fdb60c"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_03.webp",
+              "width": 1400,
+              "height": 1422,
+              "bytes": 168548,
+              "sha256": "a3066b8e1e12a5ce66a0169e89b20ca73b8de19a6a15489411161e9d7f1ce09e",
+              "source_png_sha256": "38f99f78d127db137ba2932eac282a7ee510ae3b2eb132f22fd2d15e89e5e68c"
+            }
+          }
+        }
+      ]
+    },
+    "w7_04": {
+      "pair_id": "w7_04",
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Aeria eurimedia",
+      "species_b": "Scada reckia",
+      "classification": "single_region_small_n_caution",
+      "default_card_id": "w7_04",
+      "routes": [
+        {
+          "card_id": "w7_04",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Aeria eurimedia negricola",
+          "taxon_b": "Scada reckia ethica",
+          "subspecies_a_aliases": [
+            "negricola",
+            "Aeria eurimedia negricola"
+          ],
+          "subspecies_b_aliases": [
+            "ethica",
+            "Scada reckia ethica"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_04.webp",
+              "width": 1400,
+              "height": 2142,
+              "bytes": 288184,
+              "sha256": "b5f9743084be6244143aedbceb1ee0b787cb33195f6c4b26b1a81c8ace499c56",
+              "source_png_sha256": "8fabf03a12fb5f26dd37b099679f899c97a09653af60ab447761c73a2f01ceb8"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_04.webp",
+              "width": 1400,
+              "height": 2091,
+              "bytes": 267188,
+              "sha256": "622e96b3c3178b13bd8fe3fe15308674029630c2d65ec70b67d3d80a3aad46c7",
+              "source_png_sha256": "79d4ca2069804b1c107e6221fb60bac645ce8a908a6c2e7dedf69afcca8c5702"
+            }
+          }
+        }
+      ]
+    },
+    "w7_09": {
+      "pair_id": "w7_09",
+      "wave": "wave7_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hypothyris ninonia",
+      "species_b": "Mechanitis lysimnia",
+      "classification": "single_region_small_n_caution",
+      "default_card_id": "w7_09",
+      "routes": [
+        {
+          "card_id": "w7_09",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hypothyris ninonia",
+          "taxon_b": "Mechanitis lysimnia",
+          "subspecies_a_aliases": [
+            "mamercus",
+            "polymnides",
+            "completa",
+            "completomaculata",
+            "Hypothyris ninonia mamercus"
+          ],
+          "subspecies_b_aliases": [
+            "roqueensis",
+            "ocona",
+            "Mechanitis lysimnia roqueensis",
+            "Mechanitis lysimnia ocona"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_09.webp",
+              "width": 1400,
+              "height": 1377,
+              "bytes": 149450,
+              "sha256": "f16339182c8f8faf77b8056d90772afcd05d38b7341209b94b2c1093c9f168b4",
+              "source_png_sha256": "e5d768fa30e2222f5e2c7f24ca0a705802dd7f418c4afcd845c90811dec117dd"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_09.webp",
+              "width": 1400,
+              "height": 1377,
+              "bytes": 141714,
+              "sha256": "891e66194e891f1668afddcc5a16fccb83517f8fc6ba297b7d3a248785d38d0f",
+              "source_png_sha256": "75b2c6a303875f20d15a8729a503486b3a940cc62cfe141b57ae47e48066ab92"
             }
           }
         }

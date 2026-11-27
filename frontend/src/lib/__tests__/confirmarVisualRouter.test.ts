@@ -26,7 +26,7 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
     expect(confirmVisualCardsEnabled(false)).toBe(false)
   })
 
-  it('ships 91 unified pairs, 64 active cards, 128 SHA-256 verified 1400px ES/EN WebP assets, and locked_overlap=0 across all 6 waves', () => {
+  it('ships 96 unified pairs, 69 active cards, 138 SHA-256 verified 1400px ES/EN WebP assets, 17 verified overrides, and locked_overlap=0 across all 7 waves', () => {
     expect(manifest.schema).toBe('confirmar-visual-cards/1')
     expect(manifest.waves.map(w => w.wave)).toEqual([
       'wave2_regional',
@@ -35,13 +35,15 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
       'wave4_dv',
       'wave5_non_ithomiini',
       'wave6_dv',
+      'wave7_dv',
     ])
     expect(manifest.verification?.all_wave_receipts_passed).toBe(true)
     expect(manifest.verification?.locked_or_blind_overlap).toBe(0)
-    expect(manifest.counts.total_pairs).toBe(91)
-    expect(manifest.counts.active_pairs).toBe(63)
-    expect(manifest.counts.active_cards).toBe(64)
-    expect(manifest.counts.assets_total).toBe(128)
+    expect(manifest.verification?.verified_override_cards_applied).toBe(17)
+    expect(manifest.counts.total_pairs).toBe(96)
+    expect(manifest.counts.active_pairs).toBe(68)
+    expect(manifest.counts.active_cards).toBe(69)
+    expect(manifest.counts.assets_total).toBe(138)
     expect(manifest.counts.non_active_pairs).toBe(28)
     expect(manifest.counts.superseded_pairs).toBe(2)
     expect(manifest.counts.deferred_routes).toBe(2)
@@ -74,7 +76,7 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
         }
       }
     }
-    expect(checkedAssets).toBe(128)
+    expect(checkedAssets).toBe(138)
   })
 })
 
@@ -610,7 +612,7 @@ describe('confirmarVisualRouter — subspecies names as the head sends them reac
     expect(aliases).toBeGreaterThan(250)
     // The builder checked every active side against the subspecies the head names.
     expect(manifest.verification?.head_subspecies_checked).toBe(true)
-    expect(manifest.verification?.subspecies_sides_reachable).toBe(99)
+    expect(manifest.verification?.subspecies_sides_reachable).toBe(109)
     expect(manifest.verification?.subspecies_sides_without_head_subspecies).toBe(5)
   })
 
@@ -704,7 +706,7 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
     expect(ecuadorSideLeanFromGps(Number.NaN, -78.6)).toBeNull()
   })
 
-  it('counts what a photo with no side shows: 63 pairs, 52 of them a guide for one side only', () => {
+  it('counts what a photo with no side shows: 68 pairs, 57 of them a guide for one side only', () => {
     let shown = 0
     let oneSide = 0
     for (const pair of Object.values(manifest.pairs)) {
@@ -714,8 +716,8 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
       expect(r.regionFallback).toBe(true)
       if (r.guideSide && !r.canSwitchRegion) oneSide++
     }
-    expect(shown).toBe(63)
-    expect(oneSide).toBe(52)
+    expect(shown).toBe(68)
+    expect(oneSide).toBe(57)
   })
 
   it('Tandayapa: a guide for the East alone is hidden, a guide for the West is shown as a fallback, a guide for both stays', () => {
@@ -758,8 +760,8 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
           expect(leaned, pair.pair_id).toEqual(plain)
         }
       }
-      // 39 pairs have a guide for the East alone, 13 for the West alone.
-      expect(hidden).toBe(lean === 'West' ? 39 : 13)
+      // 44 pairs have a guide for the East alone, 13 for the West alone.
+      expect(hidden).toBe(lean === 'West' ? 44 : 13)
     }
     // A side the person chose, or the GPS gave, is the answer; the lean is not asked.
     expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', sideAndes: 'East', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
@@ -1241,5 +1243,157 @@ describe('confirmarVisualRouter — runner-up pair & compared fallback guides (p
       rootUrl: ROOT_URL,
     })!
     expect(pickedCompared.pairId).toBe(secondPairId)
+  })
+
+  it('routes all 5 Wave 7 East Ecuador pairs (w7_01, w7_02, w7_03, w7_04, w7_09) on East and excludes West / West-leaning GPS', () => {
+    const wave7Cases = [
+      {
+        pairId: 'w7_01',
+        speciesA: 'Heliconius sara',
+        sspsA: ['Heliconius sara sara'],
+        speciesB: 'Heliconius wallacei',
+        sspsB: ['Heliconius wallacei flavescens'],
+      },
+      {
+        pairId: 'w7_02',
+        speciesA: 'Oleria gunilla',
+        sspsA: ['Oleria gunilla lota'],
+        speciesB: 'Oleria onega',
+        sspsB: ['Oleria onega janarilla'],
+      },
+      {
+        pairId: 'w7_03',
+        speciesA: 'Callithomia lenea',
+        sspsA: ['Callithomia lenea zelie'],
+        speciesB: 'Godyris zavaleta',
+        sspsB: ['Godyris zavaleta matronalis'],
+      },
+      {
+        pairId: 'w7_04',
+        speciesA: 'Aeria eurimedia',
+        sspsA: ['Aeria eurimedia negricola'],
+        speciesB: 'Scada reckia',
+        sspsB: ['Scada reckia ethica'],
+      },
+      {
+        pairId: 'w7_09',
+        speciesA: 'Hypothyris ninonia',
+        sspsA: ['Hypothyris ninonia mamercus', 'Hypothyris ninonia completa', 'Hypothyris ninonia completomaculata'],
+        speciesB: 'Mechanitis lysimnia',
+        sspsB: ['Mechanitis lysimnia roqueensis', 'Mechanitis lysimnia ocona'],
+      },
+    ] as const
+
+    for (const tc of wave7Cases) {
+      const sspA = tc.sspsA[0]
+      const sspB = tc.sspsB[0]
+
+      // Direct East route (ES & EN) with subspecies
+      const eastEs = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'East',
+        subspeciesA: sspA,
+        subspeciesB: sspB,
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+      expect(eastEs.status).toBe('active')
+      expect(eastEs.cardId).toBe(tc.pairId)
+      expect(eastEs.regionBadge).toBe('Oriente')
+      expect(eastEs.viewBadge).toBe('Anverso y reverso')
+      expect(eastEs.imageUrl).toContain(`/cards/es/${tc.pairId}.webp?v=`)
+
+      const eastEn = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'East',
+        locale: 'en',
+        rootUrl: ROOT_URL,
+      })
+      expect(eastEn.status).toBe('active')
+      expect(eastEn.cardId).toBe(tc.pairId)
+      expect(eastEn.regionBadge).toBe('East Ecuador')
+      expect(eastEn.viewBadge).toBe('Upperside & underside')
+      expect(eastEn.imageUrl).toContain(`/cards/en/${tc.pairId}.webp?v=`)
+
+      // Each A-side and B-side head alias matches independently (no regionFallback) and conflicts with West
+      for (const aliasA of tc.sspsA) {
+        const matchA = resolveRegionalRoute(manifest, { pairId: tc.pairId, subspeciesA: aliasA, locale: 'en', rootUrl: ROOT_URL })
+        expect(matchA.status, `${tc.pairId} A=${aliasA}`).toBe('active')
+        expect(matchA.cardId).toBe(tc.pairId)
+        expect(matchA.regionFallback).toBe(false)
+
+        const conflictA = resolveRegionalRoute(manifest, { pairId: tc.pairId, sideAndes: 'West', subspeciesA: aliasA, locale: 'en' })
+        expect(conflictA.cardId).toBeNull()
+        expect(conflictA.status, `${tc.pairId} West+A=${aliasA}`).toBe('conflicting_side_and_subspecies')
+      }
+      for (const aliasB of tc.sspsB) {
+        const matchB = resolveRegionalRoute(manifest, { pairId: tc.pairId, subspeciesB: aliasB, locale: 'en', rootUrl: ROOT_URL })
+        expect(matchB.status, `${tc.pairId} B=${aliasB}`).toBe('active')
+        expect(matchB.cardId).toBe(tc.pairId)
+        expect(matchB.regionFallback).toBe(false)
+
+        const conflictB = resolveRegionalRoute(manifest, { pairId: tc.pairId, sideAndes: 'West', subspeciesB: aliasB, locale: 'en' })
+        expect(conflictB.cardId).toBeNull()
+        expect(conflictB.status, `${tc.pairId} West+B=${aliasB}`).toBe('conflicting_side_and_subspecies')
+      }
+
+      // Non-East exclusion: West side and West-leaning ridge GPS must never show East-only Wave 7 cards
+      const westSide = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'West',
+        locale: 'es',
+      })
+      expect(westSide.cardId).toBeNull()
+      expect(westSide.status).toBe('no_card_for_side')
+
+      const westLean = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideLean: 'West',
+        subspeciesA: sspA,
+        locale: 'en',
+      })
+      expect(westLean.cardId).toBeNull()
+      expect(westLean.status).toBe('no_card_for_side')
+
+      // Prediction matching on East (reversed species order) resolves cleanly; West hides it
+      const matchedEast = resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: tc.speciesB, p: 0.58, subspecies: [{ name: sspB, p: 0.52 }] },
+          { name: tc.speciesA, p: 0.34, subspecies: [{ name: sspA, p: 0.29 }] },
+        ],
+        sideAndes: 'East',
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+      expect(matchedEast?.displayKind).toBe('card')
+      expect(matchedEast?.cardId).toBe(tc.pairId)
+      expect(matchedEast?.imageUrl).toContain(`/cards/es/${tc.pairId}.webp?v=`)
+
+      const matchedWest = resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: tc.speciesB, p: 0.58, subspecies: [{ name: sspB, p: 0.52 }] },
+          { name: tc.speciesA, p: 0.34, subspecies: [{ name: sspA, p: 0.29 }] },
+        ],
+        sideAndes: 'West',
+        locale: 'es',
+      })
+      expect(matchedWest?.cardId ?? null).not.toBe(tc.pairId)
+    }
+
+    // Compare-tap routing on East surfaces a Wave 7 pair when tapped as runner-up
+    const comparedW702 = resolveConfirmarVisualCard(manifest, {
+      topPredictions: [
+        { name: 'Oleria gunilla', p: 0.52, subspecies: [{ name: 'Oleria gunilla lota', p: 0.45 }] },
+        { name: 'Oleria astrea', p: 0.28 },
+        { name: 'Oleria onega', p: 0.14, subspecies: [{ name: 'Oleria onega janarilla', p: 0.11 }] },
+      ],
+      comparedSpecies: 'Oleria onega',
+      sideAndes: 'East',
+      locale: 'en',
+      rootUrl: ROOT_URL,
+    })
+    expect(comparedW702?.displayKind).toBe('card')
+    expect(comparedW702?.cardId).toBe('w7_02')
+    expect(comparedW702?.source).toBe('compared')
   })
 })

@@ -2,10 +2,10 @@
  * Deterministic regional router for Confirmar visual field-ID cards in /identificar/.
  *
  * Gated behind VITE_CONFIRM_VISUAL_CARDS=1 (OFF unless built with =1; production sets it in frontend/.env.production).
- * Implements the exact Waves 2, 3A, 3B, 4, 5, and 6 regional & subspecies routing contract:
+ * Implements the exact Waves 2, 3A, 3B, 4, 5, 6, and 7 regional & subspecies routing contract:
  *   - Wave 3B / Wave 5 (`routing_mode: 'side_only'`): resolves strictly by `(pair_id, side_andes)`
  *     (never rejects on subspecies predictions); inseparable pairs return explicit `null`.
- *   - Wave 2 / Wave 3A / Wave 4 / Wave 6 (`routing_mode: 'subspecies_and_side'`):
+ *   - Wave 2 / Wave 3A / Wave 4 / Wave 6 / Wave 7 (`routing_mode: 'subspecies_and_side'`):
  *     1. Subspecies alias match (case-insensitive trimmed, full trinomial OR infraspecific
  *        epithet against `a OR b` aliases); rejects conflicting subspecies or conflicting
  *        side+subspecies; returns explicit `null` for deferred rings and inseparable/held
@@ -63,6 +63,7 @@ export interface ConfirmarCardAsset {
   bytes: number
   sha256: string
   source_png_sha256: string
+  override_source?: string
 }
 
 export interface ConfirmarRoute {
@@ -108,6 +109,7 @@ export interface ConfirmarVisualManifest {
     canonical_locked_cams_cross_checked?: number
     canonical_locked_inat_obs_cross_checked?: number
     canonical_locked_inat_photos_cross_checked?: number
+    verified_override_cards_applied?: number
     webp_quality?: number
     /** Whether the builder had the head's leaf list to check the subspecies aliases against. */
     head_subspecies_checked?: boolean
