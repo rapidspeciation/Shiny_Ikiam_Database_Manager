@@ -34,7 +34,7 @@ import {
   offerFor,
   partKey,
   rolesStored,
-  readMasks,
+  readDetectorMasks,
   roleOf,
   selectMasks,
   storedName,
@@ -1055,9 +1055,13 @@ export function createEngine(
     const inp = detectorInput(img, orientation)
     const res = await session.run({ [session.inputNames[0]]: new ortD.Tensor('float32', inp.x, [1, 3, 640, 640]) })
     const det = res[session.outputNames[0]], proto = res[session.outputNames[1]]
-    const masks = readMasks(det.data as Float32Array, det.dims[1], det.dims[2], proto.data as Float32Array, proto.dims[2], inp)
-    ;(det as { dispose?: () => void }).dispose?.()
-    ;(proto as { dispose?: () => void }).dispose?.()
+    let masks
+    try {
+      masks = readDetectorMasks(det, proto, inp)
+    } finally {
+      ;(det as { dispose?: () => void } | undefined)?.dispose?.()
+      ;(proto as { dispose?: () => void } | undefined)?.dispose?.()
+    }
     const { box, status } = cropBox(selectMasks(applyP1aNms(masks)), orientation, img.width, img.height, override)
     return { square: letterboxCrop(img, box), status }
   }

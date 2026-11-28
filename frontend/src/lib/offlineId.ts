@@ -286,28 +286,36 @@ export function applyP3Roi(m: Uint8Array, W: number, H: number): Uint8Array {
 }
 
 /**
- * The detector's masks of confidence >= `minConf` (end-to-end output: [N, 38] rows x1 y1 x2 y2 score class
- * coef[32], 640 px input; prototypes [32, 160, 160]), as Ultralytics process_mask (upsample=True) and
- * v6_feature.py P3 contour cleanup give them, measured from the pixels.
+ * The detector's masks of confidence >= `minConf` (end-to-end output: [N, 6 + nm] rows x1 y1 x2 y2 score class
+ * coef[nm], 640 px input; prototypes [nm, P, P], e.g. [32, 160, 160] at Stride-4 or [32, 320, 320] at Stride-2),
+ * as Ultralytics process_mask (upsample=True) and v6_feature.py P3 contour cleanup give them, measured from the pixels.
  */
 export function readMasks(det: Float32Array, N: number, D: number, proto: Float32Array, P: number, inp: DetectorInput, minConf = 0.25, S = 640): Mask[] {
   const out: Mask[] = []
-  const n = P * P, k = P / S
+  const n = P * P, k = P / S, nm = D - 6
+  if (!Number.isInteger(N) || N < 0 || !Number.isInteger(nm) || nm <= 0 || !Number.isInteger(P) || P <= 0 || !Number.isInteger(S) || S <= 0 || det.length !== N * D || proto.length !== nm * n)
+    throw new Error('detector-shape')
+  if (N === 0) return out
+  const pm = new Float32Array(n)
+  const cell = (v: number) => Math.min(Math.floor(Math.max(0, (v + 0.5) * k - 0.5)), P - 1)
   const { gain, padX, padY, rawW, rawH } = inp
   for (let i = 0; i < N; i++) {
     const score = det[i * D + 4]
     if (!(score >= minConf)) continue
     const x1 = det[i * D], y1 = det[i * D + 1], x2 = det[i * D + 2], y2 = det[i * D + 3]
-    const pm = new Float32Array(n)
-    for (let c = 0; c < 32; c++) {
-      const w = det[i * D + 6 + c], off = c * n
-      if (w === 0) continue
-      for (let j = 0; j < n; j++) pm[j] += w * proto[off + j]
-    }
     // F.interpolate(bilinear, align_corners=False) to S x S, > 0, then crop_mask: columns r >= x1 and r < x2
     const c0 = Math.max(0, Math.ceil(x1)), c1 = Math.min(S - 1, Math.ceil(x2) - 1)
     const r0 = Math.max(0, Math.ceil(y1)), r1 = Math.min(S - 1, Math.ceil(y2) - 1)
     if (!(c1 >= c0 && r1 >= r0)) continue
+    const pr0 = cell(r0), pr1 = Math.min(cell(r1) + 1, P - 1)
+    const pc0 = cell(c0), pc1 = Math.min(cell(c1) + 1, P - 1)
+    for (let r = pr0; r <= pr1; r++) pm.fill(0, r * P + pc0, r * P + pc1 + 1)
+    for (let c = 0; c < nm; c++) {
+      const w = det[i * D + 6 + c], off = c * n
+      if (w === 0) continue
+      for (let r = pr0; r <= pr1; r++)
+        for (let j = r * P + pc0, e = r * P + pc1; j <= e; j++) pm[j] += w * proto[off + j]
+    }
     const W = c1 - c0 + 1, H = r1 - r0 + 1
     let m: Uint8Array = new Uint8Array(W * H)
     const gx0 = new Int32Array(W), gx1 = new Int32Array(W), gwx = new Float32Array(W)
@@ -373,6 +381,24 @@ export function readMasks(det: Float32Array, N: number, D: number, proto: Float3
     })
   }
   return out
+}
+
+/** Validates ONNX detector output layouts `[1, N, D]` and `[1, D - 6, P, P]` before decoding masks. */
+export function readDetectorMasks(
+  det: { data: unknown; dims: readonly number[] } | undefined,
+  proto: { data: unknown; dims: readonly number[] } | undefined,
+  inp: DetectorInput,
+  minConf = 0.25,
+  S = 640,
+): Mask[] {
+  if (
+    !det || !proto ||
+    det.dims.length !== 3 || det.dims[0] !== 1 ||
+    proto.dims.length !== 4 || proto.dims[0] !== 1 ||
+    proto.dims[1] !== det.dims[2] - 6 || proto.dims[2] !== proto.dims[3] ||
+    !(det.data instanceof Float32Array) || !(proto.data instanceof Float32Array)
+  ) throw new Error('detector-shape')
+  return readMasks(det.data, det.dims[1], det.dims[2], proto.data, proto.dims[2], inp, minConf, S)
 }
 
 function rasterIoU(a: Uint8Array, b: Uint8Array): number {
