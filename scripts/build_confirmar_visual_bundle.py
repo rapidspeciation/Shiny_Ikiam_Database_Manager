@@ -76,6 +76,11 @@ DEFAULT_WAVES = [
         WINGS_REPORTS / "confirmar_wave7_opus_20261127" / "unified_w7_20261127",
         "REGIONAL_MAP_W7.json",
     ),
+    (
+        "wave7_2_dv",
+        WINGS_REPORTS / "confirmar_wave7_2_20261127" / "unified_w7_2_20261127",
+        "REGIONAL_MAP_W7_2.json",
+    ),
 ]
 
 OPUS_AUDIT_20261127 = WINGS_REPORTS / "confirmar_opus_audit_20261127"
@@ -293,7 +298,22 @@ KNOWN_WAVE_REQUIRED_OVERLAP_KEY = {
     "wave4_dv": "leakage_hits_count",
     "wave6_dv": "leakage_hits_count",
     "wave7_dv": "leakage_hits_count",
+    "wave7_2_dv": "leakage_hits_count",
 }
+
+WAVE7_GUARDED_WAVES = ("wave7_dv", "wave7_2_dv")
+CAM_ID_RE = re.compile(r"^CAM\d{5,7}$")
+
+
+def _validate_cam_id_list(values: Any, field_name: str, wave_id: str) -> set[str]:
+    if not isinstance(values, list) or not values:
+        raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT missing non-empty '{field_name}'")
+    parsed: set[str] = set()
+    for idx, item in enumerate(values):
+        if not isinstance(item, str) or not CAM_ID_RE.fullmatch(item.strip().upper()):
+            raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT '{field_name}[{idx}]' is not a valid CAM ID: {item!r}")
+        parsed.add(item.strip().upper())
+    return parsed
 
 
 def load_sha256sums(sums_path: Path) -> dict[str, str]:
@@ -437,18 +457,29 @@ def verify_receipt_dict(
         if not isinstance(receipt.get("cams_used"), list) or not receipt["cams_used"]:
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT missing non-empty 'cams_used' list")
 
-    if wave_id == "wave7_dv":
+    if wave_id in WAVE7_GUARDED_WAVES:
         map_sha = receipt.get("regional_map_sha256")
         if not isinstance(map_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", map_sha):
             raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT missing required 64-hex 'regional_map_sha256'")
         if map_bytes is None:
             raise RuntimeError(f"[{wave_id}] Regional map bytes are required to verify 'regional_map_sha256'")
-        if not isinstance(receipt.get("wave7_reserved_blind_cams_checked"), list) or not receipt["wave7_reserved_blind_cams_checked"]:
-            raise RuntimeError(f"[{wave_id}] AUDIT_RECEIPT missing non-empty 'wave7_reserved_blind_cams_checked'")
-
-    if isinstance(receipt.get("wave7_reserved_blind_cams_checked"), list) and isinstance(receipt.get("cams_used"), list):
-        used = {str(c).strip().upper() for c in receipt["cams_used"]}
-        reserved = {str(c).strip().upper() for c in receipt["wave7_reserved_blind_cams_checked"]}
+        used_w7 = _validate_cam_id_list(receipt.get("cams_used"), "cams_used", wave_id)
+        reserved_w7 = _validate_cam_id_list(
+            receipt.get("wave7_reserved_blind_cams_checked"),
+            "wave7_reserved_blind_cams_checked",
+            wave_id,
+        )
+        blind_overlap = sorted(used_w7 & reserved_w7)
+        measured_overlap += len(blind_overlap)
+        if blind_overlap:
+            raise RuntimeError(f"[{wave_id}] Reserved blind CAM overlap detected: {blind_overlap}")
+    elif isinstance(receipt.get("wave7_reserved_blind_cams_checked"), list) and isinstance(receipt.get("cams_used"), list):
+        used = _validate_cam_id_list(receipt["cams_used"], "cams_used", wave_id)
+        reserved = _validate_cam_id_list(
+            receipt["wave7_reserved_blind_cams_checked"],
+            "wave7_reserved_blind_cams_checked",
+            wave_id,
+        )
         blind_overlap = sorted(used & reserved)
         measured_overlap += len(blind_overlap)
         if blind_overlap:
@@ -637,24 +668,27 @@ def resolve_species_pair_collision(
     return "supersede_prev"
 
 
-def optimize_png_to_webp(
-    src_png: Path, dst_webp: Path, quality: int, dry_run: bool
-) -> tuple[int, int, int, str]:
+def encode_png_to_webp_bytes(src_png: Path, quality: int) -> tuple[int, int, bytes, str]:
     with Image.open(src_png) as im:
         if im.mode not in ("RGB", "RGBA"):
             im = im.convert("RGB")
         width, height = im.size
-        if dry_run:
-            buf = io.BytesIO()
-            im.save(buf, format="WEBP", quality=quality, method=6)
-            data = buf.getvalue()
-            return width, height, len(data), hashlib.sha256(data).hexdigest()
+        buf = io.BytesIO()
+        im.save(buf, format="WEBP", quality=quality, method=6)
+        data = buf.getvalue()
+        return width, height, data, hashlib.sha256(data).hexdigest()
 
+
+def optimize_png_to_webp(
+    src_png: Path, dst_webp: Path, quality: int, dry_run: bool
+) -> tuple[int, int, int, str]:
+    width, height, data, digest = encode_png_to_webp_bytes(src_png, quality=quality)
+    if not dry_run:
         dst_webp.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst_webp.with_suffix(".webp.tmp")
-        im.save(tmp, format="WEBP", quality=quality, method=6)
+        tmp.write_bytes(data)
         tmp.replace(dst_webp)
-        return width, height, dst_webp.stat().st_size, sha256_file(dst_webp)
+    return width, height, len(data), digest
 
 
 def parse_wave_arg(spec: str) -> tuple[str, Path, str]:
@@ -689,7 +723,7 @@ def build_bundle(
     seen_species_pairs: dict[tuple[str, str], str] = {}
     superseded_pairs: dict[str, str] = {}
     expected_webp_relpaths: set[Path] = set()
-    pending_renders: list[tuple[Path, Path, dict[str, Any]]] = []
+    pending_renders: list[tuple[Path, Path, dict[str, Any], str | None, str]] = []
     wave_summaries: list[dict[str, Any]] = []
 
     total_active_cards = 0
@@ -780,6 +814,8 @@ def build_bundle(
                         if routing_mode == "subspecies_and_side"
                         else [str(x).strip() for x in raw_aliases if str(x).strip()]
                     )
+                    if routing_mode == "subspecies_and_side" and route.get(f"require_subspecies_{side_key}_match") is True:
+                        route_entry[f"require_subspecies_{side_key}_match"] = True
                 if route.get("region_detail_es"):
                     route_entry["region_detail_es"] = str(route["region_detail_es"]).strip()
                 if route.get("region_detail_en"):
@@ -845,8 +881,26 @@ def build_bundle(
                         }
                         if override_shard is not None:
                             asset_rec["override_source"] = f"confirmar_opus_audit_20261127/{override_shard.name}"
+                        expected_webp_sha: str | None = None
+                        if wave_id in WAVE7_GUARDED_WAVES and override_shard is None:
+                            receipt_webp_sha = receipt.get("output_webp_sha256")
+                            if not isinstance(receipt_webp_sha, dict) or not receipt_webp_sha.get(f"{card_id}_{lang}"):
+                                raise RuntimeError(
+                                    f"[{wave_id}:{card_id}] Missing {card_id}_{lang} in AUDIT_RECEIPT.json output_webp_sha256"
+                                )
+                            expected_webp_sha = str(receipt_webp_sha[f"{card_id}_{lang}"]).strip().lower()
+                            staged_webp = wave_dir / "cards" / lang / f"{card_id}.webp"
+                            if not staged_webp.is_file():
+                                raise RuntimeError(f"[{wave_id}:{card_id}] Missing staged WebP: {staged_webp}")
+                            actual_staged_webp_sha = sha256_file(staged_webp)
+                            if actual_staged_webp_sha != expected_webp_sha:
+                                raise RuntimeError(
+                                    f"[{wave_id}:{card_id}_{lang}] Staged WebP SHA-256 mismatch vs AUDIT_RECEIPT.json: "
+                                    f"actual={actual_staged_webp_sha} expected={expected_webp_sha}"
+                                )
+
                         assets[lang] = asset_rec
-                        pending_renders.append((render_png, out_dir / rel_webp, asset_rec))
+                        pending_renders.append((render_png, out_dir / rel_webp, asset_rec, expected_webp_sha, f"{wave_id}:{card_id}_{lang}"))
                     route_entry["assets"] = assets
                 else:
                     if status not in ALLOWED_NON_ACTIVE_STATUSES:
@@ -903,11 +957,25 @@ def build_bundle(
     if head_subspecies is None:
         print(f"NOTE: {leaf_map} is not on this host: the aliases were not checked against the head's subspecies")
 
-    # All receipts, maps, source PNG hashes, overrides, and aliases passed: now encode/write WebPs.
-    for render_png, dst_webp, asset_rec in pending_renders:
-        width, height, webp_bytes, webp_sha = optimize_png_to_webp(
-            render_png, dst_webp, quality=quality, dry_run=check_only
-        )
+    # All receipts, maps, source PNG hashes, overrides, and aliases passed: encode each PNG once,
+    # verify every expected WebP digest, and write the exact verified bytes only after all pass.
+    encoded_outputs: list[tuple[Path, dict[str, Any], int, int, bytes, str]] = []
+    for render_png, dst_webp, asset_rec, expected_webp_sha, label in pending_renders:
+        width, height, raw_bytes, webp_sha = encode_png_to_webp_bytes(render_png, quality=quality)
+        if expected_webp_sha is not None and webp_sha != expected_webp_sha:
+            raise RuntimeError(
+                f"[{label}] Encoded WebP SHA-256 mismatch vs AUDIT_RECEIPT.json: "
+                f"actual={webp_sha} expected={expected_webp_sha}"
+            )
+        encoded_outputs.append((dst_webp, asset_rec, width, height, raw_bytes, webp_sha))
+
+    for dst_webp, asset_rec, width, height, raw_bytes, webp_sha in encoded_outputs:
+        if not check_only:
+            dst_webp.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dst_webp.with_suffix(".webp.tmp")
+            tmp.write_bytes(raw_bytes)
+            tmp.replace(dst_webp)
+        webp_bytes = len(raw_bytes)
         total_webp_bytes += webp_bytes
         asset_rec["width"] = width
         asset_rec["height"] = height
@@ -1256,27 +1324,34 @@ def run_self_tests() -> None:
         "leakage_hits_count": 0,
         "output_png_sha256": {"w7_01_es": "0" * 64},
     }
-    _, ov7 = verify_receipt_dict(
-        "wave7_dv",
-        good_w7_receipt,
-        ({"CAM999999"}, set(), set()),
-        map_bytes=sample_map_bytes,
-    )
-    assert ov7 == 0
-    for bad_w7_label, bad_w7_rec, bad_map, want_msg in [
-        ("w7_nonzero_leakage", {**good_w7_receipt, "leakage_hits_count": 1}, sample_map_bytes, "must be integer 0"),
-        ("w7_missing_map_sha", {k: v for k, v in good_w7_receipt.items() if k != "regional_map_sha256"}, sample_map_bytes, "64-hex 'regional_map_sha256'"),
-        ("w7_nonhex_map_sha", {**good_w7_receipt, "regional_map_sha256": "z" * 64}, sample_map_bytes, "64-hex 'regional_map_sha256'"),
-        ("w7_missing_map_bytes", good_w7_receipt, None, "Regional map bytes are required"),
-        ("w7_mismatched_map_sha", good_w7_receipt, b'{"pairs":{"tampered":true}}', "Regional map SHA-256 mismatch"),
-        ("w7_blind_overlap", {**good_w7_receipt, "cams_used": ["CAM071585"]}, sample_map_bytes, "Reserved blind CAM overlap"),
-    ]:
-        try:
-            verify_receipt_dict("wave7_dv", bad_w7_rec, None, map_bytes=bad_map)
-        except RuntimeError as exc:
-            assert want_msg in str(exc), (bad_w7_label, str(exc))
-        else:
-            raise AssertionError(f"Self-test failed: {bad_w7_label} was accepted")
+    w7_checks = 0
+    for w7_wave in WAVE7_GUARDED_WAVES:
+        _, ov7 = verify_receipt_dict(
+            w7_wave,
+            good_w7_receipt,
+            ({"CAM999999"}, set(), set()),
+            map_bytes=sample_map_bytes,
+        )
+        assert ov7 == 0
+        w7_checks += 1
+        for bad_w7_label, bad_w7_rec, bad_map, want_msg in [
+            ("w7_nonzero_leakage", {**good_w7_receipt, "leakage_hits_count": 1}, sample_map_bytes, "must be integer 0"),
+            ("w7_missing_map_sha", {k: v for k, v in good_w7_receipt.items() if k != "regional_map_sha256"}, sample_map_bytes, "64-hex 'regional_map_sha256'"),
+            ("w7_nonhex_map_sha", {**good_w7_receipt, "regional_map_sha256": "z" * 64}, sample_map_bytes, "64-hex 'regional_map_sha256'"),
+            ("w7_missing_map_bytes", good_w7_receipt, None, "Regional map bytes are required"),
+            ("w7_mismatched_map_sha", good_w7_receipt, b'{"pairs":{"tampered":true}}', "Regional map SHA-256 mismatch"),
+            ("w7_blind_overlap", {**good_w7_receipt, "cams_used": ["CAM071585"]}, sample_map_bytes, "Reserved blind CAM overlap"),
+            ("w7_null_in_blinds", {**good_w7_receipt, "wave7_reserved_blind_cams_checked": [None]}, sample_map_bytes, "not a valid CAM ID"),
+            ("w7_null_in_cams_used", {**good_w7_receipt, "cams_used": [None]}, sample_map_bytes, "not a valid CAM ID"),
+            ("w7_bad_token_in_blinds", {**good_w7_receipt, "wave7_reserved_blind_cams_checked": ["NOTACAM"]}, sample_map_bytes, "not a valid CAM ID"),
+        ]:
+            try:
+                verify_receipt_dict(w7_wave, bad_w7_rec, None, map_bytes=bad_map)
+            except RuntimeError as exc:
+                assert want_msg in str(exc), (w7_wave, bad_w7_label, str(exc))
+            else:
+                raise AssertionError(f"Self-test failed: {w7_wave} {bad_w7_label} was accepted")
+            w7_checks += 1
 
     with tempfile.TemporaryDirectory() as tmpdir:
         shard = Path(tmpdir) / "wave_test"
@@ -1313,7 +1388,11 @@ def run_self_tests() -> None:
         else:
             raise AssertionError("Self-test failed: unlisted override PNG was accepted")
 
-    print("SELF-TEST PASS (27/27 receipt & cross-wave superseding checks, 25/25 subspecies alias checks, 4/4 override checks)")
+    total_receipt_checks = 20 + w7_checks
+    print(
+        f"SELF-TEST PASS ({total_receipt_checks}/{total_receipt_checks} receipt & cross-wave superseding checks, "
+        "25/25 subspecies alias checks, 4/4 override checks)"
+    )
 
 
 def main() -> int:

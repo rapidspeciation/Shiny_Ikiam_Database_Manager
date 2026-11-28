@@ -82,6 +82,8 @@ export interface ConfirmarRoute {
   taxon_b: string
   subspecies_a_aliases: string[]
   subspecies_b_aliases: string[]
+  require_subspecies_a_match?: boolean
+  require_subspecies_b_match?: boolean
   assets?: {
     es: ConfirmarCardAsset
     en: ConfirmarCardAsset
@@ -422,11 +424,18 @@ export function resolveRegionalRoute(
     return buildNullResolution(pair, 'no_card_for_side', locale)
   }
 
+  const routeRejectsSubspecies = (route: ConfirmarRoute): boolean =>
+    !isSideOnlyPair(pair) && (
+      (Boolean(route.require_subspecies_a_match) && sspA.length > 0 && !aliasMatches(sspA, route.subspecies_a_aliases)) ||
+      (Boolean(route.require_subspecies_b_match) && sspB.length > 0 && !aliasMatches(sspB, route.subspecies_b_aliases))
+    )
+
   // Step 1: Subspecies match (Wave 2 / Wave 3A only — skipped for side-only Wave 3B contract)
   const hasSspInput = !isSideOnlyPair(pair) && (sspA.length > 0 || sspB.length > 0)
   if (hasSspInput) {
-    const matchesA = sspA ? pair.routes.filter(r => aliasMatches(sspA, r.subspecies_a_aliases)) : []
-    const matchesB = sspB ? pair.routes.filter(r => aliasMatches(sspB, r.subspecies_b_aliases)) : []
+    const eligibleRoutes = pair.routes.filter(r => !routeRejectsSubspecies(r))
+    const matchesA = sspA ? eligibleRoutes.filter(r => aliasMatches(sspA, r.subspecies_a_aliases)) : []
+    const matchesB = sspB ? eligibleRoutes.filter(r => aliasMatches(sspB, r.subspecies_b_aliases)) : []
 
     if (matchesA.length > 0 && matchesB.length > 0) {
       const intersection = matchesA.filter(r => matchesB.includes(r))
@@ -455,15 +464,16 @@ export function resolveRegionalRoute(
       return buildActiveResolution(pair, route, locale, false, false, input.rootUrl)
     }
 
-    // Neither subspecies matched any alias: fail closed if side_andes is omitted
-    if (!side) {
+    // Neither subspecies matched any eligible alias: fail closed if side_andes is omitted
+    // or if a strict subspecies-scope requirement rejected every matching side-default route.
+    if (!side || pair.routes.some(r => r.status === 'active' && r.side_default_for.includes(side) && routeRejectsSubspecies(r))) {
       return buildNullResolution(pair, 'unknown_subspecies', locale)
     }
   }
 
   // Step 2: Side-only match (when no subspecies matched and side_andes is supplied)
   if (side) {
-    const activeForSide = pair.routes.filter(r => r.status === 'active' && r.side_default_for.includes(side))
+    const activeForSide = pair.routes.filter(r => r.status === 'active' && r.side_default_for.includes(side) && !routeRejectsSubspecies(r))
     if (activeForSide.length === 1) {
       return buildActiveResolution(pair, activeForSide[0], locale, false, false, input.rootUrl)
     }

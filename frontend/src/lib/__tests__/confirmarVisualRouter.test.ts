@@ -26,7 +26,7 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
     expect(confirmVisualCardsEnabled(false)).toBe(false)
   })
 
-  it('ships 96 unified pairs, 69 active cards, 138 SHA-256 verified 1400px ES/EN WebP assets, 17 verified overrides, and locked_overlap=0 across all 7 waves', () => {
+  it('ships 100 unified pairs, 73 active cards, 146 SHA-256 verified 1400px ES/EN WebP assets, 17 verified overrides, and locked_overlap=0 across all 8 waves', () => {
     expect(manifest.schema).toBe('confirmar-visual-cards/1')
     expect(manifest.waves.map(w => w.wave)).toEqual([
       'wave2_regional',
@@ -36,14 +36,15 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
       'wave5_non_ithomiini',
       'wave6_dv',
       'wave7_dv',
+      'wave7_2_dv',
     ])
     expect(manifest.verification?.all_wave_receipts_passed).toBe(true)
     expect(manifest.verification?.locked_or_blind_overlap).toBe(0)
     expect(manifest.verification?.verified_override_cards_applied).toBe(17)
-    expect(manifest.counts.total_pairs).toBe(96)
-    expect(manifest.counts.active_pairs).toBe(68)
-    expect(manifest.counts.active_cards).toBe(69)
-    expect(manifest.counts.assets_total).toBe(138)
+    expect(manifest.counts.total_pairs).toBe(100)
+    expect(manifest.counts.active_pairs).toBe(72)
+    expect(manifest.counts.active_cards).toBe(73)
+    expect(manifest.counts.assets_total).toBe(146)
     expect(manifest.counts.non_active_pairs).toBe(28)
     expect(manifest.counts.superseded_pairs).toBe(2)
     expect(manifest.counts.deferred_routes).toBe(2)
@@ -76,7 +77,7 @@ describe('confirmarVisualRouter — bundle integrity & feature flag', () => {
         }
       }
     }
-    expect(checkedAssets).toBe(138)
+    expect(checkedAssets).toBe(146)
   })
 })
 
@@ -612,7 +613,7 @@ describe('confirmarVisualRouter — subspecies names as the head sends them reac
     expect(aliases).toBeGreaterThan(250)
     // The builder checked every active side against the subspecies the head names.
     expect(manifest.verification?.head_subspecies_checked).toBe(true)
-    expect(manifest.verification?.subspecies_sides_reachable).toBe(109)
+    expect(manifest.verification?.subspecies_sides_reachable).toBe(117)
     expect(manifest.verification?.subspecies_sides_without_head_subspecies).toBe(5)
   })
 
@@ -706,7 +707,7 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
     expect(ecuadorSideLeanFromGps(Number.NaN, -78.6)).toBeNull()
   })
 
-  it('counts what a photo with no side shows: 68 pairs, 57 of them a guide for one side only', () => {
+  it('counts what a photo with no side shows: 72 pairs, 61 of them a guide for one side only', () => {
     let shown = 0
     let oneSide = 0
     for (const pair of Object.values(manifest.pairs)) {
@@ -716,8 +717,8 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
       expect(r.regionFallback).toBe(true)
       if (r.guideSide && !r.canSwitchRegion) oneSide++
     }
-    expect(shown).toBe(68)
-    expect(oneSide).toBe(57)
+    expect(shown).toBe(72)
+    expect(oneSide).toBe(61)
   })
 
   it('Tandayapa: a guide for the East alone is hidden, a guide for the West is shown as a fallback, a guide for both stays', () => {
@@ -760,8 +761,8 @@ describe('confirmarVisualRouter — no side known (audit 25 Nov 2026, 3.2)', () 
           expect(leaned, pair.pair_id).toEqual(plain)
         }
       }
-      // 44 pairs have a guide for the East alone, 13 for the West alone.
-      expect(hidden).toBe(lean === 'West' ? 44 : 13)
+      // 48 pairs have a guide for the East alone, 13 for the West alone.
+      expect(hidden).toBe(lean === 'West' ? 48 : 13)
     }
     // A side the person chose, or the GPS gave, is the answer; the lean is not asked.
     expect(resolveRegionalRoute(manifest, { pairId: 'w6_05', sideAndes: 'East', sideLean: 'West', locale: 'es', rootUrl: ROOT_URL }).cardId).toBe('w6_05')
@@ -1395,5 +1396,168 @@ describe('confirmarVisualRouter — runner-up pair & compared fallback guides (p
     expect(comparedW702?.displayKind).toBe('card')
     expect(comparedW702?.cardId).toBe('w7_02')
     expect(comparedW702?.source).toBe('compared')
+  })
+
+  it('routes all 4 Wave 7.2 East Ecuador pairs (w7_06, w7_10, w7_17, w7_20) on East and excludes West / West-leaning GPS', () => {
+    const wave72Cases = [
+      {
+        pairId: 'w7_06',
+        speciesA: 'Hyposcada illinissa',
+        sspsA: ['Hyposcada illinissa ida'],
+        speciesB: 'Oleria onega',
+        sspsB: ['Oleria onega janarilla'],
+      },
+      {
+        pairId: 'w7_10',
+        speciesA: 'Forbestra olivencia',
+        sspsA: ['Forbestra olivencia juntana', 'Forbestra olivencia olivencia'],
+        speciesB: 'Mechanitis polymnia',
+        sspsB: ['Mechanitis polymnia proceriformis', 'Mechanitis polymnia eurydice'],
+      },
+      {
+        pairId: 'w7_17',
+        speciesA: 'Mechanitis mazaeus',
+        sspsA: ['Mechanitis mazaeus mazaeus', 'Mechanitis mazaeus fallax'],
+        speciesB: 'Melinaea menophilus',
+        sspsB: ['Melinaea menophilus zaneka'],
+      },
+      {
+        pairId: 'w7_20',
+        speciesA: 'Forbestra equicola',
+        sspsA: ['Forbestra equicola equicoloides'],
+        speciesB: 'Mechanitis polymnia',
+        sspsB: ['Mechanitis polymnia proceriformis', 'Mechanitis polymnia eurydice'],
+      },
+    ] as const
+
+    for (const tc of wave72Cases) {
+      const sspA = tc.sspsA[0]
+      const sspB = tc.sspsB[0]
+
+      // Direct East route (ES & EN) with subspecies and species-only East fallback
+      const eastEs = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'East',
+        subspeciesA: sspA,
+        subspeciesB: sspB,
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+      expect(eastEs.status).toBe('active')
+      expect(eastEs.cardId).toBe(tc.pairId)
+      expect(eastEs.regionBadge).toBe('Oriente')
+      expect(eastEs.viewBadge).toBe('Anverso y reverso')
+      expect(eastEs.imageUrl).toContain(`/cards/es/${tc.pairId}.webp?v=`)
+
+      const eastEn = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'East',
+        locale: 'en',
+        rootUrl: ROOT_URL,
+      })
+      expect(eastEn.status).toBe('active')
+      expect(eastEn.cardId).toBe(tc.pairId)
+      expect(eastEn.regionBadge).toBe('East Ecuador')
+      expect(eastEn.viewBadge).toBe('Upperside & underside')
+      expect(eastEn.imageUrl).toContain(`/cards/en/${tc.pairId}.webp?v=`)
+
+      // Each A-side and B-side head alias matches independently (no regionFallback) and conflicts with West
+      for (const aliasA of tc.sspsA) {
+        const matchA = resolveRegionalRoute(manifest, { pairId: tc.pairId, subspeciesA: aliasA, locale: 'en', rootUrl: ROOT_URL })
+        expect(matchA.status, `${tc.pairId} A=${aliasA}`).toBe('active')
+        expect(matchA.cardId).toBe(tc.pairId)
+        expect(matchA.regionFallback).toBe(false)
+
+        const conflictA = resolveRegionalRoute(manifest, { pairId: tc.pairId, sideAndes: 'West', subspeciesA: aliasA, locale: 'en' })
+        expect(conflictA.cardId).toBeNull()
+        expect(conflictA.status, `${tc.pairId} West+A=${aliasA}`).toBe('conflicting_side_and_subspecies')
+      }
+      for (const aliasB of tc.sspsB) {
+        const matchB = resolveRegionalRoute(manifest, { pairId: tc.pairId, subspeciesB: aliasB, locale: 'en', rootUrl: ROOT_URL })
+        expect(matchB.status, `${tc.pairId} B=${aliasB}`).toBe('active')
+        expect(matchB.cardId).toBe(tc.pairId)
+        expect(matchB.regionFallback).toBe(false)
+
+        const conflictB = resolveRegionalRoute(manifest, { pairId: tc.pairId, sideAndes: 'West', subspeciesB: aliasB, locale: 'en' })
+        expect(conflictB.cardId).toBeNull()
+        expect(conflictB.status, `${tc.pairId} West+B=${aliasB}`).toBe('conflicting_side_and_subspecies')
+      }
+
+      // Non-East exclusion: West side and West-leaning ridge GPS must never show East-only Wave 7.2 cards
+      const westSide = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideAndes: 'West',
+        locale: 'es',
+      })
+      expect(westSide.cardId).toBeNull()
+      expect(westSide.status).toBe('no_card_for_side')
+
+      const westLean = resolveRegionalRoute(manifest, {
+        pairId: tc.pairId,
+        sideLean: 'West',
+        subspeciesA: sspA,
+        locale: 'en',
+      })
+      expect(westLean.cardId).toBeNull()
+      expect(westLean.status).toBe('no_card_for_side')
+
+      // Prediction matching on East (reversed species order) resolves cleanly; West hides it
+      const matchedEast = resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: tc.speciesB, p: 0.58, subspecies: [{ name: sspB, p: 0.52 }] },
+          { name: tc.speciesA, p: 0.34, subspecies: [{ name: sspA, p: 0.29 }] },
+        ],
+        sideAndes: 'East',
+        locale: 'es',
+        rootUrl: ROOT_URL,
+      })
+      expect(matchedEast?.displayKind).toBe('card')
+      expect(matchedEast?.cardId).toBe(tc.pairId)
+      expect(matchedEast?.imageUrl).toContain(`/cards/es/${tc.pairId}.webp?v=`)
+
+      const matchedWest = resolveConfirmarVisualCard(manifest, {
+        topPredictions: [
+          { name: tc.speciesB, p: 0.58, subspecies: [{ name: sspB, p: 0.52 }] },
+          { name: tc.speciesA, p: 0.34, subspecies: [{ name: sspA, p: 0.29 }] },
+        ],
+        sideAndes: 'West',
+        locale: 'es',
+      })
+      expect(matchedWest?.cardId ?? null).not.toBe(tc.pairId)
+    }
+
+    // Subspecies scope check for w7_17: ANY non-zaneka Melinaea menophilus subspecies (nominate menophilus,
+    // cocana, hicetas, etc.) is rejected regardless of whether sideAndes is East or side A matches
+    // Mechanitis mazaeus mazaeus, while zaneka and species-only East predictions still resolve w7_17 cleanly.
+    for (const nonZanekaSsp of [
+      'Melinaea menophilus menophilus',
+      'Melinaea menophilus cocana',
+      'Melinaea menophilus hicetas',
+    ]) {
+      for (const exclInput of [
+        { subspeciesB: nonZanekaSsp },
+        { sideAndes: 'East' as const, subspeciesB: nonZanekaSsp },
+        { subspeciesA: 'Mechanitis mazaeus mazaeus', subspeciesB: nonZanekaSsp },
+        { sideAndes: 'East' as const, subspeciesA: 'Mechanitis mazaeus mazaeus', subspeciesB: nonZanekaSsp },
+      ]) {
+        const excluded = resolveRegionalRoute(manifest, { pairId: 'w7_17', locale: 'en', ...exclInput })
+        expect(excluded.cardId, JSON.stringify(exclInput)).toBeNull()
+        expect(excluded.status, JSON.stringify(exclInput)).toBe('unknown_subspecies')
+      }
+      for (const side of ['East', undefined] as const) {
+        const predExcluded = resolveConfirmarVisualCard(manifest, {
+          topPredictions: [
+            { name: 'Melinaea menophilus', p: 0.56, subspecies: [{ name: nonZanekaSsp, p: 0.51 }] },
+            { name: 'Mechanitis mazaeus', p: 0.36, subspecies: [{ name: 'Mechanitis mazaeus mazaeus', p: 0.31 }] },
+          ],
+          sideAndes: side,
+          locale: 'en',
+        })
+        expect(predExcluded?.cardId ?? null, `${nonZanekaSsp} side=${String(side)}`).not.toBe('w7_17')
+      }
+    }
+    const speciesOnlyEastW717 = resolveRegionalRoute(manifest, { pairId: 'w7_17', sideAndes: 'East', locale: 'es', rootUrl: ROOT_URL })
+    expect(speciesOnlyEastW717.status).toBe('active')
+    expect(speciesOnlyEastW717.cardId).toBe('w7_17')
   })
 })

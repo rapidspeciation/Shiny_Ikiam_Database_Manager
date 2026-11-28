@@ -63,6 +63,15 @@
       "active_cards": 5,
       "non_active_pairs": 0,
       "audit_status": "PASS"
+    },
+    {
+      "wave": "wave7_2_dv",
+      "routing_mode": "subspecies_and_side",
+      "map_version": "confirmar_regional_map_w7_2_v1",
+      "pairs": 4,
+      "active_cards": 4,
+      "non_active_pairs": 0,
+      "audit_status": "PASS"
     }
   ],
   "verification": {
@@ -74,19 +83,19 @@
     "verified_override_cards_applied": 17,
     "webp_quality": 92,
     "head_subspecies_checked": true,
-    "subspecies_sides_reachable": 109,
+    "subspecies_sides_reachable": 117,
     "subspecies_sides_without_head_subspecies": 5
   },
   "counts": {
-    "total_pairs": 96,
-    "active_pairs": 68,
-    "active_cards": 69,
+    "total_pairs": 100,
+    "active_pairs": 72,
+    "active_cards": 73,
     "non_active_pairs": 28,
     "superseded_pairs": 2,
     "deferred_routes": 2,
-    "assets_total": 138,
-    "source_png_bytes": 113498481,
-    "webp_bytes": 28032332
+    "assets_total": 146,
+    "source_png_bytes": 119630458,
+    "webp_bytes": 29622414
   },
   "superseded_pairs": {
     "w3a_01": "w5_01",
@@ -4855,6 +4864,231 @@
               "bytes": 141714,
               "sha256": "891e66194e891f1668afddcc5a16fccb83517f8fc6ba297b7d3a248785d38d0f",
               "source_png_sha256": "75b2c6a303875f20d15a8729a503486b3a940cc62cfe141b57ae47e48066ab92"
+            }
+          }
+        }
+      ]
+    },
+    "w7_06": {
+      "pair_id": "w7_06",
+      "wave": "wave7_2_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Hyposcada illinissa",
+      "species_b": "Oleria onega",
+      "classification": "single_region",
+      "default_card_id": "w7_06",
+      "routes": [
+        {
+          "card_id": "w7_06",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Hyposcada illinissa ida",
+          "taxon_b": "Oleria onega janarilla",
+          "subspecies_a_aliases": [
+            "ida",
+            "Hyposcada illinissa ida"
+          ],
+          "subspecies_b_aliases": [
+            "janarilla",
+            "Oleria onega janarilla"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_06.webp",
+              "width": 1400,
+              "height": 1520,
+              "bytes": 193516,
+              "sha256": "5bd83edd845521564d83c105b26aef73c524d8ed106a3481df332edeabc6e2c7",
+              "source_png_sha256": "ac2a80190a8a7861e35d577fc67bd020edbc8161a737dfe9a7914dbf81d25526"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_06.webp",
+              "width": 1400,
+              "height": 1495,
+              "bytes": 185766,
+              "sha256": "428e788b63800022d0a04de2a2370d0f9d72fad4545f2d5a630129b37d663d51",
+              "source_png_sha256": "96f85cb5956468a0cdf1d3dbc43122c1628740a95ce4f4a52ab8b3a48df83bcc"
+            }
+          }
+        }
+      ]
+    },
+    "w7_10": {
+      "pair_id": "w7_10",
+      "wave": "wave7_2_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Forbestra olivencia",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region",
+      "default_card_id": "w7_10",
+      "routes": [
+        {
+          "card_id": "w7_10",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Forbestra olivencia",
+          "taxon_b": "Mechanitis polymnia",
+          "subspecies_a_aliases": [
+            "juntana",
+            "Forbestra olivencia juntana",
+            "olivencia",
+            "Forbestra olivencia olivencia"
+          ],
+          "subspecies_b_aliases": [
+            "proceriformis",
+            "Mechanitis polymnia proceriformis",
+            "eurydice",
+            "Mechanitis polymnia eurydice"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_10.webp",
+              "width": 1400,
+              "height": 1449,
+              "bytes": 179124,
+              "sha256": "b9c142fc4dca8f816367d464477ab136a85ef4c0725c42cdf9d71ab565af18d1",
+              "source_png_sha256": "05b984efa815307a6c1e8d2a882ef75fc057f4cc34252bea0e785f38011387d7"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_10.webp",
+              "width": 1400,
+              "height": 1449,
+              "bytes": 171440,
+              "sha256": "d716c8bb5a437ce8f3d30ba38af6dd246a02cc15ef9aa416b00681f14bf9f5d6",
+              "source_png_sha256": "9f15c732283db6c18d868b1898a62bca238703cc0f80978a1b84a28e7f89c712"
+            }
+          }
+        }
+      ]
+    },
+    "w7_17": {
+      "pair_id": "w7_17",
+      "wave": "wave7_2_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Mechanitis mazaeus",
+      "species_b": "Melinaea menophilus",
+      "classification": "single_region_small_n_caution",
+      "default_card_id": "w7_17",
+      "routes": [
+        {
+          "card_id": "w7_17",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Mechanitis mazaeus",
+          "taxon_b": "Melinaea menophilus zaneka",
+          "subspecies_a_aliases": [
+            "mazaeus",
+            "Mechanitis mazaeus mazaeus",
+            "fallax",
+            "Mechanitis mazaeus fallax"
+          ],
+          "subspecies_b_aliases": [
+            "zaneka",
+            "Melinaea menophilus zaneka"
+          ],
+          "require_subspecies_b_match": true,
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_17.webp",
+              "width": 1400,
+              "height": 1620,
+              "bytes": 220326,
+              "sha256": "fe92aa96d732342716c4d5161712643efc5918dc201e49b01c6fae4eee6e6af1",
+              "source_png_sha256": "432047fa95ed3fc25c1a9dacf982411e639006c7e7c7a2e8af432b68d5ca7756"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_17.webp",
+              "width": 1400,
+              "height": 1594,
+              "bytes": 208718,
+              "sha256": "2db6b94910a1156b71ff08acc04dc409e0382d954378cc495a456c78c447ddb7",
+              "source_png_sha256": "50c86877e767ad7e45c8ea1a3ffa3792ac9f74484af7176a726525f1f3231d44"
+            }
+          }
+        }
+      ]
+    },
+    "w7_20": {
+      "pair_id": "w7_20",
+      "wave": "wave7_2_dv",
+      "routing_mode": "subspecies_and_side",
+      "species_a": "Forbestra equicola",
+      "species_b": "Mechanitis polymnia",
+      "classification": "single_region_small_n_caution",
+      "default_card_id": "w7_20",
+      "routes": [
+        {
+          "card_id": "w7_20",
+          "status": "active",
+          "side_andes": [
+            "East"
+          ],
+          "side_default_for": [
+            "East"
+          ],
+          "region_bucket": "oriente",
+          "region_es": "Oriente",
+          "region_en": "East Ecuador",
+          "taxon_a": "Forbestra equicola equicoloides",
+          "taxon_b": "Mechanitis polymnia",
+          "subspecies_a_aliases": [
+            "equicoloides",
+            "Forbestra equicola equicoloides"
+          ],
+          "subspecies_b_aliases": [
+            "proceriformis",
+            "Mechanitis polymnia proceriformis",
+            "eurydice",
+            "Mechanitis polymnia eurydice"
+          ],
+          "view_badge_es": "Anverso y reverso",
+          "view_badge_en": "Upperside & underside",
+          "assets": {
+            "es": {
+              "path": "identificar/confirmar/cards/es/w7_20.webp",
+              "width": 1400,
+              "height": 1512,
+              "bytes": 220690,
+              "sha256": "fbc49b1334ee80577086953bc2ceedb6407ff5ab97917b2ba3c20eee0df17c9f",
+              "source_png_sha256": "65bd6f6cffbda52474d04a00e216be707477ef9b0a7f131094b1d0205d719293"
+            },
+            "en": {
+              "path": "identificar/confirmar/cards/en/w7_20.webp",
+              "width": 1400,
+              "height": 1487,
+              "bytes": 210502,
+              "sha256": "13cc9d4112bd17815e0b0528f6481bde9fb8f8306875c7931a5307605bc2f75b",
+              "source_png_sha256": "daa585755153fd7b74e87640bebac9fa0ccef45494c808a0fccdc839efe1418c"
             }
           }
         }
